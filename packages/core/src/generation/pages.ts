@@ -8,6 +8,11 @@ import {
   targetLanguagePayload,
   targetLanguageReviewGuidance
 } from "../prompting/language.js";
+import {
+  kidsReadingGuidanceForInput,
+  kidsReadingGuidanceLines,
+  kidsReadingGuidancePayload
+} from "../prompting/readingLevel.js";
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
 import { generateJsonWithJailbreak } from "./generateWithJailbreak.js";
 import { normalizePlanPageTargets } from "./planner.js";
@@ -34,17 +39,25 @@ function isLessCensored(input: CreateProjectInput): boolean {
 }
 
 function plannerToneRules(input: CreateProjectInput): string[] {
-  return plannerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings));
+  return [...kidsReadingGuidanceLines(input), ...plannerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings))];
 }
 
 function writerToneRules(input: CreateProjectInput): string[] {
-  return writerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings));
+  return [...kidsReadingGuidanceLines(input), ...writerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings))];
+}
+
+function reviewerStyleRules(input: CreateProjectInput): string[] {
+  return [
+    ...kidsReadingGuidanceLines(input).map((line) => `Reject if the page violates this reading-level rule: ${line}`),
+    ...reviewerStyleGuidance()
+  ];
 }
 
 function styleGuidancePayload(input: CreateProjectInput) {
   const toneProfile = toneProfileFromMediaSettings(input.mediaSettings);
   return {
     toneProfile,
+    readingGuidance: kidsReadingGuidancePayload(input),
     rules: writerToneGuidance(toneProfile)
   };
 }
@@ -457,7 +470,8 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
     continuityNotes: options.continuityNotes,
     researchNotes: options.researchNotes,
     tokenBudget: 7000,
-    lessCensored: isLessCensored(options.input)
+    lessCensored: isLessCensored(options.input),
+    readingGuidance: kidsReadingGuidanceLines(options.input)
   });
   const recentPages = compactPriorPages(options.previousPages ?? [], 5, 1000);
 
@@ -832,7 +846,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
             "Evaluate only the current pageBrief. Do not reject a page for omitting chapter keyBeats or futureChapterPageBriefs assigned to later pages.",
             "If pageScope.isLastPageOfChapter is false, do not require chapter closure or all chapter keyBeats on this page.",
             ...targetLanguageReviewGuidance(options.input.language),
-            ...reviewerStyleGuidance(),
+            ...reviewerStyleRules(options.input),
             "Return one JSON object with approved (boolean), score (integer 0-100), issues (string array), requiredRevisions (string array), notes (string), and checks with placeholderFree, promptLeakFree, titleClean, repetitionOk, progressionOk, styleNatural booleans.",
             "Do not use feedback as the only root field."
           ].join(" ")
@@ -1070,7 +1084,7 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
           "pageMap summaries are abbreviated excerpts for this review, not the exported manuscript.",
           "Do not reject because a pageMap summary ends with an ellipsis or looks cut off.",
           ...targetLanguageReviewGuidance(options.input.language),
-          ...reviewerStyleGuidance(),
+          ...reviewerStyleRules(options.input),
           "Return one JSON object with approved (boolean), score (integer 0-100), issues (string array), requiredFixes (string array), and notes (string).",
           "Do not use reasons or feedback as the only root field."
         ].join(" ")
@@ -1544,8 +1558,9 @@ function findAllPageBeatItems(value: unknown): unknown[] {
 }
 
 function targetWordsPerPage(input: CreateProjectInput): { min: number; max: number } {
-  if (input.category === "KIDS") {
-    return { min: 30, max: 120 };
+  const kidsGuidance = kidsReadingGuidanceForInput(input);
+  if (kidsGuidance) {
+    return kidsGuidance.targetWordsPerPage;
   }
   if (isDiagramFriendlyBookCategory(input.category)) {
     return { min: 140, max: 360 };
@@ -1628,11 +1643,32 @@ function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityRepor
     issues.push(`Page repeats or substantially overlaps the beat from page ${repeatedPage.index}.`);
   }
 
-  const wordCount = tokenize(currentBody).length;
-  const minWords = options.input.category === "KIDS" ? 12 : options.input.category === "STORY" ? 70 : 90;
+  const kidsGuidance = kidsReadingGuidanceForInput(options.input);
+  const wordCount = kidsGuidance ? countReadableWords(currentBody) : tokenize(currentBody).length;
+  const minWords = kidsGuidance?.targetWordsPerPage.min ?? (options.input.category === "STORY" ? 70 : 90);
   if (wordCount < minWords) {
     checks.progressionOk = false;
     issues.push(`Page is too short to show meaningful progression (${wordCount} words).`);
+  }
+
+  if (kidsGuidance && wordCount > kidsGuidance.maxWordsPerPageWithTolerance) {
+    checks.styleNatural = false;
+    issues.push(
+      `Page is too long for ages ${kidsGuidance.ageRange} (${wordCount} words; target ${kidsGuidance.targetWordsPerPage.min}-${kidsGuidance.targetWordsPerPage.max}).`
+    );
+  }
+
+  if (kidsGuidance) {
+    const sentenceStats = sentenceLengthStats(currentBody);
+    if (
+      sentenceStats.average > kidsGuidance.maxAverageSentenceWords ||
+      sentenceStats.max > kidsGuidance.maxSentenceWords
+    ) {
+      checks.styleNatural = false;
+      issues.push(
+        `Sentences are too long for ages ${kidsGuidance.ageRange} (average ${sentenceStats.average.toFixed(1)} words, longest ${sentenceStats.max}; target average <= ${kidsGuidance.maxAverageSentenceWords}, longest <= ${kidsGuidance.maxSentenceWords}).`
+      );
+    }
   }
 
   if (SCAFFOLD_SHAPE_PATTERNS.some((pattern) => pattern.test(currentBody))) {
@@ -1860,6 +1896,22 @@ function tokenize(text: string): string[] {
     .replace(/[^a-z0-9\s']/g, " ")
     .split(/\s+/)
     .filter((token) => token.length > 2);
+}
+
+function countReadableWords(text: string): number {
+  return text.match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+}
+
+function sentenceLengthStats(text: string): { average: number; max: number } {
+  const sentenceWordCounts = splitSentences(text).map(countReadableWords).filter((count) => count > 0);
+  if (sentenceWordCounts.length === 0) {
+    return { average: 0, max: 0 };
+  }
+  const total = sentenceWordCounts.reduce((sum, count) => sum + count, 0);
+  return {
+    average: total / sentenceWordCounts.length,
+    max: Math.max(...sentenceWordCounts)
+  };
 }
 
 function hasFormulaicProofLeap(text: string): boolean {

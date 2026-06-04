@@ -29,6 +29,7 @@ import {
   apiUrl,
   subscribeProjectEvents,
   type AuthStatus,
+  type AudienceAgeRange,
   type GenerationJobRow,
   type ImageModelSelection,
   type JobStep,
@@ -74,6 +75,7 @@ type DraftProject = {
   textModel: TextModelSelection;
   imageModel: ImageModelSelection;
   coverTemplate: CoverTemplateId;
+  audienceAgeRange: AudienceAgeRange;
   targetPages: number;
   complexity: number;
   temperature: number;
@@ -330,6 +332,11 @@ const TONE_PROFILE_OPTIONS: Array<{ id: ToneProfile; label: string; hint: string
   { id: "conversational", label: "Conversational", hint: "Plainspoken and warm" },
   { id: "narrative", label: "Narrative", hint: "Scene and example led" }
 ];
+const AUDIENCE_AGE_RANGE_OPTIONS: Array<{ value: AudienceAgeRange; label: string }> = [
+  { value: "2-4", label: "Ages 2-4" },
+  { value: "4-6", label: "Ages 4-6" },
+  { value: "6-8", label: "Ages 6-8" }
+];
 
 const initialDraft: DraftProject = {
   title: "",
@@ -344,6 +351,7 @@ const initialDraft: DraftProject = {
   textModel: DEFAULT_TEXT_MODEL,
   imageModel: DEFAULT_IMAGE_MODEL,
   coverTemplate: "auto",
+  audienceAgeRange: "4-6",
   targetPages: 32,
   complexity: 3,
   temperature: 0.8,
@@ -1102,6 +1110,23 @@ export function App() {
               onChange={(event) => setDraft({ ...draft, prompt: event.target.value })}
             />
           </label>
+          {draft.category === "KIDS" ? (
+            <label>
+              Age range
+              <select
+                value={draft.audienceAgeRange}
+                onChange={(event) =>
+                  setDraft({ ...draft, audienceAgeRange: audienceAgeRangeFromValue(event.target.value) })
+                }
+              >
+                {AUDIENCE_AGE_RANGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <div className="two-col">
             <label>
               Pages
@@ -1718,6 +1743,7 @@ function projectInputFromDraft(draft: DraftProject, textModelOptions: TextModelO
       lessCensored: draft.category === "KIDS" ? false : draft.lessCensored,
       generationStrategy: draft.generationStrategy,
       textModel: textModelSelectionFromOption(textModel),
+      ...(draft.category === "KIDS" ? { audienceAgeRange: draft.audienceAgeRange } : {}),
       toneProfile: draft.toneProfile
     }
   };
@@ -1764,8 +1790,14 @@ function draftFromSavedInputs(project: Project): DraftProject {
     includeCover: firstBoolean(mediaSettings.includeCover, initialDraft.includeCover),
     finalReview: firstBoolean(mediaSettings.finalReview, initialDraft.finalReview),
     lessCensored: category === "KIDS" ? false : firstBoolean(mediaSettings.lessCensored, initialDraft.lessCensored),
+    audienceAgeRange:
+      category === "KIDS" ? audienceAgeRangeFromValue(mediaSettings.audienceAgeRange) : initialDraft.audienceAgeRange,
     toneProfile: toneProfileFromValue(firstString(mediaSettings.toneProfile, initialDraft.toneProfile))
   };
+}
+
+function audienceAgeRangeFromValue(value: unknown): AudienceAgeRange {
+  return value === "2-4" || value === "4-6" || value === "6-8" ? value : initialDraft.audienceAgeRange;
 }
 
 function projectCategoryFromValue(value: string): ProjectCategory {

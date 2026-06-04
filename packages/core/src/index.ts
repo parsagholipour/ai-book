@@ -8,6 +8,7 @@ export * from "./prompting/contentPolicy.js";
 export * from "./prompting/jailbreak.js";
 export * from "./prompting/tone.js";
 export * from "./prompting/language.js";
+export * from "./prompting/readingLevel.js";
 export * from "./generation/generateWithJailbreak.js";
 export * from "./adapters/types.js";
 export * from "./adapters/alibabaModels.js";

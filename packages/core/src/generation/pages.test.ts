@@ -248,6 +248,69 @@ describe("page quality review", () => {
     expect(payload.pageInstruction).toMatch(/never invent studies/i);
   });
 
+  it("includes Kids age-range guidance in page draft prompts and payloads", async () => {
+    let request: GenerateJsonOptions<unknown> | undefined;
+    const promptInput = kidsInput("4-6");
+    const promptPlan = makeFallbackPlan(promptInput);
+    const model: TextModelAdapter = {
+      async generateText() {
+        return {
+          text: "",
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateJson(options) {
+        request = options;
+        return {
+          data: options.schema.parse({
+            title: "The First Step",
+            markdown: kidsGoodMarkdown(),
+            summary: "Turtle and Rabbit begin the race.",
+            continuityNotes: []
+          }),
+          text: "",
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async *streamText() {
+        yield "";
+      }
+    };
+
+    await generatePageDraft({
+      input: promptInput,
+      plan: promptPlan,
+      chapter: promptPlan.chapters[0],
+      pageIndex: 1,
+      previousSummaries: [],
+      previousPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: model
+    });
+
+    const systemMessage = request?.messages.find((message) => message.role === "system")?.content;
+    const userMessage = request?.messages.find((message) => message.role === "user")?.content;
+    const payload = JSON.parse(userMessage ?? "{}") as {
+      context?: { system?: string };
+      userContext?: {
+        styleGuidance?: {
+          readingGuidance?: {
+            ageRange?: string;
+            targetWordsPerPage?: { min?: number; max?: number };
+          };
+        };
+      };
+    };
+
+    expect(systemMessage).toMatch(/Kids reading level: 4-6/i);
+    expect(payload.context?.system).toMatch(/Reading guidance/i);
+    expect(payload.userContext?.styleGuidance?.readingGuidance?.ageRange).toBe("4-6");
+    expect(payload.userContext?.styleGuidance?.readingGuidance?.targetWordsPerPage).toEqual({ min: 20, max: 65 });
+  });
+
   it("tells page drafting to use exact recurring character names in image prompts", async () => {
     let request: GenerateJsonOptions<unknown> | undefined;
     const characterPlan = {
@@ -1251,6 +1314,46 @@ describe("page quality review", () => {
     expect(report.notes).toMatch(/local checks were used/i);
   });
 
+  it("includes Kids age-range guidance in review prompts", async () => {
+    const reviewInput = kidsInput("6-8");
+    const reviewPlan = makeFallbackPlan(reviewInput);
+    const capture = capturingJsonModel({
+      approved: true,
+      score: 92,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Approved.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    });
+
+    await reviewPageDraft({
+      input: reviewInput,
+      plan: reviewPlan,
+      chapter: reviewPlan.chapters[0],
+      pageIndex: 1,
+      draft: {
+        title: "The Race Begins",
+        markdown: kidsGoodMarkdown(),
+        summary: "Turtle and Rabbit begin the race with clear, simple action.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: [],
+      textModel: capture.model
+    });
+
+    expect(capture.systemPrompt).toMatch(/Reject if the page violates this reading-level rule: Kids reading level: 6-8/i);
+    expect(capture.payload?.book?.styleGuidance?.readingGuidance?.ageRange).toBe("6-8");
+    expect(capture.payload?.book?.styleGuidance?.readingGuidance?.targetWordsPerPage).toEqual({ min: 35, max: 100 });
+  });
+
   it("sends chapter-local page scope to review and revision prompts", async () => {
     const scopedInput = { ...input, targetPages: 5 };
     const chapter = {
@@ -1388,6 +1491,30 @@ describe("page quality review", () => {
     });
     expect(reviseCapture.systemPrompt).toMatch(/current pageBrief is authoritative/i);
   });
+
+  it("rejects Kids pages that are too long for the selected age range", async () => {
+    const reviewInput = kidsInput("4-6");
+    const reviewPlan = makeFallbackPlan(reviewInput);
+    const report = await reviewPageDraft({
+      input: reviewInput,
+      plan: reviewPlan,
+      chapter: reviewPlan.chapters[0],
+      pageIndex: 1,
+      draft: {
+        title: "The Long Race",
+        markdown: kidsOverlongMarkdown(),
+        summary: "The race begins with many small details.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: [],
+      textModel
+    });
+
+    expect(report.approved).toBe(false);
+    expect(report.checks.styleNatural).toBe(false);
+    expect(report.issues.join(" ")).toMatch(/too long for ages 4-6/i);
+  });
 });
 
 async function review(
@@ -1461,6 +1588,41 @@ function vagueFinalMarkdown(): string {
     '"What changed?" Elara asked.',
     "",
     '"Nothing," Jack said. "Everything."'
+  ].join("\n");
+}
+
+function kidsInput(ageRange: "2-4" | "4-6" | "6-8"): CreateProjectInput {
+  return {
+    prompt: "A simple picture book about Turtle and Rabbit racing through a sunny meadow.",
+    category: "KIDS",
+    targetPages: 8,
+    complexity: 3,
+    temperature: 0.8,
+    language: "en",
+    mediaSettings: {
+      fullIllustrations: true,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      lessCensored: false,
+      audienceAgeRange: ageRange,
+      toneProfile: "neutral" as const
+    }
+  };
+}
+
+function kidsGoodMarkdown(): string {
+  return [
+    "Turtle stepped onto the path. Rabbit bounced beside him. The hill looked bright. Turtle smiled and took one slow step.",
+    "",
+    "Rabbit laughed, then waited. A blue jay called from the fence. The race began with cheers from Mouse and Frog."
+  ].join("\n");
+}
+
+function kidsOverlongMarkdown(): string {
+  return [
+    "Turtle looked at the path. Rabbit jumped beside him. The sun was warm. The grass was wet. Blue Jay called, Go. Rabbit ran fast. Turtle took one step. Then another. He passed a red stone. He passed a yellow flower. Rabbit looked back and giggled. Turtle kept walking. Mouse sat on a leaf. Frog blinked near the pond. The hill rose ahead. The finish ribbon waited. Everyone watched quietly. Turtle kept his smile. The meadow hummed softly. Rabbit kicked more dust. Turtle blinked and walked."
   ].join("\n");
 }
 

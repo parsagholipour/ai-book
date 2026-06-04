@@ -1,5 +1,6 @@
 import type { JsonResult, ResearchAdapter, TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
+import { kidsReadingGuidanceLines, kidsReadingGuidancePayload } from "../prompting/readingLevel.js";
 import { getTemplateForInput, makeFallbackPlan, type TemplateDefinition } from "../prompting/templates.js";
 import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/tone.js";
 import { bookPlanSchema, type BookPlan, type ChapterPlan, type CreateProjectInput, type ResearchSource, type ToneProfile } from "../schemas/book.js";
@@ -16,6 +17,7 @@ export type RevisePlanOptions = {
   currentPlan: BookPlan;
   userMessage: string;
   textModel: TextModelAdapter;
+  input?: CreateProjectInput | undefined;
   targetPages?: number;
   temperature?: number;
   lessCensored?: boolean;
@@ -66,6 +68,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "For every recurring character, include concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details suitable for a reusable character reference sheet.",
             "Illustration prompts must use exact recurring character names whenever those characters appear.",
             ...targetLanguageGenerationGuidance(options.input.language),
+            ...kidsReadingGuidanceLines(options.input),
             ...plannerToneGuidance(toneProfile)
           ].join(" ")
         },
@@ -76,6 +79,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
               userInput: options.input,
               toneProfile,
               language: targetLanguagePayload(options.input.language),
+              readingGuidance: kidsReadingGuidancePayload(options.input),
               template,
               fallbackOutline: fallback,
               researchNotes
@@ -126,6 +130,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               `Revise this book generation plan. Keep the same JSON schema and return the plan fields at the JSON root, not nested under plan, data, or result. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference.`,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               ...targetLanguageGenerationGuidance(options.language),
+              ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
               ...plannerToneGuidance(toneProfile)
             ].join(" ")
         },
@@ -137,6 +142,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               userMessage: options.userMessage,
               toneProfile,
               language: targetLanguagePayload(options.language),
+              readingGuidance: options.input ? kidsReadingGuidancePayload(options.input) : undefined,
               pageBudget: {
                 targetPages
               }

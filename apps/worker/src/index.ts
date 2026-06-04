@@ -320,6 +320,7 @@ async function revisePlan(job: Job) {
     currentPlan,
     userMessage: message,
     textModel: providers.text,
+    input,
     targetPages: input.targetPages,
     temperature: input.temperature,
     lessCensored: input.mediaSettings.lessCensored === true,

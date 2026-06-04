@@ -25,6 +25,8 @@ export type Template = {
   description: string;
 };
 
+export type AudienceAgeRange = "2-4" | "4-6" | "6-8";
+
 export type Project = {
   id: string;
   title: string;
@@ -46,6 +48,7 @@ export type Project = {
     coverTemplate?: string;
     finalReview?: boolean;
     lessCensored?: boolean;
+    audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
   };
   status: string;
@@ -105,6 +108,7 @@ export type ProjectInputSnapshot = {
     coverTemplate?: string;
     finalReview?: boolean;
     lessCensored?: boolean;
+    audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
   };
 };

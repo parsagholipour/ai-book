@@ -11,6 +11,7 @@ export type ContextPackInput = {
   researchNotes: string[];
   tokenBudget?: number;
   lessCensored?: boolean;
+  readingGuidance?: string[] | undefined;
 };
 
 export type ContextPack = {
@@ -33,6 +34,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
       `Book: ${input.plan.title}`,
       `Audience: ${input.plan.audience}`,
       `Writing complexity: ${input.plan.writingComplexity}/10`,
+      ...(input.readingGuidance?.length ? [`Reading guidance: ${input.readingGuidance.join(" ")}`] : []),
       `Voice: ${input.plan.voiceGuide.join(" ")}`,
       `Avoid: ${input.plan.antiAiRules.join(" ")}`,
       ...(directness ? [directness] : [])

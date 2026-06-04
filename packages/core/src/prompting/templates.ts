@@ -1,5 +1,6 @@
 import { isSourceForwardBookCategory, type BookCategory } from "../categories.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import { kidsAudienceLabelForInput, kidsReadingGuidanceLines } from "./readingLevel.js";
 import { toneProfileFromMediaSettings, writerToneGuidance } from "./tone.js";
 
 export type TemplateDefinition = {
@@ -469,13 +470,14 @@ export function makeFallbackPlan(input: CreateProjectInput): BookPlan {
   const extra = input.targetPages % chapterCount;
   const title = input.title ?? deriveTitle(input.prompt);
   const toneRules = writerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings));
+  const kidsReadingRules = kidsReadingGuidanceLines(input);
 
   return {
     title,
     premise: input.prompt,
-    audience: audienceForCategory(input.category),
+    audience: audienceForInput(input),
     writingComplexity: input.complexity,
-    voiceGuide: [...template.styleRules.voice, ...toneRules.slice(0, 3)],
+    voiceGuide: [...template.styleRules.voice, ...kidsReadingRules, ...toneRules.slice(0, 3)],
     antiAiRules: [...template.styleRules.antiAi, ...toneRules.slice(3)],
     questions: [
       {
@@ -575,10 +577,15 @@ function chapterTitle(index: number, category: string): string {
   ] ?? "What Comes Next";
 }
 
-function audienceForCategory(category: string): string {
-  if (category === "KIDS") {
-    return "Children and read-aloud adults";
+function audienceForInput(input: CreateProjectInput): string {
+  const kidsAudience = kidsAudienceLabelForInput(input);
+  if (kidsAudience) {
+    return kidsAudience;
   }
+  return audienceForCategory(input.category);
+}
+
+function audienceForCategory(category: string): string {
   if (category === "SCIENCE") {
     return "Curious readers who want accurate explanations";
   }

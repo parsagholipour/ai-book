@@ -454,6 +454,8 @@ export const coverTemplateIdSchema = z.enum([
   "romance"
 ]);
 export const toneProfileSchema = z.enum(TONE_PROFILES).default("neutral");
+export const AUDIENCE_AGE_RANGES = ["2-4", "4-6", "6-8"] as const;
+export const audienceAgeRangeSchema = z.enum(AUDIENCE_AGE_RANGES);
 
 export const mediaSettingsSchema = z.object({
   fullIllustrations: z.boolean().default(true),
@@ -466,6 +468,7 @@ export const mediaSettingsSchema = z.object({
   imageModel: imageModelSelectionSchema.optional(),
   generationStrategy: bookGenerationStrategyIdSchema.optional(),
   textModel: textModelSelectionSchema.optional(),
+  audienceAgeRange: audienceAgeRangeSchema.optional(),
   toneProfile: toneProfileSchema
 });
 
@@ -696,6 +699,7 @@ export type MediaSettings = z.infer<typeof mediaSettingsSchema>;
 export type TextModelSelection = z.infer<typeof textModelSelectionSchema>;
 export type ImageModelSelection = z.infer<typeof imageModelSelectionSchema>;
 export type CoverTemplateId = z.infer<typeof coverTemplateIdSchema>;
+export type AudienceAgeRange = z.infer<typeof audienceAgeRangeSchema>;
 export type ToneProfile = z.infer<typeof toneProfileSchema>;
 export type BookPlan = z.infer<typeof bookPlanSchema>;
 export type ChapterPlan = z.infer<typeof chapterPlanSchema>;

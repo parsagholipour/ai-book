@@ -68,6 +68,44 @@ describe("createProjectSchema", () => {
     }
   });
 
+  it("accepts a Kids audience age range in media settings", () => {
+    const input = createProjectSchema.parse({
+      prompt: "A simple picture book about a turtle and a rabbit learning to race kindly.",
+      category: "KIDS",
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        lessCensored: false,
+        audienceAgeRange: "2-4",
+        toneProfile: "neutral"
+      }
+    });
+
+    expect(input.mediaSettings.audienceAgeRange).toBe("2-4");
+  });
+
+  it("rejects unsupported audience age ranges", () => {
+    const result = createProjectSchema.safeParse({
+      prompt: "A simple picture book about a turtle and a rabbit learning to race kindly.",
+      category: "KIDS",
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        lessCensored: false,
+        audienceAgeRange: "5-7",
+        toneProfile: "neutral"
+      }
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("accepts an optional selected text model in media settings", () => {
     const input = createProjectSchema.parse({
       prompt: "A practical book about choosing an AI model for planning and drafting.",

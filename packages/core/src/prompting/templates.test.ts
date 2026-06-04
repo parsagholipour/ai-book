@@ -42,6 +42,16 @@ describe("general book template", () => {
 
     expect(plan.researchQueries).toEqual([]);
   });
+
+  it("reflects the selected Kids age range in fallback audiences and voice guidance", () => {
+    const youngerPlan = makeFallbackPlan(kidsInput("2-4"));
+    const defaultPlan = makeFallbackPlan(kidsInput(undefined));
+
+    expect(youngerPlan.audience).toBe("children ages 2-4 and read-aloud adults");
+    expect(youngerPlan.voiceGuide.join(" ")).toMatch(/8-35 words per page/i);
+    expect(defaultPlan.audience).toBe("children ages 4-6 and read-aloud adults");
+    expect(defaultPlan.voiceGuide.join(" ")).toMatch(/20-65 words per page/i);
+  });
 });
 
 function generalInput(): CreateProjectInput {
@@ -60,6 +70,20 @@ function generalInput(): CreateProjectInput {
       finalReview: true,
       lessCensored: false,
       toneProfile: "neutral" as const
+    }
+  };
+}
+
+function kidsInput(ageRange: "2-4" | "4-6" | "6-8" | undefined): CreateProjectInput {
+  return {
+    ...generalInput(),
+    prompt: "A simple picture book about a turtle and a rabbit learning to race kindly.",
+    category: "KIDS",
+    targetPages: 12,
+    complexity: 3,
+    mediaSettings: {
+      ...generalInput().mediaSettings,
+      ...(ageRange ? { audienceAgeRange: ageRange } : {})
     }
   };
 }
