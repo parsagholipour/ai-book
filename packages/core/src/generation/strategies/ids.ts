@@ -1,0 +1,22 @@
+export const CHAPTERED_SEQUENTIAL_STRATEGY_ID = "chaptered-sequential";
+export const WHOLE_BOOK_SINGLE_PASS_STRATEGY_ID = "whole-book-single-pass";
+export const PAGE_MAP_SEQUENTIAL_STRATEGY_ID = "page-map-sequential";
+export const CHAPTER_WHOLE_PASS_STRATEGY_ID = "chapter-whole-pass";
+export const BATCH_WINDOW_STRATEGY_ID = "batch-window";
+export const DRAFT_THEN_POLISH_STRATEGY_ID = "draft-then-polish";
+export const RESEARCH_GROUNDED_STRATEGY_ID = "research-grounded";
+export const RESEARCH_MAP_DRAFT_POLISH_STRATEGY_ID = "research-map-draft-polish";
+export const DEFAULT_BOOK_GENERATION_STRATEGY_ID = CHAPTERED_SEQUENTIAL_STRATEGY_ID;
+
+export const BOOK_GENERATION_STRATEGY_IDS = [
+  CHAPTERED_SEQUENTIAL_STRATEGY_ID,
+  WHOLE_BOOK_SINGLE_PASS_STRATEGY_ID,
+  PAGE_MAP_SEQUENTIAL_STRATEGY_ID,
+  CHAPTER_WHOLE_PASS_STRATEGY_ID,
+  BATCH_WINDOW_STRATEGY_ID,
+  DRAFT_THEN_POLISH_STRATEGY_ID,
+  RESEARCH_GROUNDED_STRATEGY_ID,
+  RESEARCH_MAP_DRAFT_POLISH_STRATEGY_ID
+] as const;
+
+export type BookGenerationStrategyId = (typeof BOOK_GENERATION_STRATEGY_IDS)[number];

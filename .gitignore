@@ -1,0 +1,32 @@
+node_modules
+dist
+.turbo
+.cache
+coverage
+packages/db/src/generated
+playwright-report
+test-results
+.env.local
+.env
+
+# Generated books, images, and run logs may contain prompt history/results.
+storage/books/**
+storage/images/**
+apps/worker/storage/books/**
+apps/worker/storage/images/**
+!storage/books/.gitkeep
+!storage/images/.gitkeep
+!apps/worker/storage/books/.gitkeep
+!apps/worker/storage/images/.gitkeep
+
+# Logs (provider run logs under storage/**/runs/, npm debug output, etc.)
+logs/
+**/runs/
+*.log
+*.jsonl
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+.pnpm-store

@@ -1,0 +1,162 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: bookmaker
+      POSTGRES_USER: bookmaker
+      POSTGRES_PASSWORD: bookmaker
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookmaker -d bookmaker"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      target: dev
+    entrypoint: ["/bin/sh", "/app/scripts/docker-dev-entrypoint.sh"]
+    command: ["pnpm", "--filter", "@book-maker/api", "dev"]
+    env_file:
+      - .env
+    environment:
+      CI: "true"
+      DATABASE_URL: postgresql://bookmaker:bookmaker@postgres:5432/bookmaker?schema=public
+      REDIS_URL: redis://redis:6379
+      API_HOST: 0.0.0.0
+      API_PORT: 4001
+      BOOK_STORAGE_DIR: /app/storage/books
+      IMAGE_STORAGE_DIR: /app/storage/images
+      DEV_WATCH_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      DEV_PNPM_FILTER: "@book-maker/api..."
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/api/src
+          target: /app/apps/api/src
+        - action: sync
+          path: ./packages/core/src
+          target: /app/packages/core/src
+        - action: sync
+          path: ./packages/db/src
+          target: /app/packages/db/src
+        - action: sync
+          path: ./scripts
+          target: /app/scripts
+    ports:
+      - "4001:4001"
+    volumes:
+      - .:/app
+      - pnpm-store:/root/.local/share/pnpm/store
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/worker/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/core/node_modules
+      - /app/packages/db/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      target: dev
+    entrypoint: ["/bin/sh", "/app/scripts/docker-dev-entrypoint.sh"]
+    command: ["pnpm", "--filter", "@book-maker/worker", "dev"]
+    env_file:
+      - .env
+    environment:
+      CI: "true"
+      DATABASE_URL: postgresql://bookmaker:bookmaker@postgres:5432/bookmaker?schema=public
+      REDIS_URL: redis://redis:6379
+      BOOK_STORAGE_DIR: /app/storage/books
+      IMAGE_STORAGE_DIR: /app/storage/images
+      DEV_WATCH_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      DEV_PNPM_FILTER: "@book-maker/worker..."
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/worker/src
+          target: /app/apps/worker/src
+        - action: sync
+          path: ./packages/core/src
+          target: /app/packages/core/src
+        - action: sync
+          path: ./packages/db/src
+          target: /app/packages/db/src
+        - action: sync
+          path: ./scripts
+          target: /app/scripts
+    volumes:
+      - .:/app
+      - pnpm-store:/root/.local/share/pnpm/store
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/worker/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/core/node_modules
+      - /app/packages/db/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      target: dev
+    entrypoint: ["/bin/sh", "/app/scripts/docker-dev-entrypoint.sh"]
+    command: ["pnpm", "--filter", "@book-maker/web", "dev"]
+    environment:
+      CI: "true"
+      VITE_API_BASE_URL: http://localhost:4001
+      DEV_WATCH_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      DEV_PNPM_FILTER: "@book-maker/web..."
+      DEV_DEPS_PACKAGE: "vite"
+    restart: unless-stopped
+    develop:
+      watch:
+        - action: sync
+          path: ./apps/web/src
+          target: /app/apps/web/src
+        - action: sync
+          path: ./apps/web/vite.config.ts
+          target: /app/apps/web/vite.config.ts
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - pnpm-store:/root/.local/share/pnpm/store
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/apps/worker/node_modules
+      - /app/apps/web/node_modules
+      - /app/packages/core/node_modules
+      - /app/packages/db/node_modules
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  pnpm-store:

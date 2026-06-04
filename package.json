@@ -1,0 +1,31 @@
+{
+  "name": "ai-book-maker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @book-maker/api --filter @book-maker/worker --filter @book-maker/web dev",
+    "dev:api": "pnpm --filter @book-maker/api dev",
+    "dev:worker": "pnpm --filter @book-maker/worker dev",
+    "dev:web": "pnpm --filter @book-maker/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @book-maker/db prisma generate",
+    "db:migrate": "pnpm --filter @book-maker/db prisma migrate dev",
+    "db:deploy": "pnpm --filter @book-maker/db prisma migrate deploy",
+    "db:seed": "pnpm --filter @book-maker/db seed",
+    "docker:up": "docker compose up --build --watch",
+    "docker:up:detached": "docker compose up --build --watch -d"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^24.10.1",
+    "nodemon": "^3.1.11",
+    "prisma": "^7.0.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.14"
+  }
+}

@@ -1,0 +1,95 @@
+import { z } from "zod";
+import { config as loadDotenv } from "dotenv";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { DEFAULT_ALIBABA_API_HOST, DEFAULT_ALIBABA_IMAGE_MODEL, DEFAULT_ALIBABA_TEXT_MODEL } from "./adapters/alibabaModels.js";
+import { normalizeGeminiImageModel } from "./adapters/geminiModels.js";
+
+const envSchema = z.object({
+  DEEPSEEK_API_KEY: z.string().optional(),
+  GEMINI_API_KEY: z.string().optional(),
+  ALIBABA_API_KEY: z.string().optional(),
+  ALIBABA_API_HOST: z.string().url().default(DEFAULT_ALIBABA_API_HOST),
+  ALIBABA_TEXT_MODEL: z.string().default(DEFAULT_ALIBABA_TEXT_MODEL),
+  ALIBABA_IMAGE_MODEL: z.string().default(DEFAULT_ALIBABA_IMAGE_MODEL),
+  DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
+  DEEPSEEK_MODEL: z.string().default("deepseek-v4-pro"),
+  DEEPSEEK_FAST_MODEL: z.string().default("deepseek-v4-flash"),
+  GEMINI_TEXT_MODEL: z.string().default("gemini-2.5-flash"),
+  GEMINI_IMAGE_MODEL: z.string().optional().transform(normalizeGeminiImageModel),
+  GEMINI_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
+  DATABASE_URL: z
+    .string()
+    .default("postgresql://bookmaker:bookmaker@localhost:55432/bookmaker?schema=public"),
+  REDIS_URL: z.string().default("redis://localhost:6379"),
+  API_HOST: z.string().default("0.0.0.0"),
+  API_PORT: z.coerce.number().int().positive().default(4001),
+  PUBLIC_API_URL: z.string().url().default("http://localhost:4001"),
+  WEB_PORT: z.coerce.number().int().positive().default(5173),
+  WEB_PASSWORD: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim();
+      return trimmed ? trimmed : undefined;
+    }),
+  BOOK_STORAGE_DIR: z.string().default("./storage/books"),
+  IMAGE_STORAGE_DIR: z.string().default("./storage/images"),
+  MAX_PARALLEL_PAGE_JOBS: z.coerce.number().int().min(1).max(32).default(4),
+  MAX_PARALLEL_IMAGE_JOBS: z.coerce.number().int().min(1).max(8).default(2),
+  MOCK_AI: z
+    .string()
+    .optional()
+    .transform((value) => value === "true")
+    .default(false)
+});
+
+export type AppConfig = z.infer<typeof envSchema>;
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  if (env === process.env) {
+    loadWorkspaceEnv(env);
+  }
+  const parsed = envSchema.parse(env);
+  return {
+    ...parsed,
+    BOOK_STORAGE_DIR: resolveFromWorkspace(parsed.BOOK_STORAGE_DIR),
+    IMAGE_STORAGE_DIR: resolveFromWorkspace(parsed.IMAGE_STORAGE_DIR)
+  };
+}
+
+export function loadWorkspaceEnv(env: NodeJS.ProcessEnv = process.env): void {
+  const workspaceEnvPath = resolve(findWorkspaceRoot(), ".env");
+  if (existsSync(workspaceEnvPath)) {
+    loadDotenv({ path: workspaceEnvPath, processEnv: env, quiet: true });
+  }
+}
+
+function resolveFromWorkspace(value: string): string {
+  if (isAbsolute(value)) {
+    return value;
+  }
+  return resolve(findWorkspaceRoot(), value);
+}
+
+function findWorkspaceRoot(start = process.cwd()): string {
+  let current = start;
+  while (true) {
+    const packagePath = resolve(current, "package.json");
+    if (existsSync(packagePath)) {
+      try {
+        const content = JSON.parse(readFileSync(packagePath, "utf8")) as { name?: string };
+        if (content.name === "ai-book-maker") {
+          return current;
+        }
+      } catch {
+        return current;
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return start;
+    }
+    current = parent;
+  }
+}

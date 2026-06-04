@@ -1,0 +1,287 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TemplateCategory {
+  KIDS
+  SCIENCE
+  STORY
+  EDUCATION
+  BUSINESS
+  SELF_HELP
+  HEALTH
+  BIOGRAPHY
+  HISTORY
+  SOCIETY
+  ARTS
+  CUSTOM
+}
+
+enum ProjectStatus {
+  DRAFT
+  PLANNING
+  PLAN_READY
+  GENERATING
+  COMPLETE
+  FAILED
+}
+
+enum PlanStatus {
+  DRAFT
+  APPROVED
+  SUPERSEDED
+}
+
+enum JobStatus {
+  QUEUED
+  ACTIVE
+  COMPLETED
+  FAILED
+}
+
+enum JobType {
+  PLAN_BOOK
+  REVISE_PLAN
+  GENERATE_BOOK
+  GENERATE_PAGE
+  GENERATE_IMAGE
+  COMPILE_EXPORT
+  RESEARCH
+}
+
+enum AssetType {
+  COVER
+  CHARACTER_REFERENCE
+  SCENE_ILLUSTRATION
+  DIAGRAM
+}
+
+model Template {
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  name          String
+  category      TemplateCategory
+  description   String
+  defaultConfig Json
+  styleRules    Json
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  projects      Project[]
+}
+
+model Project {
+  id             String         @id @default(cuid())
+  title          String
+  subtitle       String?
+  authorName     String?
+  coverTagline   String?
+  prompt         String
+  category       TemplateCategory
+  subcategory    String?
+  targetPages    Int
+  complexity     Int
+  temperature    Float
+  language       String         @default("en")
+  mediaSettings  Json
+  status         ProjectStatus  @default(DRAFT)
+  templateId     String?
+  currentPlanId  String?        @unique
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  template       Template?      @relation(fields: [templateId], references: [id])
+  currentPlan    PlanVersion?   @relation("CurrentPlan", fields: [currentPlanId], references: [id])
+  planVersions   PlanVersion[]  @relation("ProjectPlans")
+  chapters       Chapter[]
+  pages          Page[]
+  characters     Character[]
+  locations      Location[]
+  continuity     ContinuityNote[]
+  research       ResearchSource[]
+  images         ImageAsset[]
+  jobs           GenerationJob[]
+  providerLogs   ProviderCallLog[]
+  embeddings     Embedding[]
+}
+
+model PlanVersion {
+  id              String      @id @default(cuid())
+  projectId       String
+  version         Int
+  status          PlanStatus  @default(DRAFT)
+  planningPackage Json
+  inputSnapshot   Json?
+  messages        Json
+  approvedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  project         Project     @relation("ProjectPlans", fields: [projectId], references: [id], onDelete: Cascade)
+  currentFor      Project?    @relation("CurrentPlan")
+
+  @@unique([projectId, version])
+}
+
+model Chapter {
+  id          String   @id @default(cuid())
+  projectId   String
+  index       Int
+  title       String
+  summary     String
+  targetPages Int
+  productionBrief Json?
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pages       Page[]
+
+  @@unique([projectId, index])
+}
+
+model Page {
+  id          String    @id @default(cuid())
+  projectId   String
+  chapterId   String?
+  index       Int
+  title       String
+  markdown    String
+  summary     String
+  imagePrompt String?
+  qualityReport Json?
+  status      String    @default("PENDING")
+  revision    Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter     Chapter?  @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  images      ImageAsset[]
+
+  @@unique([projectId, index])
+}
+
+model Character {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  role        String
+  description String
+  traits      Json
+  visualRules Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Location {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  description String
+  rules       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ContinuityNote {
+  id        String   @id @default(cuid())
+  projectId String
+  scope     String
+  body      String
+  tags      String[]
+  createdAt DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ResearchSource {
+  id          String   @id @default(cuid())
+  projectId   String
+  query       String
+  title       String
+  url         String?
+  summary     String
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ImageAsset {
+  id          String    @id @default(cuid())
+  projectId   String
+  pageId      String?
+  type        AssetType
+  prompt      String
+  provider    String
+  path        String
+  metadata    Json
+  createdAt   DateTime  @default(now())
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  page        Page?     @relation(fields: [pageId], references: [id], onDelete: SetNull)
+}
+
+model GenerationJob {
+  id          String    @id @default(cuid())
+  projectId   String
+  type        JobType
+  status      JobStatus @default(QUEUED)
+  progress    Int       @default(0)
+  message     String?
+  error       String?
+  bullJobId   String?
+  payload     Json
+  steps       Json?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  providerLogs ProviderCallLog[]
+}
+
+model ProviderCallLog {
+  id            String   @id @default(cuid())
+  projectId     String?
+  generationJobId String?
+  provider      String
+  model         String
+  purpose       String
+  promptTokens  Int?
+  outputTokens  Int?
+  cacheHitTokens Int?
+  costHint      Float?
+  durationMs    Int?
+  metadata      Json
+  createdAt     DateTime @default(now())
+
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  generationJob GenerationJob? @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
+
+  @@index([generationJobId])
+}
+
+model Embedding {
+  id          String                  @id @default(cuid())
+  projectId   String
+  scope       String
+  sourceId    String?
+  text        String
+  metadata    Json
+  createdAt   DateTime                @default(now())
+
+  project     Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
