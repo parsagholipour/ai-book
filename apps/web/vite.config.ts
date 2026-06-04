@@ -8,6 +8,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: "0.0.0.0",
+    proxy: {
+      "/api": "http://localhost:4001",
+      "/assets/images": "http://localhost:4001"
+    },
     watch: usePolling
       ? {
           usePolling: true,

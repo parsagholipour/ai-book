@@ -6,6 +6,8 @@ import { DEFAULT_ALIBABA_API_HOST, DEFAULT_ALIBABA_IMAGE_MODEL, DEFAULT_ALIBABA_
 import { normalizeGeminiImageModel } from "./adapters/geminiModels.js";
 
 const envSchema = z.object({
+  PORT: z.coerce.number().int().positive().optional(),
+  RAILWAY_ENVIRONMENT: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   ALIBABA_API_KEY: z.string().optional(),
@@ -23,7 +25,7 @@ const envSchema = z.object({
     .default("postgresql://bookmaker:bookmaker@localhost:55432/bookmaker?schema=public"),
   REDIS_URL: z.string().default("redis://localhost:6379"),
   API_HOST: z.string().default("0.0.0.0"),
-  API_PORT: z.coerce.number().int().positive().default(4001),
+  API_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_URL: z.string().url().default("http://localhost:4001"),
   WEB_PORT: z.coerce.number().int().positive().default(5173),
   WEB_PASSWORD: z
@@ -42,6 +44,11 @@ const envSchema = z.object({
     .optional()
     .transform((value) => value === "true")
     .default(false)
+}).transform(({ PORT, RAILWAY_ENVIRONMENT, API_PORT, ...env }) => {
+  return {
+    ...env,
+    API_PORT: RAILWAY_ENVIRONMENT ? PORT ?? API_PORT ?? 4001 : API_PORT ?? PORT ?? 4001
+  };
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

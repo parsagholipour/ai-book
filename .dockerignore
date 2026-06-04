@@ -1,0 +1,14 @@
+node_modules
+.pnpm-store
+.git
+.env
+.env.local
+dist
+coverage
+playwright-report
+test-results
+storage/books/**
+storage/images/**
+logs
+*.log
+*.jsonl

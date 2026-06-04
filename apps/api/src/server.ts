@@ -3,8 +3,9 @@ import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify from "fastify";
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import { loadConfig } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { registerAuth } from "./auth.js";
@@ -34,6 +35,22 @@ await app.register(fastifyStatic, {
 });
 await app.register(projectRoutes);
 
+const webDistDir = findWebDistDir();
+if (webDistDir) {
+  await app.register(fastifyStatic, {
+    root: webDistDir,
+    prefix: "/",
+    decorateReply: false
+  });
+  app.setNotFoundHandler(async (request, reply) => {
+    if (shouldReturnNotFound(request.url)) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+    const indexHtml = await readFile(resolve(webDistDir, "index.html"), "utf8");
+    return reply.type("text/html; charset=utf-8").send(indexHtml);
+  });
+}
+
 const shutdown = async () => {
   await app.close();
   await closeQueue();
@@ -44,3 +61,28 @@ process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
 
 await app.listen({ host: config.API_HOST, port: config.API_PORT });
+
+function findWebDistDir(start = process.cwd()): string | undefined {
+  let current = start;
+  while (true) {
+    const candidate = resolve(current, "apps/web/dist");
+    if (existsSync(resolve(candidate, "index.html"))) {
+      return candidate;
+    }
+    const parent = dirname(current);
+    if (parent === current) {
+      return undefined;
+    }
+    current = parent;
+  }
+}
+
+function shouldReturnNotFound(requestUrl: string): boolean {
+  const pathname = new URL(requestUrl, "http://localhost").pathname;
+  return (
+    pathname.startsWith("/api") ||
+    pathname.startsWith("/docs") ||
+    pathname.startsWith("/assets/images/") ||
+    pathname.includes(".")
+  );
+}
