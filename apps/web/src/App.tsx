@@ -944,13 +944,6 @@ export function App() {
             <p>Local generation console</p>
           </div>
         </div>
-        {runtime ? (
-          <div className={runtime.mockAi ? "runtime-card mock" : "runtime-card live"}>
-            <span>{runtime.mockAi ? "Mock AI" : "Live AI"}</span>
-            <strong>{runtime.providers.text}</strong>
-            <small>{runtime.models.text}</small>
-          </div>
-        ) : null}
         {authStatus.enabled ? (
           <button className="icon-text-button auth-logout" type="button" onClick={logout} disabled={authBusy}>
             {authBusy ? <Loader2 className="spin" size={16} /> : <LogOut size={16} />}
@@ -1509,27 +1502,60 @@ export function App() {
             </div>
 
             <section className="preview-grid">
-              <div className="work-section">
-                <div className="section-title">
-                  <Images size={18} />
-                  <h3>Cover</h3>
-                  <button
-                    className="icon-text-button"
-                    onClick={regenerateCover}
-                    disabled={coverBusy || !selectedId || !selectedDetails?.currentPlan}
-                  >
-                    {coverBusy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
-                    Regenerate
-                  </button>
+              <div className="preview-images-column">
+                <div className="work-section">
+                  <div className="section-title">
+                    <Images size={18} />
+                    <h3>Cover</h3>
+                    <button
+                      className="icon-text-button"
+                      onClick={regenerateCover}
+                      disabled={coverBusy || !selectedId || !selectedDetails?.currentPlan}
+                    >
+                      {coverBusy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
+                      Regenerate
+                    </button>
+                  </div>
+                  {coverImage ? (
+                    <figure className="cover-preview">
+                      <img src={apiUrl(coverImage.path)} alt={coverImage.prompt} />
+                      <figcaption>Cover PNG</figcaption>
+                    </figure>
+                  ) : (
+                    <div className="cover-placeholder">Cover will appear here after generation.</div>
+                  )}
                 </div>
-                {coverImage ? (
-                  <figure className="cover-preview">
-                    <img src={apiUrl(coverImage.path)} alt={coverImage.prompt} />
-                    <figcaption>Cover PNG</figcaption>
-                  </figure>
-                ) : (
-                  <div className="cover-placeholder">Cover will appear here after generation.</div>
-                )}
+                <div className="work-section">
+                  <div className="section-title">
+                    <Images size={18} />
+                    <h3>Images</h3>
+                  </div>
+                  <div className="image-grid">
+                    {pageImages.map((image) => (
+                      <figure key={image.id}>
+                        <img src={apiUrl(image.path)} alt={image.prompt} />
+                        <figcaption>{image.type}</figcaption>
+                      </figure>
+                    ))}
+                    {pageImages.length === 0 ? <p className="muted">Page images will appear here after generation.</p> : null}
+                  </div>
+                </div>
+                {characterReferenceImages.length > 0 ? (
+                  <div className="work-section">
+                    <div className="section-title">
+                      <Images size={18} />
+                      <h3>Character References</h3>
+                    </div>
+                    <div className="image-grid">
+                      {characterReferenceImages.map((image) => (
+                        <figure key={image.id}>
+                          <img src={apiUrl(image.path)} alt={image.prompt} />
+                          <figcaption>Character reference</figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <div className="work-section">
                 <div className="section-title">
@@ -1574,37 +1600,6 @@ export function App() {
                   </div>
                 )}
               </div>
-              <div className="work-section">
-                <div className="section-title">
-                  <Images size={18} />
-                  <h3>Images</h3>
-                </div>
-                <div className="image-grid">
-                  {pageImages.map((image) => (
-                    <figure key={image.id}>
-                      <img src={apiUrl(image.path)} alt={image.prompt} />
-                      <figcaption>{image.type}</figcaption>
-                    </figure>
-                  ))}
-                  {pageImages.length === 0 ? <p className="muted">Page images will appear here after generation.</p> : null}
-                </div>
-              </div>
-              {characterReferenceImages.length > 0 ? (
-                <div className="work-section">
-                  <div className="section-title">
-                    <Images size={18} />
-                    <h3>Character References</h3>
-                  </div>
-                  <div className="image-grid">
-                    {characterReferenceImages.map((image) => (
-                      <figure key={image.id}>
-                        <img src={apiUrl(image.path)} alt={image.prompt} />
-                        <figcaption>Character reference</figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
             </section>
           </>
         )}
