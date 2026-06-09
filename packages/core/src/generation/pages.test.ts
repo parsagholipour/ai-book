@@ -606,7 +606,14 @@ describe("page quality review", () => {
 
   it("falls back to a deterministic page map when the model returns invalid JSON", async () => {
     const pageMapInput = { ...input, targetPages: 3 };
-    const pageMapPlan = makeFallbackPlan(pageMapInput);
+    const pageMapPlan = {
+      ...makeFallbackPlan(pageMapInput),
+      chapters: makeFallbackPlan(pageMapInput).chapters.map((chapter, index) =>
+        index === 0
+          ? { ...chapter, illustrationPrompts: ["Jack holds the sealed letter under a rain-dark chapel arch."] }
+          : chapter
+      )
+    };
     const firstKeyBeat = pageMapPlan.chapters[0]?.keyBeats[0] ?? "";
     let calls = 0;
     const briefs = await generateWholeBookPageMap({
@@ -635,6 +642,7 @@ describe("page quality review", () => {
     expect(calls).toBe(2);
     expect(briefs.flatMap((brief) => brief.pages.map((page) => page.pageIndex))).toEqual([1, 2, 3]);
     expect(briefs[0]?.pages[0]?.beat).toContain(firstKeyBeat);
+    expect(briefs[0]?.pages[0]?.imageMoment).toBe("Jack holds the sealed letter under a rain-dark chapel arch.");
   });
 
   it("uses normalized chapter page ranges when creating the whole-book page map prompt", async () => {
@@ -647,21 +655,24 @@ describe("page quality review", () => {
           title: "First",
           summary: "First movement.",
           targetPages: 2,
-          keyBeats: ["First A", "First B"]
+          keyBeats: ["First A", "First B"],
+          illustrationPrompts: ["First visual A"]
         },
         {
           index: 2,
           title: "Second",
           summary: "Second movement.",
           targetPages: 2,
-          keyBeats: ["Second A", "Second B"]
+          keyBeats: ["Second A", "Second B"],
+          illustrationPrompts: ["Second visual A"]
         },
         {
           index: 3,
           title: "Third",
           summary: "Third movement.",
           targetPages: 2,
-          keyBeats: ["Third A", "Third B"]
+          keyBeats: ["Third A", "Third B"],
+          illustrationPrompts: ["Third visual A"]
         }
       ]
     };
@@ -671,6 +682,7 @@ describe("page quality review", () => {
           chapterPageRanges?: Array<{
             targetPages?: number;
             pageRange?: { start?: number; end?: number };
+            illustrationPrompts?: string[];
           }>;
         }
       | undefined;
@@ -715,6 +727,11 @@ describe("page quality review", () => {
       { start: 1, end: 2 },
       { start: 3, end: 3 },
       { start: 4, end: 4 }
+    ]);
+    expect(payload?.chapterPageRanges?.map((range) => range.illustrationPrompts)).toEqual([
+      ["First visual A"],
+      ["Second visual A"],
+      ["Third visual A"]
     ]);
   });
 

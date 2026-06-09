@@ -17,6 +17,20 @@ export type GenerateJsonWithJailbreakOptions<T> = GenerateJsonOptions<T> & {
   jailbreakRole: JailbreakRole;
 };
 
+export class ModelRefusalError extends Error {
+  constructor(purpose: string | undefined, attempts: number, lastResponsePreview: string) {
+    super(
+      `Model refused to generate content${purpose ? ` for ${purpose}` : ""} after ${attempts} attempts. Last response: ${lastResponsePreview}`
+    );
+    this.name = "ModelRefusalError";
+    this.attempts = attempts;
+    this.lastResponsePreview = lastResponsePreview;
+  }
+
+  readonly attempts: number;
+  readonly lastResponsePreview: string;
+}
+
 type AttemptConfig = {
   level: JailbreakLevel;
   tempBoost: number;
@@ -141,7 +155,7 @@ export async function generateJsonWithJailbreak<T>(
   }
 
   if (lastResult) {
-    return lastResult;
+    throw new ModelRefusalError(options.purpose, ATTEMPTS.length, lastResult.text.slice(0, 300));
   }
   throw lastError instanceof Error ? lastError : new Error("JSON generation failed.");
 }
@@ -153,7 +167,7 @@ function isRecoverableJsonSyntaxError(error: unknown): boolean {
   const message = error.message;
   return (
     error instanceof SyntaxError ||
-    error.name === "DeepSeekJsonParseError" ||
+    /JsonParseError$/.test(error.name) ||
     /(?:Model did not return a JSON object|invalid JSON|Expected .* in JSON|Unexpected token|Unterminated string)/i.test(
       message
     )

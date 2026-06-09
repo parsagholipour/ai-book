@@ -93,10 +93,16 @@ export function PreviewsSection(props: {
             Markdown
           </a>
           {props.selectedProject.status === "COMPLETE" || props.selectedPdfAvailable ? (
-            <a className="icon-text-button" href={apiUrl(`/api/projects/${props.selectedProject.id}/export/pdf`)}>
-              <Download size={16} />
-              PDF
-            </a>
+            <>
+              <a className="icon-text-button" href={apiUrl(`/api/projects/${props.selectedProject.id}/export/pdf`)}>
+                <Download size={16} />
+                PDF
+              </a>
+              <a className="icon-text-button" href={apiUrl(`/api/projects/${props.selectedProject.id}/export/epub`)}>
+                <Download size={16} />
+                EPUB
+              </a>
+            </>
           ) : null}
         </div>
         {props.selectedPdfAvailable ? (

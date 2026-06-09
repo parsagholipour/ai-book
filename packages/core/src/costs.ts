@@ -468,6 +468,11 @@ function resolveTextRate(provider: string | null, model: string | null, promptTo
     return resolveRateForPromptTokens(ALIBABA_TEXT_RATES.get(model), promptTokens);
   }
 
+  if (provider === "openai-compatible" || provider === "local") {
+    // Self-hosted OpenAI-compatible servers have no marginal API cost.
+    return { inputPerMillion: 0, outputPerMillion: 0 };
+  }
+
   if (provider !== "gemini" && provider !== "google") {
     return null;
   }

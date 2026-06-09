@@ -42,7 +42,7 @@ describe("deterministic dry run", () => {
     expect(fallback.illustrationPlan.cadence).toBe("template-driven");
   });
 
-  it("returns the deterministic fallback when AI planning validation fails", async () => {
+  it("fails loudly when AI planning validation cannot be recovered", async () => {
     const input = {
       prompt: "A practical science book about cities adapting to extreme heat.",
       category: "SCIENCE" as const,
@@ -61,16 +61,13 @@ describe("deterministic dry run", () => {
       }
     };
 
-    const plan = await createPlanningPackage({
-      input,
-      textModel: new FailingPlannerAdapter(),
-      research: new FakeResearchAdapter()
-    });
-
-    expect(plan.title).toBe(makeFallbackPlan(input).title);
-    expect(plan.premise).toBe(input.prompt);
-    expect(plan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0)).toBe(input.targetPages);
-    expect(plan.researchNotes).toHaveLength(1);
+    await expect(
+      createPlanningPackage({
+        input,
+        textModel: new FailingPlannerAdapter(),
+        research: new FakeResearchAdapter()
+      })
+    ).rejects.toThrow("AI planner failed. No fallback plan was created.");
   });
 
   it("accepts provider JSON wrapped in a plan root key", async () => {
@@ -100,6 +97,24 @@ describe("deterministic dry run", () => {
 
     expect(plan.title).toBe(makeFallbackPlan(input).title);
     expect(plan.researchNotes).toHaveLength(1);
+  });
+
+  it("recovers specific provider plans nested under generationPlan", async () => {
+    const input = smallBookInput();
+
+    const plan = await createPlanningPackage({
+      input,
+      textModel: new GenerationPlanPlannerAdapter(),
+      research: new FakeResearchAdapter()
+    });
+
+    expect(plan.title).toBe("Household Power");
+    expect(plan.premise).toBe(input.prompt);
+    expect(plan.chapters.map((chapter) => chapter.title)).toEqual(["Rituals as Infrastructure", "The Room Learns"]);
+    expect(plan.chapters[0]?.illustrationPrompts).toEqual(["A kitchen table arranged like a quiet command center."]);
+    expect(plan.voiceGuide).toEqual(["Measured, practical, and precise."]);
+    expect(plan.questions[0]?.prompt).toBe("Should examples be domestic or workplace-focused?");
+    expect(plan.researchNotes).toHaveLength(0);
   });
 
   it("normalizes AI-created chapter page targets to the requested book length", async () => {
@@ -231,6 +246,63 @@ class WrappedPlannerAdapter implements TextModelAdapter {
       data: options.schema.parse(wrapped),
       text: JSON.stringify(wrapped),
       model: "wrapped-model",
+      provider: "test"
+    };
+  }
+
+  async *streamText(): AsyncGenerator<string> {
+    yield "";
+  }
+}
+
+class GenerationPlanPlannerAdapter implements TextModelAdapter {
+  async generateText() {
+    return {
+      text: "",
+      model: "generation-plan-model",
+      provider: "test"
+    };
+  }
+
+  async generateJson<T>(options: GenerateJsonOptions<T>) {
+    const raw = {
+      title: "Household Power",
+      generationPlan: {
+        chapters: [
+          {
+            index: 1,
+            title: "Rituals as Infrastructure",
+            summary: "Shows how repeated domestic practices allocate attention and authority.",
+            targetPages: 5,
+            keyBeats: ["Open with a table being reset after an argument."],
+            illustrationPrompts: ["A kitchen table arranged like a quiet command center."]
+          },
+          {
+            index: 2,
+            title: "The Room Learns",
+            summary: "Connects repeated spatial cues to shared expectations.",
+            targetPages: 5,
+            keyBeats: ["Move from object placement to negotiated routine."]
+          }
+        ],
+        voiceGuide: "Measured, practical, and precise.",
+        antiAiRules: ["Avoid vague power-language."],
+        characters: [],
+        locations: [],
+        continuityRules: ["Keep examples concrete."],
+        illustrationPlan: {
+          cadence: "template-driven",
+          globalStyle: "Editorial domestic still life",
+          characterReferencePrompts: [],
+          pageRules: ["Use objects and rooms as the visual anchor."]
+        }
+      },
+      questions: ["Should examples be domestic or workplace-focused?"]
+    };
+    return {
+      data: options.schema.parse(raw),
+      text: JSON.stringify(raw),
+      model: "generation-plan-model",
       provider: "test"
     };
   }

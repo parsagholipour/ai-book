@@ -351,6 +351,19 @@ export function ProjectSidebar(props: {
             </select>
           </label>
         </div>
+        <label>
+          Best-of drafting
+          <select
+            value={String(props.draft.draftCandidates)}
+            onChange={(event) =>
+              props.setDraft({ ...props.draft, draftCandidates: Number.parseInt(event.target.value, 10) || 1 })
+            }
+          >
+            <option value="1">Off — single draft per page</option>
+            <option value="2">2 drafts + judge (higher quality)</option>
+            <option value="3">3 drafts + judge (best quality)</option>
+          </select>
+        </label>
         <label className="check-row">
           <input
             type="checkbox"

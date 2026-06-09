@@ -91,6 +91,10 @@ export type GeneratePageOptions = {
   previousPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
   researchNotes: string[];
+  /** Semantically retrieved long-range context outside the recency window. */
+  semanticMemory?: string[] | undefined;
+  /** Structured character/location state lines. */
+  entityState?: string[] | undefined;
   textModel: TextModelAdapter;
 };
 
@@ -316,7 +320,8 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
       start: setup.startPage,
       end: setup.endPage
     },
-    keyBeats: setup.chapter.keyBeats
+    keyBeats: setup.chapter.keyBeats,
+    illustrationPrompts: setup.chapter.illustrationPrompts ?? []
   }));
 
   try {
@@ -470,6 +475,8 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
     previousSummaries: options.previousSummaries,
     continuityNotes: options.continuityNotes,
     researchNotes: options.researchNotes,
+    semanticMemory: options.semanticMemory,
+    entityState: options.entityState,
     tokenBudget: 7000,
     lessCensored: isLessCensored(options.input),
     readingGuidance: kidsReadingGuidanceLines(options.input)
@@ -1418,6 +1425,10 @@ function fallbackPageBeatFromChapter(options: {
 }): PageProductionBeat {
   const keyBeats = options.chapter.keyBeats.length > 0 ? options.chapter.keyBeats : [options.chapter.summary];
   const assignedBeat = keyBeats[Math.min(options.localIndex, keyBeats.length - 1)] ?? options.chapter.summary;
+  const illustrationPrompt =
+    options.chapter.illustrationPrompts?.[
+      Math.min(options.localIndex, Math.max(0, options.chapter.illustrationPrompts.length - 1))
+    ];
   const chapterPageNumber = options.localIndex + 1;
   const position =
     options.pageCount === 1
@@ -1447,7 +1458,7 @@ function fallbackPageBeatFromChapter(options: {
       ...options.plan.continuityRules.slice(0, 4)
     ],
     endingPressure,
-    imageMoment: assignedBeat
+    imageMoment: illustrationPrompt ?? assignedBeat
   };
 }
 
@@ -1573,6 +1584,17 @@ function targetWordsPerPage(input: CreateProjectInput): { min: number; max: numb
 function wholeBookMaxTokens(input: CreateProjectInput): number {
   const tokensPerPage = input.category === "KIDS" ? 350 : 850;
   return Math.min(64000, Math.max(4000, input.targetPages * tokensPerPage));
+}
+
+export type LocalPageReviewOptions = Omit<ReviewPageOptions, "textModel">;
+
+/**
+ * Runs only the deterministic local quality heuristics (no model call).
+ * Used by bulk strategies (e.g. whole-book single pass) to produce honest
+ * quality reports without the full model review loop.
+ */
+export function reviewPageDraftLocally(options: LocalPageReviewOptions): PageQualityReport {
+  return runLocalPageQualityChecks({ ...options, textModel: undefined as unknown as TextModelAdapter });
 }
 
 function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityReport {

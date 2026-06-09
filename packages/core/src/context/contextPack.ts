@@ -9,6 +9,14 @@ export type ContextPackInput = {
   previousSummaries: string[];
   continuityNotes: string[];
   researchNotes: string[];
+  /**
+   * Semantically retrieved earlier-book context (e.g. page summaries found via
+   * vector search) that falls outside the recency window. Gets its own budget
+   * slice so it is not dropped before the recency window when trimming.
+   */
+  semanticMemory?: string[] | undefined;
+  /** Current structured character/location state lines. */
+  entityState?: string[] | undefined;
   tokenBudget?: number;
   lessCensored?: boolean;
   readingGuidance?: string[] | undefined;
@@ -29,6 +37,28 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
   const requestedTokens = input.tokenBudget ?? 6000;
   const directness = contextDirectnessLine(input.lessCensored === true);
   const researchNotes = input.researchNotes.map(sanitizeResearchNote).filter(Boolean);
+  const semanticMemory = (input.semanticMemory ?? []).map((entry) => entry.trim()).filter(Boolean);
+  const entityState = (input.entityState ?? []).map((entry) => entry.trim()).filter(Boolean);
+  const hasSemanticMemory = semanticMemory.length > 0;
+  // The memory budget (38% of the pack) is split so retrieved long-range
+  // context survives trimming alongside the recency window.
+  const semanticBudget = hasSemanticMemory ? Math.floor(requestedTokens * 0.12) : 0;
+  const recencyBudget = Math.floor(requestedTokens * 0.38) - semanticBudget;
+  const memorySections = [
+    hasSemanticMemory
+      ? trimToBudget(["Relevant earlier book context (retrieved):", ...semanticMemory].join("\n"), semanticBudget)
+      : "",
+    trimToBudget(
+      [
+        "Previous page summaries:",
+        ...input.previousSummaries.slice(-18),
+        "Continuity notes:",
+        ...input.continuityNotes.slice(-28)
+      ].join("\n"),
+      recencyBudget
+    )
+  ].filter(Boolean);
+
   const parts = {
     system: [
       `Book: ${input.plan.title}`,
@@ -44,17 +74,12 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
         ? `Current chapter ${input.chapter.index}: ${input.chapter.title}\n${input.chapter.summary}`
         : "Current chapter: not assigned",
       `Target page ${input.pageIndex} of ${input.targetPages}.`,
-      `Continuity rules: ${input.plan.continuityRules.join(" ")}`
+      `Continuity rules: ${input.plan.continuityRules.join(" ")}`,
+      ...(entityState.length > 0
+        ? [trimToBudget(["Current character and location state:", ...entityState].join("\n"), Math.floor(requestedTokens * 0.1))]
+        : [])
     ].join("\n\n"),
-    memory: trimToBudget(
-      [
-        "Previous page summaries:",
-        ...input.previousSummaries.slice(-18),
-        "Continuity notes:",
-        ...input.continuityNotes.slice(-28)
-      ].join("\n"),
-      Math.floor(requestedTokens * 0.38)
-    ),
+    memory: memorySections.join("\n\n"),
     research: trimToBudget(researchNotes.join("\n"), Math.floor(requestedTokens * 0.22))
   };
 

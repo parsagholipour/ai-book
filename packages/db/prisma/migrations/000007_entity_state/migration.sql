@@ -1,0 +1,2 @@
+ALTER TABLE "Character" ADD COLUMN "state" JSONB;
+ALTER TABLE "Location" ADD COLUMN "state" JSONB;

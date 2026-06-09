@@ -23,6 +23,7 @@ export {
 export { chapteredBookGenerationStrategy } from "./chaptered.js";
 export { wholeBookSinglePassStrategy } from "./wholeBook.js";
 export * from "./ids.js";
+export * from "./router.js";
 
 export const bookGenerationStrategies = [
   chapteredBookGenerationStrategy,

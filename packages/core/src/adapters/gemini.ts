@@ -212,16 +212,24 @@ export class GeminiResearchAdapter implements ResearchAdapter {
       }
     });
 
-    const text = sanitizeResearchText(response.text ?? "");
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+    const rawText = response.text ?? "";
+    const text = sanitizeResearchText(rawText);
+    const grounding = response.candidates?.[0]?.groundingMetadata;
+    const chunks = grounding?.groundingChunks ?? [];
+    const excerptsByChunk = collectGroundingExcerpts(grounding?.groundingSupports ?? [], rawText);
     const sources = chunks
-      .map((chunk: any) => chunk.web)
-      .filter(Boolean)
-      .map((web: any) => ({
-        title: String(web.title ?? "Source"),
-        url: web.uri ? String(web.uri) : undefined,
-        summary: text.slice(0, 600)
-      }));
+      .map((chunk: any, index: number) => ({ web: chunk.web, index }))
+      .filter((entry: { web: unknown; index: number }) => Boolean(entry.web))
+      .map(({ web, index }: { web: any; index: number }) => {
+        const excerpts = excerptsByChunk.get(index);
+        const summary =
+          excerpts && excerpts.length > 0 ? sanitizeResearchText(excerpts.join(" ")).slice(0, 600) : text.slice(0, 600);
+        return {
+          title: String(web.title ?? "Source"),
+          url: web.uri ? String(web.uri) : undefined,
+          summary: summary || text.slice(0, 600)
+        };
+      });
 
     return {
       query: query.query,
@@ -229,6 +237,43 @@ export class GeminiResearchAdapter implements ResearchAdapter {
       sources: sources.length > 0 ? sources : [{ title: "Gemini grounded summary", summary: text }]
     };
   }
+}
+
+function collectGroundingExcerpts(supports: any[], rawText: string): Map<number, string[]> {
+  const excerptsByChunk = new Map<number, string[]>();
+  for (const support of supports) {
+    const segmentText = groundingSegmentText(support, rawText);
+    if (!segmentText) {
+      continue;
+    }
+    for (const chunkIndex of support?.groundingChunkIndices ?? []) {
+      if (typeof chunkIndex !== "number") {
+        continue;
+      }
+      const excerpts = excerptsByChunk.get(chunkIndex) ?? [];
+      if (excerpts.length < 4 && !excerpts.includes(segmentText)) {
+        excerpts.push(segmentText);
+      }
+      excerptsByChunk.set(chunkIndex, excerpts);
+    }
+  }
+  return excerptsByChunk;
+}
+
+function groundingSegmentText(support: any, rawText: string): string {
+  const segment = support?.segment;
+  if (!segment) {
+    return "";
+  }
+  if (typeof segment.text === "string" && segment.text.trim()) {
+    return segment.text.trim();
+  }
+  const start = typeof segment.startIndex === "number" ? segment.startIndex : 0;
+  const end = typeof segment.endIndex === "number" ? segment.endIndex : 0;
+  if (end > start && end <= rawText.length) {
+    return rawText.slice(start, end).trim();
+  }
+  return "";
 }
 
 function sanitizeResearchText(text: string): string {

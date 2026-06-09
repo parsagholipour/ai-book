@@ -13,6 +13,7 @@ import {
   calculateImageGenerationCost,
   calculateTextGenerationCost,
   AlibabaImageAdapter,
+  bestOfCandidateCount,
   chapterBriefSchema,
   createVoiceProvider,
   createProviders,
@@ -21,8 +22,10 @@ import {
   expandChapterResearch,
   FallbackImageAdapter,
   GeminiImageAdapter,
+  generateBestOfPageDrafts,
+  generateBookEpub,
   renderCoverPng,
-  getBookGenerationStrategy,
+  resolveBookGenerationStrategy,
   isDiagramFriendlyBookCategory,
   selectCharacterReferenceAssets,
   shouldGenerateCharacterReferences,
@@ -34,6 +37,7 @@ import {
   publicAssetUrl,
   resolveImageModelSelection,
   resolvePublicImageUrl,
+  reviewPageDraftLocally,
   normalizeVoiceProfile,
   type BookPlan,
   type BookGenerationStrategy,
@@ -65,11 +69,10 @@ import {
   type VoiceCharacterCandidate,
   withRecoverableNetworkRetry
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
 import { inputForPlanVersion, inputFromProject, inputFromSnapshot } from "./projectInput.js";
 
 const BOOK_QUEUE_NAME = "book-maker";
-const MAX_FINAL_QA_REPAIR_PAGES = 4;
 const MAX_FINAL_QA_REVISIONS_PER_PAGE = 4;
 const MAX_PAGE_QA_CANDIDATES = 6;
 const MAX_PAGE_REVISE_RESTARTS = 2;
@@ -90,6 +93,7 @@ type ExportPageForRepair = {
   summary: string;
   imagePrompt: string | null;
   revision: number;
+  status: string;
   chapter?: { index: number; productionBrief: unknown } | null;
   images: Array<{ path: string }>;
 };
@@ -149,7 +153,8 @@ const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> 
     { key: "qa", label: "Final review" },
     { key: "compile", label: "Compile markdown" },
     { key: "write", label: "Write Markdown" },
-    { key: "pdf", label: "Generate PDF" }
+    { key: "pdf", label: "Generate PDF" },
+    { key: "epub", label: "Generate EPUB" }
   ],
   "prepare-character-candidates": [
     { key: "detect", label: "Detect characters" },
@@ -330,6 +335,7 @@ async function planBook(job: Job) {
       });
     }
   });
+  await embedResearchSourcesForProject(projectId, providers.embedding);
   await advanceJobStep(generationJobId, "save", 90);
 }
 
@@ -459,8 +465,13 @@ async function generateBook(job: Job) {
         generationJobId
       });
       return;
+    default:
+      assertNeverExecutionMode(strategy.executionMode);
   }
+}
 
+function assertNeverExecutionMode(mode: never): never {
+  throw new Error(`Unhandled book generation execution mode: ${String(mode)}`);
 }
 
 async function generateBookSequential(options: {
@@ -472,43 +483,55 @@ async function generateBookSequential(options: {
   strategy: BookGenerationStrategy;
   generationJobId?: string | undefined;
 }) {
-  const chapterSetups = await prepareChapterSetups(options);
-  await advanceJobStep(options.generationJobId, "setup", 65);
-
-  await prisma.$transaction(async (tx) => {
-    await tx.imageAsset.deleteMany({ where: { projectId: options.projectId } });
-    await tx.page.deleteMany({ where: { projectId: options.projectId } });
-    await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
-    await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
-    await tx.project.update({ where: { id: options.projectId }, data: { status: "GENERATING" } });
-
-    for (const setup of chapterSetups) {
-      const chapter = await tx.chapter.create({
-        data: {
-          projectId: options.projectId,
-          index: setup.chapter.index,
-          title: setup.chapter.title,
-          summary: setup.chapter.summary,
-          targetPages: setup.chapter.targetPages,
-          productionBrief: setup.brief as Prisma.InputJsonValue
-        }
+  if (await canResumeSequentialBook(options.projectId, options.plan, options.input)) {
+    await advanceJobStep(options.generationJobId, "setup", 65, "Resuming with existing completed pages");
+    await prisma.$transaction(async (tx) => {
+      await tx.page.updateMany({
+        where: { projectId: options.projectId, status: { in: ["GENERATING", "FAILED_QA"] } },
+        data: { status: "PENDING" }
       });
+      await tx.project.update({ where: { id: options.projectId }, data: { status: "GENERATING" } });
+    });
+  } else {
+    const chapterSetups = await prepareChapterSetups(options);
+    await advanceJobStep(options.generationJobId, "setup", 65);
 
-      for (let pageIndex = setup.startPage; pageIndex <= setup.endPage; pageIndex += 1) {
-        await tx.page.create({
+    await prisma.$transaction(async (tx) => {
+      await tx.imageAsset.deleteMany({ where: { projectId: options.projectId } });
+      await tx.page.deleteMany({ where: { projectId: options.projectId } });
+      await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
+      await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
+      await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: "page:" } } });
+      await tx.project.update({ where: { id: options.projectId }, data: { status: "GENERATING" } });
+
+      for (const setup of chapterSetups) {
+        const chapter = await tx.chapter.create({
           data: {
             projectId: options.projectId,
-            chapterId: chapter.id,
-            index: pageIndex,
-            title: `Page ${pageIndex}`,
-            markdown: "",
-            summary: "",
-            status: "PENDING"
+            index: setup.chapter.index,
+            title: setup.chapter.title,
+            summary: setup.chapter.summary,
+            targetPages: setup.chapter.targetPages,
+            productionBrief: setup.brief as Prisma.InputJsonValue
           }
         });
+
+        for (let pageIndex = setup.startPage; pageIndex <= setup.endPage; pageIndex += 1) {
+          await tx.page.create({
+            data: {
+              projectId: options.projectId,
+              chapterId: chapter.id,
+              index: pageIndex,
+              title: `Page ${pageIndex}`,
+              markdown: "",
+              summary: "",
+              status: "PENDING"
+            }
+          });
+        }
       }
-    }
-  });
+    });
+  }
 
   await ensureCharacterReferenceAssets({
     projectId: options.projectId,
@@ -520,16 +543,59 @@ async function generateBookSequential(options: {
     generationJobId: options.generationJobId
   });
   await maybeEnqueueCover(options.projectId, options.planId, options.input);
-  const firstPage = await prisma.page.findFirst({ where: { projectId: options.projectId }, orderBy: { index: "asc" } });
-  if (firstPage) {
-    await advanceJobStep(options.generationJobId, "enqueue", 85);
-    await enqueueWorkerJob({
-      projectId: options.projectId,
-      type: "GENERATE_PAGE",
-      name: "generate-page",
-      payload: { pageId: firstPage.id, planId: options.planId }
-    });
+  const waveSize = parallelPageWaveSize(options.input);
+  const pagesToStart = await prisma.page.findMany({
+    where: { projectId: options.projectId, status: "PENDING" },
+    orderBy: { index: "asc" },
+    take: waveSize
+  });
+  if (pagesToStart.length > 0) {
+    await advanceJobStep(
+      options.generationJobId,
+      "enqueue",
+      85,
+      waveSize > 1 ? `Starting ${pagesToStart.length} pages in parallel` : undefined
+    );
+    for (const pageToStart of pagesToStart) {
+      await enqueueWorkerJob({
+        projectId: options.projectId,
+        type: "GENERATE_PAGE",
+        name: "generate-page",
+        payload: { pageId: pageToStart.id, planId: options.planId }
+      });
+    }
+  } else {
+    await maybeEnqueueCompile(options.projectId, options.planId);
   }
+}
+
+/**
+ * A sequential GENERATE_BOOK re-run keeps completed pages when the existing
+ * chapter/page structure still matches the approved plan, so resuming after a
+ * failure does not discard finished work.
+ */
+async function canResumeSequentialBook(projectId: string, plan: BookPlan, input: CreateProjectInput): Promise<boolean> {
+  const [chapters, pages] = await Promise.all([
+    prisma.chapter.findMany({ where: { projectId }, orderBy: { index: "asc" }, select: { index: true, title: true, targetPages: true } }),
+    prisma.page.findMany({ where: { projectId }, orderBy: { index: "asc" }, select: { index: true, status: true } })
+  ]);
+  if (pages.length !== input.targetPages) {
+    return false;
+  }
+  if (pages.some((page, position) => page.index !== position + 1)) {
+    return false;
+  }
+  if (chapters.length !== plan.chapters.length) {
+    return false;
+  }
+  const structureMatches = plan.chapters.every((chapterPlan) => {
+    const stored = chapters.find((chapter) => chapter.index === chapterPlan.index);
+    return stored !== undefined && stored.targetPages === chapterPlan.targetPages && stored.title === chapterPlan.title;
+  });
+  if (!structureMatches) {
+    return false;
+  }
+  return pages.some((page) => page.status === "COMPLETED");
 }
 
 async function maybeExpandStrategyResearch(options: {
@@ -569,6 +635,7 @@ async function maybeExpandStrategyResearch(options: {
       publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
     }))
   });
+  await embedResearchSourcesForProject(options.projectId, options.providers.embedding);
 }
 
 async function prepareChapterSetups(options: {
@@ -636,6 +703,7 @@ async function resetBookForDirectGeneration(projectId: string, chapterSetups: Ch
     await tx.page.deleteMany({ where: { projectId } });
     await tx.chapter.deleteMany({ where: { projectId } });
     await tx.continuityNote.deleteMany({ where: { projectId } });
+    await tx.embedding.deleteMany({ where: { projectId, scope: { startsWith: "page:" } } });
     await tx.project.update({ where: { id: projectId }, data: { status: "GENERATING" } });
 
     const chapterIds = new Map<number, string>();
@@ -1107,6 +1175,7 @@ async function reviewAndSaveGeneratedPage(options: {
         tags: ["page", String(options.draft.index), options.strategy.id]
       }))
     });
+    await updateEntityStateFromPage(options.projectId, options.draft.index, draft.continuityNotes);
   }
 
   await storeEmbedding(options.projectId, `page:${options.draft.index}`, page.id, draft.summary, options.providers.embedding);
@@ -1295,9 +1364,23 @@ async function loadContinuityNotes(projectId: string): Promise<string[]> {
 async function loadResearchNotesForGeneration(
   projectId: string,
   strategy: BookGenerationStrategy,
-  chapter?: ChapterPlan | undefined
+  chapter?: ChapterPlan | undefined,
+  semantic?: { embedding: EmbeddingAdapter; queryText: string } | undefined
 ): Promise<string[]> {
   const take = strategy.researchDepth ? strategy.researchDepth + 12 : 12;
+
+  if (semantic) {
+    const retrieved = await retrieveSemanticResearchNotes({
+      projectId,
+      queryText: semantic.queryText,
+      embedding: semantic.embedding,
+      topK: take
+    });
+    if (retrieved.length > 0) {
+      return retrieved;
+    }
+  }
+
   const sources = await prisma.researchSource.findMany({
     where: { projectId },
     orderBy: { createdAt: "desc" },
@@ -1363,13 +1446,24 @@ async function generateBookWholePass(options: {
     textModel: options.providers.text
   });
 
-  await advanceJobStep(options.generationJobId, "setup", 70, `Saving ${draft.pages.length} generated pages`);
+  await advanceJobStep(options.generationJobId, "setup", 55, `Reviewing ${draft.pages.length} generated pages`);
+  const reviewedPages = await reviewWholeBookDraftPages({
+    input: options.input,
+    plan: options.plan,
+    strategy: options.strategy,
+    textModel: options.providers.text,
+    pages: draft.pages,
+    generationJobId: options.generationJobId
+  });
+
+  await advanceJobStep(options.generationJobId, "setup", 70, `Saving ${reviewedPages.length} generated pages`);
   const chapterRanges = chapterSetupsForPlan(options.plan, options.input.targetPages);
-  const savedPages = await prisma.$transaction(async (tx) => {
+  const savedPages =   await prisma.$transaction(async (tx) => {
     await tx.imageAsset.deleteMany({ where: { projectId: options.projectId } });
     await tx.page.deleteMany({ where: { projectId: options.projectId } });
     await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
     await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
+    await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: "page:" } } });
     await tx.project.update({ where: { id: options.projectId }, data: { status: "GENERATING" } });
 
     const chapterIds = new Map<number, string>();
@@ -1388,7 +1482,8 @@ async function generateBookWholePass(options: {
 
     const pages: Array<{ id: string; index: number; summary: string; imagePrompt: string | null }> = [];
     const continuityNotes: Array<{ scope: string; body: string; tags: string[] }> = [];
-    for (const pageDraft of draft.pages) {
+    for (const reviewedPage of reviewedPages) {
+      const pageDraft = reviewedPage.draft;
       const chapterIndex = chapterRanges.find(
         (setup) => pageDraft.index >= setup.startPage && pageDraft.index <= setup.endPage
       )?.chapter.index;
@@ -1402,8 +1497,8 @@ async function generateBookWholePass(options: {
           summary: pageDraft.summary,
           imagePrompt: pageDraft.imagePrompt ?? null,
           status: "COMPLETED",
-          revision: 1,
-          qualityReport: approvedWholeBookQualityReport() as Prisma.InputJsonValue
+          revision: reviewedPage.revision,
+          qualityReport: reviewedPage.qualityReport as Prisma.InputJsonValue
         }
       });
       pages.push({
@@ -1432,6 +1527,9 @@ async function generateBookWholePass(options: {
 
   for (const page of savedPages) {
     await storeEmbedding(options.projectId, `page:${page.index}`, page.id, page.summary, options.providers.embedding);
+  }
+  for (const reviewedPage of reviewedPages) {
+    await updateEntityStateFromPage(options.projectId, reviewedPage.draft.index, reviewedPage.draft.continuityNotes);
   }
 
   await advanceJobStep(options.generationJobId, "enqueue", 88, "Queueing images and export");
@@ -1487,15 +1585,42 @@ async function generatePage(job: Job) {
     take: 28
   });
   const chapterPlan = plan.chapters.find((chapter) => chapter.index === page.chapter?.index);
-  const researchNotes = await loadResearchNotesForGeneration(projectId, strategy, chapterPlan);
   const orderedPreviousPages = previousPages.reverse();
   const priorPageContext = orderedPreviousPages.map(toPriorPageContext);
   let chapterBrief = parseChapterBrief(page.chapter?.productionBrief);
   let pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === page.index);
 
-  await advanceJobStep(generationJobId, "draft", 30, `Drafting page ${page.index}`);
+  const semanticQueryText = [
+    pageBrief ? `${pageBrief.purpose} ${pageBrief.beat}` : "",
+    chapterPlan ? `${chapterPlan.title} ${chapterPlan.summary}` : "",
+    plan.premise
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const researchNotes = await loadResearchNotesForGeneration(projectId, strategy, chapterPlan, {
+    embedding: providers.embedding,
+    queryText: semanticQueryText
+  });
+  const semanticMemory =
+    page.index > RECENT_PAGE_WINDOW + 1
+      ? await retrieveSemanticPageMemory({
+          projectId,
+          queryText: semanticQueryText,
+          embedding: providers.embedding,
+          excludePageIndexes: orderedPreviousPages.map((previousPage) => previousPage.index)
+        })
+      : [];
+  const entityState = await loadEntityStateLines(projectId, plan);
+
+  const candidateCount = bestOfCandidateCount(input);
+  await advanceJobStep(
+    generationJobId,
+    "draft",
+    30,
+    candidateCount > 1 ? `Drafting page ${page.index} (${candidateCount} candidates)` : `Drafting page ${page.index}`
+  );
   let revision = 1;
-  let draft = await strategy.generatePageDraft({
+  const draftOptions = {
     input,
     plan,
     chapter: chapterPlan,
@@ -1506,8 +1631,19 @@ async function generatePage(job: Job) {
     previousPages: priorPageContext,
     continuityNotes: continuity.map((note) => note.body),
     researchNotes,
+    semanticMemory,
+    entityState,
     textModel: providers.text
-  });
+  };
+  let draft =
+    candidateCount > 1
+      ? await generateBestOfPageDrafts({
+          draftPage: strategy.generatePageDraft,
+          baseOptions: draftOptions,
+          candidateCount,
+          judgeModel: providers.text
+        })
+      : await strategy.generatePageDraft(draftOptions);
   await advanceJobStep(generationJobId, "qa", 55, `Reviewing page ${page.index}`);
   let qualityReport = await strategy.reviewPageDraft({
     input,
@@ -1585,15 +1721,27 @@ async function generatePage(job: Job) {
   }
 
   if (!qualityReport.approved) {
+    // Page-level failure isolation: keep the best draft with its honest
+    // report, flag the page, and let the rest of the book continue. The page
+    // can be retried individually and the final review can still repair it.
     await prisma.page.update({
       where: { id: pageId },
       data: {
+        title: draft.title,
+        markdown: draft.markdown,
+        summary: draft.summary,
+        imagePrompt: draft.imagePrompt ?? null,
         status: "FAILED_QA",
         revision,
         qualityReport: qualityReport as Prisma.InputJsonValue
       }
     });
-    throw new Error(formatQualityFailure(page.index, qualityReport));
+    await updateJobProgress(generationJobId, {
+      message: `Page ${page.index} kept its best draft but failed quality review; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
+    });
+    await enqueueNextPageIfReady(projectId, planId, page.index);
+    await maybeEnqueueCompile(projectId, planId);
+    return;
   }
 
   await advanceJobStep(generationJobId, "save", 88, `Saving page ${page.index}`);
@@ -1619,6 +1767,7 @@ async function generatePage(job: Job) {
         tags: ["page", String(page.index)]
       }))
     });
+    await updateEntityStateFromPage(projectId, page.index, draft.continuityNotes);
   }
 
   await storeEmbedding(projectId, `page:${page.index}`, pageId, draft.summary, providers.embedding);
@@ -2039,7 +2188,13 @@ async function compileExport(job: Job) {
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   let pages: ExportPageForRepair[] = project.pages;
-  if (input.mediaSettings.finalReview) {
+  const failedQaPageIndexes = pages.filter((page) => page.status === "FAILED_QA").map((page) => page.index);
+  // Parallel-wave drafting relies on the final review as its continuity
+  // reconciliation pass, so it runs even when the user disabled final review.
+  const runFinalReview =
+    input.mediaSettings.finalReview ||
+    (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1);
+  if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
     let finalQa = await strategy.runFinalBookQa({
       input,
@@ -2050,7 +2205,7 @@ async function compileExport(job: Job) {
         : undefined,
       textModel: providers.text
     });
-    if (!finalQa.approved) {
+    if (!finalQa.approved || failedQaPageIndexes.length > 0) {
       const repairedPages = await repairPagesFromFinalQa({
         projectId,
         input,
@@ -2059,6 +2214,7 @@ async function compileExport(job: Job) {
         strategy,
         pages,
         finalQa,
+        extraPageIndexes: failedQaPageIndexes,
         generationJobId
       });
       if (repairedPages) {
@@ -2075,7 +2231,11 @@ async function compileExport(job: Job) {
       }
     }
     if (!finalQa.approved) {
-      throw new Error(`Final book QA failed: ${finalQa.issues.join(" ")}`);
+      // Export the best available book instead of failing the whole project;
+      // remaining issues stay visible on the job and the flagged pages.
+      await updateJobProgress(generationJobId, {
+        message: `Final review still reports issues; exporting the best available version. ${finalQa.issues.slice(0, 5).join(" ")}`
+      });
     }
   } else {
     await advanceJobStep(generationJobId, "qa", 25, "Skipping final review");
@@ -2126,12 +2286,29 @@ async function compileExport(job: Job) {
   const projectDir = join(config.BOOK_STORAGE_DIR, projectId);
   await mkdir(projectDir, { recursive: true });
   await writeFile(join(projectDir, "book.md"), markdown, "utf8");
-  await advanceJobStep(generationJobId, "pdf", 92);
+  await advanceJobStep(generationJobId, "pdf", 88);
   await strategy.generatePdf(markdown, {
     imageStorageDir: config.IMAGE_STORAGE_DIR,
     publicApiUrl: config.PUBLIC_API_URL,
     outputPath: join(projectDir, "book.pdf")
   });
+  await advanceJobStep(generationJobId, "epub", 95);
+  try {
+    await generateBookEpub(markdown, {
+      title: plan.title,
+      language: input.language,
+      imageStorageDir: config.IMAGE_STORAGE_DIR,
+      publicApiUrl: config.PUBLIC_API_URL,
+      outputPath: join(projectDir, "book.epub")
+    });
+  } catch (error) {
+    // EPUB is a best-effort companion format; never fail an export that
+    // already produced the markdown and PDF artifacts.
+    console.error(`EPUB generation failed for project ${projectId}:`, error);
+    await updateJobProgress(generationJobId, {
+      message: "EPUB export failed; markdown and PDF were still produced."
+    });
+  }
   await prisma.project.update({ where: { id: projectId }, data: { status: "COMPLETE" } });
   await maybeEnqueueCharacterCandidatePreparation(projectId, planId);
 }
@@ -2431,12 +2608,15 @@ async function repairPagesFromFinalQa(options: {
   strategy: BookGenerationStrategy;
   pages: ExportPageForRepair[];
   finalQa: FinalBookQa;
+  /** Additional page indexes to repair (e.g. pages that failed page-level QA). */
+  extraPageIndexes?: number[] | undefined;
   generationJobId?: string | undefined;
 }): Promise<ExportPageForRepair[] | undefined> {
-  const repairPageIndexes = extractRepairPageIndexes(options.finalQa, options.input.targetPages).slice(
-    0,
-    MAX_FINAL_QA_REPAIR_PAGES
-  );
+  // Global editor pass: every flagged page is eligible for repair, not just
+  // the first few — large books get the same treatment as short ones.
+  const repairPageIndexes = [
+    ...new Set([...(options.extraPageIndexes ?? []), ...extractRepairPageIndexes(options.finalQa, options.input.targetPages)])
+  ].sort((first, second) => first - second);
   if (repairPageIndexes.length === 0) {
     return undefined;
   }
@@ -2543,7 +2723,24 @@ async function repairPagesFromFinalQa(options: {
     }
 
     if (!qualityReport.approved) {
-      throw new Error(`Final QA repair failed. ${formatQualityFailure(pageIndex, qualityReport)}`);
+      // Keep the best draft and an honest report; the page stays flagged but
+      // does not block the rest of the export.
+      await prisma.page.update({
+        where: { id: page.id },
+        data: {
+          title: draft.title,
+          markdown: draft.markdown,
+          summary: draft.summary,
+          imagePrompt: draft.imagePrompt ?? page.imagePrompt,
+          status: "FAILED_QA",
+          revision: { increment: revisionAttempts },
+          qualityReport: qualityReport as Prisma.InputJsonValue
+        }
+      });
+      await updateJobProgress(options.generationJobId, {
+        message: `Final QA repair could not fully fix page ${pageIndex}; exporting its best draft. ${formatQualityFailure(pageIndex, qualityReport)}`
+      });
+      continue;
     }
 
     const updatedPage = await prisma.page.update({
@@ -2676,14 +2873,42 @@ async function countOpenCoverJobs(projectId: string): Promise<number> {
   return openJobs.filter((job) => jsonPayloadToRecord(job.payload).assetType === "COVER").length;
 }
 
-async function enqueueNextPageIfReady(projectId: string, planId: string, completedPageIndex: number) {
-  const nextPage = await prisma.page.findUnique({
-    where: { projectId_index: { projectId, index: completedPageIndex + 1 } }
-  });
-  if (!nextPage || nextPage.status === "COMPLETED") {
-    return;
-  }
-  if (await hasOpenGeneratePageJob(projectId, nextPage.id)) {
+/**
+ * Fiction keeps strict page-by-page generation for continuity; non-fiction
+ * drafts pages in parallel waves and reconciles in the final review. The
+ * mediaSettings flag overrides the category default in either direction.
+ */
+function parallelPageWaveSize(input: CreateProjectInput): number {
+  const fiction = input.category === "STORY" || input.category === "KIDS";
+  const enabled = input.mediaSettings.parallelPageGeneration ?? !fiction;
+  return enabled ? Math.max(1, config.MAX_PARALLEL_PAGE_JOBS) : 1;
+}
+
+/**
+ * Enqueues the next pending page that is not already in flight. Each page
+ * completion tops the wave back up by one, so the number of concurrent page
+ * jobs stays at the initial wave size.
+ */
+async function enqueueNextPageIfReady(projectId: string, planId: string, _completedPageIndex?: number) {
+  const [pendingPages, openJobs] = await Promise.all([
+    prisma.page.findMany({
+      where: { projectId, status: "PENDING" },
+      orderBy: { index: "asc" },
+      take: 8,
+      select: { id: true, index: true }
+    }),
+    prisma.generationJob.findMany({
+      where: { projectId, type: "GENERATE_PAGE", status: { in: ["QUEUED", "ACTIVE"] } },
+      select: { payload: true }
+    })
+  ]);
+  const inFlightPageIds = new Set(
+    openJobs
+      .map((job) => jsonPayloadToRecord(job.payload).pageId)
+      .filter((pageId): pageId is string => typeof pageId === "string")
+  );
+  const nextPage = pendingPages.find((page) => !inFlightPageIds.has(page.id));
+  if (!nextPage) {
     return;
   }
 
@@ -2719,18 +2944,26 @@ async function maybeEnqueueCompile(projectId: string, planId: string) {
     return;
   }
   const input = inputForPlanVersion(project, planVersion?.inputSnapshot);
-  const [totalPages, completedPages, openImageJobs, existingCompileJobs, coverAssets] = await Promise.all([
-    prisma.page.count({ where: { projectId } }),
-    prisma.page.count({ where: { projectId, status: "COMPLETED" } }),
-    prisma.generationJob.count({
-      where: { projectId, type: "GENERATE_IMAGE", status: { in: ["QUEUED", "ACTIVE"] } }
-    }),
-    prisma.generationJob.count({
-      where: { projectId, type: "COMPILE_EXPORT", status: { in: ["QUEUED", "ACTIVE"] } }
-    }),
-    prisma.imageAsset.count({ where: { projectId, type: "COVER" } })
-  ]);
-  const pagesReady = totalPages === input.targetPages && completedPages === input.targetPages;
+  const [totalPages, completedPages, failedQaPagesWithDraft, openPageJobs, openImageJobs, existingCompileJobs, coverAssets] =
+    await Promise.all([
+      prisma.page.count({ where: { projectId } }),
+      prisma.page.count({ where: { projectId, status: "COMPLETED" } }),
+      prisma.page.count({ where: { projectId, status: "FAILED_QA", NOT: { markdown: "" } } }),
+      prisma.generationJob.count({
+        where: { projectId, type: "GENERATE_PAGE", status: { in: ["QUEUED", "ACTIVE"] } }
+      }),
+      prisma.generationJob.count({
+        where: { projectId, type: "GENERATE_IMAGE", status: { in: ["QUEUED", "ACTIVE"] } }
+      }),
+      prisma.generationJob.count({
+        where: { projectId, type: "COMPILE_EXPORT", status: { in: ["QUEUED", "ACTIVE"] } }
+      }),
+      prisma.imageAsset.count({ where: { projectId, type: "COVER" } })
+    ]);
+  // FAILED_QA pages that kept a draft count as terminal so one stubborn page
+  // cannot block the whole export; the final review pass can still repair it.
+  const terminalPages = completedPages + failedQaPagesWithDraft;
+  const pagesReady = totalPages === input.targetPages && terminalPages === input.targetPages && openPageJobs === 0;
   if (pagesReady && input.mediaSettings.includeCover && coverAssets === 0 && openImageJobs === 0) {
     await maybeEnqueueCover(projectId, planId, input);
     return;
@@ -2759,6 +2992,222 @@ async function maybeCompileAfterCompletedJob(job: Job) {
     return;
   }
   await maybeEnqueueCompile(projectId, planId);
+}
+
+const SEMANTIC_MEMORY_TOP_K = 6;
+const SEMANTIC_MEMORY_MIN_SIMILARITY = 0.25;
+const RECENT_PAGE_WINDOW = 18;
+
+/**
+ * Vector search over stored page-summary embeddings for long-range continuity
+ * that falls outside the recency window. Best effort: failures degrade to an
+ * empty result instead of failing the page job.
+ */
+async function retrieveSemanticPageMemory(options: {
+  projectId: string;
+  queryText: string;
+  embedding: EmbeddingAdapter;
+  excludePageIndexes: number[];
+}): Promise<string[]> {
+  const query = options.queryText.trim();
+  if (!query) {
+    return [];
+  }
+  try {
+    const vector = await options.embedding.embed(query);
+    const rows = await retrieveSimilarEmbeddings({
+      projectId: options.projectId,
+      vector,
+      topK: SEMANTIC_MEMORY_TOP_K * 2,
+      scopePrefix: "page:",
+      excludeScopes: options.excludePageIndexes.map((index) => `page:${index}`)
+    });
+    const seenScopes = new Set<string>();
+    const memory: string[] = [];
+    for (const row of rows) {
+      if (row.similarity < SEMANTIC_MEMORY_MIN_SIMILARITY || seenScopes.has(row.scope)) {
+        continue;
+      }
+      seenScopes.add(row.scope);
+      memory.push(`Page ${row.scope.replace("page:", "")}: ${row.text}`);
+      if (memory.length >= SEMANTIC_MEMORY_TOP_K) {
+        break;
+      }
+    }
+    return memory;
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
+    console.warn(`Semantic memory retrieval failed for project ${options.projectId}`, error);
+    return [];
+  }
+}
+
+type EntityState = {
+  notes: string[];
+  updatedAtPage: number;
+};
+
+const ENTITY_STATE_NOTE_LIMIT = 4;
+const ENTITY_STATE_LINE_LIMIT = 12;
+
+function entityStateRecord(value: unknown): EntityState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const notes = Array.isArray(record.notes) ? record.notes.filter((note): note is string => typeof note === "string") : [];
+  const updatedAtPage = typeof record.updatedAtPage === "number" ? record.updatedAtPage : 0;
+  return { notes, updatedAtPage };
+}
+
+function noteMentionsEntity(note: string, name: string): boolean {
+  const trimmed = name.trim();
+  return trimmed.length > 1 && note.toLowerCase().includes(trimmed.toLowerCase());
+}
+
+/**
+ * Folds a saved page's continuity notes into per-character/location state so
+ * later pages see each entity's latest condition even outside the recency
+ * window. Deterministic (no extra model call).
+ */
+async function updateEntityStateFromPage(projectId: string, pageIndex: number, continuityNotes: string[]) {
+  if (continuityNotes.length === 0) {
+    return;
+  }
+  try {
+    const [characters, locations] = await Promise.all([
+      prisma.character.findMany({ where: { projectId } }),
+      prisma.location.findMany({ where: { projectId } })
+    ]);
+
+    for (const character of characters) {
+      const matches = continuityNotes.filter((note) => noteMentionsEntity(note, character.name));
+      if (matches.length === 0) {
+        continue;
+      }
+      const previous = entityStateRecord(character.state);
+      const notes = [...(previous?.notes ?? []), ...matches].slice(-ENTITY_STATE_NOTE_LIMIT);
+      await prisma.character.update({
+        where: { id: character.id },
+        data: { state: { notes, updatedAtPage: pageIndex } }
+      });
+    }
+
+    for (const location of locations) {
+      const matches = continuityNotes.filter((note) => noteMentionsEntity(note, location.name));
+      if (matches.length === 0) {
+        continue;
+      }
+      const previous = entityStateRecord(location.state);
+      const notes = [...(previous?.notes ?? []), ...matches].slice(-ENTITY_STATE_NOTE_LIMIT);
+      await prisma.location.update({
+        where: { id: location.id },
+        data: { state: { notes, updatedAtPage: pageIndex } }
+      });
+    }
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
+    console.warn(`Entity state update failed for project ${projectId}`, error);
+  }
+}
+
+/** Formats the current character/location state for the writer context pack. */
+async function loadEntityStateLines(projectId: string, plan: BookPlan): Promise<string[]> {
+  if (plan.characters.length === 0 && plan.locations.length === 0) {
+    return [];
+  }
+  try {
+    const [characters, locations] = await Promise.all([
+      prisma.character.findMany({ where: { projectId } }),
+      prisma.location.findMany({ where: { projectId } })
+    ]);
+    const lines: string[] = [];
+    for (const character of characters) {
+      const state = entityStateRecord(character.state);
+      if (!state || state.notes.length === 0) {
+        continue;
+      }
+      lines.push(`${character.name} (${character.role}) — as of page ${state.updatedAtPage}: ${state.notes.join(" ")}`);
+    }
+    for (const location of locations) {
+      const state = entityStateRecord(location.state);
+      if (!state || state.notes.length === 0) {
+        continue;
+      }
+      lines.push(`${location.name} (location) — as of page ${state.updatedAtPage}: ${state.notes.join(" ")}`);
+    }
+    return lines.slice(0, ENTITY_STATE_LINE_LIMIT);
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
+    console.warn(`Entity state load failed for project ${projectId}`, error);
+    return [];
+  }
+}
+
+/** Embeds research sources that do not have an embedding row yet. */
+async function embedResearchSourcesForProject(projectId: string, embedding: EmbeddingAdapter) {
+  const sources = await prisma.researchSource.findMany({ where: { projectId } });
+  if (sources.length === 0) {
+    return;
+  }
+  const existing = await prisma.embedding.findMany({
+    where: { projectId, scope: { startsWith: "research:" } },
+    select: { sourceId: true }
+  });
+  const embedded = new Set(existing.map((row) => row.sourceId));
+  for (const source of sources) {
+    if (embedded.has(source.id)) {
+      continue;
+    }
+    await storeEmbedding(projectId, `research:${source.id}`, source.id, `${source.title}: ${source.summary}`, embedding);
+  }
+}
+
+/**
+ * Vector search over embedded research sources. Returns formatted notes or an
+ * empty array when retrieval is unavailable.
+ */
+async function retrieveSemanticResearchNotes(options: {
+  projectId: string;
+  queryText: string;
+  embedding: EmbeddingAdapter;
+  topK: number;
+}): Promise<string[]> {
+  const query = options.queryText.trim();
+  if (!query) {
+    return [];
+  }
+  try {
+    const vector = await options.embedding.embed(query);
+    const rows = await retrieveSimilarEmbeddings({
+      projectId: options.projectId,
+      vector,
+      topK: options.topK,
+      scopePrefix: "research:"
+    });
+    const seenScopes = new Set<string>();
+    const notes: string[] = [];
+    for (const row of rows) {
+      if (seenScopes.has(row.scope)) {
+        continue;
+      }
+      seenScopes.add(row.scope);
+      notes.push(row.text);
+    }
+    return notes;
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
+    console.warn(`Semantic research retrieval failed for project ${options.projectId}`, error);
+    return [];
+  }
 }
 
 async function storeEmbedding(
@@ -3741,7 +4190,11 @@ function cleanOptionalText(value: string | null | undefined): string | undefined
 }
 
 function strategyForInput(input: CreateProjectInput): BookGenerationStrategy {
-  return getBookGenerationStrategy(input.mediaSettings.generationStrategy);
+  const resolved = resolveBookGenerationStrategy(input);
+  for (const warning of resolved.warnings) {
+    console.warn(`[strategy] ${warning}`);
+  }
+  return resolved.strategy;
 }
 
 async function nextPlanVersion(projectId: string): Promise<number> {
@@ -3773,22 +4226,81 @@ function range(start: number, end: number): number[] {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
-function approvedWholeBookQualityReport(): PageQualityReport {
-  return {
-    approved: true,
-    score: 100,
-    issues: [],
-    requiredRevisions: [],
-    notes: "Generated by the whole-book single-pass strategy; page-level QA was not run.",
-    checks: {
-      placeholderFree: true,
-      promptLeakFree: true,
-      titleClean: true,
-      repetitionOk: true,
-      progressionOk: true,
-      styleNatural: true
+type ReviewedWholeBookPage = {
+  draft: IndexedPageDraft;
+  qualityReport: PageQualityReport;
+  revision: number;
+};
+
+/**
+ * Runs the deterministic local quality heuristics over a whole-book draft and
+ * attempts one model revision for pages that fail, keeping whichever version
+ * scores better. Reports stored on pages are honest rather than fabricated.
+ */
+async function reviewWholeBookDraftPages(options: {
+  input: CreateProjectInput;
+  plan: BookPlan;
+  strategy: BookGenerationStrategy;
+  textModel: TextModelAdapter;
+  pages: IndexedPageDraft[];
+  generationJobId?: string | undefined;
+}): Promise<ReviewedWholeBookPage[]> {
+  const reviewed: ReviewedWholeBookPage[] = [];
+  const previousPages: PriorPageContext[] = [];
+
+  for (const pageDraft of options.pages) {
+    let draft: IndexedPageDraft = pageDraft;
+    let revision = 1;
+    let report = reviewPageDraftLocally({
+      input: options.input,
+      plan: options.plan,
+      pageIndex: pageDraft.index,
+      draft,
+      previousPages,
+      continuityNotes: []
+    });
+
+    if (!report.approved) {
+      await updateJobProgress(options.generationJobId, {
+        message: `Page ${pageDraft.index} failed local quality checks; revising.`
+      });
+      try {
+        const revisedDraft = await options.strategy.revisePageDraft({
+          input: options.input,
+          plan: options.plan,
+          pageIndex: pageDraft.index,
+          draft,
+          report,
+          previousPages,
+          continuityNotes: [],
+          textModel: options.textModel
+        });
+        const revisedReport = reviewPageDraftLocally({
+          input: options.input,
+          plan: options.plan,
+          pageIndex: pageDraft.index,
+          draft: revisedDraft,
+          previousPages,
+          continuityNotes: []
+        });
+        if (revisedReport.score >= report.score) {
+          draft = { ...revisedDraft, index: pageDraft.index };
+          report = revisedReport;
+          revision = 2;
+        }
+      } catch (error) {
+        if (isStopRequestedError(error)) {
+          throw error;
+        }
+        // Keep the original draft with its honest (failing) report.
+      }
     }
-  };
+
+    reviewed.push({ draft, qualityReport: report, revision });
+    previousPages.push({ index: draft.index, title: draft.title, markdown: draft.markdown, summary: draft.summary });
+  }
+
+  return reviewed;
 }
 
 async function loadPagesForExport(projectId: string): Promise<ExportPageForRepair[]> {

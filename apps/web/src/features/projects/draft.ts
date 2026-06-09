@@ -46,6 +46,7 @@ export type DraftProject = {
   finalReview: boolean;
   lessCensored: boolean;
   toneProfile: ToneProfile;
+  draftCandidates: number;
 };
 
 export type GenerationStrategyOption = RuntimeInfo["generationStrategies"][number];
@@ -53,7 +54,7 @@ export type TextModelOption = RuntimeInfo["textModelOptions"][number];
 export type ImageModelOption = RuntimeInfo["imageModelOptions"][number];
 
 export const CUSTOM_SUBCATEGORY_VALUE = "__custom";
-export const DEFAULT_GENERATION_STRATEGY_ID = "chaptered-sequential";
+export const DEFAULT_GENERATION_STRATEGY_ID = "auto";
 export const DEFAULT_TONE_PROFILE: ToneProfile = "neutral";
 export const DEFAULT_TEXT_MODEL: TextModelSelection = { provider: "deepseek", model: "deepseek-v4-pro" };
 export const DEFAULT_IMAGE_MODEL: ImageModelSelection = { provider: "gemini", model: "gemini-2.5-flash-image" };
@@ -202,6 +203,12 @@ export const SUBCATEGORY_OPTIONS: Record<ProjectCategory, string[]> = {
 
 export const DEFAULT_GENERATION_STRATEGIES: GenerationStrategyOption[] = [
   {
+    id: "auto",
+    label: "Auto (recommended)",
+    strengthScore: 10,
+    recommendedPageRange: { min: 1, max: 600 }
+  },
+  {
     id: "chaptered-sequential",
     label: "Chaptered sequential generation",
     strengthScore: 7,
@@ -299,7 +306,8 @@ export const initialDraft: DraftProject = {
   includeCover: true,
   finalReview: true,
   lessCensored: false,
-  toneProfile: DEFAULT_TONE_PROFILE
+  toneProfile: DEFAULT_TONE_PROFILE,
+  draftCandidates: 1
 };
 
 export function projectInputFromDraft(draft: DraftProject, textModelOptions: TextModelOption[]) {
@@ -329,7 +337,8 @@ export function projectInputFromDraft(draft: DraftProject, textModelOptions: Tex
       generationStrategy: draft.generationStrategy,
       textModel: textModelSelectionFromOption(textModel),
       ...(draft.category === "KIDS" ? { audienceAgeRange: draft.audienceAgeRange } : {}),
-      toneProfile: draft.toneProfile
+      toneProfile: draft.toneProfile,
+      ...(draft.draftCandidates > 1 ? { draftCandidates: draft.draftCandidates } : {})
     }
   };
 }
@@ -377,7 +386,8 @@ export function draftFromSavedInputs(project: Project): DraftProject {
     lessCensored: category === "KIDS" ? false : firstBoolean(mediaSettings.lessCensored, initialDraft.lessCensored),
     audienceAgeRange:
       category === "KIDS" ? audienceAgeRangeFromValue(mediaSettings.audienceAgeRange) : initialDraft.audienceAgeRange,
-    toneProfile: toneProfileFromValue(firstString(mediaSettings.toneProfile, initialDraft.toneProfile))
+    toneProfile: toneProfileFromValue(firstString(mediaSettings.toneProfile, initialDraft.toneProfile)),
+    draftCandidates: clampInt(firstFiniteNumber(mediaSettings.draftCandidates) ?? initialDraft.draftCandidates, 1, 3)
   };
 }
 

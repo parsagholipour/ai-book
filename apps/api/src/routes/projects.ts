@@ -1,11 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
 import {
   assertBookLikeMarkdown,
+  AUTO_BOOK_GENERATION_STRATEGY_ID,
   bookGenerationStrategies,
   createLanguageDetectionTextModel,
   createProjectSchema,
   createVoiceProvider,
   detectPromptLanguage,
+  generateBookEpub,
   getBookGenerationStrategy,
   imageModelOptions,
   isEnglishLanguage,
@@ -14,6 +16,7 @@ import {
   normalizeProjectLanguage,
   normalizeVoiceProfile,
   reinforceRealtimeCharacterRoleplay,
+  resolveBookGenerationStrategy,
   resolveVoiceRtcConfig,
   resolvePublicImageUrl,
   textModelOptions,
@@ -103,6 +106,7 @@ const generationFailureJobTypes = [...resumableJobTypes, ...restartableJobTypes]
 const BOOK_MARKDOWN_FILENAME = "book.md";
 const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
 const BOOK_PDF_FILENAME = "book.pdf";
+const BOOK_EPUB_FILENAME = "book.epub";
 type ResumeContext = {
   currentPlanId: string | null;
   existingPages: number;
@@ -138,12 +142,20 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       ? [{ provider: "deepseek", model: "fake-model", label: "Mock text model" }]
       : textModelOptions(appConfig),
     imageModelOptions: imageModelOptions(appConfig),
-    generationStrategies: bookGenerationStrategies.map((strategy) => ({
-      id: strategy.id,
-      label: strategy.label,
-      strengthScore: strategy.strengthScore,
-      recommendedPageRange: strategy.recommendedPageRange
-    }))
+    generationStrategies: [
+      {
+        id: AUTO_BOOK_GENERATION_STRATEGY_ID,
+        label: "Auto (recommended)",
+        strengthScore: 10,
+        recommendedPageRange: { min: 1, max: 600 }
+      },
+      ...bookGenerationStrategies.map((strategy) => ({
+        id: strategy.id,
+        label: strategy.label,
+        strengthScore: strategy.strengthScore,
+        recommendedPageRange: strategy.recommendedPageRange
+      }))
+    ]
   }));
 
   fastify.get("/api/templates", async () => {
@@ -304,6 +316,8 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(404).send({ error: "Plan not found" });
     }
 
+    const resolvedStrategy = resolveBookGenerationStrategy(planInputForStrategy(plan.inputSnapshot, plan.project));
+
     await prisma.$transaction([
       prisma.planVersion.updateMany({
         where: { projectId: plan.projectId, id: { not: id } },
@@ -324,7 +338,16 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       type: "GENERATE_BOOK",
       payload: { planId: id }
     });
-    return reply.code(202).send(job);
+    return reply.code(202).send({
+      ...job,
+      strategy: {
+        id: resolvedStrategy.strategy.id,
+        requestedId: resolvedStrategy.requestedId,
+        autoSelected: resolvedStrategy.autoSelected,
+        switched: resolvedStrategy.switched,
+        warnings: resolvedStrategy.warnings
+      }
+    });
   });
 
   fastify.post("/api/projects/:id/cover", async (request, reply) => {
@@ -414,6 +437,42 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       stoppingJobs,
       jobs: resumedJobs
     });
+  });
+
+  fastify.post("/api/projects/:id/pages/:pageId/retry", async (request, reply) => {
+    const { id, pageId } = z.object({ id: z.string().min(1), pageId: z.string().min(1) }).parse(request.params);
+    const [project, page] = await Promise.all([
+      prisma.project.findUnique({ where: { id }, select: { id: true, currentPlanId: true } }),
+      prisma.page.findUnique({ where: { id: pageId }, select: { id: true, projectId: true, index: true, status: true } })
+    ]);
+    if (!project || !page || page.projectId !== id) {
+      return reply.code(404).send({ error: "Page not found" });
+    }
+    if (!project.currentPlanId) {
+      return reply.code(400).send({ error: "A project needs an approved plan before pages can be retried." });
+    }
+    if (page.status !== "FAILED_QA") {
+      return reply.code(400).send({ error: "Only pages that failed quality review can be retried." });
+    }
+
+    const openJobs = await prisma.generationJob.findMany({
+      where: { projectId: id, type: "GENERATE_PAGE", status: { in: ["QUEUED", "ACTIVE"] } },
+      select: { payload: true }
+    });
+    if (openJobs.some((job) => jsonPayloadToRecord(job.payload).pageId === pageId)) {
+      return reply.code(409).send({ error: "This page is already being regenerated." });
+    }
+
+    await prisma.$transaction([
+      prisma.page.update({ where: { id: pageId }, data: { status: "PENDING" } }),
+      prisma.project.update({ where: { id }, data: { status: "GENERATING" } })
+    ]);
+    const job = await enqueueGenerationJob({
+      projectId: id,
+      type: "GENERATE_PAGE",
+      payload: { pageId, planId: project.currentPlanId }
+    });
+    return reply.code(202).send(job);
   });
 
   fastify.post("/api/projects/:id/stop", async (request, reply) => {
@@ -773,6 +832,65 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     reply.type("application/pdf");
     return pdf;
   });
+
+  fastify.get("/api/projects/:id/export/epub/status", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    try {
+      await access(join(appConfig.BOOK_STORAGE_DIR, id, BOOK_EPUB_FILENAME));
+      return { available: true };
+    } catch {
+      return { available: false };
+    }
+  });
+
+  fastify.get("/api/projects/:id/export/epub", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const project = await prisma.project.findUnique({
+      where: { id },
+      select: { title: true, language: true, currentPlanId: true }
+    });
+    if (!project) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+
+    const epubPath = join(appConfig.BOOK_STORAGE_DIR, id, BOOK_EPUB_FILENAME);
+    let epub: Buffer;
+    try {
+      await access(epubPath);
+      epub = await readFile(epubPath);
+    } catch {
+      if (!project.currentPlanId) {
+        return reply.code(404).send({ error: "Book not found" });
+      }
+      const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
+      if (!markdown) {
+        return reply.code(404).send({ error: "Book not found" });
+      }
+      try {
+        await mkdir(dirname(epubPath), { recursive: true });
+        epub = await generateBookEpub(markdown, {
+          title: project.title,
+          language: project.language,
+          imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
+          publicApiUrl: appConfig.PUBLIC_API_URL,
+          outputPath: epubPath
+        });
+      } catch (error) {
+        request.log.error({ err: error, projectId: id }, "EPUB generation failed");
+        return reply.code(500).send({ error: "EPUB generation failed" });
+      }
+    }
+
+    const filename = `${sanitizeDownloadFilename(project.title)}.epub`;
+    reply.header("Content-Disposition", `attachment; filename="${filename}"`);
+    reply.type("application/epub+zip");
+    return epub;
+  });
 };
 
 async function compileProjectMarkdown(
@@ -842,7 +960,44 @@ async function readSavedBookMarkdown(projectId: string, bookStorageDir: string):
 }
 
 function strategyForMediaSettings(mediaSettings: unknown) {
-  return getBookGenerationStrategy(mediaSettingsSchema.parse(mediaSettings).generationStrategy);
+  const selection = mediaSettingsSchema.parse(mediaSettings).generationStrategy;
+  return getBookGenerationStrategy(selection === AUTO_BOOK_GENERATION_STRATEGY_ID ? undefined : selection);
+}
+
+type ProjectStrategySource = {
+  title: string;
+  subtitle?: string | null;
+  authorName?: string | null;
+  coverTagline?: string | null;
+  prompt: string;
+  category: string;
+  subcategory?: string | null;
+  targetPages: number;
+  complexity: number;
+  temperature: number;
+  language: string;
+  mediaSettings: unknown;
+};
+
+function planInputForStrategy(inputSnapshot: unknown, project: ProjectStrategySource): CreateProjectInput {
+  const fromSnapshot = createProjectSchema.safeParse(inputSnapshot);
+  if (fromSnapshot.success) {
+    return fromSnapshot.data;
+  }
+  return createProjectSchema.parse({
+    title: project.title,
+    subtitle: project.subtitle ?? undefined,
+    authorName: project.authorName ?? undefined,
+    coverTagline: project.coverTagline ?? undefined,
+    prompt: project.prompt,
+    category: project.category,
+    subcategory: project.subcategory ?? undefined,
+    targetPages: project.targetPages,
+    complexity: project.complexity,
+    temperature: project.temperature,
+    language: project.language,
+    mediaSettings: mediaSettingsSchema.parse(project.mediaSettings)
+  });
 }
 
 function sanitizeDownloadFilename(title: string): string {

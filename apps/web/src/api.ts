@@ -50,6 +50,8 @@ export type Project = {
     lessCensored?: boolean;
     audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
+    parallelPageGeneration?: boolean;
+    draftCandidates?: number;
   };
   status: string;
   currentPlan?: PlanVersion | null;
@@ -110,11 +112,13 @@ export type ProjectInputSnapshot = {
     lessCensored?: boolean;
     audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
+    parallelPageGeneration?: boolean;
+    draftCandidates?: number;
   };
 };
 
 export type TextModelSelection = {
-  provider: "deepseek" | "gemini" | "alibaba";
+  provider: "deepseek" | "gemini" | "alibaba" | "openai-compatible";
   model: string;
   thinkingBudget?: number;
   thinkingEnabled?: boolean;
@@ -268,7 +272,14 @@ export type BookPlan = {
   voiceGuide: string[];
   antiAiRules: string[];
   questions: PlanQuestion[];
-  chapters: Array<{ index: number; title: string; summary: string; targetPages: number; keyBeats: string[] }>;
+  chapters: Array<{
+    index: number;
+    title: string;
+    summary: string;
+    targetPages: number;
+    keyBeats: string[];
+    illustrationPrompts?: string[];
+  }>;
   characters: Array<{ name: string; role: string; description: string; traits: string[]; visualRules: string[] }>;
   illustrationPlan: {
     cadence: string;

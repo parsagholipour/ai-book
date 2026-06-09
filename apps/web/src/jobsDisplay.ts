@@ -6,7 +6,7 @@ const JOB_STEP_LABELS: Record<string, string[]> = {
   GENERATE_BOOK: ["Prepare book", "Create pages", "Queue follow-ups"],
   GENERATE_PAGE: ["Prepare context", "Draft page", "Quality review", "Revise draft", "Save page"],
   GENERATE_IMAGE: ["Build prompt", "Render image", "Store asset"],
-  COMPILE_EXPORT: ["Final review", "Compile markdown", "Write Markdown", "Generate PDF"],
+  COMPILE_EXPORT: ["Final review", "Compile markdown", "Write Markdown", "Generate PDF", "Generate EPUB"],
   PREPARE_CHARACTER_CANDIDATES: ["Detect characters", "Save candidates"],
   BUILD_CHARACTER_PERSONA: ["Build persona", "Create profile picture", "Save character"],
   RESEARCH: ["Gather sources", "Summarize"]
@@ -110,7 +110,7 @@ export function resolvePipelineSteps(status: ProjectStatus | null): PipelineStep
       key: "export",
       label: "Export",
       status: exportDone ? "done" : "pending",
-      ...(exportDone ? { detail: "Markdown & PDF ready" } : {})
+      ...(exportDone ? { detail: "Markdown, PDF & EPUB ready" } : {})
     }
   ];
 }

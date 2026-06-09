@@ -3,7 +3,15 @@ import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prom
 import { kidsReadingGuidanceLines, kidsReadingGuidancePayload } from "../prompting/readingLevel.js";
 import { getTemplateForInput, makeFallbackPlan, type TemplateDefinition } from "../prompting/templates.js";
 import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/tone.js";
-import { bookPlanSchema, type BookPlan, type ChapterPlan, type CreateProjectInput, type ResearchSource, type ToneProfile } from "../schemas/book.js";
+import {
+  bookPlanSchema,
+  bookPlanSchemaWithFallback,
+  type BookPlan,
+  type ChapterPlan,
+  type CreateProjectInput,
+  type ResearchSource,
+  type ToneProfile
+} from "../schemas/book.js";
 import { generateJsonWithJailbreak } from "./generateWithJailbreak.js";
 
 export type CreatePlanOptions = {
@@ -42,6 +50,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     return normalizePlanPageTargets({ ...fallback, researchNotes }, options.input.targetPages);
   }
 
+  const planningSchema = bookPlanSchemaWithFallback({ ...fallback, researchNotes });
   let result: JsonResult<BookPlan>;
   try {
     result = await generateJsonWithJailbreak(options.textModel, {
@@ -50,7 +59,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
       jailbreakRole: "planner",
       temperature: Math.min(0.8, options.input.temperature),
       maxTokens: 8000,
-      schema: bookPlanSchema,
+      schema: planningSchema,
       messages: [
         {
           role: "system",
@@ -91,22 +100,16 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
       ]
     });
   } catch (error) {
-    if (shouldUsePlanningFallback(error)) {
-      return normalizePlanPageTargets({ ...fallback, researchNotes }, options.input.targetPages);
-    }
     throw new Error(`AI planner failed. No fallback plan was created. ${formatErrorMessage(error)}`);
   }
 
   try {
-    const plan = bookPlanSchema.parse({
+    const plan = planningSchema.parse({
       ...result.data,
-      researchNotes: [...researchNotes, ...result.data.researchNotes]
+      researchNotes: mergeResearchNotes(researchNotes, result.data.researchNotes)
     });
     return normalizePlanPageTargets(plan, options.input.targetPages);
   } catch (error) {
-    if (shouldUsePlanningFallback(error)) {
-      return normalizePlanPageTargets({ ...fallback, researchNotes }, options.input.targetPages);
-    }
     throw new Error(`AI planner returned an invalid plan. No fallback plan was created. ${formatErrorMessage(error)}`);
   }
 }
@@ -191,6 +194,7 @@ function mergeOverflowChapters(chapters: ChapterPlan[], chapterLimit: number): C
     `Fold in ${chapter.title}.`,
     ...chapter.keyBeats
   ]);
+  const overflowIllustrationPrompts = overflow.flatMap((chapter) => chapter.illustrationPrompts ?? []);
 
   return [
     ...kept.slice(0, -1),
@@ -200,7 +204,8 @@ function mergeOverflowChapters(chapters: ChapterPlan[], chapterLimit: number): C
         .filter(Boolean)
         .join(" "),
       targetPages: last.targetPages + sumChapterTargetPages(overflow),
-      keyBeats: [...last.keyBeats, ...overflowBeats].slice(0, 20)
+      keyBeats: [...last.keyBeats, ...overflowBeats].slice(0, 20),
+      illustrationPrompts: [...(last.illustrationPrompts ?? []), ...overflowIllustrationPrompts].slice(0, 12)
     }
   ];
 }
@@ -245,6 +250,20 @@ function distributeTargetPages(chapters: ChapterPlan[], targetPages: number): nu
 
 function sumChapterTargetPages(chapters: ChapterPlan[]): number {
   return chapters.reduce((sum, chapter) => sum + Math.max(1, Math.floor(chapter.targetPages)), 0);
+}
+
+function mergeResearchNotes(first: ResearchSource[], second: ResearchSource[]): ResearchSource[] {
+  const seen = new Set<string>();
+  const merged: ResearchSource[] = [];
+  for (const source of [...first, ...second]) {
+    const key = [source.query, source.title, source.url ?? "", source.summary].join("\0");
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(source);
+  }
+  return merged;
 }
 
 export async function expandChapterResearch(options: ExpandChapterResearchOptions): Promise<ResearchSource[]> {
@@ -316,16 +335,4 @@ function formatErrorMessage(error: unknown): string {
     return error.message;
   }
   return "Unknown error.";
-}
-
-function shouldUsePlanningFallback(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  return (
-    error.name === "DeepSeekJsonValidationError" ||
-    error.name === "DeepSeekJsonParseError" ||
-    error.name === "ZodError" ||
-    /\b(?:JSON validation|schema validation|invalid JSON|Model did not return a JSON object)\b/i.test(error.message)
-  );
 }

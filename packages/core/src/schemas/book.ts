@@ -77,6 +77,13 @@ function stringArrayField(record: Record<string, unknown>, keys: string[]): stri
   return undefined;
 }
 
+function coerceStringArray(value: unknown): unknown {
+  if (typeof value === "string" && value.trim()) {
+    return [value.trim()];
+  }
+  return value;
+}
+
 const ILLUSTRATION_CADENCES = ["template-driven", "every-page", "manual"] as const;
 type IllustrationCadence = (typeof ILLUSTRATION_CADENCES)[number];
 export const TONE_PROFILES = ["neutral", "confident", "skeptical", "scholarly", "conversational", "narrative"] as const;
@@ -346,6 +353,9 @@ function normalizeFinalBookQa(value: unknown): unknown {
   };
 }
 
+const PLAN_WRAPPER_KEYS = ["plan", "bookPlan", "planningPackage", "outline", "data", "result"] as const;
+const PLANNER_RECOVERY_WRAPPER_KEYS = [...PLAN_WRAPPER_KEYS, "generationPlan"] as const;
+
 function isPlanLikeRecord(value: unknown): value is Record<string, unknown> {
   return (
     isRecord(value) &&
@@ -374,24 +384,32 @@ function mergePlanRecords(
   return merged;
 }
 
+function normalizePlanScalarArrays(value: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...value,
+    voiceGuide: coerceStringArray(value.voiceGuide),
+    antiAiRules: coerceStringArray(value.antiAiRules)
+  };
+}
+
 function normalizeBookPlan(value: unknown): unknown {
   if (!isRecord(value)) {
     return value;
   }
   const fallbackOutline = recordField(value, ["fallbackOutline", "fallbackPlan"]);
-  const nestedPlan = recordField(value, ["plan", "bookPlan", "planningPackage", "outline", "data", "result"]);
+  const nestedPlan = recordField(value, [...PLAN_WRAPPER_KEYS]);
   const unwrapped = isPlanLikeRecord(value)
     ? value
     : isPlanLikeRecord(nestedPlan)
       ? mergePlanRecords(isPlanLikeRecord(fallbackOutline) ? fallbackOutline : undefined, nestedPlan)
-      : isPlanLikeRecord(fallbackOutline)
-        ? fallbackOutline
-        : unwrapJsonObject(["plan", "bookPlan", "planningPackage", "outline", "data", "result"])(value);
+    : isPlanLikeRecord(fallbackOutline)
+      ? fallbackOutline
+      : unwrapJsonObject([...PLAN_WRAPPER_KEYS])(value);
   if (!isRecord(unwrapped)) {
     return unwrapped;
   }
 
-  return {
+  return normalizePlanScalarArrays({
     ...unwrapped,
     writingComplexity:
       unwrapped.writingComplexity ??
@@ -399,6 +417,29 @@ function normalizeBookPlan(value: unknown): unknown {
       unwrapped.writing_complexity ??
       unwrapped.writingLevel ??
       unwrapped.readingLevel
+  });
+}
+
+function normalizeBookPlanWithFallback(fallback: BookPlan) {
+  return (value: unknown): unknown => {
+    if (!isRecord(value)) {
+      return value;
+    }
+
+    const fallbackRecord = fallback as unknown as Record<string, unknown>;
+    const outer = { ...value };
+    const nestedPlan = recordField(value, [...PLANNER_RECOVERY_WRAPPER_KEYS]);
+    for (const key of PLANNER_RECOVERY_WRAPPER_KEYS) {
+      delete outer[key];
+    }
+
+    const candidate = isPlanLikeRecord(nestedPlan)
+      ? mergePlanRecords(mergePlanRecords(fallbackRecord, outer), nestedPlan)
+      : isPlanLikeRecord(value)
+        ? mergePlanRecords(fallbackRecord, value)
+        : mergePlanRecords(fallbackRecord, outer);
+
+    return normalizeBookPlan(candidate);
   };
 }
 
@@ -422,8 +463,9 @@ export const subcategorySchema = z.preprocess(
   z.string().max(80).optional()
 );
 export const bookGenerationStrategyIdSchema = z.enum(BOOK_GENERATION_STRATEGY_IDS);
+export const bookGenerationStrategySelectionSchema = z.enum(["auto", ...BOOK_GENERATION_STRATEGY_IDS]);
 export const textModelSelectionSchema = z.object({
-  provider: z.enum(["deepseek", "gemini", "alibaba"]),
+  provider: z.enum(["deepseek", "gemini", "alibaba", "openai-compatible"]),
   model: z.string().min(1).max(120),
   thinkingBudget: z.number().int().min(-1).max(32768).optional(),
   thinkingEnabled: z.boolean().optional()
@@ -466,10 +508,22 @@ export const mediaSettingsSchema = z.object({
   lessCensored: z.boolean().default(false),
   imageStyle: z.string().optional(),
   imageModel: imageModelSelectionSchema.optional(),
-  generationStrategy: bookGenerationStrategyIdSchema.optional(),
+  generationStrategy: bookGenerationStrategySelectionSchema.optional(),
   textModel: textModelSelectionSchema.optional(),
   audienceAgeRange: audienceAgeRangeSchema.optional(),
-  toneProfile: toneProfileSchema
+  toneProfile: toneProfileSchema,
+  /**
+   * Draft sequential-strategy pages in parallel waves and reconcile continuity
+   * in the final review. Defaults to on for non-fiction categories and off for
+   * fiction (STORY / KIDS) when unset.
+   */
+  parallelPageGeneration: z.boolean().optional(),
+  /**
+   * Best-of-N drafting (pro quality toggle): sample this many page drafts at
+   * staggered temperatures and let a judge model pick the strongest one.
+   * 1 (default) keeps single-draft generation.
+   */
+  draftCandidates: z.coerce.number().int().min(1).max(3).optional()
 });
 
 export const createProjectSchema = z.object({
@@ -501,7 +555,8 @@ export const chapterPlanSchema = z.object({
   title: z.string(),
   summary: z.string(),
   targetPages: z.number().int().positive(),
-  keyBeats: z.array(z.string()).default([])
+  keyBeats: z.array(z.string()).default([]),
+  illustrationPrompts: z.array(z.string()).optional()
 });
 
 function normalizeCharacter(value: unknown): unknown {
@@ -619,6 +674,29 @@ export const bookPlanSchema = z.preprocess(
     illustrationPlan: illustrationPlanSchema
   })
 );
+
+export function bookPlanSchemaWithFallback(fallback: BookPlan) {
+  return z.preprocess(
+    normalizeBookPlanWithFallback(fallback),
+    z.object({
+      title: z.string(),
+      subtitle: z.string().optional(),
+      premise: z.string(),
+      audience: z.string(),
+      writingComplexity: z.coerce.number().int().min(1).max(10),
+      voiceGuide: z.array(z.string()).min(1),
+      antiAiRules: z.array(z.string()).min(1),
+      questions: z.array(planQuestionSchema).default([]),
+      chapters: z.array(chapterPlanSchema).min(1),
+      characters: z.array(characterSchema).default([]),
+      locations: z.array(locationSchema).default([]),
+      continuityRules: z.array(z.string()).default([]),
+      researchQueries: z.array(z.string()).default([]),
+      researchNotes: z.array(researchSourceSchema).default([]),
+      illustrationPlan: illustrationPlanSchema
+    })
+  );
+}
 
 export const pageDraftSchema = z.preprocess(
   normalizePageDraft,

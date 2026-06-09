@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BOOK_CATEGORIES } from "../categories.js";
-import { TONE_PROFILES, bookPlanSchema, createProjectSchema } from "./book.js";
+import { TONE_PROFILES, bookPlanSchema, bookPlanSchemaWithFallback, createProjectSchema } from "./book.js";
 
 describe("createProjectSchema", () => {
   it("accepts the expanded top-level book categories", () => {
@@ -300,6 +300,51 @@ describe("createProjectSchema", () => {
     expect(plan.premise).toBe(fallbackOutline.premise);
     expect(plan.audience).toBe(fallbackOutline.audience);
     expect(plan.writingComplexity).toBe(7);
+  });
+
+  it("recovers provider plans nested under generationPlan without losing visual detail", () => {
+    const fallbackOutline = bookPlanSchema.parse(minimalPlan("template-driven"));
+    const plan = bookPlanSchemaWithFallback(fallbackOutline).parse({
+      title: "Cooler Cities",
+      subtitle: "Field Notes for Heat",
+      generationPlan: {
+        pageCount: 2,
+        chapters: [
+          {
+            index: 1,
+            title: "Shade First",
+            summary: "Turns the book toward street-level shade choices.",
+            targetPages: 2,
+            keyBeats: ["Open with a bus stop heat problem."],
+            illustrationPrompts: ["A bus stop split between harsh sun and dense tree shade."]
+          }
+        ],
+        voiceGuide: "Calm, exact, and source-aware.",
+        antiAiRules: "Avoid generic climate-book phrasing.",
+        characters: [],
+        locations: [],
+        continuityRules: ["Keep city examples concrete."],
+        illustrationPlan: {
+          cadence: "template-driven",
+          globalStyle: "Editorial civic diagrams",
+          characterReferencePrompts: [],
+          pageRules: ["Use readable urban scenes."]
+        }
+      },
+      questions: ["Should the book focus on homeowners or city staff?"]
+    });
+
+    expect(plan.title).toBe("Cooler Cities");
+    expect(plan.subtitle).toBe("Field Notes for Heat");
+    expect(plan.premise).toBe(fallbackOutline.premise);
+    expect(plan.audience).toBe(fallbackOutline.audience);
+    expect(plan.voiceGuide).toEqual(["Calm, exact, and source-aware."]);
+    expect(plan.antiAiRules).toEqual(["Avoid generic climate-book phrasing."]);
+    expect(plan.questions[0]?.prompt).toBe("Should the book focus on homeowners or city staff?");
+    expect(plan.chapters[0]?.title).toBe("Shade First");
+    expect(plan.chapters[0]?.illustrationPrompts).toEqual([
+      "A bus stop split between harsh sun and dense tree shade."
+    ]);
   });
 
   it("repairs planner characters that omit role", () => {

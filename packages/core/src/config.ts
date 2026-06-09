@@ -18,6 +18,10 @@ const envSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
   DEEPSEEK_MODEL: z.string().default("deepseek-v4-pro"),
   DEEPSEEK_FAST_MODEL: z.string().default("deepseek-v4-flash"),
+  /** OpenAI-compatible local server (Ollama/vLLM/LM Studio) for zero-cost text generation. */
+  LOCAL_TEXT_BASE_URL: z.string().url().optional(),
+  LOCAL_TEXT_MODEL: z.string().optional(),
+  LOCAL_TEXT_API_KEY: z.string().optional(),
   GEMINI_TEXT_MODEL: z.string().default("gemini-2.5-flash"),
   GEMINI_IMAGE_MODEL: z.string().optional().transform(normalizeGeminiImageModel),
   GEMINI_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),

@@ -3,6 +3,7 @@ import { alibabaImageModelOptions, alibabaTextModelOptions } from "./alibabaMode
 import { geminiImageModelOptions } from "./geminiModels.js";
 import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
 import { DeepSeekAdapter } from "./deepseek.js";
+import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
 import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeTextModelAdapter } from "./fake.js";
 import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
 import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, TextModelAdapter } from "./types.js";
@@ -98,7 +99,21 @@ export function textModelOptions(config: AppConfig): TextModelOption[] {
       thinkingEnabled: true
     },
     ...alibabaTextModelOptions(config.ALIBABA_TEXT_MODEL),
-    ...GEMINI_MAIN_TEXT_MODEL_OPTIONS
+    ...GEMINI_MAIN_TEXT_MODEL_OPTIONS,
+    ...localTextModelOptions(config)
+  ];
+}
+
+function localTextModelOptions(config: AppConfig): TextModelOption[] {
+  if (!config.LOCAL_TEXT_BASE_URL || !config.LOCAL_TEXT_MODEL) {
+    return [];
+  }
+  return [
+    {
+      provider: "openai-compatible",
+      model: config.LOCAL_TEXT_MODEL,
+      label: `Local (${config.LOCAL_TEXT_MODEL})`
+    }
   ];
 }
 
@@ -185,6 +200,13 @@ function createTextModelAdapter(config: AppConfig, selection: TextModelSelection
       apiKey: config.ALIBABA_API_KEY,
       apiHost: config.ALIBABA_API_HOST,
       textModel: selection.model
+    });
+  }
+  if (selection.provider === "openai-compatible") {
+    return new OpenAICompatibleTextAdapter({
+      baseURL: config.LOCAL_TEXT_BASE_URL,
+      model: selection.model || config.LOCAL_TEXT_MODEL,
+      apiKey: config.LOCAL_TEXT_API_KEY
     });
   }
 

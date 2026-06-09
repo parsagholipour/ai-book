@@ -85,6 +85,13 @@ describe("book generation strategies", () => {
     expect(researchMapDraftPolishStrategy.polishPageDraft).toBeDefined();
   });
 
+  it("gives draft-then-polish an authoritative page map before whole-book drafting", () => {
+    expect(draftThenPolishStrategy.executionMode).toBe("draft-then-polish");
+    expect(draftThenPolishStrategy.createChapterBriefs).toBe(pageMapSequentialStrategy.createChapterBriefs);
+    expect(draftThenPolishStrategy.generateWholeBookDraft).toBeDefined();
+    expect(draftThenPolishStrategy.polishPageDraft).toBeDefined();
+  });
+
   it("all strategies compile reader-facing Markdown without export artifacts", () => {
     const input = {
       prompt: "A story about a careful clockmaker.",

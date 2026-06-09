@@ -20,6 +20,8 @@
     "@fontsource/bebas-neue": "^5.2.7",
     "@google/genai": "^1.32.0",
     "dotenv": "^17.2.3",
+    "jszip": "^3.10.1",
+    "marked": "^18.0.5",
     "md-to-pdf": "^5.2.5",
     "openai": "^6.9.1",
     "puppeteer": "^25.0.4",

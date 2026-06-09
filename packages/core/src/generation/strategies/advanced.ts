@@ -80,6 +80,7 @@ export const draftThenPolishStrategy = Object.freeze({
   strengthScore: 9,
   recommendedPageRange: { min: 5, max: 40 },
   executionMode: "draft-then-polish",
+  createChapterBriefs: generateWholeBookPageMap,
   generateWholeBookDraft,
   polishPageDraft,
   ...sharedGeneration
