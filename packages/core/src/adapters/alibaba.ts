@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import OpenAI from "openai";
 import type {
   GenerateJsonOptions,
@@ -20,7 +22,9 @@ import {
   DEFAULT_ALIBABA_API_HOST,
   DEFAULT_ALIBABA_IMAGE_MODEL,
   DEFAULT_ALIBABA_TEXT_MODEL,
-  normalizeAlibabaModel
+  normalizeAlibabaModel,
+  qwenImageReferenceLimit,
+  supportsQwenImageReferenceImages
 } from "./alibabaModels.js";
 
 export { AlibabaJsonParseError, AlibabaJsonValidationError };
@@ -31,6 +35,8 @@ export type AlibabaAdapterOptions = {
   textModel?: string | undefined;
   imageModel?: string | undefined;
 };
+
+type QwenImageContentPart = { image: string } | { text: string };
 
 export class AlibabaTextAdapter implements TextModelAdapter {
   private readonly client: OpenAI;
@@ -150,14 +156,15 @@ export class AlibabaImageAdapter implements ImageAdapter {
   }
 
   capabilities() {
+    const maxReferenceImages = qwenImageReferenceLimit(this.model);
     return {
-      supportsReferenceImages: false,
-      maxReferenceImages: 0
+      supportsReferenceImages: maxReferenceImages > 0,
+      maxReferenceImages
     };
   }
 
   async generateImage(request: ImageRequest): Promise<ImageResult> {
-    if (request.referenceImagePaths?.length) {
+    if (request.referenceImagePaths?.length && !supportsQwenImageReferenceImages(this.model)) {
       throw new Error(`Qwen image model ${this.model} cannot consume character reference images.`);
     }
 
@@ -172,13 +179,14 @@ export class AlibabaImageAdapter implements ImageAdapter {
   }
 
   private async generateSynchronousImage(request: ImageRequest): Promise<ImageResult> {
+    const content = await this.qwenMultimodalContent(request);
     const response = await this.postJson(`${this.apiBaseURL}/services/aigc/multimodal-generation/generation`, {
       model: this.model,
       input: {
         messages: [
           {
             role: "user",
-            content: [{ text: request.prompt }]
+            content
           }
         ]
       },
@@ -191,6 +199,20 @@ export class AlibabaImageAdapter implements ImageAdapter {
     });
 
     return this.imageResultFromResponse(response);
+  }
+
+  private async qwenMultimodalContent(request: ImageRequest): Promise<QwenImageContentPart[]> {
+    const referenceImagePaths = request.referenceImagePaths?.slice(0, qwenImageReferenceLimit(this.model)) ?? [];
+    if (referenceImagePaths.length === 0) {
+      return [{ text: request.prompt }];
+    }
+
+    const referenceParts = await Promise.all(
+      referenceImagePaths.map(async (path) => ({
+        image: await imageDataUrl(path)
+      }))
+    );
+    return [...referenceParts, { text: request.prompt }];
   }
 
   private async generateAsyncImage(request: ImageRequest): Promise<ImageResult> {
@@ -364,6 +386,25 @@ function qwenNegativePrompt(): string {
     "logo",
     "chaotic composition"
   ].join(", ");
+}
+
+async function imageDataUrl(path: string): Promise<string> {
+  const mimeType = mimeTypeForImagePath(path);
+  return `data:${mimeType};base64,${(await readFile(path)).toString("base64")}`;
+}
+
+function mimeTypeForImagePath(path: string): string {
+  const fromExt: Record<string, string> = {
+    ".bmp": "image/bmp",
+    ".gif": "image/gif",
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".webp": "image/webp"
+  };
+  return fromExt[extname(path).toLowerCase()] ?? "image/png";
 }
 
 function supportsAsyncQwenImage(model: string): boolean {

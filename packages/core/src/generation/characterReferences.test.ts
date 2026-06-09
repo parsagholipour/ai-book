@@ -47,12 +47,14 @@ const plan: BookPlan = {
 };
 
 describe("character reference helpers", () => {
-  it("builds a text-free model sheet prompt from character visual rules", () => {
+  it("builds a text-free single-character reference prompt from visual rules", () => {
     const prompt = buildCharacterReferencePrompt({ input, plan, character: plan.characters[0]! });
 
-    expect(prompt).toContain("Text-free character reference model sheet");
+    expect(prompt).toContain("Text-free single-character reference image");
     expect(prompt).toContain("Nora");
     expect(prompt).toContain("Round red glasses");
+    expect(prompt).toContain("Show exactly one full-body character");
+    expect(prompt).toContain("Do not show alternate angles");
     expect(prompt).toContain("Do not include readable text");
   });
 

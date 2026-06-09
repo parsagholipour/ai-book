@@ -7,6 +7,8 @@ const JOB_STEP_LABELS: Record<string, string[]> = {
   GENERATE_PAGE: ["Prepare context", "Draft page", "Quality review", "Revise draft", "Save page"],
   GENERATE_IMAGE: ["Build prompt", "Render image", "Store asset"],
   COMPILE_EXPORT: ["Final review", "Compile markdown", "Write Markdown", "Generate PDF"],
+  PREPARE_CHARACTER_CANDIDATES: ["Detect characters", "Save candidates"],
+  BUILD_CHARACTER_PERSONA: ["Build persona", "Create profile picture", "Save character"],
   RESEARCH: ["Gather sources", "Summarize"]
 };
 

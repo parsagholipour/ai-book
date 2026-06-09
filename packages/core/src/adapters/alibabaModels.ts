@@ -3,6 +3,7 @@ import type { TextModelSelection } from "../schemas/book.js";
 export const DEFAULT_ALIBABA_TEXT_MODEL = "qwen-plus";
 export const DEFAULT_ALIBABA_IMAGE_MODEL = "qwen-image-2.0";
 export const DEFAULT_ALIBABA_API_HOST = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1";
+export const QWEN_IMAGE_MAX_REFERENCE_IMAGES = 3;
 
 export type AlibabaTextModelOption = TextModelSelection & {
   label: string;
@@ -56,16 +57,16 @@ const BASE_ALIBABA_IMAGE_MODEL_OPTIONS: AlibabaImageModelOption[] = [
     model: "qwen-image-2.0-pro",
     label: "Qwen Image 2.0 Pro",
     costUsd: 0.075,
-    supportsReferenceImages: false,
-    description: "Higher quality Qwen text-to-image model."
+    supportsReferenceImages: supportsQwenImageReferenceImages("qwen-image-2.0-pro"),
+    description: "Higher quality Qwen image generation and editing model."
   },
   {
     provider: "alibaba",
     model: DEFAULT_ALIBABA_IMAGE_MODEL,
     label: "Qwen Image 2.0",
     costUsd: 0.035,
-    supportsReferenceImages: false,
-    description: "Balanced Qwen image generation."
+    supportsReferenceImages: supportsQwenImageReferenceImages(DEFAULT_ALIBABA_IMAGE_MODEL),
+    description: "Balanced Qwen image generation and editing model."
   },
   {
     provider: "alibaba",
@@ -124,7 +125,7 @@ export function alibabaImageModelOptions(configuredModel?: string): AlibabaImage
       provider: "alibaba",
       model: normalized,
       label: `Configured Qwen image model (${normalized})`,
-      supportsReferenceImages: false
+      supportsReferenceImages: supportsQwenImageReferenceImages(normalized)
     });
   }
   return options;
@@ -132,4 +133,12 @@ export function alibabaImageModelOptions(configuredModel?: string): AlibabaImage
 
 export function qwenImageCostUsd(model: string): number | undefined {
   return BASE_ALIBABA_IMAGE_MODEL_OPTIONS.find((option) => option.model === normalizeAlibabaModel(model, ""))?.costUsd;
+}
+
+export function supportsQwenImageReferenceImages(model: string): boolean {
+  return /^qwen-image-2\.0(?:-pro)?(?:-|$)/i.test(normalizeAlibabaModel(model, ""));
+}
+
+export function qwenImageReferenceLimit(model: string): number {
+  return supportsQwenImageReferenceImages(model) ? QWEN_IMAGE_MAX_REFERENCE_IMAGES : 0;
 }

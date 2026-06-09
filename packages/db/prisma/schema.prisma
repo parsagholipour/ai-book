@@ -52,14 +52,26 @@ enum JobType {
   GENERATE_PAGE
   GENERATE_IMAGE
   COMPILE_EXPORT
+  PREPARE_CHARACTER_CANDIDATES
+  BUILD_CHARACTER_PERSONA
   RESEARCH
 }
 
 enum AssetType {
   COVER
   CHARACTER_REFERENCE
+  CHARACTER_PROFILE
   SCENE_ILLUSTRATION
   DIAGRAM
+}
+
+enum VoiceCharacterStatus {
+  CANDIDATE
+  APPROVED
+  BUILDING
+  READY
+  REJECTED
+  FAILED
 }
 
 model Template {
@@ -108,6 +120,8 @@ model Project {
   jobs           GenerationJob[]
   providerLogs   ProviderCallLog[]
   embeddings     Embedding[]
+  voiceCharacters VoiceCharacter[]
+  voiceCallEvents VoiceCallEvent[]
 }
 
 model PlanVersion {
@@ -180,6 +194,37 @@ model Character {
   updatedAt   DateTime @updatedAt
 
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model VoiceCharacter {
+  id                  String                @id @default(cuid())
+  projectId           String
+  planVersionId       String?
+  name                String
+  role                String
+  description         String
+  traits              Json
+  visualRules         Json
+  source              String                @default("PLAN")
+  status              VoiceCharacterStatus  @default(CANDIDATE)
+  persona             Json?
+  voiceProfile        Json
+  voiceProvider       String                @default("gemini_live")
+  voiceModel          String?
+  voiceId             String?
+  providerMetadata    Json
+  profileImageAssetId String?
+  error               String?
+  approvedAt          DateTime?
+  builtAt             DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  callEvents          VoiceCallEvent[]
+
+  @@index([projectId, status])
+  @@index([planVersionId])
 }
 
 model Location {
@@ -272,6 +317,34 @@ model ProviderCallLog {
   generationJob GenerationJob? @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
 
   @@index([generationJobId])
+}
+
+model VoiceCallEvent {
+  id                    String   @id @default(cuid())
+  projectId             String
+  characterId           String
+  clientCallId          String
+  phase                 String
+  attempt               Int?
+  elapsedMs             Int?
+  connectionState       String?
+  iceConnectionState    String?
+  iceGatheringState     String?
+  candidatePairType     String?
+  candidateProtocol     String?
+  currentRoundTripTimeMs Int?
+  packetsLost           Int?
+  jitterMs              Int?
+  error                 String?
+  metadata              Json
+  createdAt             DateTime @default(now())
+
+  project               Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  voiceCharacter        VoiceCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([characterId, createdAt])
+  @@index([clientCallId])
 }
 
 model Embedding {

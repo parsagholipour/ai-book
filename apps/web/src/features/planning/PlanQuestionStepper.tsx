@@ -1,0 +1,155 @@
+import {
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Send,
+  SkipForward
+} from "lucide-react";
+import type { NormalizedPlanQuestion, QuestionResponse } from "./planQuestions.js";
+
+export function PlanQuestionStepper(props: {
+  questions: NormalizedPlanQuestion[];
+  responses: Record<string, QuestionResponse>;
+  activeIndex: number;
+  customAnswer: string;
+  busy: boolean;
+  revisionPending: boolean;
+  responsesSubmitted: boolean;
+  onAnswer: (answer: string) => void;
+  onCustomAnswerChange: (answer: string) => void;
+  onGoTo: (index: number) => void;
+  onSkip: () => void;
+  onSubmit: () => void;
+}) {
+  if (props.questions.length === 0) {
+    return null;
+  }
+
+  const activeIndex = Math.min(props.activeIndex, props.questions.length - 1);
+  const activeQuestion = props.questions[activeIndex]!;
+  const activeResponse = props.responses[activeQuestion.id];
+  const responseCount = props.questions.filter((question) => props.responses[question.id]).length;
+  const answeredCount = props.questions.filter((question) => props.responses[question.id]?.status === "answered").length;
+  const skippedCount = props.questions.filter((question) => props.responses[question.id]?.status === "skipped").length;
+  const controlsBusy = props.busy || props.revisionPending;
+  const submitLabel = props.revisionPending ? "Applying" : props.responsesSubmitted ? "Submitted" : "Apply";
+
+  return (
+    <section className="plan-question-stepper" aria-label="Plan questions">
+      <div className="question-stepper-header">
+        <h4>Plan questions</h4>
+        <span>
+          {answeredCount} answered / {skippedCount} skipped
+        </span>
+      </div>
+      <div className="question-steps" role="tablist" aria-label="Plan question steps">
+        {props.questions.map((question, index) => {
+          const response = props.responses[question.id];
+          return (
+            <button
+              key={question.id}
+              type="button"
+              className={`question-step${index === activeIndex ? " active" : ""}${response ? ` ${response.status}` : ""}`}
+              onClick={() => props.onGoTo(index)}
+              aria-label={`Question ${index + 1}`}
+              aria-selected={index === activeIndex}
+            >
+              {response?.status === "answered" ? (
+                <CheckCircle2 size={14} />
+              ) : response?.status === "skipped" ? (
+                <SkipForward size={14} />
+              ) : (
+                <span>{index + 1}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="question-card">
+        <div className="question-card-heading">
+          <small>
+            Question {activeIndex + 1} of {props.questions.length}
+          </small>
+          {activeResponse ? <span className={`question-state ${activeResponse.status}`}>{activeResponse.status}</span> : null}
+        </div>
+        <p>{activeQuestion.prompt}</p>
+        {activeQuestion.options.length > 0 ? (
+          <div className="answer-options">
+            {activeQuestion.options.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={
+                  activeResponse?.status === "answered" && activeResponse.answer === option
+                    ? "answer-option selected"
+                    : "answer-option"
+                }
+                onClick={() => props.onAnswer(option)}
+                disabled={controlsBusy}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {activeQuestion.allowCustom ? (
+          <label className="custom-answer">
+            Custom answer
+            <textarea
+              rows={3}
+              value={props.customAnswer}
+              onChange={(event) => props.onCustomAnswerChange(event.target.value)}
+              placeholder="Type a custom answer"
+              disabled={controlsBusy}
+            />
+          </label>
+        ) : null}
+        <div className="question-actions">
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => props.onGoTo(activeIndex - 1)}
+            disabled={activeIndex === 0 || controlsBusy}
+            title="Previous question"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button className="icon-text-button" type="button" onClick={props.onSkip} disabled={controlsBusy}>
+            <SkipForward size={16} />
+            Skip
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => props.onGoTo(activeIndex + 1)}
+            disabled={activeIndex === props.questions.length - 1 || controlsBusy}
+            title="Next question"
+          >
+            <ChevronRight size={16} />
+          </button>
+          {activeQuestion.allowCustom ? (
+            <button
+              className="primary-button compact"
+              type="button"
+              onClick={() => props.onAnswer(props.customAnswer)}
+              disabled={controlsBusy || !props.customAnswer.trim()}
+            >
+              <Send size={16} />
+              Answer
+            </button>
+          ) : null}
+          <button
+            className="icon-text-button accent"
+            type="button"
+            onClick={props.onSubmit}
+            disabled={controlsBusy || props.responsesSubmitted || responseCount === 0}
+          >
+            {props.revisionPending ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
+            {submitLabel}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}

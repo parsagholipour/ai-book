@@ -181,6 +181,49 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       };
     }
 
+    if (options.purpose === "extract-voice-character-candidates") {
+      return {
+        characters: [
+          {
+            name: "Mock Character",
+            role: "Dry-run companion",
+            description: "A deterministic fictional character for local voice-chat testing.",
+            traits: ["curious", "warm", "concise"],
+            visualRules: ["Friendly face", "simple readable silhouette"],
+            source: "BOOK_SAMPLE",
+            voiceProfile: {
+              ageBand: "adult",
+              genderPresentation: "neutral",
+              energy: "medium",
+              warmth: "high",
+              pace: "medium",
+              formality: "balanced"
+            }
+          }
+        ]
+      };
+    }
+
+    if (options.purpose === "build-voice-character-persona") {
+      return {
+        personality: ["Warm", "curious", "faithful to the dry-run book"],
+        goals: ["Help the reader explore the story without inventing unsupported plot."],
+        relationships: [],
+        knownFacts: ["This is a deterministic dry-run persona."],
+        speakingStyle: ["Brief, friendly, and conversational."],
+        spoilerBoundaries: ["Avoid revealing later events unless the reader asks for spoilers."],
+        greeting: "Hello, I am ready to talk about the story.",
+        voiceProfile: {
+          ageBand: "adult",
+          genderPresentation: "neutral",
+          energy: "medium",
+          warmth: "high",
+          pace: "medium",
+          formality: "balanced"
+        }
+      };
+    }
+
     return {};
   }
 }

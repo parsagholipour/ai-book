@@ -42,7 +42,7 @@ export function buildCharacterReferencePrompt(options: BuildCharacterReferencePr
   const character = options.character;
   const style = options.input.mediaSettings.imageStyle ?? options.plan.illustrationPlan.globalStyle;
   return [
-    "Text-free character reference model sheet for a fictional book character.",
+    "Text-free single-character reference image for a fictional book character.",
     `Character name: ${character.name}.`,
     `Role: ${character.role}.`,
     `Description: ${character.description}.`,
@@ -51,7 +51,8 @@ export function buildCharacterReferencePrompt(options: BuildCharacterReferencePr
       ? `Authoritative visual rules to preserve in every future illustration: ${character.visualRules.join(" ")}`
       : "Create a simple, memorable, repeatable design with distinctive silhouette, outfit, palette, and face details.",
     `Book art style: ${style}.`,
-    "Show the same character design in a clean model sheet: full-body front pose, three-quarter pose, face detail, and two small expression studies.",
+    "Show exactly one full-body character in one simple front-facing pose, centered in the image.",
+    "Do not show alternate angles, turnarounds, expression studies, multiple poses, duplicate characters, panels, thumbnails, or close-up detail views.",
     "Use a plain light background, clear silhouette, consistent outfit and colors, natural child-safe presentation when age is young.",
     "Do not include readable text, labels, captions, letters, numbers, signatures, watermarks, logos, UI, panels with headings, or speech bubbles."
   ]

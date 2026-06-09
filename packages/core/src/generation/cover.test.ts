@@ -18,11 +18,12 @@ describe("cover generation helpers", () => {
       }
     });
 
-    expect(prompt).toContain("Text-free book cover artwork");
+    expect(prompt).toContain("Full-bleed text-free book cover artwork");
     expect(prompt).toMatch(/Do not include any readable text/i);
     expect(prompt).toMatch(/watermarks/i);
     expect(prompt).toMatch(/author name/i);
     expect(prompt).toContain("portrait 3:4");
+    expect(prompt).not.toMatch(/negative space|reserve|title block|blank rectangle|box|banner|panel|placard|placeholder|signboard/i);
   });
 
   it("includes optional subcategory context in cover artwork prompts", () => {

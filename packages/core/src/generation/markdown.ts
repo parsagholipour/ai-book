@@ -633,7 +633,7 @@ const FACTUAL_BACK_MATTER_PATTERNS = [
   /\b(?:history|historical|biography|biographical|ancient|archaeology|civilization)\b/i,
   /\b(?:current|recent|latest|today|real-world|real world|true story|based on real)\b/i,
   /\b(?:medicine|medical|health|law|legal|finance|financial|safety)\b/i,
-  /\b(?:explainer|field guide|guidebook|lesson|educational|learn about|teach(?:es|ing)? about)\b/i,
+  /\b(?:explainer|field guide|guidebook|educational|learn about|teach(?:es|ing)? about)\b/i,
   /\b(?:life cycle|ecosystem|habitat|pollinat(?:e|es|ion|or)|climate|weather|planet|space|ocean)\b/i,
   /\bhow\b.{0,80}\b(?:works?|happens?|changes?|grows?|moves?|forms?|pollinat(?:es|ion)|survives?)\b/i
 ];

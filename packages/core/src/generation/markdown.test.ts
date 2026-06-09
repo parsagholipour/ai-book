@@ -446,6 +446,58 @@ describe("compileBookMarkdown", () => {
     expect(markdown).not.toContain("https://example.com/rabbits");
   });
 
+  it("omits source citations for kid fables with moral lessons", () => {
+    const plan = {
+      ...makeFallbackPlan({
+        prompt: "A story for kids",
+        category: "KIDS",
+        targetPages: 1,
+        complexity: 3,
+        temperature: 0.8,
+        language: "en",
+        mediaSettings: {
+          fullIllustrations: true,
+          illustrationCadence: "template-driven",
+          includeCover: true,
+          coverTemplate: "kids",
+          finalReview: false,
+          lessCensored: false,
+          toneProfile: "neutral" as const
+        }
+      }),
+      premise: "A retelling of the classic fable where slow and steady wins the race, with an instructional ending.",
+      chapters: [
+        {
+          index: 1,
+          title: "The Big Race",
+          summary:
+            "Turtle and Rabbit decide to race, and the story ends with a clear lesson about persistence and not giving up.",
+          keyBeats: [
+            "Rabbit zooms ahead while Turtle begins his slow walk.",
+            "Turtle reaches the finish line; the animals celebrate, and the story closes with a simple message about steady effort."
+          ],
+          targetPages: 1
+        }
+      ]
+    };
+
+    const markdown = compileBookMarkdown({
+      plan,
+      category: "KIDS",
+      pages: [{ index: 1, title: "First", markdown: "Slow and steady had won the race." }],
+      researchSources: [
+        {
+          title: "Fable background",
+          url: "https://example.com/tortoise-hare",
+          summary: "Background notes that should not become back matter for a fictional fable retelling."
+        }
+      ]
+    });
+
+    expect(markdown).not.toContain("## Sources");
+    expect(markdown).not.toContain("https://example.com/tortoise-hare");
+  });
+
   it("rejects compiled export artifacts", () => {
     const badMarkdown = [
       "---",

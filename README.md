@@ -77,8 +77,35 @@ GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 ```
 
-Use a native Gemini image model, such as `gemini-2.5-flash-image`, for books with recurring characters. Character reference sheets are attached to later cover and page image calls, which Imagen text-to-image models cannot consume.
+Use a reference-capable image model, such as `gemini-2.5-flash-image`, `qwen-image-2.0`, or `qwen-image-2.0-pro`, for books with recurring characters. Character reference sheets are attached to later cover and page image calls, which Imagen text-to-image models and older prompt-only Qwen image models cannot consume.
 The web UI can choose an image model per project when images or cover generation are enabled; `GEMINI_IMAGE_MODEL` remains the default selection.
+
+## Voice Chat Reliability
+
+Voice character calls can use either OpenAI Realtime WebRTC or Gemini Live. The web UI lets you choose the provider for the next call, and `VOICE_CHAT_PROVIDER` only sets the initial default.
+
+```bash
+OPENAI_API_KEY=...
+GEMINI_API_KEY=...
+VOICE_CHAT_PROVIDER=gemini_live
+OPENAI_REALTIME_MODEL=gpt-realtime-2
+GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
+```
+
+`OPENAI_REALTIME_MODEL` sets the default OpenAI Realtime model. The web UI also exposes `gpt-realtime-2` and `gpt-realtime-mini` for each OpenAI voice call, so you can switch to mini when cost matters.
+
+OpenAI Realtime uses WebRTC, so for production OpenAI calls configure TURN relay credentials to survive restrictive NAT, mobile networks, and corporate Wi-Fi. Gemini Live uses browser WebSockets with short-lived Gemini ephemeral tokens created by the API.
+
+```bash
+VOICE_RTC_STUN_URLS=stun:stun.l.google.com:19302,stun:global.stun.twilio.com:3478
+VOICE_RTC_TURN_TTL_SECONDS=3600
+CLOUDFLARE_TURN_TOKEN=...
+CLOUDFLARE_API_TOKEN=...
+```
+
+Set `CLOUDFLARE_TURN_TOKEN` to the Cloudflare TURN key ID from the credentials URL path, and set `CLOUDFLARE_API_TOKEN` to the bearer token used to generate credentials. When both are present, the API generates short-lived Cloudflare TURN credentials server-side and returns only the resulting ICE servers to the browser.
+
+For other TURN providers, set `VOICE_RTC_TURN_URLS` with `VOICE_RTC_TURN_SHARED_SECRET`, or set `VOICE_RTC_TURN_USERNAME` and `VOICE_RTC_TURN_CREDENTIAL` for static credentials. The API stores sanitized voice-call health events, including ICE state, candidate type, RTT, packet loss, and reconnect phases, without SDP, IP addresses, audio, or transcripts.
 
 ## Verification
 

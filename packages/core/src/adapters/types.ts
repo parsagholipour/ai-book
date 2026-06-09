@@ -77,6 +77,19 @@ export type ImageResult = {
   data?: Buffer | undefined;
   url?: string | undefined;
   revisedPrompt?: string | undefined;
+  fallback?: ImageFallbackMetadata | undefined;
+};
+
+export type ImageFallbackAttempt = {
+  provider: string;
+  model: string;
+  error?: Record<string, unknown> | undefined;
+};
+
+export type ImageFallbackMetadata = {
+  used: true;
+  primary: ImageFallbackAttempt & { error: Record<string, unknown> };
+  fallback: ImageFallbackAttempt;
 };
 
 export type ImageAdapterCapabilities = {

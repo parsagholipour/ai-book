@@ -125,6 +125,129 @@ export type ImageModelSelection = {
   model: string;
 };
 
+export type VoiceChatProviderId = "openai_realtime" | "gemini_live";
+export type VoiceTransport = "webrtc_sdp" | "gemini_live";
+
+export type VoiceProviderInfo = {
+  id: VoiceChatProviderId;
+  label: string;
+  configured: boolean;
+  default: boolean;
+  transport: VoiceTransport;
+  model: string;
+  modelOptions: VoiceModelOption[];
+};
+
+export type VoiceModelOption = {
+  model: string;
+  label: string;
+  default: boolean;
+  description?: string;
+};
+
+export type VoiceAgeBand = "child" | "teen" | "young_adult" | "adult" | "elder";
+export type VoiceGenderPresentation = "feminine" | "masculine" | "neutral" | "unknown";
+export type VoiceProfile = {
+  ageBand: VoiceAgeBand;
+  genderPresentation: VoiceGenderPresentation;
+  energy: "low" | "medium" | "high";
+  warmth: "low" | "medium" | "high";
+  pace: "slow" | "medium" | "fast";
+  formality: "casual" | "balanced" | "formal";
+  accentNotes?: string;
+};
+
+export type VoiceCharacterStatus = "CANDIDATE" | "APPROVED" | "BUILDING" | "READY" | "REJECTED" | "FAILED";
+
+export type VoiceCharacter = {
+  id: string;
+  projectId: string;
+  planVersionId?: string | null;
+  name: string;
+  role: string;
+  description: string;
+  traits: string[];
+  visualRules: string[];
+  source: string;
+  status: VoiceCharacterStatus;
+  persona?: Record<string, unknown> | null;
+  voiceProfile: VoiceProfile;
+  voiceProvider: string;
+  voiceModel?: string | null;
+  voiceId?: string | null;
+  callProvider?: VoiceChatProviderId;
+  callTransport?: VoiceTransport;
+  providerMetadata?: Record<string, unknown> | null;
+  profileImageAssetId?: string | null;
+  profileImage?: { id: string; path: string; prompt: string; type: string } | null;
+  error?: string | null;
+  approvedAt?: string | null;
+  builtAt?: string | null;
+};
+
+export type OpenAIRealtimeVoiceCallSession = {
+  type: "webrtc_sdp_answer";
+  answerSdp: string;
+  provider: "openai_realtime";
+  model: string;
+  voiceId: string;
+  metadata: Record<string, unknown>;
+};
+
+export type GeminiLiveVoiceCallSession = {
+  type: "gemini_live_token";
+  token: string;
+  expiresAt: string;
+  newSessionExpiresAt: string;
+  provider: "gemini_live";
+  model: string;
+  voiceId: string;
+  metadata: Record<string, unknown>;
+};
+
+export type VoiceCallSession = OpenAIRealtimeVoiceCallSession | GeminiLiveVoiceCallSession;
+
+export type VoiceRtcIceServer = {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+  credentialType?: "password";
+};
+
+export type VoiceRtcConfig = {
+  iceServers: VoiceRtcIceServer[];
+  issuedAt: string;
+  ttlSeconds: number;
+  relayConfigured: boolean;
+};
+
+export type VoiceCallEventPhase =
+  | "connect_start"
+  | "connected"
+  | "disconnected"
+  | "reconnect_start"
+  | "reconnect_success"
+  | "reconnect_failed"
+  | "failed"
+  | "ended";
+
+export type VoiceCallEventPayload = {
+  clientCallId: string;
+  phase: VoiceCallEventPhase;
+  attempt?: number;
+  elapsedMs?: number;
+  connectionState?: string;
+  iceConnectionState?: string;
+  iceGatheringState?: string;
+  candidatePairType?: string;
+  candidateProtocol?: string;
+  currentRoundTripTimeMs?: number;
+  packetsLost?: number;
+  jitterMs?: number;
+  error?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+};
+
 export type PlanQuestion = string | {
   prompt?: string;
   question?: string;
@@ -193,9 +316,29 @@ export type GenerationJobRow = {
   error?: string | null;
   tokens?: TokenUsage | null;
   providerDurationMs?: number | null;
+  imageFallbacks?: JobImageFallbackDetails[];
   steps?: JobStep[] | null;
   startedAt?: string | null;
   finishedAt?: string | null;
+};
+
+export type JobImageFallbackDetails = {
+  status: "attempting" | "used" | "failed";
+  primary: {
+    provider: string;
+    model: string;
+    error?: string;
+  };
+  fallback: {
+    provider: string;
+    model: string;
+    error?: string;
+  };
+  result?: {
+    provider: string;
+    model: string;
+  };
+  occurredAt?: string;
 };
 
 export type ProjectStatus = {
@@ -213,6 +356,10 @@ export type ProjectStatus = {
     cost?: ProjectCost | null;
     quality?: { reviewedPages: number; repairedPages: number; blockedPages: number };
   };
+};
+
+export type ProjectPdfStatus = {
+  available: boolean;
 };
 
 export type RuntimeInfo = {
@@ -271,6 +418,19 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     init.body = JSON.stringify(body);
   }
   const response = await fetch(`${API_BASE_URL}${path}`, init);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
   if (!response.ok) {
     throw new Error(await response.text());
   }

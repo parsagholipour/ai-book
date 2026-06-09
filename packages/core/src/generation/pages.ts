@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ImageAdapter, TextModelAdapter } from "../adapters/types.js";
+import type { ImageAdapter, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
 import { buildContextPack } from "../context/contextPack.js";
 import { jailbreakImagePromptPrefix } from "../prompting/jailbreak.js";
@@ -208,6 +208,7 @@ export type GeneratedImageBytes = {
   provider: string;
   model: string;
   revisedPrompt?: string | undefined;
+  fallback?: ImageFallbackMetadata | undefined;
 };
 
 export type WholeBookPageDraft = PageDraft & {
@@ -1173,7 +1174,8 @@ export async function generateImageBytes(options: GenerateImageBytesOptions): Pr
         bytes,
         mimeType: result.mimeType,
         provider: result.provider,
-        model: result.model
+        model: result.model,
+        fallback: result.fallback
       };
       return result.revisedPrompt ? { ...output, revisedPrompt: result.revisedPrompt } : output;
     } catch (error) {

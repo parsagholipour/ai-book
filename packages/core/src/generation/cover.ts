@@ -233,7 +233,7 @@ export function buildCoverArtworkPrompt(options: CoverArtworkPromptInput): strin
   const style = cleanText(options.input.mediaSettings.imageStyle) || options.plan.illustrationPlan.globalStyle;
 
   return [
-    "Text-free book cover artwork, portrait 3:4 composition.",
+    "Full-bleed text-free book cover artwork, portrait 3:4 composition.",
     `Template mood: ${template.id}.`,
     `Book category: ${options.input.category}.`,
     options.input.subcategory ? `Book subcategory context: ${options.input.subcategory}.` : "",
@@ -243,7 +243,6 @@ export function buildCoverArtworkPrompt(options: CoverArtworkPromptInput): strin
     `Primary visual concept: ${baseCoverPrompt}.`,
     `Audience and premise: ${options.plan.audience}; ${options.plan.premise}.`,
     `Visual style: ${style}.`,
-    "Leave generous clean negative space for title and author typography.",
     "Do not include any readable text, letters, numbers, words, handwriting, captions, logos, signatures, watermarks, book title, or author name.",
     "No mockup, no book object, no border, no spine, no UI, no poster text."
   ]

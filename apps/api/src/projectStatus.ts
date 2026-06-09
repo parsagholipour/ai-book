@@ -1,5 +1,7 @@
-import type { JobStep } from "@book-maker/core";
+import { loadConfig, type JobStep } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { loadProjectCostSummary } from "./projectCosts.js";
 import type { GenerationJobType } from "./queue.js";
 
@@ -25,9 +27,29 @@ export type TokenUsage = {
   cacheHitTokens: number;
 };
 
+export type JobImageFallbackDetails = {
+  status: "attempting" | "used" | "failed";
+  primary: {
+    provider: string;
+    model: string;
+    error?: string | undefined;
+  };
+  fallback: {
+    provider: string;
+    model: string;
+    error?: string | undefined;
+  };
+  result?: {
+    provider: string;
+    model: string;
+  } | undefined;
+  occurredAt?: string | undefined;
+};
+
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
 const generationFailureJobTypes = [...resumableJobTypes, ...restartableJobTypes];
+const config = loadConfig();
 
 export async function buildProjectStatus(projectId: string) {
   const project = await prisma.project.findUnique({
@@ -77,11 +99,11 @@ export async function buildProjectStatus(projectId: string) {
     })
   ]);
   const visibleImageCount = await prisma.imageAsset.count({
-    where: { projectId, type: { not: "CHARACTER_REFERENCE" } }
+    where: { projectId, type: { notIn: ["CHARACTER_REFERENCE", "CHARACTER_PROFILE"] } }
   });
 
   const jobIds = project.jobs.map((job) => job.id);
-  const [tokenLogs, jobTokenLogs, cost] = await Promise.all([
+  const [tokenLogs, jobTokenLogs, cost, imageFallbacksByJobId] = await Promise.all([
     prisma.providerCallLog.aggregate({
       where: { projectId },
       _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true }
@@ -93,7 +115,8 @@ export async function buildProjectStatus(projectId: string) {
           _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true, durationMs: true }
         })
       : Promise.resolve([]),
-    loadProjectCostSummary(projectId)
+    loadProjectCostSummary(projectId),
+    loadImageFallbackDetails(projectId, project.jobs)
   ]);
   const tokensByJobId = new Map(
     jobTokenLogs.flatMap((row) =>
@@ -128,6 +151,7 @@ export async function buildProjectStatus(projectId: string) {
       steps: parseJobSteps(job.steps),
       tokens: tokensByJobId.get(job.id) ?? emptyTokenUsage(),
       providerDurationMs: providerDurationMsByJobId.get(job.id) ?? null,
+      imageFallbacks: imageFallbacksByJobId.get(job.id) ?? [],
       ...(typeof pageIndex === "number" ? { pageIndex } : {})
     };
   });
@@ -166,6 +190,185 @@ function emptyTokenUsage(): TokenUsage {
 
 function finiteTokenValue(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+async function loadImageFallbackDetails(
+  projectId: string,
+  jobs: Array<{ id: string; type: string; bullJobId: string | null }>
+): Promise<Map<string, JobImageFallbackDetails[]>> {
+  const entries = await Promise.all(
+    jobs.map(async (job) => {
+      const details = await readImageFallbackDetailsForJob(projectId, job);
+      return [job.id, details] as const;
+    })
+  );
+  return new Map(entries.filter(([, details]) => details.length > 0));
+}
+
+async function readImageFallbackDetailsForJob(
+  projectId: string,
+  job: { id: string; type: string; bullJobId: string | null }
+): Promise<JobImageFallbackDetails[]> {
+  const jobName = jobQueueName(job.type);
+  if (!jobName) {
+    return [];
+  }
+
+  const primaryPath = runLogPath(projectId, job.id, jobName);
+  const fallbackPath = job.bullJobId ? runLogPath(projectId, `bull-${job.bullJobId}`, jobName) : null;
+  const content = (await readOptionalTextFile(primaryPath)) ?? (fallbackPath ? await readOptionalTextFile(fallbackPath) : null);
+  if (!content) {
+    return [];
+  }
+
+  return parseImageFallbackDetails(content);
+}
+
+function parseImageFallbackDetails(content: string): JobImageFallbackDetails[] {
+  const details: JobImageFallbackDetails[] = [];
+  let pending: JobImageFallbackDetails | null = null;
+
+  for (const line of content.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+    const entry = safeJsonParseRecord(line);
+    if (!entry) {
+      continue;
+    }
+    const event = stringField(entry, "event");
+    if (event === "image.generate.fallback.start") {
+      if (pending) {
+        details.push(pending);
+      }
+      const primary = fallbackAttemptFromRecord(recordField(entry, "primary"));
+      const fallback = fallbackAttemptFromRecord(recordField(entry, "fallback"));
+      if (!primary || !fallback) {
+        pending = null;
+        continue;
+      }
+      pending = {
+        status: "attempting",
+        primary,
+        fallback,
+        ...(typeof entry.timestamp === "string" ? { occurredAt: entry.timestamp } : {})
+      };
+      continue;
+    }
+
+    if (event === "image.generate.fallback.success" && pending) {
+      const result = fallbackProviderFromRecord(recordField(entry, "result"));
+      details.push({
+        ...pending,
+        status: "used",
+        ...(result ? { result } : {}),
+        ...(typeof entry.timestamp === "string" ? { occurredAt: entry.timestamp } : {})
+      });
+      pending = null;
+      continue;
+    }
+
+    if (event === "image.generate.fallback.error" && pending) {
+      const fallback = fallbackAttemptFromRecord(recordField(entry, "fallback"));
+      details.push({
+        ...pending,
+        status: "failed",
+        ...(fallback ? { fallback } : {}),
+        ...(typeof entry.timestamp === "string" ? { occurredAt: entry.timestamp } : {})
+      });
+      pending = null;
+    }
+  }
+
+  if (pending) {
+    details.push(pending);
+  }
+  return details;
+}
+
+async function readOptionalTextFile(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+function runLogPath(projectId: string, runId: string, jobName: string): string {
+  return join(config.BOOK_STORAGE_DIR, projectId, "runs", `${safePathPart(runId)}-${safePathPart(jobName)}.jsonl`);
+}
+
+function jobQueueName(type: string): string | null {
+  return (
+    {
+      PLAN_BOOK: "plan-book",
+      REVISE_PLAN: "revise-plan",
+      GENERATE_BOOK: "generate-book",
+      GENERATE_PAGE: "generate-page",
+      GENERATE_IMAGE: "generate-image",
+      COMPILE_EXPORT: "compile-export",
+      PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
+      BUILD_CHARACTER_PERSONA: "build-character-persona",
+      RESEARCH: "research"
+    } satisfies Record<string, string>
+  )[type] ?? null;
+}
+
+function fallbackAttemptFromRecord(value: Record<string, unknown> | null): JobImageFallbackDetails["primary"] | null {
+  const provider = stringField(value, "provider");
+  const model = stringField(value, "model");
+  if (!provider || !model) {
+    return null;
+  }
+  const error = fallbackErrorMessage(recordField(value, "error"));
+  return {
+    provider,
+    model,
+    ...(error ? { error } : {})
+  };
+}
+
+function fallbackProviderFromRecord(value: Record<string, unknown> | null): JobImageFallbackDetails["result"] | null {
+  const provider = stringField(value, "provider");
+  const model = stringField(value, "model");
+  return provider && model ? { provider, model } : null;
+}
+
+function fallbackErrorMessage(error: Record<string, unknown> | null): string | null {
+  const message = stringField(error, "message");
+  if (message) {
+    return truncateJobDetail(message, 360);
+  }
+  const value = stringField(error, "value");
+  return value ? truncateJobDetail(value, 360) : null;
+}
+
+function truncateJobDetail(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized;
+}
+
+function safeJsonParseRecord(line: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(line) as unknown;
+    return jsonPayloadToRecord(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function recordField(value: Record<string, unknown> | null, key: string): Record<string, unknown> | null {
+  const field = value?.[key];
+  return field && typeof field === "object" && !Array.isArray(field) ? (field as Record<string, unknown>) : null;
+}
+
+function stringField(value: Record<string, unknown> | null, key: string): string | null {
+  const field = value?.[key];
+  return typeof field === "string" && field.trim() ? field.trim() : null;
+}
+
+function safePathPart(value: string): string {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "unknown";
 }
 
 export function buildPipelineSteps(input: {

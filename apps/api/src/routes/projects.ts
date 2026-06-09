@@ -4,6 +4,7 @@ import {
   bookGenerationStrategies,
   createLanguageDetectionTextModel,
   createProjectSchema,
+  createVoiceProvider,
   detectPromptLanguage,
   getBookGenerationStrategy,
   imageModelOptions,
@@ -11,14 +12,20 @@ import {
   loadConfig,
   mediaSettingsSchema,
   normalizeProjectLanguage,
+  normalizeVoiceProfile,
+  reinforceRealtimeCharacterRoleplay,
+  resolveVoiceRtcConfig,
   resolvePublicImageUrl,
   textModelOptions,
+  voiceProviderOptions,
+  voiceProfileSchema,
   type AppConfig,
-  type CreateProjectInput
+  type CreateProjectInput,
+  type VoiceChatProviderId
 } from "@book-maker/core";
 import { access, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { ensureSeedTemplates, prisma } from "@book-maker/db";
+import { ensureSeedTemplates, Prisma, prisma } from "@book-maker/db";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
 import {
@@ -32,12 +39,70 @@ import { z } from "zod";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
 const planMessageParamsSchema = z.object({ id: z.string().min(1) });
+const voiceCharacterParamsSchema = z.object({ id: z.string().min(1), characterId: z.string().min(1) });
+const voiceCharacterIdParamsSchema = z.object({ characterId: z.string().min(1) });
 const planMessageBodySchema = z.object({ message: z.string().min(1).max(10000) });
+const voiceProfilePatchSchema = voiceProfileSchema.partial();
+const voiceProviderIdSchema = z.enum(["openai_realtime", "gemini_live"]);
+const voiceCallReconnectContextSchema = z.string().trim().max(2000).optional();
+const voiceCallModelSchema = z.string().trim().min(1).max(120).optional();
+const voiceCallBodySchema = z.union([
+  z.object({
+    provider: z.literal("openai_realtime").default("openai_realtime"),
+    transport: z.literal("webrtc_sdp").default("webrtc_sdp"),
+    offerSdp: z.string().min(1),
+    voiceModel: voiceCallModelSchema,
+    reconnectContext: voiceCallReconnectContextSchema
+  }),
+  z.object({
+    provider: z.literal("gemini_live"),
+    transport: z.literal("gemini_live").default("gemini_live"),
+    sessionHandle: z.string().trim().min(1).max(2048).optional(),
+    voiceModel: voiceCallModelSchema,
+    reconnectContext: voiceCallReconnectContextSchema
+  })
+]);
+const voiceCallEventPhaseSchema = z.enum([
+  "connect_start",
+  "connected",
+  "disconnected",
+  "reconnect_start",
+  "reconnect_success",
+  "reconnect_failed",
+  "failed",
+  "ended"
+]);
+const voiceCallEventTextSchema = z.string().trim().min(1).max(500);
+const voiceCallEventOptionalTextSchema = z.string().trim().max(500).optional();
+const voiceCallEventBodySchema = z
+  .object({
+    clientCallId: voiceCallEventTextSchema.max(128),
+    phase: voiceCallEventPhaseSchema,
+    attempt: z.number().int().min(1).max(100).optional(),
+    elapsedMs: z.number().int().min(0).max(86_400_000).optional(),
+    connectionState: voiceCallEventOptionalTextSchema,
+    iceConnectionState: voiceCallEventOptionalTextSchema,
+    iceGatheringState: voiceCallEventOptionalTextSchema,
+    candidatePairType: voiceCallEventOptionalTextSchema,
+    candidateProtocol: voiceCallEventOptionalTextSchema,
+    currentRoundTripTimeMs: z.number().int().min(0).max(600_000).optional(),
+    packetsLost: z.number().int().min(0).max(1_000_000_000).optional(),
+    jitterMs: z.number().int().min(0).max(600_000).optional(),
+    error: voiceCallEventOptionalTextSchema,
+    metadata: z
+      .record(z.string().trim().min(1).max(64), z.union([z.string().max(500), z.number(), z.boolean(), z.null()]))
+      .default({})
+  })
+  .strict();
+const pdfExportQuerySchema = z.object({
+  disposition: z.enum(["attachment", "inline"]).optional()
+});
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
 const generationFailureJobTypes = [...resumableJobTypes, ...restartableJobTypes];
 const BOOK_MARKDOWN_FILENAME = "book.md";
 const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
+const BOOK_PDF_FILENAME = "book.pdf";
 type ResumeContext = {
   currentPlanId: string | null;
   existingPages: number;
@@ -49,6 +114,10 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   const appConfig = loadConfig();
 
   fastify.get("/api/health", async () => ({ ok: true, mockAi: appConfig.MOCK_AI }));
+
+  fastify.get("/api/voice/rtc-config", async () => resolveVoiceRtcConfig(appConfig));
+
+  fastify.get("/api/voice/providers", async () => voiceProviderOptions(appConfig));
 
   fastify.get("/api/runtime", async () => ({
     mockAi: appConfig.MOCK_AI,
@@ -367,6 +436,226 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     return status;
   });
 
+  fastify.get("/api/projects/:id/voice-characters", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const [characters, profileImages] = await Promise.all([
+      prisma.voiceCharacter.findMany({
+        where: { projectId: id },
+        orderBy: [{ status: "asc" }, { createdAt: "asc" }]
+      }),
+      prisma.imageAsset.findMany({
+        where: { projectId: id, type: "CHARACTER_PROFILE" },
+        orderBy: { createdAt: "desc" }
+      })
+    ]);
+    const imagesByCharacterId = new Map(
+      profileImages.flatMap((image) => {
+        const voiceCharacterId = stringFromRecord(image.metadata, "voiceCharacterId");
+        return voiceCharacterId ? [[voiceCharacterId, image] as const] : [];
+      })
+    );
+    const defaultVoiceProvider =
+      voiceProviderOptions(appConfig).find((option) => option.default) ?? voiceProviderOptions(appConfig)[0];
+
+    return characters.map((character) => ({
+      ...character,
+      voiceProfile: normalizeVoiceProfile(character.voiceProfile),
+      callProvider: defaultVoiceProvider?.id ?? appConfig.VOICE_CHAT_PROVIDER,
+      callTransport: defaultVoiceProvider?.transport ?? "webrtc_sdp",
+      profileImage: character.profileImageAssetId
+        ? profileImages.find((image) => image.id === character.profileImageAssetId) ?? imagesByCharacterId.get(character.id) ?? null
+        : imagesByCharacterId.get(character.id) ?? null
+    }));
+  });
+
+  fastify.post("/api/projects/:id/voice-characters/:characterId/approve", async (request, reply) => {
+    const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
+    const character = await prisma.voiceCharacter.findUnique({
+      where: { id: characterId },
+      include: { project: { select: { id: true, status: true } } }
+    });
+    if (!character || character.projectId !== id) {
+      return reply.code(404).send({ error: "Voice character not found" });
+    }
+    if (character.project.status !== "COMPLETE") {
+      return reply.code(400).send({ error: "Voice characters can be approved after the book is complete." });
+    }
+    if (character.status === "REJECTED") {
+      return reply.code(400).send({ error: "Rejected voice characters cannot be approved." });
+    }
+
+    const updated = await prisma.voiceCharacter.update({
+      where: { id: character.id },
+      data: {
+        status: character.status === "READY" ? "READY" : "APPROVED",
+        approvedAt: character.approvedAt ?? new Date(),
+        error: null
+      }
+    });
+
+    if (updated.status !== "READY") {
+      const openBuildJobs = await prisma.generationJob.count({
+        where: {
+          projectId: id,
+          type: "BUILD_CHARACTER_PERSONA",
+          status: { in: ["QUEUED", "ACTIVE"] },
+          payload: { path: ["voiceCharacterId"], equals: character.id }
+        }
+      });
+      if (openBuildJobs === 0) {
+        await enqueueGenerationJob({
+          projectId: id,
+          type: "BUILD_CHARACTER_PERSONA",
+          payload: { voiceCharacterId: character.id }
+        });
+      }
+    }
+
+    return updated;
+  });
+
+  fastify.post("/api/projects/:id/voice-characters/:characterId/reject", async (request, reply) => {
+    const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
+    const character = await prisma.voiceCharacter.findUnique({ where: { id: characterId } });
+    if (!character || character.projectId !== id) {
+      return reply.code(404).send({ error: "Voice character not found" });
+    }
+    if (character.status === "BUILDING") {
+      return reply.code(409).send({ error: "This character is already being built." });
+    }
+    return prisma.voiceCharacter.update({
+      where: { id: character.id },
+      data: { status: "REJECTED", error: null }
+    });
+  });
+
+  fastify.patch("/api/projects/:id/voice-characters/:characterId/voice-profile", async (request, reply) => {
+    const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
+    const patch = voiceProfilePatchSchema.parse(request.body);
+    const character = await prisma.voiceCharacter.findUnique({ where: { id: characterId } });
+    if (!character || character.projectId !== id) {
+      return reply.code(404).send({ error: "Voice character not found" });
+    }
+    if (character.status === "BUILDING" || character.status === "REJECTED") {
+      return reply.code(409).send({ error: "This character's voice profile cannot be edited right now." });
+    }
+
+    const voiceProfile = normalizeVoiceProfile({ ...normalizeVoiceProfile(character.voiceProfile), ...patch });
+    const selection = createVoiceProvider(appConfig).selectVoice(voiceProfile);
+    return prisma.voiceCharacter.update({
+      where: { id: character.id },
+      data: {
+        voiceProfile,
+        voiceProvider: selection.provider,
+        voiceModel: selection.model,
+        voiceId: selection.voiceId,
+        providerMetadata: {
+          ...jsonPayloadToRecord(character.providerMetadata),
+          ...selection.metadata,
+          manuallyEdited: true
+        }
+      }
+    });
+  });
+
+  fastify.post("/api/voice-characters/:characterId/calls", async (request, reply) => {
+    const { characterId } = voiceCharacterIdParamsSchema.parse(request.params);
+    const body = voiceCallBodySchema.parse(request.body);
+    const character = await prisma.voiceCharacter.findUnique({
+      where: { id: characterId },
+      include: { project: { select: { status: true } } }
+    });
+    if (!character) {
+      return reply.code(404).send({ error: "Voice character not found" });
+    }
+    if (character.project.status !== "COMPLETE" || character.status !== "READY") {
+      return reply.code(409).send({ error: "Voice character is not ready for calls." });
+    }
+    const persona = jsonPayloadToRecord(character.persona);
+    const baseInstructions =
+      typeof persona.instructions === "string" && persona.instructions.trim()
+        ? persona.instructions
+        : [
+            `You are ${character.name}, speaking from inside this finished book.`,
+            `Role: ${character.role}.`,
+            `Description: ${character.description}.`,
+            "Keep responses conversational, concise, and suitable for a voice call."
+          ].join("\n");
+    const instructions = reinforceRealtimeCharacterRoleplay(baseInstructions, character.name);
+    const requestedProvider: VoiceChatProviderId = body.provider;
+    const providerInfo = voiceProviderOptions(appConfig).find((option) => option.id === requestedProvider);
+    if (!providerInfo) {
+      return reply.code(400).send({ error: `Unsupported voice provider: ${requestedProvider}` });
+    }
+    if (!providerInfo.configured) {
+      return reply.code(400).send({ error: `${providerInfo.label} is not configured.` });
+    }
+    const requestedModel = body.voiceModel;
+    if (requestedModel && !providerInfo.modelOptions.some((option) => option.model === requestedModel)) {
+      return reply.code(400).send({ error: `${providerInfo.label} model is not available: ${requestedModel}` });
+    }
+
+    try {
+      const provider = createVoiceProvider(appConfig, requestedProvider);
+      const session = await provider.createRealtimeSession({
+        ...("offerSdp" in body ? { offerSdp: body.offerSdp } : {}),
+        ...("sessionHandle" in body && body.sessionHandle ? { sessionHandle: body.sessionHandle } : {}),
+        characterName: character.name,
+        instructions,
+        voiceProfile: normalizeVoiceProfile(character.voiceProfile),
+        voiceModel: requestedModel,
+        reconnectContext: body.reconnectContext
+      });
+      return session;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Voice call could not be started.";
+      if (isVoiceConfigurationError(message)) {
+        return reply.code(400).send({ error: message });
+      }
+      throw error;
+    }
+  });
+
+  fastify.post("/api/voice-characters/:characterId/call-events", async (request, reply) => {
+    const { characterId } = voiceCharacterIdParamsSchema.parse(request.params);
+    const body = voiceCallEventBodySchema.parse(request.body);
+    const character = await prisma.voiceCharacter.findUnique({
+      where: { id: characterId },
+      select: { id: true, projectId: true }
+    });
+    if (!character) {
+      return reply.code(404).send({ error: "Voice character not found" });
+    }
+
+    await prisma.voiceCallEvent.create({
+      data: {
+        projectId: character.projectId,
+        characterId: character.id,
+        clientCallId: sanitizeVoiceCallText(body.clientCallId, 128),
+        phase: body.phase,
+        attempt: body.attempt ?? null,
+        elapsedMs: body.elapsedMs ?? null,
+        connectionState: sanitizeVoiceCallOptionalText(body.connectionState) ?? null,
+        iceConnectionState: sanitizeVoiceCallOptionalText(body.iceConnectionState) ?? null,
+        iceGatheringState: sanitizeVoiceCallOptionalText(body.iceGatheringState) ?? null,
+        candidatePairType: sanitizeVoiceCallOptionalText(body.candidatePairType) ?? null,
+        candidateProtocol: sanitizeVoiceCallOptionalText(body.candidateProtocol) ?? null,
+        currentRoundTripTimeMs: body.currentRoundTripTimeMs ?? null,
+        packetsLost: body.packetsLost ?? null,
+        jitterMs: body.jitterMs ?? null,
+        error: sanitizeVoiceCallOptionalText(body.error) ?? null,
+        metadata: sanitizeVoiceCallMetadata(body.metadata) as Prisma.InputJsonValue
+      }
+    });
+
+    return reply.code(202).send({ ok: true });
+  });
+
   fastify.get("/api/projects/:id/events", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
     const origin = request.headers.origin;
@@ -426,22 +715,41 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     return markdown;
   });
 
+  fastify.get("/api/projects/:id/export/pdf/status", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    try {
+      await access(join(appConfig.BOOK_STORAGE_DIR, id, BOOK_PDF_FILENAME));
+      return { available: true };
+    } catch {
+      return { available: false };
+    }
+  });
+
   fastify.get("/api/projects/:id/export/pdf", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const { disposition = "attachment" } = pdfExportQuerySchema.parse(request.query);
     const project = await prisma.project.findUnique({
       where: { id },
       select: { title: true, currentPlanId: true, mediaSettings: true }
     });
-    if (!project?.currentPlanId) {
+    if (!project) {
       return reply.code(404).send({ error: "Book not found" });
     }
 
-    const pdfPath = join(appConfig.BOOK_STORAGE_DIR, id, "book.pdf");
+    const pdfPath = join(appConfig.BOOK_STORAGE_DIR, id, BOOK_PDF_FILENAME);
     let pdf: Buffer;
     try {
       await access(pdfPath);
       pdf = await readFile(pdfPath);
     } catch {
+      if (!project.currentPlanId) {
+        return reply.code(404).send({ error: "Book not found" });
+      }
       const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
       if (!markdown) {
         return reply.code(404).send({ error: "Book not found" });
@@ -461,7 +769,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const filename = `${sanitizeDownloadFilename(project.title)}.pdf`;
-    reply.header("Content-Disposition", `attachment; filename="${filename}"`);
+    reply.header("Content-Disposition", `${disposition}; filename="${filename}"`);
     reply.type("application/pdf");
     return pdf;
   });
@@ -663,6 +971,51 @@ function isCurrentCoverPayload(payload: Record<string, unknown>, context: Resume
   return payload.assetType === "COVER" && payloadPlanId(payload) === context.currentPlanId;
 }
 
+function sanitizeVoiceCallMetadata(
+  metadata: Record<string, string | number | boolean | null>
+): Record<string, string | number | boolean | null> {
+  const entries: Array<[string, string | number | boolean | null]> = [];
+  for (const [key, value] of Object.entries(metadata)) {
+    if (isSensitiveVoiceCallKey(key)) {
+      continue;
+    }
+    if (typeof value === "string") {
+      entries.push([key, sanitizeVoiceCallText(value, 240)]);
+      continue;
+    }
+    if (typeof value === "number") {
+      if (Number.isFinite(value)) {
+        entries.push([key, value]);
+      }
+      continue;
+    }
+    entries.push([key, value]);
+  }
+  return Object.fromEntries(entries);
+}
+
+function sanitizeVoiceCallOptionalText(value: string | undefined): string | undefined {
+  const sanitized = value ? sanitizeVoiceCallText(value) : "";
+  return sanitized || undefined;
+}
+
+function sanitizeVoiceCallText(value: string, maxLength = 500): string {
+  return value
+    .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[redacted-ip]")
+    .replace(/\b(?:[a-f0-9]{1,4}:){2,}[a-f0-9]{0,4}\b/gi, "[redacted-ip]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength);
+}
+
+function isSensitiveVoiceCallKey(key: string): boolean {
+  return /sdp|candidate|ip|address|port|audio|transcript|secret|credential|token|password/i.test(key);
+}
+
+function isVoiceConfigurationError(message: string): boolean {
+  return /OPENAI_API_KEY|GEMINI_API_KEY|required|not configured|Unsupported voice provider|offer SDP/i.test(message);
+}
+
 function cleanOptionalText(value: string | undefined): string | undefined {
   const trimmed = value?.replace(/\s+/g, " ").trim();
   return trimmed || undefined;
@@ -674,4 +1027,10 @@ function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
   }
 
   return payload as Record<string, unknown>;
+}
+
+function stringFromRecord(value: unknown, key: string): string | null {
+  const record = jsonPayloadToRecord(value);
+  const field = record[key];
+  return typeof field === "string" && field.trim() ? field.trim() : null;
 }

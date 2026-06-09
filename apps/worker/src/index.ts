@@ -8,12 +8,19 @@ import {
   bookPlanSchema,
   buildCoverArtworkPrompt,
   buildCharacterReferencePrompt,
+  buildCharacterProfileImagePrompt,
+  buildVoiceCharacterPersona,
   calculateImageGenerationCost,
   calculateTextGenerationCost,
+  AlibabaImageAdapter,
   chapterBriefSchema,
+  createVoiceProvider,
   createProviders,
   createReaderChaptersForExport,
+  extractVoiceCharacterCandidates,
   expandChapterResearch,
+  FallbackImageAdapter,
+  GeminiImageAdapter,
   renderCoverPng,
   getBookGenerationStrategy,
   isDiagramFriendlyBookCategory,
@@ -25,7 +32,9 @@ import {
   normalizePlanPageTargets,
   optimizeImageForStorage,
   publicAssetUrl,
+  resolveImageModelSelection,
   resolvePublicImageUrl,
+  normalizeVoiceProfile,
   type BookPlan,
   type BookGenerationStrategy,
   type ChapterBrief,
@@ -34,10 +43,13 @@ import {
   type EmbeddingAdapter,
   type FinalBookQa,
   type GenerateJsonOptions,
+  type GeneratedImageBytes,
   type GenerateTextOptions,
   type ImageAdapter,
   type ImageAdapterCapabilities,
+  type ImageFallbackEvent,
   type ImageRequest,
+  type ImageModelSelection,
   type OptimizedImage,
   type JobStep,
   type PageQualityReport,
@@ -50,6 +62,7 @@ import {
   type RevisePageOptions,
   type TextModelAdapter,
   type Usage,
+  type VoiceCharacterCandidate,
   withRecoverableNetworkRetry
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -65,6 +78,7 @@ const GENERATE_PAGE_RECOVERY_ATTEMPTS = 4;
 const GENERATE_PAGE_RECOVERY_BACKOFF_MS = 15_000;
 const PROVIDER_NETWORK_RETRY_ATTEMPTS = 3;
 const PROVIDER_NETWORK_RETRY_DELAY_MS = 2_000;
+const VOICE_CHARACTER_SAMPLE_PAGE_COUNT = 10;
 const STOPPED_JOB_MESSAGE = "Stopped";
 const STOPPED_JOB_ERROR = "Stopped by user";
 
@@ -136,6 +150,15 @@ const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> 
     { key: "compile", label: "Compile markdown" },
     { key: "write", label: "Write Markdown" },
     { key: "pdf", label: "Generate PDF" }
+  ],
+  "prepare-character-candidates": [
+    { key: "detect", label: "Detect characters" },
+    { key: "save", label: "Save candidates" }
+  ],
+  "build-character-persona": [
+    { key: "persona", label: "Build persona" },
+    { key: "portrait", label: "Create profile picture" },
+    { key: "save", label: "Save character" }
   ]
 };
 
@@ -173,6 +196,12 @@ const worker = new Worker(
           break;
         case "compile-export":
           await compileExport(job);
+          break;
+        case "prepare-character-candidates":
+          await prepareCharacterCandidates(job);
+          break;
+        case "build-character-persona":
+          await buildCharacterPersona(job);
           break;
         default:
           throw new Error(`Unknown worker job: ${job.name}`);
@@ -234,7 +263,7 @@ async function planBook(job: Job) {
   const project = await getProjectOrThrow(projectId);
   const input = inputFromSnapshot(inputSnapshot) ?? inputFromProject(project);
   const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input));
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
   await advanceJobStep(generationJobId, "research", 20);
   const plan = await strategy.createPlan({
     input,
@@ -313,7 +342,7 @@ async function revisePlan(job: Job) {
   }
   const input = inputForPlanVersion(planVersion.project, planVersion.inputSnapshot);
   const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input));
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
   const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
   await advanceJobStep(generationJobId, "revise", 35);
   const revised = await strategy.revisePlan({
@@ -363,7 +392,7 @@ async function generateBook(job: Job) {
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input));
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
 
   await maybeExpandStrategyResearch({
     projectId,
@@ -1445,7 +1474,7 @@ async function generatePage(job: Job) {
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
   const strategy = strategyForInput(input);
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
-  const providers = createLoggedProviders(job, createProviders(config, input));
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
   await prisma.page.update({ where: { id: pageId }, data: { status: "GENERATING" } });
   const previousPages = await prisma.page.findMany({
     where: { projectId, index: { lt: page.index }, status: "COMPLETED" },
@@ -1630,7 +1659,7 @@ async function generateImage(job: Job) {
   }
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
   const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input));
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const characterReferences = await ensureCharacterReferenceAssets({
     projectId,
@@ -1687,6 +1716,7 @@ async function generateImage(job: Job) {
         model: image.model,
         ...imageStorageMetadata(optimizedImage),
         revisedPrompt: image.revisedPrompt,
+        ...imageGenerationMetadata(image),
         characterReferenceCount: referenceImagePaths.length
       }
     }
@@ -1717,7 +1747,7 @@ async function generateCover(job: Job) {
   }
 
   const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input));
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const metadata = coverMetadataFromProject(project, plan);
   const characterReferences = await ensureCharacterReferenceAssets({
@@ -1788,6 +1818,7 @@ async function generateCover(job: Job) {
           ...imageStorageMetadata(optimizedCover),
           artworkMimeType: artwork.mimeType,
           revisedPrompt: artwork.revisedPrompt,
+          ...imageGenerationMetadata(artwork),
           coverTemplate: input.mediaSettings.coverTemplate,
           sourceImageProvider: artwork.provider,
           sourceImageModel: artwork.model,
@@ -1883,6 +1914,7 @@ async function ensureCharacterReferenceAssets(options: {
           model: image.model,
           ...imageStorageMetadata(optimizedImage),
           revisedPrompt: image.revisedPrompt,
+          ...imageGenerationMetadata(image),
           fileName: filename
         }
       }
@@ -2005,7 +2037,7 @@ async function compileExport(job: Job) {
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
   const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input));
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
   let pages: ExportPageForRepair[] = project.pages;
   if (input.mediaSettings.finalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
@@ -2101,6 +2133,294 @@ async function compileExport(job: Job) {
     outputPath: join(projectDir, "book.pdf")
   });
   await prisma.project.update({ where: { id: projectId }, data: { status: "COMPLETE" } });
+  await maybeEnqueueCharacterCandidatePreparation(projectId, planId);
+}
+
+async function maybeEnqueueCharacterCandidatePreparation(projectId: string, planId: string) {
+  const [existingCharacters, openJobs] = await Promise.all([
+    prisma.voiceCharacter.count({
+      where: {
+        projectId,
+        planVersionId: planId,
+        status: { not: "REJECTED" }
+      }
+    }),
+    prisma.generationJob.count({
+      where: {
+        projectId,
+        type: "PREPARE_CHARACTER_CANDIDATES",
+        status: { in: ["QUEUED", "ACTIVE"] },
+        payload: { path: ["planId"], equals: planId }
+      }
+    })
+  ]);
+  if (existingCharacters > 0 || openJobs > 0) {
+    return;
+  }
+
+  await enqueueWorkerJob({
+    projectId,
+    type: "PREPARE_CHARACTER_CANDIDATES",
+    name: "prepare-character-candidates",
+    payload: { planId }
+  });
+}
+
+async function prepareCharacterCandidates(job: Job) {
+  const { projectId, planId } = job.data as { projectId: string; planId: string };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  const [project, planVersion, existingCharacters] = await Promise.all([
+    getProjectOrThrow(projectId),
+    prisma.planVersion.findUnique({ where: { id: planId } }),
+    prisma.voiceCharacter.count({
+      where: {
+        projectId,
+        planVersionId: planId,
+        status: { not: "REJECTED" }
+      }
+    })
+  ]);
+  if (!planVersion) {
+    throw new Error("Plan not found for character candidate preparation");
+  }
+  if (existingCharacters > 0) {
+    await advanceJobStep(generationJobId, "save", 90, "Character candidates already exist");
+    return;
+  }
+
+  const input = inputForPlanVersion(project, planVersion.inputSnapshot);
+  const plan = bookPlanSchema.parse(planVersion.planningPackage);
+  const pages = await samplePagesForVoiceCharacters(projectId);
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  await advanceJobStep(generationJobId, "detect", 35);
+  const candidates = await extractVoiceCharacterCandidates({
+    input,
+    plan,
+    pages,
+    textModel: providers.text
+  });
+  if (candidates.length === 0) {
+    await advanceJobStep(generationJobId, "save", 90, "No fictional voice characters detected");
+    return;
+  }
+
+  const voiceProvider = createVoiceProvider(config);
+  await advanceJobStep(generationJobId, "save", 75, `Saving ${candidates.length} character candidate${candidates.length === 1 ? "" : "s"}`);
+  await prisma.voiceCharacter.createMany({
+    data: candidates.map((candidate) => {
+      const selection = voiceProvider.selectVoice(candidate.voiceProfile);
+      return {
+        projectId,
+        planVersionId: planId,
+        name: candidate.name,
+        role: candidate.role,
+        description: candidate.description,
+        traits: jsonInputValue(candidate.traits),
+        visualRules: jsonInputValue(candidate.visualRules),
+        source: candidate.source,
+        status: "CANDIDATE",
+        voiceProfile: jsonInputValue(candidate.voiceProfile),
+        voiceProvider: selection.provider,
+        voiceModel: selection.model,
+        voiceId: selection.voiceId,
+        providerMetadata: jsonInputValue(selection.metadata)
+      };
+    })
+  });
+}
+
+async function buildCharacterPersona(job: Job) {
+  const { projectId, voiceCharacterId } = job.data as { projectId: string; voiceCharacterId: string };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  const voiceCharacter = await prisma.voiceCharacter.findUnique({
+    where: { id: voiceCharacterId },
+    include: { project: { include: { currentPlan: true } } }
+  });
+  if (!voiceCharacter || voiceCharacter.projectId !== projectId) {
+    throw new Error("Voice character not found for persona build");
+  }
+  if (voiceCharacter.status === "REJECTED") {
+    await advanceJobStep(generationJobId, "save", 90, "Character was rejected");
+    return;
+  }
+
+  await prisma.voiceCharacter.update({
+    where: { id: voiceCharacter.id },
+    data: { status: "BUILDING", error: null }
+  });
+
+  try {
+    const planVersionId = voiceCharacter.planVersionId ?? voiceCharacter.project.currentPlanId;
+    if (!planVersionId) {
+      throw new Error("Voice character does not have a plan version");
+    }
+    const planVersion =
+      voiceCharacter.project.currentPlan?.id === planVersionId
+        ? voiceCharacter.project.currentPlan
+        : await prisma.planVersion.findUnique({ where: { id: planVersionId } });
+    if (!planVersion) {
+      throw new Error("Plan not found for voice character persona");
+    }
+
+    const input = inputForPlanVersion(voiceCharacter.project, planVersion.inputSnapshot);
+    const plan = bookPlanSchema.parse(planVersion.planningPackage);
+    const strategy = strategyForInput(input);
+    const providers = createLoggedProviders(job, createProviders(config, input), input);
+    const candidate = voiceCharacterCandidateFromRecord(voiceCharacter);
+    const pages = await samplePagesForVoiceCharacters(projectId);
+    await advanceJobStep(generationJobId, "persona", 30);
+    const persona = await buildVoiceCharacterPersona({
+      input,
+      plan,
+      candidate,
+      pages,
+      textModel: providers.text
+    });
+
+    await advanceJobStep(generationJobId, "portrait", 60);
+    const profileImageAsset = await generateCharacterProfileImage({
+      projectId,
+      voiceCharacterId,
+      input,
+      plan,
+      persona,
+      providers,
+      strategy
+    });
+    const voiceProvider = createVoiceProvider(config);
+    const voiceSelection = voiceProvider.selectVoice(persona.voiceProfile);
+
+    await advanceJobStep(generationJobId, "save", 85);
+    await prisma.voiceCharacter.update({
+      where: { id: voiceCharacter.id },
+      data: {
+        status: "READY",
+        persona: jsonInputValue(persona),
+        voiceProfile: jsonInputValue(persona.voiceProfile),
+        voiceProvider: voiceSelection.provider,
+        voiceModel: voiceSelection.model,
+        voiceId: voiceSelection.voiceId,
+        providerMetadata: jsonInputValue({
+          ...jsonPayloadToRecord(voiceCharacter.providerMetadata),
+          ...voiceSelection.metadata,
+          profileImageAssetId: profileImageAsset.id,
+          noTranscriptPersistence: true
+        }),
+        profileImageAssetId: profileImageAsset.id,
+        error: null,
+        builtAt: new Date()
+      }
+    });
+  } catch (error) {
+    await prisma.voiceCharacter.update({
+      where: { id: voiceCharacter.id },
+      data: {
+        status: "FAILED",
+        error: error instanceof Error ? error.message : "Unknown persona build error"
+      }
+    });
+    throw error;
+  }
+}
+
+async function samplePagesForVoiceCharacters(projectId: string) {
+  return prisma.page.findMany({
+    where: { projectId, index: { lte: VOICE_CHARACTER_SAMPLE_PAGE_COUNT } },
+    orderBy: { index: "asc" },
+    select: {
+      index: true,
+      title: true,
+      markdown: true,
+      summary: true
+    }
+  });
+}
+
+async function generateCharacterProfileImage(options: {
+  projectId: string;
+  voiceCharacterId: string;
+  input: CreateProjectInput;
+  plan: BookPlan;
+  persona: Pick<VoiceCharacterCandidate, "name" | "role" | "description" | "traits" | "visualRules" | "voiceProfile">;
+  providers: ProviderSet;
+  strategy: BookGenerationStrategy;
+}) {
+  const prompt = buildCharacterProfileImagePrompt({
+    plan: options.plan,
+    candidate: options.persona
+  });
+  const characterReferenceAssets = await prisma.imageAsset.findMany({
+    where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" },
+    orderBy: { createdAt: "asc" }
+  });
+  const referenceImagePaths = selectReferenceImagePaths({
+    input: options.input,
+    plan: options.plan,
+    assets: characterReferenceAssets.map(toWorkerImageAsset),
+    projectId: options.projectId,
+    image: options.providers.image,
+    context: `${options.persona.name}\n${options.persona.description}\n${prompt}`
+  });
+  const image = await options.strategy.generateImageBytes({
+    image: options.providers.image,
+    prompt,
+    projectId: options.projectId,
+    referenceImagePaths,
+    aspectRatio: "1:1",
+    lessCensored: options.input.mediaSettings.lessCensored === true
+  });
+  const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
+  const ext = optimizedImage.extension;
+  const projectImageDir = join(config.IMAGE_STORAGE_DIR, options.projectId);
+  await mkdir(projectImageDir, { recursive: true });
+  const filename = `character-profile-${safePathPart(options.voiceCharacterId)}.${ext}`;
+  const filePath = join(projectImageDir, filename);
+  await writeFile(filePath, optimizedImage.bytes);
+
+  return prisma.imageAsset.create({
+    data: {
+      projectId: options.projectId,
+      type: "CHARACTER_PROFILE",
+      prompt,
+      provider: image.provider,
+      path: publicAssetUrl(config.PUBLIC_API_URL, `/assets/images/${options.projectId}/${filename}`),
+      metadata: {
+        voiceCharacterId: options.voiceCharacterId,
+        characterName: options.persona.name,
+        voiceProfile: options.persona.voiceProfile,
+        model: image.model,
+        ...imageStorageMetadata(optimizedImage),
+        revisedPrompt: image.revisedPrompt,
+        ...imageGenerationMetadata(image),
+        characterReferenceCount: referenceImagePaths.length,
+        fileName: filename
+      }
+    }
+  });
+}
+
+function voiceCharacterCandidateFromRecord(record: {
+  name: string;
+  role: string;
+  description: string;
+  traits: unknown;
+  visualRules: unknown;
+  source: string;
+  voiceProfile: unknown;
+}): VoiceCharacterCandidate {
+  return {
+    name: record.name,
+    role: record.role,
+    description: record.description,
+    traits: stringArrayFromJson(record.traits),
+    visualRules: stringArrayFromJson(record.visualRules),
+    source: record.source === "BOOK_SAMPLE" ? "BOOK_SAMPLE" : "PLAN",
+    voiceProfile: normalizeVoiceProfile(record.voiceProfile)
+  };
+}
+
+function stringArrayFromJson(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
 
 async function repairPagesFromFinalQa(options: {
@@ -2260,8 +2580,18 @@ async function repairPagesFromFinalQa(options: {
 
 async function enqueueWorkerJob(options: {
   projectId: string;
-  type: "GENERATE_PAGE" | "GENERATE_IMAGE" | "COMPILE_EXPORT";
-  name: "generate-page" | "generate-image" | "compile-export";
+  type:
+    | "GENERATE_PAGE"
+    | "GENERATE_IMAGE"
+    | "COMPILE_EXPORT"
+    | "PREPARE_CHARACTER_CANDIDATES"
+    | "BUILD_CHARACTER_PERSONA";
+  name:
+    | "generate-page"
+    | "generate-image"
+    | "compile-export"
+    | "prepare-character-candidates"
+    | "build-character-persona";
   payload: Record<string, unknown>;
 }) {
   if (!(await canEnqueueProjectWork(options.projectId))) {
@@ -2473,14 +2803,14 @@ type RunLogger = {
   append(event: string, data: Record<string, unknown>): Promise<string>;
 };
 
-function createLoggedProviders(job: Job, providers: ProviderSet): ProviderSet {
+function createLoggedProviders(job: Job, providers: ProviderSet, input?: CreateProjectInput | undefined): ProviderSet {
   const logger = createRunLogger(job);
   const generationJobId = job.data.generationJobId as string | undefined;
   const projectId = job.data.projectId as string | undefined;
   return {
     text: new LoggingTextModelAdapter(providers.text, logger, generationJobId, projectId),
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
-    image: new LoggingImageAdapter(providers.image, logger, generationJobId),
+    image: createLoggedImageAdapter(providers.image, logger, generationJobId, input),
     embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId)
   };
 }
@@ -2521,6 +2851,12 @@ function createRunLogger(job: Job): RunLogger {
 
 function providerConfigSnapshot() {
   return {
+    gemini: {
+      apiKeySet: Boolean(config.GEMINI_API_KEY),
+      textModel: config.GEMINI_TEXT_MODEL,
+      imageModel: config.GEMINI_IMAGE_MODEL,
+      embeddingModel: config.GEMINI_EMBEDDING_MODEL
+    },
     alibaba: {
       apiKeySet: Boolean(config.ALIBABA_API_KEY),
       apiHost: config.ALIBABA_API_HOST,
@@ -2528,6 +2864,73 @@ function providerConfigSnapshot() {
       imageModel: config.ALIBABA_IMAGE_MODEL
     }
   };
+}
+
+type LoggedImageAttempt = {
+  role: "primary" | "fallback";
+  provider: string;
+  model: string;
+};
+
+function createLoggedImageAdapter(
+  primaryAdapter: ImageAdapter,
+  logger: RunLogger,
+  generationJobId: string | undefined,
+  input?: CreateProjectInput | undefined
+): ImageAdapter {
+  if (!input || config.MOCK_AI) {
+    return new LoggingImageAdapter(primaryAdapter, logger, generationJobId);
+  }
+
+  const primary = resolveImageModelSelection(config, input);
+  const fallback = imageFallbackSelection(primary);
+  return new FallbackImageAdapter({
+    primary: {
+      provider: primary.provider,
+      model: primary.model,
+      adapter: new LoggingImageAdapter(primaryAdapter, logger, generationJobId, {
+        role: "primary",
+        provider: primary.provider,
+        model: primary.model
+      })
+    },
+    fallback: {
+      provider: fallback.provider,
+      model: fallback.model,
+      adapter: () =>
+        new LoggingImageAdapter(createImageAdapterForSelection(fallback), logger, generationJobId, {
+          role: "fallback",
+          provider: fallback.provider,
+          model: fallback.model
+        })
+    },
+    onEvent: async (fallbackEvent) => {
+      const { event, ...payload } = fallbackEvent;
+      await logger.append(`image.generate.${event}`, payload);
+    },
+    shouldFallback: (error) => !isStopRequestedError(error)
+  });
+}
+
+function imageFallbackSelection(primary: ImageModelSelection): ImageModelSelection {
+  if (primary.provider === "alibaba") {
+    return { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
+  }
+  return { provider: "alibaba", model: config.ALIBABA_IMAGE_MODEL };
+}
+
+function createImageAdapterForSelection(selection: ImageModelSelection): ImageAdapter {
+  if (selection.provider === "alibaba") {
+    return new AlibabaImageAdapter({
+      apiKey: config.ALIBABA_API_KEY,
+      apiHost: config.ALIBABA_API_HOST,
+      imageModel: selection.model
+    });
+  }
+  return new GeminiImageAdapter({
+    apiKey: config.GEMINI_API_KEY,
+    imageModel: selection.model
+  });
 }
 
 class LoggingTextModelAdapter implements TextModelAdapter {
@@ -2811,7 +3214,8 @@ class LoggingImageAdapter implements ImageAdapter {
   constructor(
     private readonly delegate: ImageAdapter,
     private readonly logger: RunLogger,
-    private readonly generationJobId: string | undefined
+    private readonly generationJobId: string | undefined,
+    private readonly attempt?: LoggedImageAttempt | undefined
   ) {}
 
   capabilities(): ImageAdapterCapabilities {
@@ -2820,14 +3224,22 @@ class LoggingImageAdapter implements ImageAdapter {
 
   async generateImage(request: ImageRequest) {
     const callId = randomUUID();
-    const requestAt = await this.logger.append("image.generate.request", { callId, request });
+    const requestAt = await this.logger.append("image.generate.request", {
+      callId,
+      request,
+      ...this.attemptLog()
+    });
     try {
       await assertJobNotStopped(this.generationJobId);
       const result = await withRecoverableNetworkRetry(
         () => this.delegate.generateImage(request),
         providerRetryOptions(this.logger, this.generationJobId, "image.generate")
       );
-      const responseAt = await this.logger.append("image.generate.response", { callId, result: logImageResult(result) });
+      const responseAt = await this.logger.append("image.generate.response", {
+        callId,
+        result: logImageResult(result),
+        ...this.attemptLog()
+      });
       await recordProviderImageCost({
         projectId: request.projectId,
         generationJobId: this.generationJobId,
@@ -2843,16 +3255,30 @@ class LoggingImageAdapter implements ImageAdapter {
         metadata: {
           aspectRatio: request.aspectRatio,
           referenceImageCount: request.referenceImagePaths?.length ?? 0,
-          mimeType: result.mimeType
+          mimeType: result.mimeType,
+          ...this.providerCostAttemptMetadata()
         }
       });
       await assertJobNotStopped(this.generationJobId);
       return result;
     } catch (error) {
-      await this.logger.append("image.generate.error", { callId, error: serializeError(error) });
+      attachProviderLogContext(error, { callId, attempt: this.attempt });
+      await this.logger.append("image.generate.error", {
+        callId,
+        error: serializeError(error),
+        ...this.attemptLog()
+      });
       await assertJobNotStopped(this.generationJobId);
       throw error;
     }
+  }
+
+  private attemptLog(): { attempt?: LoggedImageAttempt } {
+    return this.attempt ? { attempt: this.attempt } : {};
+  }
+
+  private providerCostAttemptMetadata(): Record<string, unknown> {
+    return this.attempt ? { attempt: this.attempt } : {};
   }
 }
 
@@ -2955,8 +3381,26 @@ function logImageResult(result: Awaited<ReturnType<ImageAdapter["generateImage"]
     mimeType: result.mimeType,
     url: result.url,
     revisedPrompt: result.revisedPrompt,
+    fallback: result.fallback,
     dataBytes: result.data?.byteLength
   };
+}
+
+function attachProviderLogContext(
+  error: unknown,
+  context: { callId: string; attempt?: LoggedImageAttempt | undefined }
+): void {
+  if (!error || typeof error !== "object") {
+    return;
+  }
+  try {
+    (error as Record<string, unknown>).providerLog = {
+      callId: context.callId,
+      ...(context.attempt ? { attempt: context.attempt } : {})
+    };
+  } catch {
+    // Non-extensible provider errors are still logged through serializeError.
+  }
 }
 
 function serializeError(error: unknown): Record<string, unknown> {
@@ -3169,9 +3613,13 @@ async function markFailed(job: Job, error: unknown) {
       }
     });
   }
-  if (projectId) {
+  if (projectId && shouldFailProjectForJob(job.name)) {
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
+}
+
+function shouldFailProjectForJob(jobName: string): boolean {
+  return !["prepare-character-candidates", "build-character-persona"].includes(jobName);
 }
 
 async function markStopped(job: Job) {
@@ -3476,6 +3924,10 @@ function imageStorageMetadata(image: OptimizedImage): Record<string, unknown> {
       height: image.height
     }).filter(([, value]) => value !== undefined)
   );
+}
+
+function imageGenerationMetadata(image: GeneratedImageBytes): Record<string, unknown> {
+  return image.fallback ? { fallback: image.fallback } : {};
 }
 
 async function shutdown() {

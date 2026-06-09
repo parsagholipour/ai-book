@@ -27,6 +27,8 @@ const jobNames = {
   GENERATE_PAGE: "generate-page",
   GENERATE_IMAGE: "generate-image",
   COMPILE_EXPORT: "compile-export",
+  PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
+  BUILD_CHARACTER_PERSONA: "build-character-persona",
   RESEARCH: "research"
 } as const;
 

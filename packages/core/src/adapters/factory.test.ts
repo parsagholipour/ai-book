@@ -115,7 +115,8 @@ describe("text model provider selection", () => {
       expect.objectContaining({
         provider: "alibaba",
         model: "qwen-image-2.0",
-        label: "Qwen Image 2.0"
+        label: "Qwen Image 2.0",
+        supportsReferenceImages: true
       })
     );
     expect(createProviders(config, alibabaInput).image).toBeInstanceOf(AlibabaImageAdapter);
