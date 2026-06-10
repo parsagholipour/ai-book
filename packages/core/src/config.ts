@@ -3,12 +3,14 @@ import { config as loadDotenv } from "dotenv";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { DEFAULT_ALIBABA_API_HOST, DEFAULT_ALIBABA_IMAGE_MODEL, DEFAULT_ALIBABA_TEXT_MODEL } from "./adapters/alibabaModels.js";
+import { DEFAULT_DEEPINFRA_BASE_URL, DEFAULT_DEEPINFRA_FAST_MODEL, DEFAULT_DEEPINFRA_MODEL } from "./adapters/deepinfraModels.js";
 import { normalizeGeminiImageModel } from "./adapters/geminiModels.js";
 
 const envSchema = z.object({
   PORT: z.coerce.number().int().positive().optional(),
   RAILWAY_ENVIRONMENT: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
+  DEEPINFRA_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   GEMINI_API_KEY: z.string().optional(),
   ALIBABA_API_KEY: z.string().optional(),
@@ -18,6 +20,9 @@ const envSchema = z.object({
   DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
   DEEPSEEK_MODEL: z.string().default("deepseek-v4-pro"),
   DEEPSEEK_FAST_MODEL: z.string().default("deepseek-v4-flash"),
+  DEEPINFRA_BASE_URL: z.string().url().default(DEFAULT_DEEPINFRA_BASE_URL),
+  DEEPINFRA_MODEL: z.string().default(DEFAULT_DEEPINFRA_MODEL),
+  DEEPINFRA_FAST_MODEL: z.string().default(DEFAULT_DEEPINFRA_FAST_MODEL),
   /** OpenAI-compatible local server (Ollama/vLLM/LM Studio) for zero-cost text generation. */
   LOCAL_TEXT_BASE_URL: z.string().url().optional(),
   LOCAL_TEXT_MODEL: z.string().optional(),
@@ -25,6 +30,7 @@ const envSchema = z.object({
   GEMINI_TEXT_MODEL: z.string().default("gemini-2.5-flash"),
   GEMINI_IMAGE_MODEL: z.string().optional().transform(normalizeGeminiImageModel),
   GEMINI_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
+  GEMINI_TTS_MODEL: z.string().default("gemini-3.1-flash-tts-preview"),
   VOICE_CHAT_PROVIDER: z.enum(["openai_realtime", "gemini_live"]).default("gemini_live"),
   OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2"),
   OPENAI_REALTIME_VOICE: z.string().default("alloy"),
@@ -55,6 +61,7 @@ const envSchema = z.object({
     }),
   BOOK_STORAGE_DIR: z.string().default("./storage/books"),
   IMAGE_STORAGE_DIR: z.string().default("./storage/images"),
+  VOICE_STORAGE_DIR: z.string().default("./storage/voice"),
   MAX_PARALLEL_PAGE_JOBS: z.coerce.number().int().min(1).max(32).default(4),
   MAX_PARALLEL_IMAGE_JOBS: z.coerce.number().int().min(1).max(8).default(2),
   MOCK_AI: z
@@ -79,7 +86,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return {
     ...parsed,
     BOOK_STORAGE_DIR: resolveFromWorkspace(parsed.BOOK_STORAGE_DIR),
-    IMAGE_STORAGE_DIR: resolveFromWorkspace(parsed.IMAGE_STORAGE_DIR)
+    IMAGE_STORAGE_DIR: resolveFromWorkspace(parsed.IMAGE_STORAGE_DIR),
+    VOICE_STORAGE_DIR: resolveFromWorkspace(parsed.VOICE_STORAGE_DIR)
   };
 }
 

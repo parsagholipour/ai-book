@@ -64,7 +64,7 @@ function shouldProtectPath(rawUrl: string): boolean {
   if (path === "/api/health" || path.startsWith("/api/auth/")) {
     return false;
   }
-  return path.startsWith("/api/") || path.startsWith("/assets/images/") || path.startsWith("/docs");
+  return path.startsWith("/api/") || path.startsWith("/assets/images/") || path.startsWith("/assets/voice/") || path.startsWith("/docs");
 }
 
 function isAuthenticatedRequest(request: FastifyRequest, config: AppConfig): boolean {

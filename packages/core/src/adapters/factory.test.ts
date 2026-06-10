@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { loadConfig } from "../config.js";
 import { createProjectSchema } from "../schemas/book.js";
 import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
+import { DeepInfraAdapter } from "./deepinfra.js";
 import { DeepSeekAdapter } from "./deepseek.js";
 import { FakeTextModelAdapter } from "./fake.js";
 import { GeminiTextAdapter } from "./gemini.js";
@@ -29,6 +30,7 @@ describe("text model provider selection", () => {
   it("uses the selected text provider adapter", () => {
     const config = testConfig({});
     const deepseekInput = projectInput({ provider: "deepseek", model: "deepseek-writer" });
+    const deepInfraInput = projectInput({ provider: "deepinfra", model: "deepseek-ai/DeepSeek-V4-Pro" });
     const geminiInput = projectInput({ provider: "gemini", model: "gemini-3.5-flash" });
     const alibabaInput = projectInput({ provider: "alibaba", model: "qwen-plus" });
 
@@ -37,6 +39,7 @@ describe("text model provider selection", () => {
       model: "deepseek-writer"
     });
     expect(createProviders(config, deepseekInput).text).toBeInstanceOf(DeepSeekAdapter);
+    expect(createProviders(config, deepInfraInput).text).toBeInstanceOf(DeepInfraAdapter);
     expect(createProviders(config, geminiInput).text).toBeInstanceOf(GeminiTextAdapter);
     expect(createProviders(config, alibabaInput).text).toBeInstanceOf(AlibabaTextAdapter);
   });
@@ -49,11 +52,36 @@ describe("text model provider selection", () => {
 
   it("uses the lightest available text adapter for language detection", () => {
     expect(createLanguageDetectionTextModel(testConfig({}))).toBeInstanceOf(DeepSeekAdapter);
-    expect(createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "" }))).toBeInstanceOf(GeminiTextAdapter);
+    expect(createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "" }))).toBeInstanceOf(DeepInfraAdapter);
     expect(
-      createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "", GEMINI_API_KEY: "", ALIBABA_API_KEY: "alibaba-key" }))
+      createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "" }))
+    ).toBeInstanceOf(GeminiTextAdapter);
+    expect(
+      createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "", GEMINI_API_KEY: "", ALIBABA_API_KEY: "alibaba-key" }))
     ).toBeInstanceOf(AlibabaTextAdapter);
     expect(createLanguageDetectionTextModel(testConfig({ MOCK_AI: "true" }))).toBeInstanceOf(FakeTextModelAdapter);
+  });
+
+  it("exposes DeepInfra normal and thinking options only when configured", () => {
+    const configuredOptions = textModelOptions(testConfig({ DEEPINFRA_MODEL: "deepseek-ai/DeepSeek-V4-Pro" }));
+    const deepInfraOptions = configuredOptions.filter((option) => option.provider === "deepinfra");
+    const unconfiguredOptions = textModelOptions(testConfig({ DEEPINFRA_API_KEY: "" }));
+
+    expect(deepInfraOptions).toEqual([
+      expect.objectContaining({
+        provider: "deepinfra",
+        model: "deepseek-ai/DeepSeek-V4-Pro",
+        label: "DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro)"
+      }),
+      expect.objectContaining({
+        provider: "deepinfra",
+        model: "deepseek-ai/DeepSeek-V4-Pro",
+        thinking: true,
+        thinkingEnabled: true
+      })
+    ]);
+    expect(deepInfraOptions[0]).not.toEqual(deepInfraOptions[1]);
+    expect(unconfiguredOptions.some((option) => option.provider === "deepinfra")).toBe(false);
   });
 
   it("marks reasoning-capable text models as thinking options", () => {
@@ -126,6 +154,7 @@ describe("text model provider selection", () => {
 function testConfig(overrides: NodeJS.ProcessEnv) {
   return loadConfig({
     DEEPSEEK_API_KEY: "deepseek-key",
+    DEEPINFRA_API_KEY: "deepinfra-key",
     GEMINI_API_KEY: "gemini-key",
     ALIBABA_API_KEY: "alibaba-key",
     MOCK_AI: "false",
@@ -134,7 +163,7 @@ function testConfig(overrides: NodeJS.ProcessEnv) {
 }
 
 function projectInput(
-  textModel: { provider: "deepseek" | "gemini" | "alibaba"; model: string },
+  textModel: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba"; model: string },
   imageModel?: { provider: "gemini" | "alibaba"; model: string }
 ) {
   return createProjectSchema.parse({

@@ -1,24 +1,31 @@
+import { useEffect, useMemo, useState } from "react";
 import {
+  FileAudio,
   Loader2,
   MessageSquareText,
   Mic,
   MicOff,
   Phone,
   PhoneOff,
+  Sparkles,
+  Users,
   XCircle
 } from "lucide-react";
 import {
   apiUrl,
+  type CreateVoiceConversationRequest,
   type VoiceAgeBand,
   type VoiceCharacter,
   type VoiceChatProviderId,
+  type VoiceConversation,
   type VoiceGenderPresentation,
   type VoiceModelOption,
   type VoiceProfile,
-  type VoiceProviderInfo
+  type VoiceProviderInfo,
+  type ProjectStatus
 } from "../../api.js";
 import { voiceCharacterActionKey } from "../projects/actionKeys.js";
-import { initialsForName, labelCase } from "../shared/formatters.js";
+import { formatDuration, formatRelativeTime, initialsForName, labelCase, readError } from "../shared/formatters.js";
 import {
   VOICE_AGE_BAND_OPTIONS,
   VOICE_FORMALITY_OPTIONS,
@@ -26,12 +33,15 @@ import {
   VOICE_INTENSITY_OPTIONS,
   VOICE_PACE_OPTIONS
 } from "./constants.js";
-import type { ActiveVoiceCall, ActiveVoiceCallStatus } from "./types.js";
+import type { ActiveVoiceCall, ActiveVoiceCallStatus, ActiveVoiceRoom } from "./types.js";
 
 export function VoiceCharactersPanel(props: {
   characters: VoiceCharacter[];
+  selectedStatus: ProjectStatus | null;
   busyActions: Record<string, boolean>;
+  conversations: VoiceConversation[];
   activeCallCharacterId: string | null;
+  activeRoomCharacterIds: string[];
   providers: VoiceProviderInfo[];
   selectedProviderId: VoiceChatProviderId;
   selectedModel: string | null;
@@ -42,16 +52,85 @@ export function VoiceCharactersPanel(props: {
   onProviderChange: (providerId: VoiceChatProviderId) => void;
   onModelChange: (model: string) => void;
   onCall: (character: VoiceCharacter) => void;
+  onStartRoom: (characters: VoiceCharacter[]) => void;
+  onCreateConversation: (payload: CreateVoiceConversationRequest) => Promise<VoiceConversation>;
 }) {
+  const [selectedRoomCharacterIds, setSelectedRoomCharacterIds] = useState<string[]>([]);
+  const [conversationDialogOpen, setConversationDialogOpen] = useState(false);
+  const [conversationContinuationTarget, setConversationContinuationTarget] = useState<VoiceConversation | null>(null);
+  const [conversationPrompt, setConversationPrompt] = useState("");
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  const [creatingConversation, setCreatingConversation] = useState(false);
+  const [latestConversationId, setLatestConversationId] = useState<string | null>(null);
   const readyCount = props.characters.filter((character) => character.status === "READY").length;
+  const readyCharacters = useMemo(
+    () => props.characters.filter((character) => character.status === "READY"),
+    [props.characters]
+  );
   const selectedProvider = props.providers.find((provider) => provider.id === props.selectedProviderId) ?? props.providers[0] ?? null;
   const selectedModel = props.selectedModel ?? selectedProvider?.model ?? null;
+  const geminiConfigured = props.providers.some((provider) => provider.id === "gemini_live" && provider.configured);
+  const activeRoomCharacterIds = new Set(props.activeRoomCharacterIds);
+  const activeRoom = props.activeRoomCharacterIds.length > 0;
+  const activeCall = Boolean(props.activeCallCharacterId);
+  const selectedRoomCharacters = readyCharacters.filter((character) => selectedRoomCharacterIds.includes(character.id));
+  const canStartRoom =
+    selectedRoomCharacters.length >= 2 &&
+    selectedRoomCharacters.length <= 4 &&
+    Boolean(selectedProvider?.configured && selectedModel) &&
+    !props.activeCallCharacterId &&
+    !activeRoom;
+  const canMakeConversation =
+    selectedRoomCharacters.length === 2 &&
+    geminiConfigured &&
+    !props.activeCallCharacterId &&
+    !activeRoom &&
+    !creatingConversation;
+  const canContinueConversation = geminiConfigured && !props.activeCallCharacterId && !activeRoom && !creatingConversation;
   const statusLabel =
     props.characters.length === 0
       ? ""
       : readyCount > 0
         ? `${readyCount}/${props.characters.length} ready`
-        : `${props.characters.length} candidate${props.characters.length === 1 ? "" : "s"}`;
+      : `${props.characters.length} candidate${props.characters.length === 1 ? "" : "s"}`;
+
+  useEffect(() => {
+    const readyIds = new Set(readyCharacters.map((character) => character.id));
+    setSelectedRoomCharacterIds((current) => current.filter((characterId) => readyIds.has(characterId)).slice(0, 4));
+  }, [readyCharacters]);
+
+  function toggleRoomCharacter(character: VoiceCharacter) {
+    setSelectedRoomCharacterIds((current) => {
+      if (current.includes(character.id)) {
+        return current.filter((characterId) => characterId !== character.id);
+      }
+      return [...current, character.id].slice(0, 4);
+    });
+  }
+
+  async function createConversation() {
+    const prompt = conversationPrompt.trim();
+    const canCreate = conversationContinuationTarget ? canContinueConversation : canMakeConversation;
+    if (!prompt || !canCreate) {
+      return;
+    }
+    setCreatingConversation(true);
+    setConversationError(null);
+    try {
+      const payload: CreateVoiceConversationRequest = conversationContinuationTarget
+        ? { prompt, continuationOfConversationId: conversationContinuationTarget.id }
+        : { prompt, characterIds: selectedRoomCharacters.map((character) => character.id) };
+      const conversation = await props.onCreateConversation(payload);
+      setLatestConversationId(conversation.id);
+      setConversationPrompt("");
+      setConversationDialogOpen(false);
+      setConversationContinuationTarget(null);
+    } catch (error) {
+      setConversationError(readError(error));
+    } finally {
+      setCreatingConversation(false);
+    }
+  }
 
   return (
     <div className="work-section voice-character-panel">
@@ -81,21 +160,107 @@ export function VoiceCharactersPanel(props: {
       {props.characters.length === 0 ? (
         <p className="muted">No character chat candidates for this book.</p>
       ) : (
-        <div className="voice-character-list">
-          {props.characters.map((character) => (
-            <VoiceCharacterCard
-              key={character.id}
-              character={character}
-              busyActions={props.busyActions}
-              active={props.activeCallCharacterId === character.id}
-              callDisabled={!selectedProvider?.configured || !selectedModel}
-              onApprove={props.onApprove}
-              onReject={props.onReject}
-              onProfileChange={props.onProfileChange}
-              onCall={props.onCall}
+        <>
+          {readyCharacters.length >= 2 ? (
+            <div className="voice-room-builder">
+              <div className="voice-room-header">
+                <div>
+                  <strong>Group voice</strong>
+                  <small>{selectedRoomCharacters.length}/4 selected</small>
+                </div>
+                <button
+                  className="icon-text-button accent"
+                  type="button"
+                  disabled={!canStartRoom}
+                  onClick={() => props.onStartRoom(selectedRoomCharacters)}
+                >
+                  <Users size={16} />
+                  Start room
+                </button>
+                <button
+                  className="icon-text-button"
+                  type="button"
+                  disabled={!canMakeConversation}
+                  onClick={() => {
+                    setConversationError(null);
+                    setConversationContinuationTarget(null);
+                    setConversationDialogOpen(true);
+                  }}
+                  title={geminiConfigured ? "Generate a saved scripted voice conversation" : "Gemini is not configured"}
+                >
+                  {creatingConversation ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+                  Make conversation
+                </button>
+              </div>
+              <div className="voice-room-picks">
+                {readyCharacters.map((character) => {
+                  const selected = selectedRoomCharacterIds.includes(character.id);
+                  return (
+                    <label key={character.id} className={`voice-room-pick${selected ? " selected" : ""}`}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={props.providerSelectionDisabled || (!selected && selectedRoomCharacterIds.length >= 4)}
+                        onChange={() => toggleRoomCharacter(character)}
+                      />
+                      <span>{character.name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          {conversationDialogOpen ? (
+            <VoiceConversationDialog
+              title={conversationContinuationTarget ? "Continue conversation" : "Make conversation"}
+              characters={conversationContinuationTarget?.characters ?? selectedRoomCharacters}
+              prompt={conversationPrompt}
+              error={conversationError}
+              busy={creatingConversation}
+              canSubmit={
+                Boolean(conversationPrompt.trim()) &&
+                (conversationContinuationTarget ? canContinueConversation : canMakeConversation)
+              }
+              onPromptChange={setConversationPrompt}
+              onCancel={() => {
+                if (!creatingConversation) {
+                  setConversationDialogOpen(false);
+                  setConversationContinuationTarget(null);
+                  setConversationError(null);
+                }
+              }}
+              onSubmit={() => void createConversation()}
             />
-          ))}
-        </div>
+          ) : null}
+          <VoiceConversationList
+            conversations={props.conversations}
+            latestConversationId={latestConversationId}
+            continuationDisabled={!canContinueConversation}
+            onContinue={(conversation) => {
+              setConversationError(null);
+              setConversationPrompt("");
+              setConversationContinuationTarget(conversation);
+              setConversationDialogOpen(true);
+            }}
+          />
+          <div className="voice-character-list">
+            {props.characters.map((character) => (
+              <VoiceCharacterCard
+                key={character.id}
+                character={character}
+                hasActivePersonaBuildJob={hasActivePersonaBuildJob(props.selectedStatus, character.id)}
+                busyActions={props.busyActions}
+                active={props.activeCallCharacterId === character.id}
+                inRoom={activeRoomCharacterIds.has(character.id)}
+                callDisabled={!selectedProvider?.configured || !selectedModel || activeRoom || activeCall}
+                onApprove={props.onApprove}
+                onReject={props.onReject}
+                onProfileChange={props.onProfileChange}
+                onCall={props.onCall}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -103,8 +268,10 @@ export function VoiceCharactersPanel(props: {
 
 function VoiceCharacterCard(props: {
   character: VoiceCharacter;
+  hasActivePersonaBuildJob: boolean;
   busyActions: Record<string, boolean>;
   active: boolean;
+  inRoom: boolean;
   callDisabled: boolean;
   onApprove: (character: VoiceCharacter) => void;
   onReject: (character: VoiceCharacter) => void;
@@ -116,9 +283,10 @@ function VoiceCharacterCard(props: {
   const rejecting = Boolean(props.busyActions[voiceCharacterActionKey(character.id, "reject")]);
   const editing = Boolean(props.busyActions[voiceCharacterActionKey(character.id, "voice-profile")]);
   const ready = character.status === "READY";
-  const building = character.status === "APPROVED" || character.status === "BUILDING";
-  const editable = character.status !== "BUILDING" && character.status !== "REJECTED";
+  const building = props.hasActivePersonaBuildJob || character.status === "APPROVED" || character.status === "BUILDING";
+  const editable = !building && character.status !== "REJECTED";
   const needsBuild = character.status === "CANDIDATE" || character.status === "FAILED";
+  const buildBusy = approving || building;
 
   return (
     <article className={`voice-character-card status-${character.status.toLowerCase()}`}>
@@ -148,28 +316,22 @@ function VoiceCharacterCard(props: {
       ) : null}
       {character.error ? <small className="voice-character-error">{character.error}</small> : null}
       <div className="voice-character-actions">
-        {needsBuild ? (
-          <button className="icon-text-button accent" onClick={() => props.onApprove(character)} disabled={approving}>
-            {approving ? <Loader2 className="spin" size={16} /> : <MessageSquareText size={16} />}
-            {character.status === "FAILED" ? "Retry chat build" : "Build chat"}
+        {needsBuild || building ? (
+          <button className="icon-text-button accent" onClick={() => props.onApprove(character)} disabled={buildBusy}>
+            {buildBusy ? <Loader2 className="spin" size={16} /> : <MessageSquareText size={16} />}
+            {building ? "Building chat" : character.status === "FAILED" ? "Retry chat build" : "Build chat"}
           </button>
         ) : null}
         {needsBuild ? (
-          <button className="icon-text-button danger" onClick={() => props.onReject(character)} disabled={rejecting}>
+          <button className="icon-text-button danger" onClick={() => props.onReject(character)} disabled={rejecting || building}>
             {rejecting ? <Loader2 className="spin" size={16} /> : <XCircle size={16} />}
             Reject
           </button>
         ) : null}
-        {building ? (
-          <span className="voice-building">
-            <Loader2 className="spin" size={14} />
-            Building chat
-          </span>
-        ) : null}
         {ready ? (
           <button className="primary-button compact" onClick={() => props.onCall(character)} disabled={props.active || props.callDisabled}>
             <Phone size={16} />
-            {props.active ? "In chat" : "Voice chat"}
+            {props.active ? "In chat" : props.inRoom ? "In room" : "Voice chat"}
           </button>
         ) : null}
       </div>
@@ -180,6 +342,131 @@ function VoiceCharacterCard(props: {
       />
       <small className="voice-disclosure">AI voice</small>
     </article>
+  );
+}
+
+function VoiceConversationDialog(props: {
+  title: string;
+  characters: Array<{ id: string; name: string }>;
+  prompt: string;
+  error: string | null;
+  busy: boolean;
+  canSubmit: boolean;
+  onPromptChange: (prompt: string) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="voice-conversation-dialog-backdrop" role="presentation">
+      <form
+        className="voice-conversation-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voice-conversation-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          props.onSubmit();
+        }}
+      >
+        <div className="voice-conversation-dialog-title">
+          <Sparkles size={17} />
+          <h4 id="voice-conversation-title">{props.title}</h4>
+        </div>
+        <div className="voice-conversation-selected">
+          {props.characters.map((character) => (
+            <span key={character.id}>{character.name}</span>
+          ))}
+        </div>
+        <label>
+          Prompt
+          <textarea
+            rows={4}
+            value={props.prompt}
+            disabled={props.busy}
+            maxLength={2000}
+            autoFocus
+            onChange={(event) => props.onPromptChange(event.target.value)}
+          />
+        </label>
+        {props.error ? <small className="voice-character-error">{props.error}</small> : null}
+        <div className="voice-conversation-dialog-actions">
+          <button className="icon-text-button" type="button" disabled={props.busy} onClick={props.onCancel}>
+            Cancel
+          </button>
+          <button className="icon-text-button accent" type="submit" disabled={!props.canSubmit || props.busy}>
+            {props.busy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+            Generate & play
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function VoiceConversationList(props: {
+  conversations: VoiceConversation[];
+  latestConversationId: string | null;
+  continuationDisabled: boolean;
+  onContinue: (conversation: VoiceConversation) => void;
+}) {
+  if (props.conversations.length === 0) {
+    return null;
+  }
+  return (
+    <div className="voice-conversation-list">
+      {props.conversations.map((conversation) => (
+        <article key={conversation.id} className="voice-conversation-card">
+          <div className="voice-conversation-card-header">
+            <div>
+              <strong>{conversation.transcript.title ?? "Voice conversation"}</strong>
+              <small>
+                {conversation.characters.map((character) => character.name).join(" & ")}
+                {conversation.durationMs ? ` · ${formatDuration(conversation.durationMs)}` : ""} · {formatRelativeTime(conversation.createdAt)}
+              </small>
+            </div>
+            <FileAudio size={18} />
+          </div>
+          <p>{conversation.prompt}</p>
+          <audio
+            controls
+            preload="metadata"
+            autoPlay={conversation.id === props.latestConversationId}
+            src={apiUrl(conversation.audioPath)}
+          />
+          <details>
+            <summary>Transcript</summary>
+            <div className="voice-conversation-transcript">
+              {conversation.transcript.turns.map((turn, index) => (
+                <p key={`${conversation.id}-${index}`}>
+                  <strong>{turn.speakerName}</strong>
+                  <span>{turn.text}</span>
+                </p>
+              ))}
+            </div>
+          </details>
+          <button
+            className="icon-text-button"
+            type="button"
+            disabled={props.continuationDisabled}
+            onClick={() => props.onContinue(conversation)}
+          >
+            <Sparkles size={16} />
+            Continue
+          </button>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function hasActivePersonaBuildJob(status: ProjectStatus | null, characterId: string): boolean {
+  return (
+    status?.project.jobs.some(
+      (job) =>
+        job.type === "BUILD_CHARACTER_PERSONA" &&
+        (job.status === "QUEUED" || job.status === "ACTIVE") &&
+        job.payload?.voiceCharacterId === characterId
+    ) ?? false
   );
 }
 
@@ -304,6 +591,47 @@ export function VoiceCallBar(props: {
       <div className="voice-call-actions">
         <button className="icon-button" type="button" onClick={props.onToggleMute} disabled={!props.call.client}>
           {props.call.muted ? <MicOff size={16} /> : <Mic size={16} />}
+        </button>
+        <button className="icon-text-button danger" type="button" onClick={props.onEnd}>
+          <PhoneOff size={16} />
+          End
+        </button>
+      </div>
+    </section>
+  );
+}
+
+export function VoiceRoomBar(props: {
+  room: NonNullable<ActiveVoiceRoom>;
+  onEnd: () => void;
+  onToggleMute: () => void;
+}) {
+  const statusText = props.room.error ?? voiceCallStatusText(props.room.status);
+  const currentSpeaker = props.room.characters.find((character) => character.id === props.room.currentSpeakerCharacterId);
+  return (
+    <section className={`voice-call-bar voice-room-bar status-${props.room.status}`}>
+      <div className="voice-call-identity voice-room-identity">
+        <div className="voice-room-avatar-stack">
+          {props.room.characters.slice(0, 4).map((character) => (
+            <div key={character.id} className={`voice-avatar small${character.id === currentSpeaker?.id ? " speaking" : ""}`}>
+              {character.profileImage ? (
+                <img src={apiUrl(character.profileImage.path)} alt={character.name} />
+              ) : (
+                <span>{initialsForName(character.name)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+        <div>
+          <strong>{currentSpeaker ? `${currentSpeaker.name} speaking` : "Group voice room"}</strong>
+          <small>
+            {statusText} via {props.room.provider.label} / {props.room.voiceModel}
+          </small>
+        </div>
+      </div>
+      <div className="voice-call-actions">
+        <button className="icon-button" type="button" onClick={props.onToggleMute} disabled={!props.room.client}>
+          {props.room.muted ? <MicOff size={16} /> : <Mic size={16} />}
         </button>
         <button className="icon-text-button danger" type="button" onClick={props.onEnd}>
           <PhoneOff size={16} />

@@ -1300,6 +1300,209 @@ figure img {
   margin-bottom: 12px;
 }
 
+.voice-room-builder {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid #d8d0c3;
+  border-radius: 8px;
+  background: #f7f4ed;
+}
+
+.voice-room-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.voice-room-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.voice-room-header strong,
+.voice-room-header small {
+  overflow-wrap: anywhere;
+}
+
+.voice-room-header small {
+  color: #65706b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.voice-room-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.voice-room-pick {
+  width: auto;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 6px 9px;
+  border: 1px solid #d4cbbc;
+  border-radius: 999px;
+  background: #fffefa;
+  color: #39443f;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.voice-room-pick.selected {
+  border-color: #8db4a0;
+  background: #f8fbf7;
+  color: #23665d;
+}
+
+.voice-room-pick input {
+  width: auto;
+  margin: 0;
+}
+
+.voice-conversation-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(23, 32, 31, 0.38);
+}
+
+.voice-conversation-dialog {
+  width: min(100%, 520px);
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #d8d0c3;
+  border-radius: 8px;
+  background: #fffefa;
+  box-shadow: 0 22px 70px rgba(23, 32, 31, 0.22);
+}
+
+.voice-conversation-dialog-title,
+.voice-conversation-dialog-actions,
+.voice-conversation-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voice-conversation-dialog-title h4 {
+  margin: 0;
+}
+
+.voice-conversation-selected,
+.voice-conversation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.voice-conversation-selected span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e2eddf;
+  color: #23665d;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.voice-conversation-dialog textarea {
+  min-height: 112px;
+}
+
+.voice-conversation-dialog-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.voice-conversation-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  margin-bottom: 12px;
+}
+
+.voice-conversation-card {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid #d8d0c3;
+  border-radius: 8px;
+  background: #fffefa;
+}
+
+.voice-conversation-card-header {
+  justify-content: space-between;
+}
+
+.voice-conversation-card-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.voice-conversation-card strong,
+.voice-conversation-card small,
+.voice-conversation-card p,
+.voice-conversation-card summary {
+  overflow-wrap: anywhere;
+}
+
+.voice-conversation-card small {
+  color: #65706b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.voice-conversation-card p {
+  margin: 0;
+  color: #39443f;
+  line-height: 1.4;
+}
+
+.voice-conversation-card audio {
+  width: 100%;
+}
+
+.voice-conversation-card details {
+  border-top: 1px solid #ece4d8;
+  padding-top: 8px;
+}
+
+.voice-conversation-card summary {
+  cursor: pointer;
+  color: #23665d;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.voice-conversation-transcript {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.voice-conversation-transcript p {
+  display: grid;
+  gap: 2px;
+}
+
+.voice-conversation-transcript span {
+  color: #39443f;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .voice-provider-selector,
 .voice-model-selector {
   display: inline-grid;
@@ -1450,6 +1653,11 @@ figure img {
   flex-basis: 42px;
 }
 
+.voice-avatar.speaking {
+  border-color: #d69b3d;
+  box-shadow: 0 0 0 3px rgba(214, 155, 61, 0.22);
+}
+
 .voice-avatar img {
   width: 100%;
   height: 100%;
@@ -1538,6 +1746,25 @@ figure img {
 
 .voice-call-actions {
   flex: 0 0 auto;
+}
+
+.voice-room-identity {
+  align-items: center;
+}
+
+.voice-room-avatar-stack {
+  display: flex;
+  align-items: center;
+  min-width: 42px;
+}
+
+.voice-room-avatar-stack .voice-avatar {
+  margin-right: -12px;
+  background: #e2eddf;
+}
+
+.voice-room-avatar-stack .voice-avatar:last-child {
+  margin-right: 0;
 }
 
 figcaption {

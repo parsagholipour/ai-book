@@ -122,6 +122,7 @@ model Project {
   embeddings     Embedding[]
   voiceCharacters VoiceCharacter[]
   voiceCallEvents VoiceCallEvent[]
+  voiceConversations VoiceConversation[]
 }
 
 model PlanVersion {
@@ -347,6 +348,28 @@ model VoiceCallEvent {
   @@index([projectId, createdAt])
   @@index([characterId, createdAt])
   @@index([clientCallId])
+}
+
+model VoiceConversation {
+  id                 String   @id @default(cuid())
+  projectId          String
+  parentConversationId String?
+  rootConversationId String?
+  prompt             String
+  characterSnapshots Json
+  transcript         Json
+  provider           String
+  model              String
+  audioPath          String
+  durationMs         Int?
+  metadata           Json
+  createdAt          DateTime @default(now())
+
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+  @@index([parentConversationId])
+  @@index([rootConversationId, createdAt])
 }
 
 model Embedding {

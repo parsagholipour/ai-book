@@ -73,15 +73,15 @@ import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
 import { inputForPlanVersion, inputFromProject, inputFromSnapshot } from "./projectInput.js";
 
 const BOOK_QUEUE_NAME = "book-maker";
-const MAX_FINAL_QA_REVISIONS_PER_PAGE = 4;
-const MAX_PAGE_QA_CANDIDATES = 6;
+const MAX_PAGE_QA_REWRITE_ATTEMPTS = 6;
+const MAX_FINAL_QA_REVISIONS_PER_PAGE = 6;
+const MAX_PAGE_QA_CANDIDATES = MAX_PAGE_QA_REWRITE_ATTEMPTS + 1;
 const MAX_PAGE_REVISE_RESTARTS = 2;
 const PAGE_QA_RECOVERY_CANDIDATE = 4;
 const GENERATE_PAGE_RECOVERY_ATTEMPTS = 4;
 const GENERATE_PAGE_RECOVERY_BACKOFF_MS = 15_000;
 const PROVIDER_NETWORK_RETRY_ATTEMPTS = 3;
 const PROVIDER_NETWORK_RETRY_DELAY_MS = 2_000;
-const VOICE_CHARACTER_SAMPLE_PAGE_COUNT = 10;
 const STOPPED_JOB_MESSAGE = "Stopped";
 const STOPPED_JOB_ERROR = "Stopped by user";
 
@@ -1076,7 +1076,7 @@ async function reviewAndSaveGeneratedPage(options: {
   while (!qualityReport.approved && revision < MAX_PAGE_QA_CANDIDATES) {
     const nextRevision = revision + 1;
     await updateJobProgress(options.generationJobId, {
-      message: pageRevisionMessage(options.draft.index, nextRevision, MAX_PAGE_QA_CANDIDATES)
+      message: pageRevisionMessage(options.draft.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
     });
     if (shouldRepairPageBriefForRecovery(nextRevision, qualityReport, pageBrief)) {
       pageBrief = await repairPageBriefForRecovery({
@@ -1229,9 +1229,10 @@ async function revisePageDraftWithRestart(options: {
   throw lastError instanceof Error ? lastError : new Error(`${options.context} revise failed.`);
 }
 
-function pageRevisionMessage(pageIndex: number, revision: number, maxRevisions: number): string {
+function pageRevisionMessage(pageIndex: number, revision: number, maxRewriteAttempts: number): string {
   const phase = revision >= PAGE_QA_RECOVERY_CANDIDATE ? "Quality recovery rewrite" : "Revising";
-  return `${phase} page ${pageIndex} (attempt ${revision}/${maxRevisions})`;
+  const rewriteAttempt = Math.max(1, revision - 1);
+  return `${phase} page ${pageIndex} (rewrite ${rewriteAttempt}/${maxRewriteAttempts})`;
 }
 
 function pageRewriteReport(
@@ -1664,7 +1665,7 @@ async function generatePage(job: Job) {
       generationJobId,
       "revise",
       70,
-      pageRevisionMessage(page.index, nextRevision, MAX_PAGE_QA_CANDIDATES)
+      pageRevisionMessage(page.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
     );
     if (shouldRepairPageBriefForRecovery(nextRevision, qualityReport, pageBrief)) {
       pageBrief = await repairPageBriefForRecovery({
@@ -2502,7 +2503,7 @@ async function buildCharacterPersona(job: Job) {
 
 async function samplePagesForVoiceCharacters(projectId: string) {
   return prisma.page.findMany({
-    where: { projectId, index: { lte: VOICE_CHARACTER_SAMPLE_PAGE_COUNT } },
+    where: { projectId },
     orderBy: { index: "asc" },
     select: {
       index: true,
@@ -3311,6 +3312,12 @@ function providerConfigSnapshot() {
       apiHost: config.ALIBABA_API_HOST,
       textModel: config.ALIBABA_TEXT_MODEL,
       imageModel: config.ALIBABA_IMAGE_MODEL
+    },
+    deepinfra: {
+      apiKeySet: Boolean(config.DEEPINFRA_API_KEY),
+      baseURL: config.DEEPINFRA_BASE_URL,
+      textModel: config.DEEPINFRA_MODEL,
+      fastTextModel: config.DEEPINFRA_FAST_MODEL
     }
   };
 }

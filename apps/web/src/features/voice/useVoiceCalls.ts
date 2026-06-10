@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiGet, type VoiceCharacter, type VoiceChatProviderId, type VoiceModelOption, type VoiceProviderInfo } from "../../api.js";
 import { readError } from "../shared/formatters.js";
 import { createBrowserVoiceCallClient } from "./BrowserVoiceCallClient.js";
-import type { ActiveVoiceCall } from "./types.js";
+import { createBrowserVoiceRoomClient } from "./BrowserVoiceRoomClient.js";
+import type { ActiveVoiceCall, ActiveVoiceRoom } from "./types.js";
 
 const VOICE_PROVIDER_STORAGE_KEY = "ai-book-maker.voiceProvider";
 const VOICE_MODEL_STORAGE_KEY = "ai-book-maker.voiceModels";
@@ -12,6 +13,9 @@ export function useVoiceCalls(
   options: { authenticated?: boolean | undefined } = {}
 ) {
   const [activeVoiceCall, setActiveVoiceCall] = useState<ActiveVoiceCall>(null);
+  const [activeVoiceRoom, setActiveVoiceRoom] = useState<ActiveVoiceRoom>(null);
+  const activeVoiceCallClientRef = useRef<NonNullable<ActiveVoiceCall>["client"]>(null);
+  const activeVoiceRoomClientRef = useRef<NonNullable<ActiveVoiceRoom>["client"]>(null);
   const [voiceProviders, setVoiceProviders] = useState<VoiceProviderInfo[]>([]);
   const [selectedVoiceProviderId, setSelectedVoiceProviderIdState] = useState<VoiceChatProviderId>(() =>
     storedVoiceProviderId() ?? "gemini_live"
@@ -61,7 +65,7 @@ export function useVoiceCalls(
     : null;
 
   function setSelectedVoiceProviderId(providerId: VoiceChatProviderId) {
-    if (activeVoiceCall) {
+    if (activeVoiceCall || activeVoiceRoom) {
       return;
     }
     setSelectedVoiceProviderIdState(providerId);
@@ -69,7 +73,7 @@ export function useVoiceCalls(
   }
 
   function setSelectedVoiceModel(model: string) {
-    if (activeVoiceCall || !selectedVoiceProvider) {
+    if (activeVoiceCall || activeVoiceRoom || !selectedVoiceProvider) {
       return;
     }
     const normalized = model.trim();
@@ -94,7 +98,7 @@ export function useVoiceCalls(
       return;
     }
 
-    await endVoiceCall();
+    await endAllVoiceSessions();
     const client = createBrowserVoiceCallClient(provider.id, character.id, {
       voiceModel: selectedVoiceModel ?? provider.model,
       onStatusChange: (status) => {
@@ -111,6 +115,9 @@ export function useVoiceCalls(
       },
       onFailure: (failureError) => {
         const message = readError(failureError);
+        if (activeVoiceCallClientRef.current === client) {
+          activeVoiceCallClientRef.current = null;
+        }
         setActiveVoiceCall((current) =>
           current?.client === client
             ? { ...current, client: null, status: "failed", muted: false, error: message }
@@ -119,6 +126,7 @@ export function useVoiceCalls(
         setError(message);
       }
     });
+    activeVoiceCallClientRef.current = client;
     setActiveVoiceCall({
       character,
       provider,
@@ -139,6 +147,9 @@ export function useVoiceCalls(
     } catch (callError) {
       const endedByUser = client.isEnded();
       await client.end();
+      if (activeVoiceCallClientRef.current === client) {
+        activeVoiceCallClientRef.current = null;
+      }
       if (endedByUser) {
         return;
       }
@@ -156,11 +167,126 @@ export function useVoiceCalls(
   }
 
   async function endVoiceCall() {
-    const call = activeVoiceCall;
-    if (call?.client) {
-      await call.client.end();
+    const client = activeVoiceCall?.client ?? activeVoiceCallClientRef.current;
+    if (client) {
+      if (activeVoiceCallClientRef.current === client) {
+        activeVoiceCallClientRef.current = null;
+      }
+      await client.end();
     }
     setActiveVoiceCall(null);
+  }
+
+  async function startVoiceRoom(projectId: string, characters: VoiceCharacter[]) {
+    const provider = selectedVoiceProvider;
+    if (!provider) {
+      setError("No voice provider is available.");
+      return;
+    }
+    if (!provider.configured) {
+      setError(`${provider.label} is not configured.`);
+      return;
+    }
+    const readyCharacters = characters.filter((character) => character.status === "READY");
+    if (readyCharacters.length < 2 || readyCharacters.length > 4) {
+      setError("Select 2-4 ready characters for a group voice room.");
+      return;
+    }
+
+    await endAllVoiceSessions();
+    const client = createBrowserVoiceRoomClient(provider.id, projectId, readyCharacters, {
+      voiceModel: selectedVoiceModel ?? provider.model,
+      onStatusChange: (status) => {
+        setActiveVoiceRoom((current) => {
+          if (current?.client !== client) {
+            return current;
+          }
+          if (status === "connected") {
+            const { error: _error, ...connectedRoom } = current;
+            return { ...connectedRoom, status };
+          }
+          return { ...current, status };
+        });
+      },
+      onCurrentSpeakerChange: (characterId) => {
+        setActiveVoiceRoom((current) =>
+          current?.client === client ? { ...current, currentSpeakerCharacterId: characterId } : current
+        );
+      },
+      onFailure: (failureError) => {
+        const message = readError(failureError);
+        if (activeVoiceRoomClientRef.current === client) {
+          activeVoiceRoomClientRef.current = null;
+        }
+        setActiveVoiceRoom((current) =>
+          current?.client === client
+            ? { ...current, client: null, status: "failed", muted: false, currentSpeakerCharacterId: null, error: message }
+            : current
+        );
+        setError(message);
+      }
+    });
+    activeVoiceRoomClientRef.current = client;
+    setActiveVoiceRoom({
+      characters: readyCharacters,
+      provider,
+      voiceModel: selectedVoiceModel ?? provider.model,
+      client,
+      status: "connecting",
+      muted: false,
+      currentSpeakerCharacterId: null
+    });
+    try {
+      await client.connect();
+      setActiveVoiceRoom((current) => {
+        if (current?.client !== client) {
+          return current;
+        }
+        const { error: _error, ...connectedRoom } = current;
+        return { ...connectedRoom, status: "connected" };
+      });
+    } catch (roomError) {
+      const endedByUser = client.isEnded();
+      await client.end();
+      if (activeVoiceRoomClientRef.current === client) {
+        activeVoiceRoomClientRef.current = null;
+      }
+      if (endedByUser) {
+        return;
+      }
+      setActiveVoiceRoom({
+        characters: readyCharacters,
+        provider,
+        voiceModel: selectedVoiceModel ?? provider.model,
+        client: null,
+        status: "failed",
+        muted: false,
+        currentSpeakerCharacterId: null,
+        error: readError(roomError)
+      });
+      setError(readError(roomError));
+    }
+  }
+
+  async function endVoiceRoom() {
+    const client = activeVoiceRoom?.client ?? activeVoiceRoomClientRef.current;
+    if (client) {
+      if (activeVoiceRoomClientRef.current === client) {
+        activeVoiceRoomClientRef.current = null;
+      }
+      await client.end();
+    }
+    setActiveVoiceRoom(null);
+  }
+
+  async function endAllVoiceSessions() {
+    const callClient = activeVoiceCallClientRef.current ?? activeVoiceCall?.client ?? null;
+    const roomClient = activeVoiceRoomClientRef.current ?? activeVoiceRoom?.client ?? null;
+    activeVoiceCallClientRef.current = null;
+    activeVoiceRoomClientRef.current = null;
+    setActiveVoiceCall(null);
+    setActiveVoiceRoom(null);
+    await Promise.all([callClient?.end(), roomClient?.end()].filter(Boolean));
   }
 
   function toggleVoiceCallMute() {
@@ -174,8 +300,20 @@ export function useVoiceCalls(
     });
   }
 
+  function toggleVoiceRoomMute() {
+    setActiveVoiceRoom((current) => {
+      if (!current?.client) {
+        return current;
+      }
+      const muted = !current.muted;
+      current.client.setMuted(muted);
+      return { ...current, muted };
+    });
+  }
+
   return {
     activeVoiceCall,
+    activeVoiceRoom,
     voiceProviders,
     selectedVoiceProvider,
     selectedVoiceProviderId,
@@ -184,7 +322,10 @@ export function useVoiceCalls(
     setSelectedVoiceModel,
     startVoiceCall,
     endVoiceCall,
-    toggleVoiceCallMute
+    toggleVoiceCallMute,
+    startVoiceRoom,
+    endVoiceRoom,
+    toggleVoiceRoomMute
   };
 }
 

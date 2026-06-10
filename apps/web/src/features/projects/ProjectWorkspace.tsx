@@ -1,10 +1,12 @@
 import { AlertTriangle, MessageSquareText } from "lucide-react";
 import type {
+  CreateVoiceConversationRequest,
   Project,
   ProjectDetails,
   ProjectStatus,
   VoiceCharacter,
   VoiceChatProviderId,
+  VoiceConversation,
   VoiceProfile,
   VoiceProviderInfo
 } from "../../api.js";
@@ -15,8 +17,8 @@ import type { NormalizedPlanQuestion, QuestionResponse } from "../planning/planQ
 import { PreviewsSection } from "../previews/PreviewsSection.js";
 import { Metric } from "../shared/Metric.js";
 import { formatTokenCount } from "../shared/formatters.js";
-import { VoiceCallBar, VoiceCharactersPanel } from "../voice/VoiceComponents.js";
-import type { ActiveVoiceCall } from "../voice/types.js";
+import { VoiceCallBar, VoiceCharactersPanel, VoiceRoomBar } from "../voice/VoiceComponents.js";
+import type { ActiveVoiceCall, ActiveVoiceRoom } from "../voice/types.js";
 import { formatProjectCategory, type GenerationStrategyOption } from "./draft.js";
 
 export function ProjectWorkspace(props: {
@@ -30,7 +32,9 @@ export function ProjectWorkspace(props: {
   selectedPdfAvailable: boolean;
   selectedPdfPreviewUrl: string;
   selectedVoiceCharacters: VoiceCharacter[];
+  selectedVoiceConversations: VoiceConversation[];
   activeVoiceCall: ActiveVoiceCall;
+  activeVoiceRoom: ActiveVoiceRoom;
   voiceProviders: VoiceProviderInfo[];
   selectedVoiceProviderId: VoiceChatProviderId;
   selectedVoiceModel: string | null;
@@ -71,8 +75,12 @@ export function ProjectWorkspace(props: {
   onVoiceProviderChange: (providerId: VoiceChatProviderId) => void;
   onVoiceModelChange: (model: string) => void;
   onStartVoiceCall: (character: VoiceCharacter) => void;
+  onStartVoiceRoom: (projectId: string, characters: VoiceCharacter[]) => void;
+  onCreateVoiceConversation: (projectId: string, payload: CreateVoiceConversationRequest) => Promise<VoiceConversation>;
   onEndVoiceCall: () => void;
+  onEndVoiceRoom: () => void;
   onToggleVoiceCallMute: () => void;
+  onToggleVoiceRoomMute: () => void;
 }) {
   const selectedProject = props.selectedProject;
   const plan = props.selectedDetails?.currentPlan?.planningPackage;
@@ -140,22 +148,34 @@ export function ProjectWorkspace(props: {
           {props.activeVoiceCall ? (
             <VoiceCallBar call={props.activeVoiceCall} onEnd={props.onEndVoiceCall} onToggleMute={props.onToggleVoiceCallMute} />
           ) : null}
+          {props.activeVoiceRoom ? (
+            <VoiceRoomBar room={props.activeVoiceRoom} onEnd={props.onEndVoiceRoom} onToggleMute={props.onToggleVoiceRoomMute} />
+          ) : null}
 
           {selectedProject.status === "COMPLETE" || props.selectedVoiceCharacters.length > 0 ? (
             <VoiceCharactersPanel
               characters={props.selectedVoiceCharacters}
+              selectedStatus={props.selectedStatus}
               busyActions={props.busyActions}
+              conversations={props.selectedVoiceConversations}
               activeCallCharacterId={props.activeVoiceCall?.character.id ?? null}
+              activeRoomCharacterIds={props.activeVoiceRoom?.characters.map((character) => character.id) ?? []}
               providers={props.voiceProviders}
               selectedProviderId={props.selectedVoiceProviderId}
               selectedModel={props.selectedVoiceModel}
-              providerSelectionDisabled={Boolean(props.activeVoiceCall)}
+              providerSelectionDisabled={Boolean(props.activeVoiceCall || props.activeVoiceRoom)}
               onApprove={props.onApproveVoiceCharacter}
               onReject={props.onRejectVoiceCharacter}
               onProfileChange={props.onVoiceProfileChange}
               onProviderChange={props.onVoiceProviderChange}
               onModelChange={props.onVoiceModelChange}
               onCall={props.onStartVoiceCall}
+              onStartRoom={(characters) => selectedProject ? props.onStartVoiceRoom(selectedProject.id, characters) : undefined}
+              onCreateConversation={(payload) =>
+                selectedProject
+                  ? props.onCreateVoiceConversation(selectedProject.id, payload)
+                  : Promise.reject(new Error("Select a project first."))
+              }
             />
           ) : null}
 

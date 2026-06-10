@@ -18,6 +18,26 @@ describe("provider cost calculation", () => {
     expect(cost).toBe(0.826863);
   });
 
+  it("calculates DeepInfra DeepSeek text cost with cache-hit pricing", () => {
+    const proCost = calculateTextGenerationCost({
+      provider: "deepinfra",
+      model: "deepseek-ai/DeepSeek-V4-Pro",
+      promptTokens: 1_000_000,
+      cacheHitTokens: 100_000,
+      outputTokens: 500_000
+    });
+    const flashCost = calculateTextGenerationCost({
+      provider: "deepinfra",
+      model: "deepseek-ai/DeepSeek-V4-Flash",
+      promptTokens: 1_000_000,
+      cacheHitTokens: 200_000,
+      outputTokens: 500_000
+    });
+
+    expect(proCost).toBe(2.48);
+    expect(flashCost).toBe(0.184);
+  });
+
   it("uses selected Gemini text model pricing tiers", () => {
     const shortPromptCost = calculateTextGenerationCost({
       provider: "gemini",

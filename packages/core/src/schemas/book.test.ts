@@ -182,6 +182,33 @@ describe("createProjectSchema", () => {
     });
   });
 
+  it("accepts a DeepInfra thinking text model variant in media settings", () => {
+    const input = createProjectSchema.parse({
+      prompt: "A practical book about choosing an AI model for planning and drafting.",
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        lessCensored: false,
+        generationStrategy: "chaptered-sequential",
+        textModel: {
+          provider: "deepinfra",
+          model: "deepseek-ai/DeepSeek-V4-Pro",
+          thinkingEnabled: true
+        },
+        toneProfile: "neutral"
+      }
+    });
+
+    expect(input.mediaSettings.textModel).toEqual({
+      provider: "deepinfra",
+      model: "deepseek-ai/DeepSeek-V4-Pro",
+      thinkingEnabled: true
+    });
+  });
+
   it("accepts Alibaba Qwen text models in media settings", () => {
     const input = createProjectSchema.parse({
       prompt: "A practical book about choosing an AI model for planning and drafting.",

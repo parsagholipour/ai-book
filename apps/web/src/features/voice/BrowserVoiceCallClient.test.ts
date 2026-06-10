@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { decodePcm16Base64, encodePcm16Base64, resampleFloat32 } from "./BrowserVoiceCallClient.js";
+import {
+  decodePcm16Base64,
+  encodePcm16Base64,
+  isRetryableGeminiDisconnectReason,
+  resampleFloat32
+} from "./BrowserVoiceCallClient.js";
 
 describe("Gemini Live audio helpers", () => {
   it("encodes and decodes clipped PCM16 audio", () => {
@@ -23,5 +28,18 @@ describe("Gemini Live audio helpers", () => {
     expect(output).toHaveLength(160);
     expect(output[0]).toBeCloseTo(0.25, 4);
     expect(output.at(-1)).toBeCloseTo(0.25, 4);
+  });
+
+  it("treats Gemini GoAway session-duration closes as retryable", () => {
+    expect(
+      isRetryableGeminiDisconnectReason(
+        "Connection aborted because the client failed to close the connection after receiving a GoAway signal once the session duration limit was reached."
+      )
+    ).toBe(true);
+  });
+
+  it("does not retry Gemini auth or quota failures", () => {
+    expect(isRetryableGeminiDisconnectReason("PERMISSION_DENIED: invalid API key")).toBe(false);
+    expect(isRetryableGeminiDisconnectReason("RESOURCE_EXHAUSTED: quota exceeded")).toBe(false);
   });
 });

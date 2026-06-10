@@ -1,7 +1,9 @@
 import type { AppConfig } from "../config.js";
 import { alibabaImageModelOptions, alibabaTextModelOptions } from "./alibabaModels.js";
+import { deepInfraTextModelOptions } from "./deepinfraModels.js";
 import { geminiImageModelOptions } from "./geminiModels.js";
 import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
+import { DeepInfraAdapter } from "./deepinfra.js";
 import { DeepSeekAdapter } from "./deepseek.js";
 import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
 import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeTextModelAdapter } from "./fake.js";
@@ -98,10 +100,15 @@ export function textModelOptions(config: AppConfig): TextModelOption[] {
       thinking: true,
       thinkingEnabled: true
     },
+    ...deepInfraModelOptions(config),
     ...alibabaTextModelOptions(config.ALIBABA_TEXT_MODEL),
     ...GEMINI_MAIN_TEXT_MODEL_OPTIONS,
     ...localTextModelOptions(config)
   ];
+}
+
+function deepInfraModelOptions(config: AppConfig): TextModelOption[] {
+  return config.DEEPINFRA_API_KEY ? deepInfraTextModelOptions(config.DEEPINFRA_MODEL) : [];
 }
 
 function localTextModelOptions(config: AppConfig): TextModelOption[] {
@@ -169,6 +176,14 @@ export function createLanguageDetectionTextModel(config: AppConfig): TextModelAd
       thinkingEnabled: false
     });
   }
+  if (config.DEEPINFRA_API_KEY) {
+    return new DeepInfraAdapter({
+      apiKey: config.DEEPINFRA_API_KEY,
+      baseURL: config.DEEPINFRA_BASE_URL,
+      model: config.DEEPINFRA_FAST_MODEL,
+      thinkingEnabled: false
+    });
+  }
   if (config.GEMINI_API_KEY) {
     return new GeminiTextAdapter({
       apiKey: config.GEMINI_API_KEY,
@@ -207,6 +222,14 @@ function createTextModelAdapter(config: AppConfig, selection: TextModelSelection
       baseURL: config.LOCAL_TEXT_BASE_URL,
       model: selection.model || config.LOCAL_TEXT_MODEL,
       apiKey: config.LOCAL_TEXT_API_KEY
+    });
+  }
+  if (selection.provider === "deepinfra") {
+    return new DeepInfraAdapter({
+      apiKey: config.DEEPINFRA_API_KEY,
+      baseURL: config.DEEPINFRA_BASE_URL,
+      model: selection.model,
+      thinkingEnabled: selection.thinkingEnabled
     });
   }
 

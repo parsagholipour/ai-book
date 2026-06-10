@@ -78,11 +78,22 @@ export type VoiceCharacterPageSample = {
 };
 
 type PlanCharacter = BookPlan["characters"][number];
+type PersonaDraft = z.infer<typeof personaDraftSchema>;
 type GenderPresentation = VoiceProfile["genderPresentation"];
 type GenderEvidence = Record<Exclude<GenderPresentation, "unknown">, number>;
 type CharacterMatcher = {
   key: string;
   patterns: RegExp[];
+};
+type VoiceCharacterModelPageSample = {
+  index: number;
+  title?: string | undefined;
+  summary: string;
+  excerpt: string;
+  part?: {
+    index: number;
+    total: number;
+  };
 };
 
 const DEFAULT_VOICE_PROFILE: VoiceProfile = {
@@ -93,6 +104,7 @@ const DEFAULT_VOICE_PROFILE: VoiceProfile = {
   pace: "medium",
   formality: "balanced"
 };
+const VOICE_CHARACTER_PAGE_CHUNK_CHAR_BUDGET = 24_000;
 
 export function voiceCharactersDisabledForInput(input: Pick<CreateProjectInput, "category" | "prompt" | "subcategory">): boolean {
   if (input.category === "BIOGRAPHY" || input.category === "HISTORY") {
@@ -129,43 +141,51 @@ export async function extractVoiceCharacterCandidates(options: {
     return [];
   }
 
-  const result = await generateJsonWithJailbreak(options.textModel, {
-    purpose: "extract-voice-character-candidates",
-    lessCensored: false,
-    jailbreakRole: "planner",
-    temperature: 0.2,
-    maxTokens: 1200,
-    schema: voiceCharacterCandidateListSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "Extract recurring fictional characters for a future voice-chat feature.",
-          "Use only the supplied book plan and first-page sample.",
-          "Return compact JSON. Do not include real people, authors, historical figures, or generic narrators.",
-          "If no safe fictional character is present, return an empty characters array.",
-          "Infer age/gender voice profile only from explicit evidence; use unknown/neutral adult defaults otherwise."
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          book: {
-            title: options.plan.title,
-            premise: options.plan.premise,
-            audience: options.plan.audience,
-            prompt: options.input.prompt,
-            category: options.input.category,
-            subcategory: options.input.subcategory
-          },
-          firstPages: compactPageSamples(options.pages)
-        })
-      }
-    ]
-  });
+  const pageChunks = pageSampleChunks(options.pages);
+  const modelCandidates: VoiceCharacterCandidate[] = [];
+  for (const [chunkIndex, pageChunk] of pageChunks.entries()) {
+    const result = await generateJsonWithJailbreak(options.textModel, {
+      purpose: "extract-voice-character-candidates",
+      lessCensored: false,
+      jailbreakRole: "planner",
+      temperature: 0.2,
+      schema: voiceCharacterCandidateListSchema,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "Extract recurring fictional characters for a future voice-chat feature.",
+            "Use only the supplied book plan and page sample chunk.",
+            "Return one complete JSON object. Do not include real people, authors, historical figures, or generic narrators.",
+            "If no safe fictional character is present, return an empty characters array.",
+            "Infer age/gender voice profile only from explicit evidence; use unknown/neutral adult defaults otherwise."
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            book: {
+              title: options.plan.title,
+              premise: options.plan.premise,
+              audience: options.plan.audience,
+              prompt: options.input.prompt,
+              category: options.input.category,
+              subcategory: options.input.subcategory
+            },
+            pageChunk: {
+              index: chunkIndex + 1,
+              total: pageChunks.length,
+              pages: pageChunk
+            }
+          })
+        }
+      ]
+    });
+    modelCandidates.push(...result.data.characters);
+  }
 
   const candidates = dedupeCandidates(
-    result.data.characters
+    modelCandidates
       .map((candidate) => ({
         ...candidate,
         source: "BOOK_SAMPLE" as const,
@@ -183,47 +203,57 @@ export async function buildVoiceCharacterPersona(options: {
   pages: VoiceCharacterPageSample[];
   textModel: TextModelAdapter;
 }): Promise<VoiceCharacterPersona> {
-  const result = await generateJsonWithJailbreak(options.textModel, {
-    purpose: "build-voice-character-persona",
-    lessCensored: false,
-    jailbreakRole: "planner",
-    temperature: 0.35,
-    maxTokens: 1800,
-    schema: personaDraftSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "Create a concise fictional character persona for live voice chat.",
-          "Use only the supplied plan, candidate, page summaries, and first pages.",
-          "Do not store or ask for audio transcripts.",
-          "Do not claim knowledge beyond the book. Spoiler boundaries should prevent revealing later plot unless the user asks.",
-          "Return compact JSON only."
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          book: {
-            title: options.plan.title,
-            premise: options.plan.premise,
-            audience: options.plan.audience,
-            voiceGuide: options.plan.voiceGuide,
-            prompt: options.input.prompt,
-            category: options.input.category,
-            subcategory: options.input.subcategory
-          },
-          candidate: options.candidate,
-          firstPages: compactPageSamples(options.pages)
-        })
-      }
-    ]
-  });
+  const pageChunks = pageSampleChunks(options.pages);
+  const chunks = pageChunks.length > 0 ? pageChunks : [[]];
+  const personaDrafts: PersonaDraft[] = [];
+  for (const [chunkIndex, pageChunk] of chunks.entries()) {
+    const result = await generateJsonWithJailbreak(options.textModel, {
+      purpose: "build-voice-character-persona",
+      lessCensored: false,
+      jailbreakRole: "planner",
+      temperature: 0.35,
+      schema: personaDraftSchema,
+      messages: [
+        {
+          role: "system",
+          content: [
+            "Create a concise fictional character persona for live voice chat.",
+            "Use only the supplied plan, candidate, page summaries, and page sample chunk.",
+            "Do not store or ask for audio transcripts.",
+            "Do not claim knowledge beyond the book. Spoiler boundaries should prevent revealing later plot unless the user asks.",
+            "Return one complete JSON object only."
+          ].join(" ")
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            book: {
+              title: options.plan.title,
+              premise: options.plan.premise,
+              audience: options.plan.audience,
+              voiceGuide: options.plan.voiceGuide,
+              prompt: options.input.prompt,
+              category: options.input.category,
+              subcategory: options.input.subcategory
+            },
+            candidate: options.candidate,
+            pageChunk: {
+              index: chunkIndex + 1,
+              total: chunks.length,
+              pages: pageChunk
+            }
+          })
+        }
+      ]
+    });
+    personaDrafts.push(result.data);
+  }
+  const personaDraft = mergePersonaDrafts(personaDrafts);
 
   const voiceProfile = refineVoiceProfileWithPageSamples(
     normalizeVoiceProfile({
       ...options.candidate.voiceProfile,
-      ...result.data.voiceProfile
+      ...personaDraft.voiceProfile
     }),
     options.candidate.name,
     options.pages,
@@ -235,13 +265,13 @@ export async function buildVoiceCharacterPersona(options: {
     description: options.candidate.description,
     traits: options.candidate.traits,
     visualRules: options.candidate.visualRules,
-    personality: result.data.personality,
-    goals: result.data.goals,
-    relationships: result.data.relationships,
-    knownFacts: result.data.knownFacts,
-    speakingStyle: result.data.speakingStyle,
-    spoilerBoundaries: result.data.spoilerBoundaries,
-    greeting: result.data.greeting.trim() || greetingForCandidate(options.candidate),
+    personality: personaDraft.personality,
+    goals: personaDraft.goals,
+    relationships: personaDraft.relationships,
+    knownFacts: personaDraft.knownFacts,
+    speakingStyle: personaDraft.speakingStyle,
+    spoilerBoundaries: personaDraft.spoilerBoundaries,
+    greeting: personaDraft.greeting.trim() || greetingForCandidate(options.candidate),
     voiceProfile,
     instructions: ""
   };
@@ -360,6 +390,44 @@ export function reinforceRealtimeCharacterRoleplay(instructions: string, charact
       "Do not impersonate a real living person or claim real-world physical presence with the caller."
     ].join(" ")
   ].join("\n");
+}
+
+export function buildRealtimeGroupCharacterInstructions(options: {
+  baseInstructions: string;
+  characterName: string;
+  participantNames: string[];
+}): string {
+  const baseInstructions = reinforceRealtimeCharacterRoleplay(options.baseInstructions, options.characterName);
+  const participantNames = uniqueStrings(options.participantNames.map((name) => name.trim()).filter(Boolean));
+  const otherCharacters = participantNames.filter((name) => name.toLowerCase() !== options.characterName.toLowerCase());
+  return [
+    baseInstructions,
+    [
+      "Group voice room rules:",
+      `The room participants are User${participantNames.length ? `, ${participantNames.join(", ")}` : ""}.`,
+      otherCharacters.length
+        ? `Other characters in the room: ${otherCharacters.join(", ")}. Treat their quoted lines as in-world speech.`
+        : "",
+      `Speak only as ${options.characterName}; never narrate, imitate, or answer for another participant.`,
+      "Wait for conductor prompts before speaking. Each prompt contains the recent room transcript and names you as the next speaker.",
+      "Answer the latest user or character line naturally, in first person, and keep each turn concise enough for a live voice conversation.",
+      "If a prompt says the user interrupted, stop the prior thought and respond to the user's newest line."
+    ]
+      .filter(Boolean)
+      .join(" ")
+  ].join("\n");
+}
+
+export function buildRealtimeGroupListenerInstructions(participantNames: string[]): string {
+  const names = uniqueStrings(participantNames.map((name) => name.trim()).filter(Boolean));
+  return [
+    "You are a hidden listener for a live fictional character group voice room.",
+    "Transcribe the user's microphone input for routing only.",
+    "Do not roleplay, do not answer the user, and do not generate spoken responses.",
+    names.length ? `Characters in the room: ${names.join(", ")}.` : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function candidateFromPlanCharacter(input: CreateProjectInput, character: PlanCharacter): VoiceCharacterCandidate {
@@ -585,12 +653,68 @@ function inferAccentNotes(text: string): string | undefined {
   return explicit || undefined;
 }
 
-function compactPageSamples(pages: VoiceCharacterPageSample[]) {
-  return pages.slice(0, 10).map((page) => ({
+function mergePersonaDrafts(drafts: PersonaDraft[]): PersonaDraft {
+  const voiceProfile = normalizeVoiceProfile(
+    drafts.reduce<Record<string, unknown>>((profile, draft) => ({ ...profile, ...draft.voiceProfile }), {})
+  );
+  return {
+    personality: uniqueStrings(drafts.flatMap((draft) => draft.personality)),
+    goals: uniqueStrings(drafts.flatMap((draft) => draft.goals)),
+    relationships: uniqueStrings(drafts.flatMap((draft) => draft.relationships)),
+    knownFacts: uniqueStrings(drafts.flatMap((draft) => draft.knownFacts)),
+    speakingStyle: uniqueStrings(drafts.flatMap((draft) => draft.speakingStyle)),
+    spoilerBoundaries: uniqueStrings(drafts.flatMap((draft) => draft.spoilerBoundaries)),
+    greeting: drafts.find((draft) => draft.greeting.trim())?.greeting ?? "Hello. I am glad you called.",
+    voiceProfile
+  };
+}
+
+function pageSampleChunks(pages: VoiceCharacterPageSample[]): VoiceCharacterModelPageSample[][] {
+  const chunks: VoiceCharacterModelPageSample[][] = [];
+  let current: VoiceCharacterModelPageSample[] = [];
+  let currentSize = 0;
+
+  for (const sample of pages.flatMap(pageModelSamples)) {
+    const sampleSize = JSON.stringify(sample).length;
+    if (current.length > 0 && currentSize + sampleSize > VOICE_CHARACTER_PAGE_CHUNK_CHAR_BUDGET) {
+      chunks.push(current);
+      current = [];
+      currentSize = 0;
+    }
+    current.push(sample);
+    currentSize += sampleSize;
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+  return chunks;
+}
+
+function pageModelSamples(page: VoiceCharacterPageSample): VoiceCharacterModelPageSample[] {
+  const summary = normalizePageText(page.summary ?? "");
+  const excerpt = normalizePageText(page.markdown ?? "");
+  const baseSize = JSON.stringify({
     index: page.index,
     title: page.title,
-    summary: clip(page.summary ?? "", 500),
-    excerpt: clip(page.markdown ?? "", 900)
+    summary,
+    excerpt: ""
+  }).length;
+  const excerptBudget = Math.max(1_000, VOICE_CHARACTER_PAGE_CHUNK_CHAR_BUDGET - baseSize);
+  const parts = splitText(excerpt, excerptBudget);
+  return parts.map((part, index) => ({
+    index: page.index,
+    title: page.title,
+    summary,
+    excerpt: part,
+    ...(parts.length > 1
+      ? {
+          part: {
+            index: index + 1,
+            total: parts.length
+          }
+        }
+      : {})
   }));
 }
 
@@ -621,14 +745,28 @@ function greetingForCandidate(candidate: VoiceCharacterCandidate): string {
   return `Hello, I am ${candidate.name}.`;
 }
 
-function clip(value: string, maxLength: number): string {
-  const clean = value.replace(/\s+/g, " ").trim();
-  if (clean.length <= maxLength) {
-    return clean;
+function splitText(text: string, maxLength: number): string[] {
+  const clean = normalizePageText(text);
+  if (!clean) {
+    return [""];
   }
-  const sliced = clean.slice(0, maxLength);
-  const lastSpace = sliced.lastIndexOf(" ");
-  return `${sliced.slice(0, lastSpace > 120 ? lastSpace : maxLength).trim()}...`;
+  const parts: string[] = [];
+  for (let start = 0; start < clean.length; ) {
+    const hardEnd = Math.min(clean.length, start + maxLength);
+    if (hardEnd === clean.length) {
+      parts.push(clean.slice(start).trim());
+      break;
+    }
+    const softEnd = clean.lastIndexOf(" ", hardEnd);
+    const end = softEnd > start + Math.floor(maxLength * 0.6) ? softEnd : hardEnd;
+    parts.push(clean.slice(start, end).trim());
+    start = end;
+  }
+  return parts.filter(Boolean);
+}
+
+function normalizePageText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function uniqueStrings(values: string[]): string[] {

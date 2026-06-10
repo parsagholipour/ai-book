@@ -6,7 +6,12 @@ import {
   draftFromSavedInputs,
   initialDraft,
   projectInputFromDraft,
-  resolveTextModelOption
+  resolveTextModelOption,
+  textModelKey,
+  textModelLabel,
+  textModelSelectionFromKey,
+  textModelSelectionFromOption,
+  textModelSelectionFromValue
 } from "./draft.js";
 
 describe("project draft helpers", () => {
@@ -75,5 +80,36 @@ describe("project draft helpers", () => {
 
   it("falls back to the first available text model option", () => {
     expect(resolveTextModelOption([], { provider: "gemini", model: "unknown" })).toEqual(DEFAULT_TEXT_MODEL_OPTIONS[0]);
+  });
+
+  it("round-trips DeepInfra thinking text model selections", () => {
+    const normalOption = {
+      provider: "deepinfra" as const,
+      model: "deepseek-ai/DeepSeek-V4-Pro",
+      label: "DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro)"
+    };
+    const thinkingOption = {
+      ...normalOption,
+      thinking: true,
+      thinkingEnabled: true
+    };
+
+    expect(textModelSelectionFromValue(thinkingOption)).toEqual({
+      provider: "deepinfra",
+      model: "deepseek-ai/DeepSeek-V4-Pro",
+      thinkingEnabled: true
+    });
+    expect(textModelSelectionFromOption(thinkingOption)).toEqual({
+      provider: "deepinfra",
+      model: "deepseek-ai/DeepSeek-V4-Pro",
+      thinkingEnabled: true
+    });
+    expect(textModelSelectionFromKey(textModelKey(thinkingOption), [normalOption, thinkingOption])).toEqual({
+      provider: "deepinfra",
+      model: "deepseek-ai/DeepSeek-V4-Pro",
+      thinkingEnabled: true
+    });
+    expect(textModelKey(normalOption)).not.toBe(textModelKey(thinkingOption));
+    expect(textModelLabel(thinkingOption)).toBe("DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro) (Thinking)");
   });
 });

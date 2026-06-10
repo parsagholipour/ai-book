@@ -447,11 +447,7 @@ export function textModelSelectionFromValue(value: unknown): TextModelSelection 
   const record = value as Record<string, unknown>;
   const provider = record.provider;
   const model = record.model;
-  if (
-    (provider === "deepseek" || provider === "gemini" || provider === "alibaba") &&
-    typeof model === "string" &&
-    model.trim()
-  ) {
+  if (isTextModelProvider(provider) && typeof model === "string" && model.trim()) {
     const thinkingBudget = record.thinkingBudget;
     const thinkingEnabled = record.thinkingEnabled;
     return {
@@ -464,6 +460,16 @@ export function textModelSelectionFromValue(value: unknown): TextModelSelection 
     };
   }
   return DEFAULT_TEXT_MODEL;
+}
+
+function isTextModelProvider(provider: unknown): provider is TextModelSelection["provider"] {
+  return (
+    provider === "deepseek" ||
+    provider === "deepinfra" ||
+    provider === "gemini" ||
+    provider === "alibaba" ||
+    provider === "openai-compatible"
+  );
 }
 
 export function imageModelSelectionFromValue(value: unknown): ImageModelSelection {

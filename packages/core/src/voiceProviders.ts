@@ -44,6 +44,10 @@ export type CreateRealtimeSessionRequest = {
   voiceId?: string | undefined;
   reconnectContext?: string | undefined;
   providerMetadata?: Record<string, unknown> | undefined;
+  manualTurnControl?: boolean | undefined;
+  outputAudio?: boolean | undefined;
+  inputAudioTranscription?: boolean | undefined;
+  sessionMode?: "single" | "group_character" | "group_listener" | undefined;
 };
 
 export type CreateOpenAIRealtimeSessionRequest = CreateRealtimeSessionRequest & {
@@ -218,11 +222,7 @@ export class OpenAIRealtimeVoiceProvider implements VoiceChatProvider {
       type: "realtime",
       model,
       instructions: [request.instructions, reconnectInstructions, selected.instructions].filter(Boolean).join("\n\n"),
-      audio: {
-        output: {
-          voice: selected.voiceId
-        }
-      }
+      audio: openAIRealtimeAudioConfig(request, selected.voiceId)
     });
 
     const formData = new FormData();
@@ -329,6 +329,7 @@ export class GeminiLiveVoiceProvider implements VoiceChatProvider {
             },
             inputAudioTranscription: {},
             outputAudioTranscription: {},
+            ...geminiRealtimeInputConfig(request),
             sessionResumption: sessionHandle ? { handle: sessionHandle } : {},
             contextWindowCompression: {
               triggerTokens: "24000",
@@ -344,6 +345,7 @@ export class GeminiLiveVoiceProvider implements VoiceChatProvider {
           "speechConfig",
           "inputAudioTranscription",
           "outputAudioTranscription",
+          ...(request.manualTurnControl ? ["realtimeInputConfig"] : []),
           "sessionResumption",
           "contextWindowCompression"
         ]
@@ -396,6 +398,38 @@ function buildReconnectInstructions(reconnectContext?: string): string {
     "Recent conversation before reconnect:",
     trimmed
   ].join("\n");
+}
+
+function openAIRealtimeAudioConfig(request: CreateRealtimeSessionRequest, voiceId: string): Record<string, unknown> {
+  const input: Record<string, unknown> = {};
+  if (request.inputAudioTranscription !== false) {
+    input.transcription = { model: "gpt-4o-mini-transcribe" };
+  }
+  if (request.manualTurnControl && request.sessionMode !== "group_character") {
+    input.turn_detection = {
+      type: "server_vad",
+      create_response: false,
+      interrupt_response: true
+    };
+  }
+  const audio: Record<string, unknown> = Object.keys(input).length ? { input } : {};
+  if (request.outputAudio !== false) {
+    audio.output = { voice: voiceId };
+  }
+  return audio;
+}
+
+function geminiRealtimeInputConfig(request: CreateRealtimeSessionRequest): Record<string, unknown> {
+  if (!request.manualTurnControl) {
+    return {};
+  }
+  return {
+    realtimeInputConfig: {
+      automaticActivityDetection: {
+        disabled: request.sessionMode === "group_character"
+      }
+    }
+  };
 }
 
 const NEUTRAL_REALTIME_VOICE = "alloy";

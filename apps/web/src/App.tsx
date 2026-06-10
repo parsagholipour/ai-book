@@ -82,6 +82,7 @@ export function App() {
     void auth.logout(async () => {
       data.clearProjectData();
       await voice.endVoiceCall();
+      await voice.endVoiceRoom();
     });
   }
 
@@ -145,7 +146,9 @@ export function App() {
         selectedPdfAvailable={data.selectedPdfAvailable}
         selectedPdfPreviewUrl={data.selectedPdfPreviewUrl}
         selectedVoiceCharacters={data.selectedVoiceCharacters}
+        selectedVoiceConversations={data.selectedVoiceConversations}
         activeVoiceCall={voice.activeVoiceCall}
+        activeVoiceRoom={voice.activeVoiceRoom}
         voiceProviders={voice.voiceProviders}
         selectedVoiceProviderId={voice.selectedVoiceProviderId}
         selectedVoiceModel={voice.selectedVoiceModel}
@@ -186,8 +189,12 @@ export function App() {
         onVoiceProviderChange={voice.setSelectedVoiceProviderId}
         onVoiceModelChange={voice.setSelectedVoiceModel}
         onStartVoiceCall={(character) => void voice.startVoiceCall(character)}
+        onStartVoiceRoom={(projectId, characters) => void voice.startVoiceRoom(projectId, characters)}
+        onCreateVoiceConversation={data.createVoiceConversation}
         onEndVoiceCall={() => void voice.endVoiceCall()}
+        onEndVoiceRoom={() => void voice.endVoiceRoom()}
         onToggleVoiceCallMute={voice.toggleVoiceCallMute}
+        onToggleVoiceRoomMute={voice.toggleVoiceRoomMute}
       />
     </main>
   );

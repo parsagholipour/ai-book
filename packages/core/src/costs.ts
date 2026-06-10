@@ -289,6 +289,18 @@ const DEEPSEEK_V4_PRO_RATE: TextRate = {
   cacheHitPerMillion: 0.003625
 };
 
+const DEEPINFRA_V4_FLASH_RATE: TextRate = {
+  inputPerMillion: 0.1,
+  outputPerMillion: 0.2,
+  cacheHitPerMillion: 0.02
+};
+
+const DEEPINFRA_V4_PRO_RATE: TextRate = {
+  inputPerMillion: 1.3,
+  outputPerMillion: 2.6,
+  cacheHitPerMillion: 0.1
+};
+
 const GEMINI_IMAGE_COSTS_USD = new Map<string, number>([
   ["gemini-2.5-flash-image", 0.039],
   ["imagen-4.0-fast-generate-001", 0.02],
@@ -464,6 +476,16 @@ function resolveTextRate(provider: string | null, model: string | null, promptTo
     return null;
   }
 
+  if (provider === "deepinfra") {
+    if (isDeepInfraV4ProModel(model)) {
+      return DEEPINFRA_V4_PRO_RATE;
+    }
+    if (isDeepInfraV4FlashModel(model)) {
+      return DEEPINFRA_V4_FLASH_RATE;
+    }
+    return null;
+  }
+
   if (provider === "alibaba" || provider === "qwen") {
     return resolveRateForPromptTokens(ALIBABA_TEXT_RATES.get(model), promptTokens);
   }
@@ -478,6 +500,14 @@ function resolveTextRate(provider: string | null, model: string | null, promptTo
   }
 
   return resolveRateForPromptTokens(GEMINI_TEXT_RATES.get(model), promptTokens);
+}
+
+function isDeepInfraV4ProModel(model: string): boolean {
+  return model === "deepseek-ai/deepseek-v4-pro" || model === "deepseek-v4-pro";
+}
+
+function isDeepInfraV4FlashModel(model: string): boolean {
+  return model === "deepseek-ai/deepseek-v4-flash" || model === "deepseek-v4-flash";
 }
 
 function resolveRateForPromptTokens(

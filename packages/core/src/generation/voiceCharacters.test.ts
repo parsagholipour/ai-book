@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { FakeTextModelAdapter } from "../adapters/fake.js";
+import type { TextModelAdapter } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import {
   buildCharacterProfileImagePrompt,
+  buildRealtimeGroupCharacterInstructions,
   buildVoiceCharacterPersona,
   candidatesFromPlanCharacters,
   extractVoiceCharacterCandidates,
@@ -177,6 +179,151 @@ describe("voice character helpers", () => {
     expect(persona.voiceProfile.warmth).toBe("high");
   });
 
+  it("does not cap voice character JSON output with app-level max tokens", async () => {
+    const requests: Array<{ purpose: string | undefined; hasMaxTokens: boolean; maxTokens: number | undefined }> = [];
+    const textModel: TextModelAdapter = {
+      async generateText(options) {
+        return {
+          text: `text for ${options.purpose ?? "unknown"}`,
+          model: "recording-model",
+          provider: "recording"
+        };
+      },
+      async generateJson(options) {
+        requests.push({
+          purpose: options.purpose,
+          hasMaxTokens: Object.hasOwn(options, "maxTokens"),
+          maxTokens: options.maxTokens
+        });
+        const data =
+          options.purpose === "extract-voice-character-candidates"
+            ? { characters: [] }
+            : {
+                personality: ["Curious"],
+                goals: ["Stay faithful to the book."],
+                relationships: [],
+                knownFacts: ["Known from supplied pages."],
+                speakingStyle: ["Conversational."],
+                spoilerBoundaries: ["Avoid later spoilers unless asked."],
+                greeting: "Hello.",
+                voiceProfile: {
+                  ageBand: "adult",
+                  genderPresentation: "neutral",
+                  energy: "medium",
+                  warmth: "medium",
+                  pace: "medium",
+                  formality: "balanced"
+                }
+              };
+        return {
+          data: options.schema.parse(data),
+          text: JSON.stringify(data),
+          model: "recording-model",
+          provider: "recording"
+        };
+      },
+      async *streamText() {
+        yield "stream";
+      }
+    };
+
+    await extractVoiceCharacterCandidates({
+      input,
+      plan: { ...plan, characters: [] },
+      pages: [{ index: 1, title: "One", markdown: "Lina checks the moon map.", summary: "Lina studies the map." }],
+      textModel
+    });
+
+    await buildVoiceCharacterPersona({
+      input,
+      plan,
+      candidate: candidatesFromPlanCharacters(input, plan)[0]!,
+      pages: [{ index: 1, markdown: "Lina checks the moon map.", summary: "Lina studies the map." }],
+      textModel
+    });
+
+    expect(requests).toEqual([
+      {
+        purpose: "extract-voice-character-candidates",
+        hasMaxTokens: false,
+        maxTokens: undefined
+      },
+      {
+        purpose: "build-voice-character-persona",
+        hasMaxTokens: false,
+        maxTokens: undefined
+      }
+    ]);
+  });
+
+  it("splits long voice page context without clipping text", async () => {
+    const pageChunks: Array<{
+      index: number;
+      total: number;
+      pages: Array<{ excerpt: string }>;
+    }> = [];
+    const textModel: TextModelAdapter = {
+      async generateText() {
+        return {
+          text: "text",
+          model: "recording-model",
+          provider: "recording"
+        };
+      },
+      async generateJson(options) {
+        const payload = JSON.parse(options.messages[options.messages.length - 1]!.content) as {
+          pageChunk: {
+            index: number;
+            total: number;
+            pages: Array<{ excerpt: string }>;
+          };
+        };
+        pageChunks.push(payload.pageChunk);
+        const data = {
+          personality: ["Curious"],
+          goals: ["Stay faithful to the book."],
+          relationships: [],
+          knownFacts: ["Known from supplied pages."],
+          speakingStyle: ["Conversational."],
+          spoilerBoundaries: ["Avoid later spoilers unless asked."],
+          greeting: "Hello.",
+          voiceProfile: {
+            ageBand: "adult",
+            genderPresentation: "neutral",
+            energy: "medium",
+            warmth: "medium",
+            pace: "medium",
+            formality: "balanced"
+          }
+        };
+        return {
+          data: options.schema.parse(data),
+          text: JSON.stringify(data),
+          model: "recording-model",
+          provider: "recording"
+        };
+      },
+      async *streamText() {
+        yield "stream";
+      }
+    };
+    const longPage = Array.from({ length: 7_000 }, (_, index) => `token${index}`).join(" ");
+
+    await buildVoiceCharacterPersona({
+      input,
+      plan,
+      candidate: candidatesFromPlanCharacters(input, plan)[0]!,
+      pages: [{ index: 1, markdown: longPage, summary: "Lina follows a long moon map." }],
+      textModel
+    });
+
+    expect(pageChunks.length).toBeGreaterThan(1);
+    expect(pageChunks.map((chunk) => chunk.index)).toEqual(pageChunks.map((_, index) => index + 1));
+    expect(pageChunks.every((chunk) => chunk.total === pageChunks.length)).toBe(true);
+    expect(pageChunks.flatMap((chunk) => chunk.pages.map((page) => page.excerpt)).join(" ")).toBe(longPage);
+    expect(pageChunks.flatMap((chunk) => chunk.pages.map((page) => page.excerpt)).join(" ")).not.toContain("...");
+  });
+
   it("reinforces in-character answers for already-saved personas", () => {
     const instructions = reinforceRealtimeCharacterRoleplay(
       "You are Lina. Stay in character, but be honest that you are an AI-generated fictional character if asked.",
@@ -186,6 +333,21 @@ describe("voice character helpers", () => {
     expect(instructions).toContain("Roleplay priority supersedes older persona text");
     expect(instructions).toContain("Answer in first person as Lina");
     expect(instructions).toContain("ordinary questions about your identity");
+  });
+
+  it("wraps saved personas with group voice room turn rules", () => {
+    const instructions = buildRealtimeGroupCharacterInstructions({
+      baseInstructions: "You are Lina. Avoid later spoilers unless asked.",
+      characterName: "Lina",
+      participantNames: ["Lina", "Captain Orlo"]
+    });
+
+    expect(instructions).toContain("You are Lina");
+    expect(instructions).toContain("Roleplay priority supersedes older persona text");
+    expect(instructions).toContain("Group voice room rules");
+    expect(instructions).toContain("Other characters in the room: Captain Orlo");
+    expect(instructions).toContain("Speak only as Lina");
+    expect(instructions).toContain("Avoid later spoilers unless asked");
   });
 
   it("builds a text-free profile portrait prompt", () => {

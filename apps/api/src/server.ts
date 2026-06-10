@@ -17,6 +17,7 @@ const app = Fastify({ logger: true });
 
 await mkdir(config.BOOK_STORAGE_DIR, { recursive: true });
 await mkdir(config.IMAGE_STORAGE_DIR, { recursive: true });
+await mkdir(config.VOICE_STORAGE_DIR, { recursive: true });
 
 await app.register(cors, { origin: true, credentials: true });
 await registerAuth(app, config);
@@ -32,6 +33,11 @@ await app.register(swaggerUi, { routePrefix: "/docs" });
 await app.register(fastifyStatic, {
   root: resolve(config.IMAGE_STORAGE_DIR),
   prefix: "/assets/images/"
+});
+await app.register(fastifyStatic, {
+  root: resolve(config.VOICE_STORAGE_DIR),
+  prefix: "/assets/voice/",
+  decorateReply: false
 });
 await app.register(projectRoutes);
 
@@ -83,6 +89,7 @@ function shouldReturnNotFound(requestUrl: string): boolean {
     pathname.startsWith("/api") ||
     pathname.startsWith("/docs") ||
     pathname.startsWith("/assets/images/") ||
+    pathname.startsWith("/assets/voice/") ||
     pathname.includes(".")
   );
 }

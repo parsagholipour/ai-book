@@ -279,7 +279,7 @@ export type PolishPageOptions = {
 
 const CHUNKED_PAGE_MAP_THRESHOLD = 24;
 const INTERNAL_PAGE_TITLE_RULE =
-  "The title field is internal tracking metadata only; do not include a title, page label, Page N heading, or mini-chapter heading in markdown.";
+  "The title field is internal tracking metadata only; give it a concise page-specific title that reflects this page's beat, and do not reuse the book title, chapter title, a Page N label, mini-chapter heading, or an adjacent/recent page title.";
 const GROUNDED_FACTUALITY_RULE =
   "For factual or research-grounded prose, never invent studies, journals, experts, institutions, citations, statistics, source names, or numeric findings; use provided researchNotes or qualify/omit unsupported claims.";
 const IMAGE_PROMPT_CHARACTER_RULE =
@@ -601,8 +601,8 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
             pageGuidance: {
               targetWordsPerPage: targetWordsPerPage(options.input),
               instruction: options.chapterBriefs
-                ? "Use pageMap as the authoritative page-by-page production structure. Return exactly the requested page indexes from 1 through targetPages. Write finished page prose, not outline notes. Keep page titles clean without a Page N prefix. Do not put page titles or headings inside markdown."
-                : "Return exactly the requested page indexes from 1 through targetPages. Write finished page prose, not outline notes. Keep page titles clean without a Page N prefix. Do not put page titles or headings inside markdown."
+                ? "Use pageMap as the authoritative page-by-page production structure. Return exactly the requested page indexes from 1 through targetPages. Write finished page prose, not outline notes. Give each page a distinct page-specific title without a Page N prefix, and do not duplicate adjacent page titles. Do not put page titles or headings inside markdown."
+                : "Return exactly the requested page indexes from 1 through targetPages. Write finished page prose, not outline notes. Give each page a distinct page-specific title without a Page N prefix, and do not duplicate adjacent page titles. Do not put page titles or headings inside markdown."
             }
           },
           null,

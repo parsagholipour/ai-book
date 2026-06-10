@@ -64,6 +64,7 @@ Add these to `.env`:
 
 ```bash
 DEEPSEEK_API_KEY=...
+DEEPINFRA_API_KEY=...
 GEMINI_API_KEY=...
 ```
 
@@ -72,6 +73,8 @@ Then run without `MOCK_AI=true`. Provider models are configurable with:
 ```bash
 DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_FAST_MODEL=deepseek-v4-flash
+DEEPINFRA_MODEL=deepseek-ai/DeepSeek-V4-Pro
+DEEPINFRA_FAST_MODEL=deepseek-ai/DeepSeek-V4-Flash
 GEMINI_TEXT_MODEL=gemini-2.5-flash
 GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
@@ -90,11 +93,15 @@ GEMINI_API_KEY=...
 VOICE_CHAT_PROVIDER=gemini_live
 OPENAI_REALTIME_MODEL=gpt-realtime-2
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
+GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview
+VOICE_STORAGE_DIR=./storage/voice
 ```
 
 `OPENAI_REALTIME_MODEL` sets the default OpenAI Realtime model. The web UI also exposes `gpt-realtime-2` and `gpt-realtime-mini` for each OpenAI voice call, so you can switch to mini when cost matters.
 
 OpenAI Realtime uses WebRTC, so for production OpenAI calls configure TURN relay credentials to survive restrictive NAT, mobile networks, and corporate Wi-Fi. Gemini Live uses browser WebSockets with short-lived Gemini ephemeral tokens created by the API.
+
+Character Chat can also generate saved, non-live voice conversations. The web UI takes a user prompt plus exactly two ready characters, creates a short transcript, synthesizes it with Gemini TTS, stores a WAV under `VOICE_STORAGE_DIR`, and serves it from `/assets/voice/`.
 
 ```bash
 VOICE_RTC_STUN_URLS=stun:stun.l.google.com:19302,stun:global.stun.twilio.com:3478

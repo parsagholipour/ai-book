@@ -12,6 +12,7 @@ test-results
 # Generated books, images, and run logs may contain prompt history/results.
 storage/books/**
 storage/images/**
+storage/voice/**
 apps/worker/storage/books/**
 apps/worker/storage/images/**
 !storage/books/.gitkeep

@@ -11,38 +11,36 @@ import {
   parseSchemaWithContext,
   throwWithProviderUsage
 } from "./json.js";
+import {
+  DEFAULT_DEEPINFRA_BASE_URL,
+  DEFAULT_DEEPINFRA_MODEL
+} from "./deepinfraModels.js";
 
-const PROVIDER_LABEL = "OpenAICompatible";
-const PROVIDER_ID = "openai-compatible";
+const PROVIDER_LABEL = "DeepInfra";
+const PROVIDER_ID = "deepinfra";
 
-export type OpenAICompatibleAdapterOptions = {
-  /** Chat-completions base URL, e.g. http://localhost:11434/v1 (Ollama) or http://localhost:8000/v1 (vLLM). */
-  baseURL: string | undefined;
-  model: string | undefined;
-  /** Most local servers ignore the key; a placeholder is sent when omitted. */
-  apiKey?: string | undefined;
+export type DeepInfraAdapterOptions = {
+  apiKey: string | undefined;
+  baseURL?: string | undefined;
+  model?: string | undefined;
+  thinkingEnabled?: boolean | undefined;
 };
 
-/**
- * Text adapter for any OpenAI-compatible chat-completions server (Ollama,
- * vLLM, LM Studio, llama.cpp server, ...). Lets the basic tier run on a normal
- * server at zero marginal cost while the pro tier stays on cloud providers.
- */
-export class OpenAICompatibleTextAdapter implements TextModelAdapter {
+export class DeepInfraAdapter implements TextModelAdapter {
   private readonly client: OpenAI;
   private readonly model: string;
+  private readonly thinkingEnabled: boolean;
 
-  constructor(options: OpenAICompatibleAdapterOptions) {
-    if (!options.baseURL) {
-      throw new Error("LOCAL_TEXT_BASE_URL is required for the openai-compatible text provider.");
+  constructor(options: DeepInfraAdapterOptions) {
+    if (!options.apiKey) {
+      throw new Error("DEEPINFRA_API_KEY is required for DeepInfra text generation.");
     }
-    if (!options.model) {
-      throw new Error("LOCAL_TEXT_MODEL is required for the openai-compatible text provider.");
-    }
-    this.model = options.model;
+
+    this.model = options.model ?? DEFAULT_DEEPINFRA_MODEL;
+    this.thinkingEnabled = options.thinkingEnabled ?? false;
     this.client = new OpenAI({
-      apiKey: options.apiKey?.trim() || "local",
-      baseURL: options.baseURL
+      apiKey: options.apiKey,
+      baseURL: options.baseURL ?? DEFAULT_DEEPINFRA_BASE_URL
     });
   }
 
@@ -50,9 +48,10 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: options.messages,
-      temperature: options.temperature ?? null,
-      ...maxTokensParam(options.maxTokens)
-    });
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      ...deepInfraReasoningConfig(this.thinkingEnabled)
+    } as never);
 
     const text = response.choices[0]?.message?.content ?? "";
     return {
@@ -61,7 +60,8 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
       provider: PROVIDER_ID,
       usage: {
         promptTokens: response.usage?.prompt_tokens,
-        outputTokens: response.usage?.completion_tokens
+        outputTokens: response.usage?.completion_tokens,
+        cacheHitTokens: deepInfraCacheHitTokens(response.usage)
       }
     };
   }
@@ -77,15 +77,17 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
         },
         ...options.messages
       ],
-      temperature: options.temperature ?? null,
-      ...maxTokensParam(options.maxTokens),
-      response_format: { type: "json_object" }
-    });
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      response_format: { type: "json_object" },
+      ...deepInfraReasoningConfig(this.thinkingEnabled)
+    } as never);
 
     const text = response.choices[0]?.message?.content ?? "{}";
     const usage = {
       promptTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens
+      outputTokens: response.usage?.completion_tokens,
+      cacheHitTokens: deepInfraCacheHitTokens(response.usage)
     };
     let parsedObject: unknown;
     try {
@@ -116,13 +118,15 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
   }
 
   async *streamText(options: GenerateTextOptions): AsyncGenerator<string> {
-    const stream = await this.client.chat.completions.create({
+    const stream: any = await this.client.chat.completions.create({
       model: this.model,
       messages: options.messages,
-      temperature: options.temperature ?? null,
-      ...maxTokensParam(options.maxTokens),
-      stream: true
-    });
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      stream: true,
+      stream_options: { include_usage: true },
+      ...deepInfraReasoningConfig(this.thinkingEnabled)
+    } as never);
 
     for await (const chunk of stream) {
       const content = chunk.choices[0]?.delta?.content;
@@ -133,6 +137,24 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
   }
 }
 
-function maxTokensParam(maxTokens: number | undefined): { max_tokens?: number } {
-  return maxTokens === undefined ? {} : { max_tokens: maxTokens };
+function deepInfraReasoningConfig(enabled: boolean) {
+  return enabled
+    ? { reasoning: { enabled: true, effort: "high" }, reasoning_effort: "high" }
+    : { reasoning: { enabled: false }, reasoning_effort: "none" };
+}
+
+function deepInfraCacheHitTokens(usage: unknown): number | undefined {
+  if (!usage || typeof usage !== "object") {
+    return undefined;
+  }
+  const record = usage as {
+    prompt_cache_hit_tokens?: unknown;
+    prompt_tokens_details?: { cached_tokens?: unknown };
+  };
+  if (typeof record.prompt_cache_hit_tokens === "number") {
+    return record.prompt_cache_hit_tokens;
+  }
+  return typeof record.prompt_tokens_details?.cached_tokens === "number"
+    ? record.prompt_tokens_details.cached_tokens
+    : undefined;
 }

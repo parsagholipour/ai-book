@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   apiGet,
+  apiPost,
   apiUrl,
   subscribeProjectEvents,
+  type CreateVoiceConversationRequest,
   type Project,
   type ProjectDetails,
   type ProjectPdfStatus,
   type ProjectStatus,
   type RuntimeInfo,
   type Template,
-  type VoiceCharacter
+  type VoiceCharacter,
+  type VoiceConversation
 } from "../../api.js";
 import { normalizeProjectStatus } from "../../jobsDisplay.js";
 import { readError } from "../shared/formatters.js";
@@ -26,6 +29,7 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
   const [bookMarkdownByProjectId, setBookMarkdownByProjectId] = useState<Record<string, string>>({});
   const [pdfAvailableByProjectId, setPdfAvailableByProjectId] = useState<Record<string, boolean>>({});
   const [voiceCharactersByProjectId, setVoiceCharactersByProjectId] = useState<Record<string, VoiceCharacter[]>>({});
+  const [voiceConversationsByProjectId, setVoiceConversationsByProjectId] = useState<Record<string, VoiceConversation[]>>({});
   const [error, setError] = useState<string | null>(null);
   const lastPageCompleteByProjectIdRef = useRef<Record<string, number>>({});
   const lastVoiceCharacterJobsByProjectIdRef = useRef<Record<string, string>>({});
@@ -38,6 +42,7 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
   const selectedBookMarkdown = selectedId ? bookMarkdownByProjectId[selectedId] ?? "" : "";
   const selectedPdfAvailable = selectedId ? pdfAvailableByProjectId[selectedId] ?? false : false;
   const selectedVoiceCharacters = selectedId ? voiceCharactersByProjectId[selectedId] ?? [] : [];
+  const selectedVoiceConversations = selectedId ? voiceConversationsByProjectId[selectedId] ?? [] : [];
   const selectedPdfPreviewUrl = selectedProject
     ? apiUrl(`/api/projects/${selectedProject.id}/export/pdf?disposition=inline#toolbar=1&navpanes=0`)
     : "";
@@ -160,6 +165,7 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
     setBookMarkdownByProjectId({});
     setPdfAvailableByProjectId({});
     setVoiceCharactersByProjectId({});
+    setVoiceConversationsByProjectId({});
   }
 
   function cacheProjectStatus(statusData: ProjectStatus): ProjectStatus {
@@ -237,12 +243,41 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
     }
   }
 
+  async function refreshVoiceConversations(id: string) {
+    try {
+      const conversations = await apiGet<VoiceConversation[]>(`/api/projects/${id}/voice-conversations`);
+      setVoiceConversationsByProjectId((current) => ({ ...current, [id]: conversations }));
+    } catch {
+      setVoiceConversationsByProjectId((current) => ({ ...current, [id]: [] }));
+    }
+  }
+
+  async function createVoiceConversation(
+    projectId: string,
+    payload: CreateVoiceConversationRequest
+  ): Promise<VoiceConversation> {
+    try {
+      setError(null);
+      const conversation = await apiPost<VoiceConversation>(`/api/projects/${projectId}/voice-conversations`, payload);
+      setVoiceConversationsByProjectId((current) => ({
+        ...current,
+        [projectId]: [conversation, ...(current[projectId] ?? []).filter((candidate) => candidate.id !== conversation.id)]
+      }));
+      return conversation;
+    } catch (createError) {
+      const message = readError(createError);
+      setError(message);
+      throw createError;
+    }
+  }
+
   async function refreshProject(id: string) {
     await Promise.all([
       refreshProjectDetails(id),
       refreshBookMarkdown(id),
       refreshProjectPdfPreview(id),
-      refreshVoiceCharacters(id)
+      refreshVoiceCharacters(id),
+      refreshVoiceConversations(id)
     ]);
     try {
       const statusData = cacheProjectStatus(await apiGet<ProjectStatus>(`/api/projects/${id}/status`));
@@ -264,12 +299,15 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
     selectedPdfAvailable,
     selectedPdfPreviewUrl,
     selectedVoiceCharacters,
+    selectedVoiceConversations,
     selectedStatus: selectedId ? statusByProjectId[selectedId] ?? null : null,
     error,
     setError,
     refreshAll,
     refreshProject,
     refreshVoiceCharacters,
+    refreshVoiceConversations,
+    createVoiceConversation,
     clearProjectData
   };
 }

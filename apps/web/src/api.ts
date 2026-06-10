@@ -118,7 +118,7 @@ export type ProjectInputSnapshot = {
 };
 
 export type TextModelSelection = {
-  provider: "deepseek" | "gemini" | "alibaba" | "openai-compatible";
+  provider: "deepseek" | "deepinfra" | "gemini" | "alibaba" | "openai-compatible";
   model: string;
   thinkingBudget?: number;
   thinkingEnabled?: boolean;
@@ -210,6 +210,79 @@ export type GeminiLiveVoiceCallSession = {
 };
 
 export type VoiceCallSession = OpenAIRealtimeVoiceCallSession | GeminiLiveVoiceCallSession;
+
+export type VoiceConversationTurn = {
+  speakerId: string;
+  speakerName: string;
+  text: string;
+};
+
+export type VoiceConversationCharacterSnapshot = {
+  id: string;
+  name: string;
+  role?: string | null;
+  description?: string | null;
+  voiceName: string;
+  temporary?: boolean;
+};
+
+export type VoiceConversation = {
+  id: string;
+  projectId: string;
+  parentConversationId?: string | null;
+  rootConversationId?: string | null;
+  prompt: string;
+  characters: VoiceConversationCharacterSnapshot[];
+  transcript: {
+    title?: string;
+    turns: VoiceConversationTurn[];
+  };
+  provider: string;
+  model: string;
+  audioPath: string;
+  durationMs?: number | null;
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export type CreateVoiceConversationRequest = {
+  prompt: string;
+  characterIds?: string[];
+  continuationOfConversationId?: string;
+};
+
+export type OpenAIVoiceRoomParticipantRequest = {
+  characterId: string;
+  offerSdp: string;
+};
+
+export type GeminiVoiceRoomParticipantRequest = {
+  characterId: string;
+  sessionHandle?: string;
+};
+
+export type CreateVoiceRoomSessionRequest =
+  | {
+      provider: "openai_realtime";
+      transport: "webrtc_sdp";
+      voiceModel?: string;
+      listenerOfferSdp: string;
+      participants: OpenAIVoiceRoomParticipantRequest[];
+    }
+  | {
+      provider: "gemini_live";
+      transport: "gemini_live";
+      voiceModel?: string;
+      listenerSessionHandle?: string;
+      participants: GeminiVoiceRoomParticipantRequest[];
+    };
+
+export type VoiceRoomSessionResponse = {
+  provider: VoiceChatProviderId;
+  voiceModel: string;
+  listener: VoiceCallSession;
+  participants: Array<{ characterId: string; session: VoiceCallSession }>;
+};
 
 export type VoiceRtcIceServer = {
   urls: string | string[];
@@ -322,6 +395,7 @@ export type GenerationJobRow = {
   type: string;
   status: string;
   progress: number;
+  payload?: Record<string, unknown> | null;
   pageIndex?: number | null;
   message?: string | null;
   error?: string | null;

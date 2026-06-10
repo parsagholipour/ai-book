@@ -103,7 +103,11 @@ export function projectSavedMediaSettings(project: Project): NonNullable<Project
 }
 
 export function modelSelectionLabel(selection: TextModelSelection | ImageModelSelection): string {
-  if ("thinkingEnabled" in selection && selection.provider === "deepseek" && selection.thinkingEnabled) {
+  if (
+    "thinkingEnabled" in selection &&
+    (selection.provider === "deepseek" || selection.provider === "deepinfra") &&
+    selection.thinkingEnabled
+  ) {
     return `${modelProviderLabel(selection.provider)} ${selection.model} (Thinking)`;
   }
   if ("thinkingBudget" in selection && selection.provider === "gemini" && selection.thinkingBudget === 0) {
@@ -116,8 +120,14 @@ export function modelProviderLabel(provider: TextModelSelection["provider"] | Im
   if (provider === "deepseek") {
     return "DeepSeek";
   }
+  if (provider === "deepinfra") {
+    return "DeepInfra";
+  }
   if (provider === "gemini") {
     return "Gemini";
+  }
+  if (provider === "openai-compatible") {
+    return "Local";
   }
   return "Alibaba";
 }

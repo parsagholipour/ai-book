@@ -1243,8 +1243,11 @@ function errorFromErrorEvent(event: ErrorEvent): Error {
   return new Error(event.message || "Gemini Live voice chat connection failed.");
 }
 
-function isRetryableGeminiDisconnectReason(reason: string): boolean {
+export function isRetryableGeminiDisconnectReason(reason: string): boolean {
   const normalized = reason.toLowerCase();
+  if (isGeminiGoAwayDisconnectReason(normalized)) {
+    return true;
+  }
   if (
     normalized.includes("prepayment credits") ||
     normalized.includes("billing") ||
@@ -1262,6 +1265,15 @@ function isRetryableGeminiDisconnectReason(reason: string): boolean {
     return false;
   }
   return true;
+}
+
+function isGeminiGoAwayDisconnectReason(normalizedReason: string): boolean {
+  return (
+    normalizedReason.includes("goaway") ||
+    normalizedReason.includes("go away") ||
+    normalizedReason.includes("session duration") ||
+    normalizedReason.includes("failed to close the connection after receiving")
+  );
 }
 
 function sampleRateFromMimeType(mimeType: string): number | null {
