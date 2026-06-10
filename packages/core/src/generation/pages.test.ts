@@ -242,9 +242,12 @@ describe("page quality review", () => {
     expect(payload.userContext.styleGuidance?.rules?.join(" ")).toMatch(/proof-leap/i);
     expect(payload.recentPages[0]?.excerpt).toContain("checkpoint");
     expect(payload.alreadyCovered[0]?.coveredBeat).toContain("checkpoint");
+    expect(systemMessage).toMatch(/Treat pageBrief purpose, beat, requiredContinuity, and endingPressure as internal assignment notes/i);
+    expect(systemMessage).toMatch(/concluding the survey/i);
     expect(payload.pageInstruction).toMatch(/final page/i);
     expect(payload.pageInstruction).toMatch(/resolve/i);
     expect(payload.pageInstruction).toMatch(/internal metadata/i);
+    expect(payload.pageInstruction).toMatch(/Treat pageBrief and endingPressure as internal notes/i);
     expect(payload.pageInstruction).toMatch(/never invent studies/i);
   });
 
@@ -467,10 +470,68 @@ describe("page quality review", () => {
     expect(payload.qualityReport?.issues?.join(" ")).toMatch(/repeats/i);
     expect(payload.previousPages?.[0]?.summary).toMatch(/already been resolved/i);
     expect(payload.instruction).toMatch(/Repair the assignment itself/i);
+    expect(request?.messages.find((message) => message.role === "system")?.content).toMatch(
+      /endingPressure must be phrased as a substantive landing claim/i
+    );
     expect(repaired.pageIndex).toBe(5);
     expect(repaired.chapterIndex).toBe(1);
     expect(repaired.beat).toMatch(/reads the warrant aloud/i);
     expect(repaired.endingPressure).toMatch(/cannot retreat/i);
+  });
+
+  it("replaces repaired brief ending pressure that still contains procedural meta-language", async () => {
+    const repaired = await repairPageBrief({
+      input,
+      plan,
+      chapter: plan.chapters[0],
+      pageIndex: 8,
+      pageBrief: {
+        pageIndex: 8,
+        chapterIndex: 3,
+        purpose: "Assess archival bias.",
+        beat: "Compare surviving administrative texts with gaps in secular archives.",
+        requiredContinuity: ["Do not repeat prior temple-economics exposition."],
+        endingPressure: "Conclude the survey with a qualified understanding of its scope."
+      },
+      draft: {
+        title: "Archival Bias",
+        markdown: "The surviving records skew heavily toward institutions that preserved clay and inscription.",
+        summary: "The page considers whether archival survival distorts visibility of female authority.",
+        continuityNotes: []
+      },
+      report: {
+        approved: false,
+        score: 52,
+        issues: [
+          "Closing sentence contains meta-language ('concluding the survey').",
+          "Archival bias needs to define minimum thresholds of power."
+        ],
+        requiredRevisions: ["Link archival bias directly to implications for female authority."],
+        notes: "Repair the assignment so it does not ask the writer to announce the conclusion.",
+        checks: {
+          placeholderFree: true,
+          promptLeakFree: false,
+          titleClean: true,
+          repetitionOk: true,
+          progressionOk: false,
+          styleNatural: false
+        }
+      },
+      previousPages: [],
+      continuityNotes: [],
+      textModel: jsonModel({
+        pageIndex: 8,
+        chapterIndex: 3,
+        purpose: "Assess archival bias.",
+        beat: "Test whether record survival changes the evidentiary threshold for female authority.",
+        requiredContinuity: ["Do not repeat prior temple-economics exposition."],
+        endingPressure: "The uneven archives conclude the survey with a qualified understanding of its scope."
+      })
+    });
+
+    expect(repaired.endingPressure).toMatch(/minimum threshold/i);
+    expect(repaired.endingPressure).toMatch(/documented female authority/i);
+    expect(repaired.endingPressure).not.toMatch(/conclud|survey|scope/i);
   });
 
   it("generates and validates a complete single-pass book draft", async () => {
@@ -1138,6 +1199,26 @@ describe("page quality review", () => {
     expect(report.checks.promptLeakFree).toBe(false);
   });
 
+  it("rejects page-brief meta-language mirrored as reader-facing prose", async () => {
+    const report = await review({
+      title: "Archival Bias",
+      markdown: [
+        "The surviving archives are not evenly distributed across institutions. A court that lost its tablets may vanish from the record, while a temple that preserved its accounts can appear more politically central than it was.",
+        "",
+        "That imbalance still matters because surviving decrees and ledgers establish a floor for documented authority, not a ceiling for every form of power that failed to survive.",
+        "",
+        "The uneven evidence concludes the survey with a qualified understanding of its scope."
+      ].join("\n"),
+      summary: "The page turns archival bias into a procedural conclusion instead of a substantive consequence.",
+      continuityNotes: []
+    });
+
+    expect(report.approved).toBe(false);
+    expect(report.checks.promptLeakFree).toBe(false);
+    expect(report.checks.progressionOk).toBe(false);
+    expect(report.issues.join(" ")).toMatch(/page-brief instructions|meta-commentary/i);
+  });
+
   it("rejects explicitly fabricated research evidence", async () => {
     const report = await review({
       title: "The Genetic Claim",
@@ -1507,6 +1588,7 @@ describe("page quality review", () => {
       isLastPageOfChapter: false
     });
     expect(reviseCapture.systemPrompt).toMatch(/current pageBrief is authoritative/i);
+    expect(reviseCapture.systemPrompt).toMatch(/requiredContinuity points to an earlier page/i);
   });
 
   it("rejects Kids pages that are too long for the selected age range", async () => {

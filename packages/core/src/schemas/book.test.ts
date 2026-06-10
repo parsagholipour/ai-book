@@ -155,6 +155,35 @@ describe("createProjectSchema", () => {
     });
   });
 
+  it("accepts a Gemini thinking level text model variant in media settings", () => {
+    const input = createProjectSchema.parse({
+      prompt: "A practical book about choosing an AI model for planning and drafting.",
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        lessCensored: false,
+        generationStrategy: "chaptered-sequential",
+        textModel: {
+          provider: "gemini",
+          model: "gemini-3.5-flash",
+          thinkingEnabled: true,
+          thinkingEffort: "minimal"
+        },
+        toneProfile: "neutral"
+      }
+    });
+
+    expect(input.mediaSettings.textModel).toEqual({
+      provider: "gemini",
+      model: "gemini-3.5-flash",
+      thinkingEnabled: true,
+      thinkingEffort: "minimal"
+    });
+  });
+
   it("accepts a DeepSeek thinking text model variant in media settings", () => {
     const input = createProjectSchema.parse({
       prompt: "A practical book about choosing an AI model for planning and drafting.",
@@ -169,7 +198,8 @@ describe("createProjectSchema", () => {
         textModel: {
           provider: "deepseek",
           model: "deepseek-v4-pro",
-          thinkingEnabled: true
+          thinkingEnabled: true,
+          thinkingEffort: "max"
         },
         toneProfile: "neutral"
       }
@@ -178,7 +208,8 @@ describe("createProjectSchema", () => {
     expect(input.mediaSettings.textModel).toEqual({
       provider: "deepseek",
       model: "deepseek-v4-pro",
-      thinkingEnabled: true
+      thinkingEnabled: true,
+      thinkingEffort: "max"
     });
   });
 
@@ -196,7 +227,8 @@ describe("createProjectSchema", () => {
         textModel: {
           provider: "deepinfra",
           model: "deepseek-ai/DeepSeek-V4-Pro",
-          thinkingEnabled: true
+          thinkingEnabled: true,
+          thinkingEffort: "medium"
         },
         toneProfile: "neutral"
       }
@@ -205,7 +237,8 @@ describe("createProjectSchema", () => {
     expect(input.mediaSettings.textModel).toEqual({
       provider: "deepinfra",
       model: "deepseek-ai/DeepSeek-V4-Pro",
-      thinkingEnabled: true
+      thinkingEnabled: true,
+      thinkingEffort: "medium"
     });
   });
 

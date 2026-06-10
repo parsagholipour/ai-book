@@ -31,7 +31,7 @@ export async function loadProjectCostSummary(projectId: string): Promise<Project
     })
   ]);
 
-  return calculateProjectCostSummary(logs, images);
+  return calculateProjectCostSummary(logs.filter(isSettledCostLog), images);
 }
 
 export async function loadProjectCostSummaries(projectIds: string[]): Promise<Map<string, ProjectCostSummary>> {
@@ -50,7 +50,7 @@ export async function loadProjectCostSummaries(projectIds: string[]): Promise<Ma
       select: imageCostSelect
     })
   ]);
-  const logsByProjectId = groupByProjectId(logs);
+  const logsByProjectId = groupByProjectId(logs.filter(isSettledCostLog));
   const imagesByProjectId = groupByProjectId(images);
 
   for (const projectId of projectIds) {
@@ -95,4 +95,20 @@ function groupByProjectId<T extends ProviderCostRow | ImageCostRow>(rows: T[]): 
     }
   }
   return grouped;
+}
+
+function isSettledCostLog(log: ProviderCostRow): boolean {
+  const metadata = jsonPayloadToRecord(log.metadata);
+  if (metadata.provisional === true) {
+    return false;
+  }
+  const liveStatus = typeof metadata.liveStatus === "string" ? metadata.liveStatus : null;
+  return liveStatus !== "in_progress" && liveStatus !== "failed";
+}
+
+function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return {};
+  }
+  return payload as Record<string, unknown>;
 }

@@ -38,6 +38,25 @@ describe("provider cost calculation", () => {
     expect(flashCost).toBe(0.184);
   });
 
+  it("calculates DeepInfra Mistral Small text cost", () => {
+    const cost = calculateTextGenerationCost({
+      provider: "deepinfra",
+      model: "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+      promptTokens: 1_000_000,
+      cacheHitTokens: 200_000,
+      outputTokens: 500_000
+    });
+    const legacyAliasCost = calculateTextGenerationCost({
+      provider: "deepinfra",
+      model: "mistral-small-latest",
+      promptTokens: 1_000_000,
+      outputTokens: 500_000
+    });
+
+    expect(cost).toBe(0.175);
+    expect(legacyAliasCost).toBe(0.175);
+  });
+
   it("uses selected Gemini text model pricing tiers", () => {
     const shortPromptCost = calculateTextGenerationCost({
       provider: "gemini",

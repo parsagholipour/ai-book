@@ -4,7 +4,8 @@ import type {
   GenerateTextOptions,
   JsonResult,
   TextModelAdapter,
-  TextResult
+  TextResult,
+  Usage
 } from "./types.js";
 import {
   AdapterJsonParseError as DeepSeekJsonParseError,
@@ -22,12 +23,17 @@ export type DeepSeekAdapterOptions = {
   model?: string | undefined;
   fastModel?: string | undefined;
   thinkingEnabled?: boolean | undefined;
+  thinkingEffort?: ThinkingEffort | undefined;
 };
+
+type ThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+type DeepSeekReasoningEffort = "high" | "max";
 
 export class DeepSeekAdapter implements TextModelAdapter {
   private readonly client: OpenAI;
   private readonly model: string;
   private readonly thinkingEnabled: boolean;
+  private readonly thinkingEffort: DeepSeekReasoningEffort | undefined;
 
   constructor(options: DeepSeekAdapterOptions) {
     if (!options.apiKey) {
@@ -35,7 +41,8 @@ export class DeepSeekAdapter implements TextModelAdapter {
     }
 
     this.model = options.model ?? "deepseek-v4-pro";
-    this.thinkingEnabled = options.thinkingEnabled ?? false;
+    this.thinkingEnabled = options.thinkingEnabled ?? thinkingEffortEnabled(options.thinkingEffort);
+    this.thinkingEffort = deepSeekReasoningEffort(options.thinkingEffort, this.thinkingEnabled);
     this.client = new OpenAI({
       apiKey: options.apiKey,
       baseURL: options.baseURL ?? "https://api.deepseek.com"
@@ -43,28 +50,33 @@ export class DeepSeekAdapter implements TextModelAdapter {
   }
 
   async generateText(options: GenerateTextOptions): Promise<TextResult> {
+    if (options.onOutputTextChunk) {
+      return this.generateTextStreaming(options);
+    }
+
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: options.messages,
       temperature: options.temperature,
       max_tokens: options.maxTokens,
-      thinking: deepSeekThinkingConfig(this.thinkingEnabled)
+      ...deepSeekThinkingConfig(this.thinkingEnabled, this.thinkingEffort)
     } as never);
 
     const text = response.choices[0]?.message?.content ?? "";
+    const usage = usageFromDeepSeek(response.usage);
     return {
       text,
       model: this.model,
       provider: "deepseek",
-      usage: {
-        promptTokens: response.usage?.prompt_tokens,
-        outputTokens: response.usage?.completion_tokens,
-        cacheHitTokens: (response.usage as { prompt_cache_hit_tokens?: number } | undefined)?.prompt_cache_hit_tokens
-      }
+      ...(usage ? { usage } : {})
     };
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    if (options.onOutputTextChunk) {
+      return this.generateJsonStreaming(options);
+    }
+
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
@@ -78,15 +90,78 @@ export class DeepSeekAdapter implements TextModelAdapter {
       temperature: options.temperature,
       max_tokens: options.maxTokens,
       response_format: { type: "json_object" },
-      thinking: deepSeekThinkingConfig(this.thinkingEnabled)
+      ...deepSeekThinkingConfig(this.thinkingEnabled, this.thinkingEffort)
     } as never);
 
     const text = response.choices[0]?.message?.content ?? "{}";
-    const usage = {
-      promptTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      cacheHitTokens: (response.usage as { prompt_cache_hit_tokens?: number } | undefined)?.prompt_cache_hit_tokens
+    const usage = usageFromDeepSeek(response.usage);
+    return this.parseJsonResult(options, text, usage);
+  }
+
+  private async generateTextStreaming(options: GenerateTextOptions): Promise<TextResult> {
+    const stream: any = await this.client.chat.completions.create({
+      model: this.model,
+      messages: options.messages,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      stream: true,
+      stream_options: { include_usage: true },
+      ...deepSeekThinkingConfig(this.thinkingEnabled, this.thinkingEffort)
+    } as never);
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        text += content;
+        await options.onOutputTextChunk?.(content);
+      }
+      usage = usageFromDeepSeek(chunk.usage) ?? usage;
+    }
+
+    return {
+      text,
+      model: this.model,
+      provider: "deepseek",
+      ...(usage ? { usage } : {})
     };
+  }
+
+  private async generateJsonStreaming<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    const stream: any = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
+        },
+        ...options.messages
+      ],
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      response_format: { type: "json_object" },
+      stream: true,
+      stream_options: { include_usage: true },
+      ...deepSeekThinkingConfig(this.thinkingEnabled, this.thinkingEffort)
+    } as never);
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        text += content;
+        await options.onOutputTextChunk?.(content);
+      }
+      usage = usageFromDeepSeek(chunk.usage) ?? usage;
+    }
+
+    return this.parseJsonResult(options, text || "{}", usage);
+  }
+
+  private parseJsonResult<T>(options: GenerateJsonOptions<T>, text: string, usage: Usage | undefined): JsonResult<T> {
     let parsedObject: unknown;
     try {
       parsedObject = parseJsonObject(text);
@@ -99,7 +174,7 @@ export class DeepSeekAdapter implements TextModelAdapter {
         text,
         model: this.model,
         provider: "deepseek",
-        usage
+        ...(usage ? { usage } : {})
       };
     }
     try {
@@ -109,7 +184,7 @@ export class DeepSeekAdapter implements TextModelAdapter {
         text,
         model: this.model,
         provider: "deepseek",
-        usage
+        ...(usage ? { usage } : {})
       };
     } catch (error) {
       throwWithProviderUsage(error, { provider: "deepseek", model: this.model, usage });
@@ -124,7 +199,7 @@ export class DeepSeekAdapter implements TextModelAdapter {
       max_tokens: options.maxTokens,
       stream: true,
       stream_options: { include_usage: true },
-      thinking: deepSeekThinkingConfig(this.thinkingEnabled)
+      ...deepSeekThinkingConfig(this.thinkingEnabled, this.thinkingEffort)
     } as never);
 
     for await (const chunk of stream) {
@@ -136,8 +211,42 @@ export class DeepSeekAdapter implements TextModelAdapter {
   }
 }
 
-function deepSeekThinkingConfig(enabled: boolean): { type: "enabled" | "disabled" } {
-  return { type: enabled ? "enabled" : "disabled" };
+function deepSeekThinkingConfig(
+  enabled: boolean,
+  effort: DeepSeekReasoningEffort | undefined
+): { thinking: { type: "enabled" | "disabled" }; reasoning_effort?: DeepSeekReasoningEffort } {
+  return {
+    thinking: { type: enabled ? "enabled" : "disabled" },
+    ...(enabled && effort ? { reasoning_effort: effort } : {})
+  };
+}
+
+function thinkingEffortEnabled(effort: ThinkingEffort | undefined): boolean {
+  return effort !== undefined && effort !== "none";
+}
+
+function deepSeekReasoningEffort(
+  effort: ThinkingEffort | undefined,
+  enabled: boolean
+): DeepSeekReasoningEffort | undefined {
+  if (!enabled) {
+    return undefined;
+  }
+  if (effort === "max") {
+    return "max";
+  }
+  return "high";
+}
+
+function usageFromDeepSeek(usage: { prompt_tokens?: number; completion_tokens?: number; prompt_cache_hit_tokens?: number } | null | undefined): Usage | undefined {
+  if (!usage) {
+    return undefined;
+  }
+  return {
+    promptTokens: usage.prompt_tokens,
+    outputTokens: usage.completion_tokens,
+    cacheHitTokens: usage.prompt_cache_hit_tokens
+  };
 }
 
 export function parseJsonObject(text: string): unknown {

@@ -64,6 +64,9 @@ export type TokenUsage = {
   promptTokens?: number | null;
   outputTokens?: number | null;
   cacheHitTokens?: number | null;
+  provisionalPromptTokens?: number | null;
+  provisionalOutputTokens?: number | null;
+  inFlightCalls?: number | null;
 };
 
 export type ProjectCost = {
@@ -122,6 +125,15 @@ export type TextModelSelection = {
   model: string;
   thinkingBudget?: number;
   thinkingEnabled?: boolean;
+  thinkingEffort?: TextModelThinkingEffort;
+};
+
+export type TextModelThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+
+export type TextModelThinkingEffortOption = {
+  value: TextModelThinkingEffort;
+  label: string;
+  default?: boolean;
 };
 
 export type ImageModelSelection = {
@@ -467,6 +479,7 @@ export type RuntimeInfo = {
       label: string;
       preview?: boolean;
       thinking?: boolean;
+      thinkingEfforts?: TextModelThinkingEffortOption[];
     }
   >;
   imageModelOptions: Array<{

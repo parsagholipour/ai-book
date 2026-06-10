@@ -27,8 +27,10 @@ export class FakeTextModelAdapter implements TextModelAdapter {
   constructor(private readonly input?: CreateProjectInput) {}
 
   async generateText(options: GenerateTextOptions): Promise<TextResult> {
+    const text = `Drafted content for ${options.purpose ?? "book generation"}.`;
+    await options.onOutputTextChunk?.(text);
     return {
-      text: `Drafted content for ${options.purpose ?? "book generation"}.`,
+      text,
       model: "fake-model",
       provider: "fake",
       usage: { promptTokens: 1, outputTokens: 1 }
@@ -37,9 +39,11 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
     const data = this.fakeForSchema(options.schema, options);
+    const text = JSON.stringify(data);
+    await options.onOutputTextChunk?.(text);
     return {
       data: options.schema.parse(data),
-      text: JSON.stringify(data),
+      text,
       model: "fake-model",
       provider: "fake",
       usage: { promptTokens: 1, outputTokens: 1 }
@@ -60,19 +64,7 @@ export class FakeTextModelAdapter implements TextModelAdapter {
       return {
         ...plan,
         premise: `[MOCK_AI placeholder plan] ${plan.premise}`,
-        questions: [
-          {
-            prompt:
-              "MOCK_AI is enabled, so this is a deterministic placeholder plan. How should this planning pass be handled?",
-            options: [
-              "Continue with the placeholder plan for local testing.",
-              "Restart the API and worker without MOCK_AI=true, then regenerate.",
-              "Use the placeholder plan but revise it with my notes."
-            ],
-            allowCustom: true
-          },
-          ...plan.questions
-        ]
+        questions: plan.questions
       };
     }
 

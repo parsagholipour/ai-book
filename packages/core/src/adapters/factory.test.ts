@@ -25,6 +25,11 @@ describe("text model provider selection", () => {
       model: "deepseek-live",
       label: "DeepSeek (deepseek-live)"
     });
+    expect(
+      textModelOptions(testConfig({ DEEPSEEK_MODEL: "deepseek-live", DEEPSEEK_FAST_MODEL: "deepseek-live" })).filter(
+        (option) => option.provider === "deepseek"
+      )
+    ).toHaveLength(1);
   });
 
   it("uses the selected text provider adapter", () => {
@@ -42,6 +47,9 @@ describe("text model provider selection", () => {
     expect(createProviders(config, deepInfraInput).text).toBeInstanceOf(DeepInfraAdapter);
     expect(createProviders(config, geminiInput).text).toBeInstanceOf(GeminiTextAdapter);
     expect(createProviders(config, alibabaInput).text).toBeInstanceOf(AlibabaTextAdapter);
+    expect((createProviders(config, projectInput({ provider: "deepinfra", model: "mistral-small-latest" })).text as any).model).toBe(
+      "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
+    );
   });
 
   it("keeps mock mode on fake text even when Gemini is selected", () => {
@@ -62,7 +70,7 @@ describe("text model provider selection", () => {
     expect(createLanguageDetectionTextModel(testConfig({ MOCK_AI: "true" }))).toBeInstanceOf(FakeTextModelAdapter);
   });
 
-  it("exposes DeepInfra normal and thinking options only when configured", () => {
+  it("exposes DeepInfra effort options only when configured", () => {
     const configuredOptions = textModelOptions(testConfig({ DEEPINFRA_MODEL: "deepseek-ai/DeepSeek-V4-Pro" }));
     const deepInfraOptions = configuredOptions.filter((option) => option.provider === "deepinfra");
     const unconfiguredOptions = textModelOptions(testConfig({ DEEPINFRA_API_KEY: "" }));
@@ -71,37 +79,74 @@ describe("text model provider selection", () => {
       expect.objectContaining({
         provider: "deepinfra",
         model: "deepseek-ai/DeepSeek-V4-Pro",
-        label: "DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro)"
+        label: "DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro)",
+        thinking: true,
+        thinkingEfforts: [
+          { value: "none", label: "Off", default: true },
+          { value: "low", label: "Low" },
+          { value: "medium", label: "Medium" },
+          { value: "high", label: "High" }
+        ]
       }),
       expect.objectContaining({
         provider: "deepinfra",
-        model: "deepseek-ai/DeepSeek-V4-Pro",
-        thinking: true,
-        thinkingEnabled: true
+        model: "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+        label: "DeepInfra Mistral Small 3.2 (mistralai/Mistral-Small-3.2-24B-Instruct-2506)"
       })
     ]);
-    expect(deepInfraOptions[0]).not.toEqual(deepInfraOptions[1]);
+    expect(deepInfraOptions[1]).not.toHaveProperty("thinking");
     expect(unconfiguredOptions.some((option) => option.provider === "deepinfra")).toBe(false);
+    expect(
+      textModelOptions(testConfig({ DEEPINFRA_MODEL: "mistral-small-latest" })).filter(
+        (option) =>
+          option.provider === "deepinfra" && option.model === "mistralai/Mistral-Small-3.2-24B-Instruct-2506"
+      )
+    ).toHaveLength(1);
   });
 
   it("marks reasoning-capable text models as thinking options", () => {
     const options = textModelOptions(testConfig({ DEEPSEEK_MODEL: "deepseek-v4-pro" }));
+    const deepseekOptions = options.filter((option) => option.provider === "deepseek");
+    const deepseekFast = deepseekOptions.find((option) => option.model === "deepseek-v4-flash");
+    const gemini35Flash = options.find((option) => option.provider === "gemini" && option.model === "gemini-3.5-flash");
 
-    expect(options).toContainEqual(expect.objectContaining({ provider: "deepseek", model: "deepseek-v4-pro" }));
-    expect(options.find((option) => option.provider === "deepseek" && option.model === "deepseek-v4-pro")).not.toHaveProperty(
-      "thinking"
-    );
-    expect(options).toContainEqual(
-      expect.objectContaining({
-        provider: "deepseek",
-        model: "deepseek-v4-pro",
-        thinking: true,
-        thinkingEnabled: true
-      })
-    );
+    expect(deepseekOptions).toHaveLength(2);
+    expect(deepseekOptions[0]).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+      thinking: true,
+      thinkingEfforts: [
+        { value: "none", label: "Off", default: true },
+        { value: "high", label: "High" },
+        { value: "max", label: "Max" }
+      ]
+    });
+    expect(deepseekFast).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      label: "DeepSeek Fast (deepseek-v4-flash)",
+      thinking: true,
+      thinkingEfforts: [
+        { value: "none", label: "Off", default: true },
+        { value: "high", label: "High" },
+        { value: "max", label: "Max" }
+      ]
+    });
     expect(options).toContainEqual(
       expect.objectContaining({ provider: "alibaba", model: "qwen3.5-plus", thinking: true })
     );
+    expect(gemini35Flash).toMatchObject({
+      provider: "gemini",
+      model: "gemini-3.5-flash",
+      label: "Gemini 3.5 Flash",
+      thinking: true,
+      thinkingEfforts: [
+        { value: "minimal", label: "Minimal" },
+        { value: "low", label: "Low" },
+        { value: "medium", label: "Medium", default: true },
+        { value: "high", label: "High" }
+      ]
+    });
     expect(options).toContainEqual(
       expect.objectContaining({ provider: "gemini", model: "gemini-2.5-flash", thinking: true })
     );

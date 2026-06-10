@@ -16,7 +16,7 @@ import { normalizePlanMessages } from "../planning/planMessages.js";
 import type { NormalizedPlanQuestion, QuestionResponse } from "../planning/planQuestions.js";
 import { PreviewsSection } from "../previews/PreviewsSection.js";
 import { Metric } from "../shared/Metric.js";
-import { formatTokenCount } from "../shared/formatters.js";
+import { formatLiveTokenCount } from "../shared/formatters.js";
 import { VoiceCallBar, VoiceCharactersPanel, VoiceRoomBar } from "../voice/VoiceComponents.js";
 import type { ActiveVoiceCall, ActiveVoiceRoom } from "../voice/types.js";
 import { formatProjectCategory, type GenerationStrategyOption } from "./draft.js";
@@ -50,6 +50,7 @@ export function ProjectWorkspace(props: {
   coverBusy: boolean;
   approvePlanDisabled: boolean;
   hasActivePlanRevision: boolean;
+  canRetryPlanning: boolean;
   canResumeProject: boolean;
   canStopProject: boolean;
   planQuestions: NormalizedPlanQuestion[];
@@ -128,8 +129,8 @@ export function ProjectWorkspace(props: {
             <Metric label="Pages" value={`${pageProgress?.complete ?? 0}/${pageProgress?.target ?? selectedProject.targetPages}`} />
             <Metric label="Images" value={String(props.selectedStatus?.progress.images ?? props.selectedDetails?.images.length ?? 0)} />
             <Metric label="Research" value={String(props.selectedStatus?.progress.research ?? props.selectedDetails?.research.length ?? 0)} />
-            <Metric label="Input Tokens" value={formatTokenCount(projectTokens?.promptTokens)} />
-            <Metric label="Output Tokens" value={formatTokenCount(projectTokens?.outputTokens)} />
+            <Metric label="Input Tokens" value={formatLiveTokenCount(projectTokens, "promptTokens")} />
+            <Metric label="Output Tokens" value={formatLiveTokenCount(projectTokens, "outputTokens")} />
             <Metric
               label="QA"
               value={
@@ -212,6 +213,7 @@ export function ProjectWorkspace(props: {
               selectedId={props.selectedId}
               activeGenerationStrategy={props.activeGenerationStrategy}
               canStopProject={props.canStopProject}
+              canRetryPlanning={props.canRetryPlanning}
               canResumeProject={props.canResumeProject}
               stopBusy={props.stopBusy}
               resumeBusy={props.resumeBusy}

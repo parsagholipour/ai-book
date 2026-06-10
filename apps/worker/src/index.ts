@@ -36,6 +36,7 @@ import {
   optimizeImageForStorage,
   publicAssetUrl,
   resolveImageModelSelection,
+  resolveTextModelSelection,
   resolvePublicImageUrl,
   reviewPageDraftLocally,
   normalizeVoiceProfile,
@@ -3253,16 +3254,30 @@ type RunLogger = {
   append(event: string, data: Record<string, unknown>): Promise<string>;
 };
 
+type LoggedTextModel = {
+  provider: string;
+  model: string;
+};
+
 function createLoggedProviders(job: Job, providers: ProviderSet, input?: CreateProjectInput | undefined): ProviderSet {
   const logger = createRunLogger(job);
   const generationJobId = job.data.generationJobId as string | undefined;
   const projectId = job.data.projectId as string | undefined;
+  const textModel = loggedTextModel(input);
   return {
-    text: new LoggingTextModelAdapter(providers.text, logger, generationJobId, projectId),
+    text: new LoggingTextModelAdapter(providers.text, logger, generationJobId, projectId, textModel),
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
     image: createLoggedImageAdapter(providers.image, logger, generationJobId, input),
     embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId)
   };
+}
+
+function loggedTextModel(input?: CreateProjectInput | undefined): LoggedTextModel {
+  if (config.MOCK_AI) {
+    return { provider: "fake", model: "fake-model" };
+  }
+  const selection = resolveTextModelSelection(config, input);
+  return { provider: selection.provider, model: selection.model };
 }
 
 function createRunLogger(job: Job): RunLogger {
@@ -3394,16 +3409,38 @@ class LoggingTextModelAdapter implements TextModelAdapter {
     private readonly delegate: TextModelAdapter,
     private readonly logger: RunLogger,
     private readonly generationJobId: string | undefined,
-    private readonly projectId: string | undefined
+    private readonly projectId: string | undefined,
+    private readonly textModel: LoggedTextModel
   ) {}
 
   async generateText(options: GenerateTextOptions) {
     const callId = randomUUID();
     const requestAt = await this.logger.append("text.generateText.request", { callId, request: logTextRequest(options) });
+    const liveUsage = await beginLiveTextUsage({
+      projectId: options.projectId ?? this.projectId,
+      generationJobId: this.generationJobId,
+      provider: this.textModel.provider,
+      model: this.textModel.model,
+      purpose: options.purpose ?? "text.generateText",
+      operation: "text.generateText",
+      callId,
+      startedAt: requestAt,
+      options
+    });
+    let responseCharacterCount = 0;
+    let lastLiveOutputUpdateAt = 0;
+    const monitoredOptions = withLiveOutputTracking(options, async (chunk) => {
+      responseCharacterCount += chunk.length;
+      lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
+        liveUsageId: liveUsage?.id,
+        outputTokens: estimateTokenCountFromTextLength(responseCharacterCount),
+        lastUpdateAt: lastLiveOutputUpdateAt
+      });
+    });
     try {
       await assertJobNotStopped(this.generationJobId);
       const result = await withRecoverableNetworkRetry(
-        () => this.delegate.generateText(options),
+        () => this.delegate.generateText(monitoredOptions),
         providerRetryOptions(this.logger, this.generationJobId, "text.generateText", options.purpose)
       );
       const responseAt = await this.logger.append("text.generateText.response", { callId, result });
@@ -3416,12 +3453,19 @@ class LoggingTextModelAdapter implements TextModelAdapter {
         operation: "text.generateText",
         callId,
         durationMs: durationBetweenTimestamps(requestAt, responseAt),
-        usage: result.usage
+        usage: result.usage,
+        liveUsageId: liveUsage?.id,
+        fallbackPromptTokens: liveUsage?.promptTokens,
+        fallbackOutputTokens: Math.max(estimateTokenCountFromText(result.text), estimateTokenCountFromTextLength(responseCharacterCount))
       });
       await assertJobNotStopped(this.generationJobId);
       return result;
     } catch (error) {
-      await this.logger.append("text.generateText.error", { callId, error: serializeError(error) });
+      const errorAt = await this.logger.append("text.generateText.error", { callId, error: serializeError(error) });
+      await markLiveTextUsageFailed(liveUsage?.id, {
+        durationMs: durationBetweenTimestamps(requestAt, errorAt),
+        error
+      });
       await assertJobNotStopped(this.generationJobId);
       throw error;
     }
@@ -3430,10 +3474,31 @@ class LoggingTextModelAdapter implements TextModelAdapter {
   async generateJson<T>(options: GenerateJsonOptions<T>) {
     const callId = randomUUID();
     const requestAt = await this.logger.append("text.generateJson.request", { callId, request: logTextRequest(options) });
+    const liveUsage = await beginLiveTextUsage({
+      projectId: options.projectId ?? this.projectId,
+      generationJobId: this.generationJobId,
+      provider: this.textModel.provider,
+      model: this.textModel.model,
+      purpose: options.purpose ?? "text.generateJson",
+      operation: "text.generateJson",
+      callId,
+      startedAt: requestAt,
+      options
+    });
+    let responseCharacterCount = 0;
+    let lastLiveOutputUpdateAt = 0;
+    const monitoredOptions = withLiveOutputTracking(options, async (chunk) => {
+      responseCharacterCount += chunk.length;
+      lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
+        liveUsageId: liveUsage?.id,
+        outputTokens: estimateTokenCountFromTextLength(responseCharacterCount),
+        lastUpdateAt: lastLiveOutputUpdateAt
+      });
+    });
     try {
       await assertJobNotStopped(this.generationJobId);
       const result = await withRecoverableNetworkRetry(
-        () => this.delegate.generateJson(options),
+        () => this.delegate.generateJson(monitoredOptions),
         providerRetryOptions(this.logger, this.generationJobId, "text.generateJson", options.purpose)
       );
       const responseAt = await this.logger.append("text.generateJson.response", { callId, result });
@@ -3446,7 +3511,10 @@ class LoggingTextModelAdapter implements TextModelAdapter {
         operation: "text.generateJson",
         callId,
         durationMs: durationBetweenTimestamps(requestAt, responseAt),
-        usage: result.usage
+        usage: result.usage,
+        liveUsageId: liveUsage?.id,
+        fallbackPromptTokens: liveUsage?.promptTokens,
+        fallbackOutputTokens: Math.max(estimateTokenCountFromText(result.text), estimateTokenCountFromTextLength(responseCharacterCount))
       });
       await assertJobNotStopped(this.generationJobId);
       return result;
@@ -3459,8 +3527,16 @@ class LoggingTextModelAdapter implements TextModelAdapter {
         operation: "text.generateJson",
         callId,
         durationMs: durationBetweenTimestamps(requestAt, errorAt),
-        error
+        error,
+        liveUsageId: liveUsage?.id,
+        fallbackPromptTokens: liveUsage?.promptTokens
       });
+      if (!providerUsageFromError(error)) {
+        await markLiveTextUsageFailed(liveUsage?.id, {
+          durationMs: durationBetweenTimestamps(requestAt, errorAt),
+          error
+        });
+      }
       await assertJobNotStopped(this.generationJobId);
       throw error;
     }
@@ -3468,21 +3544,46 @@ class LoggingTextModelAdapter implements TextModelAdapter {
 
   async *streamText(options: GenerateTextOptions) {
     const callId = randomUUID();
-    await this.logger.append("text.streamText.request", { callId, request: logTextRequest(options) });
+    const requestAt = await this.logger.append("text.streamText.request", { callId, request: logTextRequest(options) });
+    const liveUsage = await beginLiveTextUsage({
+      projectId: options.projectId ?? this.projectId,
+      generationJobId: this.generationJobId,
+      provider: this.textModel.provider,
+      model: this.textModel.model,
+      purpose: options.purpose ?? "text.streamText",
+      operation: "text.streamText",
+      callId,
+      startedAt: requestAt,
+      options
+    });
     let chunkCount = 0;
     let characterCount = 0;
+    let lastLiveOutputUpdateAt = 0;
     try {
       await assertJobNotStopped(this.generationJobId);
       for await (const chunk of this.delegate.streamText(options)) {
         await assertJobNotStopped(this.generationJobId);
         chunkCount += 1;
         characterCount += chunk.length;
+        lastLiveOutputUpdateAt = await maybeUpdateLiveTextOutput({
+          liveUsageId: liveUsage?.id,
+          outputTokens: estimateTokenCountFromTextLength(characterCount),
+          lastUpdateAt: lastLiveOutputUpdateAt
+        });
         yield chunk;
       }
-      await this.logger.append("text.streamText.response", { callId, chunkCount, characterCount });
+      const responseAt = await this.logger.append("text.streamText.response", { callId, chunkCount, characterCount });
+      await settleLiveTextUsageEstimate(liveUsage?.id, {
+        durationMs: durationBetweenTimestamps(requestAt, responseAt),
+        outputTokens: estimateTokenCountFromTextLength(characterCount)
+      });
       await assertJobNotStopped(this.generationJobId);
     } catch (error) {
-      await this.logger.append("text.streamText.error", { callId, error: serializeError(error) });
+      const errorAt = await this.logger.append("text.streamText.error", { callId, error: serializeError(error) });
+      await markLiveTextUsageFailed(liveUsage?.id, {
+        durationMs: durationBetweenTimestamps(requestAt, errorAt),
+        error
+      });
       await assertJobNotStopped(this.generationJobId);
       throw error;
     }
@@ -3499,40 +3600,64 @@ async function recordProviderUsage(options: {
   callId: string;
   durationMs: number | null;
   usage: Usage | undefined;
+  liveUsageId?: string | undefined;
+  fallbackPromptTokens?: number | null | undefined;
+  fallbackOutputTokens?: number | null | undefined;
 }) {
-  const promptTokens = finiteTokenCount(options.usage?.promptTokens);
-  const outputTokens = finiteTokenCount(options.usage?.outputTokens);
+  const exactPromptTokens = finiteTokenCount(options.usage?.promptTokens);
+  const exactOutputTokens = finiteTokenCount(options.usage?.outputTokens);
   const cacheHitTokens = finiteTokenCount(options.usage?.cacheHitTokens);
+  const promptTokens = exactPromptTokens ?? finiteTokenCount(options.fallbackPromptTokens ?? undefined);
+  const outputTokens = exactOutputTokens ?? finiteTokenCount(options.fallbackOutputTokens ?? undefined);
   if (promptTokens === null && outputTokens === null && cacheHitTokens === null) {
+    if (options.liveUsageId) {
+      await markLiveTextUsageFailed(options.liveUsageId, { durationMs: options.durationMs });
+    }
     return;
   }
-  const costHint = calculateTextGenerationCost({
-    provider: options.provider,
-    model: options.model,
-    promptTokens,
-    outputTokens,
-    cacheHitTokens
-  });
-
-  try {
-    await prisma.providerCallLog.create({
-      data: {
-        projectId: options.projectId ?? null,
-        generationJobId: options.generationJobId ?? null,
+  const promptTokensEstimated = exactPromptTokens === null && promptTokens !== null;
+  const outputTokensEstimated = exactOutputTokens === null && outputTokens !== null;
+  const provisional = promptTokensEstimated || outputTokensEstimated;
+  const costHint = provisional
+    ? null
+    : calculateTextGenerationCost({
         provider: options.provider,
         model: options.model,
-        purpose: options.purpose,
         promptTokens,
         outputTokens,
-        cacheHitTokens,
-        costHint,
-        durationMs: options.durationMs,
-        metadata: {
-          operation: options.operation,
-          callId: options.callId
-        } satisfies Prisma.InputJsonValue
-      }
-    });
+        cacheHitTokens
+      });
+  const metadata = {
+    operation: options.operation,
+    callId: options.callId,
+    liveStatus: "settled",
+    provisional,
+    promptTokensEstimated,
+    outputTokensEstimated
+  } satisfies Prisma.InputJsonValue;
+
+  try {
+    const data = {
+      projectId: options.projectId ?? null,
+      generationJobId: options.generationJobId ?? null,
+      provider: options.provider,
+      model: options.model,
+      purpose: options.purpose,
+      promptTokens,
+      outputTokens,
+      cacheHitTokens,
+      costHint,
+      durationMs: options.durationMs,
+      metadata
+    };
+    if (options.liveUsageId) {
+      await prisma.providerCallLog.update({
+        where: { id: options.liveUsageId },
+        data
+      });
+    } else {
+      await prisma.providerCallLog.create({ data });
+    }
   } catch (error) {
     console.error("Failed to record provider token usage", error);
   }
@@ -3546,6 +3671,8 @@ async function recordProviderUsageFromError(options: {
   callId: string;
   durationMs: number | null;
   error: unknown;
+  liveUsageId?: string | undefined;
+  fallbackPromptTokens?: number | null | undefined;
 }) {
   const providerUsage = providerUsageFromError(options.error);
   if (!providerUsage) {
@@ -3560,8 +3687,143 @@ async function recordProviderUsageFromError(options: {
     operation: options.operation,
     callId: options.callId,
     durationMs: options.durationMs,
-    usage: providerUsage.usage
+    usage: providerUsage.usage,
+    liveUsageId: options.liveUsageId,
+    fallbackPromptTokens: options.fallbackPromptTokens
   });
+}
+
+async function beginLiveTextUsage(options: {
+  projectId: string | undefined;
+  generationJobId: string | undefined;
+  provider: string;
+  model: string;
+  purpose: string;
+  operation: string;
+  callId: string;
+  startedAt: string;
+  options: GenerateTextOptions;
+}): Promise<{ id: string; promptTokens: number } | null> {
+  const promptTokens = estimateTextRequestTokens(options.options);
+  try {
+    const log = await prisma.providerCallLog.create({
+      data: {
+        projectId: options.projectId ?? null,
+        generationJobId: options.generationJobId ?? null,
+        provider: options.provider,
+        model: options.model,
+        purpose: options.purpose,
+        promptTokens,
+        outputTokens: 0,
+        cacheHitTokens: null,
+        costHint: null,
+        durationMs: null,
+        metadata: {
+          operation: options.operation,
+          callId: options.callId,
+          liveStatus: "in_progress",
+          provisional: true,
+          promptTokensEstimated: true,
+          outputTokensEstimated: true,
+          startedAt: options.startedAt,
+          maxTokens: options.options.maxTokens ?? null
+        } satisfies Prisma.InputJsonValue
+      },
+      select: { id: true }
+    });
+    return { id: log.id, promptTokens };
+  } catch (error) {
+    console.error("Failed to start live provider token usage", error);
+    return null;
+  }
+}
+
+async function maybeUpdateLiveTextOutput(options: {
+  liveUsageId: string | undefined;
+  outputTokens: number;
+  lastUpdateAt: number;
+}): Promise<number> {
+  if (!options.liveUsageId) {
+    return options.lastUpdateAt;
+  }
+  const now = Date.now();
+  if (now - options.lastUpdateAt < 1000) {
+    return options.lastUpdateAt;
+  }
+  await updateLiveTextOutput(options.liveUsageId, options.outputTokens);
+  return now;
+}
+
+async function updateLiveTextOutput(liveUsageId: string, outputTokens: number) {
+  try {
+    await prisma.providerCallLog.update({
+      where: { id: liveUsageId },
+      data: { outputTokens }
+    });
+  } catch (error) {
+    console.error("Failed to update live provider output tokens", error);
+  }
+}
+
+async function settleLiveTextUsageEstimate(
+  liveUsageId: string | undefined,
+  options: { durationMs: number | null; outputTokens: number }
+) {
+  if (!liveUsageId) {
+    return;
+  }
+  try {
+    const current = await prisma.providerCallLog.findUnique({
+      where: { id: liveUsageId },
+      select: { metadata: true }
+    });
+    await prisma.providerCallLog.update({
+      where: { id: liveUsageId },
+      data: {
+        outputTokens: options.outputTokens,
+        durationMs: options.durationMs,
+        costHint: null,
+        metadata: jsonInputValue({
+          ...jsonPayloadToRecord(current?.metadata),
+          liveStatus: "settled",
+          provisional: true,
+          outputTokensEstimated: true
+        })
+      }
+    });
+  } catch (error) {
+    console.error("Failed to settle live provider token estimate", error);
+  }
+}
+
+async function markLiveTextUsageFailed(
+  liveUsageId: string | undefined,
+  options: { durationMs: number | null; error?: unknown } = { durationMs: null }
+) {
+  if (!liveUsageId) {
+    return;
+  }
+  try {
+    const current = await prisma.providerCallLog.findUnique({
+      where: { id: liveUsageId },
+      select: { metadata: true }
+    });
+    await prisma.providerCallLog.update({
+      where: { id: liveUsageId },
+      data: {
+        durationMs: options.durationMs,
+        costHint: null,
+        metadata: jsonInputValue({
+          ...jsonPayloadToRecord(current?.metadata),
+          liveStatus: "failed",
+          provisional: true,
+          ...(options.error ? { error: serializeError(options.error) } : {})
+        })
+      }
+    });
+  } catch (error) {
+    console.error("Failed to fail live provider token usage", error);
+  }
 }
 
 function providerUsageFromError(error: unknown): { provider: string; model: string; usage: Usage } | null {
@@ -3628,6 +3890,32 @@ async function recordProviderImageCost(options: {
 
 function finiteTokenCount(value: number | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function withLiveOutputTracking<T extends GenerateTextOptions>(options: T, onChunk: (chunk: string) => Promise<void>): T {
+  return {
+    ...options,
+    async onOutputTextChunk(chunk: string) {
+      await onChunk(chunk);
+      await options.onOutputTextChunk?.(chunk);
+    }
+  };
+}
+
+function estimateTextRequestTokens(options: GenerateTextOptions): number {
+  const messageText = options.messages.map((message) => `${message.role}\n${message.content}`).join("\n\n");
+  return estimateTokenCountFromText(messageText) + options.messages.length * 4 + 12;
+}
+
+function estimateTokenCountFromText(text: string): number {
+  return estimateTokenCountFromTextLength(text.length);
+}
+
+function estimateTokenCountFromTextLength(length: number): number {
+  if (!Number.isFinite(length) || length <= 0) {
+    return 0;
+  }
+  return Math.max(1, Math.ceil(length / 4));
 }
 
 function durationBetweenTimestamps(start: string, end: string): number | null {
@@ -4068,6 +4356,14 @@ async function markFailed(job: Job, error: unknown) {
         error: error instanceof Error ? error.message : "Unknown error"
       }
     });
+  }
+  if (projectId && job.name === "revise-plan") {
+    const restored = await prisma.project
+      .updateMany({ where: { id: projectId, currentPlanId: { not: null } }, data: { status: "PLAN_READY" } })
+      .catch(() => ({ count: 0 }));
+    if (restored.count > 0) {
+      return;
+    }
   }
   if (projectId && shouldFailProjectForJob(job.name)) {
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);

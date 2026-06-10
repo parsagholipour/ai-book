@@ -1,6 +1,6 @@
 import type { AppConfig } from "../config.js";
 import { alibabaImageModelOptions, alibabaTextModelOptions } from "./alibabaModels.js";
-import { deepInfraTextModelOptions } from "./deepinfraModels.js";
+import { deepInfraTextModelOptions, normalizeDeepInfraTextModel } from "./deepinfraModels.js";
 import { geminiImageModelOptions } from "./geminiModels.js";
 import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
 import { DeepInfraAdapter } from "./deepinfra.js";
@@ -9,7 +9,12 @@ import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
 import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeTextModelAdapter } from "./fake.js";
 import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
 import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, TextModelAdapter } from "./types.js";
-import type { CreateProjectInput, ImageModelSelection, TextModelSelection } from "../schemas/book.js";
+import type {
+  CreateProjectInput,
+  ImageModelSelection,
+  TextModelSelection,
+  TextModelThinkingEffort
+} from "../schemas/book.js";
 
 export type ProviderSet = {
   text: TextModelAdapter;
@@ -22,6 +27,13 @@ export type TextModelOption = TextModelSelection & {
   label: string;
   preview?: boolean;
   thinking?: boolean;
+  thinkingEfforts?: TextModelThinkingEffortOption[];
+};
+
+export type TextModelThinkingEffortOption = {
+  value: TextModelThinkingEffort;
+  label: string;
+  default?: boolean;
 };
 
 export type ImageModelProviderOption = ImageModelSelection & {
@@ -32,12 +44,20 @@ export type ImageModelProviderOption = ImageModelSelection & {
 };
 export type ImageModelOption = ImageModelProviderOption;
 
+const GEMINI_35_FLASH_THINKING_EFFORTS: TextModelThinkingEffortOption[] = [
+  { value: "minimal", label: "Minimal" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium", default: true },
+  { value: "high", label: "High" }
+];
+
 const GEMINI_MAIN_TEXT_MODEL_OPTIONS: TextModelOption[] = [
   {
     provider: "gemini",
     model: "gemini-3.5-flash",
     label: "Gemini 3.5 Flash",
-    ...geminiThinkingFlag("gemini-3.5-flash")
+    thinking: true,
+    thinkingEfforts: GEMINI_35_FLASH_THINKING_EFFORTS
   },
   {
     provider: "gemini",
@@ -70,6 +90,12 @@ const GEMINI_MAIN_TEXT_MODEL_OPTIONS: TextModelOption[] = [
   { provider: "gemini", model: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite" }
 ];
 
+const DEEPSEEK_THINKING_EFFORTS: TextModelThinkingEffortOption[] = [
+  { value: "none", label: "Off", default: true },
+  { value: "high", label: "High" },
+  { value: "max", label: "Max" }
+];
+
 function geminiThinkingFlag(model: string): Pick<TextModelOption, "thinking"> {
   return isGeminiThinkingTextModel(model) ? { thinking: true } : {};
 }
@@ -88,23 +114,34 @@ function isGeminiThinkingTextModel(model: string): boolean {
 
 export function textModelOptions(config: AppConfig): TextModelOption[] {
   return [
-    {
-      provider: "deepseek",
-      model: config.DEEPSEEK_MODEL,
-      label: `DeepSeek (${config.DEEPSEEK_MODEL})`
-    },
-    {
-      provider: "deepseek",
-      model: config.DEEPSEEK_MODEL,
-      label: `DeepSeek (${config.DEEPSEEK_MODEL})`,
-      thinking: true,
-      thinkingEnabled: true
-    },
+    ...deepSeekModelOptions(config),
     ...deepInfraModelOptions(config),
     ...alibabaTextModelOptions(config.ALIBABA_TEXT_MODEL),
     ...GEMINI_MAIN_TEXT_MODEL_OPTIONS,
     ...localTextModelOptions(config)
   ];
+}
+
+function deepSeekModelOptions(config: AppConfig): TextModelOption[] {
+  const options: TextModelOption[] = [
+    {
+      provider: "deepseek",
+      model: config.DEEPSEEK_MODEL,
+      label: `DeepSeek (${config.DEEPSEEK_MODEL})`,
+      thinking: true,
+      thinkingEfforts: DEEPSEEK_THINKING_EFFORTS
+    }
+  ];
+  if (config.DEEPSEEK_FAST_MODEL !== config.DEEPSEEK_MODEL) {
+    options.push({
+      provider: "deepseek",
+      model: config.DEEPSEEK_FAST_MODEL,
+      label: `DeepSeek Fast (${config.DEEPSEEK_FAST_MODEL})`,
+      thinking: true,
+      thinkingEfforts: DEEPSEEK_THINKING_EFFORTS
+    });
+  }
+  return options;
 }
 
 function deepInfraModelOptions(config: AppConfig): TextModelOption[] {
@@ -207,7 +244,9 @@ function createTextModelAdapter(config: AppConfig, selection: TextModelSelection
     return new GeminiTextAdapter({
       apiKey: config.GEMINI_API_KEY,
       textModel: selection.model,
-      thinkingBudget: selection.thinkingBudget
+      thinkingBudget: selection.thinkingBudget,
+      thinkingEnabled: selection.thinkingEnabled,
+      thinkingEffort: selection.thinkingEffort
     });
   }
   if (selection.provider === "alibaba") {
@@ -228,8 +267,9 @@ function createTextModelAdapter(config: AppConfig, selection: TextModelSelection
     return new DeepInfraAdapter({
       apiKey: config.DEEPINFRA_API_KEY,
       baseURL: config.DEEPINFRA_BASE_URL,
-      model: selection.model,
-      thinkingEnabled: selection.thinkingEnabled
+      model: normalizeDeepInfraTextModel(selection.model),
+      thinkingEnabled: selection.thinkingEnabled,
+      thinkingEffort: selection.thinkingEffort
     });
   }
 
@@ -238,7 +278,8 @@ function createTextModelAdapter(config: AppConfig, selection: TextModelSelection
     baseURL: config.DEEPSEEK_BASE_URL,
     model: selection.model,
     fastModel: config.DEEPSEEK_FAST_MODEL,
-    thinkingEnabled: selection.thinkingEnabled
+    thinkingEnabled: selection.thinkingEnabled,
+    thinkingEffort: selection.thinkingEffort
   });
 }
 

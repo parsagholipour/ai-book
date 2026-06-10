@@ -53,6 +53,13 @@ function reviewerStyleRules(input: CreateProjectInput): string[] {
   ];
 }
 
+const READER_FACING_PAGE_BRIEF_RULES = [
+  "Treat pageBrief purpose, beat, requiredContinuity, and endingPressure as internal assignment notes; transform them into prose instead of echoing their wording.",
+  'Do not write procedural phrases such as "concluding the survey", "this chapter transitions", "the next section", or "the scope of this survey" in the page.',
+  "If requiredContinuity points to an earlier page, preserve consistency without re-explaining that page's concrete examples; add a new implication or consequence.",
+  "When pageScope.isLastPageOfChapter is true, close with a concrete implication for the chapter's argument and let any handoff to the next chapter arise from substance, not from announcing a transition."
+];
+
 function styleGuidancePayload(input: CreateProjectInput) {
   const toneProfile = toneProfileFromMediaSettings(input.mediaSettings);
   return {
@@ -499,6 +506,7 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Do not use scaffold phrases, meta commentary, or a summary of what the page should do.",
+          ...READER_FACING_PAGE_BRIEF_RULES,
           "Make the page itself advance the story or explanation through concrete action, claims, dialogue, or scene work.",
           "Every page must add a distinct irreversible change, new information, completed decision, or resolved consequence.",
           "Do not replay an encounter, decision, exposition point, or emotional beat that already appeared in recent pages.",
@@ -567,6 +575,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           "Return exactly one root JSON object with a pages array.",
           "Each page object must include index, title, markdown, summary, continuityNotes, and optional imagePrompt.",
           "Images are generated later, so imagePrompt must be a separate visual prompt field and must not appear in markdown.",
+          ...READER_FACING_PAGE_BRIEF_RULES,
           "Every page must add distinct progression; do not repeat the same scene, explanation, decision, or emotional beat across pages.",
           IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
@@ -638,6 +647,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions in reader-facing pages.",
+          ...READER_FACING_PAGE_BRIEF_RULES,
           IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -710,6 +720,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Make each page advance a distinct beat and avoid repeating recent pages.",
+          ...READER_FACING_PAGE_BRIEF_RULES,
           IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -781,6 +792,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions.",
+          ...READER_FACING_PAGE_BRIEF_RULES,
           IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
@@ -949,6 +961,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Do not mention the critique, AI, prompts, JSON, schemas, generation, or production instructions.",
+          ...READER_FACING_PAGE_BRIEF_RULES,
           "If the current pageBrief requires a recurring action type from previousPages, keep the required action but change the physical details, sentence rhythm, and consequence.",
           "Do not reuse distinctive phrases from previousPages; replace them with fresh concrete wording.",
           "Use pageScope to keep the replacement inside the current global page and chapter-local position.",
@@ -1017,6 +1030,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
           "If the chapter requires recurring mechanics, repair the assignment around the new consequence, location, choice, or relation rather than banning the recurring action itself.",
           "Use pageScope to keep the repaired assignment inside the current page. Do not move futureChapterPageBriefs or later chapter keyBeats into this page.",
           "The endingPressure must name a concrete consequence, completed choice, or resolved claim.",
+          "The endingPressure must be phrased as a substantive landing claim the prose can earn, not a procedural instruction. It must not include words such as concluding, survey, chapter, section, scope, transition, recap, reader, or next chapter.",
           "Return exactly one JSON object with pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure, and optional imageMoment.",
           ...targetLanguageGenerationGuidance(options.input.language),
           ...plannerToneRules(options.input)
@@ -1622,6 +1636,12 @@ function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityRepor
     issues.push("Page leaks prompts, schema, image instructions, or production notes.");
   }
 
+  if (hasPageBriefMetaLanguage(currentBody)) {
+    checks.promptLeakFree = false;
+    checks.progressionOk = false;
+    issues.push("Page turns page-brief instructions into reader-facing meta-commentary.");
+  }
+
   const fabricatedResearch = FABRICATED_RESEARCH_PATTERNS.find((pattern) => pattern.test(text));
   if (fabricatedResearch) {
     checks.promptLeakFree = false;
@@ -1823,6 +1843,7 @@ function buildPageInstruction(pageIndex: number, targetPages: number): string {
     "Treat the title as internal metadata only; the markdown should begin with book prose, not a page title or heading.",
     GROUNDED_FACTUALITY_RULE,
     "Advance beyond recentPages and alreadyCovered; do not restate their scene, decision, exposition, or emotional beat.",
+    'Treat pageBrief and endingPressure as internal notes; do not echo phrases like "concluding the survey" or announce a transition to another chapter.',
     "The page summary must name the new beat or changed consequence introduced on this page."
   ];
   if (pageIndex === targetPages) {
@@ -1840,9 +1861,11 @@ function normalizeRepairedPageBrief(raw: unknown, options: RepairPageBriefOption
   const beat =
     parsed.beat.trim() ||
     `Add a distinct concrete beat for page ${options.pageIndex} that does not restate previous pages or the rejected draft.`;
+  const rawEndingPressure = parsed.endingPressure.trim();
   const endingPressure =
-    parsed.endingPressure.trim() ||
-    "End with a concrete consequence or resolved claim that moves the chapter forward.";
+    rawEndingPressure && !hasPageBriefMetaLanguage(rawEndingPressure)
+      ? rawEndingPressure
+      : repairedEndingPressureFallback(options);
   const requiredContinuity = parsed.requiredContinuity.map((item) => item.trim()).filter(Boolean);
   const imageMoment = parsed.imageMoment?.trim();
 
@@ -1856,6 +1879,15 @@ function normalizeRepairedPageBrief(raw: unknown, options: RepairPageBriefOption
     endingPressure,
     ...(imageMoment ? { imageMoment } : {})
   };
+}
+
+function repairedEndingPressureFallback(options: RepairPageBriefOptions): string {
+  const feedback = [...options.report.issues, ...options.report.requiredRevisions, options.report.notes].join(" ");
+  const authorityContext = `${feedback} ${options.plan.premise} ${options.chapter?.summary ?? ""}`;
+  if (/\b(?:archiv\w*|preserv\w*|surviv\w*|record|silence|evidence)\b/i.test(feedback) && /\b(?:power|authority|govern|leadership|sovereignty|suprem)\b/i.test(authorityContext)) {
+    return "Surviving records establish a minimum threshold of documented female authority rather than proof that power was absent where evidence was lost.";
+  }
+  return "The new material establishes one evidence-bound implication for the central claim.";
 }
 
 function compactPriorPages(pages: PriorPageContext[], count: number, excerptLength: number) {
@@ -2234,6 +2266,17 @@ const PROMPT_LEAK_PATTERNS = [
   /production instructions/i,
   /do not mention ai/i
 ];
+
+const PAGE_BRIEF_META_LANGUAGE_PATTERNS = [
+  /\b(?:concluding|conclude|concludes|closing|close|ending|end)\s+the\s+(?:survey|chapter|section|discussion|analysis|page)\b/i,
+  /\b(?:the|this)\s+(?:survey|chapter|section|discussion|analysis|page)\s+(?:concludes|closes|ends|transitions|moves|prepares|sets up)\b/i,
+  /\b(?:transition(?:s|ing)?|shift(?:s|ing)?|move(?:s|ing)?|prepare(?:s|ing)?)\s+(?:the\s+reader\s+)?(?:from|toward|to|into|away from|for)\s+(?:the\s+)?(?:next|following|subsequent)\s+(?:chapter|section|analysis|focus)\b/i,
+  /\b(?:sets?|leaves)\s+up\s+(?:the\s+)?(?:next|following|subsequent)\s+(?:chapter|section|analysis|focus)\b/i
+];
+
+function hasPageBriefMetaLanguage(text: string): boolean {
+  return PAGE_BRIEF_META_LANGUAGE_PATTERNS.some((pattern) => pattern.test(text));
+}
 
 const FABRICATED_RESEARCH_PATTERNS = [
   /\b(?:fictional|fabricated|invented|made[-\s]?up)\b.{0,100}\b(?:stud(?:y|ies)|data|journal|institute|authority|research|project|statistics|evidence|source|citation|expert|findings?)\b/i,

@@ -147,15 +147,17 @@ const voiceCallEventBodySchema = z
 const pdfExportQuerySchema = z.object({
   disposition: z.enum(["attachment", "inline"]).optional()
 });
+const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
-const generationFailureJobTypes = [...resumableJobTypes, ...restartableJobTypes];
+const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 const BOOK_MARKDOWN_FILENAME = "book.md";
 const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
 const BOOK_PDF_FILENAME = "book.pdf";
 const BOOK_EPUB_FILENAME = "book.epub";
 type ResumeContext = {
   currentPlanId: string | null;
+  currentPlanCreatedAt: Date | null;
   existingPages: number;
   pageIds: Set<string>;
 };
@@ -422,10 +424,6 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
-    if (!project.currentPlanId) {
-      return reply.code(400).send({ error: "A project needs an approved plan before generation can resume." });
-    }
-
     const failedJobs = await prisma.generationJob.findMany({
       where: {
         projectId: id,
@@ -440,15 +438,20 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     });
     const resumeContext = {
       currentPlanId: project.currentPlanId,
+      currentPlanCreatedAt: project.currentPlan?.createdAt ?? null,
       existingPages: pages.length,
       pageIds: new Set(pages.map((page) => page.id))
     };
-    const jobsForCurrentPlan = failedJobs.filter((job) =>
-      canResumeGenerationJob(job.type as GenerationJobType, job.payload, resumeContext)
+    const recoveryCandidates = failedJobs.filter((job) =>
+      canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
     );
+    const planningRecoveryCandidates = recoveryCandidates.filter((job) =>
+      isPlanningRecoveryJob(job.type as GenerationJobType)
+    );
+    const jobsForRecovery = planningRecoveryCandidates.length > 0 ? planningRecoveryCandidates : recoveryCandidates;
     const jobsReadyToResume: typeof failedJobs = [];
     let stoppingJobs = 0;
-    for (const job of jobsForCurrentPlan) {
+    for (const job of jobsForRecovery) {
       if (await isBullJobActive(job.bullJobId)) {
         stoppingJobs += 1;
       } else {
@@ -461,11 +464,14 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         error:
           stoppingJobs > 0
             ? "Stopped generation jobs are still winding down. Try resume again in a moment."
-            : "No failed generation jobs are available to resume for the current plan."
+            : "No failed jobs are available to retry or resume for this project."
       });
     }
 
-    await prisma.project.update({ where: { id }, data: { status: "GENERATING" } });
+    const nextStatus = jobsReadyToResume.every((job) => isPlanningRecoveryJob(job.type as GenerationJobType))
+      ? "PLANNING"
+      : "GENERATING";
+    await prisma.project.update({ where: { id }, data: { status: nextStatus } });
     const resumedJobs = [];
     for (const job of jobsReadyToResume) {
       resumedJobs.push(
@@ -473,14 +479,14 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
           id: job.id,
           projectId: job.projectId,
           type: job.type as GenerationJobType,
-          payload: payloadWithCurrentPlan(job.payload, project.currentPlanId)
+          payload: recoveryPayload(job.type as GenerationJobType, job.payload, project.currentPlanId)
         })
       );
     }
 
     return reply.code(202).send({
       resumedJobs: resumedJobs.length,
-      skippedJobs: failedJobs.length - jobsForCurrentPlan.length,
+      skippedJobs: failedJobs.length - jobsForRecovery.length,
       stoppingJobs,
       jobs: resumedJobs
     });
@@ -1599,12 +1605,31 @@ function payloadPlanId(payload: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function canResumeGenerationJob(type: GenerationJobType, payload: unknown, context: ResumeContext): boolean {
+function canRecoverGenerationJob(
+  type: GenerationJobType,
+  payload: unknown,
+  context: ResumeContext,
+  jobCreatedAt: Date
+): boolean {
+  const payloadRecord = jsonPayloadToRecord(payload);
+
+  if (type === "PLAN_BOOK") {
+    return !context.currentPlanCreatedAt || jobCreatedAt > context.currentPlanCreatedAt;
+  }
+
+  if (type === "REVISE_PLAN") {
+    return (
+      typeof payloadRecord.planId === "string" &&
+      payloadRecord.planId === context.currentPlanId &&
+      typeof payloadRecord.message === "string" &&
+      payloadRecord.message.trim().length > 0
+    );
+  }
+
   if (!context.currentPlanId) {
     return false;
   }
 
-  const payloadRecord = jsonPayloadToRecord(payload);
   const planId = payloadPlanId(payloadRecord);
   if (planId && planId !== context.currentPlanId) {
     return false;
@@ -1626,6 +1651,24 @@ function canResumeGenerationJob(type: GenerationJobType, payload: unknown, conte
   }
 
   return type === "COMPILE_EXPORT";
+}
+
+function isPlanningRecoveryJob(type: GenerationJobType): boolean {
+  return type === "PLAN_BOOK" || type === "REVISE_PLAN";
+}
+
+function recoveryPayload(
+  type: GenerationJobType,
+  payload: unknown,
+  currentPlanId: string | null
+): Record<string, unknown> {
+  if (isPlanningRecoveryJob(type)) {
+    return jsonPayloadToRecord(payload);
+  }
+  if (!currentPlanId) {
+    return jsonPayloadToRecord(payload);
+  }
+  return payloadWithCurrentPlan(payload, currentPlanId);
 }
 
 function payloadWithCurrentPlan(payload: unknown, currentPlanId: string): Record<string, unknown> {

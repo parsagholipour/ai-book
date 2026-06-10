@@ -14,7 +14,21 @@ export function formatProviderModel(value: { provider: string; model: string }):
 }
 
 export function formatTokenPair(tokens?: TokenUsage | null): string {
-  return `Input ${formatTokenCount(tokens?.promptTokens)} · Output ${formatTokenCount(tokens?.outputTokens)}`;
+  const liveCalls = liveCallCount(tokens);
+  return [
+    `Input ${formatLiveTokenCount(tokens, "promptTokens")}`,
+    `Output ${formatLiveTokenCount(tokens, "outputTokens")}`,
+    liveCalls > 0 ? `${TOKEN_FORMATTER.format(liveCalls)} live` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+export function formatLiveTokenCount(tokens: TokenUsage | null | undefined, key: "promptTokens" | "outputTokens"): string {
+  const provisional =
+    key === "promptTokens" ? finiteNumber(tokens?.provisionalPromptTokens) : finiteNumber(tokens?.provisionalOutputTokens);
+  const prefix = provisional > 0 ? "≈" : "";
+  return `${prefix}${formatTokenCount(tokens?.[key])}`;
 }
 
 export function hasProviderDuration(value?: number | null): value is number {
@@ -49,7 +63,15 @@ export function formatUsd(value?: number | null): string {
 }
 
 export function formatTokenCount(value?: number | null): string {
-  return TOKEN_FORMATTER.format(typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0);
+  return TOKEN_FORMATTER.format(finiteNumber(value));
+}
+
+function liveCallCount(tokens?: TokenUsage | null): number {
+  return finiteNumber(tokens?.inFlightCalls);
+}
+
+function finiteNumber(value?: number | null): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 export function formatJobTiming(startedAt?: string | null, finishedAt?: string | null): string {

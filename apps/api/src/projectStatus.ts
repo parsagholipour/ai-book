@@ -17,6 +17,7 @@ export type PipelineStep = {
 
 type ResumeContext = {
   currentPlanId: string | null;
+  currentPlanCreatedAt: Date | null;
   existingPages: number;
   pageIds: Set<string>;
 };
@@ -25,6 +26,18 @@ export type TokenUsage = {
   promptTokens: number;
   outputTokens: number;
   cacheHitTokens: number;
+  provisionalPromptTokens: number;
+  provisionalOutputTokens: number;
+  inFlightCalls: number;
+};
+
+type ProviderTokenLogRow = {
+  generationJobId: string | null;
+  promptTokens: number | null;
+  outputTokens: number | null;
+  cacheHitTokens: number | null;
+  durationMs: number | null;
+  metadata: unknown;
 };
 
 export type JobImageFallbackDetails = {
@@ -46,9 +59,10 @@ export type JobImageFallbackDetails = {
   occurredAt?: string | undefined;
 };
 
+const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
-const generationFailureJobTypes = [...resumableJobTypes, ...restartableJobTypes];
+const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 const config = loadConfig();
 
 export async function buildProjectStatus(projectId: string) {
@@ -73,21 +87,20 @@ export async function buildProjectStatus(projectId: string) {
   const pageIndexById = new Map(pages.map((page) => [page.id, page.index]));
   const resumeContext: ResumeContext = {
     currentPlanId: project.currentPlanId,
+    currentPlanCreatedAt: project.currentPlan?.createdAt ?? null,
     existingPages: pages.length,
     pageIds: new Set(pages.map((page) => page.id))
   };
-  const failedGenerationJobs = project.currentPlanId
-    ? await prisma.generationJob.findMany({
-        where: {
-          projectId,
-          status: "FAILED",
-          type: { in: generationFailureJobTypes }
-        },
-        select: { type: true, payload: true }
-      })
-    : [];
+  const failedGenerationJobs = await prisma.generationJob.findMany({
+    where: {
+      projectId,
+      status: "FAILED",
+      type: { in: generationFailureJobTypes }
+    },
+    select: { type: true, payload: true, createdAt: true }
+  });
   const resumableFailedJobs = failedGenerationJobs.filter((job) =>
-    canResumeGenerationJob(job.type as GenerationJobType, job.payload, resumeContext)
+    canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
   ).length;
 
   const [openImageJobs, compileJobs] = await Promise.all([
@@ -103,35 +116,30 @@ export async function buildProjectStatus(projectId: string) {
   });
 
   const jobIds = project.jobs.map((job) => job.id);
-  const [tokenLogs, jobTokenLogs, cost, imageFallbacksByJobId] = await Promise.all([
-    prisma.providerCallLog.aggregate({
+  const [tokenLogRows, cost, imageFallbacksByJobId] = await Promise.all([
+    prisma.providerCallLog.findMany({
       where: { projectId },
-      _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true }
+      select: {
+        generationJobId: true,
+        promptTokens: true,
+        outputTokens: true,
+        cacheHitTokens: true,
+        durationMs: true,
+        metadata: true
+      }
     }),
-    jobIds.length > 0
-      ? prisma.providerCallLog.groupBy({
-          by: ["generationJobId"],
-          where: { projectId, generationJobId: { in: jobIds } },
-          _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true, durationMs: true }
-        })
-      : Promise.resolve([]),
     loadProjectCostSummary(projectId),
     loadImageFallbackDetails(projectId, project.jobs)
   ]);
-  const tokensByJobId = new Map(
-    jobTokenLogs.flatMap((row) =>
-      row.generationJobId ? [[row.generationJobId, normalizeTokenUsage(row._sum)] as const] : []
-    )
-  );
-  const providerDurationMsByJobId = new Map(
-    jobTokenLogs.flatMap((row) =>
-      row.generationJobId && row._sum.durationMs !== null ? [[row.generationJobId, row._sum.durationMs] as const] : []
-    )
-  );
+  const projectTokens = summarizeTokenLogs(tokenLogRows);
+  const visibleJobIds = new Set(jobIds);
+  const tokensByJobId = summarizeTokenLogsByJob(tokenLogRows, visibleJobIds);
+  const providerDurationMsByJobId = providerDurationsByJob(tokenLogRows, visibleJobIds);
 
   const pageProgress = { complete: completePages, target: project.targetPages };
   const pipeline = buildPipelineSteps({
     projectStatus: project.status,
+    currentPlanCreatedAt: project.currentPlan?.createdAt ?? null,
     jobs: project.jobs,
     pageProgress,
     imageCount: visibleImageCount,
@@ -165,7 +173,7 @@ export async function buildProjectStatus(projectId: string) {
       failedJobs,
       resumableFailedJobs,
       pipeline,
-      tokens: normalizeTokenUsage(tokenLogs._sum),
+      tokens: projectTokens,
       cost,
       quality: {
         reviewedPages: pages.filter((page) => page.qualityReport !== null).length,
@@ -180,16 +188,83 @@ export function normalizeTokenUsage(input?: Partial<Record<keyof TokenUsage, num
   return {
     promptTokens: finiteTokenValue(input?.promptTokens),
     outputTokens: finiteTokenValue(input?.outputTokens),
-    cacheHitTokens: finiteTokenValue(input?.cacheHitTokens)
+    cacheHitTokens: finiteTokenValue(input?.cacheHitTokens),
+    provisionalPromptTokens: finiteTokenValue(input?.provisionalPromptTokens),
+    provisionalOutputTokens: finiteTokenValue(input?.provisionalOutputTokens),
+    inFlightCalls: finiteTokenValue(input?.inFlightCalls)
   };
 }
 
 function emptyTokenUsage(): TokenUsage {
-  return { promptTokens: 0, outputTokens: 0, cacheHitTokens: 0 };
+  return normalizeTokenUsage();
 }
 
 function finiteTokenValue(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function summarizeTokenLogs(rows: ProviderTokenLogRow[]): TokenUsage {
+  const totals = emptyTokenUsage();
+  for (const row of rows) {
+    if (!shouldCountTokenLog(row)) {
+      continue;
+    }
+    const metadata = liveTokenMetadata(row.metadata);
+    const promptTokens = finiteTokenValue(row.promptTokens);
+    const outputTokens = finiteTokenValue(row.outputTokens);
+    totals.promptTokens += promptTokens;
+    totals.outputTokens += outputTokens;
+    totals.cacheHitTokens += finiteTokenValue(row.cacheHitTokens);
+    if (metadata.promptTokensEstimated) {
+      totals.provisionalPromptTokens += promptTokens;
+    }
+    if (metadata.outputTokensEstimated) {
+      totals.provisionalOutputTokens += outputTokens;
+    }
+    if (metadata.liveStatus === "in_progress") {
+      totals.inFlightCalls += 1;
+    }
+  }
+  return totals;
+}
+
+function summarizeTokenLogsByJob(rows: ProviderTokenLogRow[], jobIds: Set<string>): Map<string, TokenUsage> {
+  const grouped = new Map<string, ProviderTokenLogRow[]>();
+  for (const row of rows) {
+    if (!row.generationJobId || !jobIds.has(row.generationJobId)) {
+      continue;
+    }
+    grouped.set(row.generationJobId, [...(grouped.get(row.generationJobId) ?? []), row]);
+  }
+  return new Map([...grouped.entries()].map(([jobId, jobRows]) => [jobId, summarizeTokenLogs(jobRows)] as const));
+}
+
+function providerDurationsByJob(rows: ProviderTokenLogRow[], jobIds: Set<string>): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    if (!row.generationJobId || !jobIds.has(row.generationJobId) || row.durationMs === null || !shouldCountTokenLog(row)) {
+      continue;
+    }
+    totals.set(row.generationJobId, (totals.get(row.generationJobId) ?? 0) + row.durationMs);
+  }
+  return totals;
+}
+
+function shouldCountTokenLog(row: ProviderTokenLogRow): boolean {
+  return liveTokenMetadata(row.metadata).liveStatus !== "failed";
+}
+
+function liveTokenMetadata(metadata: unknown): {
+  liveStatus?: string | undefined;
+  promptTokensEstimated: boolean;
+  outputTokensEstimated: boolean;
+} {
+  const record = jsonPayloadToRecord(metadata);
+  return {
+    liveStatus: typeof record.liveStatus === "string" ? record.liveStatus : undefined,
+    promptTokensEstimated: record.promptTokensEstimated === true,
+    outputTokensEstimated: record.outputTokensEstimated === true
+  };
 }
 
 async function loadImageFallbackDetails(
@@ -373,16 +448,19 @@ function safePathPart(value: string): string {
 
 export function buildPipelineSteps(input: {
   projectStatus: string;
-  jobs: Array<{ type: string; status: string }>;
+  currentPlanCreatedAt?: Date | null;
+  jobs: Array<{ type: string; status: string; createdAt?: Date }>;
   pageProgress: { complete: number; target: number };
   imageCount: number;
   openImageJobs: number;
   hasCompileJob: boolean;
 }): PipelineStep[] {
-  const { projectStatus, jobs, pageProgress, imageCount, openImageJobs, hasCompileJob } = input;
+  const { projectStatus, currentPlanCreatedAt, jobs, pageProgress, imageCount, openImageJobs, hasCompileJob } = input;
   const planFailed = jobs.some(
     (job) =>
-      (job.type === "PLAN_BOOK" || job.type === "REVISE_PLAN") && job.status === "FAILED"
+      (job.type === "PLAN_BOOK" || job.type === "REVISE_PLAN") &&
+      job.status === "FAILED" &&
+      isCurrentPlanningFailure(job.createdAt, currentPlanCreatedAt ?? null)
   );
   const planActive = jobs.some(
     (job) =>
@@ -434,12 +512,35 @@ export function buildPipelineSteps(input: {
   ];
 }
 
-function canResumeGenerationJob(type: GenerationJobType, payload: unknown, context: ResumeContext): boolean {
+function isCurrentPlanningFailure(jobCreatedAt: Date | undefined, currentPlanCreatedAt: Date | null): boolean {
+  return !currentPlanCreatedAt || (jobCreatedAt ? jobCreatedAt > currentPlanCreatedAt : true);
+}
+
+function canRecoverGenerationJob(
+  type: GenerationJobType,
+  payload: unknown,
+  context: ResumeContext,
+  jobCreatedAt: Date
+): boolean {
+  const payloadRecord = jsonPayloadToRecord(payload);
+
+  if (type === "PLAN_BOOK") {
+    return !context.currentPlanCreatedAt || jobCreatedAt > context.currentPlanCreatedAt;
+  }
+
+  if (type === "REVISE_PLAN") {
+    return (
+      typeof payloadRecord.planId === "string" &&
+      payloadRecord.planId === context.currentPlanId &&
+      typeof payloadRecord.message === "string" &&
+      payloadRecord.message.trim().length > 0
+    );
+  }
+
   if (!context.currentPlanId) {
     return false;
   }
 
-  const payloadRecord = jsonPayloadToRecord(payload);
   const planId = payloadPlanId(payloadRecord);
   if (planId && planId !== context.currentPlanId) {
     return false;

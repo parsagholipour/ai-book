@@ -4,7 +4,8 @@ import type {
   GenerateTextOptions,
   JsonResult,
   TextModelAdapter,
-  TextResult
+  TextResult,
+  Usage
 } from "./types.js";
 import {
   parseJsonObject,
@@ -24,12 +25,17 @@ export type DeepInfraAdapterOptions = {
   baseURL?: string | undefined;
   model?: string | undefined;
   thinkingEnabled?: boolean | undefined;
+  thinkingEffort?: ThinkingEffort | undefined;
 };
+
+type ThinkingEffort = "none" | "minimal" | "low" | "medium" | "high" | "max";
+type DeepInfraReasoningEffort = "low" | "medium" | "high";
 
 export class DeepInfraAdapter implements TextModelAdapter {
   private readonly client: OpenAI;
   private readonly model: string;
   private readonly thinkingEnabled: boolean;
+  private readonly thinkingEffort: DeepInfraReasoningEffort | undefined;
 
   constructor(options: DeepInfraAdapterOptions) {
     if (!options.apiKey) {
@@ -37,7 +43,8 @@ export class DeepInfraAdapter implements TextModelAdapter {
     }
 
     this.model = options.model ?? DEFAULT_DEEPINFRA_MODEL;
-    this.thinkingEnabled = options.thinkingEnabled ?? false;
+    this.thinkingEnabled = options.thinkingEnabled ?? thinkingEffortEnabled(options.thinkingEffort);
+    this.thinkingEffort = deepInfraReasoningEffort(options.thinkingEffort, this.thinkingEnabled);
     this.client = new OpenAI({
       apiKey: options.apiKey,
       baseURL: options.baseURL ?? DEFAULT_DEEPINFRA_BASE_URL
@@ -45,28 +52,33 @@ export class DeepInfraAdapter implements TextModelAdapter {
   }
 
   async generateText(options: GenerateTextOptions): Promise<TextResult> {
+    if (options.onOutputTextChunk) {
+      return this.generateTextStreaming(options);
+    }
+
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: options.messages,
       temperature: options.temperature,
       max_tokens: options.maxTokens,
-      ...deepInfraReasoningConfig(this.thinkingEnabled)
+      ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
     } as never);
 
     const text = response.choices[0]?.message?.content ?? "";
+    const usage = usageFromDeepInfra(response.usage);
     return {
       text,
       model: this.model,
       provider: PROVIDER_ID,
-      usage: {
-        promptTokens: response.usage?.prompt_tokens,
-        outputTokens: response.usage?.completion_tokens,
-        cacheHitTokens: deepInfraCacheHitTokens(response.usage)
-      }
+      ...(usage ? { usage } : {})
     };
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    if (options.onOutputTextChunk) {
+      return this.generateJsonStreaming(options);
+    }
+
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
@@ -80,15 +92,78 @@ export class DeepInfraAdapter implements TextModelAdapter {
       temperature: options.temperature,
       max_tokens: options.maxTokens,
       response_format: { type: "json_object" },
-      ...deepInfraReasoningConfig(this.thinkingEnabled)
+      ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
     } as never);
 
     const text = response.choices[0]?.message?.content ?? "{}";
-    const usage = {
-      promptTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens,
-      cacheHitTokens: deepInfraCacheHitTokens(response.usage)
+    const usage = usageFromDeepInfra(response.usage);
+    return this.parseJsonResult(options, text, usage);
+  }
+
+  private async generateTextStreaming(options: GenerateTextOptions): Promise<TextResult> {
+    const stream: any = await this.client.chat.completions.create({
+      model: this.model,
+      messages: options.messages,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      stream: true,
+      stream_options: { include_usage: true },
+      ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
+    } as never);
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        text += content;
+        await options.onOutputTextChunk?.(content);
+      }
+      usage = usageFromDeepInfra(chunk.usage) ?? usage;
+    }
+
+    return {
+      text,
+      model: this.model,
+      provider: PROVIDER_ID,
+      ...(usage ? { usage } : {})
     };
+  }
+
+  private async generateJsonStreaming<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    const stream: any = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
+        },
+        ...options.messages
+      ],
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      response_format: { type: "json_object" },
+      stream: true,
+      stream_options: { include_usage: true },
+      ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
+    } as never);
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        text += content;
+        await options.onOutputTextChunk?.(content);
+      }
+      usage = usageFromDeepInfra(chunk.usage) ?? usage;
+    }
+
+    return this.parseJsonResult(options, text || "{}", usage);
+  }
+
+  private parseJsonResult<T>(options: GenerateJsonOptions<T>, text: string, usage: Usage | undefined): JsonResult<T> {
     let parsedObject: unknown;
     try {
       parsedObject = parseJsonObject(text, PROVIDER_LABEL);
@@ -101,7 +176,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
         text,
         model: this.model,
         provider: PROVIDER_ID,
-        usage
+        ...(usage ? { usage } : {})
       };
     }
     try {
@@ -110,7 +185,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
         text,
         model: this.model,
         provider: PROVIDER_ID,
-        usage
+        ...(usage ? { usage } : {})
       };
     } catch (error) {
       throwWithProviderUsage(error, { provider: PROVIDER_ID, model: this.model, usage });
@@ -125,7 +200,7 @@ export class DeepInfraAdapter implements TextModelAdapter {
       max_tokens: options.maxTokens,
       stream: true,
       stream_options: { include_usage: true },
-      ...deepInfraReasoningConfig(this.thinkingEnabled)
+      ...deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort)
     } as never);
 
     for await (const chunk of stream) {
@@ -137,10 +212,40 @@ export class DeepInfraAdapter implements TextModelAdapter {
   }
 }
 
-function deepInfraReasoningConfig(enabled: boolean) {
+function deepInfraReasoningConfig(enabled: boolean, effort: DeepInfraReasoningEffort | undefined) {
+  const selectedEffort = effort ?? "high";
   return enabled
-    ? { reasoning: { enabled: true, effort: "high" }, reasoning_effort: "high" }
+    ? { reasoning: { enabled: true, effort: selectedEffort }, reasoning_effort: selectedEffort }
     : { reasoning: { enabled: false }, reasoning_effort: "none" };
+}
+
+function thinkingEffortEnabled(effort: ThinkingEffort | undefined): boolean {
+  return effort !== undefined && effort !== "none";
+}
+
+function deepInfraReasoningEffort(
+  effort: ThinkingEffort | undefined,
+  enabled: boolean
+): DeepInfraReasoningEffort | undefined {
+  if (!enabled) {
+    return undefined;
+  }
+  if (effort === "low" || effort === "medium" || effort === "high") {
+    return effort;
+  }
+  return "high";
+}
+
+function usageFromDeepInfra(usage: unknown): Usage | undefined {
+  if (!usage || typeof usage !== "object") {
+    return undefined;
+  }
+  const record = usage as { prompt_tokens?: number; completion_tokens?: number };
+  return {
+    promptTokens: record.prompt_tokens,
+    outputTokens: record.completion_tokens,
+    cacheHitTokens: deepInfraCacheHitTokens(usage)
+  };
 }
 
 function deepInfraCacheHitTokens(usage: unknown): number | undefined {

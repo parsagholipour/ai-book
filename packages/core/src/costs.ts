@@ -301,6 +301,11 @@ const DEEPINFRA_V4_PRO_RATE: TextRate = {
   cacheHitPerMillion: 0.1
 };
 
+const DEEPINFRA_MISTRAL_SMALL_RATE: TextRate = {
+  inputPerMillion: 0.075,
+  outputPerMillion: 0.2
+};
+
 const GEMINI_IMAGE_COSTS_USD = new Map<string, number>([
   ["gemini-2.5-flash-image", 0.039],
   ["imagen-4.0-fast-generate-001", 0.02],
@@ -483,6 +488,9 @@ function resolveTextRate(provider: string | null, model: string | null, promptTo
     if (isDeepInfraV4FlashModel(model)) {
       return DEEPINFRA_V4_FLASH_RATE;
     }
+    if (isDeepInfraMistralSmallModel(model)) {
+      return DEEPINFRA_MISTRAL_SMALL_RATE;
+    }
     return null;
   }
 
@@ -508,6 +516,10 @@ function isDeepInfraV4ProModel(model: string): boolean {
 
 function isDeepInfraV4FlashModel(model: string): boolean {
   return model === "deepseek-ai/deepseek-v4-flash" || model === "deepseek-v4-flash";
+}
+
+function isDeepInfraMistralSmallModel(model: string): boolean {
+  return model === "mistralai/mistral-small-3.2-24b-instruct-2506" || model === "mistral-small-latest";
 }
 
 function resolveRateForPromptTokens(

@@ -1,3 +1,4 @@
+import { ThinkingLevel } from "@google/genai";
 import { describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -49,8 +50,9 @@ describe("GeminiTextAdapter", () => {
     const requests: any[] = [];
     const adapter = new GeminiTextAdapter({
       apiKey: "test-key",
-      textModel: "gemini-2.5-flash",
-      thinkingBudget: 0
+      textModel: "gemini-3.5-flash",
+      thinkingBudget: 0,
+      thinkingEffort: "high"
     });
     (adapter as any).ai = {
       models: {
@@ -66,6 +68,38 @@ describe("GeminiTextAdapter", () => {
     });
 
     expect(requests[0].config.thinkingConfig).toEqual({ thinkingBudget: 0 });
+  });
+
+  it("passes configured thinking levels to Gemini 3.5 Flash requests", async () => {
+    const cases = [
+      ["minimal", ThinkingLevel.MINIMAL],
+      ["low", ThinkingLevel.LOW],
+      ["medium", ThinkingLevel.MEDIUM],
+      ["high", ThinkingLevel.HIGH]
+    ] as const;
+
+    for (const [thinkingEffort, thinkingLevel] of cases) {
+      const requests: any[] = [];
+      const adapter = new GeminiTextAdapter({
+        apiKey: "test-key",
+        textModel: "gemini-3.5-flash",
+        thinkingEffort
+      });
+      (adapter as any).ai = {
+        models: {
+          generateContent: async (request: any) => {
+            requests.push(request);
+            return { text: "A generated response." };
+          }
+        }
+      };
+
+      await adapter.generateText({
+        messages: [{ role: "user", content: "Draft a paragraph." }]
+      });
+
+      expect(requests[0].config.thinkingConfig).toEqual({ thinkingLevel });
+    }
   });
 
   it("generates schema-constrained JSON and validates the parsed data", async () => {

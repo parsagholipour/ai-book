@@ -4,7 +4,8 @@ import type {
   GenerateTextOptions,
   JsonResult,
   TextModelAdapter,
-  TextResult
+  TextResult,
+  Usage
 } from "./types.js";
 import {
   parseJsonObject,
@@ -47,6 +48,10 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
   }
 
   async generateText(options: GenerateTextOptions): Promise<TextResult> {
+    if (options.onOutputTextChunk) {
+      return this.generateTextStreaming(options);
+    }
+
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: options.messages,
@@ -55,18 +60,20 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
     });
 
     const text = response.choices[0]?.message?.content ?? "";
+    const usage = usageFromOpenAiCompatible(response.usage);
     return {
       text,
       model: this.model,
       provider: PROVIDER_ID,
-      usage: {
-        promptTokens: response.usage?.prompt_tokens,
-        outputTokens: response.usage?.completion_tokens
-      }
+      ...(usage ? { usage } : {})
     };
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    if (options.onOutputTextChunk) {
+      return this.generateJsonStreaming(options);
+    }
+
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
@@ -83,10 +90,72 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
     });
 
     const text = response.choices[0]?.message?.content ?? "{}";
-    const usage = {
-      promptTokens: response.usage?.prompt_tokens,
-      outputTokens: response.usage?.completion_tokens
+    const usage = usageFromOpenAiCompatible(response.usage);
+    return this.parseJsonResult(options, text, usage);
+  }
+
+  private async generateTextStreaming(options: GenerateTextOptions): Promise<TextResult> {
+    const stream: any = await this.client.chat.completions.create({
+      model: this.model,
+      messages: options.messages,
+      temperature: options.temperature ?? null,
+      ...maxTokensParam(options.maxTokens),
+      stream: true,
+      stream_options: { include_usage: true }
+    } as never);
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        text += content;
+        await options.onOutputTextChunk?.(content);
+      }
+      usage = usageFromOpenAiCompatible(chunk.usage) ?? usage;
+    }
+
+    return {
+      text,
+      model: this.model,
+      provider: PROVIDER_ID,
+      ...(usage ? { usage } : {})
     };
+  }
+
+  private async generateJsonStreaming<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    const stream: any = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
+        },
+        ...options.messages
+      ],
+      temperature: options.temperature ?? null,
+      ...maxTokensParam(options.maxTokens),
+      response_format: { type: "json_object" },
+      stream: true,
+      stream_options: { include_usage: true }
+    } as never);
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        text += content;
+        await options.onOutputTextChunk?.(content);
+      }
+      usage = usageFromOpenAiCompatible(chunk.usage) ?? usage;
+    }
+
+    return this.parseJsonResult(options, text || "{}", usage);
+  }
+
+  private parseJsonResult<T>(options: GenerateJsonOptions<T>, text: string, usage: Usage | undefined): JsonResult<T> {
     let parsedObject: unknown;
     try {
       parsedObject = parseJsonObject(text, PROVIDER_LABEL);
@@ -99,7 +168,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
         text,
         model: this.model,
         provider: PROVIDER_ID,
-        usage
+        ...(usage ? { usage } : {})
       };
     }
     try {
@@ -108,7 +177,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
         text,
         model: this.model,
         provider: PROVIDER_ID,
-        usage
+        ...(usage ? { usage } : {})
       };
     } catch (error) {
       throwWithProviderUsage(error, { provider: PROVIDER_ID, model: this.model, usage });
@@ -135,4 +204,14 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
 
 function maxTokensParam(maxTokens: number | undefined): { max_tokens?: number } {
   return maxTokens === undefined ? {} : { max_tokens: maxTokens };
+}
+
+function usageFromOpenAiCompatible(usage: { prompt_tokens?: number; completion_tokens?: number } | null | undefined): Usage | undefined {
+  if (!usage) {
+    return undefined;
+  }
+  return {
+    promptTokens: usage.prompt_tokens,
+    outputTokens: usage.completion_tokens
+  };
 }

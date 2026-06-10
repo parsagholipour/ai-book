@@ -464,11 +464,13 @@ export const subcategorySchema = z.preprocess(
 );
 export const bookGenerationStrategyIdSchema = z.enum(BOOK_GENERATION_STRATEGY_IDS);
 export const bookGenerationStrategySelectionSchema = z.enum(["auto", ...BOOK_GENERATION_STRATEGY_IDS]);
+export const textModelThinkingEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "max"]);
 export const textModelSelectionSchema = z.object({
   provider: z.enum(["deepseek", "deepinfra", "gemini", "alibaba", "openai-compatible"]),
   model: z.string().min(1).max(120),
   thinkingBudget: z.number().int().min(-1).max(32768).optional(),
-  thinkingEnabled: z.boolean().optional()
+  thinkingEnabled: z.boolean().optional(),
+  thinkingEffort: textModelThinkingEffortSchema.optional()
 });
 export const imageModelSelectionSchema = z.preprocess(
   normalizeImageModelSelectionInput,
@@ -619,13 +621,44 @@ export const illustrationPlanSchema = z.object({
   pageRules: z.array(z.string()).default([])
 });
 
-export const researchSourceSchema = z.object({
-  query: z.string(),
-  title: z.string(),
-  url: z.string().url().optional(),
-  summary: z.string(),
-  publishedAt: z.string().optional()
-});
+function normalizeResearchSource(value: unknown): unknown {
+  if (typeof value === "string") {
+    return {
+      query: "planner-note",
+      title: "Planner research note",
+      summary: value.trim()
+    };
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  const query = stringField(value, ["query", "searchQuery", "topic"]);
+  const title = stringField(value, ["title", "source", "name"]);
+  const summary = stringField(value, ["summary", "note", "notes", "body", "description", "content", "text"]);
+  const url = stringField(value, ["url", "link", "sourceUrl"]);
+  const publishedAt = stringField(value, ["publishedAt", "published_at", "date"]);
+
+  return {
+    ...value,
+    query: query?.trim() || "planner-note",
+    title: title?.trim() || "Planner research note",
+    url: url?.trim() || undefined,
+    summary: summary?.trim() || title?.trim() || "",
+    publishedAt: publishedAt?.trim() || undefined
+  };
+}
+
+export const researchSourceSchema = z.preprocess(
+  normalizeResearchSource,
+  z.object({
+    query: z.string(),
+    title: z.string(),
+    url: z.string().url().optional(),
+    summary: z.string(),
+    publishedAt: z.string().optional()
+  })
+);
 
 export const planQuestionSchema = z.preprocess(
   (value) => {
@@ -774,6 +807,7 @@ export const finalBookQaSchema = z.preprocess(
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type MediaSettings = z.infer<typeof mediaSettingsSchema>;
+export type TextModelThinkingEffort = z.infer<typeof textModelThinkingEffortSchema>;
 export type TextModelSelection = z.infer<typeof textModelSelectionSchema>;
 export type ImageModelSelection = z.infer<typeof imageModelSelectionSchema>;
 export type CoverTemplateId = z.infer<typeof coverTemplateIdSchema>;

@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { z } from "zod";
@@ -20,11 +20,14 @@ import type {
   Usage
 } from "./types.js";
 import { geminiImageReferenceLimit, isGeminiNativeImageModel, normalizeGeminiImageModel } from "./geminiModels.js";
+import type { TextModelThinkingEffort } from "../schemas/book.js";
 
 export type GeminiAdapterOptions = {
   apiKey: string | undefined;
   textModel?: string | undefined;
   thinkingBudget?: number | undefined;
+  thinkingEnabled?: boolean | undefined;
+  thinkingEffort?: TextModelThinkingEffort | undefined;
   imageModel?: string | undefined;
   embeddingModel?: string | undefined;
 };
@@ -33,6 +36,8 @@ export class GeminiTextAdapter implements TextModelAdapter {
   private readonly ai: any;
   private readonly model: string;
   private readonly thinkingBudget: number | undefined;
+  private readonly thinkingEnabled: boolean | undefined;
+  private readonly thinkingEffort: TextModelThinkingEffort | undefined;
 
   constructor(options: GeminiAdapterOptions) {
     if (!options.apiKey) {
@@ -41,16 +46,22 @@ export class GeminiTextAdapter implements TextModelAdapter {
     this.ai = new GoogleGenAI({ apiKey: options.apiKey });
     this.model = options.textModel ?? "gemini-2.5-flash";
     this.thinkingBudget = options.thinkingBudget;
+    this.thinkingEnabled = options.thinkingEnabled;
+    this.thinkingEffort = options.thinkingEffort;
   }
 
   async generateText(options: GenerateTextOptions): Promise<TextResult> {
+    if (options.onOutputTextChunk) {
+      return this.generateTextStreaming(options);
+    }
+
     const prompt = geminiPromptFromMessages(options.messages);
     const response = await this.ai.models.generateContent({
       model: this.model,
       contents: prompt.contents,
       config: {
         ...prompt.config,
-        ...geminiThinkingConfig(this.thinkingBudget),
+        ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens
       }
@@ -66,6 +77,10 @@ export class GeminiTextAdapter implements TextModelAdapter {
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    if (options.onOutputTextChunk) {
+      return this.generateJsonStreaming(options);
+    }
+
     const prompt = geminiPromptFromMessages(options.messages, [
       "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
     ]);
@@ -74,7 +89,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       contents: prompt.contents,
       config: {
         ...prompt.config,
-        ...geminiThinkingConfig(this.thinkingBudget),
+        ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens,
         responseMimeType: "application/json",
@@ -84,6 +99,73 @@ export class GeminiTextAdapter implements TextModelAdapter {
 
     const usage = usageFromGeminiResponse(response);
     const text = responseText(response) || "{}";
+    return this.parseJsonResult(options, text, usage);
+  }
+
+  private async generateTextStreaming(options: GenerateTextOptions): Promise<TextResult> {
+    const prompt = geminiPromptFromMessages(options.messages);
+    const stream = await this.ai.models.generateContentStream({
+      model: this.model,
+      contents: prompt.contents,
+      config: {
+        ...prompt.config,
+        ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        temperature: options.temperature,
+        maxOutputTokens: options.maxTokens
+      }
+    });
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const chunkText = responseText(chunk);
+      if (chunkText) {
+        text += chunkText;
+        await options.onOutputTextChunk?.(chunkText);
+      }
+      usage = usageFromGeminiResponse(chunk) ?? usage;
+    }
+
+    return {
+      text,
+      model: this.model,
+      provider: "gemini",
+      ...(usage ? { usage } : {})
+    };
+  }
+
+  private async generateJsonStreaming<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+    const prompt = geminiPromptFromMessages(options.messages, [
+      "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
+    ]);
+    const stream = await this.ai.models.generateContentStream({
+      model: this.model,
+      contents: prompt.contents,
+      config: {
+        ...prompt.config,
+        ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        temperature: options.temperature,
+        maxOutputTokens: options.maxTokens,
+        responseMimeType: "application/json",
+        responseJsonSchema: z.toJSONSchema(options.schema as never, { unrepresentable: "any" })
+      }
+    });
+
+    let text = "";
+    let usage: Usage | undefined;
+    for await (const chunk of stream) {
+      const chunkText = responseText(chunk);
+      if (chunkText) {
+        text += chunkText;
+        await options.onOutputTextChunk?.(chunkText);
+      }
+      usage = usageFromGeminiResponse(chunk) ?? usage;
+    }
+
+    return this.parseJsonResult(options, text || "{}", usage);
+  }
+
+  private parseJsonResult<T>(options: GenerateJsonOptions<T>, text: string, usage: Usage | undefined): JsonResult<T> {
     let parsedObject: unknown;
     try {
       parsedObject = parseJsonObject(text, "Gemini");
@@ -119,7 +201,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       contents: prompt.contents,
       config: {
         ...prompt.config,
-        ...geminiThinkingConfig(this.thinkingBudget),
+        ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens
       }
@@ -134,8 +216,50 @@ export class GeminiTextAdapter implements TextModelAdapter {
   }
 }
 
-function geminiThinkingConfig(thinkingBudget: number | undefined) {
-  return typeof thinkingBudget === "number" ? { thinkingConfig: { thinkingBudget } } : {};
+function geminiThinkingConfig(
+  model: string,
+  thinkingBudget: number | undefined,
+  thinkingEnabled: boolean | undefined,
+  thinkingEffort: TextModelThinkingEffort | undefined
+) {
+  if (typeof thinkingBudget === "number") {
+    return { thinkingConfig: { thinkingBudget } };
+  }
+  const thinkingLevel = geminiThinkingLevel(model, thinkingEnabled, thinkingEffort);
+  return thinkingLevel ? { thinkingConfig: { thinkingLevel } } : {};
+}
+
+function geminiThinkingLevel(
+  model: string,
+  thinkingEnabled: boolean | undefined,
+  thinkingEffort: TextModelThinkingEffort | undefined
+): ThinkingLevel | undefined {
+  if (!isGemini35FlashTextModel(model)) {
+    return undefined;
+  }
+  if (thinkingEffort === "minimal" || thinkingEffort === "none") {
+    return ThinkingLevel.MINIMAL;
+  }
+  if (thinkingEffort === "low") {
+    return ThinkingLevel.LOW;
+  }
+  if (thinkingEffort === "medium") {
+    return ThinkingLevel.MEDIUM;
+  }
+  if (thinkingEffort === "high" || thinkingEffort === "max") {
+    return ThinkingLevel.HIGH;
+  }
+  if (thinkingEnabled === false) {
+    return ThinkingLevel.MINIMAL;
+  }
+  if (thinkingEnabled === true) {
+    return ThinkingLevel.MEDIUM;
+  }
+  return undefined;
+}
+
+function isGemini35FlashTextModel(model: string): boolean {
+  return model.trim().replace(/^models\//, "").toLowerCase().startsWith("gemini-3.5-flash");
 }
 
 function geminiPromptFromMessages(messages: ChatMessage[], extraSystemLines: string[] = []) {

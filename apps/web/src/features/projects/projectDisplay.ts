@@ -11,7 +11,9 @@ import {
   resolveGenerationStrategy,
   sameImageModel,
   sameTextModel,
+  textModelSupportsEffort,
   textModelLabel,
+  textModelThinkingEffortValue,
   textModelSelectionFromOption,
   textModelSelectionFromValue,
   toneProfileFromValue,
@@ -68,6 +70,10 @@ export function projectTextModelLabel(project: Project, options: TextModelOption
       ? textModelSelectionFromOption(options[0])
       : DEFAULT_TEXT_MODEL;
   const option = options.find((candidate) => sameTextModel(candidate, selection));
+  if (option && textModelSupportsEffort(option)) {
+    const effort = textModelThinkingEffortValue(selection, option);
+    return effort === "none" ? option.label : `${option.label} (${thinkingEffortLabel(effort)} Effort)`;
+  }
   return option ? textModelLabel(option) : modelSelectionLabel(selection);
 }
 
@@ -104,6 +110,16 @@ export function projectSavedMediaSettings(project: Project): NonNullable<Project
 
 export function modelSelectionLabel(selection: TextModelSelection | ImageModelSelection): string {
   if (
+    "thinkingEffort" in selection &&
+    (selection.provider === "deepseek" || selection.provider === "deepinfra" || selection.provider === "gemini") &&
+    selection.thinkingEffort
+  ) {
+    if (selection.thinkingEffort === "none") {
+      return `${modelProviderLabel(selection.provider)} ${selection.model}`;
+    }
+    return `${modelProviderLabel(selection.provider)} ${selection.model} (${thinkingEffortLabel(selection.thinkingEffort)} Effort)`;
+  }
+  if (
     "thinkingEnabled" in selection &&
     (selection.provider === "deepseek" || selection.provider === "deepinfra") &&
     selection.thinkingEnabled
@@ -114,6 +130,10 @@ export function modelSelectionLabel(selection: TextModelSelection | ImageModelSe
     return `${modelProviderLabel(selection.provider)} ${selection.model} (No Thinking)`;
   }
   return `${modelProviderLabel(selection.provider)} ${selection.model}`;
+}
+
+function thinkingEffortLabel(effort: NonNullable<TextModelSelection["thinkingEffort"]>): string {
+  return effort.charAt(0).toUpperCase() + effort.slice(1);
 }
 
 export function modelProviderLabel(provider: TextModelSelection["provider"] | ImageModelSelection["provider"]): string {

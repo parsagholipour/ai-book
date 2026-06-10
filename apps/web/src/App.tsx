@@ -6,12 +6,13 @@ import { useAuth } from "./features/auth/useAuth.js";
 import {
   CREATE_PROJECT_ACTION_KEY,
   planApproveActionKey,
+  planningRecoveryJobTypes,
   planRevisionActionKey,
   projectCoverActionKey,
   projectPlanActionKey,
   projectResumeActionKey,
   projectStopActionKey,
-  resumableJobTypes
+  generationRecoveryJobTypes
 } from "./features/projects/actionKeys.js";
 import { DEFAULT_GENERATION_STRATEGY_ID, resolveGenerationStrategy } from "./features/projects/draft.js";
 import { ProjectHoverPopover, ProjectSidebar } from "./features/projects/ProjectSidebar.js";
@@ -52,7 +53,15 @@ export function App() {
   const hasActivePlanRevision = latestPlanRevisionStatus === "QUEUED" || latestPlanRevisionStatus === "ACTIVE";
   const currentPlanId = data.selectedDetails?.currentPlan?.id ?? null;
   const hasVisibleFailedGenerationJob =
-    selectedStatus?.project.jobs.some((job) => job.status === "FAILED" && resumableJobTypes.has(job.type)) ?? false;
+    selectedStatus?.project.jobs.some((job) => job.status === "FAILED" && generationRecoveryJobTypes.has(job.type)) ?? false;
+  const hasFailedPlanningJob =
+    selectedStatus?.project.jobs.some((job) => job.status === "FAILED" && planningRecoveryJobTypes.has(job.type)) ?? false;
+  const hasActivePlanningJob =
+    selectedStatus?.project.jobs.some(
+      (job) => planningRecoveryJobTypes.has(job.type) && (job.status === "QUEUED" || job.status === "ACTIVE")
+    ) ?? false;
+  const planStepStatus = selectedStatus?.progress.pipeline?.find((step) => step.key === "plan")?.status;
+  const canRetryPlanning = (planStepStatus ? planStepStatus === "failed" : hasFailedPlanningJob) && !hasActivePlanningJob;
   const canResumeProject = (selectedStatus?.progress.resumableFailedJobs ?? 0) > 0 || hasVisibleFailedGenerationJob;
   const canStopProject =
     selectedStatus?.project.jobs.some((job) => job.status === "QUEUED" || job.status === "ACTIVE") ?? false;
@@ -164,6 +173,7 @@ export function App() {
         coverBusy={coverBusy}
         approvePlanDisabled={approvePlanDisabled}
         hasActivePlanRevision={hasActivePlanRevision}
+        canRetryPlanning={canRetryPlanning}
         canResumeProject={canResumeProject}
         canStopProject={canStopProject}
         planQuestions={planQuestions.planQuestions}

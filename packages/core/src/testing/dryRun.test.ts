@@ -117,6 +117,29 @@ describe("deterministic dry run", () => {
     expect(plan.researchNotes).toHaveLength(0);
   });
 
+  it("normalizes planner research notes returned as strings", async () => {
+    const input = smallBookInput();
+
+    const plan = await createPlanningPackage({
+      input,
+      textModel: new StringResearchNotesPlannerAdapter(input),
+      research: new FakeResearchAdapter()
+    });
+
+    expect(plan.researchNotes).toEqual([
+      {
+        query: "planner-note",
+        title: "Planner research note",
+        summary: "Use standard textbook-level concepts; do not invent studies."
+      },
+      {
+        query: "planner-note",
+        title: "Planner research note",
+        summary: "Historical examples should be qualified when source detail is unavailable."
+      }
+    ]);
+  });
+
   it("normalizes AI-created chapter page targets to the requested book length", async () => {
     const input = smallBookInput();
 
@@ -143,6 +166,25 @@ describe("deterministic dry run", () => {
 
     expect(plan.chapters.map((chapter) => chapter.targetPages)).toEqual([2, 2, 2, 1, 1, 1, 1]);
     expect(plan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0)).toBe(input.targetPages);
+  });
+
+  it("recovers partial plan revisions by preserving the current plan", async () => {
+    const input = smallBookInput();
+    const currentPlan = makeFallbackPlan(input);
+
+    const revised = await revisePlanningPackage({
+      currentPlan,
+      userMessage: "Retitle this and sharpen the premise.",
+      textModel: new PartialRevisionPlannerAdapter(),
+      targetPages: input.targetPages
+    });
+
+    expect(revised.title).toBe("Household Power, Retitled");
+    expect(revised.subtitle).toBe("A sharper frame");
+    expect(revised.premise).toBe("A revised premise that keeps the same book structure.");
+    expect(revised.audience).toBe(currentPlan.audience);
+    expect(revised.voiceGuide).toEqual(currentPlan.voiceGuide);
+    expect(revised.chapters.map((chapter) => chapter.title)).toEqual(currentPlan.chapters.map((chapter) => chapter.title));
   });
 
   it("fails plan revision instead of creating a revision-note fallback", async () => {
@@ -303,6 +345,66 @@ class GenerationPlanPlannerAdapter implements TextModelAdapter {
       data: options.schema.parse(raw),
       text: JSON.stringify(raw),
       model: "generation-plan-model",
+      provider: "test"
+    };
+  }
+
+  async *streamText(): AsyncGenerator<string> {
+    yield "";
+  }
+}
+
+class StringResearchNotesPlannerAdapter implements TextModelAdapter {
+  constructor(private readonly input: CreateProjectInput) {}
+
+  async generateText() {
+    return {
+      text: "",
+      model: "string-research-notes-model",
+      provider: "test"
+    };
+  }
+
+  async generateJson<T>(options: GenerateJsonOptions<T>) {
+    const raw = {
+      ...makeFallbackPlan(this.input),
+      researchNotes: [
+        "Use standard textbook-level concepts; do not invent studies.",
+        "Historical examples should be qualified when source detail is unavailable."
+      ]
+    };
+    return {
+      data: options.schema.parse(raw),
+      text: JSON.stringify(raw),
+      model: "string-research-notes-model",
+      provider: "test"
+    };
+  }
+
+  async *streamText(): AsyncGenerator<string> {
+    yield "";
+  }
+}
+
+class PartialRevisionPlannerAdapter implements TextModelAdapter {
+  async generateText() {
+    return {
+      text: "",
+      model: "partial-revision-model",
+      provider: "test"
+    };
+  }
+
+  async generateJson<T>(options: GenerateJsonOptions<T>) {
+    const raw = {
+      title: "Household Power, Retitled",
+      subtitle: "A sharper frame",
+      premise: "A revised premise that keeps the same book structure."
+    };
+    return {
+      data: options.schema.parse(raw),
+      text: JSON.stringify(raw),
+      model: "partial-revision-model",
       provider: "test"
     };
   }

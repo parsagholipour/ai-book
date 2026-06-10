@@ -34,6 +34,12 @@ describe("general book template", () => {
     expect(plan.researchQueries).toEqual([]);
   });
 
+  it("does not seed fallback plans with default planning questions", () => {
+    const plan = makeFallbackPlan(generalInput());
+
+    expect(plan.questions).toEqual([]);
+  });
+
   it("does not let a General subcategory force research", () => {
     const plan = makeFallbackPlan({
       ...generalInput(),

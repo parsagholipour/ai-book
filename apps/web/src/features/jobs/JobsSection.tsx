@@ -24,12 +24,15 @@ export function JobsSection(props: {
   selectedId: string | null;
   activeGenerationStrategy: GenerationStrategyOption;
   canStopProject: boolean;
+  canRetryPlanning: boolean;
   canResumeProject: boolean;
   stopBusy: boolean;
   resumeBusy: boolean;
   onStopProject: () => void;
   onResumeProject: () => void;
 }) {
+  const recoveryLabel = props.canRetryPlanning ? "Retry" : "Resume";
+
   return (
     <section className="work-section">
       <div className="section-title">
@@ -46,7 +49,7 @@ export function JobsSection(props: {
             {props.canResumeProject ? (
               <button className="icon-text-button accent" onClick={props.onResumeProject} disabled={props.resumeBusy || !props.selectedId}>
                 {props.resumeBusy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
-                Resume
+                {recoveryLabel}
               </button>
             ) : null}
           </div>

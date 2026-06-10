@@ -479,27 +479,7 @@ export function makeFallbackPlan(input: CreateProjectInput): BookPlan {
     writingComplexity: input.complexity,
     voiceGuide: [...template.styleRules.voice, ...kidsReadingRules, ...toneRules.slice(0, 3)],
     antiAiRules: [...template.styleRules.antiAi, ...toneRules.slice(3)],
-    questions: [
-      {
-        prompt: "Are there any names, settings, or facts that must be included exactly?",
-        options: [
-          "No fixed details; use the current plan freely.",
-          "Keep the core premise, but invent names and settings.",
-          "I will provide exact names, settings, or facts."
-        ],
-        allowCustom: true
-      },
-      {
-        prompt: "Should the ending feel resolved, open, surprising, or instructional?",
-        options: [
-          "Warm and fully resolved.",
-          "Open-ended with a sense of wonder.",
-          "Surprising but still satisfying.",
-          "Instructional and clearly wrapped up."
-        ],
-        allowCustom: true
-      }
-    ],
+    questions: [],
     chapters: Array.from({ length: chapterCount }, (_, index) => ({
       index: index + 1,
       title: `Chapter ${index + 1}: ${chapterTitle(index, input.category)}`,

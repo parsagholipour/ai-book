@@ -11,7 +11,9 @@ import {
   textModelLabel,
   textModelSelectionFromKey,
   textModelSelectionFromOption,
-  textModelSelectionFromValue
+  textModelSelectionFromValue,
+  textModelSelectionWithEffort,
+  textModelThinkingEffortValue
 } from "./draft.js";
 
 describe("project draft helpers", () => {
@@ -82,34 +84,74 @@ describe("project draft helpers", () => {
     expect(resolveTextModelOption([], { provider: "gemini", model: "unknown" })).toEqual(DEFAULT_TEXT_MODEL_OPTIONS[0]);
   });
 
-  it("round-trips DeepInfra thinking text model selections", () => {
-    const normalOption = {
+  it("round-trips effort-aware DeepInfra text model selections", () => {
+    const effortOption = {
       provider: "deepinfra" as const,
       model: "deepseek-ai/DeepSeek-V4-Pro",
-      label: "DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro)"
-    };
-    const thinkingOption = {
-      ...normalOption,
+      label: "DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro)",
       thinking: true,
-      thinkingEnabled: true
+      thinkingEfforts: [
+        { value: "none" as const, label: "Off", default: true },
+        { value: "low" as const, label: "Low" },
+        { value: "medium" as const, label: "Medium" },
+        { value: "high" as const, label: "High" }
+      ]
     };
+    const mediumSelection = textModelSelectionWithEffort(effortOption, "medium");
 
-    expect(textModelSelectionFromValue(thinkingOption)).toEqual({
+    expect(textModelSelectionFromValue({ ...effortOption, thinkingEnabled: true })).toEqual({
       provider: "deepinfra",
       model: "deepseek-ai/DeepSeek-V4-Pro",
       thinkingEnabled: true
     });
-    expect(textModelSelectionFromOption(thinkingOption)).toEqual({
+    expect(textModelSelectionFromOption(effortOption, mediumSelection)).toEqual({
       provider: "deepinfra",
       model: "deepseek-ai/DeepSeek-V4-Pro",
-      thinkingEnabled: true
+      thinkingEnabled: true,
+      thinkingEffort: "medium"
     });
-    expect(textModelSelectionFromKey(textModelKey(thinkingOption), [normalOption, thinkingOption])).toEqual({
+    expect(textModelSelectionFromKey(textModelKey(effortOption), [effortOption])).toEqual({
       provider: "deepinfra",
       model: "deepseek-ai/DeepSeek-V4-Pro",
-      thinkingEnabled: true
+      thinkingEnabled: false,
+      thinkingEffort: "none"
     });
-    expect(textModelKey(normalOption)).not.toBe(textModelKey(thinkingOption));
-    expect(textModelLabel(thinkingOption)).toBe("DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro) (Thinking)");
+    expect(textModelThinkingEffortValue({ ...effortOption, thinkingEnabled: true }, effortOption)).toBe("high");
+    expect(textModelLabel(effortOption)).toBe("DeepInfra DeepSeek (deepseek-ai/DeepSeek-V4-Pro)");
+  });
+
+  it("round-trips effort-aware Gemini 3.5 Flash selections", () => {
+    const effortOption = {
+      provider: "gemini" as const,
+      model: "gemini-3.5-flash",
+      label: "Gemini 3.5 Flash",
+      thinking: true,
+      thinkingEfforts: [
+        { value: "minimal" as const, label: "Minimal" },
+        { value: "low" as const, label: "Low" },
+        { value: "medium" as const, label: "Medium", default: true },
+        { value: "high" as const, label: "High" }
+      ]
+    };
+    const minimalSelection = textModelSelectionWithEffort(effortOption, "minimal");
+
+    expect(textModelSelectionFromValue({ ...effortOption, thinkingEffort: "minimal" })).toEqual({
+      provider: "gemini",
+      model: "gemini-3.5-flash",
+      thinkingEffort: "minimal"
+    });
+    expect(textModelSelectionFromOption(effortOption)).toEqual({
+      provider: "gemini",
+      model: "gemini-3.5-flash",
+      thinkingEnabled: true,
+      thinkingEffort: "medium"
+    });
+    expect(textModelSelectionFromOption(effortOption, minimalSelection)).toEqual({
+      provider: "gemini",
+      model: "gemini-3.5-flash",
+      thinkingEnabled: true,
+      thinkingEffort: "minimal"
+    });
+    expect(textModelLabel(effortOption)).toBe("Gemini 3.5 Flash");
   });
 });

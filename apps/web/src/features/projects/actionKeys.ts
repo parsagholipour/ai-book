@@ -1,5 +1,6 @@
 export const CREATE_PROJECT_ACTION_KEY = "create-project";
-export const resumableJobTypes = new Set(["GENERATE_BOOK", "GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"]);
+export const planningRecoveryJobTypes = new Set(["PLAN_BOOK", "REVISE_PLAN"]);
+export const generationRecoveryJobTypes = new Set(["GENERATE_BOOK", "GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"]);
 export const VOICE_CHARACTER_JOB_TYPES = new Set(["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA"]);
 
 export function projectPlanActionKey(projectId: string): string {

@@ -1,6 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { createProjectSchema, makeFallbackPlan, normalizePlanPageTargets, bookPlanSchemaWithFallback } from "../packages/core/src/index.ts";
+import {
+  bookPlanSchema,
+  bookPlanSchemaWithFallback,
+  createProjectSchema,
+  makeFallbackPlan,
+  normalizePlanPageTargets
+} from "../packages/core/src/index.ts";
 import { Prisma, prisma } from "../packages/db/src/index.ts";
 
 type Args = {
@@ -8,6 +14,8 @@ type Args = {
   apply: boolean;
   logFile?: string | undefined;
 };
+
+type PlannerLogPurpose = "plan-book" | "revise-plan";
 
 const args = parseArgs(process.argv.slice(2));
 const bookStorageDir = process.env.BOOK_STORAGE_DIR ?? path.resolve(process.cwd(), "storage/books");
@@ -24,9 +32,10 @@ async function repairPlanFromRunLog(options: Args) {
     where: { id: options.projectId },
     include: { currentPlan: true }
   });
-  if (!project?.currentPlan) {
-    throw new Error(`Project ${options.projectId} does not have a current plan.`);
+  if (!project) {
+    throw new Error(`Project ${options.projectId} was not found.`);
   }
+  const currentPlan = project.currentPlan;
 
   const [pageCount, imageCount] = await Promise.all([
     prisma.page.count({ where: { projectId: options.projectId } }),
@@ -37,10 +46,17 @@ async function repairPlanFromRunLog(options: Args) {
     throw new Error(`Refusing repair because project already has ${pageCount} pages and ${imageCount} images.`);
   }
 
-  const input = createProjectSchema.parse(project.currentPlan.inputSnapshot ?? projectInputFromProject(project));
-  const rawText = await rawPlannerTextFromLog(options.projectId, options.logFile);
+  const input = createProjectSchema.parse(currentPlan?.inputSnapshot ?? projectInputFromProject(project));
+  const plannerLog = await rawPlannerPayloadFromLog(options.projectId, options.logFile);
+  if (plannerLog.purpose === "revise-plan" && !currentPlan) {
+    throw new Error(`Project ${options.projectId} needs a current plan to repair a revise-plan log.`);
+  }
+  const fallback =
+    plannerLog.purpose === "revise-plan" && currentPlan
+      ? bookPlanSchema.parse(currentPlan.planningPackage)
+      : makeFallbackPlan(input);
+  const rawText = plannerLog.rawText;
   const rawPlan = JSON.parse(rawText) as unknown;
-  const fallback = makeFallbackPlan(input);
   const plan = normalizePlanPageTargets(bookPlanSchemaWithFallback(fallback).parse(rawPlan), input.targetPages);
   const latest = await prisma.planVersion.findFirst({
     where: { projectId: options.projectId },
@@ -52,11 +68,14 @@ async function repairPlanFromRunLog(options: Args) {
   const summary = {
     projectId: options.projectId,
     mode: options.apply ? "applied" : "dry-run",
-    oldPlanId: project.currentPlan.id,
+    logPurpose: plannerLog.purpose,
+    logFile: plannerLog.logFile,
+    oldPlanId: currentPlan?.id ?? null,
     newVersion: nextVersion,
     recoveredTitle: plan.title,
     chapterTitles: plan.chapters.map((chapter) => chapter.title),
     chapterCount: plan.chapters.length,
+    researchNoteCount: plan.researchNotes.length,
     pageCount,
     imageCount,
     wouldRefuseApply: hasGeneratedArtifacts
@@ -67,12 +86,14 @@ async function repairPlanFromRunLog(options: Args) {
   }
 
   const now = new Date().toISOString();
-  const priorMessages = Array.isArray(project.currentPlan.messages) ? project.currentPlan.messages : [];
+  const priorMessages = currentPlan && Array.isArray(currentPlan.messages) ? currentPlan.messages : [];
   const newPlan = await prisma.$transaction(async (tx) => {
-    await tx.planVersion.update({
-      where: { id: project.currentPlan!.id },
-      data: { status: "SUPERSEDED" }
-    });
+    if (currentPlan) {
+      await tx.planVersion.update({
+        where: { id: currentPlan.id },
+        data: { status: "SUPERSEDED" }
+      });
+    }
     const created = await tx.planVersion.create({
       data: {
         projectId: options.projectId,
@@ -83,7 +104,7 @@ async function repairPlanFromRunLog(options: Args) {
           ...priorMessages,
           {
             role: "system",
-            content: "Recovered from the original plan-book run log after planner wrapper normalization was fixed.",
+            content: "Recovered from the original plan-book run log after planner output normalization was fixed.",
             at: now
           }
         ])
@@ -95,6 +116,7 @@ async function repairPlanFromRunLog(options: Args) {
     });
     await tx.character.deleteMany({ where: { projectId: options.projectId } });
     await tx.location.deleteMany({ where: { projectId: options.projectId } });
+    await tx.researchSource.deleteMany({ where: { projectId: options.projectId } });
     if (plan.characters.length > 0) {
       await tx.character.createMany({
         data: plan.characters.map((character) => ({
@@ -117,6 +139,18 @@ async function repairPlanFromRunLog(options: Args) {
         }))
       });
     }
+    if (plan.researchNotes.length > 0) {
+      await tx.researchSource.createMany({
+        data: plan.researchNotes.map((source) => ({
+          projectId: options.projectId,
+          query: source.query,
+          title: source.title,
+          url: source.url ?? null,
+          summary: source.summary,
+          publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
+        }))
+      });
+    }
     return created;
   });
 
@@ -126,7 +160,10 @@ async function repairPlanFromRunLog(options: Args) {
   };
 }
 
-async function rawPlannerTextFromLog(projectId: string, explicitLogFile: string | undefined): Promise<string> {
+async function rawPlannerPayloadFromLog(
+  projectId: string,
+  explicitLogFile: string | undefined
+): Promise<{ rawText: string; purpose: PlannerLogPurpose; logFile: string }> {
   const logFile = explicitLogFile ?? (await latestPlanBookLogFile(projectId));
   const content = await readFile(logFile, "utf8");
   for (const line of content.trim().split("\n").reverse()) {
@@ -135,13 +172,25 @@ async function rawPlannerTextFromLog(projectId: string, explicitLogFile: string 
     }
     const entry = JSON.parse(line) as {
       event?: string;
-      error?: { context?: { rawText?: string } };
+      error?: { context?: { purpose?: string; rawText?: string } };
     };
     if (entry.event === "text.generateJson.error" && entry.error?.context?.rawText) {
-      return entry.error.context.rawText;
+      return {
+        rawText: entry.error.context.rawText,
+        purpose: normalizePlannerPurpose(entry.error.context.purpose) ?? purposeFromLogFile(logFile),
+        logFile
+      };
     }
   }
   throw new Error(`No planner rawText found in ${logFile}.`);
+}
+
+function normalizePlannerPurpose(value: string | undefined): PlannerLogPurpose | undefined {
+  return value === "plan-book" || value === "revise-plan" ? value : undefined;
+}
+
+function purposeFromLogFile(logFile: string): PlannerLogPurpose {
+  return logFile.endsWith("-revise-plan.jsonl") ? "revise-plan" : "plan-book";
 }
 
 async function latestPlanBookLogFile(projectId: string): Promise<string> {

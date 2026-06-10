@@ -11,6 +11,7 @@ export type GenerateTextOptions = {
   maxTokens?: number;
   purpose?: string;
   projectId?: string;
+  onOutputTextChunk?: (chunk: string) => void | Promise<void>;
 };
 
 export type GenerateJsonOptions<T> = GenerateTextOptions & {

@@ -4,7 +4,9 @@ import type {
   Project,
   ProjectInputSnapshot,
   RuntimeInfo,
-  TextModelSelection
+  TextModelSelection,
+  TextModelThinkingEffort,
+  TextModelThinkingEffortOption
 } from "../../api.js";
 import { firstString, formatUsd } from "../shared/formatters.js";
 
@@ -57,7 +59,13 @@ export const CUSTOM_SUBCATEGORY_VALUE = "__custom";
 export const DEFAULT_GENERATION_STRATEGY_ID = "auto";
 export const DEFAULT_TONE_PROFILE: ToneProfile = "neutral";
 export const DEFAULT_TEXT_MODEL: TextModelSelection = { provider: "deepseek", model: "deepseek-v4-pro" };
+export const DEFAULT_FAST_TEXT_MODEL: TextModelSelection = { provider: "deepseek", model: "deepseek-v4-flash" };
 export const DEFAULT_IMAGE_MODEL: ImageModelSelection = { provider: "gemini", model: "gemini-2.5-flash-image" };
+export const DEFAULT_TEXT_MODEL_THINKING_EFFORT_OPTIONS: TextModelThinkingEffortOption[] = [
+  { value: "none", label: "Off", default: true },
+  { value: "high", label: "High" },
+  { value: "max", label: "Max" }
+];
 
 export const CATEGORY_OPTIONS: Array<{ value: ProjectCategory; label: string }> = [
   { value: "KIDS", label: "Kids' books" },
@@ -259,7 +267,18 @@ export const DEFAULT_GENERATION_STRATEGIES: GenerationStrategyOption[] = [
 ];
 
 export const DEFAULT_TEXT_MODEL_OPTIONS: TextModelOption[] = [
-  { ...DEFAULT_TEXT_MODEL, label: `DeepSeek (${DEFAULT_TEXT_MODEL.model})` }
+  {
+    ...DEFAULT_TEXT_MODEL,
+    label: `DeepSeek (${DEFAULT_TEXT_MODEL.model})`,
+    thinking: true,
+    thinkingEfforts: DEFAULT_TEXT_MODEL_THINKING_EFFORT_OPTIONS
+  },
+  {
+    ...DEFAULT_FAST_TEXT_MODEL,
+    label: `DeepSeek Fast (${DEFAULT_FAST_TEXT_MODEL.model})`,
+    thinking: true,
+    thinkingEfforts: DEFAULT_TEXT_MODEL_THINKING_EFFORT_OPTIONS
+  }
 ];
 export const DEFAULT_IMAGE_MODEL_OPTIONS: ImageModelOption[] = [
   {
@@ -335,7 +354,7 @@ export function projectInputFromDraft(draft: DraftProject, textModelOptions: Tex
       finalReview: draft.finalReview,
       lessCensored: draft.category === "KIDS" ? false : draft.lessCensored,
       generationStrategy: draft.generationStrategy,
-      textModel: textModelSelectionFromOption(textModel),
+      textModel: textModelSelectionFromOption(textModel, draft.textModel),
       ...(draft.category === "KIDS" ? { audienceAgeRange: draft.audienceAgeRange } : {}),
       toneProfile: draft.toneProfile,
       ...(draft.draftCandidates > 1 ? { draftCandidates: draft.draftCandidates } : {})
@@ -450,13 +469,15 @@ export function textModelSelectionFromValue(value: unknown): TextModelSelection 
   if (isTextModelProvider(provider) && typeof model === "string" && model.trim()) {
     const thinkingBudget = record.thinkingBudget;
     const thinkingEnabled = record.thinkingEnabled;
+    const thinkingEffort = textModelThinkingEffortFromValue(record.thinkingEffort);
     return {
       provider,
       model: model.trim(),
       ...(typeof thinkingBudget === "number" && Number.isFinite(thinkingBudget)
         ? { thinkingBudget: Math.trunc(thinkingBudget) }
         : {}),
-      ...(typeof thinkingEnabled === "boolean" ? { thinkingEnabled } : {})
+      ...(typeof thinkingEnabled === "boolean" ? { thinkingEnabled } : {}),
+      ...(thinkingEffort ? { thinkingEffort } : {})
     };
   }
   return DEFAULT_TEXT_MODEL;
@@ -488,12 +509,58 @@ export function imageModelSelectionFromValue(value: unknown): ImageModelSelectio
   return DEFAULT_IMAGE_MODEL;
 }
 
-export function textModelSelectionFromOption(option: TextModelSelection): TextModelSelection {
-  return {
+export function textModelSelectionFromOption(
+  option: TextModelSelection | TextModelOption,
+  selection?: TextModelSelection
+): TextModelSelection {
+  const baseSelection: TextModelSelection = {
     provider: option.provider,
     model: option.model,
     ...(typeof option.thinkingBudget === "number" ? { thinkingBudget: option.thinkingBudget } : {}),
-    ...(typeof option.thinkingEnabled === "boolean" ? { thinkingEnabled: option.thinkingEnabled } : {})
+    ...(typeof option.thinkingEnabled === "boolean" ? { thinkingEnabled: option.thinkingEnabled } : {}),
+    ...(option.thinkingEffort ? { thinkingEffort: option.thinkingEffort } : {})
+  };
+  return textModelSupportsEffort(option)
+    ? textModelSelectionWithEffort(baseSelection, textModelThinkingEffortValue(selection ?? option, option))
+    : baseSelection;
+}
+
+export function textModelSupportsEffort(
+  option: TextModelSelection | TextModelOption
+): option is TextModelOption & { thinkingEfforts: TextModelThinkingEffortOption[] } {
+  const efforts = (option as { thinkingEfforts?: unknown }).thinkingEfforts;
+  return Array.isArray(efforts) && efforts.length > 0;
+}
+
+export function textModelThinkingEffortValue(
+  selection: TextModelSelection,
+  option: TextModelOption
+): TextModelThinkingEffort {
+  const efforts = textModelSupportsEffort(option) ? option.thinkingEfforts : [];
+  const noneEffort = efforts.find((effort) => effort.value === "none")?.value;
+  const selectedEffort = textModelThinkingEffortFromValue(selection.thinkingEffort);
+  if (selectedEffort && efforts.some((effort) => effort.value === selectedEffort)) {
+    return selectedEffort;
+  }
+  if (selection.thinkingEnabled === true) {
+    return enabledDefaultThinkingEffort(efforts) ?? noneEffort ?? efforts[0]?.value ?? "none";
+  }
+  if (selection.thinkingEnabled === false) {
+    return noneEffort ?? efforts[0]?.value ?? "none";
+  }
+  return defaultThinkingEffort(efforts) ?? noneEffort ?? efforts[0]?.value ?? "none";
+}
+
+export function textModelSelectionWithEffort(
+  selection: TextModelSelection,
+  effort: TextModelThinkingEffort
+): TextModelSelection {
+  return {
+    provider: selection.provider,
+    model: selection.model,
+    ...(typeof selection.thinkingBudget === "number" ? { thinkingBudget: selection.thinkingBudget } : {}),
+    thinkingEnabled: effort !== "none",
+    thinkingEffort: effort
   };
 }
 
@@ -529,16 +596,21 @@ export function imageModelLabel(option: ImageModelOption): string {
 }
 
 export function textModelLabel(option: TextModelOption): string {
-  return option.thinking ? `${option.label} (Thinking)` : option.label;
+  return option.thinking && !textModelSupportsEffort(option) ? `${option.label} (Thinking)` : option.label;
 }
 
 export function sameTextModel(first: TextModelSelection, second: TextModelSelection): boolean {
-  return (
+  const sameBase =
     first.provider === second.provider &&
     first.model === second.model &&
-    first.thinkingBudget === second.thinkingBudget &&
-    first.thinkingEnabled === second.thinkingEnabled
-  );
+    first.thinkingBudget === second.thinkingBudget;
+  if (!sameBase) {
+    return false;
+  }
+  if (textModelSupportsEffort(first) || textModelSupportsEffort(second)) {
+    return true;
+  }
+  return first.thinkingEnabled === second.thinkingEnabled && first.thinkingEffort === second.thinkingEffort;
 }
 
 export function sameImageModel(first: ImageModelSelection, second: ImageModelSelection): boolean {
@@ -546,9 +618,7 @@ export function sameImageModel(first: ImageModelSelection, second: ImageModelSel
 }
 
 export function textModelKey(selection: TextModelSelection): string {
-  return `${selection.provider}:${selection.model}:${selection.thinkingBudget ?? "default"}:${
-    selection.thinkingEnabled ?? "default"
-  }`;
+  return `${selection.provider}:${selection.model}:${selection.thinkingBudget ?? "default"}`;
 }
 
 export function imageModelKey(selection: ImageModelSelection): string {
@@ -616,4 +686,25 @@ function clampInt(value: number, min: number, max: number): number {
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function textModelThinkingEffortFromValue(value: unknown): TextModelThinkingEffort | undefined {
+  return value === "none" ||
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "max"
+    ? value
+    : undefined;
+}
+
+function defaultThinkingEffort(efforts: TextModelThinkingEffortOption[]): TextModelThinkingEffort | undefined {
+  return efforts.find((effort) => effort.default)?.value;
+}
+
+function enabledDefaultThinkingEffort(efforts: TextModelThinkingEffortOption[]): TextModelThinkingEffort | undefined {
+  return efforts.find((effort) => effort.value !== "none" && effort.default)?.value ??
+    efforts.find((effort) => effort.value === "high")?.value ??
+    efforts.find((effort) => effort.value !== "none")?.value;
 }

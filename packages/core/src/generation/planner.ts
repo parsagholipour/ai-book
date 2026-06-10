@@ -117,6 +117,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
 export async function revisePlanningPackage(options: RevisePlanOptions): Promise<BookPlan> {
   const targetPages = options.targetPages ?? sumChapterTargetPages(options.currentPlan.chapters);
   const toneProfile = options.toneProfile ?? "neutral";
+  const revisionSchema = bookPlanSchemaWithFallback(options.currentPlan);
   try {
     const result = await generateJsonWithJailbreak(options.textModel, {
       purpose: "revise-plan",
@@ -124,7 +125,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
       jailbreakRole: "planner",
       temperature: options.temperature ?? 0.4,
       maxTokens: 8000,
-      schema: bookPlanSchema,
+      schema: revisionSchema,
       messages: [
         {
           role: "system",
@@ -156,7 +157,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
         }
       ]
     });
-    return normalizePlanPageTargets(bookPlanSchema.parse(result.data), targetPages);
+    return normalizePlanPageTargets(revisionSchema.parse(result.data), targetPages);
   } catch (error) {
     throw new Error(`AI plan revision failed. No revised plan was created. ${formatErrorMessage(error)}`);
   }

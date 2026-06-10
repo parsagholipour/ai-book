@@ -10,7 +10,7 @@ import {
   RefreshCcw,
   Sparkles
 } from "lucide-react";
-import type { Project } from "../../api.js";
+import type { Project, TextModelThinkingEffort } from "../../api.js";
 import { formatProjectCost, formatUsd } from "../shared/formatters.js";
 import {
   AUDIENCE_AGE_RANGE_OPTIONS,
@@ -25,6 +25,9 @@ import {
   imageModelSelectionFromKey,
   textModelKey,
   textModelLabel,
+  textModelSelectionWithEffort,
+  textModelSupportsEffort,
+  textModelThinkingEffortValue,
   textModelSelectionFromKey,
   toneProfileFromValue,
   type DraftProject,
@@ -212,6 +215,29 @@ export function ProjectSidebar(props: {
             ))}
           </select>
         </label>
+        {textModelSupportsEffort(props.selectedTextModel) ? (
+          <label>
+            Thinking
+            <select
+              value={textModelThinkingEffortValue(props.draft.textModel, props.selectedTextModel)}
+              onChange={(event) =>
+                props.setDraft({
+                  ...props.draft,
+                  textModel: textModelSelectionWithEffort(
+                    props.selectedTextModel,
+                    event.target.value as TextModelThinkingEffort
+                  )
+                })
+              }
+            >
+              {props.selectedTextModel.thinkingEfforts.map((effort) => (
+                <option key={effort.value} value={effort.value}>
+                  {effort.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         <label>
           Tone
           <select
