@@ -48,6 +48,20 @@ Open `http://localhost:5173`.
 
 The API runs on `http://localhost:4001`, with OpenAPI docs at `http://localhost:4001/docs`.
 
+## Auth Behavior
+
+`WEB_PASSWORD` is still the optional local/operator password for the existing web console. It sets an HTTP-only cookie through `/api/auth/login` and protects the legacy `/api/*`, `/docs`, and generated asset routes when configured.
+
+Mobile user auth is separate and database-backed under `/api/mobile/auth/*`:
+
+- `POST /api/mobile/auth/signup`
+- `POST /api/mobile/auth/signin`
+- `POST /api/mobile/auth/refresh`
+- `POST /api/mobile/auth/logout`
+- `GET /api/mobile/auth/me`
+
+The mobile flow uses email/password accounts, short-lived bearer access tokens, and refresh tokens. Only token hashes are stored in `MobileSession`; logout revokes session state. No additional auth env vars are required for local development.
+
 ## Ports
 
 Docker maps Postgres to host port `55432` to avoid colliding with existing local Postgres installs. Inside Docker, services still use `postgres:5432`.

@@ -2,6 +2,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AppConfig } from "@book-maker/core";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import {
+  authenticateMobileBearer,
+  markOperatorRequest,
+  sendMobileAuthFailure
+} from "./requestAuth.js";
 
 const AUTH_COOKIE_NAME = "ai_book_maker_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -45,12 +50,33 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
   });
 
   app.addHook("onRequest", async (request, reply) => {
-    if (!shouldProtectPath(request.url)) {
+    const path = pathFromRequestUrl(request.url);
+    if (!shouldProtectPath(path)) {
       return;
     }
-    if (isAuthenticatedRequest(request, config)) {
+
+    const operatorAuthenticated = isAuthenticatedRequest(request, config);
+    if (isOperatorOnlyPath(path)) {
+      if (operatorAuthenticated) {
+        await markOperatorRequest(request);
+        return;
+      }
+      return reply.code(401).send({ error: "Password required" });
+    }
+
+    const mobileAuth = await authenticateMobileBearer(request);
+    if (mobileAuth) {
+      if ("ok" in mobileAuth && mobileAuth.ok === false) {
+        return sendMobileAuthFailure(reply, mobileAuth);
+      }
       return;
     }
+
+    if (operatorAuthenticated) {
+      await markOperatorRequest(request);
+      return;
+    }
+
     return reply.code(401).send({ error: "Password required" });
   });
 }
@@ -59,12 +85,19 @@ function isAuthEnabled(config: AppConfig): config is AppConfig & { WEB_PASSWORD:
   return Boolean(config.WEB_PASSWORD);
 }
 
-function shouldProtectPath(rawUrl: string): boolean {
-  const path = new URL(rawUrl, "http://localhost").pathname;
-  if (path === "/api/health" || path.startsWith("/api/auth/")) {
+function pathFromRequestUrl(rawUrl: string): string {
+  return new URL(rawUrl, "http://localhost").pathname;
+}
+
+function shouldProtectPath(path: string): boolean {
+  if (path === "/api/health" || path.startsWith("/api/auth/") || path.startsWith("/api/mobile/auth/")) {
     return false;
   }
   return path.startsWith("/api/") || path.startsWith("/assets/images/") || path.startsWith("/assets/voice/") || path.startsWith("/docs");
+}
+
+function isOperatorOnlyPath(path: string): boolean {
+  return path.startsWith("/docs") || path === "/api/runtime" || path === "/api/voice/rtc-config" || path === "/api/voice/providers";
 }
 
 function isAuthenticatedRequest(request: FastifyRequest, config: AppConfig): boolean {

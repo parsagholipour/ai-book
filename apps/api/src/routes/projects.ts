@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import {
   assertBookLikeMarkdown,
   AUTO_BOOK_GENERATION_STRATEGY_ID,
@@ -6,9 +6,12 @@ import {
   createLanguageDetectionTextModel,
   createProjectSchema,
   createVoiceProvider,
+  buildMarginEstimate,
   buildRealtimeGroupCharacterInstructions,
   buildRealtimeGroupListenerInstructions,
   detectPromptLanguage,
+  estimateFullBookCreditCost,
+  estimateProviderCostForProject,
   generateBookEpub,
   generateGeminiVoiceConversationTranscript,
   getBookGenerationStrategy,
@@ -34,13 +37,14 @@ import {
   wavFromPcm16,
   type AppConfig,
   type CreateProjectInput,
+  type ProjectCostSummary,
   type VoiceConversationHistoryItem,
   type VoiceConversationSpeaker,
   type VoiceChatProviderId
 } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
 import { ensureSeedTemplates, Prisma, prisma } from "@book-maker/db";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
@@ -51,9 +55,14 @@ import {
   stopProjectGenerationJobs,
   type GenerationJobType
 } from "../queue.js";
+import { resolveProjectActor, sendProjectNotFound, type ProjectActor } from "../requestAuth.js";
 import { z } from "zod";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
+const assetParamsSchema = z.object({
+  projectId: z.string().min(1),
+  filename: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/)
+});
 const planMessageParamsSchema = z.object({ id: z.string().min(1) });
 const voiceCharacterParamsSchema = z.object({ id: z.string().min(1), characterId: z.string().min(1) });
 const voiceCharacterIdParamsSchema = z.object({ characterId: z.string().min(1) });
@@ -155,6 +164,18 @@ const BOOK_MARKDOWN_FILENAME = "book.md";
 const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
 const BOOK_PDF_FILENAME = "book.pdf";
 const BOOK_EPUB_FILENAME = "book.epub";
+const MIME_BY_EXT: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  ".wav": "audio/wav",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg"
+};
 type ResumeContext = {
   currentPlanId: string | null;
   currentPlanCreatedAt: Date | null;
@@ -162,11 +183,143 @@ type ResumeContext = {
   pageIds: Set<string>;
 };
 
+export type ProjectPdfExportSource = {
+  title: string;
+  currentPlanId: string | null;
+  mediaSettings: unknown;
+};
+
+export type ProjectEpubExportSource = {
+  title: string;
+  language: string;
+  currentPlanId: string | null;
+};
+
+export type ProjectExportFormat = "pdf" | "epub";
+
+export async function projectExportAvailability(
+  appConfig: AppConfig,
+  projectId: string,
+  format: ProjectExportFormat
+): Promise<{ available: boolean }> {
+  const filename = format === "pdf" ? BOOK_PDF_FILENAME : BOOK_EPUB_FILENAME;
+  try {
+    await access(join(appConfig.BOOK_STORAGE_DIR, projectId, filename));
+    return { available: true };
+  } catch {
+    return { available: false };
+  }
+}
+
+export async function sendProjectPdfExport(options: {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  appConfig: AppConfig;
+  projectId: string;
+  project: ProjectPdfExportSource;
+  disposition?: "attachment" | "inline";
+}) {
+  const { request, reply, appConfig, projectId, project, disposition = "attachment" } = options;
+  const pdfPath = join(appConfig.BOOK_STORAGE_DIR, projectId, BOOK_PDF_FILENAME);
+  let pdf: Buffer;
+  try {
+    await access(pdfPath);
+    pdf = await readFile(pdfPath);
+  } catch {
+    if (!project.currentPlanId) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    const markdown = await compileProjectMarkdown(projectId, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
+    if (!markdown) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    try {
+      await mkdir(dirname(pdfPath), { recursive: true });
+      const strategy = strategyForMediaSettings(project.mediaSettings);
+      pdf = await strategy.generatePdf(markdown, {
+        imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
+        publicApiUrl: appConfig.PUBLIC_API_URL,
+        outputPath: pdfPath
+      });
+    } catch (error) {
+      request.log.error({ err: error, projectId }, "PDF generation failed");
+      return reply.code(500).send({ error: "PDF generation failed" });
+    }
+  }
+
+  const filename = `${sanitizeDownloadFilename(project.title)}.pdf`;
+  reply.header("Content-Disposition", `${disposition}; filename="${filename}"`);
+  reply.type("application/pdf");
+  return pdf;
+}
+
+export async function sendProjectEpubExport(options: {
+  request: FastifyRequest;
+  reply: FastifyReply;
+  appConfig: AppConfig;
+  projectId: string;
+  project: ProjectEpubExportSource;
+}) {
+  const { request, reply, appConfig, projectId, project } = options;
+  const epubPath = join(appConfig.BOOK_STORAGE_DIR, projectId, BOOK_EPUB_FILENAME);
+  let epub: Buffer;
+  try {
+    await access(epubPath);
+    epub = await readFile(epubPath);
+  } catch {
+    if (!project.currentPlanId) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    const markdown = await compileProjectMarkdown(projectId, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
+    if (!markdown) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    try {
+      await mkdir(dirname(epubPath), { recursive: true });
+      epub = await generateBookEpub(markdown, {
+        title: project.title,
+        language: project.language,
+        imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
+        publicApiUrl: appConfig.PUBLIC_API_URL,
+        outputPath: epubPath
+      });
+    } catch (error) {
+      request.log.error({ err: error, projectId }, "EPUB generation failed");
+      return reply.code(500).send({ error: "EPUB generation failed" });
+    }
+  }
+
+  const filename = `${sanitizeDownloadFilename(project.title)}.epub`;
+  reply.header("Content-Disposition", `attachment; filename="${filename}"`);
+  reply.type("application/epub+zip");
+  return epub;
+}
+
 export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   await ensureSeedTemplates();
   const appConfig = loadConfig();
 
   fastify.get("/api/health", async () => ({ ok: true, mockAi: appConfig.MOCK_AI }));
+
+  fastify.get("/assets/images/:projectId/:filename", async (request, reply) => {
+    const { projectId, filename } = assetParamsSchema.parse(request.params);
+    return sendOwnedProjectAsset(request, reply, {
+      projectId,
+      filename,
+      storageDir: appConfig.IMAGE_STORAGE_DIR,
+      missingLabel: "Image not found"
+    });
+  });
+
+  fastify.get("/assets/voice/:projectId/:filename", async (request, reply) => {
+    const { projectId, filename } = assetParamsSchema.parse(request.params);
+    return sendOwnedProjectAsset(request, reply, {
+      projectId,
+      filename,
+      storageDir: appConfig.VOICE_STORAGE_DIR,
+      missingLabel: "Voice file not found"
+    });
+  });
 
   fastify.get("/api/voice/rtc-config", async () => resolveVoiceRtcConfig(appConfig));
 
@@ -207,12 +360,21 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     ]
   }));
 
-  fastify.get("/api/templates", async () => {
+  fastify.get("/api/templates", async (request, reply) => {
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     return prisma.template.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }] });
   });
 
-  fastify.get("/api/projects", async () => {
+  fastify.get("/api/projects", async (request, reply) => {
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const projects = await prisma.project.findMany({
+      where: { userId: actor.userId },
       orderBy: { updatedAt: "desc" },
       include: {
         template: true,
@@ -240,41 +402,51 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     return projects.map((project) => ({
       ...project,
       tokens: tokensByProjectId.get(project.id) ?? normalizeTokenUsage(),
-      cost: costsByProjectId.get(project.id)
+      cost: costsByProjectId.get(project.id),
+      billing: projectBillingSummary(project, costsByProjectId.get(project.id))
     }));
   });
 
   fastify.get("/api/projects/:id", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const [project, tokenLogs, cost] = await Promise.all([
-      prisma.project.findUnique({
-        where: { id },
-        include: {
-          template: true,
-          currentPlan: true,
-          chapters: { orderBy: { index: "asc" } },
-          pages: { orderBy: { index: "asc" } },
-          images: true,
-          research: true
-        }
-      }),
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({
+      where: ownedProjectWhere(id, actor),
+      include: {
+        template: true,
+        currentPlan: true,
+        chapters: { orderBy: { index: "asc" } },
+        pages: { orderBy: { index: "asc" } },
+        images: true,
+        research: true
+      }
+    });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+    const [tokenLogs, cost] = await Promise.all([
       prisma.providerCallLog.aggregate({
         where: { projectId: id },
         _sum: { promptTokens: true, outputTokens: true, cacheHitTokens: true }
       }),
       loadProjectCostSummary(id)
     ]);
-    if (!project) {
-      return reply.code(404).send({ error: "Project not found" });
-    }
     return {
       ...project,
       tokens: normalizeTokenUsage(tokenLogs._sum),
-      cost
+      cost,
+      billing: projectBillingSummary(project, cost)
     };
   });
 
   fastify.post("/api/projects", async (request, reply) => {
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const input = await inputWithDetectedLanguage(createProjectSchema.parse(request.body), request.body, appConfig);
     const template = await prisma.template.findFirst({
       where: input.templateSlug ? { slug: input.templateSlug } : { category: input.category }
@@ -287,6 +459,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
     const project = await prisma.project.create({
       data: {
+        userId: actor.userId,
         title,
         ...(subtitle ? { subtitle } : {}),
         ...(authorName ? { authorName } : {}),
@@ -309,11 +482,15 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/plan", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const input =
       request.body === undefined
         ? null
         : await inputWithDetectedLanguage(createProjectSchema.parse(request.body), request.body, appConfig);
-    const project = await prisma.project.findUnique({ where: { id } });
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor) });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
@@ -341,8 +518,12 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/plans/:id/messages", async (request, reply) => {
     const { id } = planMessageParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const body = planMessageBodySchema.parse(request.body);
-    const plan = await prisma.planVersion.findUnique({ where: { id } });
+    const plan = await prisma.planVersion.findFirst({ where: ownedPlanWhere(id, actor) });
     if (!plan) {
       return reply.code(404).send({ error: "Plan not found" });
     }
@@ -360,7 +541,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/plans/:id/approve", async (request, reply) => {
     const { id } = planMessageParamsSchema.parse(request.params);
-    const plan = await prisma.planVersion.findUnique({ where: { id }, include: { project: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const plan = await prisma.planVersion.findFirst({ where: ownedPlanWhere(id, actor), include: { project: true } });
     if (!plan) {
       return reply.code(404).send({ error: "Plan not found" });
     }
@@ -401,7 +586,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/cover", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({ where: { id }, include: { currentPlan: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), include: { currentPlan: true } });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
@@ -420,7 +609,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/resume", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({ where: { id }, include: { currentPlan: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), include: { currentPlan: true } });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
@@ -494,8 +687,12 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/pages/:pageId/retry", async (request, reply) => {
     const { id, pageId } = z.object({ id: z.string().min(1), pageId: z.string().min(1) }).parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const [project, page] = await Promise.all([
-      prisma.project.findUnique({ where: { id }, select: { id: true, currentPlanId: true } }),
+      prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true, currentPlanId: true } }),
       prisma.page.findUnique({ where: { id: pageId }, select: { id: true, projectId: true, index: true, status: true } })
     ]);
     if (!project || !page || page.projectId !== id) {
@@ -530,7 +727,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/stop", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
@@ -539,8 +740,45 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.code(202).send(result);
   });
 
+  fastify.delete("/api/projects/:id", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    let stoppedJobs: Awaited<ReturnType<typeof stopProjectGenerationJobs>> | null = null;
+    try {
+      stoppedJobs = await stopProjectGenerationJobs(id);
+    } catch (error) {
+      request.log.warn({ err: error, projectId: id }, "Could not stop project jobs before deletion");
+    }
+
+    await prisma.project.delete({ where: { id } });
+    const assetCleanup = await deleteProjectStorage(appConfig, id, request);
+    return {
+      ok: true,
+      deletedProjectId: id,
+      stoppedJobs,
+      assetCleanup,
+      retainedLogs: "Provider call logs are retained for cost/provider diagnostics with project/job references cleared by database delete rules."
+    };
+  });
+
   fastify.get("/api/projects/:id/status", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
     const status = await buildProjectStatus(id);
     if (!status) {
       return reply.code(404).send({ error: "Project not found" });
@@ -550,7 +788,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/voice-characters", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
@@ -587,8 +829,12 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-characters/:characterId/approve", async (request, reply) => {
     const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
-    const character = await prisma.voiceCharacter.findUnique({
-      where: { id: characterId },
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const character = await prisma.voiceCharacter.findFirst({
+      where: ownedVoiceCharacterWhere(characterId, actor),
       include: { project: { select: { id: true, status: true } } }
     });
     if (!character || character.projectId !== id) {
@@ -633,7 +879,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-characters/:characterId/reject", async (request, reply) => {
     const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
-    const character = await prisma.voiceCharacter.findUnique({ where: { id: characterId } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const character = await prisma.voiceCharacter.findFirst({ where: ownedVoiceCharacterWhere(characterId, actor) });
     if (!character || character.projectId !== id) {
       return reply.code(404).send({ error: "Voice character not found" });
     }
@@ -648,8 +898,12 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.patch("/api/projects/:id/voice-characters/:characterId/voice-profile", async (request, reply) => {
     const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const patch = voiceProfilePatchSchema.parse(request.body);
-    const character = await prisma.voiceCharacter.findUnique({ where: { id: characterId } });
+    const character = await prisma.voiceCharacter.findFirst({ where: ownedVoiceCharacterWhere(characterId, actor) });
     if (!character || character.projectId !== id) {
       return reply.code(404).send({ error: "Voice character not found" });
     }
@@ -677,9 +931,13 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/voice-characters/:characterId/calls", async (request, reply) => {
     const { characterId } = voiceCharacterIdParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const body = voiceCallBodySchema.parse(request.body);
-    const character = await prisma.voiceCharacter.findUnique({
-      where: { id: characterId },
+    const character = await prisma.voiceCharacter.findFirst({
+      where: ownedVoiceCharacterWhere(characterId, actor),
       include: { project: { select: { status: true } } }
     });
     if (!character) {
@@ -735,6 +993,10 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-rooms/sessions", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const body = voiceRoomSessionBodySchema.parse(request.body);
     const participantIds = body.participants.map((participant) => participant.characterId);
     if (new Set(participantIds).size !== participantIds.length) {
@@ -755,7 +1017,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     const [project, characters] = await Promise.all([
-      prisma.project.findUnique({ where: { id }, select: { id: true, status: true } }),
+      prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true, status: true } }),
       prisma.voiceCharacter.findMany({
         where: { id: { in: participantIds } }
       })
@@ -848,7 +1110,11 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/voice-conversations", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
@@ -862,6 +1128,10 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-conversations", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const parsedBody = voiceConversationBodySchema.safeParse(request.body);
     if (!parsedBody.success) {
       return reply.code(400).send({ error: "Voice conversations require a prompt and exactly 2 character IDs." });
@@ -874,8 +1144,8 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Voice conversation characters must be unique." });
     }
 
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const project = await prisma.project.findFirst({
+      where: ownedProjectWhere(id, actor),
       select: {
         id: true,
         title: true,
@@ -965,9 +1235,13 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/voice-characters/:characterId/call-events", async (request, reply) => {
     const { characterId } = voiceCharacterIdParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const body = voiceCallEventBodySchema.parse(request.body);
-    const character = await prisma.voiceCharacter.findUnique({
-      where: { id: characterId },
+    const character = await prisma.voiceCharacter.findFirst({
+      where: ownedVoiceCharacterWhere(characterId, actor),
       select: { id: true, projectId: true }
     });
     if (!character) {
@@ -1000,6 +1274,14 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/events", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
     const origin = request.headers.origin;
     const corsHeaders = origin
       ? {
@@ -1034,6 +1316,14 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/book", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
     const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
     if (!markdown) {
       return reply.code(404).send({ error: "Book not found" });
@@ -1044,10 +1334,15 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/export/readme", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const [markdown, project] = await Promise.all([
-      compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR),
-      prisma.project.findUnique({ where: { id }, select: { title: true } })
-    ]);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { title: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
     if (!markdown) {
       return reply.code(404).send({ error: "Book not found" });
     }
@@ -1059,122 +1354,184 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/export/pdf/status", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    try {
-      await access(join(appConfig.BOOK_STORAGE_DIR, id, BOOK_PDF_FILENAME));
-      return { available: true };
-    } catch {
-      return { available: false };
-    }
+    return projectExportAvailability(appConfig, id, "pdf");
   });
 
   fastify.get("/api/projects/:id/export/pdf", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
     const { disposition = "attachment" } = pdfExportQuerySchema.parse(request.query);
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const project = await prisma.project.findFirst({
+      where: ownedProjectWhere(id, actor),
       select: { title: true, currentPlanId: true, mediaSettings: true }
     });
     if (!project) {
       return reply.code(404).send({ error: "Book not found" });
     }
 
-    const pdfPath = join(appConfig.BOOK_STORAGE_DIR, id, BOOK_PDF_FILENAME);
-    let pdf: Buffer;
-    try {
-      await access(pdfPath);
-      pdf = await readFile(pdfPath);
-    } catch {
-      if (!project.currentPlanId) {
-        return reply.code(404).send({ error: "Book not found" });
-      }
-      const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-      if (!markdown) {
-        return reply.code(404).send({ error: "Book not found" });
-      }
-      try {
-        await mkdir(dirname(pdfPath), { recursive: true });
-        const strategy = strategyForMediaSettings(project.mediaSettings);
-        pdf = await strategy.generatePdf(markdown, {
-          imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
-          publicApiUrl: appConfig.PUBLIC_API_URL,
-          outputPath: pdfPath
-        });
-      } catch (error) {
-        request.log.error({ err: error, projectId: id }, "PDF generation failed");
-        return reply.code(500).send({ error: "PDF generation failed" });
-      }
-    }
-
-    const filename = `${sanitizeDownloadFilename(project.title)}.pdf`;
-    reply.header("Content-Disposition", `${disposition}; filename="${filename}"`);
-    reply.type("application/pdf");
-    return pdf;
+    return sendProjectPdfExport({ request, reply, appConfig, projectId: id, project, disposition });
   });
 
   fastify.get("/api/projects/:id/export/epub/status", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({ where: { id }, select: { id: true } });
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    try {
-      await access(join(appConfig.BOOK_STORAGE_DIR, id, BOOK_EPUB_FILENAME));
-      return { available: true };
-    } catch {
-      return { available: false };
-    }
+    return projectExportAvailability(appConfig, id, "epub");
   });
 
   fastify.get("/api/projects/:id/export/epub", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const project = await prisma.project.findUnique({
-      where: { id },
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({
+      where: ownedProjectWhere(id, actor),
       select: { title: true, language: true, currentPlanId: true }
     });
     if (!project) {
       return reply.code(404).send({ error: "Book not found" });
     }
 
-    const epubPath = join(appConfig.BOOK_STORAGE_DIR, id, BOOK_EPUB_FILENAME);
-    let epub: Buffer;
-    try {
-      await access(epubPath);
-      epub = await readFile(epubPath);
-    } catch {
-      if (!project.currentPlanId) {
-        return reply.code(404).send({ error: "Book not found" });
-      }
-      const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-      if (!markdown) {
-        return reply.code(404).send({ error: "Book not found" });
-      }
-      try {
-        await mkdir(dirname(epubPath), { recursive: true });
-        epub = await generateBookEpub(markdown, {
-          title: project.title,
-          language: project.language,
-          imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
-          publicApiUrl: appConfig.PUBLIC_API_URL,
-          outputPath: epubPath
-        });
-      } catch (error) {
-        request.log.error({ err: error, projectId: id }, "EPUB generation failed");
-        return reply.code(500).send({ error: "EPUB generation failed" });
-      }
-    }
-
-    const filename = `${sanitizeDownloadFilename(project.title)}.epub`;
-    reply.header("Content-Disposition", `attachment; filename="${filename}"`);
-    reply.type("application/epub+zip");
-    return epub;
+    return sendProjectEpubExport({ request, reply, appConfig, projectId: id, project });
   });
 };
+
+function ownedProjectWhere(projectId: string, actor: ProjectActor): Prisma.ProjectWhereInput {
+  return { id: projectId, userId: actor.userId };
+}
+
+function projectBillingSummary(
+  project: {
+    title: string;
+    subtitle: string | null;
+    authorName: string | null;
+    coverTagline: string | null;
+    prompt: string;
+    category: string;
+    subcategory: string | null;
+    targetPages: number;
+    complexity: number;
+    temperature: number;
+    language: string;
+    mediaSettings: unknown;
+  },
+  cost: ProjectCostSummary | undefined
+) {
+  const input = createProjectSchema.parse({
+    title: project.title,
+    ...(project.subtitle ? { subtitle: project.subtitle } : {}),
+    ...(project.authorName ? { authorName: project.authorName } : {}),
+    ...(project.coverTagline ? { coverTagline: project.coverTagline } : {}),
+    prompt: project.prompt,
+    category: project.category,
+    ...(project.subcategory ? { subcategory: project.subcategory } : {}),
+    targetPages: project.targetPages,
+    complexity: project.complexity,
+    temperature: project.temperature,
+    language: project.language,
+    mediaSettings: mediaSettingsSchema.parse(project.mediaSettings)
+  });
+  const creditEstimate = estimateFullBookCreditCost(input);
+  const providerEstimate = estimateProviderCostForProject(input);
+  return {
+    creditEstimate,
+    providerEstimate,
+    margin: buildMarginEstimate({
+      creditEstimate,
+      providerEstimate,
+      actualProviderCostUsd: cost?.totalUsd ?? null
+    })
+  };
+}
+
+function ownedPlanWhere(planId: string, actor: ProjectActor): Prisma.PlanVersionWhereInput {
+  return { id: planId, project: { userId: actor.userId } };
+}
+
+function ownedVoiceCharacterWhere(characterId: string, actor: ProjectActor): Prisma.VoiceCharacterWhereInput {
+  return { id: characterId, project: { userId: actor.userId } };
+}
+
+async function sendOwnedProjectAsset(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: {
+    projectId: string;
+    filename: string;
+    storageDir: string;
+    missingLabel: string;
+  }
+) {
+  const actor = await resolveProjectActor(request, reply);
+  if (!actor) {
+    return;
+  }
+  const project = await prisma.project.findFirst({
+    where: ownedProjectWhere(options.projectId, actor),
+    select: { id: true }
+  });
+  if (!project) {
+    return sendProjectNotFound(reply, options.missingLabel);
+  }
+
+  const filePath = join(options.storageDir, options.projectId, options.filename);
+  try {
+    const file = await readFile(filePath);
+    reply.type(mimeTypeForPath(filePath));
+    reply.header("Cache-Control", "private, max-age=300");
+    return file;
+  } catch {
+    return sendProjectNotFound(reply, options.missingLabel);
+  }
+}
+
+async function deleteProjectStorage(appConfig: AppConfig, projectId: string, request: FastifyRequest) {
+  const targets = {
+    book: join(appConfig.BOOK_STORAGE_DIR, projectId),
+    images: join(appConfig.IMAGE_STORAGE_DIR, projectId),
+    voice: join(appConfig.VOICE_STORAGE_DIR, projectId)
+  };
+  const results: Record<keyof typeof targets, boolean> = {
+    book: false,
+    images: false,
+    voice: false
+  };
+
+  for (const [key, path] of Object.entries(targets) as Array<[keyof typeof targets, string]>) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      results[key] = true;
+    } catch (error) {
+      request.log.warn({ err: error, projectId, path }, "Project asset cleanup failed");
+    }
+  }
+
+  return results;
+}
+
+function mimeTypeForPath(filePath: string): string {
+  return MIME_BY_EXT[extname(filePath).toLowerCase()] ?? "application/octet-stream";
+}
 
 async function compileProjectMarkdown(
   projectId: string,

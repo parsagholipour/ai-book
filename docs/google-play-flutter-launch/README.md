@@ -1,50 +1,63 @@
 # Google Play Flutter Launch Plan
 
-This folder contains phased handoff documents for turning the current AI Book Maker service into a Google Play app built with Flutter while keeping the backend in this same TypeScript monorepo.
+This folder contains a phased agent handoff plan for turning the current AI Book Maker service into a Google Play app built with Flutter while keeping the backend in this same TypeScript monorepo.
 
-Use the files in order. Each phase is intended to be given to an AI agent as the primary implementation brief for that phase. Agents should read this index, the current phase document, and any phase outputs produced earlier before changing code.
+This second iteration intentionally breaks the work into more phases. Each phase has a narrower goal, clearer acceptance gate, and fewer hidden decisions for the next AI agent.
+
+Start every agent run with:
+
+1. [Agent Runbook](./AGENT-RUNBOOK.md)
+2. This README
+3. The current phase file
+4. Any output notes created by earlier phases
 
 ## Product Direction
 
 - Working product name: `Tomeza: AI Book Maker`.
-- Primary first market: creators, coaches, teachers, and small business users who want a practical ebook, guide, workbook, or lead magnet.
+- Primary first market: creators, coaches, teachers, and small business users who want practical ebooks, guides, workbooks, or lead magnets.
 - Secondary market after validation: personalized fiction and children's books.
-- First revenue goal: reach a stable USD 1,000/month before optimizing for scale.
-- Core promise: create, edit, illustrate, export, and share useful books from a guided mobile workflow.
+- First revenue goal: stable USD 1,000/month, not venture-scale growth.
+- Core promise: create, refine, illustrate, export, and share useful books from a guided mobile workflow.
 
 ## Repository Direction
 
 - Keep everything in this repository.
-- Preserve the current TypeScript workspace style for backend packages and apps.
-- Add Flutter as a sibling app under `apps/mobile`.
-- Continue using the existing API, worker, Prisma database, Redis queue, and shared core package as the backend foundation.
-- Avoid rewriting the backend in Dart or moving generation logic into the mobile app.
+- Preserve the current TypeScript backend workspace style.
+- Add the Flutter app as `apps/mobile`.
+- Keep generation, cost tracking, exports, user ownership, billing checks, and safety enforcement on the backend.
+- Use Flutter for mobile UX, local session state, API calls, downloads, sharing, and Google Play Billing client flows.
 
 ## Phase Order
 
-1. [Phase 01 - Product, Architecture, And Repo Foundations](./phase-01-product-architecture-repo-foundations.md)
-2. [Phase 02 - Backend Productization For Mobile](./phase-02-backend-productization-for-mobile.md)
-3. [Phase 03 - Flutter MVP App Shell And Auth](./phase-03-flutter-mvp-app-shell-and-auth.md)
-4. [Phase 04 - Mobile Book Creation, Progress, And Export](./phase-04-mobile-book-creation-progress-export.md)
-5. [Phase 05 - Monetization, Credits, And Entitlements](./phase-05-monetization-credits-entitlements.md)
-6. [Phase 06 - Compliance, Safety, Privacy, And Reliability](./phase-06-compliance-safety-privacy-reliability.md)
-7. [Phase 07 - Beta, Store Launch, And Growth Loop](./phase-07-beta-store-launch-growth-loop.md)
+1. [Phase 01 - Product Positioning And Revenue Thesis](./phase-01-product-positioning-revenue-thesis.md)
+2. [Phase 02 - Monorepo And Flutter Architecture Foundation](./phase-02-monorepo-flutter-architecture-foundation.md)
+3. [Phase 03 - Backend Multi-User Accounts And Auth](./phase-03-backend-multi-user-accounts-auth.md)
+4. [Phase 04 - Project Ownership, Assets, And Data Boundaries](./phase-04-project-ownership-assets-data-boundaries.md)
+5. [Phase 05 - Mobile API Contract And Product Presets](./phase-05-mobile-api-contract-product-presets.md)
+6. [Phase 06 - Credits, Cost Model, And Entitlement Design](./phase-06-credits-cost-model-entitlement-design.md)
+7. [Phase 07 - Flutter App Shell, Design System, And Auth](./phase-07-flutter-app-shell-design-system-auth.md)
+8. [Phase 08 - Mobile Book Creation And Planning Workflow](./phase-08-mobile-book-creation-planning-workflow.md)
+9. [Phase 09 - Generation Progress, Preview, Editing, And Export](./phase-09-generation-progress-preview-editing-export.md)
+10. [Phase 10 - Google Play Billing And Paywalls](./phase-10-google-play-billing-paywalls.md)
+11. [Phase 11 - Safety, Privacy, Compliance, And Store Readiness](./phase-11-safety-privacy-compliance-store-readiness.md)
+12. [Phase 12 - Production Deploy, Beta, Launch, And Growth Loop](./phase-12-production-beta-launch-growth-loop.md)
 
 ## Global Rules For Agents
 
 - Do not create a separate repository.
 - Do not replace the current backend stack.
-- Do not expose model/provider controls to normal mobile users unless explicitly required by an admin/debug surface.
-- Do not offer unlimited generation, unlimited images, or unlimited voice features.
-- Treat AI cost, safety, moderation, and Google Play policy compliance as product requirements.
-- Keep implementation changes small enough to verify with tests before moving to the next phase.
-- Update this folder when a phase changes an assumption that affects later phases.
+- Do not rewrite generation logic in Dart.
+- Do not expose provider, model, temperature, or raw queue details to normal mobile users.
+- Do not offer unlimited generation, unlimited images, or unlimited voice.
+- Treat AI cost, safety, moderation, ownership, and Google Play policy as product requirements.
+- Keep each phase independently testable.
+- Update this folder when a phase changes a decision that later phases depend on.
 
-## Definition Of Done For The Full Goal
+## Full Goal Definition Of Done
 
-- A Flutter Android app can be built from `apps/mobile`.
-- The app lets a signed-in user create a book project, answer planning prompts, generate content, monitor progress, preview output, and export/share a PDF or EPUB.
-- The backend supports multiple users, mobile-safe authentication, credit/entitlement checks, project ownership, cost tracking, and app-facing APIs.
-- Paid plans or credit packs are available through Google Play Billing.
-- The app includes required safety/reporting, privacy, account deletion, and data handling flows.
-- Internal testing, closed testing, store assets, release signing, and production deployment are documented and repeatable.
+- `apps/mobile` builds a Flutter Android app.
+- A real signed-in user can create a book, review a plan, approve generation, monitor progress, preview output, and export/share PDF or EPUB.
+- The backend supports real users, project ownership, mobile-safe auth, credits, entitlements, billing verification, cost tracking, and app-facing APIs.
+- Google Play Billing supports subscriptions or credit packs without allowing unbounded AI usage.
+- The app includes report/flag flows, privacy policy, account deletion, data safety documentation, and production reliability checks.
+- Internal testing, closed testing, release signing, production deployment, and launch analytics are documented and repeatable.

@@ -9,6 +9,8 @@ import { dirname, resolve } from "node:path";
 import { loadConfig } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { registerAuth } from "./auth.js";
+import { mobileAuthRoutes } from "./mobileAuth.js";
+import { mobileProjectRoutes } from "./mobileProjects.js";
 import { closeQueue } from "./queue.js";
 import { projectRoutes } from "./routes/projects.js";
 
@@ -30,15 +32,8 @@ await app.register(swagger, {
   }
 });
 await app.register(swaggerUi, { routePrefix: "/docs" });
-await app.register(fastifyStatic, {
-  root: resolve(config.IMAGE_STORAGE_DIR),
-  prefix: "/assets/images/"
-});
-await app.register(fastifyStatic, {
-  root: resolve(config.VOICE_STORAGE_DIR),
-  prefix: "/assets/voice/",
-  decorateReply: false
-});
+await app.register(mobileAuthRoutes);
+await app.register(mobileProjectRoutes);
 await app.register(projectRoutes);
 
 const webDistDir = findWebDistDir();

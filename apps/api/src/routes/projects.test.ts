@@ -1,15 +1,22 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "@book-maker/core";
 import { registerAuth } from "../auth.js";
+import { hashToken } from "../mobileAuth.js";
+import { stopProjectGenerationJobs } from "../queue.js";
 
 const mockPrisma = vi.hoisted(() => ({
+  user: { upsert: vi.fn() },
+  mobileSession: { findUnique: vi.fn() },
   template: { findMany: vi.fn() },
-  project: { findUnique: vi.fn() },
-  voiceCharacter: { findUnique: vi.fn(), findMany: vi.fn() },
+  project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), delete: vi.fn() },
+  providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
+  imageAsset: { findMany: vi.fn() },
+  generationJob: { count: vi.fn(), findMany: vi.fn() },
+  voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   voiceCallEvent: { create: vi.fn() },
   voiceConversation: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() }
 }));
@@ -28,11 +35,24 @@ vi.mock("../queue.js", () => ({
 }));
 
 const originalEnv = { ...process.env };
+let tempBookStorageDir: string | null = null;
+let tempImageStorageDir: string | null = null;
 let tempVoiceStorageDir: string | null = null;
 
-describe("project voice routes", () => {
+describe("project routes", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockPrisma.user.upsert.mockResolvedValue({ id: "local-admin" });
+    mockPrisma.project.findFirst.mockImplementation((...args: unknown[]) => mockPrisma.project.findUnique(...args));
+    mockPrisma.voiceCharacter.findFirst.mockImplementation((...args: unknown[]) => mockPrisma.voiceCharacter.findUnique(...args));
+    mockPrisma.providerCallLog.aggregate.mockResolvedValue({ _sum: {} });
+    mockPrisma.providerCallLog.findMany.mockResolvedValue([]);
+    mockPrisma.providerCallLog.groupBy.mockResolvedValue([]);
+    mockPrisma.imageAsset.findMany.mockResolvedValue([]);
+    mockPrisma.generationJob.count.mockResolvedValue(0);
+    mockPrisma.generationJob.findMany.mockResolvedValue([]);
+    tempBookStorageDir = mkdtempSync(join(tmpdir(), "book-maker-books-"));
+    tempImageStorageDir = mkdtempSync(join(tmpdir(), "book-maker-images-"));
     tempVoiceStorageDir = mkdtempSync(join(tmpdir(), "book-maker-voice-"));
     process.env = {
       ...originalEnv,
@@ -41,6 +61,8 @@ describe("project voice routes", () => {
       WEB_PASSWORD: "",
       OPENAI_API_KEY: "",
       GEMINI_API_KEY: "",
+      BOOK_STORAGE_DIR: tempBookStorageDir,
+      IMAGE_STORAGE_DIR: tempImageStorageDir,
       VOICE_CHAT_PROVIDER: "openai_realtime",
       VOICE_STORAGE_DIR: tempVoiceStorageDir
     };
@@ -49,10 +71,164 @@ describe("project voice routes", () => {
   afterEach(() => {
     process.env = { ...originalEnv };
     vi.unstubAllGlobals();
+    if (tempBookStorageDir) {
+      rmSync(tempBookStorageDir, { recursive: true, force: true });
+      tempBookStorageDir = null;
+    }
+    if (tempImageStorageDir) {
+      rmSync(tempImageStorageDir, { recursive: true, force: true });
+      tempImageStorageDir = null;
+    }
     if (tempVoiceStorageDir) {
       rmSync(tempVoiceStorageDir, { recursive: true, force: true });
       tempVoiceStorageDir = null;
     }
+  });
+
+  it("lists and reads only the signed-in user's projects", async () => {
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    mockPrisma.project.findMany.mockResolvedValueOnce([projectRecord({ id: "project-a", userId: "user-a" })]);
+    mockPrisma.project.findFirst.mockResolvedValueOnce(null);
+    const app = await buildApp();
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/projects",
+      headers: bearer("token-a")
+    });
+    const crossUserDetail = await app.inject({
+      method: "GET",
+      url: "/api/projects/project-b",
+      headers: bearer("token-a")
+    });
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toEqual([expect.objectContaining({ id: "project-a", userId: "user-a" })]);
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "user-a" } }));
+    expect(crossUserDetail.statusCode).toBe(404);
+    expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "project-b", userId: "user-a" } })
+    );
+    await app.close();
+  });
+
+  it("authorizes image and voice assets by project owner", async () => {
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    writeProjectFile(tempImageStorageDir, "project-a", "cover.png", "image-bytes");
+    writeProjectFile(tempVoiceStorageDir, "project-a", "conversation.wav", "voice-bytes");
+    mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
+      where.id === "project-a" && where.userId === "user-a" ? { id: "project-a" } : null
+    );
+    const app = await buildApp();
+
+    const ownImage = await app.inject({
+      method: "GET",
+      url: "/assets/images/project-a/cover.png",
+      headers: bearer("token-a")
+    });
+    const otherImage = await app.inject({
+      method: "GET",
+      url: "/assets/images/project-a/cover.png",
+      headers: bearer("token-b")
+    });
+    const ownVoice = await app.inject({
+      method: "GET",
+      url: "/assets/voice/project-a/conversation.wav",
+      headers: bearer("token-a")
+    });
+    const otherVoice = await app.inject({
+      method: "GET",
+      url: "/assets/voice/project-a/conversation.wav",
+      headers: bearer("token-b")
+    });
+
+    expect(ownImage.statusCode).toBe(200);
+    expect(ownImage.body).toBe("image-bytes");
+    expect(otherImage.statusCode).toBe(404);
+    expect(ownVoice.statusCode).toBe(200);
+    expect(ownVoice.body).toBe("voice-bytes");
+    expect(otherVoice.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("authorizes PDF and EPUB exports by project owner", async () => {
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    writeProjectFile(tempBookStorageDir, "project-a", "book.pdf", "%PDF-owned");
+    writeProjectFile(tempBookStorageDir, "project-a", "book.epub", "epub-owned");
+    mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
+      where.id === "project-a" && where.userId === "user-a"
+        ? { id: "project-a", title: "Owned Book", language: "en", currentPlanId: null, mediaSettings: {} }
+        : null
+    );
+    const app = await buildApp();
+
+    const ownPdf = await app.inject({
+      method: "GET",
+      url: "/api/projects/project-a/export/pdf",
+      headers: bearer("token-a")
+    });
+    const otherPdf = await app.inject({
+      method: "GET",
+      url: "/api/projects/project-a/export/pdf",
+      headers: bearer("token-b")
+    });
+    const ownEpub = await app.inject({
+      method: "GET",
+      url: "/api/projects/project-a/export/epub",
+      headers: bearer("token-a")
+    });
+    const otherEpub = await app.inject({
+      method: "GET",
+      url: "/api/projects/project-a/export/epub",
+      headers: bearer("token-b")
+    });
+
+    expect(ownPdf.statusCode).toBe(200);
+    expect(ownPdf.body).toBe("%PDF-owned");
+    expect(otherPdf.statusCode).toBe(404);
+    expect(ownEpub.statusCode).toBe(200);
+    expect(ownEpub.body).toBe("epub-owned");
+    expect(otherEpub.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("deletes owned projects and best-effort project storage", async () => {
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    writeProjectFile(tempBookStorageDir, "project-a", "book.pdf", "%PDF-owned");
+    writeProjectFile(tempImageStorageDir, "project-a", "cover.png", "image-bytes");
+    writeProjectFile(tempVoiceStorageDir, "project-a", "conversation.wav", "voice-bytes");
+    vi.mocked(stopProjectGenerationJobs).mockResolvedValue({ stoppedJobs: 1, activeJobs: 0, removedQueueJobs: 1 });
+    mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
+      where.id === "project-a" && where.userId === "user-a" ? { id: "project-a" } : null
+    );
+    mockPrisma.project.delete.mockResolvedValue({ id: "project-a" });
+    const app = await buildApp();
+
+    const otherUserDelete = await app.inject({
+      method: "DELETE",
+      url: "/api/projects/project-a",
+      headers: bearer("token-b")
+    });
+    const ownDelete = await app.inject({
+      method: "DELETE",
+      url: "/api/projects/project-a",
+      headers: bearer("token-a")
+    });
+
+    expect(otherUserDelete.statusCode).toBe(404);
+    expect(ownDelete.statusCode).toBe(200);
+    expect(ownDelete.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        deletedProjectId: "project-a",
+        assetCleanup: { book: true, images: true, voice: true }
+      })
+    );
+    expect(mockPrisma.project.delete).toHaveBeenCalledWith({ where: { id: "project-a" } });
+    expect(existsSync(join(tempBookStorageDir!, "project-a"))).toBe(false);
+    expect(existsSync(join(tempImageStorageDir!, "project-a"))).toBe(false);
+    expect(existsSync(join(tempVoiceStorageDir!, "project-a"))).toBe(false);
+    await app.close();
   });
 
   it("returns RTC config with relay metadata and without TURN secrets", async () => {
@@ -936,6 +1112,73 @@ function readyCharacter(overrides: Record<string, unknown> = {}) {
     },
     ...overrides
   };
+}
+
+function mockAccessTokens(tokensByRawToken: Record<string, string>) {
+  mockPrisma.mobileSession.findUnique.mockImplementation(async ({ where }: { where: { accessTokenHash?: string } }) => {
+    const userEntry = Object.entries(tokensByRawToken).find(([token]) => hashToken(token) === where.accessTokenHash);
+    if (!userEntry) {
+      return null;
+    }
+    const [, userId] = userEntry;
+    return {
+      id: `session-${userId}`,
+      userId,
+      accessTokenExpiresAt: new Date("2999-06-15T08:15:00.000Z"),
+      refreshTokenExpiresAt: new Date("2999-07-15T08:00:00.000Z"),
+      revokedAt: null,
+      user: {
+        id: userId,
+        email: `${userId}@example.com`,
+        displayName: userId,
+        status: "ACTIVE",
+        disabledAt: null,
+        createdAt: new Date("2026-06-01T12:00:00.000Z"),
+        updatedAt: new Date("2026-06-01T12:00:00.000Z")
+      }
+    };
+  });
+}
+
+function bearer(token: string) {
+  return { authorization: `Bearer ${token}` };
+}
+
+function projectRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "project-a",
+    userId: "user-a",
+    title: "Owned Book",
+    subtitle: null,
+    authorName: null,
+    coverTagline: null,
+    prompt: "Write a useful guide.",
+    category: "BUSINESS",
+    subcategory: null,
+    targetPages: 12,
+    complexity: 5,
+    temperature: 0.7,
+    language: "en",
+    mediaSettings: {},
+    status: "DRAFT",
+    templateId: null,
+    currentPlanId: null,
+    createdAt: new Date("2026-06-01T12:00:00.000Z"),
+    updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+    template: null,
+    currentPlan: null,
+    _count: { pages: 0, images: 0, jobs: 0 },
+    ...overrides
+  };
+}
+
+function writeProjectFile(storageDir: string | null, projectId: string, filename: string, content: string) {
+  if (!storageDir) {
+    throw new Error("Storage dir was not initialized");
+  }
+  const projectDir = join(storageDir, projectId);
+  mkdirSync(projectDir, { recursive: true });
+  writeFileSync(join(projectDir, filename), content);
 }
 
 async function buildApp(options: { auth?: boolean } = {}): Promise<FastifyInstance> {

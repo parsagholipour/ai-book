@@ -1,28 +1,7 @@
-import { Prisma, PrismaClient } from "./generated/prisma/client.ts";
 import { templateDefinitions } from "@book-maker/core";
-import { PrismaPg } from "@prisma/adapter-pg";
+import { prisma } from "./client.ts";
 
-const databaseUrl =
-  process.env.DATABASE_URL ?? "postgresql://bookmaker:bookmaker@localhost:55432/bookmaker?schema=public";
-
-const adapter = new PrismaPg({ connectionString: databaseUrl });
-
-const globalForPrisma = globalThis as unknown as {
-  prisma?: PrismaClient;
-};
-
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    adapter,
-    log: process.env.PRISMA_LOG === "true" ? ["query", "warn", "error"] : ["warn", "error"]
-  });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
-
-export { PrismaClient, Prisma };
+export { prisma, PrismaClient, Prisma } from "./client.ts";
 export * from "./generated/prisma/enums.ts";
 export type * from "./generated/prisma/models.ts";
 

@@ -71,6 +71,7 @@ import {
   withRecoverableNetworkRetry
 } from "@book-maker/core";
 import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
+import { refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 import { inputForPlanVersion, inputFromProject, inputFromSnapshot } from "./projectInput.js";
 
 const BOOK_QUEUE_NAME = "book-maker";
@@ -4366,6 +4367,7 @@ async function markFailed(job: Job, error: unknown) {
     }
   }
   if (projectId && shouldFailProjectForJob(job.name)) {
+    await refundFailedProjectCredits(projectId, errorMessage(error));
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
 }
@@ -4390,8 +4392,19 @@ async function markStopped(job: Job) {
     });
   }
   if (projectId) {
+    await refundFailedProjectCredits(projectId, STOPPED_JOB_ERROR);
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
+}
+
+async function refundFailedProjectCredits(projectId: string, reason: string): Promise<void> {
+  await refundLatestProjectOperationCredits({
+    projectId,
+    operation: "FULL_BOOK_GENERATION",
+    reason
+  }).catch((error) => {
+    console.error(`Failed to refund credits for project ${projectId}`, error);
+  });
 }
 
 async function markRecovering(job: Job, error: unknown) {

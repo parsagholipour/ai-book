@@ -37,6 +37,14 @@ describe("worker project input resolution", () => {
     expect(input.prompt).toContain("project row prompt");
     expect(input.mediaSettings.textModel).toEqual({ provider: "deepseek", model: "deepseek-project" });
   });
+
+  it("ignores project ownership metadata when resolving worker input", () => {
+    const ownedProject = { ...projectSource(), userId: "user-1" };
+    const input = inputForPlanVersion(ownedProject, null);
+
+    expect(input.prompt).toContain("project row prompt");
+    expect(input.mediaSettings.generationStrategy).toBe("chaptered-sequential");
+  });
 });
 
 function projectSource() {

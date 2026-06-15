@@ -2,6 +2,7 @@ import { Queue, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import { loadConfig } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
+import { refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 
 export const BOOK_QUEUE_NAME = "book-maker";
 
@@ -146,6 +147,11 @@ export async function stopProjectGenerationJobs(projectId: string) {
       error: STOPPED_JOB_ERROR,
       finishedAt
     }
+  });
+  await refundLatestProjectOperationCredits({
+    projectId,
+    operation: "FULL_BOOK_GENERATION",
+    reason: STOPPED_JOB_ERROR
   });
 
   return {

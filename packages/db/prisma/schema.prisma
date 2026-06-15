@@ -65,6 +65,85 @@ enum AssetType {
   DIAGRAM
 }
 
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum BillingProductType {
+  ONE_TIME_UNLOCK
+  CREDIT_PACK
+  SUBSCRIPTION
+  INTERNAL_GRANT
+}
+
+enum BillingProvider {
+  INTERNAL
+  GOOGLE_PLAY
+}
+
+enum PurchaseStatus {
+  PENDING
+  VERIFIED
+  GRANTED
+  FAILED
+  REVOKED
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+  GRACE_PERIOD
+  PAUSED
+  CANCELED
+  EXPIRED
+}
+
+enum UserEntitlementType {
+  EXPORT_UNLOCK
+  PREMIUM_PRESET
+  PREMIUM_REVIEW
+  EXTRA_IMAGES
+  CREATOR_PLAN
+  PRO_PLAN
+}
+
+enum UserEntitlementStatus {
+  ACTIVE
+  CONSUMED
+  EXPIRED
+  REVOKED
+}
+
+enum CreditLedgerEntryType {
+  GRANT
+  RESERVE
+  SPEND
+  REFUND
+  RELEASE
+  ADJUSTMENT
+}
+
+enum CreditLedgerEntryStatus {
+  RESERVED
+  SETTLED
+  REFUNDED
+  VOIDED
+}
+
+enum CreditOperation {
+  PLAN_GENERATION
+  PREVIEW_GENERATION
+  FULL_BOOK_GENERATION
+  IMAGE_GENERATION
+  COVER_REGENERATION
+  PREMIUM_REVIEW
+  EXPORT_UNLOCK
+  PURCHASE_CREDIT_GRANT
+  SUBSCRIPTION_CREDIT_GRANT
+  ADMIN_GRANT
+}
+
 enum VoiceCharacterStatus {
   CANDIDATE
   APPROVED
@@ -87,8 +166,202 @@ model Template {
   projects      Project[]
 }
 
+model User {
+  id                 String                  @id @default(cuid())
+  email              String                  @unique
+  displayName        String?
+  status             UserStatus              @default(ACTIVE)
+  disabledAt         DateTime?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  passwordCredential UserPasswordCredential?
+  mobileSessions     MobileSession[]
+  projects           Project[]
+  creditAccount      UserCreditAccount?
+  creditLedger       CreditLedgerEntry[]
+  entitlements       UserEntitlement[]
+  purchases          PurchaseRecord[]
+  subscriptions      SubscriptionState[]
+}
+
+model UserPasswordCredential {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MobileSession {
+  id                    String    @id @default(cuid())
+  userId                String
+  accessTokenHash       String    @unique
+  refreshTokenHash      String    @unique
+  accessTokenExpiresAt  DateTime
+  refreshTokenExpiresAt DateTime
+  userAgent             String?
+  ipHash                String?
+  revokedAt             DateTime?
+  lastUsedAt            DateTime  @default(now())
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([accessTokenExpiresAt])
+  @@index([refreshTokenExpiresAt])
+}
+
+model ProductCatalog {
+  id             String             @id @default(cuid())
+  sku            String             @unique
+  title          String
+  description    String?
+  productType    BillingProductType
+  provider       BillingProvider    @default(GOOGLE_PLAY)
+  creditAmount   Int                @default(0)
+  priceMicros    BigInt?
+  currency       String             @default("USD")
+  active         Boolean            @default(true)
+  metadata       Json
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  creditLedger   CreditLedgerEntry[]
+  purchases      PurchaseRecord[]
+  subscriptions  SubscriptionState[]
+}
+
+model UserCreditAccount {
+  userId                 String   @id
+  availableCredits       Int      @default(0)
+  reservedCredits        Int      @default(0)
+  lifetimeCreditsGranted Int      @default(0)
+  lifetimeCreditsSpent   Int      @default(0)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserEntitlement {
+  id                   String                 @id @default(cuid())
+  userId               String
+  projectId            String?
+  type                 UserEntitlementType
+  status               UserEntitlementStatus  @default(ACTIVE)
+  source               String
+  creditsCost          Int                    @default(0)
+  relatedLedgerEntryId String?
+  purchaseRecordId     String?
+  startsAt             DateTime               @default(now())
+  expiresAt            DateTime?
+  consumedAt           DateTime?
+  metadata             Json
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project              Project?               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  relatedLedgerEntry   CreditLedgerEntry?     @relation("LedgerEntryEntitlements", fields: [relatedLedgerEntryId], references: [id], onDelete: SetNull)
+  purchaseRecord       PurchaseRecord?        @relation(fields: [purchaseRecordId], references: [id], onDelete: SetNull)
+
+  @@index([userId, type, status])
+  @@index([projectId, type, status])
+  @@index([relatedLedgerEntryId])
+}
+
+model CreditLedgerEntry {
+  id                 String                  @id @default(cuid())
+  userId             String
+  projectId          String?
+  generationJobId    String?
+  productId          String?
+  purchaseRecordId   String?
+  entryType          CreditLedgerEntryType
+  status             CreditLedgerEntryStatus @default(SETTLED)
+  operation          CreditOperation
+  amountCredits      Int
+  balanceAfterCredits Int?
+  idempotencyKey     String                  @unique
+  reversesEntryId    String?                 @unique
+  description        String?
+  metadata           Json
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project            Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  generationJob      GenerationJob?          @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
+  product            ProductCatalog?         @relation(fields: [productId], references: [id], onDelete: SetNull)
+  purchaseRecord     PurchaseRecord?         @relation(fields: [purchaseRecordId], references: [id], onDelete: SetNull)
+  reversesEntry      CreditLedgerEntry?      @relation("CreditLedgerReversal", fields: [reversesEntryId], references: [id], onDelete: SetNull)
+  reversedByEntry    CreditLedgerEntry?      @relation("CreditLedgerReversal")
+  entitlements       UserEntitlement[]       @relation("LedgerEntryEntitlements")
+
+  @@index([userId, createdAt])
+  @@index([projectId, operation])
+  @@index([generationJobId])
+  @@index([purchaseRecordId])
+}
+
+model PurchaseRecord {
+  id                   String          @id @default(cuid())
+  userId               String
+  productId            String?
+  provider             BillingProvider @default(GOOGLE_PLAY)
+  externalPurchaseId   String?
+  purchaseTokenHash    String?
+  status               PurchaseStatus  @default(PENDING)
+  creditsGranted       Int             @default(0)
+  amountMicros         BigInt?
+  currency             String          @default("USD")
+  purchasedAt          DateTime?
+  verifiedAt           DateTime?
+  metadata             Json
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product              ProductCatalog? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  creditLedger         CreditLedgerEntry[]
+  entitlements         UserEntitlement[]
+
+  @@index([userId, createdAt])
+  @@index([provider, externalPurchaseId])
+  @@index([purchaseTokenHash])
+}
+
+model SubscriptionState {
+  id                     String             @id @default(cuid())
+  userId                 String
+  productId              String?
+  provider               BillingProvider    @default(GOOGLE_PLAY)
+  externalSubscriptionId String?
+  status                 SubscriptionStatus @default(INACTIVE)
+  creditsPerPeriod       Int                @default(0)
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  nextCreditGrantAt      DateTime?
+  canceledAt             DateTime?
+  metadata               Json
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product                ProductCatalog?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([provider, externalSubscriptionId])
+}
+
 model Project {
   id             String         @id @default(cuid())
+  userId         String
   title          String
   subtitle       String?
   authorName     String?
@@ -107,6 +380,7 @@ model Project {
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
+  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict)
   template       Template?      @relation(fields: [templateId], references: [id])
   currentPlan    PlanVersion?   @relation("CurrentPlan", fields: [currentPlanId], references: [id])
   planVersions   PlanVersion[]  @relation("ProjectPlans")
@@ -123,6 +397,11 @@ model Project {
   voiceCharacters VoiceCharacter[]
   voiceCallEvents VoiceCallEvent[]
   voiceConversations VoiceConversation[]
+  creditLedger   CreditLedgerEntry[]
+  entitlements   UserEntitlement[]
+
+  @@index([userId, updatedAt])
+  @@index([userId, createdAt])
 }
 
 model PlanVersion {
@@ -299,6 +578,7 @@ model GenerationJob {
 
   project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   providerLogs ProviderCallLog[]
+  creditLedger CreditLedgerEntry[]
 }
 
 model ProviderCallLog {
