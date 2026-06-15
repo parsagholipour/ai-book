@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/projects/presentation/generation_progress_screen.dart';
+import '../../features/projects/presentation/new_book_wizard_screen.dart';
+import '../../features/projects/presentation/project_detail_screen.dart';
 import '../../features/projects/presentation/projects_home_screen.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 
@@ -51,6 +54,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/home',
         builder: (context, state) => const ProjectsHomeScreen(),
+      ),
+      GoRoute(
+        path: '/books/new',
+        builder: (context, state) => const NewBookWizardScreen(),
+      ),
+      GoRoute(
+        path: '/projects/:id',
+        builder: (context, state) =>
+            ProjectDetailScreen(projectId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/projects/:id/handoff',
+        builder: (context, state) => GenerationProgressScreen(
+          projectId: state.pathParameters['id']!,
+          initialMessage: state.extra as String?,
+        ),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(

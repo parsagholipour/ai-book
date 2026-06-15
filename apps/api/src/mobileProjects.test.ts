@@ -14,7 +14,7 @@ import {
 } from "@book-maker/db/billing";
 import { hashToken } from "./mobileAuth.js";
 import { buildProjectStatus } from "./projectStatus.js";
-import { enqueueGenerationJob } from "./queue.js";
+import { enqueueGenerationJob, isBullJobActive, requeueGenerationJob } from "./queue.js";
 
 type QueuedGenerationJobRecord = Awaited<ReturnType<typeof enqueueGenerationJob>>;
 
@@ -24,10 +24,11 @@ const mockPrisma = vi.hoisted(() => ({
   mobileSession: { findUnique: vi.fn() },
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  page: { findMany: vi.fn() },
   planVersion: { findFirst: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   generationJob: { count: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
-  imageAsset: { findMany: vi.fn() },
+  imageAsset: { findFirst: vi.fn(), findMany: vi.fn() },
   voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   voiceCallEvent: { create: vi.fn() },
   voiceConversation: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() }
@@ -166,6 +167,8 @@ describe("mobile project routes", () => {
       chargedLedgerEntry: null
     });
     vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord());
+    vi.mocked(isBullJobActive).mockResolvedValue(false);
+    vi.mocked(requeueGenerationJob).mockResolvedValue(jobRecord({ id: "job-resumed", status: "QUEUED" }));
     vi.mocked(buildProjectStatus).mockResolvedValue(statusRecord());
     tempBookStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-books-"));
     tempImageStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-images-"));
@@ -279,6 +282,7 @@ describe("mobile project routes", () => {
       [
         "authorName",
         "bookType",
+        "coverImage",
         "createdAt",
         "currentAction",
         "exports",
@@ -388,6 +392,76 @@ describe("mobile project routes", () => {
       expect.objectContaining({ where: { id: "project-b", userId: "user-a" } })
     );
     expect(JSON.stringify(list.json())).not.toMatch(/temperature|generationStrategy|provider|model|mediaSettings|cost|tokens/);
+    await app.close();
+  });
+
+  it("returns generated page previews and mobile-safe image references on project detail", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(
+      projectRecord({
+        id: "project-a",
+        title: "Preview Book",
+        status: "GENERATING",
+        pages: [
+          {
+            id: "page-1",
+            projectId: "project-a",
+            index: 1,
+            title: "Set the promise",
+            markdown:
+              "## Set the promise\n\nA strong promise names the reader, the outcome, and the moment they can see progress.",
+            summary: "Define the result the reader should get.",
+            status: "COMPLETED",
+            images: [
+              {
+                id: "image-page",
+                projectId: "project-a",
+                pageId: "page-1",
+                type: "DIAGRAM",
+                path: "http://localhost:4001/assets/images/project-a/page-1.png",
+                metadata: { mimeType: "image/png", model: "hidden" }
+              }
+            ]
+          }
+        ],
+        images: [
+          {
+            id: "image-cover",
+            projectId: "project-a",
+            pageId: null,
+            type: "COVER",
+            path: "http://localhost:4001/assets/images/project-a/cover.png",
+            metadata: { mimeType: "image/png", provider: "hidden" }
+          }
+        ],
+        _count: { pages: 1, images: 2, jobs: 1 }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a",
+      headers: bearer("token-a")
+    });
+    const project = response.json().project;
+
+    expect(response.statusCode).toBe(200);
+    expect(project.pages[0]).toMatchObject({
+      title: "Set the promise",
+      previewText: expect.stringContaining("A strong promise names the reader"),
+      image: {
+        id: "image-page",
+        url: "/api/mobile/projects/project-a/assets/image-page",
+        contentType: "image/png"
+      }
+    });
+    expect(project.coverImage).toMatchObject({
+      id: "image-cover",
+      role: "cover",
+      url: "/api/mobile/projects/project-a/assets/image-cover"
+    });
+    expect(JSON.stringify(project)).not.toMatch(/temperature|generationStrategy|mediaSettings|cost|tokens/);
     await app.close();
   });
 
@@ -580,6 +654,62 @@ describe("mobile project routes", () => {
     expect(JSON.stringify({ plan: plan.json(), revise: revise.json(), approve: approve.json() })).not.toMatch(
       /strategy|provider|model|temperature/
     );
+    await app.close();
+  });
+
+  it("retries recoverable mobile generation failures without returning queue internals", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(
+      projectRecord({
+        id: "project-1",
+        currentPlanId: "plan-1",
+        currentPlan: { id: "plan-1", createdAt: new Date("2026-06-15T12:00:00.000Z") }
+      })
+    );
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([
+      jobRecord({
+        id: "job-failed-page",
+        projectId: "project-1",
+        type: "GENERATE_PAGE",
+        status: "FAILED",
+        payload: { pageId: "page-1", planId: "plan-1" },
+        createdAt: new Date("2026-06-15T12:10:00.000Z")
+      })
+    ]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([{ id: "page-1" }]);
+    mockPrisma.project.update.mockResolvedValueOnce({});
+    vi.mocked(requeueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-failed-page", status: "QUEUED" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/resume",
+      headers: bearer("token-a")
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(202);
+    expect(body).toEqual({
+      projectId: "project-1",
+      status: "recovery_started",
+      currentAction: "Picking up your book generation.",
+      resumedActions: 1,
+      skippedActions: 0,
+      stoppingActions: 0
+    });
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "GENERATING" }
+    });
+    expect(vi.mocked(requeueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "job-failed-page",
+        projectId: "project-1",
+        type: "GENERATE_PAGE",
+        payload: { pageId: "page-1", planId: "plan-1" }
+      })
+    );
+    expect(JSON.stringify(body)).not.toMatch(/jobs|queue|provider|model|temperature/);
     await app.close();
   });
 

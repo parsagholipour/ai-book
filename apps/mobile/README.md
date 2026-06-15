@@ -1,6 +1,6 @@
 # Tomeza Mobile
 
-Flutter app shell for the Google Play launch work. Phase 07 includes authentication, session restore, project list loading, and a credits/account area. Book creation, planning, generation approval, downloads, and Google Play Billing client flows are intentionally not implemented yet.
+Flutter app for the Google Play launch work. Phase 09 includes authentication, project list loading, credits, guided book creation, plan generation/revision/approval, generation progress, generated page preview, recovery, and protected PDF/EPUB download/share. Google Play Billing client flows are intentionally not implemented yet.
 
 ## Local Tooling
 
@@ -13,13 +13,23 @@ The app reads build-time config through `--dart-define`:
 
 ## Run Locally
 
-Start the backend from the repository root:
+Start the local dependencies and backend from the repository root:
 
 ```sh
-pnpm dev:api
+pnpm install
+pnpm db:generate
+docker compose up -d postgres redis
+pnpm db:deploy
+pnpm db:seed
+
+# terminal 1
+MOCK_AI=true pnpm dev:api
+
+# terminal 2
+MOCK_AI=true pnpm dev:worker
 ```
 
-Run the app from `apps/mobile`:
+Run the app from `apps/mobile` in another terminal:
 
 ```sh
 flutter run \
@@ -28,6 +38,19 @@ flutter run \
 ```
 
 For a physical Android device, replace `10.0.2.2` with the development machine LAN IP.
+
+Phase 09 local workflow:
+
+1. Sign up or sign in with an email/password account.
+2. Tap `New`.
+3. Choose book type, prompt/title, length, finish, and visuals.
+4. Create the project, then open `Create book plan`.
+5. Review the plan, answer questions, send revisions, and approve when ready.
+6. Watch `Book progress` for writing, visuals, export readiness, and recoverable failure actions.
+7. Preview generated pages as they become available.
+8. Download PDF/EPUB when the backend reports the export is ready and unlocked; use `Share` for Android's share sheet after unlock.
+
+The local backend and worker should both run with `MOCK_AI=true` for this workflow.
 
 ## Android Builds
 

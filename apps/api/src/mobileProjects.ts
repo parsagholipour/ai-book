@@ -1,4 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { readFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   CREDIT_COSTS,
@@ -30,7 +32,12 @@ import {
 import { z } from "zod";
 import { buildProjectStatus, type PipelineStep } from "./projectStatus.js";
 import type { AuthFailure } from "./mobileAuth.js";
-import { enqueueGenerationJob, type GenerationJobType } from "./queue.js";
+import {
+  enqueueGenerationJob,
+  isBullJobActive,
+  requeueGenerationJob,
+  type GenerationJobType
+} from "./queue.js";
 import {
   authenticateMobileBearer,
   sendMobileAuthFailure,
@@ -47,6 +54,12 @@ const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
 const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
 const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium"]);
 const idParamsSchema = z.object({ id: z.string().min(1) });
+const assetParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().min(1) });
+const mobileAssetFilenameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/);
+const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
+const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
+const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
+const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 
 export type MobileBookType = z.infer<typeof mobileBookTypeSchema>;
 export type MobileLengthPreset = z.infer<typeof mobileLengthPresetSchema>;
@@ -91,6 +104,7 @@ export type MobileProjectDetailDto = MobileProjectSummaryDto & {
   language: string;
   plan: MobilePlanDto | null;
   pages: MobileProjectPageDto[];
+  coverImage: MobileProjectImageDto | null;
 };
 
 export type MobileProjectCreateResponseDto = {
@@ -118,7 +132,18 @@ export type MobileProjectPageDto = {
   index: number;
   title: string;
   summary: string;
+  previewText: string;
   status: string;
+  image: MobileProjectImageDto | null;
+};
+
+export type MobileProjectImageDto = {
+  id: string;
+  role: "cover" | "page_visual";
+  url: string;
+  contentType: string;
+  altText: string;
+  pageId: string | null;
 };
 
 export type MobilePlanRevisionRequestDto = {
@@ -134,6 +159,15 @@ export type MobilePlanOperationDto = {
 };
 
 export type MobilePlanRevisionResponseDto = MobilePlanOperationDto;
+
+export type MobileProjectRecoveryDto = {
+  projectId: string;
+  status: "recovery_started";
+  currentAction: string;
+  resumedActions: number;
+  skippedActions: number;
+  stoppingActions: number;
+};
 
 export type MobileQueuedJobDto = {
   id: string;
@@ -207,6 +241,7 @@ type MobileProjectRecord = {
   currentPlanId: string | null;
   currentPlan?: MobilePlanRecord | null;
   pages?: MobilePageRecord[];
+  images?: MobileImageRecord[];
   _count?: {
     pages?: number;
     images?: number;
@@ -231,8 +266,19 @@ type MobilePageRecord = {
   id: string;
   index: number;
   title: string;
+  markdown: string;
   summary: string;
   status: string;
+  images?: MobileImageRecord[];
+};
+
+type MobileImageRecord = {
+  id: string;
+  projectId: string;
+  pageId: string | null;
+  type: string;
+  path: string;
+  metadata: unknown;
 };
 
 type ProjectStatusResult = NonNullable<Awaited<ReturnType<typeof buildProjectStatus>>>;
@@ -495,7 +541,22 @@ export const mobileProjectRoutes: FastifyPluginAsync = async (fastify) => {
         },
         include: {
           currentPlan: true,
-          pages: { orderBy: { index: "asc" }, select: { id: true, index: true, title: true, summary: true, status: true } },
+          pages: {
+            orderBy: { index: "asc" },
+            select: {
+              id: true,
+              index: true,
+              title: true,
+              markdown: true,
+              summary: true,
+              status: true,
+              images: {
+                select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true },
+                orderBy: { createdAt: "asc" }
+              }
+            }
+          },
+          images: { select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true } },
           _count: { select: { pages: true, images: true, jobs: true } }
         }
       })) as MobileProjectRecord;
@@ -517,7 +578,22 @@ export const mobileProjectRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id, userId: auth.user.id },
         include: {
           currentPlan: true,
-          pages: { orderBy: { index: "asc" }, select: { id: true, index: true, title: true, summary: true, status: true } },
+          pages: {
+            orderBy: { index: "asc" },
+            select: {
+              id: true,
+              index: true,
+              title: true,
+              markdown: true,
+              summary: true,
+              status: true,
+              images: {
+                select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true },
+                orderBy: { createdAt: "asc" }
+              }
+            }
+          },
+          images: { select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true } },
           _count: { select: { pages: true, images: true, jobs: true } }
         }
       })) as MobileProjectRecord | null;
@@ -550,6 +626,38 @@ export const mobileProjectRoutes: FastifyPluginAsync = async (fastify) => {
       }
       const exports = await serializeExportSet(id, status.project.title, appConfig, auth.user.id);
       return { status: serializeProjectStatus(status, exports) };
+    }
+  );
+
+  fastify.get(
+    "/api/mobile/projects/:id/assets/:assetId",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id, assetId } = assetParamsSchema.parse(request.params);
+      const image = await prisma.imageAsset.findFirst({
+        where: { id: assetId, projectId: id, project: { userId: auth.user.id } },
+        select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true }
+      });
+      if (!image) {
+        return sendMobileError(reply, 404, "ASSET_NOT_FOUND", "Visual not found.");
+      }
+      const filename = mobileAssetFilenameFromPath(image.path, id);
+      if (!filename) {
+        return sendMobileError(reply, 404, "ASSET_NOT_FOUND", "Visual not found.");
+      }
+
+      try {
+        const file = await readFile(join(appConfig.IMAGE_STORAGE_DIR, id, filename));
+        reply.header("Cache-Control", "private, max-age=300");
+        reply.type(imageContentType(image));
+        return file;
+      } catch {
+        return sendMobileError(reply, 404, "ASSET_NOT_FOUND", "Visual not found.");
+      }
     }
   );
 
@@ -756,6 +864,92 @@ export const mobileProjectRoutes: FastifyPluginAsync = async (fastify) => {
         }
         throw error;
       }
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/projects/:id/resume",
+    { schema: { tags: ["mobile"], response: { 202: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const project = await prisma.project.findFirst({
+        where: { id, userId: auth.user.id },
+        include: { currentPlan: true }
+      });
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+
+      const failedJobs = await prisma.generationJob.findMany({
+        where: {
+          projectId: id,
+          status: "FAILED",
+          type: { in: generationFailureJobTypes }
+        },
+        orderBy: { createdAt: "asc" }
+      });
+      const pages = await prisma.page.findMany({
+        where: { projectId: id },
+        select: { id: true }
+      });
+      const resumeContext = {
+        currentPlanId: project.currentPlanId,
+        currentPlanCreatedAt: project.currentPlan?.createdAt ?? null,
+        pageIds: new Set(pages.map((page) => page.id))
+      };
+      const recoveryCandidates = failedJobs.filter((job) =>
+        canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
+      );
+      const planningRecoveryCandidates = recoveryCandidates.filter((job) =>
+        isPlanningRecoveryJob(job.type as GenerationJobType)
+      );
+      const jobsForRecovery = planningRecoveryCandidates.length > 0 ? planningRecoveryCandidates : recoveryCandidates;
+      const jobsReadyToResume: typeof failedJobs = [];
+      let stoppingJobs = 0;
+      for (const job of jobsForRecovery) {
+        if (await isBullJobActive(job.bullJobId)) {
+          stoppingJobs += 1;
+        } else {
+          jobsReadyToResume.push(job);
+        }
+      }
+
+      if (jobsReadyToResume.length === 0) {
+        return sendMobileError(
+          reply,
+          409,
+          "RECOVERY_NOT_AVAILABLE",
+          stoppingJobs > 0
+            ? "Generation is still winding down. Try again in a moment."
+            : "There is nothing ready to retry for this book."
+        );
+      }
+
+      const nextStatus = jobsReadyToResume.every((job) => isPlanningRecoveryJob(job.type as GenerationJobType))
+        ? "PLANNING"
+        : "GENERATING";
+      await prisma.project.update({ where: { id }, data: { status: nextStatus } });
+      for (const job of jobsReadyToResume) {
+        await requeueGenerationJob({
+          id: job.id,
+          projectId: job.projectId,
+          type: job.type as GenerationJobType,
+          payload: recoveryPayload(job.type as GenerationJobType, job.payload, project.currentPlanId)
+        });
+      }
+
+      return reply.code(202).send({
+        projectId: id,
+        status: "recovery_started",
+        currentAction: nextStatus === "PLANNING" ? "Retrying your book plan." : "Picking up your book generation.",
+        resumedActions: jobsReadyToResume.length,
+        skippedActions: failedJobs.length - jobsForRecovery.length,
+        stoppingActions: stoppingJobs
+      } satisfies MobileProjectRecoveryDto);
     }
   );
 
@@ -994,6 +1188,7 @@ async function serializeProjectDetail(
   userId: string
 ): Promise<MobileProjectDetailDto> {
   const summary = await serializeProjectSummary(project, appConfig, userId);
+  const coverImage = project.images?.find((image) => image.type === "COVER") ?? null;
   return {
     ...summary,
     prompt: project.prompt,
@@ -1004,8 +1199,29 @@ async function serializeProjectDetail(
       index: page.index,
       title: page.title,
       summary: page.summary,
-      status: page.status.toLowerCase()
-    }))
+      previewText: generatedPagePreview(page.markdown, page.summary),
+      status: page.status.toLowerCase(),
+      image: serializeImage(page.images?.[0] ?? null, "page_visual", `Visual for ${page.title}`)
+    })),
+    coverImage: serializeImage(coverImage, "cover", `Cover for ${project.title}`)
+  };
+}
+
+function serializeImage(
+  image: MobileImageRecord | null,
+  role: MobileProjectImageDto["role"],
+  altText: string
+): MobileProjectImageDto | null {
+  if (!image) {
+    return null;
+  }
+  return {
+    id: image.id,
+    role,
+    url: `/api/mobile/projects/${encodeURIComponent(image.projectId)}/assets/${encodeURIComponent(image.id)}`,
+    contentType: imageContentType(image),
+    altText,
+    pageId: image.pageId
   };
 }
 
@@ -1373,13 +1589,148 @@ function normalizeJobStatus(status: string): MobileQueuedJobDto["status"] {
 }
 
 function previewText(value: string): string {
+  return clipText(value, 180);
+}
+
+function generatedPagePreview(markdown: string, summary: string): string {
+  const plain = markdownPlainText(markdown);
+  return clipText(plain || summary, 900);
+}
+
+function markdownPlainText(markdown: string): string {
+  return markdown
+    .replace(/!\[[^\]]*]\([^)]+\)/g, "")
+    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
+    .replace(/[`*_>#-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function clipText(value: string, maxLength: number): string {
   const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= 180) {
+  if (normalized.length <= maxLength) {
     return normalized;
   }
-  const clipped = normalized.slice(0, 180);
+  const clipped = normalized.slice(0, maxLength);
   const lastSpace = clipped.lastIndexOf(" ");
-  return `${clipped.slice(0, lastSpace > 120 ? lastSpace : 180).trim()}...`;
+  const minBreak = Math.floor(maxLength * 0.65);
+  return `${clipped.slice(0, lastSpace > minBreak ? lastSpace : maxLength).trim()}...`;
+}
+
+function imageContentType(image: { path: string; metadata: unknown }): string {
+  const mimeType = stringField(jsonRecord(image.metadata), "mimeType");
+  if (mimeType?.startsWith("image/")) {
+    return mimeType;
+  }
+  return (
+    {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".webp": "image/webp",
+      ".gif": "image/gif"
+    } satisfies Record<string, string>
+  )[extname(image.path).toLowerCase()] ?? "application/octet-stream";
+}
+
+function mobileAssetFilenameFromPath(path: string, projectId: string): string | null {
+  let pathname = path;
+  try {
+    pathname = new URL(path).pathname;
+  } catch {
+    // Relative asset paths are supported below.
+  }
+  const prefix = `/assets/images/${projectId}/`;
+  const index = pathname.indexOf(prefix);
+  if (index === -1) {
+    return null;
+  }
+  const filename = decodeURIComponent(pathname.slice(index + prefix.length));
+  return mobileAssetFilenameSchema.safeParse(filename).success ? filename : null;
+}
+
+function canRecoverGenerationJob(
+  type: GenerationJobType,
+  payload: unknown,
+  context: { currentPlanId: string | null; currentPlanCreatedAt: Date | null; pageIds: Set<string> },
+  jobCreatedAt: Date
+): boolean {
+  const payloadRecord = jsonRecord(payload);
+
+  if (type === "PLAN_BOOK") {
+    return !context.currentPlanCreatedAt || jobCreatedAt > context.currentPlanCreatedAt;
+  }
+
+  if (type === "REVISE_PLAN") {
+    return (
+      typeof payloadRecord.planId === "string" &&
+      payloadRecord.planId === context.currentPlanId &&
+      typeof payloadRecord.message === "string" &&
+      payloadRecord.message.trim().length > 0
+    );
+  }
+
+  if (!context.currentPlanId) {
+    return false;
+  }
+
+  const planId = payloadPlanId(payloadRecord);
+  if (planId && planId !== context.currentPlanId) {
+    return false;
+  }
+
+  if (type === "GENERATE_BOOK") {
+    return planId === context.currentPlanId;
+  }
+
+  if (type === "GENERATE_PAGE") {
+    return isCurrentPagePayload(payloadRecord, context);
+  }
+
+  if (type === "GENERATE_IMAGE") {
+    return (
+      isCurrentCoverPayload(payloadRecord, context) ||
+      (isCurrentPagePayload(payloadRecord, context) && typeof payloadRecord.prompt === "string")
+    );
+  }
+
+  return type === "COMPILE_EXPORT";
+}
+
+function isPlanningRecoveryJob(type: GenerationJobType): boolean {
+  return type === "PLAN_BOOK" || type === "REVISE_PLAN";
+}
+
+function recoveryPayload(
+  type: GenerationJobType,
+  payload: unknown,
+  currentPlanId: string | null
+): Record<string, unknown> {
+  if (isPlanningRecoveryJob(type) || !currentPlanId) {
+    return jsonRecord(payload);
+  }
+  return {
+    ...jsonRecord(payload),
+    planId: currentPlanId
+  };
+}
+
+function payloadPlanId(payload: Record<string, unknown>): string | null {
+  return typeof payload.planId === "string" ? payload.planId : null;
+}
+
+function isCurrentPagePayload(
+  payload: Record<string, unknown>,
+  context: { pageIds: Set<string> }
+): boolean {
+  return typeof payload.pageId === "string" && context.pageIds.has(payload.pageId);
+}
+
+function isCurrentCoverPayload(
+  payload: Record<string, unknown>,
+  context: { currentPlanId: string | null }
+): boolean {
+  return payload.assetType === "COVER" && payloadPlanId(payload) === context.currentPlanId;
 }
 
 function deriveTitle(prompt: string): string {

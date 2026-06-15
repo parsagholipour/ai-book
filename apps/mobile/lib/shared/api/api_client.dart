@@ -38,12 +38,41 @@ class ApiClient {
     return _request('GET', path, requiresAuth: requiresAuth);
   }
 
+  Future<Map<String, String>> authHeaders() async {
+    final accessToken = await _validAccessToken();
+    return {'Authorization': 'Bearer $accessToken'};
+  }
+
   Future<Response<dynamic>> postJson(
     String path, {
     Object? data,
     bool requiresAuth = true,
   }) {
     return _request('POST', path, data: data, requiresAuth: requiresAuth);
+  }
+
+  Future<void> downloadFile(String path, String savePath) async {
+    final accessToken = await _validAccessToken();
+    try {
+      await dio.download(
+        path,
+        savePath,
+        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+      );
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 401) {
+        final tokens = await refreshTokens();
+        await dio.download(
+          path,
+          savePath,
+          options: Options(
+            headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
+          ),
+        );
+        return;
+      }
+      throw _mapDioException(error);
+    }
   }
 
   Future<MobileSessionTokens> refreshTokens() async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
@@ -175,7 +176,7 @@ class _NewBookPlaceholder extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Book setup is not available in this build.',
+                    'Create a guided outline for an ebook, workbook, or story.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colors.onPrimaryContainer,
                     ),
@@ -185,13 +186,7 @@ class _NewBookPlaceholder extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             FilledButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('New book setup is not available yet.'),
-                  ),
-                );
-              },
+              onPressed: () => context.go('/books/new'),
               icon: const Icon(Icons.add),
               label: const Text('New'),
             ),
@@ -239,90 +234,93 @@ class ProjectCard extends StatelessWidget {
     final progress = (project.progressPercent / 100).clamp(0.0, 1.0);
 
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: colors.secondaryContainer,
-                    borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => context.go('/projects/${project.id}'),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: colors.secondaryContainer,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.menu_book_outlined,
+                      color: colors.onSecondaryContainer,
+                    ),
                   ),
-                  child: Icon(
-                    Icons.menu_book_outlined,
-                    color: colors.onSecondaryContainer,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        project.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${project.bookTypeLabel} · ${project.targetPages} pages',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          project.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          '${project.bookTypeLabel} · ${project.targetPages} pages',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            LinearProgressIndicator(value: progress),
-            const SizedBox(height: 10),
-            Text(
-              project.statusLabel,
-              style: Theme.of(
-                context,
-              ).textTheme.labelLarge?.copyWith(color: colors.primary),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              project.currentAction,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              project.promptPreview,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _MetricChip(
-                  label: 'Pages',
-                  value: '${project.pageCount}/${project.targetPages}',
-                ),
-                _MetricChip(label: 'Visuals', value: '${project.imageCount}'),
-                _MetricChip(
-                  label: 'Exports',
-                  value: project.hasReadyExport ? 'Ready' : 'Pending',
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 14),
+              LinearProgressIndicator(value: progress),
+              const SizedBox(height: 10),
+              Text(
+                project.statusLabel,
+                style: Theme.of(
+                  context,
+                ).textTheme.labelLarge?.copyWith(color: colors.primary),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                project.currentAction,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                project.promptPreview,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _MetricChip(
+                    label: 'Pages',
+                    value: '${project.pageCount}/${project.targetPages}',
+                  ),
+                  _MetricChip(label: 'Visuals', value: '${project.imageCount}'),
+                  _MetricChip(
+                    label: 'Exports',
+                    value: project.hasReadyExport ? 'Ready' : 'Pending',
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

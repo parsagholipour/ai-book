@@ -28,7 +28,7 @@ void main() {
   });
 
   testWidgets(
-    'authenticated users land on projects home with placeholder action',
+    'authenticated users land on projects home and can open the book wizard',
     (tester) async {
       await tester.pumpWidget(
         testApp(
@@ -46,9 +46,10 @@ void main() {
       expect(find.text('Create your account'), findsNothing);
 
       await tester.tap(find.widgetWithText(FilledButton, 'New'));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
-      expect(find.text('New book setup is not available yet.'), findsOneWidget);
+      expect(find.text('New book'), findsOneWidget);
+      expect(find.text('Choose a book type'), findsOneWidget);
     },
   );
 }
@@ -106,13 +107,97 @@ class FakeAuthRepository implements AuthRepository {
 }
 
 class FakeProjectsRepository implements ProjectsRepository {
-  FakeProjectsRepository({List<MobileProjectSummary>? projects})
-    : _projects = projects ?? [];
+  FakeProjectsRepository({
+    List<MobileProjectSummary>? projects,
+    this.projectDetail,
+  }) : _projects = projects ?? [];
 
   final List<MobileProjectSummary> _projects;
+  final MobileProjectDetail? projectDetail;
+
+  MobileProjectCreateRequest? lastCreateRequest;
 
   @override
   Future<List<MobileProjectSummary>> listProjects() async => _projects;
+
+  @override
+  Future<MobileProjectDetail> createProject(
+    MobileProjectCreateRequest request,
+  ) async {
+    lastCreateRequest = request;
+    return projectDetail ?? fakeProjectDetail();
+  }
+
+  @override
+  Future<Map<String, String>> assetHeaders() async {
+    return const {};
+  }
+
+  @override
+  Future<ProjectExportFile> downloadExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {
+    return ProjectExportFile(
+      format: export.format,
+      filename: export.filename,
+      path: '/tmp/${export.filename}',
+    );
+  }
+
+  @override
+  Future<MobileProjectDetail> getProject(String id) async {
+    return projectDetail ?? fakeProjectDetail(id: id);
+  }
+
+  @override
+  Future<MobileProjectStatus> getProjectStatus(String id) async {
+    return fakeProjectStatus(projectId: id);
+  }
+
+  @override
+  Future<MobilePlanOperation> generatePlan(String projectId) async {
+    return fakePlanOperation(projectId: projectId, status: 'planning_queued');
+  }
+
+  @override
+  Future<MobilePlanOperation> revisePlan({
+    required String planId,
+    required String message,
+  }) async {
+    return fakePlanOperation(
+      projectId: projectDetail?.id ?? 'project-1',
+      planId: planId,
+      status: 'revision_queued',
+    );
+  }
+
+  @override
+  Future<MobilePlanOperation> approvePlan(String planId) async {
+    return fakePlanOperation(
+      projectId: projectDetail?.id ?? 'project-1',
+      planId: planId,
+      status: 'generation_queued',
+    );
+  }
+
+  @override
+  Future<MobileProjectRecovery> resumeProject(String id) async {
+    return MobileProjectRecovery(
+      projectId: id,
+      status: 'recovery_started',
+      currentAction: 'Retrying generation.',
+      resumedActions: 1,
+      skippedActions: 0,
+      stoppingActions: 0,
+    );
+  }
+
+  @override
+  Future<void> shareExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {}
 }
 
 class FakeBillingRepository implements BillingRepository {
@@ -186,6 +271,70 @@ MobileProjectSummary fakeProject() {
       ),
     ),
     createdAt: DateTime.utc(2026, 6, 1),
+    updatedAt: DateTime.utc(2026, 6, 1),
+  );
+}
+
+MobileProjectDetail fakeProjectDetail({String id = 'project-1'}) {
+  final summary = fakeProject();
+  return MobileProjectDetail(
+    id: id,
+    title: summary.title,
+    subtitle: summary.subtitle,
+    authorName: summary.authorName,
+    bookType: summary.bookType,
+    lengthPreset: summary.lengthPreset,
+    qualityPreset: summary.qualityPreset,
+    imagesEnabled: summary.imagesEnabled,
+    status: summary.status,
+    statusLabel: summary.statusLabel,
+    progressPercent: summary.progressPercent,
+    currentAction: summary.currentAction,
+    promptPreview: summary.promptPreview,
+    targetPages: summary.targetPages,
+    pageCount: summary.pageCount,
+    imageCount: summary.imageCount,
+    hasPlan: summary.hasPlan,
+    exports: summary.exports,
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt,
+    prompt:
+        'Create a workbook for independent teachers building a simple audience funnel.',
+    language: 'en',
+    pages: const [],
+  );
+}
+
+MobilePlanOperation fakePlanOperation({
+  required String projectId,
+  required String status,
+  String? planId,
+}) {
+  return MobilePlanOperation(
+    projectId: projectId,
+    planId: planId,
+    status: status,
+    currentAction: 'Working on your book plan.',
+    job: const MobileQueuedJob(
+      id: 'job-1',
+      status: 'queued',
+      currentAction: 'Working on your book plan.',
+    ),
+  );
+}
+
+MobileProjectStatus fakeProjectStatus({required String projectId}) {
+  return MobileProjectStatus(
+    projectId: projectId,
+    status: 'draft',
+    statusLabel: 'Draft saved',
+    progressPercent: 0,
+    currentAction: 'Ready to create a book plan.',
+    retryAvailable: false,
+    steps: const [],
+    pageProgress: const MobilePageProgress(completed: 0, target: 28),
+    imageCount: 0,
+    exports: fakeProject().exports,
     updatedAt: DateTime.utc(2026, 6, 1),
   );
 }
