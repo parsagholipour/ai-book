@@ -51,6 +51,10 @@ const envSchema = z.object({
   API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_URL: z.string().url().default("http://localhost:4001"),
+  GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
+  GOOGLE_PLAY_ACCESS_TOKEN: z.string().optional(),
+  GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  GOOGLE_PLAY_SERVICE_ACCOUNT_FILE: z.string().optional(),
   WEB_PORT: z.coerce.number().int().positive().default(5173),
   WEB_PASSWORD: z
     .string()

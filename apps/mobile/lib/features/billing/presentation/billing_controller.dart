@@ -1,0 +1,343 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../shared/api/api_error.dart';
+import '../data/billing_repository.dart';
+import '../data/google_play_billing_client.dart';
+import '../domain/billing_models.dart';
+
+class BillingPurchaseState {
+  const BillingPurchaseState({
+    this.billing,
+    this.storeProducts = const {},
+    this.missingProductIds = const [],
+    this.pendingProductIds = const {},
+    this.loading = true,
+    this.storeAvailable = false,
+    this.restoring = false,
+    this.message,
+    this.error,
+  });
+
+  final MobileBilling? billing;
+  final Map<String, StoreProduct> storeProducts;
+  final List<String> missingProductIds;
+  final Set<String> pendingProductIds;
+  final bool loading;
+  final bool storeAvailable;
+  final bool restoring;
+  final String? message;
+  final String? error;
+
+  BillingPurchaseState copyWith({
+    MobileBilling? billing,
+    Map<String, StoreProduct>? storeProducts,
+    List<String>? missingProductIds,
+    Set<String>? pendingProductIds,
+    bool? loading,
+    bool? storeAvailable,
+    bool? restoring,
+    String? message,
+    String? error,
+    bool clearMessage = false,
+    bool clearError = false,
+  }) {
+    return BillingPurchaseState(
+      billing: billing ?? this.billing,
+      storeProducts: storeProducts ?? this.storeProducts,
+      missingProductIds: missingProductIds ?? this.missingProductIds,
+      pendingProductIds: pendingProductIds ?? this.pendingProductIds,
+      loading: loading ?? this.loading,
+      storeAvailable: storeAvailable ?? this.storeAvailable,
+      restoring: restoring ?? this.restoring,
+      message: clearMessage ? null : message ?? this.message,
+      error: clearError ? null : error ?? this.error,
+    );
+  }
+}
+
+class BillingController extends ChangeNotifier {
+  BillingController({
+    required this._billingRepository,
+    required this._storeClient,
+    required this._onBillingChanged,
+    this.projectId,
+  }) {
+    _subscription = _storeClient.purchaseUpdates.listen(_handlePurchases);
+    unawaited(load());
+  }
+
+  final BillingRepository _billingRepository;
+  final StoreBillingClient _storeClient;
+  final VoidCallback _onBillingChanged;
+  final String? projectId;
+  late final StreamSubscription<List<StorePurchaseUpdate>> _subscription;
+
+  BillingPurchaseState _state = const BillingPurchaseState();
+
+  BillingPurchaseState get state => _state;
+
+  List<MobileBillingProduct> get products {
+    final billing = _state.billing;
+    if (billing == null) {
+      return const [];
+    }
+    final copy = [...billing.products];
+    copy.sort((left, right) {
+      int rank(MobileBillingProduct product) {
+        return switch (product.sku) {
+          'tomeza.one_book_export' => 0,
+          'tomeza.creator_monthly' => 1,
+          'tomeza.pro_monthly' => 2,
+          'tomeza.credit_pack_1' => 3,
+          'tomeza.credit_pack_2' => 4,
+          _ => 5,
+        };
+      }
+
+      return rank(left).compareTo(rank(right));
+    });
+    return copy;
+  }
+
+  Future<void> load() async {
+    _setState(
+      _state.copyWith(loading: true, clearError: true, clearMessage: true),
+    );
+    try {
+      final billing = await _billingRepository.getBilling();
+      final storeAvailable = await _storeClient.isAvailable();
+      StoreProductQueryResult query = const StoreProductQueryResult(
+        products: [],
+        notFoundIds: [],
+      );
+      if (storeAvailable && billing.products.isNotEmpty) {
+        query = await _storeClient.queryProducts(
+          billing.products.map((product) => product.sku).toSet(),
+        );
+      }
+      _setState(
+        _state.copyWith(
+          billing: billing,
+          loading: false,
+          storeAvailable: storeAvailable,
+          storeProducts: {
+            for (final product in query.products) product.id: product,
+          },
+          missingProductIds: query.notFoundIds,
+        ),
+      );
+    } catch (error) {
+      _setState(_state.copyWith(loading: false, error: userFacingError(error)));
+    }
+  }
+
+  Future<void> buy(MobileBillingProduct product) async {
+    final storeProduct = _state.storeProducts[product.sku];
+    if (!_state.storeAvailable || storeProduct == null) {
+      _setState(
+        _state.copyWith(
+          error: 'This item is not available from Google Play yet.',
+        ),
+      );
+      return;
+    }
+    _setState(
+      _state.copyWith(
+        pendingProductIds: {..._state.pendingProductIds, product.sku},
+        message: 'Opening Google Play checkout.',
+        clearError: true,
+      ),
+    );
+    try {
+      await _storeClient.buyProduct(
+        storeProduct,
+        consumable: product.isConsumable,
+      );
+    } catch (error) {
+      final nextPending = {..._state.pendingProductIds}..remove(product.sku);
+      _setState(
+        _state.copyWith(
+          pendingProductIds: nextPending,
+          error: userFacingError(error),
+        ),
+      );
+    }
+  }
+
+  Future<void> restore() async {
+    _setState(
+      _state.copyWith(
+        restoring: true,
+        message: 'Checking Google Play purchases.',
+        clearError: true,
+      ),
+    );
+    try {
+      await _storeClient.restorePurchases();
+      _setState(
+        _state.copyWith(
+          restoring: false,
+          message:
+              'Restore started. Purchases will appear as Google Play returns them.',
+        ),
+      );
+    } catch (error) {
+      _setState(
+        _state.copyWith(restoring: false, error: userFacingError(error)),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_subscription.cancel());
+    super.dispose();
+  }
+
+  Future<void> _handlePurchases(List<StorePurchaseUpdate> purchases) async {
+    for (final purchase in purchases) {
+      await _handlePurchase(purchase);
+    }
+  }
+
+  Future<void> _handlePurchase(StorePurchaseUpdate purchase) async {
+    final product = _state.billing?.products
+        .where((item) => item.sku == purchase.productId)
+        .firstOrNull;
+    switch (purchase.status) {
+      case StorePurchaseStatus.pending:
+        _setState(
+          _state.copyWith(
+            pendingProductIds: {
+              ..._state.pendingProductIds,
+              purchase.productId,
+            },
+            message:
+                'Payment is pending. Credits unlock after Google Play confirms payment.',
+            clearError: true,
+          ),
+        );
+        return;
+      case StorePurchaseStatus.canceled:
+        final nextPending = {..._state.pendingProductIds}
+          ..remove(purchase.productId);
+        _setState(
+          _state.copyWith(
+            pendingProductIds: nextPending,
+            message: 'Purchase canceled.',
+          ),
+        );
+        return;
+      case StorePurchaseStatus.error:
+        final nextPending = {..._state.pendingProductIds}
+          ..remove(purchase.productId);
+        _setState(
+          _state.copyWith(
+            pendingProductIds: nextPending,
+            error:
+                purchase.errorMessage ??
+                'Google Play could not complete this purchase.',
+          ),
+        );
+        return;
+      case StorePurchaseStatus.purchased:
+      case StorePurchaseStatus.restored:
+        if (product == null) {
+          _setState(
+            _state.copyWith(
+              error: 'This Google Play product is not configured.',
+            ),
+          );
+          return;
+        }
+        if (purchase.purchaseToken.trim().isEmpty) {
+          _setState(
+            _state.copyWith(
+              error: 'Google Play did not return a purchase token.',
+            ),
+          );
+          return;
+        }
+        _setState(
+          _state.copyWith(
+            pendingProductIds: {
+              ..._state.pendingProductIds,
+              purchase.productId,
+            },
+            message: purchase.status == StorePurchaseStatus.restored
+                ? 'Restoring purchase with the backend.'
+                : 'Verifying purchase with the backend.',
+            clearError: true,
+          ),
+        );
+        try {
+          final result = await _billingRepository.verifyGooglePlayPurchase(
+            productId: purchase.productId,
+            purchaseToken: purchase.purchaseToken,
+            transactionId: purchase.purchaseId,
+            purchaseStatus: purchase.status == StorePurchaseStatus.restored
+                ? 'restored'
+                : 'purchased',
+            projectId: projectId,
+          );
+          await _storeClient.finishPurchase(
+            purchase,
+            consumable: product.isConsumable,
+          );
+          final nextPending = {..._state.pendingProductIds}
+            ..remove(purchase.productId);
+          _setState(
+            _state.copyWith(
+              billing: result.billing,
+              pendingProductIds: nextPending,
+              message: _successMessage(result),
+              clearError: true,
+            ),
+          );
+          _onBillingChanged();
+        } catch (error) {
+          final nextPending = {..._state.pendingProductIds}
+            ..remove(purchase.productId);
+          _setState(
+            _state.copyWith(
+              pendingProductIds: nextPending,
+              error: userFacingError(error),
+            ),
+          );
+        }
+    }
+  }
+
+  String _successMessage(GooglePlayVerificationResult result) {
+    if (result.purchase.subscriptionStatus != null) {
+      return 'Subscription verified. Your monthly credits are available.';
+    }
+    if (result.purchase.creditsGranted > 0) {
+      return '${result.purchase.creditsGranted} credits added.';
+    }
+    if (result.purchase.status == 'pending') {
+      return 'Payment is pending. Credits unlock after Google Play confirms payment.';
+    }
+    return 'Purchase verified.';
+  }
+
+  void _setState(BillingPurchaseState value) {
+    _state = value;
+    notifyListeners();
+  }
+}
+
+final billingControllerProvider = Provider.autoDispose
+    .family<BillingController, String?>((ref, projectId) {
+      final controller = BillingController(
+        billingRepository: ref.watch(billingRepositoryProvider),
+        storeClient: ref.watch(storeBillingClientProvider),
+        projectId: projectId,
+        onBillingChanged: () => ref.invalidate(billingProvider),
+      );
+      ref.onDispose(controller.dispose);
+      return controller;
+    });

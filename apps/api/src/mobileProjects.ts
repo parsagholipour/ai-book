@@ -25,6 +25,7 @@ import {
   grantProjectEntitlement,
   hasActiveProjectEntitlement,
   listActiveUserEntitlements,
+  recordVerifiedGooglePlayPurchase,
   refundCreditLedgerEntry,
   reserveCredits,
   type CreditLedgerEntryRecord
@@ -49,6 +50,12 @@ import {
   sendProjectPdfExport,
   type ProjectExportFormat
 } from "./routes/projects.js";
+import {
+  GooglePlayBillingConfigError,
+  GooglePlayVerificationError,
+  createGooglePlayVerifierFromConfig,
+  type GooglePlayVerifier
+} from "./googlePlayBilling.js";
 
 const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
 const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
@@ -312,6 +319,17 @@ export type MobileBillingDto = {
   }>;
 };
 
+export type MobileGooglePlayVerificationResponseDto = {
+  purchase: {
+    id: string;
+    status: string;
+    creditsGranted: number;
+    subscriptionStatus: string | null;
+    entitlementType: string | null;
+  };
+  billing: MobileBillingDto;
+};
+
 const mobileProjectCreateBodySchema = z
   .object({
     bookType: mobileBookTypeSchema,
@@ -332,6 +350,15 @@ const mobilePlanRevisionBodySchema = z
   .strict();
 
 const emptyMobilePlanBodySchema = z.object({}).strict().default({});
+const mobileGooglePlayVerificationBodySchema = z
+  .object({
+    productId: z.string().trim().min(3).max(160),
+    purchaseToken: z.string().trim().min(8).max(8000),
+    transactionId: z.string().trim().min(1).max(240).optional(),
+    purchaseStatus: z.enum(["purchased", "restored"]).optional(),
+    projectId: z.string().trim().min(1).max(160).optional()
+  })
+  .strict();
 
 const MOBILE_BOOK_TYPE_SETTINGS: Record<
   MobileBookType,
@@ -447,10 +474,15 @@ const mobilePlanRevisionOpenApiBody = {
   required: ["message"]
 } as const;
 
-export const mobileProjectRoutes: FastifyPluginAsync = async (fastify) => {
+export type MobileProjectRoutesOptions = {
+  googlePlayVerifier?: GooglePlayVerifier | undefined;
+};
+
+export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions> = async (fastify, options) => {
   await ensureSeedTemplates();
   await ensureDefaultProductCatalog();
   const appConfig = loadConfig();
+  const googlePlayVerifier = options.googlePlayVerifier ?? createGooglePlayVerifierFromConfig(appConfig);
 
   fastify.get(
     "/api/mobile/me",
@@ -473,6 +505,95 @@ export const mobileProjectRoutes: FastifyPluginAsync = async (fastify) => {
         return;
       }
       return { billing: await serializeMobileBilling(auth.user.id) };
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/billing/google-play/verify",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            productId: { type: "string", minLength: 3, maxLength: 160 },
+            purchaseToken: { type: "string", minLength: 8, maxLength: 8000 },
+            transactionId: { type: "string", minLength: 1, maxLength: 240 },
+            purchaseStatus: { type: "string", enum: ["purchased", "restored"] },
+            projectId: { type: "string", minLength: 1, maxLength: 160 }
+          },
+          required: ["productId", "purchaseToken"]
+        },
+        response: { 401: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const parsed = mobileGooglePlayVerificationBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the Google Play product and purchase token.");
+      }
+      const product = await prisma.productCatalog.findUnique({
+        where: { sku: parsed.data.productId },
+        select: { sku: true, productType: true, active: true }
+      });
+      if (!product || !product.active) {
+        return sendMobileError(reply, 400, "UNKNOWN_BILLING_PRODUCT", "This purchase is not available.");
+      }
+
+      try {
+        const verification = await googlePlayVerifier.verifyPurchase({
+          packageName: appConfig.GOOGLE_PLAY_PACKAGE_NAME ?? "",
+          productId: product.sku,
+          productType: product.productType,
+          purchaseToken: parsed.data.purchaseToken
+        });
+        const purchase = await recordVerifiedGooglePlayPurchase({
+          userId: auth.user.id,
+          verification: {
+            ...verification,
+            metadata: {
+              ...(verification.metadata ?? {}),
+              clientTransactionId: parsed.data.transactionId ?? null,
+              clientPurchaseStatus: parsed.data.purchaseStatus ?? null,
+              projectId: parsed.data.projectId ?? null
+            }
+          }
+        });
+        return {
+          purchase: {
+            id: purchase.purchaseRecordId,
+            status: purchase.status.toLowerCase(),
+            creditsGranted: purchase.creditsGranted,
+            subscriptionStatus: purchase.subscriptionStatus?.toLowerCase() ?? null,
+            entitlementType: purchase.entitlementType
+          },
+          billing: await serializeMobileBilling(auth.user.id)
+        } satisfies MobileGooglePlayVerificationResponseDto;
+      } catch (error) {
+        if (error instanceof GooglePlayBillingConfigError) {
+          return sendMobileError(
+            reply,
+            503,
+            error.code,
+            "Google Play Billing is not configured on this backend yet."
+          );
+        }
+        if (error instanceof GooglePlayVerificationError) {
+          return sendMobileError(
+            reply,
+            502,
+            error.code,
+            "Google Play could not verify this purchase. Try restoring purchases in a moment."
+          );
+        }
+        throw error;
+      }
     }
   );
 

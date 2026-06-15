@@ -7,6 +7,7 @@ import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
@@ -51,7 +52,15 @@ class ProjectsHomeScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 18),
             billing.when(
-              data: (value) => CreditsPanel(billing: value),
+              data: (value) => CreditsPanel(
+                billing: value,
+                onAddCredits: () => showBillingPaywall(
+                  context,
+                  title: 'Add book credits',
+                  message:
+                      'Credits unlock full book writing packages, export downloads, visuals, and extra polish.',
+                ),
+              ),
               loading: () => const AppLoadingState(message: 'Loading credits'),
               error: (error, stackTrace) => AppErrorState(
                 title: 'Credits unavailable',
@@ -88,9 +97,10 @@ class ProjectsHomeScreen extends ConsumerWidget {
 }
 
 class CreditsPanel extends StatelessWidget {
-  const CreditsPanel({required this.billing, super.key});
+  const CreditsPanel({required this.billing, this.onAddCredits, super.key});
 
   final MobileBilling billing;
+  final VoidCallback? onAddCredits;
 
   @override
   Widget build(BuildContext context) {
@@ -141,6 +151,12 @@ class CreditsPanel extends StatelessWidget {
                   value: '${billing.activeExportUnlockCount}',
                 ),
               ],
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onAddCredits,
+              icon: const Icon(Icons.add_card_outlined),
+              label: const Text('Get credits'),
             ),
           ],
         ),

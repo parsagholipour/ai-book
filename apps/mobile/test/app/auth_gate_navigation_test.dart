@@ -208,6 +208,24 @@ class FakeBillingRepository implements BillingRepository {
 
   @override
   Future<MobileBilling> getBilling() async => _billing;
+
+  @override
+  Future<GooglePlayVerificationResult> verifyGooglePlayPurchase({
+    required String productId,
+    required String purchaseToken,
+    String? transactionId,
+    String? purchaseStatus,
+    String? projectId,
+  }) async {
+    return GooglePlayVerificationResult(
+      purchase: const VerifiedPurchase(
+        id: 'purchase-1',
+        status: 'granted',
+        creditsGranted: 1000,
+      ),
+      billing: _billing,
+    );
+  }
 }
 
 AuthSession fakeSession({

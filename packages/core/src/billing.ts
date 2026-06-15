@@ -43,6 +43,15 @@ export const DEFAULT_BILLING_PRODUCTS = [
     currency: "USD"
   },
   {
+    sku: "tomeza.pro_monthly",
+    title: "Pro monthly",
+    description: "Monthly pro plan with six standard export credits for busier creators.",
+    productType: "SUBSCRIPTION",
+    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 6,
+    priceMicros: 39_990_000,
+    currency: "USD"
+  },
+  {
     sku: "tomeza.credit_pack_1",
     title: "One extra credit",
     description: "One extra standard export credit.",

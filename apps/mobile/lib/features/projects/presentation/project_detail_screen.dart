@@ -8,6 +8,7 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
@@ -148,6 +149,20 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           entitlement.projectId == project.id,
     );
     if (!mounted) {
+      return;
+    }
+    if (billing.credits.available < estimate) {
+      await showBillingPaywall(
+        context,
+        projectId: project.id,
+        title: 'Credits needed',
+        message:
+            'This ${project.lengthPresetLabel.toLowerCase()} ${project.bookTypeLabel.toLowerCase()} needs about $estimate credits to write, prepare visuals, and unlock export. You have ${billing.credits.available}.',
+      );
+      ref.invalidate(billingProvider);
+      if (!mounted) {
+        return;
+      }
       return;
     }
     final approved = await showDialog<bool>(

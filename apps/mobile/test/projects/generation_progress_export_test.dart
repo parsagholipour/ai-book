@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/generation_progress_screen.dart';
 
@@ -28,6 +29,7 @@ void main() {
             },
             onDownload: (_) async {},
             onShare: (_) async {},
+            onOpenPaywall: (_) async {},
           ),
         ),
       ),
@@ -51,6 +53,7 @@ void main() {
   testWidgets('export panel shows locked and unlocked states', (tester) async {
     final downloadedFormats = <String>[];
     final sharedFormats = <String>[];
+    final paywalledFormats = <String>[];
 
     await tester.pumpWidget(
       MaterialApp(
@@ -62,12 +65,16 @@ void main() {
               epubUnlocked: true,
               epubAvailable: true,
             ),
+            billing: fakeBilling(availableCredits: 200),
             downloadedFiles: const {},
             onDownload: (export) async {
               downloadedFormats.add(export.format);
             },
             onShare: (export) async {
               sharedFormats.add(export.format);
+            },
+            onOpenPaywall: (export) async {
+              paywalledFormats.add(export.format);
             },
           ),
         ),
@@ -91,7 +98,61 @@ void main() {
 
     expect(downloadedFormats, ['pdf']);
     expect(sharedFormats, ['epub']);
+    expect(paywalledFormats, isEmpty);
   });
+
+  testWidgets('export panel opens paywall when credits are short', (
+    tester,
+  ) async {
+    final paywalledFormats = <String>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProjectExportPanel(
+            exports: fakeExports(
+              pdfUnlocked: false,
+              pdfAvailable: true,
+              epubUnlocked: false,
+              epubAvailable: true,
+            ),
+            billing: fakeBilling(availableCredits: 25),
+            downloadedFiles: const {},
+            onDownload: (_) async {},
+            onShare: (_) async {},
+            onOpenPaywall: (export) async {
+              paywalledFormats.add(export.format);
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Get credits'), findsNWidgets(2));
+    expect(
+      find.text('Ready after export unlock. You need 150 credits and have 25.'),
+      findsNWidgets(2),
+    );
+
+    await tester.tap(find.text('Get credits').first);
+    await tester.pump();
+
+    expect(paywalledFormats, ['pdf']);
+  });
+}
+
+MobileBilling fakeBilling({int availableCredits = 1000}) {
+  return MobileBilling(
+    credits: CreditBalance(
+      available: availableCredits,
+      reserved: 0,
+      lifetimeGranted: availableCredits,
+      lifetimeSpent: 0,
+    ),
+    entitlements: const [],
+    products: const [],
+    creditCosts: const {'exportUnlock': 150},
+  );
 }
 
 MobileProjectStatus fakeStatus({

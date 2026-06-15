@@ -7,6 +7,8 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../billing/domain/billing_models.dart';
+import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
@@ -49,6 +51,7 @@ class _GenerationProgressScreenState
   Widget build(BuildContext context) {
     final statusValue = ref.watch(projectStatusProvider(widget.projectId));
     final projectValue = ref.watch(projectDetailProvider(widget.projectId));
+    final billingValue = ref.watch(billingProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -65,6 +68,7 @@ class _GenerationProgressScreenState
         data: (status) => ProjectGenerationView(
           status: status,
           project: projectValue.asData?.value,
+          billing: billingValue.asData?.value,
           initialMessage: widget.initialMessage,
           busyAction: _busyAction,
           downloadedFiles: _downloadedFiles,
@@ -72,6 +76,7 @@ class _GenerationProgressScreenState
           onResume: status.retryAvailable ? _resumeGeneration : null,
           onDownload: _downloadExport,
           onShare: _shareExport,
+          onOpenPaywall: _openExportPaywall,
         ),
         loading: () => const AppLoadingState(message: 'Checking book progress'),
         error: (error, stackTrace) => AppErrorState(
@@ -145,6 +150,18 @@ class _GenerationProgressScreenState
     );
   }
 
+  Future<void> _openExportPaywall(MobileExportAvailability export) async {
+    await showBillingPaywall(
+      context,
+      projectId: widget.projectId,
+      title: 'Unlock exports',
+      message:
+          'This ${export.format.toUpperCase()} is ready. Add credits to unlock protected downloads for this book.',
+    );
+    ref.invalidate(billingProvider);
+    _refresh();
+  }
+
   Future<void> _runExportAction<T>({
     required String action,
     required MobileExportAvailability export,
@@ -178,7 +195,9 @@ class ProjectGenerationView extends StatelessWidget {
     required this.onRefresh,
     required this.onDownload,
     required this.onShare,
+    required this.onOpenPaywall,
     this.project,
+    this.billing,
     this.initialMessage,
     this.busyAction,
     this.onResume,
@@ -187,6 +206,7 @@ class ProjectGenerationView extends StatelessWidget {
 
   final MobileProjectStatus status;
   final MobileProjectDetail? project;
+  final MobileBilling? billing;
   final String? initialMessage;
   final String? busyAction;
   final Map<String, ProjectExportFile> downloadedFiles;
@@ -194,6 +214,7 @@ class ProjectGenerationView extends StatelessWidget {
   final Future<void> Function()? onResume;
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onShare;
+  final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
 
   @override
   Widget build(BuildContext context) {
@@ -216,10 +237,12 @@ class ProjectGenerationView extends StatelessWidget {
           ],
           ProjectExportPanel(
             exports: status.exports,
+            billing: billing,
             busyAction: busyAction,
             downloadedFiles: downloadedFiles,
             onDownload: onDownload,
             onShare: onShare,
+            onOpenPaywall: onOpenPaywall,
           ),
         ],
       ),
@@ -550,15 +573,19 @@ class ProjectExportPanel extends StatelessWidget {
     required this.downloadedFiles,
     required this.onDownload,
     required this.onShare,
+    required this.onOpenPaywall,
+    this.billing,
     this.busyAction,
     super.key,
   });
 
   final MobileExportSet exports;
+  final MobileBilling? billing;
   final String? busyAction;
   final Map<String, ProjectExportFile> downloadedFiles;
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onShare;
+  final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
 
   @override
   Widget build(BuildContext context) {
@@ -584,20 +611,24 @@ class ProjectExportPanel extends StatelessWidget {
             const SizedBox(height: 12),
             _ExportFormatTile(
               export: exports.pdf,
+              availableCredits: billing?.credits.available,
               icon: Icons.picture_as_pdf_outlined,
               busyAction: busyAction,
               downloadedFile: downloadedFiles['pdf'],
               onDownload: onDownload,
               onShare: onShare,
+              onOpenPaywall: onOpenPaywall,
             ),
             const Divider(height: 22),
             _ExportFormatTile(
               export: exports.epub,
+              availableCredits: billing?.credits.available,
               icon: Icons.menu_book_outlined,
               busyAction: busyAction,
               downloadedFile: downloadedFiles['epub'],
               onDownload: onDownload,
               onShare: onShare,
+              onOpenPaywall: onOpenPaywall,
             ),
           ],
         ),
@@ -609,19 +640,23 @@ class ProjectExportPanel extends StatelessWidget {
 class _ExportFormatTile extends StatelessWidget {
   const _ExportFormatTile({
     required this.export,
+    required this.availableCredits,
     required this.icon,
     required this.busyAction,
     required this.onDownload,
     required this.onShare,
+    required this.onOpenPaywall,
     this.downloadedFile,
   });
 
   final MobileExportAvailability export;
+  final int? availableCredits;
   final IconData icon;
   final String? busyAction;
   final ProjectExportFile? downloadedFile;
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onShare;
+  final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
 
   @override
   Widget build(BuildContext context) {
@@ -631,6 +666,11 @@ class _ExportFormatTile extends StatelessWidget {
     final shareAction = 'share-${export.format}';
     final isDownloading = busyAction == downloadAction;
     final isSharing = busyAction == shareAction;
+    final needsCredits =
+        export.available &&
+        !export.unlocked &&
+        availableCredits != null &&
+        availableCredits! < export.creditsRequired;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -675,7 +715,9 @@ class _ExportFormatTile extends StatelessWidget {
           children: [
             FilledButton.icon(
               onPressed: export.available && !isDownloading && !isSharing
-                  ? () => onDownload(export)
+                  ? () => needsCredits
+                        ? onOpenPaywall(export)
+                        : onDownload(export)
                   : null,
               icon: isDownloading
                   ? const SizedBox.square(
@@ -685,9 +727,11 @@ class _ExportFormatTile extends StatelessWidget {
                   : Icon(
                       export.unlocked
                           ? Icons.download_outlined
+                          : needsCredits
+                          ? Icons.add_card_outlined
                           : Icons.lock_open_outlined,
                     ),
-              label: Text(_downloadLabel(export)),
+              label: Text(_downloadLabel(export, needsCredits)),
             ),
             OutlinedButton.icon(
               onPressed:
@@ -718,16 +762,23 @@ class _ExportFormatTile extends StatelessWidget {
     if (export.unlocked) {
       return 'Ready to download and share.';
     }
+    if (availableCredits != null &&
+        availableCredits! < export.creditsRequired) {
+      return 'Ready after export unlock. You need ${export.creditsRequired} credits and have $availableCredits.';
+    }
     return 'Ready after export unlock. This uses ${export.creditsRequired} credits if not already included.';
   }
 
-  String _downloadLabel(MobileExportAvailability export) {
+  String _downloadLabel(MobileExportAvailability export, bool needsCredits) {
     final format = export.format.toUpperCase();
     if (!export.available) {
       return 'Preparing $format';
     }
     if (export.unlocked) {
       return 'Download $format';
+    }
+    if (needsCredits) {
+      return 'Get credits';
     }
     return 'Unlock $format';
   }

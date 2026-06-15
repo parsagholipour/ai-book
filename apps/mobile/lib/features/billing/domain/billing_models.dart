@@ -40,6 +40,51 @@ class MobileBilling {
   }
 }
 
+class GooglePlayVerificationResult {
+  const GooglePlayVerificationResult({
+    required this.purchase,
+    required this.billing,
+  });
+
+  final VerifiedPurchase purchase;
+  final MobileBilling billing;
+
+  factory GooglePlayVerificationResult.fromJson(Map<String, dynamic> json) {
+    return GooglePlayVerificationResult(
+      purchase: VerifiedPurchase.fromJson(
+        json['purchase'] as Map<String, dynamic>,
+      ),
+      billing: MobileBilling.fromJson(json['billing'] as Map<String, dynamic>),
+    );
+  }
+}
+
+class VerifiedPurchase {
+  const VerifiedPurchase({
+    required this.id,
+    required this.status,
+    required this.creditsGranted,
+    this.subscriptionStatus,
+    this.entitlementType,
+  });
+
+  final String id;
+  final String status;
+  final int creditsGranted;
+  final String? subscriptionStatus;
+  final String? entitlementType;
+
+  factory VerifiedPurchase.fromJson(Map<String, dynamic> json) {
+    return VerifiedPurchase(
+      id: json['id'] as String,
+      status: json['status'] as String,
+      creditsGranted: json['creditsGranted'] as int,
+      subscriptionStatus: json['subscriptionStatus'] as String?,
+      entitlementType: json['entitlementType'] as String?,
+    );
+  }
+}
+
 class CreditBalance {
   const CreditBalance({
     required this.available,
@@ -130,4 +175,67 @@ class MobileBillingProduct {
       currency: json['currency'] as String,
     );
   }
+
+  bool get isSubscription => productType == 'SUBSCRIPTION';
+
+  bool get isConsumable => !isSubscription;
+
+  String get benefitLabel {
+    if (isSubscription) {
+      return '$creditAmount credits each month';
+    }
+    return '$creditAmount credits';
+  }
+}
+
+enum StorePurchaseStatus { pending, purchased, restored, error, canceled }
+
+class StoreProduct {
+  const StoreProduct({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.price,
+    required this.rawPrice,
+    required this.currencyCode,
+    this.source,
+  });
+
+  final String id;
+  final String title;
+  final String description;
+  final String price;
+  final double rawPrice;
+  final String currencyCode;
+  final Object? source;
+}
+
+class StoreProductQueryResult {
+  const StoreProductQueryResult({
+    required this.products,
+    required this.notFoundIds,
+  });
+
+  final List<StoreProduct> products;
+  final List<String> notFoundIds;
+}
+
+class StorePurchaseUpdate {
+  const StorePurchaseUpdate({
+    required this.productId,
+    required this.status,
+    required this.purchaseToken,
+    this.purchaseId,
+    this.errorMessage,
+    this.pendingCompletePurchase = false,
+    this.source,
+  });
+
+  final String productId;
+  final StorePurchaseStatus status;
+  final String purchaseToken;
+  final String? purchaseId;
+  final String? errorMessage;
+  final bool pendingCompletePurchase;
+  final Object? source;
 }
