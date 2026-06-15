@@ -68,7 +68,10 @@ console.log(
 const child = spawn(process.execPath, [nodemonPath, ...nodemonArgs], {
   cwd: appDir,
   stdio: "inherit",
-  env: process.env
+  env: {
+    ...process.env,
+    NODE_ENV: process.env.NODE_ENV ?? "development"
+  }
 });
 
 child.on("exit", (code, signal) => {

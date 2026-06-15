@@ -147,7 +147,9 @@ class BillingController extends ChangeNotifier {
     _setState(
       _state.copyWith(
         pendingProductIds: {..._state.pendingProductIds, product.sku},
-        message: 'Opening Google Play checkout.',
+        message: storeProduct.source is DebugStoreProduct
+            ? 'Adding debug credits.'
+            : 'Opening Google Play checkout.',
         clearError: true,
       ),
     );

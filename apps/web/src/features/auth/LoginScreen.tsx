@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
 import { Loader2, LockKeyhole } from "lucide-react";
 import { AuthShell } from "./AuthShell.js";
+import { AppLogo } from "../shared/AppLogo.js";
 
 export function LoginScreen(props: {
   password: string;
@@ -12,7 +13,7 @@ export function LoginScreen(props: {
   return (
     <AuthShell>
       <div className="auth-icon">
-        <LockKeyhole size={28} aria-hidden />
+        <AppLogo aria-hidden={true} />
       </div>
       <div>
         <p className="eyebrow">Protected console</p>

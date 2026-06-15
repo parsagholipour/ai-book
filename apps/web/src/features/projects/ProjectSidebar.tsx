@@ -1,6 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
 import {
-  BookOpen,
   Images,
   Info,
   ListChecks,
@@ -43,6 +42,7 @@ import {
   projectToneLabel,
   type ProjectHoverState
 } from "./projectDisplay.js";
+import { AppLogo } from "../shared/AppLogo.js";
 
 export function ProjectSidebar(props: {
   authEnabled: boolean;
@@ -70,7 +70,7 @@ export function ProjectSidebar(props: {
   return (
     <aside className="sidebar">
       <div className="brand-row">
-        <BookOpen size={24} aria-hidden />
+        <AppLogo aria-hidden={true} />
         <div>
           <h1>AI Book Maker</h1>
           <p>Local generation console</p>
@@ -405,13 +405,12 @@ export function ProjectSidebar(props: {
               checked={props.draft.lessCensored}
               onChange={(event) => props.setDraft({ ...props.draft, lessCensored: event.target.checked })}
             />
-            Less censored
+            Direct phrasing for mature topics
           </label>
         ) : null}
         {props.draft.category !== "KIDS" && props.draft.lessCensored ? (
           <p className="field-hint">
-            Uses stronger prompts and retries to reduce refusals; some material may still be blocked by the AI
-            provider.
+            Uses clearer drafting prompts for allowed mature topics. Safety filters and provider policy still apply.
           </p>
         ) : null}
         <button className="primary-button" onClick={props.onCreateProject} disabled={props.createProjectBusy || props.draft.prompt.length < 10}>

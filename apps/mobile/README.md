@@ -51,6 +51,7 @@ Phase 09 local workflow:
 8. Download PDF/EPUB when the backend reports the export is ready and unlocked; use `Share` for Android's share sheet after unlock.
 
 The local backend and worker should both run with `MOCK_AI=true` for this workflow.
+Local mobile builds (`APP_ENV=local`) use a debug billing client instead of Google Play. Backend dev mode (`pnpm dev:api` or Docker dev, both `NODE_ENV=development`) accepts those fake purchase tokens and grants credits through the normal backend ledger, so you can buy credits repeatedly during development.
 
 ## Android Builds
 

@@ -39,6 +39,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   Widget build(BuildContext context) {
     final projectValue = ref.watch(projectDetailProvider(widget.projectId));
     final billingValue = ref.watch(billingProvider);
+    projectValue.whenData(_stopPollingWhenProjectSettled);
 
     return Scaffold(
       appBar: AppBar(
@@ -61,6 +62,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           lastOperation: _lastOperation,
           onRefresh: () async =>
               ref.invalidate(projectDetailProvider(widget.projectId)),
+          onDeleteProject: () => _confirmAndDelete(project),
           onGeneratePlan: () => _runPlanAction(
             action: 'plan',
             future: () =>
@@ -201,7 +203,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
       if (!mounted) {
         return;
       }
-      context.go(
+      context.push(
         '/projects/${project.id}/handoff',
         extra: operation.currentAction,
       );
@@ -216,10 +218,68 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     }
   }
 
+  Future<void> _confirmAndDelete(MobileProjectDetail project) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete this project?'),
+        content: Text(
+          'This removes "${project.title}" and its generated files from your account. Some safety, billing, and support records may be retained.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete project'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+
+    setState(() => _busyAction = 'delete');
+    try {
+      await ref.read(projectsRepositoryProvider).deleteProject(project.id);
+      ref.invalidate(projectsProvider);
+      ref.invalidate(projectDetailProvider(project.id));
+      if (!mounted) {
+        return;
+      }
+      context.go('/home');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Deleted ${project.title}.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _busyAction = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
   void _startRefreshPoll() {
     _refreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
+      if (ref.read(projectDetailProvider(widget.projectId)).isLoading) {
+        return;
+      }
       ref.invalidate(projectDetailProvider(widget.projectId));
     });
+  }
+
+  void _stopPollingWhenProjectSettled(MobileProjectDetail project) {
+    if (_refreshTimer == null || project.status == 'planning') {
+      return;
+    }
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
   }
 }
 
@@ -230,6 +290,7 @@ class _ProjectDetailBody extends StatelessWidget {
     required this.onGeneratePlan,
     required this.onRevisePlan,
     required this.onRefresh,
+    required this.onDeleteProject,
     required this.busyAction,
     required this.lastOperation,
     this.billing,
@@ -242,6 +303,7 @@ class _ProjectDetailBody extends StatelessWidget {
   final Future<void> Function() onGeneratePlan;
   final Future<void> Function(String message) onRevisePlan;
   final Future<void> Function() onRefresh;
+  final Future<void> Function() onDeleteProject;
   final Future<void> Function()? onApprovePlan;
   final String? busyAction;
   final MobilePlanOperation? lastOperation;
@@ -254,7 +316,11 @@ class _ProjectDetailBody extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
         children: [
-          _ProjectHeader(project: project),
+          _ProjectHeader(
+            project: project,
+            isDeleting: busyAction == 'delete',
+            onDeleteProject: onDeleteProject,
+          ),
           const SizedBox(height: 16),
           if (lastOperation != null) ...[
             _OperationBanner(operation: lastOperation!),
@@ -436,7 +502,7 @@ class ProjectPlanReview extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           FilledButton.icon(
-            onPressed: () => context.go('/projects/${project.id}/handoff'),
+            onPressed: () => context.push('/projects/${project.id}/handoff'),
             icon: const Icon(Icons.auto_stories_outlined),
             label: const Text('View generation progress'),
           ),
@@ -628,9 +694,15 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
 }
 
 class _ProjectHeader extends StatelessWidget {
-  const _ProjectHeader({required this.project});
+  const _ProjectHeader({
+    required this.project,
+    required this.onDeleteProject,
+    this.isDeleting = false,
+  });
 
   final MobileProjectDetail project;
+  final bool isDeleting;
+  final Future<void> Function() onDeleteProject;
 
   @override
   Widget build(BuildContext context) {
@@ -666,8 +738,41 @@ class _ProjectHeader extends StatelessWidget {
                 _InfoChip(label: 'Finish', value: project.qualityPresetLabel),
               ],
             ),
+            const SizedBox(height: 12),
+            ProjectPrivacyActions(
+              isDeleting: isDeleting,
+              onDeleteProject: onDeleteProject,
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class ProjectPrivacyActions extends StatelessWidget {
+  const ProjectPrivacyActions({
+    required this.onDeleteProject,
+    this.isDeleting = false,
+    super.key,
+  });
+
+  final bool isDeleting;
+  final Future<void> Function() onDeleteProject;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        onPressed: isDeleting ? null : () => onDeleteProject(),
+        icon: isDeleting
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.delete_outline),
+        label: const Text('Delete project'),
       ),
     );
   }

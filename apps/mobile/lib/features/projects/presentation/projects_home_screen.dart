@@ -25,6 +25,11 @@ class ProjectsHomeScreen extends ConsumerWidget {
         title: const Text('Tomeza'),
         actions: [
           IconButton(
+            tooltip: 'Account',
+            onPressed: () => context.push('/account'),
+            icon: const Icon(Icons.account_circle_outlined),
+          ),
+          IconButton(
             tooltip: 'Log out',
             onPressed: () => ref.read(authControllerProvider.notifier).logout(),
             icon: const Icon(Icons.logout),
@@ -202,7 +207,7 @@ class _NewBookPlaceholder extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             FilledButton.icon(
-              onPressed: () => context.go('/books/new'),
+              onPressed: () => context.push('/books/new'),
               icon: const Icon(Icons.add),
               label: const Text('New'),
             ),
@@ -252,7 +257,7 @@ class ProjectCard extends StatelessWidget {
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        onTap: () => context.go('/projects/${project.id}'),
+        onTap: () => context.push('/projects/${project.id}'),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

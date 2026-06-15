@@ -43,11 +43,12 @@ import {
   type VoiceChatProviderId
 } from "@book-maker/core";
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { ensureSeedTemplates, Prisma, prisma } from "@book-maker/db";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
+import { deleteProjectStorage } from "../projectStorage.js";
 import {
   enqueueGenerationJob,
   isBullJobActive,
@@ -1503,30 +1504,6 @@ async function sendOwnedProjectAsset(
   } catch {
     return sendProjectNotFound(reply, options.missingLabel);
   }
-}
-
-async function deleteProjectStorage(appConfig: AppConfig, projectId: string, request: FastifyRequest) {
-  const targets = {
-    book: join(appConfig.BOOK_STORAGE_DIR, projectId),
-    images: join(appConfig.IMAGE_STORAGE_DIR, projectId),
-    voice: join(appConfig.VOICE_STORAGE_DIR, projectId)
-  };
-  const results: Record<keyof typeof targets, boolean> = {
-    book: false,
-    images: false,
-    voice: false
-  };
-
-  for (const [key, path] of Object.entries(targets) as Array<[keyof typeof targets, string]>) {
-    try {
-      await rm(path, { recursive: true, force: true });
-      results[key] = true;
-    } catch (error) {
-      request.log.warn({ err: error, projectId, path }, "Project asset cleanup failed");
-    }
-  }
-
-  return results;
 }
 
 function mimeTypeForPath(filePath: string): string {

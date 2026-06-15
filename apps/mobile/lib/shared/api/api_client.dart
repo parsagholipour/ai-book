@@ -13,10 +13,7 @@ final dioProvider = Provider<Dio>((ref) {
       baseUrl: config.apiBaseUrl.toString(),
       connectTimeout: const Duration(seconds: 12),
       receiveTimeout: const Duration(seconds: 20),
-      headers: const {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
+      headers: const {'Accept': 'application/json'},
     ),
   );
 });
@@ -49,6 +46,14 @@ class ApiClient {
     bool requiresAuth = true,
   }) {
     return _request('POST', path, data: data, requiresAuth: requiresAuth);
+  }
+
+  Future<Response<dynamic>> deleteJson(
+    String path, {
+    Object? data,
+    bool requiresAuth = true,
+  }) {
+    return _request('DELETE', path, data: data, requiresAuth: requiresAuth);
   }
 
   Future<void> downloadFile(String path, String savePath) async {
@@ -90,6 +95,7 @@ class ApiClient {
       final response = await dio.post<dynamic>(
         '/api/mobile/auth/refresh',
         data: {'refreshToken': current.refreshToken},
+        options: Options(contentType: Headers.jsonContentType),
       );
       final data = response.data as Map<String, dynamic>;
       final tokens = MobileSessionTokens.fromJson(
@@ -113,7 +119,10 @@ class ApiClient {
     bool requiresAuth = true,
     bool retryOnAuthFailure = true,
   }) async {
-    final options = Options(method: method);
+    final options = Options(
+      method: method,
+      contentType: data == null ? null : Headers.jsonContentType,
+    );
     if (requiresAuth) {
       final accessToken = await _validAccessToken();
       options.headers = {'Authorization': 'Bearer $accessToken'};
@@ -131,6 +140,7 @@ class ApiClient {
           data: data,
           options: Options(
             method: method,
+            contentType: data == null ? null : Headers.jsonContentType,
             headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
           ),
         );

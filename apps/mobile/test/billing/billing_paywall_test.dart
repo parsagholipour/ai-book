@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
@@ -127,6 +128,47 @@ void main() {
 
     expect(billingController.state.message, 'Purchase canceled.');
   });
+
+  test('local app config uses the debug billing store client', () {
+    final container = ProviderContainer(
+      overrides: [appConfigProvider.overrideWithValue(testConfig)],
+    );
+    addTearDown(container.dispose);
+
+    expect(
+      container.read(storeBillingClientProvider),
+      isA<DebugStoreBillingClient>(),
+    );
+  });
+
+  test(
+    'debug store client emits unique completed purchases repeatedly',
+    () async {
+      final store = DebugStoreBillingClient();
+      addTearDown(store.dispose);
+      final updates = <StorePurchaseUpdate>[];
+      final subscription = store.purchaseUpdates.listen(updates.addAll);
+      addTearDown(subscription.cancel);
+
+      final query = await store.queryProducts({'tomeza.credit_pack_1'});
+      expect(await store.isAvailable(), isTrue);
+      expect(query.products.single.price, 'Debug');
+
+      await store.buyProduct(query.products.single, consumable: true);
+      await store.buyProduct(query.products.single, consumable: true);
+      await pumpEventQueue();
+
+      expect(updates, hasLength(2));
+      expect(
+        updates.map((update) => update.status),
+        everyElement(StorePurchaseStatus.purchased),
+      );
+      expect(
+        updates.map((update) => update.purchaseToken).toSet(),
+        hasLength(2),
+      );
+    },
+  );
 }
 
 Widget testPaywall({
@@ -325,3 +367,12 @@ MobileBilling fakeBilling({required int availableCredits}) {
     },
   );
 }
+
+final testConfig = AppConfig(
+  environment: AppEnvironment.local,
+  apiBaseUrl: Uri.parse('http://10.0.2.2:4001'),
+  privacyPolicyUrl: Uri.parse('https://example.com/tomeza/privacy'),
+  termsOfServiceUrl: Uri.parse('https://example.com/tomeza/terms'),
+  accountDeletionUrl: Uri.parse('https://example.com/tomeza/account-deletion'),
+  supportEmail: 'support@example.com',
+);

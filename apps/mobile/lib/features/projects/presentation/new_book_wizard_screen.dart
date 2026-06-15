@@ -149,7 +149,7 @@ class _NewBookWizardScreenState extends ConsumerState<NewBookWizardScreen> {
       if (!mounted) {
         return;
       }
-      context.go('/projects/${project.id}');
+      context.pushReplacement('/projects/${project.id}');
     } catch (error) {
       if (!mounted) {
         return;

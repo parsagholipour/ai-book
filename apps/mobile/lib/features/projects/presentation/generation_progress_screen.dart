@@ -77,6 +77,8 @@ class _GenerationProgressScreenState
           onDownload: _downloadExport,
           onShare: _shareExport,
           onOpenPaywall: _openExportPaywall,
+          onReportProject: _reportProject,
+          onReportImage: _reportImage,
         ),
         loading: () => const AppLoadingState(message: 'Checking book progress'),
         error: (error, stackTrace) => AppErrorState(
@@ -162,6 +164,70 @@ class _GenerationProgressScreenState
     _refresh();
   }
 
+  Future<void> _reportProject() async {
+    await _showReportDialog(
+      title: 'Report this AI-generated book',
+      submit: (reason, comment) => ref
+          .read(projectsRepositoryProvider)
+          .reportProject(
+            projectId: widget.projectId,
+            reason: reason,
+            comment: comment,
+          ),
+    );
+  }
+
+  Future<void> _reportImage(MobileProjectImage image) async {
+    await _showReportDialog(
+      title: 'Report this AI-generated visual',
+      submit: (reason, comment) => ref
+          .read(projectsRepositoryProvider)
+          .reportAsset(
+            projectId: widget.projectId,
+            assetId: image.id,
+            reason: reason,
+            comment: comment,
+          ),
+    );
+  }
+
+  Future<void> _showReportDialog({
+    required String title,
+    required Future<ModerationReportReceipt> Function(
+      String reason,
+      String? comment,
+    )
+    submit,
+  }) async {
+    final request = await showDialog<ContentReportRequest>(
+      context: context,
+      builder: (context) => ContentReportDialog(title: title),
+    );
+    if (request == null || !mounted) {
+      return;
+    }
+
+    setState(() => _busyAction = 'report');
+    try {
+      await submit(request.reason, request.comment);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _busyAction = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Report sent for review.')));
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _busyAction = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
   Future<void> _runExportAction<T>({
     required String action,
     required MobileExportAvailability export,
@@ -201,6 +267,8 @@ class ProjectGenerationView extends StatelessWidget {
     this.initialMessage,
     this.busyAction,
     this.onResume,
+    this.onReportProject,
+    this.onReportImage,
     super.key,
   });
 
@@ -215,6 +283,8 @@ class ProjectGenerationView extends StatelessWidget {
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onShare;
   final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
+  final Future<void> Function()? onReportProject;
+  final Future<void> Function(MobileProjectImage image)? onReportImage;
 
   @override
   Widget build(BuildContext context) {
@@ -232,7 +302,11 @@ class ProjectGenerationView extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (project != null) ...[
-            GeneratedBookPreview(project: project!),
+            GeneratedBookPreview(
+              project: project!,
+              onReportProject: onReportProject,
+              onReportImage: onReportImage,
+            ),
             const SizedBox(height: 12),
           ],
           ProjectExportPanel(
@@ -426,9 +500,16 @@ class _ProgressStepTile extends StatelessWidget {
 }
 
 class GeneratedBookPreview extends StatelessWidget {
-  const GeneratedBookPreview({required this.project, super.key});
+  const GeneratedBookPreview({
+    required this.project,
+    this.onReportProject,
+    this.onReportImage,
+    super.key,
+  });
 
   final MobileProjectDetail project;
+  final Future<void> Function()? onReportProject;
+  final Future<void> Function(MobileProjectImage image)? onReportImage;
 
   @override
   Widget build(BuildContext context) {
@@ -450,9 +531,30 @@ class GeneratedBookPreview extends StatelessWidget {
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
+            const SizedBox(height: 6),
+            Text(
+              'AI-generated content from your prompt and selected preset.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            if (onReportProject != null) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: () => onReportProject!(),
+                icon: const Icon(Icons.flag_outlined),
+                label: const Text('Report book'),
+              ),
+            ],
             const SizedBox(height: 12),
             if (project.coverImage != null) ...[
               _AuthenticatedProjectImage(image: project.coverImage!),
+              if (onReportImage != null) ...[
+                const SizedBox(height: 8),
+                _ReportVisualButton(
+                  onPressed: () => onReportImage!(project.coverImage!),
+                ),
+              ],
               const SizedBox(height: 12),
             ],
             if (pages.isEmpty)
@@ -464,7 +566,7 @@ class GeneratedBookPreview extends StatelessWidget {
               )
             else
               for (final page in pages) ...[
-                _GeneratedPagePreview(page: page),
+                _GeneratedPagePreview(page: page, onReportImage: onReportImage),
                 if (page != pages.last) const Divider(height: 22),
               ],
           ],
@@ -475,9 +577,10 @@ class GeneratedBookPreview extends StatelessWidget {
 }
 
 class _GeneratedPagePreview extends StatelessWidget {
-  const _GeneratedPagePreview({required this.page});
+  const _GeneratedPagePreview({required this.page, this.onReportImage});
 
   final MobileProjectPage page;
+  final Future<void> Function(MobileProjectImage image)? onReportImage;
 
   @override
   Widget build(BuildContext context) {
@@ -510,6 +613,10 @@ class _GeneratedPagePreview extends StatelessWidget {
         if (page.image != null) ...[
           const SizedBox(height: 10),
           _AuthenticatedProjectImage(image: page.image!),
+          if (onReportImage != null) ...[
+            const SizedBox(height: 8),
+            _ReportVisualButton(onPressed: () => onReportImage!(page.image!)),
+          ],
         ],
         const SizedBox(height: 8),
         Text(preview, maxLines: 8, overflow: TextOverflow.ellipsis),
@@ -563,6 +670,123 @@ class _ImageUnavailable extends StatelessWidget {
       child: Center(
         child: Icon(Icons.image_not_supported_outlined, color: colors.outline),
       ),
+    );
+  }
+}
+
+class _ReportVisualButton extends StatelessWidget {
+  const _ReportVisualButton({required this.onPressed});
+
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        onPressed: () => onPressed(),
+        icon: const Icon(Icons.flag_outlined),
+        label: const Text('Report visual'),
+      ),
+    );
+  }
+}
+
+class ContentReportRequest {
+  const ContentReportRequest({required this.reason, this.comment});
+
+  final String reason;
+  final String? comment;
+}
+
+class ContentReportDialog extends StatefulWidget {
+  const ContentReportDialog({required this.title, super.key});
+
+  final String title;
+
+  @override
+  State<ContentReportDialog> createState() => _ContentReportDialogState();
+}
+
+class _ContentReportDialogState extends State<ContentReportDialog> {
+  final _commentController = TextEditingController();
+  String _reason = 'other';
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _reason,
+            decoration: const InputDecoration(labelText: 'Reason'),
+            items: const [
+              DropdownMenuItem(value: 'offensive', child: Text('Offensive')),
+              DropdownMenuItem(
+                value: 'hate_or_harassment',
+                child: Text('Hate or harassment'),
+              ),
+              DropdownMenuItem(
+                value: 'sexual_content',
+                child: Text('Sexual content'),
+              ),
+              DropdownMenuItem(
+                value: 'violence_or_self_harm',
+                child: Text('Violence or self-harm'),
+              ),
+              DropdownMenuItem(
+                value: 'child_safety',
+                child: Text('Child safety concern'),
+              ),
+              DropdownMenuItem(
+                value: 'deceptive_or_misleading',
+                child: Text('Misleading or inaccurate'),
+              ),
+              DropdownMenuItem(
+                value: 'privacy_or_copyright',
+                child: Text('Privacy or copyright'),
+              ),
+              DropdownMenuItem(value: 'other', child: Text('Other')),
+            ],
+            onChanged: (value) => setState(() => _reason = value ?? 'other'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _commentController,
+            decoration: const InputDecoration(
+              labelText: 'Optional details',
+              hintText: 'Briefly describe the issue',
+            ),
+            minLines: 3,
+            maxLines: 5,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(
+            ContentReportRequest(
+              reason: _reason,
+              comment: _commentController.text.trim().isEmpty
+                  ? null
+                  : _commentController.text.trim(),
+            ),
+          ),
+          child: const Text('Send report'),
+        ),
+      ],
     );
   }
 }

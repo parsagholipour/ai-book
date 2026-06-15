@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 
+import '../../../app/config/app_config.dart';
 import '../domain/billing_models.dart';
 
 abstract interface class StoreBillingClient {
@@ -126,6 +127,81 @@ class InAppPurchaseStoreBillingClient implements StoreBillingClient {
   }
 }
 
+class DebugStoreProduct {
+  const DebugStoreProduct();
+}
+
+class DebugStoreBillingClient implements StoreBillingClient {
+  final _purchaseUpdates =
+      StreamController<List<StorePurchaseUpdate>>.broadcast();
+  var _purchaseCounter = 0;
+
+  @override
+  Stream<List<StorePurchaseUpdate>> get purchaseUpdates =>
+      _purchaseUpdates.stream;
+
+  @override
+  Future<bool> isAvailable() async => true;
+
+  @override
+  Future<StoreProductQueryResult> queryProducts(Set<String> productIds) async {
+    return StoreProductQueryResult(
+      products: [
+        for (final id in productIds)
+          StoreProduct(
+            id: id,
+            title: id,
+            description: id,
+            price: 'Debug',
+            rawPrice: 0,
+            currencyCode: 'DBG',
+            source: const DebugStoreProduct(),
+          ),
+      ],
+      notFoundIds: const [],
+    );
+  }
+
+  @override
+  Future<void> buyProduct(
+    StoreProduct product, {
+    required bool consumable,
+  }) async {
+    _purchaseCounter += 1;
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    final purchaseId = 'debug-${product.id}-$timestamp-$_purchaseCounter';
+    _purchaseUpdates.add([
+      StorePurchaseUpdate(
+        productId: product.id,
+        status: StorePurchaseStatus.purchased,
+        purchaseId: purchaseId,
+        purchaseToken: purchaseId,
+        pendingCompletePurchase: true,
+        source: const DebugStoreProduct(),
+      ),
+    ]);
+  }
+
+  @override
+  Future<void> restorePurchases() async {}
+
+  @override
+  Future<void> finishPurchase(
+    StorePurchaseUpdate purchase, {
+    required bool consumable,
+  }) async {}
+
+  void dispose() {
+    unawaited(_purchaseUpdates.close());
+  }
+}
+
 final storeBillingClientProvider = Provider<StoreBillingClient>((ref) {
+  final config = ref.watch(appConfigProvider);
+  if (config.environment == AppEnvironment.local) {
+    final client = DebugStoreBillingClient();
+    ref.onDispose(client.dispose);
+    return client;
+  }
   return InAppPurchaseStoreBillingClient();
 });

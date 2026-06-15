@@ -56,6 +56,12 @@ import {
   createGooglePlayVerifierFromConfig,
   type GooglePlayVerifier
 } from "./googlePlayBilling.js";
+import {
+  InMemoryRateLimiter,
+  rateLimitKey,
+  sendRateLimitError,
+  type RateLimitConfig
+} from "./rateLimit.js";
 
 const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
 const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
@@ -67,6 +73,8 @@ const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLA
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
 const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
+const DEFAULT_GENERATION_RATE_LIMIT = { maxAttempts: 12, windowMs: 60 * 60 * 1000 };
+const DEFAULT_BILLING_VERIFICATION_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
 
 export type MobileBookType = z.infer<typeof mobileBookTypeSchema>;
 export type MobileLengthPreset = z.infer<typeof mobileLengthPresetSchema>;
@@ -476,6 +484,8 @@ const mobilePlanRevisionOpenApiBody = {
 
 export type MobileProjectRoutesOptions = {
   googlePlayVerifier?: GooglePlayVerifier | undefined;
+  generationRateLimit?: Partial<RateLimitConfig>;
+  billingVerificationRateLimit?: Partial<RateLimitConfig>;
 };
 
 export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions> = async (fastify, options) => {
@@ -483,6 +493,14 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   await ensureDefaultProductCatalog();
   const appConfig = loadConfig();
   const googlePlayVerifier = options.googlePlayVerifier ?? createGooglePlayVerifierFromConfig(appConfig);
+  const generationLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_GENERATION_RATE_LIMIT,
+    ...options.generationRateLimit
+  });
+  const billingVerificationLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_BILLING_VERIFICATION_RATE_LIMIT,
+    ...options.billingVerificationRateLimit
+  });
 
   fastify.get(
     "/api/mobile/me",
@@ -532,6 +550,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(billingVerificationLimiter, request, reply, auth.user.id, "billing-verify")) {
         return;
       }
       const parsed = mobileGooglePlayVerificationBodySchema.safeParse(request.body);
@@ -633,6 +654,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "create-project")) {
         return;
       }
 
@@ -793,6 +817,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       if (!auth) {
         return;
       }
+      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "plan")) {
+        return;
+      }
       const { id } = idParamsSchema.parse(request.params);
       const parsed = emptyMobilePlanBodySchema.safeParse(request.body ?? {});
       if (!parsed.success) {
@@ -874,6 +901,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "revise-plan")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -1186,6 +1216,21 @@ async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): 
     return null;
   }
   return auth;
+}
+
+function hitAuthenticatedLimit(
+  limiter: InMemoryRateLimiter,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  userId: string,
+  action: string
+): boolean {
+  const limit = limiter.hit(rateLimitKey(request, userId, action));
+  if (limit.allowed) {
+    return true;
+  }
+  sendRateLimitError(reply, limit.retryAfterSeconds);
+  return false;
 }
 
 function isAuthFailure(auth: MobileAuthContext | AuthFailure): auth is AuthFailure {

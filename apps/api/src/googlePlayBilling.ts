@@ -1,4 +1,4 @@
-import { createSign } from "node:crypto";
+import { createHash, createSign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { AppConfig } from "@book-maker/core";
 import type { GooglePlaySubscriptionGrantState, VerifiedGooglePlayPurchase } from "@book-maker/db/billing";
@@ -58,12 +58,65 @@ export class GooglePlayVerificationError extends Error {
 }
 
 export function createGooglePlayVerifierFromConfig(config: AppConfig): GooglePlayVerifier {
+  if (config.MOCK_GOOGLE_PLAY_BILLING) {
+    return createMockGooglePlayVerifier();
+  }
   return createGooglePlayVerifier({
     packageName: config.GOOGLE_PLAY_PACKAGE_NAME,
     accessToken: config.GOOGLE_PLAY_ACCESS_TOKEN,
     serviceAccountJson: config.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON,
     serviceAccountFile: config.GOOGLE_PLAY_SERVICE_ACCOUNT_FILE
   });
+}
+
+export function createMockGooglePlayVerifier(): GooglePlayVerifier {
+  return {
+    async verifyPurchase(request) {
+      const now = new Date();
+      const externalPurchaseId = `MOCK.${createHash("sha256")
+        .update(`${request.productId}:${request.purchaseToken}`)
+        .digest("hex")
+        .slice(0, 16)}`;
+
+      if (request.productType === "SUBSCRIPTION") {
+        const currentPeriodEnd = new Date(now);
+        currentPeriodEnd.setUTCMonth(currentPeriodEnd.getUTCMonth() + 1);
+        return {
+          productSku: request.productId,
+          purchaseToken: request.purchaseToken,
+          kind: "subscription",
+          grantable: true,
+          providerStatus: "MOCK_SUBSCRIPTION_ACTIVE",
+          externalPurchaseId,
+          purchasedAt: now,
+          subscription: {
+            status: "ACTIVE",
+            currentPeriodStart: now,
+            currentPeriodEnd
+          },
+          metadata: {
+            mockGooglePlayBilling: true,
+            packageName: request.packageName || null
+          }
+        };
+      }
+
+      return {
+        productSku: request.productId,
+        purchaseToken: request.purchaseToken,
+        kind: "one_time",
+        grantable: true,
+        providerStatus: "MOCK_PURCHASED",
+        externalPurchaseId,
+        purchasedAt: now,
+        quantity: 1,
+        metadata: {
+          mockGooglePlayBilling: true,
+          packageName: request.packageName || null
+        }
+      };
+    }
+  };
 }
 
 export function createGooglePlayVerifier(options: GooglePlayVerifierOptions): GooglePlayVerifier {

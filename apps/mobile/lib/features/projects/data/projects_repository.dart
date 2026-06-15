@@ -27,6 +27,21 @@ abstract interface class ProjectsRepository {
 
   Future<MobileProjectRecovery> resumeProject(String id);
 
+  Future<ProjectDeletionReceipt> deleteProject(String id);
+
+  Future<ModerationReportReceipt> reportProject({
+    required String projectId,
+    required String reason,
+    String? comment,
+  });
+
+  Future<ModerationReportReceipt> reportAsset({
+    required String projectId,
+    required String assetId,
+    required String reason,
+    String? comment,
+  });
+
   Future<ProjectExportFile> downloadExport({
     required String projectId,
     required MobileExportAvailability export,
@@ -128,6 +143,47 @@ class MobileProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<ProjectDeletionReceipt> deleteProject(String id) async {
+    final response = await apiClient.deleteJson('/api/mobile/projects/$id');
+    return ProjectDeletionReceipt.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<ModerationReportReceipt> reportProject({
+    required String projectId,
+    required String reason,
+    String? comment,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/reports',
+      data: _reportPayload(reason: reason, comment: comment),
+    );
+    final data = response.data as Map<String, dynamic>;
+    return ModerationReportReceipt.fromJson(
+      data['report'] as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<ModerationReportReceipt> reportAsset({
+    required String projectId,
+    required String assetId,
+    required String reason,
+    String? comment,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/assets/$assetId/reports',
+      data: _reportPayload(reason: reason, comment: comment),
+    );
+    final data = response.data as Map<String, dynamic>;
+    return ModerationReportReceipt.fromJson(
+      data['report'] as Map<String, dynamic>,
+    );
+  }
+
+  @override
   Future<ProjectExportFile> downloadExport({
     required String projectId,
     required MobileExportAvailability export,
@@ -207,4 +263,11 @@ String _safeLocalFilename(String filename, String format) {
       .replaceAll(RegExp(r'[^A-Za-z0-9._ -]+'), '')
       .trim();
   return cleaned.isEmpty ? fallback : cleaned;
+}
+
+Map<String, dynamic> _reportPayload({required String reason, String? comment}) {
+  return {
+    'reason': reason,
+    if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
+  };
 }

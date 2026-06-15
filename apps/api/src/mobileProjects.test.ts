@@ -666,6 +666,71 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("uses debug Google Play verification for local credit purchases", async () => {
+    process.env.NODE_ENV = "development";
+    delete process.env.MOCK_GOOGLE_PLAY_BILLING;
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.productCatalog.findUnique.mockResolvedValueOnce({
+      sku: "tomeza.credit_pack_2",
+      productType: "CREDIT_PACK",
+      active: true
+    });
+    vi.mocked(recordVerifiedGooglePlayPurchase).mockResolvedValueOnce({
+      purchaseRecordId: "purchase-debug-credit-pack",
+      status: "GRANTED",
+      creditsGranted: 2000,
+      ledgerEntryId: "ledger-debug-credit-pack",
+      subscriptionStatus: null,
+      entitlementType: null
+    });
+    vi.mocked(getCreditBalance).mockResolvedValueOnce({
+      availableCredits: 2100,
+      reservedCredits: 0,
+      lifetimeCreditsGranted: 2100,
+      lifetimeCreditsSpent: 0
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/google-play/verify",
+      headers: bearer("token-a"),
+      payload: {
+        productId: "tomeza.credit_pack_2",
+        purchaseToken: "debug-token-1",
+        transactionId: "debug-order-1",
+        purchaseStatus: "purchased"
+      }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(vi.mocked(recordVerifiedGooglePlayPurchase)).toHaveBeenCalledWith({
+      userId: "user-a",
+      verification: expect.objectContaining({
+        productSku: "tomeza.credit_pack_2",
+        purchaseToken: "debug-token-1",
+        kind: "one_time",
+        grantable: true,
+        providerStatus: "MOCK_PURCHASED",
+        metadata: expect.objectContaining({
+          mockGooglePlayBilling: true,
+          clientTransactionId: "debug-order-1",
+          clientPurchaseStatus: "purchased"
+        })
+      })
+    });
+    expect(body.purchase).toEqual({
+      id: "purchase-debug-credit-pack",
+      status: "granted",
+      creditsGranted: 2000,
+      subscriptionStatus: null,
+      entitlementType: null
+    });
+    expect(body.billing.credits.available).toBe(2100);
+    await app.close();
+  });
+
   it("does not grant pending Google Play purchases", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.productCatalog.findUnique.mockResolvedValueOnce({
@@ -891,6 +956,74 @@ describe("mobile project routes", () => {
       }
     });
     expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rate limits repeated mobile generation actions", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ generationRateLimit: { maxAttempts: 1, windowMs: 60_000 } });
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(429);
+    expect(second.json().error.code).toBe("RATE_LIMITED");
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it("does not rate limit mobile project reads after a plan generation action", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
+      where.id === "project-1" && where.userId === "user-a" ? projectRecord({ id: "project-1", status: "PLANNING" }) : null
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ generationRateLimit: { maxAttempts: 1, windowMs: 60_000 } });
+
+    const plan = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const detail = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1",
+      headers: bearer("token-a")
+    });
+    const status = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const repeatedPlan = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/plan",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(plan.statusCode).toBe(202);
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().project).toMatchObject({ id: "project-1", status: "planning" });
+    expect(status.statusCode).toBe(200);
+    expect(status.json().status.projectId).toBe("project-1");
+    expect(repeatedPlan.statusCode).toBe(429);
     await app.close();
   });
 

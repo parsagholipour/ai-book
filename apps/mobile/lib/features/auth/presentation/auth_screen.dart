@@ -165,13 +165,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                   ),
                   const SizedBox(height: 18),
                   TextButton(
-                    onPressed: isSubmitting
-                        ? null
-                        : () {
-                            context.go(
-                              _isSignUp ? '/auth/sign-in' : '/auth/sign-up',
-                            );
-                          },
+                    onPressed: isSubmitting ? null : _toggleMode,
                     child: Text(
                       _isSignUp
                           ? 'I already have an account'
@@ -204,5 +198,18 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       email: _emailController.text,
       password: _passwordController.text,
     );
+  }
+
+  void _toggleMode() {
+    if (_isSignUp) {
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/auth/sign-in');
+      }
+      return;
+    }
+
+    context.push('/auth/sign-up');
   }
 }

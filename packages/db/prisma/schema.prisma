@@ -144,6 +144,36 @@ enum CreditOperation {
   ADMIN_GRANT
 }
 
+enum ModerationReportTargetType {
+  PROJECT
+  IMAGE_ASSET
+}
+
+enum ModerationReportReason {
+  OFFENSIVE
+  HATE_OR_HARASSMENT
+  SEXUAL_CONTENT
+  VIOLENCE_OR_SELF_HARM
+  CHILD_SAFETY
+  DECEPTIVE_OR_MISLEADING
+  PRIVACY_OR_COPYRIGHT
+  OTHER
+}
+
+enum ModerationReportStatus {
+  PENDING
+  REVIEWED
+  ACTIONED
+  DISMISSED
+}
+
+enum AccountDeletionRequestStatus {
+  PENDING
+  COMPLETED
+  CANCELED
+  REJECTED
+}
+
 enum VoiceCharacterStatus {
   CANDIDATE
   APPROVED
@@ -167,22 +197,25 @@ model Template {
 }
 
 model User {
-  id                 String                  @id @default(cuid())
-  email              String                  @unique
-  displayName        String?
-  status             UserStatus              @default(ACTIVE)
-  disabledAt         DateTime?
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
+  id          String     @id @default(cuid())
+  email       String     @unique
+  displayName String?
+  status      UserStatus @default(ACTIVE)
+  disabledAt  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  passwordCredential UserPasswordCredential?
-  mobileSessions     MobileSession[]
-  projects           Project[]
-  creditAccount      UserCreditAccount?
-  creditLedger       CreditLedgerEntry[]
-  entitlements       UserEntitlement[]
-  purchases          PurchaseRecord[]
-  subscriptions      SubscriptionState[]
+  passwordCredential      UserPasswordCredential?
+  mobileSessions          MobileSession[]
+  projects                Project[]
+  creditAccount           UserCreditAccount?
+  creditLedger            CreditLedgerEntry[]
+  entitlements            UserEntitlement[]
+  purchases               PurchaseRecord[]
+  subscriptions           SubscriptionState[]
+  moderationReports       ModerationReport[]       @relation("ModerationReportReporter")
+  moderationReviews       ModerationReport[]       @relation("ModerationReportReviewer")
+  accountDeletionRequests AccountDeletionRequest[]
 }
 
 model UserPasswordCredential {
@@ -192,7 +225,7 @@ model UserPasswordCredential {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model MobileSession {
@@ -209,7 +242,7 @@ model MobileSession {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, revokedAt])
   @@index([accessTokenExpiresAt])
@@ -217,23 +250,23 @@ model MobileSession {
 }
 
 model ProductCatalog {
-  id             String             @id @default(cuid())
-  sku            String             @unique
-  title          String
-  description    String?
-  productType    BillingProductType
-  provider       BillingProvider    @default(GOOGLE_PLAY)
-  creditAmount   Int                @default(0)
-  priceMicros    BigInt?
-  currency       String             @default("USD")
-  active         Boolean            @default(true)
-  metadata       Json
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  id           String             @id @default(cuid())
+  sku          String             @unique
+  title        String
+  description  String?
+  productType  BillingProductType
+  provider     BillingProvider    @default(GOOGLE_PLAY)
+  creditAmount Int                @default(0)
+  priceMicros  BigInt?
+  currency     String             @default("USD")
+  active       Boolean            @default(true)
+  metadata     Json
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
-  creditLedger   CreditLedgerEntry[]
-  purchases      PurchaseRecord[]
-  subscriptions  SubscriptionState[]
+  creditLedger  CreditLedgerEntry[]
+  purchases     PurchaseRecord[]
+  subscriptions SubscriptionState[]
 }
 
 model UserCreditAccount {
@@ -245,30 +278,30 @@ model UserCreditAccount {
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model UserEntitlement {
-  id                   String                 @id @default(cuid())
+  id                   String                @id @default(cuid())
   userId               String
   projectId            String?
   type                 UserEntitlementType
-  status               UserEntitlementStatus  @default(ACTIVE)
+  status               UserEntitlementStatus @default(ACTIVE)
   source               String
-  creditsCost          Int                    @default(0)
+  creditsCost          Int                   @default(0)
   relatedLedgerEntryId String?
   purchaseRecordId     String?
-  startsAt             DateTime               @default(now())
+  startsAt             DateTime              @default(now())
   expiresAt            DateTime?
   consumedAt           DateTime?
   metadata             Json
-  createdAt            DateTime               @default(now())
-  updatedAt            DateTime               @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
-  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project              Project?               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  relatedLedgerEntry   CreditLedgerEntry?     @relation("LedgerEntryEntitlements", fields: [relatedLedgerEntryId], references: [id], onDelete: SetNull)
-  purchaseRecord       PurchaseRecord?        @relation(fields: [purchaseRecordId], references: [id], onDelete: SetNull)
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project            Project?           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  relatedLedgerEntry CreditLedgerEntry? @relation("LedgerEntryEntitlements", fields: [relatedLedgerEntryId], references: [id], onDelete: SetNull)
+  purchaseRecord     PurchaseRecord?    @relation(fields: [purchaseRecordId], references: [id], onDelete: SetNull)
 
   @@index([userId, type, status])
   @@index([projectId, type, status])
@@ -276,32 +309,32 @@ model UserEntitlement {
 }
 
 model CreditLedgerEntry {
-  id                 String                  @id @default(cuid())
-  userId             String
-  projectId          String?
-  generationJobId    String?
-  productId          String?
-  purchaseRecordId   String?
-  entryType          CreditLedgerEntryType
-  status             CreditLedgerEntryStatus @default(SETTLED)
-  operation          CreditOperation
-  amountCredits      Int
+  id                  String                  @id @default(cuid())
+  userId              String
+  projectId           String?
+  generationJobId     String?
+  productId           String?
+  purchaseRecordId    String?
+  entryType           CreditLedgerEntryType
+  status              CreditLedgerEntryStatus @default(SETTLED)
+  operation           CreditOperation
+  amountCredits       Int
   balanceAfterCredits Int?
-  idempotencyKey     String                  @unique
-  reversesEntryId    String?                 @unique
-  description        String?
-  metadata           Json
-  createdAt          DateTime                @default(now())
-  updatedAt          DateTime                @updatedAt
+  idempotencyKey      String                  @unique
+  reversesEntryId     String?                 @unique
+  description         String?
+  metadata            Json
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
 
-  user               User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project            Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
-  generationJob      GenerationJob?          @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
-  product            ProductCatalog?         @relation(fields: [productId], references: [id], onDelete: SetNull)
-  purchaseRecord     PurchaseRecord?         @relation(fields: [purchaseRecordId], references: [id], onDelete: SetNull)
-  reversesEntry      CreditLedgerEntry?      @relation("CreditLedgerReversal", fields: [reversesEntryId], references: [id], onDelete: SetNull)
-  reversedByEntry    CreditLedgerEntry?      @relation("CreditLedgerReversal")
-  entitlements       UserEntitlement[]       @relation("LedgerEntryEntitlements")
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project         Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  generationJob   GenerationJob?     @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
+  product         ProductCatalog?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  purchaseRecord  PurchaseRecord?    @relation(fields: [purchaseRecordId], references: [id], onDelete: SetNull)
+  reversesEntry   CreditLedgerEntry? @relation("CreditLedgerReversal", fields: [reversesEntryId], references: [id], onDelete: SetNull)
+  reversedByEntry CreditLedgerEntry? @relation("CreditLedgerReversal")
+  entitlements    UserEntitlement[]  @relation("LedgerEntryEntitlements")
 
   @@index([userId, createdAt])
   @@index([projectId, operation])
@@ -310,26 +343,26 @@ model CreditLedgerEntry {
 }
 
 model PurchaseRecord {
-  id                   String          @id @default(cuid())
-  userId               String
-  productId            String?
-  provider             BillingProvider @default(GOOGLE_PLAY)
-  externalPurchaseId   String?
-  purchaseTokenHash    String?
-  status               PurchaseStatus  @default(PENDING)
-  creditsGranted       Int             @default(0)
-  amountMicros         BigInt?
-  currency             String          @default("USD")
-  purchasedAt          DateTime?
-  verifiedAt           DateTime?
-  metadata             Json
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
+  id                 String          @id @default(cuid())
+  userId             String
+  productId          String?
+  provider           BillingProvider @default(GOOGLE_PLAY)
+  externalPurchaseId String?
+  purchaseTokenHash  String?
+  status             PurchaseStatus  @default(PENDING)
+  creditsGranted     Int             @default(0)
+  amountMicros       BigInt?
+  currency           String          @default("USD")
+  purchasedAt        DateTime?
+  verifiedAt         DateTime?
+  metadata           Json
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
-  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product              ProductCatalog? @relation(fields: [productId], references: [id], onDelete: SetNull)
-  creditLedger         CreditLedgerEntry[]
-  entitlements         UserEntitlement[]
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product      ProductCatalog?     @relation(fields: [productId], references: [id], onDelete: SetNull)
+  creditLedger CreditLedgerEntry[]
+  entitlements UserEntitlement[]
 
   @@index([userId, createdAt])
   @@index([provider, externalPurchaseId])
@@ -352,112 +385,113 @@ model SubscriptionState {
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
 
-  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product                ProductCatalog?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product ProductCatalog? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
   @@index([provider, externalSubscriptionId])
 }
 
 model Project {
-  id             String         @id @default(cuid())
-  userId         String
-  title          String
-  subtitle       String?
-  authorName     String?
-  coverTagline   String?
-  prompt         String
-  category       TemplateCategory
-  subcategory    String?
-  targetPages    Int
-  complexity     Int
-  temperature    Float
-  language       String         @default("en")
-  mediaSettings  Json
-  status         ProjectStatus  @default(DRAFT)
-  templateId     String?
-  currentPlanId  String?        @unique
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id            String           @id @default(cuid())
+  userId        String
+  title         String
+  subtitle      String?
+  authorName    String?
+  coverTagline  String?
+  prompt        String
+  category      TemplateCategory
+  subcategory   String?
+  targetPages   Int
+  complexity    Int
+  temperature   Float
+  language      String           @default("en")
+  mediaSettings Json
+  status        ProjectStatus    @default(DRAFT)
+  templateId    String?
+  currentPlanId String?          @unique
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 
-  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  template       Template?      @relation(fields: [templateId], references: [id])
-  currentPlan    PlanVersion?   @relation("CurrentPlan", fields: [currentPlanId], references: [id])
-  planVersions   PlanVersion[]  @relation("ProjectPlans")
-  chapters       Chapter[]
-  pages          Page[]
-  characters     Character[]
-  locations      Location[]
-  continuity     ContinuityNote[]
-  research       ResearchSource[]
-  images         ImageAsset[]
-  jobs           GenerationJob[]
-  providerLogs   ProviderCallLog[]
-  embeddings     Embedding[]
-  voiceCharacters VoiceCharacter[]
-  voiceCallEvents VoiceCallEvent[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  template           Template?           @relation(fields: [templateId], references: [id])
+  currentPlan        PlanVersion?        @relation("CurrentPlan", fields: [currentPlanId], references: [id])
+  planVersions       PlanVersion[]       @relation("ProjectPlans")
+  chapters           Chapter[]
+  pages              Page[]
+  characters         Character[]
+  locations          Location[]
+  continuity         ContinuityNote[]
+  research           ResearchSource[]
+  images             ImageAsset[]
+  jobs               GenerationJob[]
+  providerLogs       ProviderCallLog[]
+  embeddings         Embedding[]
+  voiceCharacters    VoiceCharacter[]
+  voiceCallEvents    VoiceCallEvent[]
   voiceConversations VoiceConversation[]
-  creditLedger   CreditLedgerEntry[]
-  entitlements   UserEntitlement[]
+  creditLedger       CreditLedgerEntry[]
+  entitlements       UserEntitlement[]
+  moderationReports  ModerationReport[]
 
   @@index([userId, updatedAt])
   @@index([userId, createdAt])
 }
 
 model PlanVersion {
-  id              String      @id @default(cuid())
+  id              String     @id @default(cuid())
   projectId       String
   version         Int
-  status          PlanStatus  @default(DRAFT)
+  status          PlanStatus @default(DRAFT)
   planningPackage Json
   inputSnapshot   Json?
   messages        Json
   approvedAt      DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
-  project         Project     @relation("ProjectPlans", fields: [projectId], references: [id], onDelete: Cascade)
-  currentFor      Project?    @relation("CurrentPlan")
+  project    Project  @relation("ProjectPlans", fields: [projectId], references: [id], onDelete: Cascade)
+  currentFor Project? @relation("CurrentPlan")
 
   @@unique([projectId, version])
 }
 
 model Chapter {
-  id          String   @id @default(cuid())
-  projectId   String
-  index       Int
-  title       String
-  summary     String
-  targetPages Int
+  id              String   @id @default(cuid())
+  projectId       String
+  index           Int
+  title           String
+  summary         String
+  targetPages     Int
   productionBrief Json?
-  status      String   @default("PENDING")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status          String   @default("PENDING")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  pages       Page[]
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pages   Page[]
 
   @@unique([projectId, index])
 }
 
 model Page {
-  id          String    @id @default(cuid())
-  projectId   String
-  chapterId   String?
-  index       Int
-  title       String
-  markdown    String
-  summary     String
-  imagePrompt String?
+  id            String   @id @default(cuid())
+  projectId     String
+  chapterId     String?
+  index         Int
+  title         String
+  markdown      String
+  summary       String
+  imagePrompt   String?
   qualityReport Json?
-  status      String    @default("PENDING")
-  revision    Int       @default(1)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  status        String   @default("PENDING")
+  revision      Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  chapter     Chapter?  @relation(fields: [chapterId], references: [id], onDelete: SetNull)
-  images      ImageAsset[]
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapter Chapter?     @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  images  ImageAsset[]
 
   @@unique([projectId, index])
 }
@@ -474,11 +508,11 @@ model Character {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model VoiceCharacter {
-  id                  String                @id @default(cuid())
+  id                  String               @id @default(cuid())
   projectId           String
   planVersionId       String?
   name                String
@@ -486,11 +520,11 @@ model VoiceCharacter {
   description         String
   traits              Json
   visualRules         Json
-  source              String                @default("PLAN")
-  status              VoiceCharacterStatus  @default(CANDIDATE)
+  source              String               @default("PLAN")
+  status              VoiceCharacterStatus @default(CANDIDATE)
   persona             Json?
   voiceProfile        Json
-  voiceProvider       String                @default("gemini_live")
+  voiceProvider       String               @default("gemini_live")
   voiceModel          String?
   voiceId             String?
   providerMetadata    Json
@@ -498,11 +532,11 @@ model VoiceCharacter {
   error               String?
   approvedAt          DateTime?
   builtAt             DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 
-  project             Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  callEvents          VoiceCallEvent[]
+  project    Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  callEvents VoiceCallEvent[]
 
   @@index([projectId, status])
   @@index([planVersionId])
@@ -518,7 +552,7 @@ model Location {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ContinuityNote {
@@ -529,101 +563,147 @@ model ContinuityNote {
   tags      String[]
   createdAt DateTime @default(now())
 
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ResearchSource {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   projectId   String
   query       String
   title       String
   url         String?
   summary     String
   publishedAt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ImageAsset {
-  id          String    @id @default(cuid())
-  projectId   String
-  pageId      String?
-  type        AssetType
-  prompt      String
-  provider    String
-  path        String
-  metadata    Json
-  createdAt   DateTime  @default(now())
+  id        String    @id @default(cuid())
+  projectId String
+  pageId    String?
+  type      AssetType
+  prompt    String
+  provider  String
+  path      String
+  metadata  Json
+  createdAt DateTime  @default(now())
 
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  page        Page?     @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  page              Page?              @relation(fields: [pageId], references: [id], onDelete: SetNull)
+  moderationReports ModerationReport[]
+}
+
+model ModerationReport {
+  id             String                     @id @default(cuid())
+  reporterUserId String?
+  projectId      String?
+  imageAssetId   String?
+  targetType     ModerationReportTargetType
+  reason         ModerationReportReason
+  comment        String?
+  status         ModerationReportStatus     @default(PENDING)
+  targetSnapshot Json
+  reviewerUserId String?
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  reporter   User?       @relation("ModerationReportReporter", fields: [reporterUserId], references: [id], onDelete: SetNull)
+  reviewer   User?       @relation("ModerationReportReviewer", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  imageAsset ImageAsset? @relation(fields: [imageAssetId], references: [id], onDelete: SetNull)
+
+  @@index([reporterUserId, createdAt])
+  @@index([projectId, createdAt])
+  @@index([imageAssetId, createdAt])
+  @@index([status, createdAt])
+}
+
+model AccountDeletionRequest {
+  id          String                       @id @default(cuid())
+  userId      String?
+  email       String
+  status      AccountDeletionRequestStatus @default(PENDING)
+  reason      String?
+  metadata    Json
+  requestedAt DateTime                     @default(now())
+  completedAt DateTime?
+  createdAt   DateTime                     @default(now())
+  updatedAt   DateTime                     @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([email, requestedAt])
 }
 
 model GenerationJob {
-  id          String    @id @default(cuid())
-  projectId   String
-  type        JobType
-  status      JobStatus @default(QUEUED)
-  progress    Int       @default(0)
-  message     String?
-  error       String?
-  bullJobId   String?
-  payload     Json
-  steps       Json?
-  startedAt   DateTime?
-  finishedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(cuid())
+  projectId  String
+  type       JobType
+  status     JobStatus @default(QUEUED)
+  progress   Int       @default(0)
+  message    String?
+  error      String?
+  bullJobId  String?
+  payload    Json
+  steps      Json?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   providerLogs ProviderCallLog[]
   creditLedger CreditLedgerEntry[]
 }
 
 model ProviderCallLog {
-  id            String   @id @default(cuid())
-  projectId     String?
+  id              String   @id @default(cuid())
+  projectId       String?
   generationJobId String?
-  provider      String
-  model         String
-  purpose       String
-  promptTokens  Int?
-  outputTokens  Int?
-  cacheHitTokens Int?
-  costHint      Float?
-  durationMs    Int?
-  metadata      Json
-  createdAt     DateTime @default(now())
+  provider        String
+  model           String
+  purpose         String
+  promptTokens    Int?
+  outputTokens    Int?
+  cacheHitTokens  Int?
+  costHint        Float?
+  durationMs      Int?
+  metadata        Json
+  createdAt       DateTime @default(now())
 
-  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project       Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
   generationJob GenerationJob? @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
 
   @@index([generationJobId])
 }
 
 model VoiceCallEvent {
-  id                    String   @id @default(cuid())
-  projectId             String
-  characterId           String
-  clientCallId          String
-  phase                 String
-  attempt               Int?
-  elapsedMs             Int?
-  connectionState       String?
-  iceConnectionState    String?
-  iceGatheringState     String?
-  candidatePairType     String?
-  candidateProtocol     String?
+  id                     String   @id @default(cuid())
+  projectId              String
+  characterId            String
+  clientCallId           String
+  phase                  String
+  attempt                Int?
+  elapsedMs              Int?
+  connectionState        String?
+  iceConnectionState     String?
+  iceGatheringState      String?
+  candidatePairType      String?
+  candidateProtocol      String?
   currentRoundTripTimeMs Int?
-  packetsLost           Int?
-  jitterMs              Int?
-  error                 String?
-  metadata              Json
-  createdAt             DateTime @default(now())
+  packetsLost            Int?
+  jitterMs               Int?
+  error                  String?
+  metadata               Json
+  createdAt              DateTime @default(now())
 
-  project               Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  voiceCharacter        VoiceCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  voiceCharacter VoiceCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
   @@index([characterId, createdAt])
@@ -631,21 +711,21 @@ model VoiceCallEvent {
 }
 
 model VoiceConversation {
-  id                 String   @id @default(cuid())
-  projectId          String
+  id                   String   @id @default(cuid())
+  projectId            String
   parentConversationId String?
-  rootConversationId String?
-  prompt             String
-  characterSnapshots Json
-  transcript         Json
-  provider           String
-  model              String
-  audioPath          String
-  durationMs         Int?
-  metadata           Json
-  createdAt          DateTime @default(now())
+  rootConversationId   String?
+  prompt               String
+  characterSnapshots   Json
+  transcript           Json
+  provider             String
+  model                String
+  audioPath            String
+  durationMs           Int?
+  metadata             Json
+  createdAt            DateTime @default(now())
 
-  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, createdAt])
   @@index([parentConversationId])
@@ -653,13 +733,13 @@ model VoiceConversation {
 }
 
 model Embedding {
-  id          String                  @id @default(cuid())
-  projectId   String
-  scope       String
-  sourceId    String?
-  text        String
-  metadata    Json
-  createdAt   DateTime                @default(now())
+  id        String   @id @default(cuid())
+  projectId String
+  scope     String
+  sourceId  String?
+  text      String
+  metadata  Json
+  createdAt DateTime @default(now())
 
-  project     Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }

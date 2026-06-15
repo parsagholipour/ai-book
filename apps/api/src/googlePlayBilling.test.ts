@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { loadConfig } from "@book-maker/core";
 import {
   GooglePlayBillingConfigError,
-  createGooglePlayVerifier
+  createGooglePlayVerifier,
+  createGooglePlayVerifierFromConfig
 } from "./googlePlayBilling.js";
 
 describe("Google Play billing verifier", () => {
@@ -120,6 +122,68 @@ describe("Google Play billing verifier", () => {
         purchaseToken: "purchase-token"
       })
     ).rejects.toBeInstanceOf(GooglePlayBillingConfigError);
+  });
+
+  it("uses grantable mock purchases when backend dev billing is enabled", async () => {
+    const verifier = createGooglePlayVerifierFromConfig(
+      loadConfig({
+        NODE_ENV: "development",
+        MOCK_GOOGLE_PLAY_BILLING: "true"
+      })
+    );
+
+    const oneTime = await verifier.verifyPurchase({
+      packageName: "",
+      productId: "tomeza.credit_pack_1",
+      productType: "CREDIT_PACK",
+      purchaseToken: "debug-purchase-token-1"
+    });
+    const subscription = await verifier.verifyPurchase({
+      packageName: "",
+      productId: "tomeza.creator_monthly",
+      productType: "SUBSCRIPTION",
+      purchaseToken: "debug-subscription-token-1"
+    });
+
+    expect(oneTime).toMatchObject({
+      productSku: "tomeza.credit_pack_1",
+      purchaseToken: "debug-purchase-token-1",
+      kind: "one_time",
+      grantable: true,
+      providerStatus: "MOCK_PURCHASED",
+      quantity: 1,
+      metadata: { mockGooglePlayBilling: true }
+    });
+    expect(subscription).toMatchObject({
+      productSku: "tomeza.creator_monthly",
+      kind: "subscription",
+      grantable: true,
+      providerStatus: "MOCK_SUBSCRIPTION_ACTIVE",
+      subscription: { status: "ACTIVE" },
+      metadata: { mockGooglePlayBilling: true }
+    });
+    expect(subscription.subscription?.currentPeriodEnd?.getTime()).toBeGreaterThan(
+      subscription.subscription?.currentPeriodStart?.getTime() ?? 0
+    );
+  });
+
+  it("accepts mock billing by default in backend dev mode", () => {
+    const config = loadConfig({ NODE_ENV: "development" });
+
+    expect(config.NODE_ENV).toBe("development");
+    expect(config.MOCK_GOOGLE_PLAY_BILLING).toBe(true);
+  });
+
+  it("does not accept mock billing in production", () => {
+    const config = loadConfig({
+      NODE_ENV: "production",
+      MOCK_AI: "true",
+      MOCK_GOOGLE_PLAY_BILLING: "true"
+    });
+
+    expect(config.NODE_ENV).toBe("production");
+    expect(config.MOCK_AI).toBe(true);
+    expect(config.MOCK_GOOGLE_PLAY_BILLING).toBe(false);
   });
 });
 

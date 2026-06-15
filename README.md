@@ -48,6 +48,8 @@ Open `http://localhost:5173`.
 
 The API runs on `http://localhost:4001`, with OpenAPI docs at `http://localhost:4001/docs`.
 
+Backend dev mode (`pnpm dev:api` or Docker dev, both `NODE_ENV=development`) accepts debug Google Play purchases and grants credits through the normal ledger, so the mobile app can buy credit packs repeatedly without contacting Google Play. Set `MOCK_GOOGLE_PLAY_BILLING=false` if you specifically want to test real Google Play verification in dev.
+
 ## Auth Behavior
 
 `WEB_PASSWORD` is still the optional local/operator password for the existing web console. It sets an HTTP-only cookie through `/api/auth/login` and protects the legacy `/api/*`, `/docs`, and generated asset routes when configured.

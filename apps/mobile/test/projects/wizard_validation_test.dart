@@ -110,6 +110,14 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<ProjectDeletionReceipt> deleteProject(String id) async {
+    return ProjectDeletionReceipt(
+      deletedProjectId: id,
+      retainedLogs: 'Retained safety records.',
+    );
+  }
+
+  @override
   Future<MobilePlanOperation> generatePlan(String projectId) async {
     return fakeOperation(projectId: projectId, status: 'planning_queued');
   }
@@ -162,10 +170,42 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<ModerationReportReceipt> reportAsset({
+    required String projectId,
+    required String assetId,
+    required String reason,
+    String? comment,
+  }) async {
+    return fakeReportReceipt(targetType: 'image_asset', reason: reason);
+  }
+
+  @override
+  Future<ModerationReportReceipt> reportProject({
+    required String projectId,
+    required String reason,
+    String? comment,
+  }) async {
+    return fakeReportReceipt(targetType: 'project', reason: reason);
+  }
+
+  @override
   Future<void> shareExport({
     required String projectId,
     required MobileExportAvailability export,
   }) async {}
+}
+
+ModerationReportReceipt fakeReportReceipt({
+  required String targetType,
+  required String reason,
+}) {
+  return ModerationReportReceipt(
+    id: 'report-1',
+    targetType: targetType,
+    reason: reason,
+    status: 'pending',
+    createdAt: DateTime.utc(2026, 6, 15),
+  );
 }
 
 MobileProjectDetail fakeProjectDetail({required String id}) {

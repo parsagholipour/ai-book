@@ -7,6 +7,7 @@ import { DEFAULT_DEEPINFRA_BASE_URL, DEFAULT_DEEPINFRA_FAST_MODEL, DEFAULT_DEEPI
 import { normalizeGeminiImageModel } from "./adapters/geminiModels.js";
 
 const envSchema = z.object({
+  NODE_ENV: z.string().optional(),
   PORT: z.coerce.number().int().positive().optional(),
   RAILWAY_ENVIRONMENT: z.string().optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
@@ -51,6 +52,10 @@ const envSchema = z.object({
   API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_URL: z.string().url().default("http://localhost:4001"),
+  PRIVACY_POLICY_URL: z.string().url().default("https://example.com/tomeza/privacy"),
+  TERMS_OF_SERVICE_URL: z.string().url().default("https://example.com/tomeza/terms"),
+  ACCOUNT_DELETION_URL: z.string().url().default("https://example.com/tomeza/account-deletion"),
+  SUPPORT_EMAIL: z.string().email().default("support@example.com"),
   GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
   GOOGLE_PLAY_ACCESS_TOKEN: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
@@ -72,10 +77,19 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((value) => value === "true")
-    .default(false)
-}).transform(({ PORT, RAILWAY_ENVIRONMENT, API_PORT, ...env }) => {
+    .default(false),
+  MOCK_GOOGLE_PLAY_BILLING: z
+    .string()
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === "true"))
+}).transform(({ NODE_ENV, PORT, RAILWAY_ENVIRONMENT, API_PORT, MOCK_AI, MOCK_GOOGLE_PLAY_BILLING, ...env }) => {
+  const nodeEnv = NODE_ENV?.trim() || undefined;
+  const devMode = nodeEnv === "development" || nodeEnv === "test";
   return {
     ...env,
+    NODE_ENV: nodeEnv,
+    MOCK_AI,
+    MOCK_GOOGLE_PLAY_BILLING: devMode ? MOCK_GOOGLE_PLAY_BILLING ?? true : false,
     API_PORT: RAILWAY_ENVIRONMENT ? PORT ?? API_PORT ?? 4001 : API_PORT ?? PORT ?? 4001
   };
 });

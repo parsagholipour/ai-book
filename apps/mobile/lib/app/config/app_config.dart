@@ -15,10 +15,21 @@ enum AppEnvironment {
 }
 
 class AppConfig {
-  const AppConfig({required this.environment, required this.apiBaseUrl});
+  const AppConfig({
+    required this.environment,
+    required this.apiBaseUrl,
+    required this.privacyPolicyUrl,
+    required this.termsOfServiceUrl,
+    required this.accountDeletionUrl,
+    required this.supportEmail,
+  });
 
   final AppEnvironment environment;
   final Uri apiBaseUrl;
+  final Uri privacyPolicyUrl;
+  final Uri termsOfServiceUrl;
+  final Uri accountDeletionUrl;
+  final String supportEmail;
 
   static AppConfig fromDartDefine() {
     const rawEnvironment = String.fromEnvironment(
@@ -26,14 +37,42 @@ class AppConfig {
       defaultValue: 'local',
     );
     const rawApiBaseUrl = String.fromEnvironment('API_BASE_URL');
+    const rawPrivacyPolicyUrl = String.fromEnvironment(
+      'PRIVACY_POLICY_URL',
+      defaultValue: 'https://example.com/tomeza/privacy',
+    );
+    const rawTermsOfServiceUrl = String.fromEnvironment(
+      'TERMS_OF_SERVICE_URL',
+      defaultValue: 'https://example.com/tomeza/terms',
+    );
+    const rawAccountDeletionUrl = String.fromEnvironment(
+      'ACCOUNT_DELETION_URL',
+      defaultValue: 'https://example.com/tomeza/account-deletion',
+    );
+    const rawSupportEmail = String.fromEnvironment(
+      'SUPPORT_EMAIL',
+      defaultValue: 'support@example.com',
+    );
 
     final environment = AppEnvironment.parse(rawEnvironment);
     final apiBaseUrl = rawApiBaseUrl.trim().isEmpty
         ? _defaultApiBaseUrl(environment)
         : Uri.parse(rawApiBaseUrl.trim());
+    final privacyPolicyUrl = Uri.parse(rawPrivacyPolicyUrl.trim());
+    final termsOfServiceUrl = Uri.parse(rawTermsOfServiceUrl.trim());
+    final accountDeletionUrl = Uri.parse(rawAccountDeletionUrl.trim());
 
     if (!apiBaseUrl.hasScheme || apiBaseUrl.host.isEmpty) {
       throw StateError('API_BASE_URL must be an absolute URL.');
+    }
+    for (final url in [
+      privacyPolicyUrl,
+      termsOfServiceUrl,
+      accountDeletionUrl,
+    ]) {
+      if (!url.hasScheme || url.host.isEmpty) {
+        throw StateError('Policy and account deletion URLs must be absolute.');
+      }
     }
 
     if (environment != AppEnvironment.local && apiBaseUrl.scheme != 'https') {
@@ -42,7 +81,16 @@ class AppConfig {
       );
     }
 
-    return AppConfig(environment: environment, apiBaseUrl: apiBaseUrl);
+    return AppConfig(
+      environment: environment,
+      apiBaseUrl: apiBaseUrl,
+      privacyPolicyUrl: privacyPolicyUrl,
+      termsOfServiceUrl: termsOfServiceUrl,
+      accountDeletionUrl: accountDeletionUrl,
+      supportEmail: rawSupportEmail.trim().isEmpty
+          ? 'support@example.com'
+          : rawSupportEmail.trim(),
+    );
   }
 
   static Uri _defaultApiBaseUrl(AppEnvironment environment) {

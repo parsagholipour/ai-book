@@ -103,7 +103,7 @@ export const SUBCATEGORY_OPTIONS: Record<ProjectCategory, string[]> = {
     "Physics",
     "Climate & environment",
     "Technology",
-    "Medicine & health",
+    "Health science education",
     "Mathematics",
     "Earth science"
   ],
@@ -132,8 +132,8 @@ export const SUBCATEGORY_OPTIONS: Record<ProjectCategory, string[]> = {
     "Marketing & sales",
     "Leadership",
     "Career development",
-    "Personal finance",
-    "Investing",
+    "Personal finance education",
+    "Investing education",
     "Product & startups",
     "Management"
   ],
@@ -150,10 +150,10 @@ export const SUBCATEGORY_OPTIONS: Record<ProjectCategory, string[]> = {
   HEALTH: [
     "Nutrition",
     "Fitness",
-    "Mental health",
+    "Mental wellbeing education",
     "Sleep",
-    "Medicine & patient education",
-    "Public health",
+    "Patient education (not medical advice)",
+    "Public health education",
     "Aging & longevity",
     "Wellness"
   ],
@@ -184,7 +184,7 @@ export const SUBCATEGORY_OPTIONS: Record<ProjectCategory, string[]> = {
     "Philosophy & ideas",
     "Religion & spirituality",
     "Economics",
-    "Law & justice",
+    "Law & civic education",
     "Environment & society"
   ],
   ARTS: [

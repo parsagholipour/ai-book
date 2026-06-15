@@ -573,6 +573,49 @@ class ProjectExportFile {
   final String path;
 }
 
+class ModerationReportReceipt {
+  const ModerationReportReceipt({
+    required this.id,
+    required this.targetType,
+    required this.reason,
+    required this.status,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String targetType;
+  final String reason;
+  final String status;
+  final DateTime createdAt;
+
+  factory ModerationReportReceipt.fromJson(Map<String, dynamic> json) {
+    return ModerationReportReceipt(
+      id: json['id'] as String,
+      targetType: json['targetType'] as String,
+      reason: json['reason'] as String,
+      status: json['status'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+}
+
+class ProjectDeletionReceipt {
+  const ProjectDeletionReceipt({
+    required this.deletedProjectId,
+    required this.retainedLogs,
+  });
+
+  final String deletedProjectId;
+  final String retainedLogs;
+
+  factory ProjectDeletionReceipt.fromJson(Map<String, dynamic> json) {
+    return ProjectDeletionReceipt(
+      deletedProjectId: json['deletedProjectId'] as String,
+      retainedLogs: json['retainedLogs'] as String? ?? '',
+    );
+  }
+}
+
 int estimateApprovalCredits(
   MobileProjectDetail project,
   Map<String, dynamic> creditCosts,

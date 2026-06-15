@@ -2,6 +2,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
+import { InMemoryRateLimiter, rateLimitKey, sendRateLimitError, type RateLimitConfig } from "./rateLimit.js";
 
 const ACCESS_TOKEN_PREFIX = "bma_at";
 const REFRESH_TOKEN_PREFIX = "bma_rt";
@@ -43,11 +44,6 @@ const signInBodySchema = z
   .strict();
 const refreshBodySchema = z.object({ refreshToken: tokenSchema }).strict();
 const logoutBodySchema = z.object({ refreshToken: tokenSchema.optional() }).strict();
-
-type RateLimitConfig = {
-  maxAttempts: number;
-  windowMs: number;
-};
 
 type MobileAuthRouteOptions = {
   signUpRateLimit?: Partial<RateLimitConfig>;
@@ -116,33 +112,6 @@ type RefreshedSession =
       session: IssuedMobileSession;
     }
   | AuthFailure;
-
-class InMemoryRateLimiter {
-  private readonly buckets = new Map<string, { count: number; resetAt: number }>();
-  private readonly config: RateLimitConfig;
-
-  constructor(config: RateLimitConfig) {
-    this.config = config;
-  }
-
-  hit(key: string, now = Date.now()): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
-    const existing = this.buckets.get(key);
-    if (!existing || existing.resetAt <= now) {
-      this.buckets.set(key, { count: 1, resetAt: now + this.config.windowMs });
-      return { allowed: true };
-    }
-
-    existing.count += 1;
-    if (existing.count <= this.config.maxAttempts) {
-      return { allowed: true };
-    }
-
-    return {
-      allowed: false,
-      retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - now) / 1000))
-    };
-  }
-}
 
 export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = async (fastify, options) => {
   const signUpLimiter = new InMemoryRateLimiter({
@@ -541,10 +510,6 @@ function requestSessionContext(request: FastifyRequest): MobileSessionContext {
   };
 }
 
-function rateLimitKey(request: FastifyRequest, email: string): string {
-  return `${request.ip || "unknown"}:${email}`;
-}
-
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -609,11 +574,6 @@ function sendAuthError(reply: FastifyReply, statusCode: number, code: string, me
       message
     }
   });
-}
-
-function sendRateLimitError(reply: FastifyReply, retryAfterSeconds: number): FastifyReply {
-  reply.header("Retry-After", String(retryAfterSeconds));
-  return sendAuthError(reply, 429, "RATE_LIMITED", "Too many attempts. Try again soon.");
 }
 
 function hasValidationError(request: FastifyRequest): boolean {

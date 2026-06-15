@@ -11,10 +11,10 @@ FLUTTER_DART_DEFINES := --dart-define=APP_ENV=$(FLUTTER_APP_ENV) --dart-define=A
 fix-docker-access:
 	sudo snap connect docker:removable-media
 
-# Always start the full stack (postgres, redis, api, worker, web).
+# Always start the full stack (postgres, redis, pgadmin, api, worker, web).
 up:
 	@./scripts/ensure-docker-access.sh
-	docker compose up -d --build postgres redis api worker web
+	docker compose up -d --build postgres redis pgadmin api worker web
 
 down:
 	docker compose down

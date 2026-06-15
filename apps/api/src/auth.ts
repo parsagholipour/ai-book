@@ -97,7 +97,13 @@ function shouldProtectPath(path: string): boolean {
 }
 
 function isOperatorOnlyPath(path: string): boolean {
-  return path.startsWith("/docs") || path === "/api/runtime" || path === "/api/voice/rtc-config" || path === "/api/voice/providers";
+  return (
+    path.startsWith("/docs") ||
+    path.startsWith("/api/admin/") ||
+    path === "/api/runtime" ||
+    path === "/api/voice/rtc-config" ||
+    path === "/api/voice/providers"
+  );
 }
 
 function isAuthenticatedRequest(request: FastifyRequest, config: AppConfig): boolean {

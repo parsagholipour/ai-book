@@ -56,13 +56,25 @@ button {
 }
 
 .auth-icon {
-  width: 54px;
-  height: 54px;
+  width: 58px;
+  height: 58px;
   display: grid;
   place-items: center;
-  border-radius: 16px;
+  border-radius: 18px;
   background: #23665d;
   color: #fffefa;
+}
+
+.app-logo {
+  width: 32px;
+  height: 32px;
+  display: block;
+  flex: 0 0 auto;
+}
+
+.auth-icon .app-logo {
+  width: 42px;
+  height: 42px;
 }
 
 .auth-form {

@@ -11,11 +11,26 @@ import { prisma } from "@book-maker/db";
 import { registerAuth } from "./auth.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
 import { mobileProjectRoutes } from "./mobileProjects.js";
+import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { closeQueue } from "./queue.js";
 import { projectRoutes } from "./routes/projects.js";
 
 const config = loadConfig();
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: {
+    redact: [
+      "req.headers.authorization",
+      "req.headers.cookie",
+      "res.headers.set-cookie",
+      "body.password",
+      "body.refreshToken",
+      "body.purchaseToken",
+      "body.comment",
+      "body.reason",
+      "body.reviewNotes"
+    ]
+  }
+});
 
 await mkdir(config.BOOK_STORAGE_DIR, { recursive: true });
 await mkdir(config.IMAGE_STORAGE_DIR, { recursive: true });
@@ -34,6 +49,7 @@ await app.register(swagger, {
 await app.register(swaggerUi, { routePrefix: "/docs" });
 await app.register(mobileAuthRoutes);
 await app.register(mobileProjectRoutes);
+await app.register(mobileSafetyRoutes);
 await app.register(projectRoutes);
 
 const webDistDir = findWebDistDir();
