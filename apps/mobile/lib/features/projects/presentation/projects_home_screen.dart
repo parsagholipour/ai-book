@@ -125,15 +125,15 @@ class _HomeContent extends StatelessWidget {
       );
     }
 
-    final sortedProjects = _sortProjectsByNextAction(projects);
+    final sortedProjects = sortProjectsByNextAction(projects);
     final attentionProjects = sortedProjects
         .where(
-          (project) => _ProjectHomeAction.forProject(project).needsUserAction,
+          (project) => ProjectHomeAction.forProject(project).needsUserAction,
         )
         .toList();
     final backgroundProjects = sortedProjects
         .where(
-          (project) => !_ProjectHomeAction.forProject(project).needsUserAction,
+          (project) => !ProjectHomeAction.forProject(project).needsUserAction,
         )
         .toList();
     final name = _firstName(displayName);
@@ -433,7 +433,7 @@ class ProjectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final action = _ProjectHomeAction.forProject(project);
+    final action = ProjectHomeAction.forProject(project);
     final progress = (project.progressPercent / 100).clamp(0.0, 1.0);
 
     return Card(
@@ -524,7 +524,7 @@ class ProjectCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final label in _projectMeta(project))
+                  for (final label in projectMeta(project))
                     AppMetricChip(label: label),
                 ],
               ),
@@ -551,8 +551,8 @@ class ProjectCard extends StatelessWidget {
   }
 }
 
-class _ProjectHomeAction {
-  const _ProjectHomeAction({
+class ProjectHomeAction {
+  const ProjectHomeAction({
     required this.priority,
     required this.statusLabel,
     required this.nextAction,
@@ -581,11 +581,11 @@ class _ProjectHomeAction {
     return '/projects/${project.id}$suffix';
   }
 
-  static _ProjectHomeAction forProject(MobileProjectSummary project) {
+  static ProjectHomeAction forProject(MobileProjectSummary project) {
     final status = project.status.toLowerCase();
 
     if (status == 'failed') {
-      return const _ProjectHomeAction(
+      return const ProjectHomeAction(
         priority: 0,
         statusLabel: 'Needs your attention',
         nextAction: 'Retry or review the issue',
@@ -600,7 +600,7 @@ class _ProjectHomeAction {
     }
 
     if (status == 'plan_ready') {
-      return const _ProjectHomeAction(
+      return const ProjectHomeAction(
         priority: 1,
         statusLabel: 'Plan ready',
         nextAction: 'Review the plan',
@@ -614,7 +614,7 @@ class _ProjectHomeAction {
     }
 
     if (status == 'complete' || project.hasReadyExport) {
-      return const _ProjectHomeAction(
+      return const ProjectHomeAction(
         priority: 3,
         statusLabel: 'Exports ready',
         nextAction: 'Download or share',
@@ -629,7 +629,7 @@ class _ProjectHomeAction {
     }
 
     if (status == 'planning') {
-      return const _ProjectHomeAction(
+      return const ProjectHomeAction(
         priority: 4,
         statusLabel: 'Plan in progress',
         nextAction: 'Wait for the plan',
@@ -642,7 +642,7 @@ class _ProjectHomeAction {
     }
 
     if (status == 'draft' || !project.hasPlan) {
-      return const _ProjectHomeAction(
+      return const ProjectHomeAction(
         priority: 2,
         statusLabel: 'Ready for a plan',
         nextAction: 'Build the plan',
@@ -656,7 +656,7 @@ class _ProjectHomeAction {
 
     if (status == 'generating') {
       final preparingDownloads = project.progressPercent >= 90;
-      return _ProjectHomeAction(
+      return ProjectHomeAction(
         priority: 5,
         statusLabel: preparingDownloads
             ? 'Preparing downloads'
@@ -673,7 +673,7 @@ class _ProjectHomeAction {
       );
     }
 
-    return const _ProjectHomeAction(
+    return const ProjectHomeAction(
       priority: 6,
       statusLabel: 'In progress',
       nextAction: 'Open this book',
@@ -686,13 +686,13 @@ class _ProjectHomeAction {
   }
 }
 
-List<MobileProjectSummary> _sortProjectsByNextAction(
+List<MobileProjectSummary> sortProjectsByNextAction(
   List<MobileProjectSummary> projects,
 ) {
   final sorted = [...projects];
   sorted.sort((a, b) {
-    final actionA = _ProjectHomeAction.forProject(a);
-    final actionB = _ProjectHomeAction.forProject(b);
+    final actionA = ProjectHomeAction.forProject(a);
+    final actionB = ProjectHomeAction.forProject(b);
     final priority = actionA.priority.compareTo(actionB.priority);
     if (priority != 0) {
       return priority;
@@ -706,7 +706,7 @@ List<MobileProjectSummary> _sortProjectsByNextAction(
   return sorted;
 }
 
-List<String> _projectMeta(MobileProjectSummary project) {
+List<String> projectMeta(MobileProjectSummary project) {
   return [
     project.bookTypeLabel,
     project.lengthPresetLabel,

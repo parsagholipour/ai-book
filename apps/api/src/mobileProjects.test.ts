@@ -517,6 +517,42 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("starts a creation session with the first user message already persisted", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", status: "ACTIVE", payload: data.payload })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions",
+      headers: bearer("token-a"),
+      payload: { message: "Bedtime story for 5 year olds" }
+    });
+    const body = response.json();
+    const createCall = mockPrisma.mobileCreationDraft.create.mock.calls.at(0)?.[0] as {
+      data: { payload: Record<string, any> };
+    };
+
+    expect(response.statusCode).toBe(201);
+    expect(body.session.draftId).toBe("session-draft");
+    expect(body.turn.detectedLane).toBe("children_story");
+    expect(body.turn.readiness.canBuild).toBe(true);
+    expect(body.session.messages.map((message: { role: string }) => message.role)).toEqual([
+      "assistant",
+      "user",
+      "assistant"
+    ]);
+    expect(createCall.data.payload.rawIdea).toBe("Bedtime story for 5 year olds");
+    expect(createCall.data.payload.messages.map((message: { role: string }) => message.role)).toEqual([
+      "assistant",
+      "user",
+      "assistant"
+    ]);
+    await app.close();
+  });
+
   it("resumes an active session and runs a turn once the user has replied", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(

@@ -25,6 +25,7 @@ void main() {
     expect(find.text('New book'), findsOneWidget);
     expect(find.text(_greeting), findsOneWidget);
     expect(find.text('A kids book'), findsOneWidget);
+    expect(creation.startedMessages, isEmpty);
 
     final buildFinder = find.widgetWithText(FilledButton, 'Build the plan');
     expect(tester.widget<FilledButton>(buildFinder).onPressed, isNull);
@@ -40,6 +41,7 @@ void main() {
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
 
+    expect(creation.startedMessages, contains('A kids book'));
     expect(creation.sentMessages, contains('A kids book'));
     expect(find.text(_reply), findsOneWidget);
 
@@ -49,29 +51,30 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('advanced sheet overrides the book type with a Your choice badge', (
-    tester,
-  ) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'advanced sheet overrides the book type with a Your choice badge',
+    (tester) async {
+      final creation = _ScriptedCreationRepository();
+      await tester.pumpWidget(_app(creation: creation));
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Advanced settings'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Advanced settings'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Advanced settings'), findsOneWidget);
-    await tester.tap(find.text('Workbook').first);
-    await tester.pumpAndSettle();
+      expect(find.text('Advanced settings'), findsOneWidget);
+      await tester.tap(find.text('Workbook').first);
+      await tester.pumpAndSettle();
 
-    expect(find.text('Your choice'), findsWidgets);
+      expect(find.text('Your choice'), findsWidgets);
 
-    final doneButton = find.widgetWithText(FilledButton, 'Done');
-    await tester.ensureVisible(doneButton);
-    await tester.tap(doneButton);
-    await tester.pumpAndSettle();
+      final doneButton = find.widgetWithText(FilledButton, 'Done');
+      await tester.ensureVisible(doneButton);
+      await tester.tap(doneButton);
+      await tester.pumpAndSettle();
 
-    await tester.teardownScreen();
-  });
+      await tester.teardownScreen();
+    },
+  );
 
   testWidgets('building shows the generated plan in-chat', (tester) async {
     final creation = _ScriptedCreationRepository();
@@ -94,6 +97,47 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets('changing draftId reloads the selected chat', (tester) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Selected chat draft-a'), findsOneWidget);
+
+    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+    await tester.pumpAndSettle();
+
+    expect(creation.resumedDraftIds, ['draft-a', 'draft-b']);
+    expect(find.text('Selected chat draft-a'), findsNothing);
+    expect(find.text('Selected chat draft-b'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('fresh new chat is saved only after the first message', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Tell me about the book'), findsOneWidget);
+    expect(creation.startedMessages, isEmpty);
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'A workbook for new coaches',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(creation.startedMessages, ['A workbook for new coaches']);
+    expect(find.text(_reply), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
 }
 
 extension on WidgetTester {
@@ -107,6 +151,8 @@ extension on WidgetTester {
 Widget _app({
   required _ScriptedCreationRepository creation,
   ProjectsRepository? projects,
+  String? draftId,
+  bool startFresh = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -117,7 +163,7 @@ Widget _app({
     ],
     child: MaterialApp(
       theme: buildTomezaLightTheme(),
-      home: const CreationChatScreen(),
+      home: CreationChatScreen(draftId: draftId, startFresh: startFresh),
     ),
   );
 }
@@ -152,8 +198,13 @@ Map<String, dynamic> _turnJson({
 
 class _ScriptedCreationRepository implements CreationRepository {
   final sentMessages = <String>[];
+  final startedMessages = <String>[];
+  final resumedDraftIds = <String>[];
   MobileCreationPresets? buildPresets;
   String? buildDraftId;
+
+  @override
+  Future<List<MobileChatSession>> listSessions() async => const [];
 
   @override
   Future<MobileCreationConversationResponse> resumeConversation() async {
@@ -167,7 +218,39 @@ class _ScriptedCreationRepository implements CreationRepository {
   }
 
   @override
-  Future<MobileCreationConversationResponse> startConversation() async {
+  Future<MobileCreationConversationResponse> resumeConversationById(
+    String draftId,
+  ) async {
+    resumedDraftIds.add(draftId);
+    return MobileCreationConversationResponse.fromJson({
+      'session': {
+        'draftId': draftId,
+        'status': 'ACTIVE',
+        'messages': [
+          {'role': 'assistant', 'content': 'Selected chat $draftId'},
+        ],
+        'createdProjectId': null,
+        'updatedAt': '2026-06-15T00:00:00.000Z',
+      },
+      'turn': _turnJson(
+        assistantMessage: 'Selected chat $draftId',
+        canBuild: false,
+        quickReplies: const [],
+      ),
+    });
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> startConversation({
+    String? message,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+  }) async {
+    if (message != null) {
+      startedMessages.add(message);
+      return sendConversationMessage(draftId: 'draft-1', message: message);
+    }
     return MobileCreationConversationResponse.fromJson({
       'session': {
         'draftId': 'draft-1',

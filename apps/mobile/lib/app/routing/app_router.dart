@@ -8,7 +8,6 @@ import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/generation_progress_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
-import '../../features/projects/presentation/projects_home_screen.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -54,7 +53,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/home',
-        builder: (context, state) => const ProjectsHomeScreen(),
+        builder: (context, state) => const CreationChatScreen(),
       ),
       GoRoute(
         path: '/account',
@@ -62,7 +61,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/books/new',
-        builder: (context, state) => const CreationChatScreen(),
+        builder: (context, state) {
+          final fresh = state.uri.queryParameters['fresh'] == 'true';
+          return CreationChatScreen(startFresh: fresh);
+        },
+      ),
+      GoRoute(
+        path: '/books/chat/:draftId',
+        builder: (context, state) => CreationChatScreen(
+          draftId: state.pathParameters['draftId'],
+        ),
       ),
       GoRoute(
         path: '/projects/:id',

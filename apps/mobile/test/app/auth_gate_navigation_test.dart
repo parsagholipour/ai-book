@@ -29,39 +29,22 @@ void main() {
     expect(find.text('I already have an account'), findsOneWidget);
   });
 
-  testWidgets(
-    'authenticated users land on projects home and can open the book wizard',
-    (tester) async {
-      await tester.pumpWidget(
-        testApp(
-          authRepository: FakeAuthRepository(initialSession: fakeSession()),
-          projectsRepository: FakeProjectsRepository(projects: [fakeProject()]),
-          billingRepository: FakeBillingRepository(billing: fakeBilling()),
-        ),
-      );
+  testWidgets('authenticated users land on the book chat', (tester) async {
+    await tester.pumpWidget(
+      testApp(
+        authRepository: FakeAuthRepository(initialSession: fakeSession()),
+        projectsRepository: FakeProjectsRepository(projects: [fakeProject()]),
+        billingRepository: FakeBillingRepository(billing: fakeBilling()),
+      ),
+    );
 
-      await tester.pumpAndSettle();
+    await tester.pumpAndSettle();
 
-      expect(find.text('Welcome back, Mira'), findsOneWidget);
-      expect(find.text('Book credits'), findsOneWidget);
-      expect(find.text('Audience Growth Workbook'), findsOneWidget);
-      expect(find.text('Create your account'), findsNothing);
-
-      await tester.tap(
-        find.widgetWithText(OutlinedButton, 'Start another book'),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('New book'), findsOneWidget);
-      expect(find.text('Book brief'), findsWidgets);
-
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-
-      expect(find.text('Welcome back, Mira'), findsOneWidget);
-      expect(find.text('New book'), findsNothing);
-    },
-  );
+    expect(find.text('New book'), findsOneWidget);
+    expect(find.text('Book brief'), findsWidgets);
+    expect(find.text('A kids book'), findsOneWidget);
+    expect(find.text('Create your account'), findsNothing);
+  });
 }
 
 Widget testApp({
@@ -122,6 +105,9 @@ class FakeAuthRepository implements AuthRepository {
 
 class FakeCreationRepository implements CreationRepository {
   @override
+  Future<List<MobileChatSession>> listSessions() async => const [];
+
+  @override
   Future<MobileCreationDraft?> getActiveDraft() async => null;
 
   @override
@@ -155,7 +141,19 @@ class FakeCreationRepository implements CreationRepository {
   }
 
   @override
-  Future<MobileCreationConversationResponse> startConversation() async {
+  Future<MobileCreationConversationResponse> resumeConversationById(
+    String draftId,
+  ) async {
+    return fakeGreetingConversation(withSession: true);
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> startConversation({
+    String? message,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+  }) async {
     return fakeGreetingConversation(withSession: true);
   }
 

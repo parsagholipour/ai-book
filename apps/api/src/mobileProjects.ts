@@ -448,6 +448,16 @@ const mobileCreationMessageBodySchema = z
   })
   .strict();
 
+const mobileCreationSessionStartBodySchema = z
+  .object({
+    message: z.string().trim().min(1).max(4000).optional(),
+    presets: mobileCreationPresetsSchema.optional(),
+    sourceNotes: z.string().trim().max(12000).optional(),
+    optionalDetails: mobileCreationOptionalDetailsSchema.optional()
+  })
+  .strict()
+  .default({});
+
 const mobileCreationBuildBodySchema = z
   .object({
     presets: mobileCreationPresetsSchema.optional(),
@@ -866,6 +876,42 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   );
 
   fastify.get(
+    "/api/mobile/creation-sessions",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const drafts = await prisma.mobileCreationDraft.findMany({
+        where: { userId: auth.user.id },
+        orderBy: { updatedAt: "desc" },
+        take: 100
+      });
+      const sessions = drafts.flatMap((draft) => {
+        const parsed = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+        if (!parsed.success) return [];
+        const payload = parsed.data;
+        const messages = payload.messages ?? [];
+        const title = _chatTitleForPayload(payload);
+        const lastMsg = messages.length > 0 ? messages[messages.length - 1] : undefined;
+        const preview = lastMsg ? lastMsg.content.trim().slice(0, 100) : "";
+        return [{
+          draftId: draft.id,
+          title,
+          preview,
+          messageCount: messages.length,
+          status: draft.status,
+          createdProjectId: draft.createdProjectId,
+          createdAt: draft.createdAt.toISOString(),
+          updatedAt: draft.updatedAt.toISOString()
+        }];
+      });
+      return { sessions };
+    }
+  );
+
+  fastify.get(
     "/api/mobile/creation-sessions/active",
     { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
     async (request, reply) => {
@@ -899,6 +945,40 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     }
   );
 
+  fastify.get(
+    "/api/mobile/creation-sessions/:id",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id }
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "NOT_FOUND", "Chat session not found.");
+      }
+      const parsed = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      if (!parsed.success) {
+        return sendMobileError(reply, 404, "NOT_FOUND", "Chat session could not be loaded.");
+      }
+      const messages = conversationMessagesFromPayload(parsed.data);
+      const hasUserMessage = messages.some((message) => message.role === "user");
+      const turn = hasUserMessage
+        ? await runCreationTurn(turnRequestFromPayload(parsed.data, messages), {
+            enrich: creationEnrichment,
+            timeoutMs: options.creationTurnTimeoutMs
+          })
+        : greetingCreationTurn();
+      return {
+        session: serializeCreationSession(draft, messages),
+        turn
+      } satisfies MobileCreationConversationResponseDto;
+    }
+  );
+
   fastify.post(
     "/api/mobile/creation-sessions",
     { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError } } },
@@ -910,11 +990,50 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-session-start")) {
         return;
       }
+      const parsedBody = mobileCreationSessionStartBodySchema.safeParse(request.body ?? {});
+      if (!parsedBody.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a short message to start the chat.");
+      }
       const greeting = greetingCreationTurn();
       const greetingMessages: MobileCreationMessage[] = [
         { role: "assistant" as const, content: greeting.assistantMessage }
       ];
-      const payload = mobileCreationDraftPayloadSchema.parse({ payloadVersion: 3, messages: greetingMessages });
+      const firstMessage = parsedBody.data.message;
+      let turn = greeting;
+      let messages = greetingMessages;
+      let payload: MobileCreationDraftPayload;
+      if (firstMessage) {
+        const nextMessages: MobileCreationMessage[] = [
+          ...greetingMessages,
+          { role: "user" as const, content: firstMessage }
+        ].slice(-60);
+        const turnRequest: MobileCreationTurnRequest = {
+          messages: nextMessages,
+          presets: parsedBody.data.presets,
+          sourceNotes: parsedBody.data.sourceNotes,
+          optionalDetails: parsedBody.data.optionalDetails
+        };
+        turn = await runCreationTurn(turnRequest, {
+          enrich: creationEnrichment,
+          timeoutMs: options.creationTurnTimeoutMs
+        });
+        messages = [
+          ...nextMessages,
+          { role: "assistant" as const, content: turn.assistantMessage }
+        ].slice(-60);
+        payload = mobileCreationDraftPayloadSchema.parse({
+          payloadVersion: 3,
+          rawIdea: userTextFromMessages(messages),
+          optionalDetails: turnRequest.optionalDetails ?? { mustInclude: "", tone: "" },
+          sourceNotes: turnRequest.sourceNotes ?? "",
+          detectedLane: turn.brief.lane,
+          recipe: turn.brief,
+          selectedPresets: turn.presets,
+          messages
+        });
+      } else {
+        payload = mobileCreationDraftPayloadSchema.parse({ payloadVersion: 3, messages });
+      }
       const draft = await prisma.mobileCreationDraft.create({
         data: {
           userId: auth.user.id,
@@ -923,8 +1042,8 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         }
       });
       return reply.code(201).send({
-        session: serializeCreationSession(draft, greetingMessages),
-        turn: greeting
+        session: serializeCreationSession(draft, messages),
+        turn
       } satisfies MobileCreationConversationResponseDto);
     }
   );
@@ -1804,6 +1923,14 @@ async function queueInitialMobilePlan(
     }
     throw error;
   }
+}
+
+function _chatTitleForPayload(payload: MobileCreationDraftPayload): string {
+  if (payload.recipe?.title?.trim()) return payload.recipe.title.trim();
+  if (payload.brief?.topic?.trim()) return payload.brief.topic.trim();
+  const firstUser = payload.messages?.find((m) => m.role === "user");
+  if (firstUser?.content?.trim()) return firstUser.content.trim().slice(0, 60);
+  return "New book";
 }
 
 function serializeCreationDraft(draft: {

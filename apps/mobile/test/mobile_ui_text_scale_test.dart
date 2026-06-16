@@ -188,6 +188,9 @@ class _NeverProjectsRepository implements ProjectsRepository {
 
 class _FakeCreationRepository implements CreationRepository {
   @override
+  Future<List<MobileChatSession>> listSessions() async => const [];
+
+  @override
   Future<MobileCreationDraft?> getActiveDraft() async => null;
 
   @override
@@ -221,7 +224,19 @@ class _FakeCreationRepository implements CreationRepository {
   }
 
   @override
-  Future<MobileCreationConversationResponse> startConversation() async {
+  Future<MobileCreationConversationResponse> resumeConversationById(
+    String draftId,
+  ) async {
+    return fakeCreationConversation(withSession: true);
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> startConversation({
+    String? message,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+  }) async {
     return fakeCreationConversation(withSession: true);
   }
 

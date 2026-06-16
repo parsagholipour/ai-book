@@ -544,6 +544,43 @@ class MobileCreationFinalizeResponse {
   }
 }
 
+class MobileChatSession {
+  const MobileChatSession({
+    required this.draftId,
+    required this.title,
+    required this.preview,
+    required this.messageCount,
+    required this.status,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdProjectId,
+  });
+
+  final String draftId;
+  final String title;
+  final String preview;
+  final int messageCount;
+  final String status;
+  final String? createdProjectId;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  bool get isActive => status == 'ACTIVE';
+
+  factory MobileChatSession.fromJson(Map<String, dynamic> json) {
+    return MobileChatSession(
+      draftId: json['draftId'] as String,
+      title: json['title'] as String,
+      preview: json['preview'] as String,
+      messageCount: json['messageCount'] as int,
+      status: json['status'] as String,
+      createdProjectId: json['createdProjectId'] as String?,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
 List<String> _stringList(Object? value) {
   if (value is! List<dynamic>) {
     return const [];

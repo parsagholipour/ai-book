@@ -4,6 +4,8 @@ import '../../../shared/api/api_client.dart';
 import '../domain/creation_models.dart';
 
 abstract interface class CreationRepository {
+  Future<List<MobileChatSession>> listSessions();
+
   Future<MobileCreationDraft?> getActiveDraft();
 
   Future<MobileCreationDraft> createDraft(MobileCreationDraftPayload payload);
@@ -21,7 +23,16 @@ abstract interface class CreationRepository {
 
   Future<MobileCreationConversationResponse> resumeConversation();
 
-  Future<MobileCreationConversationResponse> startConversation();
+  Future<MobileCreationConversationResponse> resumeConversationById(
+    String draftId,
+  );
+
+  Future<MobileCreationConversationResponse> startConversation({
+    String? message,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+  });
 
   Future<MobileCreationConversationResponse> sendConversationMessage({
     required String draftId,
@@ -44,6 +55,17 @@ class MobileCreationRepository implements CreationRepository {
   const MobileCreationRepository({required this.apiClient});
 
   final ApiClient apiClient;
+
+  @override
+  Future<List<MobileChatSession>> listSessions() async {
+    final response = await apiClient.getJson('/api/mobile/creation-sessions');
+    final data = response.data as Map<String, dynamic>;
+    final list = data['sessions'] as List<dynamic>;
+    return list
+        .cast<Map<String, dynamic>>()
+        .map(MobileChatSession.fromJson)
+        .toList(growable: false);
+  }
 
   @override
   Future<MobileCreationDraft?> getActiveDraft() async {
@@ -116,10 +138,32 @@ class MobileCreationRepository implements CreationRepository {
   }
 
   @override
-  Future<MobileCreationConversationResponse> startConversation() async {
+  Future<MobileCreationConversationResponse> resumeConversationById(
+    String draftId,
+  ) async {
+    final response = await apiClient.getJson(
+      '/api/mobile/creation-sessions/$draftId',
+    );
+    return MobileCreationConversationResponse.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> startConversation({
+    String? message,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+  }) async {
     final response = await apiClient.postJson(
       '/api/mobile/creation-sessions',
-      data: const <String, dynamic>{},
+      data: <String, dynamic>{
+        'message': ?message,
+        'presets': ?presets?.toJson(),
+        'sourceNotes': ?sourceNotes,
+        'optionalDetails': ?optionalDetails?.toJson(),
+      },
     );
     return MobileCreationConversationResponse.fromJson(
       response.data as Map<String, dynamic>,
@@ -177,4 +221,8 @@ class MobileCreationRepository implements CreationRepository {
 
 final creationRepositoryProvider = Provider<CreationRepository>((ref) {
   return MobileCreationRepository(apiClient: ref.watch(apiClientProvider));
+});
+
+final chatSessionsProvider = FutureProvider<List<MobileChatSession>>((ref) {
+  return ref.watch(creationRepositoryProvider).listSessions();
 });

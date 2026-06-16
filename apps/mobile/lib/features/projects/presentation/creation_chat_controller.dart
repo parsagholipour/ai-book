@@ -18,6 +18,26 @@ const _emptyReadiness = MobileCreationReadiness(
   missing: <String>[],
 );
 
+const _localGreetingText =
+    'Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.';
+
+const _localGreetingTurn = MobileCreationTurn(
+  assistantMessage: _localGreetingText,
+  brief: MobileBookRecipe(lane: 'practical_guide'),
+  presets: _defaultPresets,
+  detectedLane: 'practical_guide',
+  quickReplies: <String>[
+    'Bedtime story for 5 year olds',
+    'Lead magnet about pricing',
+    'Workbook for new coaches',
+    'Short story about a garden mystery',
+  ],
+  readiness: _emptyReadiness,
+  titleSuggestions: <String>[],
+  shapePreview: <String>['Clear reader promise'],
+  warnings: <String>[],
+);
+
 /// Keys tracked for "Your choice" badges in the live brief / advanced sheet.
 enum CreationChoice { bookType, length, finish, visuals, language, tone }
 
@@ -129,25 +149,55 @@ class CreationChatState {
 }
 
 class CreationChatController extends Notifier<CreationChatState> {
+  int _initRequestId = 0;
+  int _messageRequestId = 0;
+
   @override
   CreationChatState build() => const CreationChatState();
 
   CreationRepository get _repository => ref.read(creationRepositoryProvider);
 
-  Future<void> init() async {
-    if (!state.initializing && state.hasSession) {
+  Future<void> init({
+    bool fresh = false,
+    String? draftId,
+    bool force = false,
+  }) async {
+    final sameSpecificDraft = draftId != null && draftId == state.draftId;
+    final implicitSessionReady = draftId == null && state.hasSession;
+    if (!force &&
+        !fresh &&
+        !state.initializing &&
+        (sameSpecificDraft || implicitSessionReady)) {
       return;
     }
-    state = state.copyWith(initializing: true, initError: null);
+    final requestId = ++_initRequestId;
+    final isSessionSwitch =
+        force || fresh || (draftId != null && draftId != state.draftId);
+    if (isSessionSwitch) {
+      _messageRequestId++;
+    }
+    state = isSessionSwitch
+        ? const CreationChatState(initializing: true)
+        : state.copyWith(initializing: true, initError: null);
     try {
-      final resumed = await _repository.resumeConversation();
-      if (resumed.session != null) {
+      if (draftId != null) {
+        final resumed = await _repository.resumeConversationById(draftId);
+        if (requestId != _initRequestId) return;
         _applyConversation(resumed, initializing: false);
         return;
       }
-      final started = await _repository.startConversation();
-      _applyConversation(started, initializing: false);
+      if (!fresh) {
+        final resumed = await _repository.resumeConversation();
+        if (requestId != _initRequestId) return;
+        _applyConversation(resumed, initializing: false);
+        return;
+      }
+      _applyConversation(
+        const MobileCreationConversationResponse(turn: _localGreetingTurn),
+        initializing: false,
+      );
     } catch (error) {
+      if (requestId != _initRequestId) return;
       state = state.copyWith(
         initializing: false,
         initError: userFacingError(error),
@@ -163,9 +213,15 @@ class CreationChatController extends Notifier<CreationChatState> {
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
     final draftId = state.draftId;
-    if (trimmed.isEmpty || draftId == null || state.isBusy) {
+    if (trimmed.isEmpty || state.isBusy) {
       return;
     }
+    final presets = state.presets;
+    final sourceNotes = state.hasSourceNotes ? state.sourceNotes.trim() : null;
+    final optionalDetails = state.optionalDetails.hasContent
+        ? state.optionalDetails
+        : null;
+    final requestId = ++_messageRequestId;
     final optimistic = [
       ...state.messages,
       MobileCreationMessage(role: 'user', content: trimmed),
@@ -178,16 +234,23 @@ class CreationChatController extends Notifier<CreationChatState> {
       initError: null,
     );
     try {
-      final response = await _repository.sendConversationMessage(
-        draftId: draftId,
-        message: trimmed,
-        presets: state.presets,
-        sourceNotes: state.hasSourceNotes ? state.sourceNotes.trim() : null,
-        optionalDetails: state.optionalDetails.hasContent
-            ? state.optionalDetails
-            : null,
-      );
+      final response = draftId == null
+          ? await _repository.startConversation(
+              message: trimmed,
+              presets: presets,
+              sourceNotes: sourceNotes,
+              optionalDetails: optionalDetails,
+            )
+          : await _repository.sendConversationMessage(
+              draftId: draftId,
+              message: trimmed,
+              presets: presets,
+              sourceNotes: sourceNotes,
+              optionalDetails: optionalDetails,
+            );
+      if (requestId != _messageRequestId || state.draftId != draftId) return;
       _applyConversation(response, assistantTyping: false);
+      ref.invalidate(chatSessionsProvider);
     } catch (error) {
       state = state.copyWith(
         assistantTyping: false,
@@ -220,6 +283,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         building: false,
         createdProjectId: response.project.id,
       );
+      ref.invalidate(chatSessionsProvider);
       return response;
     } catch (error) {
       state = state.copyWith(building: false);
@@ -315,11 +379,21 @@ class CreationChatController extends Notifier<CreationChatState> {
   }) {
     final turn = response.turn;
     final session = response.session;
+    final messages =
+        session?.messages ??
+        (turn.assistantMessage.trim().isEmpty
+            ? state.messages
+            : <MobileCreationMessage>[
+                MobileCreationMessage(
+                  role: 'assistant',
+                  content: turn.assistantMessage,
+                ),
+              ]);
     state = state.copyWith(
       initializing: initializing ?? state.initializing,
       assistantTyping: assistantTyping ?? state.assistantTyping,
       draftId: session?.draftId ?? state.draftId,
-      messages: session?.messages ?? state.messages,
+      messages: messages,
       createdProjectId: session?.createdProjectId,
       brief: turn.brief,
       presets: _mergeUserPresets(turn.presets),
