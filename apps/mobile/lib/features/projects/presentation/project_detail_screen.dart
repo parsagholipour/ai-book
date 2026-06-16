@@ -5,12 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
-import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'plan_approval.dart';
+import 'project_route_error.dart';
 
 class ProjectDetailScreen extends ConsumerStatefulWidget {
   const ProjectDetailScreen({required this.projectId, super.key});
@@ -80,11 +82,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
               : () => _confirmAndApprove(project),
         ),
         loading: () => const AppLoadingState(message: 'Loading book plan'),
-        error: (error, stackTrace) => AppErrorState(
-          title: 'Plan unavailable',
-          message: userFacingError(error),
+        error: (error, stackTrace) => ProjectRouteErrorState(
+          error: error,
+          fallbackTitle: 'Plan unavailable',
           onRetry: () =>
               ref.invalidate(projectDetailProvider(widget.projectId)),
+          onGoHome: () => context.go('/home'),
         ),
       ),
     );
@@ -126,119 +129,40 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   }
 
   Future<void> _confirmAndApprove(MobileProjectDetail project) async {
-    final plan = project.plan;
-    if (plan == null) {
-      return;
-    }
-
-    late final MobileBilling billing;
-    try {
-      billing = await ref.read(billingProvider.future);
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-      return;
-    }
-
-    final estimate = estimateApprovalCredits(project, billing.creditCosts);
-    final hasProjectUnlock = billing.entitlements.any(
-      (entitlement) =>
-          entitlement.type == 'EXPORT_UNLOCK' &&
-          entitlement.projectId == project.id,
+    final operation = await confirmAndApprovePlan(
+      context,
+      ref,
+      project,
+      onStart: () {
+        if (mounted) {
+          setState(() => _busyAction = 'approve');
+        }
+      },
+      onSettled: () {
+        if (mounted && _busyAction == 'approve') {
+          setState(() => _busyAction = null);
+        }
+      },
     );
-    if (!mounted) {
+    if (operation == null || !mounted) {
       return;
     }
-    if (billing.credits.available < estimate) {
-      await showBillingPaywall(
-        context,
-        projectId: project.id,
-        title: 'Credits needed',
-        message:
-            'This ${project.lengthPresetLabel.toLowerCase()} ${project.bookTypeLabel.toLowerCase()} needs about $estimate credits to write, prepare visuals, and unlock export. You have ${billing.credits.available}.',
-      );
-      ref.invalidate(billingProvider);
-      if (!mounted) {
-        return;
-      }
-      return;
-    }
-    final approved = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Approve this plan?'),
-        content: Text(
-          hasProjectUnlock
-              ? 'This project already has an export unlock. Starting the full book can still spend writing credits.'
-              : 'Estimated package: $estimate credits. You have ${billing.credits.available} available.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Approve'),
-          ),
-        ],
-      ),
+    context.push(
+      '/projects/${project.id}/handoff',
+      extra: operation.currentAction,
     );
-    if (approved != true || !mounted) {
-      return;
-    }
-
-    setState(() => _busyAction = 'approve');
-    try {
-      final operation = await ref
-          .read(projectsRepositoryProvider)
-          .approvePlan(plan.id);
-      ref.invalidate(projectsProvider);
-      ref.invalidate(billingProvider);
-      ref.invalidate(projectDetailProvider(widget.projectId));
-      if (!mounted) {
-        return;
-      }
-      context.push(
-        '/projects/${project.id}/handoff',
-        extra: operation.currentAction,
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _busyAction = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
   }
 
   Future<void> _confirmAndDelete(MobileProjectDetail project) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete this project?'),
-        content: Text(
+    final confirmed = await showAppConfirmationDialog(
+      context,
+      title: 'Delete this project?',
+      message:
           'This removes "${project.title}" and its generated files from your account. Some safety, billing, and support records may be retained.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete project'),
-          ),
-        ],
-      ),
+      confirmLabel: 'Delete project',
+      destructive: true,
     );
-    if (confirmed != true || !mounted) {
+    if (!confirmed || !mounted) {
       return;
     }
 
@@ -400,9 +324,12 @@ class ProjectPlanReview extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            _InfoChip(label: 'Version', value: '${plan.version}'),
-            _InfoChip(label: 'Length', value: '${project.targetPages} pages'),
-            _InfoChip(
+            AppMetricChip(label: 'Version', value: '${plan.version}'),
+            AppMetricChip(
+              label: 'Length',
+              value: '${project.targetPages} pages',
+            ),
+            AppMetricChip(
               label: 'Visuals',
               value: project.imagesEnabled ? 'Included' : 'Text-first',
             ),
@@ -447,43 +374,25 @@ class ProjectPlanReview extends StatelessWidget {
             onSubmit: onRevisionRequest,
           ),
           const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Ready to write',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+          AppPrimaryActionPanel(
+            title: 'Ready to write',
+            message: estimate == null
+                ? 'Approve when this plan matches the book you want.'
+                : 'Estimated package: $estimate credits. Available: ${billing!.credits.available}',
+            icon: Icons.check_circle_outline,
+            actionLabel: 'Approve and start writing',
+            onAction: busyAction == null && onApprovePlan != null
+                ? () => onApprovePlan!()
+                : null,
+            actionIcon: busyAction == 'approve'
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      semanticsLabel: 'Approving plan',
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    estimate == null
-                        ? 'Approve when this plan matches the book you want.'
-                        : 'Estimated package: $estimate credits · Available: ${billing!.credits.available}',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: busyAction == null && onApprovePlan != null
-                        ? () => onApprovePlan!()
-                        : null,
-                    icon: busyAction == 'approve'
-                        ? const SizedBox.square(
-                            dimension: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_circle_outline),
-                    label: const Text('Approve and start writing'),
-                  ),
-                ],
-              ),
-            ),
+                  )
+                : const Icon(Icons.check_circle_outline),
           ),
         ] else ...[
           const SizedBox(height: 12),
@@ -638,7 +547,10 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
             icon: widget.isBusy
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      semanticsLabel: 'Revising plan',
+                    ),
                   )
                 : const Icon(Icons.auto_fix_high_outlined),
             label: const Text('Revise with answers'),
@@ -733,9 +645,15 @@ class _ProjectHeader extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _InfoChip(label: 'Type', value: project.bookTypeLabel),
-                _InfoChip(label: 'Length', value: project.lengthPresetLabel),
-                _InfoChip(label: 'Finish', value: project.qualityPresetLabel),
+                AppMetricChip(label: 'Type', value: project.bookTypeLabel),
+                AppMetricChip(
+                  label: 'Length',
+                  value: project.lengthPresetLabel,
+                ),
+                AppMetricChip(
+                  label: 'Finish',
+                  value: project.qualityPresetLabel,
+                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -769,7 +687,10 @@ class ProjectPrivacyActions extends StatelessWidget {
         icon: isDeleting
             ? const SizedBox.square(
                 dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  semanticsLabel: 'Deleting project',
+                ),
               )
             : const Icon(Icons.delete_outline),
         label: const Text('Delete project'),
@@ -792,34 +713,21 @@ class _NoPlanCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isPlanning = project.status == 'planning' || busyAction == 'plan';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              isPlanning ? 'Creating your book plan' : 'Ready for a plan',
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Text(project.currentAction),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: isPlanning ? null : () => onGeneratePlan(),
-              icon: isPlanning
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_awesome_outlined),
-              label: Text(isPlanning ? 'Plan requested' : 'Create book plan'),
-            ),
-          ],
-        ),
-      ),
+    return AppPrimaryActionPanel(
+      title: isPlanning ? 'Creating your book plan' : 'Ready for a plan',
+      message: project.currentAction,
+      icon: Icons.auto_awesome_outlined,
+      actionLabel: isPlanning ? 'Plan requested' : 'Create book plan',
+      onAction: isPlanning ? null : () => onGeneratePlan(),
+      actionIcon: isPlanning
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                semanticsLabel: 'Creating book plan',
+              ),
+            )
+          : const Icon(Icons.auto_awesome_outlined),
     );
   }
 }
@@ -843,17 +751,12 @@ class _PlanSectionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(icon, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
+            AppSectionHeader(
+              title: title,
+              icon: icon,
+              titleStyle: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 12),
             child,
@@ -962,7 +865,10 @@ class _RevisionRequestCard extends StatelessWidget {
             icon: isBusy
                 ? const SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      semanticsLabel: 'Sending revision',
+                    ),
                   )
                 : const Icon(Icons.send_outlined),
             label: const Text('Send revision'),
@@ -980,53 +886,11 @@ class _OperationBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.tertiaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Icon(Icons.schedule_outlined, color: colors.onTertiaryContainer),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                operation.currentAction,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.onTertiaryContainer,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        '$label: $value',
-        style: Theme.of(context).textTheme.labelMedium,
-      ),
+    return AppInlineNotice(
+      icon: Icons.schedule_outlined,
+      title: 'Book update',
+      message: operation.currentAction,
+      tone: AppNoticeTone.info,
     );
   }
 }

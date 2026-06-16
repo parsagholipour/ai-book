@@ -84,6 +84,12 @@ function coerceStringArray(value: unknown): unknown {
   return value;
 }
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(jsonValueSchema), z.record(z.string(), jsonValueSchema)])
+);
+
 const ILLUSTRATION_CADENCES = ["template-driven", "every-page", "manual"] as const;
 type IllustrationCadence = (typeof ILLUSTRATION_CADENCES)[number];
 export const TONE_PROFILES = ["neutral", "confident", "skeptical", "scholarly", "conversational", "narrative"] as const;
@@ -525,7 +531,8 @@ export const mediaSettingsSchema = z.object({
    * staggered temperatures and let a judge model pick the strongest one.
    * 1 (default) keeps single-draft generation.
    */
-  draftCandidates: z.coerce.number().int().min(1).max(3).optional()
+  draftCandidates: z.coerce.number().int().min(1).max(3).optional(),
+  mobile: jsonValueSchema.optional()
 });
 
 export const createProjectSchema = z.object({

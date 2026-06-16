@@ -23,6 +23,7 @@ const mockPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
   user: { upsert: vi.fn() },
   mobileSession: { findUnique: vi.fn() },
+  mobileCreationDraft: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -230,6 +231,587 @@ describe("mobile project routes", () => {
         message: "Sign in to continue."
       }
     });
+    await app.close();
+  });
+
+  it("loads and saves user-owned mobile creation drafts", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst
+      .mockResolvedValueOnce(
+        creationDraftRecord({
+          payload: creationPayload({
+            brief: { topic: "Pricing guide", audience: "solo consultants", desiredOutcome: "price a starter offer" }
+          })
+        })
+      )
+      .mockResolvedValue(creationDraftRecord({ id: "draft-created" }));
+    mockPrisma.mobileCreationDraft.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "draft-created", payload: data.payload })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "draft-created", payload: data.payload })
+    );
+    const app = await buildMobileApp();
+
+    const active = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-drafts/active",
+      headers: bearer("token-a")
+    });
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-drafts",
+      headers: bearer("token-a"),
+      payload: {
+        ...creationPayload(),
+        internalProvider: "do-not-accept"
+      }
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-drafts",
+      headers: bearer("token-a"),
+      payload: creationPayload({ brief: { topic: "Workshop checklist" } })
+    });
+    const patched = await app.inject({
+      method: "PATCH",
+      url: "/api/mobile/creation-drafts/draft-created",
+      headers: bearer("token-a"),
+      payload: creationPayload({ brief: { topic: "Workshop checklist", audience: "online teachers" } })
+    });
+
+    expect(active.statusCode).toBe(200);
+    expect(active.json().draft).toMatchObject({
+      id: "draft-1",
+      status: "ACTIVE",
+      payload: { brief: expect.objectContaining({ topic: "Pricing guide", audience: "solo consultants" }) }
+    });
+    expect(mockPrisma.mobileCreationDraft.findFirst).toHaveBeenCalledWith({
+      where: { userId: "user-a", status: "ACTIVE" },
+      orderBy: { updatedAt: "desc" }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(mockPrisma.mobileCreationDraft.create).toHaveBeenCalledOnce();
+    expect(created.statusCode).toBe(201);
+    expect(created.json().draft.id).toBe("draft-created");
+    expect(patched.statusCode).toBe(200);
+    expect(mockPrisma.mobileCreationDraft.update).toHaveBeenCalledWith({
+      where: { id: "draft-created" },
+      data: { payload: expect.objectContaining({ brief: expect.objectContaining({ audience: "online teachers" }) }) }
+    });
+    expect(JSON.stringify({ active: active.json(), created: created.json(), patched: patched.json() })).not.toMatch(
+      /provider|model|generationStrategy|billing/
+    );
+    await app.close();
+  });
+
+  it("returns deterministic mobile book advisor fallback without spending credits", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const app = await buildMobileApp({
+      advisorEnrichment: async () => new Promise<never>(() => undefined),
+      advisorTimeoutMs: 1
+    });
+    const advisorPayload = creationPayload({
+      brief: {
+        intent: "teach_practice",
+        topic: "workshop planning",
+        audience: "online teachers",
+        desiredOutcome: "launch a clear first workshop"
+      }
+    });
+    delete (advisorPayload as Partial<typeof advisorPayload>).selectedPresets;
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/book-advisor",
+      headers: bearer("token-a"),
+      payload: advisorPayload
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.advisor).toMatchObject({
+      recommendation: {
+        bookType: "workbook",
+        lengthPreset: "standard",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      },
+      briefScore: expect.any(Number),
+      bookShapePreview: expect.arrayContaining([expect.stringContaining("lessons")])
+    });
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
+    await app.close();
+  });
+
+  it("returns a complete easy-first child story recipe for a minimal raw idea", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const app = await buildMobileApp({ advisorEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/book-advisor",
+      headers: bearer("token-a"),
+      payload: {
+        payloadVersion: 2,
+        rawIdea: "Bedtime story for 5 year olds"
+      }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.advisor).toMatchObject({
+      detectedLane: "children_story",
+      recommendation: {
+        bookType: "short_story",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      },
+      recipe: expect.objectContaining({
+        lane: "children_story",
+        audience: "5 year olds",
+        tone: expect.stringContaining("read-aloud")
+      }),
+      followUpSuggestions: expect.arrayContaining([expect.stringContaining("ending feel")]),
+      bookShapePreview: expect.arrayContaining([expect.stringContaining("read-aloud ending")])
+    });
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
+    await app.close();
+  });
+
+  it("finalizes a creation draft into a project and queues first plan generation", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = creationPayload({
+      brief: {
+        intent: "teach_practice",
+        topic: "Client onboarding",
+        audience: "consulting clients",
+        desiredOutcome: "complete a first-week checklist",
+        sourceNotes: "SECRET SOURCE NOTES from a private webinar transcript"
+      },
+      selectedPresets: {
+        bookType: "workbook",
+        lengthPreset: "standard",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "draft-1", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-draft",
+        title: data.title,
+        authorName: data.authorName ?? null,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "draft-1", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-drafts/draft-1/create-project",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
+    const queuedCall = vi.mocked(enqueueGenerationJob).mock.calls.at(0)?.[0] as { payload: Record<string, any> };
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      project: { id: "project-from-draft", bookType: "workbook" },
+      operation: { projectId: "project-from-draft", status: "planning_queued", job: { id: "job-plan" } }
+    });
+    expect(createCall.data.prompt).toContain("Use the pasted source notes stored in the mobile creation metadata");
+    expect(createCall.data.prompt).not.toContain("SECRET SOURCE NOTES");
+    expect(createCall.data.mediaSettings.mobile).toMatchObject({
+      bookType: "workbook",
+      brief: expect.objectContaining({
+        topic: "Client onboarding",
+        sourceNotes: "SECRET SOURCE NOTES from a private webinar transcript"
+      }),
+      advisor: expect.objectContaining({
+        recommendation: expect.objectContaining({ bookType: "workbook" })
+      })
+    });
+    expect(queuedCall).toMatchObject({
+      projectId: "project-from-draft",
+      type: "PLAN_BOOK",
+      payload: {
+        inputSnapshot: expect.objectContaining({
+          mediaSettings: expect.objectContaining({
+            mobile: expect.objectContaining({
+              brief: expect.objectContaining({ sourceNotes: expect.stringContaining("SECRET SOURCE NOTES") })
+            })
+          })
+        })
+      }
+    });
+    expect(mockPrisma.mobileCreationDraft.update).toHaveBeenLastCalledWith({
+      where: { id: "draft-1" },
+      data: expect.objectContaining({ status: "COMPLETED", createdProjectId: "project-from-draft" })
+    });
+    expect(JSON.stringify(response.json().project)).not.toMatch(/SECRET SOURCE NOTES|provider|model|mediaSettings|temperature/);
+    await app.close();
+  });
+
+  it("does not finalize completed mobile creation drafts again", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "draft-complete", status: "COMPLETED" })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-drafts/draft-complete/create-project",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("DRAFT_NOT_ACTIVE");
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("starts a creation session with a deterministic greeting turn", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", status: "ACTIVE", payload: data.payload })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(201);
+    expect(body.session).toMatchObject({ draftId: "session-draft", status: "ACTIVE" });
+    expect(body.session.messages).toHaveLength(1);
+    expect(body.session.messages[0].role).toBe("assistant");
+    expect(body.turn.assistantMessage).toContain("Tell me about the book");
+    expect(body.turn.readiness.canBuild).toBe(false);
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
+    await app.close();
+  });
+
+  it("resumes an active session and runs a turn once the user has replied", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          rawIdea: "Bedtime story for 5 year olds",
+          messages: [
+            { role: "assistant", content: "Hi! Tell me about your book." },
+            { role: "user", content: "Bedtime story for 5 year olds" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions/active",
+      headers: bearer("token-a")
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.session.draftId).toBe("session-draft");
+    expect(body.turn.detectedLane).toBe("children_story");
+    expect(body.turn.readiness.canBuild).toBe(true);
+    await app.close();
+  });
+
+  it("returns a greeting when no active creation session exists", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(null);
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions/active",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().session).toBeNull();
+    expect(response.json().turn.assistantMessage).toContain("Tell me about the book");
+    await app.close();
+  });
+
+  it("appends a conversation message and persists the updated transcript", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: { payloadVersion: 3, messages: [{ role: "assistant", content: "Hi! Tell me about your book." }] }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Bedtime story for 5 year olds" }
+    });
+    const body = response.json();
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: Record<string, any> };
+    };
+
+    expect(response.statusCode).toBe(200);
+    expect(body.turn.detectedLane).toBe("children_story");
+    expect(body.turn.readiness.canBuild).toBe(true);
+    expect(body.session.messages.map((message: { role: string }) => message.role)).toEqual([
+      "assistant",
+      "user",
+      "assistant"
+    ]);
+    expect(updateCall.data.payload.payloadVersion).toBe(3);
+    expect(updateCall.data.payload.messages.at(-1).role).toBe("assistant");
+    expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
+    await app.close();
+  });
+
+  it("rejects messages to a completed creation session", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", status: "COMPLETED" })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Add a dragon" }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("SESSION_NOT_ACTIVE");
+    await app.close();
+  });
+
+  it("returns 404 for messages to an unknown creation session", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(null);
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/missing/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Hello" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("SESSION_NOT_FOUND");
+    await app.close();
+  });
+
+  it("builds a project from a session and applies advanced overrides", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "Workbook for new coaches",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "Workbook for new coaches" }
+      ],
+      selectedPresets: {
+        bookType: "lead_magnet",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-session",
+        title: data.title,
+        prompt: data.prompt,
+        language: data.language,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: {
+        presets: { bookType: "workbook", lengthPreset: "standard", qualityPreset: "balanced", imagesEnabled: true },
+        language: "es"
+      }
+    });
+    const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      project: { id: "project-from-session", bookType: "workbook" },
+      operation: { projectId: "project-from-session", status: "planning_queued", job: { id: "job-plan" } }
+    });
+    expect(createCall.data.language).toBe("es");
+    expect(createCall.data.mediaSettings.mobile.bookType).toBe("workbook");
+    await app.close();
+  });
+
+  it("defers untitled session project titles to the planner", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "I want to create a similar story to the Rabit and Turtle race",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "I want to create a similar story to the Rabit and Turtle race" }
+      ],
+      selectedPresets: {
+        bookType: "short_story",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-story" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-session",
+        title: data.title,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
+    const queuedCall = vi.mocked(enqueueGenerationJob).mock.calls.at(0)?.[0] as { payload: Record<string, any> };
+    const inputSnapshot = queuedCall.payload.inputSnapshot as Record<string, any>;
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().project.title).toBe("Untitled Book");
+    expect(createCall.data.title).toBe("Untitled Book");
+    expect(createCall.data.mediaSettings.mobile.titleSource).toBe("planner_pending");
+    expect(inputSnapshot).not.toHaveProperty("title");
+    expect(inputSnapshot.mediaSettings.mobile.titleSource).toBe("planner_pending");
+    await app.close();
+  });
+
+  it("keeps explicit mobile titles in the project row and planner snapshot", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "Story about a careful race.",
+      optionalDetails: { title: "The Meadow Finish" },
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "Story about a careful race." }
+      ],
+      selectedPresets: {
+        bookType: "short_story",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-story" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-session",
+        title: data.title,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
+    const queuedCall = vi.mocked(enqueueGenerationJob).mock.calls.at(0)?.[0] as { payload: Record<string, any> };
+    const inputSnapshot = queuedCall.payload.inputSnapshot as Record<string, any>;
+
+    expect(response.statusCode).toBe(201);
+    expect(createCall.data.title).toBe("The Meadow Finish");
+    expect(createCall.data.mediaSettings.mobile.titleSource).toBeUndefined();
+    expect(inputSnapshot.title).toBe("The Meadow Finish");
     await app.close();
   });
 
@@ -1230,6 +1812,49 @@ function projectRecord(overrides: Record<string, unknown> = {}) {
     _count: { pages: 0, images: 0, jobs: 0 },
     createdAt: new Date("2026-06-01T12:00:00.000Z"),
     updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+    ...overrides
+  };
+}
+
+function creationPayload(
+  overrides: {
+    brief?: Partial<Record<string, unknown>>;
+    selectedPresets?: Partial<Record<string, unknown>>;
+  } = {}
+) {
+  return {
+    brief: {
+      intent: "collect_leads",
+      topic: "Pricing guide",
+      audience: "solo consultants",
+      readerProblem: "They are unsure how to package the offer.",
+      desiredOutcome: "price a starter offer",
+      tone: "practical and direct",
+      mustInclude: "Include a checklist and examples.",
+      distributionUse: "email opt-in",
+      sourceNotes: "",
+      ...overrides.brief
+    },
+    selectedPresets: {
+      bookType: "lead_magnet",
+      lengthPreset: "short",
+      qualityPreset: "balanced",
+      imagesEnabled: true,
+      ...overrides.selectedPresets
+    }
+  };
+}
+
+function creationDraftRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "draft-1",
+    userId: "user-a",
+    payload: creationPayload(),
+    advisorSnapshot: null,
+    createdProjectId: null,
+    status: "ACTIVE",
+    createdAt: new Date("2026-06-15T12:00:00.000Z"),
+    updatedAt: new Date("2026-06-15T12:00:00.000Z"),
     ...overrides
   };
 }

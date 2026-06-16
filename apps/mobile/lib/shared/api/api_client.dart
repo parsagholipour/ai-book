@@ -48,6 +48,14 @@ class ApiClient {
     return _request('POST', path, data: data, requiresAuth: requiresAuth);
   }
 
+  Future<Response<dynamic>> patchJson(
+    String path, {
+    Object? data,
+    bool requiresAuth = true,
+  }) {
+    return _request('PATCH', path, data: data, requiresAuth: requiresAuth);
+  }
+
   Future<Response<dynamic>> deleteJson(
     String path, {
     Object? data,

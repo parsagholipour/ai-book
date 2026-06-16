@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../data/account_repository.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
@@ -20,14 +22,15 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final config = ref.watch(appConfigProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
+      body: AppScreenLayout(
         children: [
           AccountPrivacyControls(
             config: config,
             requestingDeletion: _requestingDeletion,
             onRequestDeletion: _requestAccountDeletion,
           ),
+          const SizedBox(height: 12),
+          const _AccountSessionCard(),
         ],
       ),
     );
@@ -74,6 +77,55 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   }
 }
 
+class _AccountSessionCard extends ConsumerWidget {
+  const _AccountSessionCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authControllerProvider);
+    final loggingOut = authState.isLoading;
+    final colors = Theme.of(context).colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Session',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Log out of this device when you are finished.',
+              style: TextStyle(color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: loggingOut
+                  ? null
+                  : () => ref.read(authControllerProvider.notifier).logout(),
+              icon: loggingOut
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        semanticsLabel: 'Logging out',
+                      ),
+                    )
+                  : const Icon(Icons.logout),
+              label: const Text('Log out'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AccountPrivacyControls extends StatelessWidget {
   const AccountPrivacyControls({
     required this.config,
@@ -92,9 +144,10 @@ class AccountPrivacyControls extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Privacy and support',
-          style: Theme.of(
+        AppSectionHeader(
+          title: 'Privacy and support',
+          subtitle: 'Support, policies, AI disclosure, and deletion controls.',
+          titleStyle: Theme.of(
             context,
           ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
@@ -192,7 +245,10 @@ class AccountPrivacyControls extends StatelessWidget {
                   icon: requestingDeletion
                       ? const SizedBox.square(
                           dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            semanticsLabel: 'Requesting account deletion',
+                          ),
                         )
                       : const Icon(Icons.delete_outline),
                   label: const Text('Request account deletion'),

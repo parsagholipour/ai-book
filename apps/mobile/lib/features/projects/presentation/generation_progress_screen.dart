@@ -2,15 +2,18 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'project_route_error.dart';
 
 class GenerationProgressScreen extends ConsumerStatefulWidget {
   const GenerationProgressScreen({
@@ -81,10 +84,11 @@ class _GenerationProgressScreenState
           onReportImage: _reportImage,
         ),
         loading: () => const AppLoadingState(message: 'Checking book progress'),
-        error: (error, stackTrace) => AppErrorState(
-          title: 'Progress unavailable',
-          message: userFacingError(error),
+        error: (error, stackTrace) => ProjectRouteErrorState(
+          error: error,
+          fallbackTitle: 'Progress unavailable',
           onRetry: _refresh,
+          onGoHome: () => context.go('/home'),
         ),
       ),
     );
@@ -373,7 +377,15 @@ class _ProgressOverviewCard extends StatelessWidget {
             const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(child: LinearProgressIndicator(value: progress / 100)),
+                Expanded(
+                  child: Semantics(
+                    label: 'Book generation progress',
+                    value: '$progress percent complete',
+                    child: ExcludeSemantics(
+                      child: LinearProgressIndicator(value: progress / 100),
+                    ),
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Text(
                   '$progress%',
@@ -386,12 +398,12 @@ class _ProgressOverviewCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: [
-                _MetricChip(
+                AppMetricChip(
                   icon: Icons.menu_book_outlined,
                   label:
                       '${status.pageProgress.completed}/${status.pageProgress.target} pages',
                 ),
-                _MetricChip(
+                AppMetricChip(
                   icon: Icons.image_outlined,
                   label: '${status.imageCount} visuals',
                 ),
@@ -401,41 +413,28 @@ class _ProgressOverviewCard extends StatelessWidget {
             for (final step in status.steps) _ProgressStepTile(step: step),
             if (status.hasFailure) ...[
               const SizedBox(height: 12),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.errorContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        status.failureMessage!,
-                        style: TextStyle(color: colors.onErrorContainer),
-                      ),
-                      if (onResume != null) ...[
-                        const SizedBox(height: 10),
-                        FilledButton.icon(
-                          onPressed: busyAction == 'resume'
-                              ? null
-                              : () => onResume!(),
-                          icon: busyAction == 'resume'
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.replay_outlined),
-                          label: const Text('Retry generation'),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+              AppInlineNotice(
+                icon: Icons.error_outline,
+                title: 'Writing stopped',
+                message: status.failureMessage!,
+                tone: AppNoticeTone.error,
               ),
+              if (onResume != null) ...[
+                const SizedBox(height: 10),
+                FilledButton.icon(
+                  onPressed: busyAction == 'resume' ? null : () => onResume!(),
+                  icon: busyAction == 'resume'
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            semanticsLabel: 'Retrying generation',
+                          ),
+                        )
+                      : const Icon(Icons.replay_outlined),
+                  label: const Text('Retry generation'),
+                ),
+              ],
             ],
           ],
         ),
@@ -466,34 +465,52 @@ class _ProgressStepTile extends StatelessWidget {
         : step.isActive
         ? colors.tertiary
         : colors.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  step.label,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
-                ),
-                if (step.detail != null)
-                  Text(
-                    step.detail!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
+    final stateLabel = step.isDone
+        ? 'Done'
+        : step.isFailed
+        ? 'Needs attention'
+        : step.isActive
+        ? 'In progress'
+        : 'Waiting';
+    final semanticLabel = [
+      step.label,
+      stateLabel,
+      if (step.detail != null) step.detail!,
+    ].join('. ');
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      child: ExcludeSemantics(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 5),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, color: color, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      step.label,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-              ],
-            ),
+                    if (step.detail != null)
+                      Text(
+                        step.detail!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -591,7 +608,10 @@ class _GeneratedPagePreview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
               'Page ${page.index}',
@@ -599,14 +619,11 @@ class _GeneratedPagePreview extends StatelessWidget {
                 context,
               ).textTheme.labelLarge?.copyWith(color: colors.primary),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                page.title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
+            Text(
+              page.title,
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
           ],
         ),
@@ -646,21 +663,20 @@ class _AuthenticatedProjectImage extends ConsumerWidget {
             fit: BoxFit.cover,
             semanticLabel: image.altText,
             errorBuilder: (context, error, stackTrace) =>
-                const _ImageUnavailable(),
+                _ImageUnavailable(label: image.altText),
           ),
-          loading: () => const ColoredBox(
-            color: Color(0xFFE6E0D7),
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          error: (error, stackTrace) => const _ImageUnavailable(),
+          loading: () => _ImageLoading(label: image.altText),
+          error: (error, stackTrace) => _ImageUnavailable(label: image.altText),
         ),
       ),
     );
   }
 }
 
-class _ImageUnavailable extends StatelessWidget {
-  const _ImageUnavailable();
+class _ImageLoading extends StatelessWidget {
+  const _ImageLoading({required this.label});
+
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -668,7 +684,55 @@ class _ImageUnavailable extends StatelessWidget {
     return ColoredBox(
       color: colors.surfaceContainerHighest,
       child: Center(
-        child: Icon(Icons.image_not_supported_outlined, color: colors.outline),
+        child: CircularProgressIndicator(
+          semanticsLabel: label.isEmpty
+              ? 'Loading generated visual'
+              : 'Loading $label',
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageUnavailable extends StatelessWidget {
+  const _ImageUnavailable({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final message = label.isEmpty
+        ? 'Generated visual unavailable'
+        : '$label unavailable';
+    return Semantics(
+      label: message,
+      child: ExcludeSemantics(
+        child: ColoredBox(
+          color: colors.surfaceContainerHighest,
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.image_not_supported_outlined,
+                    color: colors.outline,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -946,7 +1010,10 @@ class _ExportFormatTile extends StatelessWidget {
               icon: isDownloading
                   ? const SizedBox.square(
                       dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        semanticsLabel: 'Downloading export',
+                      ),
                     )
                   : Icon(
                       export.unlocked
@@ -968,7 +1035,10 @@ class _ExportFormatTile extends StatelessWidget {
               icon: isSharing
                   ? const SizedBox.square(
                       dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        semanticsLabel: 'Sharing export',
+                      ),
                     )
                   : const Icon(Icons.ios_share_outlined),
               label: const Text('Share'),
@@ -1005,32 +1075,5 @@ class _ExportFormatTile extends StatelessWidget {
       return 'Get credits';
     }
     return 'Unlock $format';
-  }
-}
-
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: colors.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Text(label, style: Theme.of(context).textTheme.labelMedium),
-        ],
-      ),
-    );
   }
 }

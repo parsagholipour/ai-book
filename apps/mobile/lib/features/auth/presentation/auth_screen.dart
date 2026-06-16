@@ -116,6 +116,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                           autofillHints: const [AutofillHints.password],
                           decoration: InputDecoration(
                             labelText: 'Password',
+                            helperText: _isSignUp
+                                ? 'Use at least 8 characters.'
+                                : null,
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
                               tooltip: _obscurePassword
@@ -147,10 +150,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                         FilledButton.icon(
                           onPressed: isSubmitting ? null : _submit,
                           icon: isSubmitting
-                              ? const SizedBox.square(
+                              ? SizedBox.square(
                                   dimension: 18,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
+                                    semanticsLabel: _isSignUp
+                                        ? 'Creating account'
+                                        : 'Signing in',
                                   ),
                                 )
                               : Icon(

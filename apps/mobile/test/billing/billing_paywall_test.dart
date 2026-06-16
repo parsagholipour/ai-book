@@ -66,6 +66,11 @@ void main() {
     expect(repository.verifications.single.purchaseToken, 'purchase-token-1');
     expect(store.finished.single.purchaseToken, 'purchase-token-1');
     expect(find.text('1100 credits available'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('1000 credits added.'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('1000 credits added.'), findsOneWidget);
   });
 

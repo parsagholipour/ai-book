@@ -43,6 +43,12 @@ A user should always understand:
 8. [Phase 08 - Account, Privacy, Support, And Trust](./phase-08-account-privacy-support-and-trust.md)
 9. [Phase 09 - Usability Testing, Analytics, And Beta Iteration](./phase-09-usability-testing-analytics-and-beta-iteration.md)
 
+## Latest Work
+
+- [Conversational Book Studio Output Notes](./conversational-book-studio-output-notes.md) -
+  chat-first book creation that supersedes the Phase 04 new-book wizard and folds the
+  Phase 05 plan review/revision/approval flow into the same conversation.
+
 ## Agent Prompts
 
 - [Phase 01 Agent Prompt](./phase-01-agent-prompt.md)

@@ -620,31 +620,55 @@ int estimateApprovalCredits(
   MobileProjectDetail project,
   Map<String, dynamic> creditCosts,
 ) {
+  return estimateProjectCredits(
+    bookType: project.bookType,
+    qualityPreset: project.qualityPreset,
+    imagesEnabled: project.imagesEnabled,
+    targetPages: project.targetPages,
+    creditCosts: creditCosts,
+  );
+}
+
+int estimateProjectCredits({
+  required String bookType,
+  required String qualityPreset,
+  required bool imagesEnabled,
+  required int targetPages,
+  required Map<String, dynamic> creditCosts,
+}) {
   final fullBookBase = _intCost(creditCosts, 'fullBookBase', 350);
   final fullBookPerPage = _intCost(creditCosts, 'fullBookPerPage', 8);
   final imageGeneration = _intCost(creditCosts, 'imageGeneration', 45);
   final premiumReview = _intCost(creditCosts, 'premiumReview', 200);
   final exportUnlock = _intCost(creditCosts, 'exportUnlock', 150);
-  final imageCount = _estimatedInteriorImages(project);
-  final premiumCredits = project.qualityPreset == 'premium' ? premiumReview : 0;
+  final imageCount = _estimatedInteriorImages(
+    bookType: bookType,
+    imagesEnabled: imagesEnabled,
+    targetPages: targetPages,
+  );
+  final premiumCredits = qualityPreset == 'premium' ? premiumReview : 0;
   return fullBookBase +
-      project.targetPages * fullBookPerPage +
+      targetPages * fullBookPerPage +
       imageCount * imageGeneration +
       premiumCredits +
       exportUnlock;
 }
 
-int _estimatedInteriorImages(MobileProjectDetail project) {
-  if (!project.imagesEnabled) {
+int _estimatedInteriorImages({
+  required String bookType,
+  required bool imagesEnabled,
+  required int targetPages,
+}) {
+  if (!imagesEnabled) {
     return 0;
   }
-  final customCap = (project.targetPages / 8).ceil();
-  final launchCap = switch (project.bookType) {
+  final customCap = (targetPages / 8).ceil();
+  final launchCap = switch (bookType) {
     'workbook' => 6,
     'lead_magnet' || 'short_story' => 4,
     _ => customCap < 1 ? 1 : customCap,
   };
-  final estimated = (project.targetPages / 4).ceil();
+  final estimated = (targetPages / 4).ceil();
   if (estimated < 0) {
     return 0;
   }

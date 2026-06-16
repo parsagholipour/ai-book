@@ -226,8 +226,18 @@ export type WholeBookPageDraft = PageDraft & {
   index: number;
 };
 
+export type WholeBookPageSetDiagnostics = {
+  requestedPages: number;
+  acceptedPages: number;
+  missingIndexes: number[];
+  unexpectedIndexes: number[];
+  duplicateIndexes: number[];
+  renumbered: boolean;
+};
+
 export type WholeBookDraft = {
   pages: WholeBookPageDraft[];
+  pageSetDiagnostics?: WholeBookPageSetDiagnostics | undefined;
 };
 
 export type GenerateWholeBookOptions = {
@@ -622,8 +632,10 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
   });
 
   const draft = wholeBookDraftSchema.parse(result.data);
+  const normalized = normalizeWholeBookPageSet(draft.pages, options.input.targetPages);
   return {
-    pages: normalizeWholeBookPageSet(draft.pages, options.input.targetPages)
+    pages: normalized.pages,
+    pageSetDiagnostics: normalized.diagnostics
   };
 }
 
@@ -1274,7 +1286,13 @@ function normalizeWholeBookPage(value: unknown, fallbackIndex: number): unknown 
   };
 }
 
-function normalizeWholeBookPageSet(pages: WholeBookPageDraft[], targetPages: number): WholeBookPageDraft[] {
+function normalizeWholeBookPageSet(
+  pages: WholeBookPageDraft[],
+  targetPages: number
+): { pages: WholeBookPageDraft[]; diagnostics: WholeBookPageSetDiagnostics } {
+  const pageCount = pages.length;
+  const minimumPages = Math.ceil(targetPages * 0.5);
+  const maximumPages = Math.floor(targetPages * 1.5);
   const byIndex = new Map<number, WholeBookPageDraft>();
   const duplicates = new Set<number>();
   for (const page of pages) {
@@ -1287,8 +1305,9 @@ function normalizeWholeBookPageSet(pages: WholeBookPageDraft[], targetPages: num
   const expectedIndexes = range(1, targetPages);
   const missing = expectedIndexes.filter((pageIndex) => !byIndex.has(pageIndex));
   const extra = [...byIndex.keys()].filter((pageIndex) => pageIndex < 1 || pageIndex > targetPages);
-  if (missing.length > 0 || extra.length > 0 || duplicates.size > 0) {
+  if (pageCount < minimumPages || pageCount > maximumPages) {
     const parts = [
+      `returned ${pageCount} pages; expected ${minimumPages}-${maximumPages} pages for target ${targetPages}`,
       missing.length ? `missing pages ${missing.join(", ")}` : "",
       extra.length ? `unexpected pages ${extra.join(", ")}` : "",
       duplicates.size ? `duplicate pages ${[...duplicates].join(", ")}` : ""
@@ -1296,7 +1315,25 @@ function normalizeWholeBookPageSet(pages: WholeBookPageDraft[], targetPages: num
     throw new Error(`Whole-book generation returned an invalid page set: ${parts.join("; ")}.`);
   }
 
-  return expectedIndexes.map((pageIndex) => byIndex.get(pageIndex)!);
+  const orderedPages = pages
+    .map((page, sourceIndex) => ({ page, sourceIndex }))
+    .sort((first, second) => first.page.index - second.page.index || first.sourceIndex - second.sourceIndex);
+  const normalizedPages = orderedPages.map(({ page }, index) => ({ ...page, index: index + 1 }));
+  const renumbered =
+    targetPages !== normalizedPages.length ||
+    normalizedPages.some((page, index) => page.index !== orderedPages[index]!.page.index);
+
+  return {
+    pages: normalizedPages,
+    diagnostics: {
+      requestedPages: targetPages,
+      acceptedPages: normalizedPages.length,
+      missingIndexes: missing,
+      unexpectedIndexes: extra.sort((first, second) => first - second),
+      duplicateIndexes: [...duplicates].sort((first, second) => first - second),
+      renumbered
+    }
+  };
 }
 
 function normalizeDraftPageSubset(

@@ -6,6 +6,7 @@ import {
   CREDIT_COSTS,
   DEFAULT_BILLING_PRODUCTS,
   bookPlanSchema,
+  createLanguageDetectionTextModel,
   createProjectSchema,
   creditCostForOperation,
   estimateFullBookCreditCost,
@@ -62,6 +63,31 @@ import {
   sendRateLimitError,
   type RateLimitConfig
 } from "./rateLimit.js";
+import {
+  adviseMobileBook,
+  composeMobileProjectPrompt,
+  enrichAdvisorWithAi,
+  enrichCreationTurnWithAi,
+  greetingCreationTurn,
+  mobileBookAdvisorBodySchema,
+  mobileBookAdvisorResponseSchema,
+  mobileBriefMetadata,
+  mobileCreationBriefSchema,
+  mobileCreationDraftPayloadSchema,
+  mobileCreationMessageSchema,
+  mobileCreationOptionalDetailsSchema,
+  mobileCreationPresetsSchema,
+  runCreationTurn,
+  authorForMobilePayload,
+  briefForMobilePayload,
+  titleForMobilePayload,
+  type MobileBookAdvisorResponse,
+  type MobileCreationBrief,
+  type MobileCreationDraftPayload,
+  type MobileCreationMessage,
+  type MobileCreationTurn,
+  type MobileCreationTurnRequest
+} from "./mobileCreation.js";
 
 const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
 const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
@@ -75,10 +101,15 @@ const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
 const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 const DEFAULT_GENERATION_RATE_LIMIT = { maxAttempts: 12, windowMs: 60 * 60 * 1000 };
 const DEFAULT_BILLING_VERIFICATION_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
+const DEFAULT_ADVISOR_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
+const DEFAULT_DRAFT_RATE_LIMIT = { maxAttempts: 120, windowMs: 60 * 60 * 1000 };
+const UNTITLED_MOBILE_PROJECT_TITLE = "Untitled Book";
+const MOBILE_TITLE_SOURCE_PLANNER_PENDING = "planner_pending";
 
 export type MobileBookType = z.infer<typeof mobileBookTypeSchema>;
 export type MobileLengthPreset = z.infer<typeof mobileLengthPresetSchema>;
 export type MobileQualityPreset = z.infer<typeof mobileQualityPresetSchema>;
+type MobileJsonValue = string | number | boolean | null | MobileJsonValue[] | { [key: string]: MobileJsonValue };
 
 export type MobileProjectCreateRequestDto = {
   bookType: MobileBookType;
@@ -89,6 +120,9 @@ export type MobileProjectCreateRequestDto = {
   qualityPreset?: MobileQualityPreset | undefined;
   imagesEnabled?: boolean | undefined;
   language?: string | undefined;
+  creationBrief?: MobileCreationBrief | undefined;
+  creationPayload?: MobileCreationDraftPayload | undefined;
+  advisor?: MobileBookAdvisorResponse | undefined;
 };
 
 export type MobileProjectSummaryDto = {
@@ -125,6 +159,47 @@ export type MobileProjectDetailDto = MobileProjectSummaryDto & {
 export type MobileProjectCreateResponseDto = {
   project: MobileProjectDetailDto;
 };
+
+export type MobileCreationDraftDto = {
+  id: string;
+  status: string;
+  payload: MobileCreationDraftPayload;
+  advisorSnapshot: MobileBookAdvisorResponse | null;
+  createdProjectId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MobileCreationDraftResponseDto = {
+  draft: MobileCreationDraftDto | null;
+};
+
+export type MobileCreationSessionDto = {
+  draftId: string;
+  status: string;
+  messages: MobileCreationMessage[];
+  createdProjectId: string | null;
+  updatedAt: string;
+};
+
+export type MobileCreationConversationResponseDto = {
+  session: MobileCreationSessionDto | null;
+  turn: MobileCreationTurn;
+};
+
+export type MobileBookAdvisorResponseDto = {
+  advisor: MobileBookAdvisorResponse;
+};
+
+export type MobileCreationFinalizeResponseDto = {
+  project: MobileProjectDetailDto;
+  operation: MobilePlanOperationDto | null;
+};
+
+type FinalizeOutcome =
+  | { ok: true; project: MobileProjectDetailDto; operation: MobilePlanOperationDto | null }
+  | { ok: false; status: number; code: string; message: string }
+  | { ok: false; insufficient: InsufficientCreditsError };
 
 export type MobilePlanDto = {
   id: string;
@@ -229,6 +304,7 @@ export type MobileExportSetDto = {
 };
 
 type MobileMediaMetadata = {
+  [key: string]: MobileJsonValue;
   bookType: MobileBookType;
   lengthPreset: MobileLengthPreset;
   qualityPreset: MobileQualityPreset;
@@ -246,10 +322,13 @@ type MobileProjectRecord = {
   title: string;
   subtitle: string | null;
   authorName: string | null;
+  coverTagline: string | null;
   prompt: string;
   category: string;
   subcategory: string | null;
   targetPages: number;
+  complexity: number;
+  temperature: number;
   language: string;
   mediaSettings: unknown;
   status: string;
@@ -347,13 +426,34 @@ const mobileProjectCreateBodySchema = z
     lengthPreset: mobileLengthPresetSchema.default("standard"),
     qualityPreset: mobileQualityPresetSchema.default("balanced"),
     imagesEnabled: z.boolean().default(true),
-    language: z.string().trim().min(2).max(40).default("en")
+    language: z.string().trim().min(2).max(40).default("en"),
+    creationBrief: mobileCreationBriefSchema.optional(),
+    creationPayload: mobileCreationDraftPayloadSchema.optional(),
+    advisor: mobileBookAdvisorResponseSchema.optional()
   })
   .strict();
 
 const mobilePlanRevisionBodySchema = z
   .object({
     message: z.string().trim().min(1).max(5000)
+  })
+  .strict();
+
+const mobileCreationMessageBodySchema = z
+  .object({
+    message: z.string().trim().min(1).max(4000),
+    presets: mobileCreationPresetsSchema.optional(),
+    sourceNotes: z.string().trim().max(12000).optional(),
+    optionalDetails: mobileCreationOptionalDetailsSchema.optional()
+  })
+  .strict();
+
+const mobileCreationBuildBodySchema = z
+  .object({
+    presets: mobileCreationPresetsSchema.optional(),
+    sourceNotes: z.string().trim().max(12000).optional(),
+    optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
+    language: z.string().trim().min(2).max(40).optional()
   })
   .strict();
 
@@ -468,7 +568,10 @@ const mobileProjectCreateOpenApiBody = {
     lengthPreset: { type: "string", enum: mobileLengthPresetSchema.options, default: "standard" },
     qualityPreset: { type: "string", enum: mobileQualityPresetSchema.options, default: "balanced" },
     imagesEnabled: { type: "boolean", default: true },
-    language: { type: "string", minLength: 2, maxLength: 40, default: "en" }
+    language: { type: "string", minLength: 2, maxLength: 40, default: "en" },
+    creationBrief: { type: "object" },
+    creationPayload: { type: "object" },
+    advisor: { type: "object" }
   },
   required: ["bookType", "prompt"]
 } as const;
@@ -486,6 +589,16 @@ export type MobileProjectRoutesOptions = {
   googlePlayVerifier?: GooglePlayVerifier | undefined;
   generationRateLimit?: Partial<RateLimitConfig>;
   billingVerificationRateLimit?: Partial<RateLimitConfig>;
+  advisorRateLimit?: Partial<RateLimitConfig>;
+  draftRateLimit?: Partial<RateLimitConfig>;
+  advisorTimeoutMs?: number;
+  advisorEnrichment?:
+    | false
+    | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => Promise<Partial<MobileBookAdvisorResponse>>);
+  creationTurnTimeoutMs?: number;
+  creationEnrichment?:
+    | false
+    | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>);
 };
 
 export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions> = async (fastify, options) => {
@@ -501,6 +614,26 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     ...DEFAULT_BILLING_VERIFICATION_RATE_LIMIT,
     ...options.billingVerificationRateLimit
   });
+  const advisorLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_ADVISOR_RATE_LIMIT,
+    ...options.advisorRateLimit
+  });
+  const draftLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_DRAFT_RATE_LIMIT,
+    ...options.draftRateLimit
+  });
+  const advisorEnrichment =
+    options.advisorEnrichment === false
+      ? undefined
+      : options.advisorEnrichment ??
+        ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) =>
+          enrichAdvisorWithAi(createLanguageDetectionTextModel(appConfig), payload, base));
+  const creationEnrichment =
+    options.creationEnrichment === false
+      ? undefined
+      : options.creationEnrichment ??
+        ((request: MobileCreationTurnRequest, base: MobileCreationTurn) =>
+          enrichCreationTurnWithAi(createLanguageDetectionTextModel(appConfig), request, base));
 
   fastify.get(
     "/api/mobile/me",
@@ -619,6 +752,405 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   );
 
   fastify.get(
+    "/api/mobile/creation-drafts/active",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { userId: auth.user.id, status: "ACTIVE" },
+        orderBy: { updatedAt: "desc" }
+      });
+      return { draft: serializeCreationDraft(draft) } satisfies MobileCreationDraftResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/creation-drafts",
+    { attachValidation: true, schema: { tags: ["mobile"] } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-draft")) {
+        return;
+      }
+      const parsed = mobileCreationDraftPayloadSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a valid creation brief.");
+      }
+      const draft = await prisma.mobileCreationDraft.create({
+        data: {
+          userId: auth.user.id,
+          status: "ACTIVE",
+          payload: jsonInputValue(parsed.data)
+        }
+      });
+      return reply.code(201).send({ draft: serializeCreationDraft(draft) } satisfies MobileCreationDraftResponseDto);
+    }
+  );
+
+  fastify.patch(
+    "/api/mobile/creation-drafts/:id",
+    { attachValidation: true, schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-draft")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileCreationDraftPayloadSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a valid creation brief.");
+      }
+      const existing = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id }
+      });
+      if (!existing) {
+        return sendMobileError(reply, 404, "DRAFT_NOT_FOUND", "Creation draft not found.");
+      }
+      if (existing.status !== "ACTIVE") {
+        return sendMobileError(reply, 409, "DRAFT_NOT_ACTIVE", "This creation draft is no longer active.");
+      }
+      const draft = await prisma.mobileCreationDraft.update({
+        where: { id },
+        data: { payload: jsonInputValue(parsed.data) }
+      });
+      return { draft: serializeCreationDraft(draft) } satisfies MobileCreationDraftResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/book-advisor",
+    { attachValidation: true, schema: { tags: ["mobile"] } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(advisorLimiter, request, reply, auth.user.id, "book-advisor")) {
+        return;
+      }
+      const parsed = mobileBookAdvisorBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a valid creation brief.");
+      }
+      const advisor = await adviseMobileBook(parsed.data, {
+        enrich: advisorEnrichment,
+        timeoutMs: options.advisorTimeoutMs
+      });
+      return { advisor } satisfies MobileBookAdvisorResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/creation-drafts/:id/create-project",
+    { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "creation-finalize")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      return sendFinalizeOutcome(reply, await finalizeMobileCreationDraft(auth.user.id, id));
+    }
+  );
+
+  fastify.get(
+    "/api/mobile/creation-sessions/active",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { userId: auth.user.id, status: "ACTIVE" },
+        orderBy: { updatedAt: "desc" }
+      });
+      if (!draft) {
+        return { session: null, turn: greetingCreationTurn() } satisfies MobileCreationConversationResponseDto;
+      }
+      const parsed = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      if (!parsed.success) {
+        return { session: null, turn: greetingCreationTurn() } satisfies MobileCreationConversationResponseDto;
+      }
+      const messages = conversationMessagesFromPayload(parsed.data);
+      const hasUserMessage = messages.some((message) => message.role === "user");
+      const turn = hasUserMessage
+        ? await runCreationTurn(turnRequestFromPayload(parsed.data, messages), {
+            enrich: creationEnrichment,
+            timeoutMs: options.creationTurnTimeoutMs
+          })
+        : greetingCreationTurn();
+      return {
+        session: serializeCreationSession(draft, messages),
+        turn
+      } satisfies MobileCreationConversationResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/creation-sessions",
+    { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-session-start")) {
+        return;
+      }
+      const greeting = greetingCreationTurn();
+      const greetingMessages: MobileCreationMessage[] = [
+        { role: "assistant" as const, content: greeting.assistantMessage }
+      ];
+      const payload = mobileCreationDraftPayloadSchema.parse({ payloadVersion: 3, messages: greetingMessages });
+      const draft = await prisma.mobileCreationDraft.create({
+        data: {
+          userId: auth.user.id,
+          status: "ACTIVE",
+          payload: jsonInputValue(payload)
+        }
+      });
+      return reply.code(201).send({
+        session: serializeCreationSession(draft, greetingMessages),
+        turn: greeting
+      } satisfies MobileCreationConversationResponseDto);
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/creation-sessions/:id/messages",
+    { attachValidation: true, schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-message")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsedBody = mobileCreationMessageBodySchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a short message to continue the chat.");
+      }
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id }
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "SESSION_NOT_FOUND", "This book chat was not found.");
+      }
+      if (draft.status !== "ACTIVE") {
+        return sendMobileError(reply, 409, "SESSION_NOT_ACTIVE", "This book chat has already been used to start a book.");
+      }
+      const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      if (!parsedPayload.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "This book chat needs to be restarted.");
+      }
+
+      const priorMessages = conversationMessagesFromPayload(parsedPayload.data);
+      const nextMessages: MobileCreationMessage[] = [
+        ...priorMessages,
+        { role: "user" as const, content: parsedBody.data.message }
+      ].slice(-60);
+      const turnRequest: MobileCreationTurnRequest = {
+        messages: nextMessages,
+        brief: parsedPayload.data.recipe,
+        presets: parsedBody.data.presets ?? parsedPayload.data.selectedPresets,
+        sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
+        optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails
+      };
+      const turn = await runCreationTurn(turnRequest, {
+        enrich: creationEnrichment,
+        timeoutMs: options.creationTurnTimeoutMs
+      });
+      const persistedMessages: MobileCreationMessage[] = [
+        ...nextMessages,
+        { role: "assistant" as const, content: turn.assistantMessage }
+      ].slice(-60);
+      const updatedPayload = mobileCreationDraftPayloadSchema.parse({
+        payloadVersion: 3,
+        rawIdea: userTextFromMessages(persistedMessages),
+        optionalDetails: turnRequest.optionalDetails ?? { mustInclude: "", tone: "" },
+        sourceNotes: turnRequest.sourceNotes ?? "",
+        detectedLane: turn.brief.lane,
+        recipe: turn.brief,
+        selectedPresets: turn.presets,
+        messages: persistedMessages
+      });
+      const updated = await prisma.mobileCreationDraft.update({
+        where: { id },
+        data: { payload: jsonInputValue(updatedPayload) }
+      });
+      return {
+        session: serializeCreationSession(updated, persistedMessages),
+        turn
+      } satisfies MobileCreationConversationResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/creation-sessions/:id/build",
+    { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "creation-session-build")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsedBody = mobileCreationBuildBodySchema.safeParse(request.body ?? {});
+      if (!parsedBody.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "These book settings are not supported.");
+      }
+      return sendFinalizeOutcome(
+        reply,
+        await finalizeMobileCreationDraft(auth.user.id, id, parsedBody.data)
+      );
+    }
+  );
+
+  async function finalizeMobileCreationDraft(
+    userId: string,
+    draftId: string,
+    overrides: z.infer<typeof mobileCreationBuildBodySchema> = {}
+  ): Promise<FinalizeOutcome> {
+    const draft = await prisma.mobileCreationDraft.findFirst({
+      where: { id: draftId, userId }
+    });
+    if (!draft) {
+      return { ok: false, status: 404, code: "DRAFT_NOT_FOUND", message: "Creation draft not found." };
+    }
+    if (draft.status !== "ACTIVE") {
+      return { ok: false, status: 409, code: "DRAFT_NOT_ACTIVE", message: "This creation draft has already been used." };
+    }
+
+    const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+    if (!parsedPayload.success) {
+      return {
+        ok: false,
+        status: 400,
+        code: "VALIDATION_ERROR",
+        message: "This creation draft needs to be updated before it can create a project."
+      };
+    }
+
+    const mergedPayload: MobileCreationDraftPayload = {
+      ...parsedPayload.data,
+      ...(overrides.presets ? { selectedPresets: overrides.presets } : {}),
+      ...(overrides.sourceNotes !== undefined ? { sourceNotes: overrides.sourceNotes } : {}),
+      ...(overrides.optionalDetails ? { optionalDetails: overrides.optionalDetails } : {})
+    };
+    const advisorFromDraft = mobileBookAdvisorResponseSchema.safeParse(draft.advisorSnapshot);
+    const advisor = advisorFromDraft.success
+      ? advisorFromDraft.data
+      : await adviseMobileBook(mergedPayload, {
+          enrich: advisorEnrichment,
+          timeoutMs: options.advisorTimeoutMs
+        });
+    const selectedPresets = mergedPayload.selectedPresets ?? advisor.recommendation;
+    const finalPayload = mobileCreationDraftPayloadSchema.parse({
+      ...mergedPayload,
+      selectedPresets,
+      detectedLane: mergedPayload.detectedLane ?? advisor.detectedLane,
+      recipe: mergedPayload.recipe ?? advisor.recipe
+    });
+    const finalAdvisor: MobileBookAdvisorResponse = {
+      ...advisor,
+      recommendation: selectedPresets,
+      detectedLane: finalPayload.detectedLane ?? advisor.detectedLane,
+      recipe: finalPayload.recipe ?? advisor.recipe
+    };
+
+    let project = draft.createdProjectId ? await loadMobileProjectDetail(userId, draft.createdProjectId) : null;
+    if (draft.createdProjectId && !project) {
+      return {
+        ok: false,
+        status: 409,
+        code: "PROJECT_NOT_FOUND",
+        message: "The project created from this draft is no longer available."
+      };
+    }
+    if (!project) {
+      const input = buildMobileCreateProjectInput({
+        bookType: selectedPresets.bookType,
+        lengthPreset: selectedPresets.lengthPreset,
+        qualityPreset: selectedPresets.qualityPreset,
+        imagesEnabled: selectedPresets.imagesEnabled,
+        title: titleForMobilePayload(finalPayload, finalAdvisor),
+        authorName: authorForMobilePayload(finalPayload),
+        prompt: composeMobileProjectPrompt(finalPayload, finalAdvisor),
+        language: overrides.language ?? "en",
+        creationBrief: briefForMobilePayload(finalPayload, finalAdvisor),
+        creationPayload: finalPayload,
+        advisor: finalAdvisor
+      });
+      project = await createMobileProjectRecord(userId, input);
+      await prisma.mobileCreationDraft.update({
+        where: { id: draftId },
+        data: {
+          createdProjectId: project.id,
+          advisorSnapshot: jsonInputValue(finalAdvisor)
+        }
+      });
+    }
+
+    let operation: MobilePlanOperationDto | null = null;
+    try {
+      operation =
+        project.currentPlanId || project.status === "PLANNING"
+          ? null
+          : await queueInitialMobilePlan(userId, project.id, inputSnapshotFromProject(project));
+    } catch (error) {
+      if (error instanceof InsufficientCreditsError) {
+        return { ok: false, insufficient: error };
+      }
+      throw error;
+    }
+
+    await prisma.mobileCreationDraft.update({
+      where: { id: draftId },
+      data: {
+        status: "COMPLETED",
+        advisorSnapshot: jsonInputValue(finalAdvisor),
+        createdProjectId: project.id
+      }
+    });
+    const refreshedProject = (await loadMobileProjectDetail(userId, project.id)) ?? project;
+    return {
+      ok: true,
+      project: await serializeProjectDetail(refreshedProject, appConfig, userId),
+      operation
+    };
+  }
+
+  function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcome): FastifyReply {
+    if (outcome.ok) {
+      return reply.code(201).send({
+        project: outcome.project,
+        operation: outcome.operation
+      } satisfies MobileCreationFinalizeResponseDto);
+    }
+    if ("insufficient" in outcome) {
+      return sendInsufficientCredits(reply, outcome.insufficient);
+    }
+    return sendMobileError(reply, outcome.status, outcome.code, outcome.message);
+  }
+
+  fastify.get(
     "/api/mobile/projects",
     { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
     async (request, reply) => {
@@ -665,46 +1197,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide a book type, prompt, and supported mobile presets.");
       }
 
-      const input = buildMobileCreateProjectInput(parsed.data);
-      const template = await prisma.template.findFirst({
-        where: input.templateSlug ? { slug: input.templateSlug } : { category: input.category }
-      });
-      const project = (await prisma.project.create({
-        data: {
-          userId: auth.user.id,
-          title: input.title ?? deriveTitle(input.prompt),
-          ...(input.authorName ? { authorName: input.authorName } : {}),
-          prompt: input.prompt,
-          category: input.category,
-          ...(input.subcategory ? { subcategory: input.subcategory } : {}),
-          targetPages: input.targetPages,
-          complexity: input.complexity,
-          temperature: input.temperature,
-          language: input.language,
-          mediaSettings: input.mediaSettings as Prisma.InputJsonValue,
-          ...(template ? { templateId: template.id } : {})
-        },
-        include: {
-          currentPlan: true,
-          pages: {
-            orderBy: { index: "asc" },
-            select: {
-              id: true,
-              index: true,
-              title: true,
-              markdown: true,
-              summary: true,
-              status: true,
-              images: {
-                select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true },
-                orderBy: { createdAt: "asc" }
-              }
-            }
-          },
-          images: { select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true } },
-          _count: { select: { pages: true, images: true, jobs: true } }
-        }
-      })) as MobileProjectRecord;
+      const project = await createMobileProjectRecord(auth.user.id, buildMobileCreateProjectInput(parsed.data));
 
       return reply.code(201).send({ project: await serializeProjectDetail(project, appConfig, auth.user.id) } satisfies MobileProjectCreateResponseDto);
     }
@@ -848,41 +1341,13 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
       }
 
-      const inputSnapshot = inputSnapshotFromProject(project);
-      const planCost = creditCostForOperation("PLAN_GENERATION");
-      let planReservation: CreditLedgerEntryRecord | null = null;
       try {
-        planReservation = await reserveCredits({
-          userId: auth.user.id,
-          projectId: id,
-          operation: "PLAN_GENERATION",
-          amountCredits: planCost,
-          idempotencyKey: `mobile:project:${id}:plan`,
-          description: "Mobile plan generation"
-        });
+        return reply
+          .code(202)
+          .send(await queueInitialMobilePlan(auth.user.id, id, inputSnapshotFromProject(project)));
       } catch (error) {
         if (error instanceof InsufficientCreditsError) {
           return sendInsufficientCredits(reply, error);
-        }
-        throw error;
-      }
-      let committedPlanCharge: CreditLedgerEntryRecord | null = null;
-      try {
-        await prisma.project.update({ where: { id }, data: { status: "PLANNING" } });
-        committedPlanCharge = planReservation ? await commitReservedCredits(planReservation.id) : null;
-        const job = await enqueueGenerationJob({
-          projectId: id,
-          type: "PLAN_BOOK",
-          payload: {
-            inputSnapshot,
-            ...(committedPlanCharge ? { billingLedgerEntryId: committedPlanCharge.id } : {})
-          }
-        });
-        return reply.code(202).send(planOperation("planning_queued", id, null, job, "Creating your book plan."));
-      } catch (error) {
-        const entryToRefund = committedPlanCharge ?? planReservation;
-        if (entryToRefund) {
-          await refundCreditLedgerEntry(entryToRefund.id, "Plan generation could not be queued.");
         }
         throw error;
       }
@@ -1165,6 +1630,57 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
   const parsed = mobileProjectCreateBodySchema.parse(input);
   const bookType = MOBILE_BOOK_TYPE_SETTINGS[parsed.bookType];
   const quality = MOBILE_PRODUCT_PRESETS[parsed.qualityPreset];
+  const mobileMetadata: MobileMediaMetadata = {
+    bookType: parsed.bookType,
+    lengthPreset: parsed.lengthPreset,
+    qualityPreset: parsed.qualityPreset,
+    imagesEnabled: parsed.imagesEnabled
+  };
+  if (parsed.creationBrief && parsed.advisor) {
+    const legacyCreationPayload =
+      parsed.creationPayload ??
+      mobileCreationDraftPayloadSchema.parse({
+        payloadVersion: 2,
+        rawIdea: parsed.creationBrief.topic,
+        optionalDetails: {
+          title: parsed.creationBrief.title,
+          authorName: parsed.creationBrief.authorName,
+          mustInclude: parsed.creationBrief.mustInclude,
+          tone: parsed.creationBrief.tone
+        },
+        sourceNotes: parsed.creationBrief.sourceNotes,
+        selectedPresets: {
+          bookType: parsed.bookType,
+          lengthPreset: parsed.lengthPreset,
+          qualityPreset: parsed.qualityPreset,
+          imagesEnabled: parsed.imagesEnabled
+        },
+        brief: parsed.creationBrief
+      });
+    const metadata = mobileBriefMetadata(legacyCreationPayload, parsed.advisor);
+    for (const [key, value] of Object.entries(metadata)) {
+      mobileMetadata[key] = jsonValue(value);
+    }
+  } else if (parsed.creationPayload && parsed.advisor) {
+    const metadata = mobileBriefMetadata(parsed.creationPayload, parsed.advisor);
+    for (const [key, value] of Object.entries(metadata)) {
+      mobileMetadata[key] = jsonValue(value);
+    }
+  } else {
+    if (parsed.creationBrief) {
+      mobileMetadata.brief = jsonValue(parsed.creationBrief);
+    }
+    if (parsed.creationPayload) {
+      mobileMetadata.payloadVersion = 2;
+      mobileMetadata.creationPayload = jsonValue(parsed.creationPayload);
+    }
+    if (parsed.advisor) {
+      mobileMetadata.advisor = jsonValue(parsed.advisor);
+    }
+  }
+  if (!parsed.title) {
+    mobileMetadata.titleSource = MOBILE_TITLE_SOURCE_PLANNER_PENDING;
+  }
   const baseMediaSettings = mediaSettingsSchema.parse({
     fullIllustrations: parsed.imagesEnabled,
     illustrationCadence: parsed.imagesEnabled ? "template-driven" : "manual",
@@ -1178,7 +1694,7 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     draftCandidates: quality.draftCandidates
   });
   const projectInput = createProjectSchema.parse({
-    ...(parsed.title ? { title: parsed.title } : {}),
+    title: parsed.title ?? UNTITLED_MOBILE_PROJECT_TITLE,
     ...(parsed.authorName ? { authorName: parsed.authorName } : {}),
     prompt: parsed.prompt,
     category: bookType.category,
@@ -1195,14 +1711,179 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     ...projectInput,
     mediaSettings: {
       ...projectInput.mediaSettings,
-      mobile: {
-        bookType: parsed.bookType,
-        lengthPreset: parsed.lengthPreset,
-        qualityPreset: parsed.qualityPreset,
-        imagesEnabled: parsed.imagesEnabled
-      }
+      mobile: mobileMetadata
     }
   };
+}
+
+async function createMobileProjectRecord(userId: string, input: MobileCreateProjectInput): Promise<MobileProjectRecord> {
+  const template = await prisma.template.findFirst({
+    where: input.templateSlug ? { slug: input.templateSlug } : { category: input.category }
+  });
+  return (await prisma.project.create({
+    data: {
+      userId,
+      title: input.title ?? UNTITLED_MOBILE_PROJECT_TITLE,
+      ...(input.authorName ? { authorName: input.authorName } : {}),
+      prompt: input.prompt,
+      category: input.category,
+      ...(input.subcategory ? { subcategory: input.subcategory } : {}),
+      targetPages: input.targetPages,
+      complexity: input.complexity,
+      temperature: input.temperature,
+      language: input.language,
+      mediaSettings: jsonInputValue(input.mediaSettings),
+      ...(template ? { templateId: template.id } : {})
+    },
+    include: mobileProjectDetailInclude()
+  })) as MobileProjectRecord;
+}
+
+async function loadMobileProjectDetail(userId: string, projectId: string): Promise<MobileProjectRecord | null> {
+  return (await prisma.project.findFirst({
+    where: { id: projectId, userId },
+    include: mobileProjectDetailInclude()
+  })) as MobileProjectRecord | null;
+}
+
+function mobileProjectDetailInclude() {
+  return {
+    currentPlan: true,
+    pages: {
+      orderBy: { index: "asc" },
+      select: {
+        id: true,
+        index: true,
+        title: true,
+        markdown: true,
+        summary: true,
+        status: true,
+        images: {
+          select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true },
+          orderBy: { createdAt: "asc" }
+        }
+      }
+    },
+    images: { select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true } },
+    _count: { select: { pages: true, images: true, jobs: true } }
+  } as const;
+}
+
+async function queueInitialMobilePlan(
+  userId: string,
+  projectId: string,
+  inputSnapshot: Record<string, unknown>
+): Promise<MobilePlanOperationDto> {
+  const planCost = creditCostForOperation("PLAN_GENERATION");
+  let planReservation: CreditLedgerEntryRecord | null = null;
+  let committedPlanCharge: CreditLedgerEntryRecord | null = null;
+  try {
+    planReservation = await reserveCredits({
+      userId,
+      projectId,
+      operation: "PLAN_GENERATION",
+      amountCredits: planCost,
+      idempotencyKey: `mobile:project:${projectId}:plan`,
+      description: "Mobile plan generation"
+    });
+    await prisma.project.update({ where: { id: projectId }, data: { status: "PLANNING" } });
+    committedPlanCharge = planReservation ? await commitReservedCredits(planReservation.id) : null;
+    const job = await enqueueGenerationJob({
+      projectId,
+      type: "PLAN_BOOK",
+      payload: {
+        inputSnapshot,
+        ...(committedPlanCharge ? { billingLedgerEntryId: committedPlanCharge.id } : {})
+      }
+    });
+    return planOperation("planning_queued", projectId, null, job, "Creating your book plan.");
+  } catch (error) {
+    const entryToRefund = committedPlanCharge ?? planReservation;
+    if (entryToRefund) {
+      await refundCreditLedgerEntry(entryToRefund.id, "Plan generation could not be queued.");
+    }
+    throw error;
+  }
+}
+
+function serializeCreationDraft(draft: {
+  id: string;
+  payload: unknown;
+  advisorSnapshot: unknown;
+  createdProjectId: string | null;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+} | null): MobileCreationDraftDto | null {
+  if (!draft) {
+    return null;
+  }
+  const payload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+  if (!payload.success) {
+    return null;
+  }
+  const advisor = mobileBookAdvisorResponseSchema.safeParse(draft.advisorSnapshot);
+  return {
+    id: draft.id,
+    status: draft.status,
+    payload: payload.data,
+    advisorSnapshot: advisor.success ? advisor.data : null,
+    createdProjectId: draft.createdProjectId,
+    createdAt: draft.createdAt.toISOString(),
+    updatedAt: draft.updatedAt.toISOString()
+  };
+}
+
+function serializeCreationSession(
+  draft: { id: string; status: string; createdProjectId: string | null; updatedAt: Date },
+  messages: MobileCreationMessage[]
+): MobileCreationSessionDto {
+  return {
+    draftId: draft.id,
+    status: draft.status,
+    messages,
+    createdProjectId: draft.createdProjectId,
+    updatedAt: draft.updatedAt.toISOString()
+  };
+}
+
+function conversationMessagesFromPayload(payload: MobileCreationDraftPayload): MobileCreationMessage[] {
+  if (payload.messages && payload.messages.length > 0) {
+    return payload.messages;
+  }
+  // Migrate an in-progress wizard draft (V2) into the chat by seeding the idea as the first message.
+  const idea = payload.rawIdea.trim();
+  return idea ? [{ role: "user" as const, content: idea.slice(0, 4000) }] : [];
+}
+
+function turnRequestFromPayload(
+  payload: MobileCreationDraftPayload,
+  messages: MobileCreationMessage[]
+): MobileCreationTurnRequest {
+  return {
+    messages,
+    brief: payload.recipe,
+    presets: payload.selectedPresets,
+    sourceNotes: payload.sourceNotes,
+    optionalDetails: payload.optionalDetails
+  };
+}
+
+function userTextFromMessages(messages: MobileCreationMessage[]): string {
+  return messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 2000);
+}
+
+function jsonInputValue(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function jsonValue(value: unknown): MobileJsonValue {
+  return JSON.parse(JSON.stringify(value)) as MobileJsonValue;
 }
 
 async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): Promise<MobileAuthContext | null> {
@@ -1676,8 +2357,10 @@ function inputSnapshotFromProject(project: {
   language: string;
   mediaSettings: unknown;
 }): Record<string, unknown> {
+  const mediaSettings = mediaSettingsSchema.parse(project.mediaSettings);
+  const title = hasPlannerPendingMobileTitle(mediaSettings) ? undefined : project.title;
   const input = createProjectSchema.parse({
-    title: project.title,
+    ...(title ? { title } : {}),
     ...(project.subtitle ? { subtitle: project.subtitle } : {}),
     ...(project.authorName ? { authorName: project.authorName } : {}),
     ...(project.coverTagline ? { coverTagline: project.coverTagline } : {}),
@@ -1688,9 +2371,13 @@ function inputSnapshotFromProject(project: {
     complexity: project.complexity,
     temperature: project.temperature,
     language: project.language,
-    mediaSettings: mediaSettingsSchema.parse(project.mediaSettings)
+    mediaSettings
   });
   return JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
+}
+
+function hasPlannerPendingMobileTitle(mediaSettings: unknown): boolean {
+  return stringField(jsonRecord(jsonRecord(mediaSettings).mobile), "titleSource") === MOBILE_TITLE_SOURCE_PLANNER_PENDING;
 }
 
 function mobileMetadataFromMediaSettings(mediaSettings: unknown): MobileMediaMetadata | null {
@@ -1897,14 +2584,6 @@ function isCurrentCoverPayload(
   context: { currentPlanId: string | null }
 ): boolean {
   return payload.assetType === "COVER" && payloadPlanId(payload) === context.currentPlanId;
-}
-
-function deriveTitle(prompt: string): string {
-  return prompt
-    .split(/[.!?\n]/)[0]
-    ?.replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 90) || "Untitled Book";
 }
 
 function sanitizeDownloadFilename(title: string): string {

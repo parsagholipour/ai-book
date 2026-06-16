@@ -6,7 +6,9 @@ import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
+import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 
 void main() {
@@ -40,21 +42,23 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Your book projects'), findsOneWidget);
-      expect(find.text('Credits'), findsOneWidget);
+      expect(find.text('Welcome back, Mira'), findsOneWidget);
+      expect(find.text('Book credits'), findsOneWidget);
       expect(find.text('Audience Growth Workbook'), findsOneWidget);
       expect(find.text('Create your account'), findsNothing);
 
-      await tester.tap(find.widgetWithText(FilledButton, 'New'));
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, 'Start another book'),
+      );
       await tester.pumpAndSettle();
 
       expect(find.text('New book'), findsOneWidget);
-      expect(find.text('Choose a book type'), findsOneWidget);
+      expect(find.text('Book brief'), findsWidgets);
 
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
 
-      expect(find.text('Your book projects'), findsOneWidget);
+      expect(find.text('Welcome back, Mira'), findsOneWidget);
       expect(find.text('New book'), findsNothing);
     },
   );
@@ -64,10 +68,14 @@ Widget testApp({
   required FakeAuthRepository authRepository,
   FakeProjectsRepository? projectsRepository,
   FakeBillingRepository? billingRepository,
+  FakeCreationRepository? creationRepository,
 }) {
   return ProviderScope(
     overrides: [
       authRepositoryProvider.overrideWithValue(authRepository),
+      creationRepositoryProvider.overrideWithValue(
+        creationRepository ?? FakeCreationRepository(),
+      ),
       projectsRepositoryProvider.overrideWithValue(
         projectsRepository ?? FakeProjectsRepository(),
       ),
@@ -110,6 +118,100 @@ class FakeAuthRepository implements AuthRepository {
   Future<void> logout() async {
     _session = null;
   }
+}
+
+class FakeCreationRepository implements CreationRepository {
+  @override
+  Future<MobileCreationDraft?> getActiveDraft() async => null;
+
+  @override
+  Future<MobileCreationDraft> createDraft(MobileCreationDraftPayload payload) {
+    throw UnimplementedError('Draft saves are not used in this test.');
+  }
+
+  @override
+  Future<MobileCreationDraft> updateDraft({
+    required String id,
+    required MobileCreationDraftPayload payload,
+  }) {
+    throw UnimplementedError('Draft saves are not used in this test.');
+  }
+
+  @override
+  Future<MobileBookAdvisorResponse> adviseBook(
+    MobileCreationDraftPayload payload,
+  ) {
+    throw UnimplementedError('Advisor is not used in this test.');
+  }
+
+  @override
+  Future<MobileCreationFinalizeResponse> finalizeDraft(String id) {
+    throw UnimplementedError('Finalize is not used in this test.');
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> resumeConversation() async {
+    return fakeGreetingConversation(withSession: false);
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> startConversation() async {
+    return fakeGreetingConversation(withSession: true);
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> sendConversationMessage({
+    required String draftId,
+    required String message,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+  }) async {
+    return fakeGreetingConversation(withSession: true);
+  }
+
+  @override
+  Future<MobileCreationFinalizeResponse> buildConversation({
+    required String draftId,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+    String? language,
+  }) {
+    throw UnimplementedError('Conversation is not used in this test.');
+  }
+}
+
+MobileCreationConversationResponse fakeGreetingConversation({
+  required bool withSession,
+}) {
+  return MobileCreationConversationResponse.fromJson({
+    if (withSession)
+      'session': {
+        'draftId': 'draft-1',
+        'status': 'ACTIVE',
+        'messages': <dynamic>[],
+        'createdProjectId': null,
+        'updatedAt': '2026-06-15T00:00:00.000Z',
+      },
+    'turn': {
+      'assistantMessage': 'Tell me about the book you want to make.',
+      'brief': {'lane': 'practical_guide'},
+      'presets': {
+        'bookType': 'lead_magnet',
+        'lengthPreset': 'short',
+        'qualityPreset': 'balanced',
+        'imagesEnabled': true,
+      },
+      'detectedLane': 'practical_guide',
+      'quickReplies': <dynamic>['A kids book', 'A workbook'],
+      'question': null,
+      'readiness': {'score': 0, 'canBuild': false, 'missing': <dynamic>[]},
+      'titleSuggestions': <dynamic>[],
+      'shapePreview': <dynamic>['Intro'],
+      'warnings': <dynamic>[],
+    },
+  });
 }
 
 class FakeProjectsRepository implements ProjectsRepository {

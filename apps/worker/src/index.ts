@@ -68,11 +68,17 @@ import {
   type TextModelAdapter,
   type Usage,
   type VoiceCharacterCandidate,
+  type WholeBookDraft,
   withRecoverableNetworkRetry
 } from "@book-maker/core";
 import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
 import { refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 import { inputForPlanVersion, inputFromProject, inputFromSnapshot } from "./projectInput.js";
+import {
+  acceptedSavedPageTarget,
+  effectiveSavedWholeBookExportContext,
+  terminalSavedPageCount
+} from "./wholeBookTolerance.js";
 
 const BOOK_QUEUE_NAME = "book-maker";
 const MAX_PAGE_QA_REWRITE_ATTEMPTS = 6;
@@ -726,6 +732,90 @@ async function resetBookForDirectGeneration(projectId: string, chapterSetups: Ch
   });
 }
 
+function effectiveWholeBookDraftContext(
+  input: CreateProjectInput,
+  plan: BookPlan,
+  draft: WholeBookDraft,
+  exactTargetChapterSetups?: ChapterSetup[]
+): { input: CreateProjectInput; plan: BookPlan; chapterSetups: ChapterSetup[] } {
+  const acceptedPages = draft.pageSetDiagnostics?.acceptedPages ?? draft.pages.length;
+  const targetPages = Math.max(1, acceptedPages);
+  const targetChanged = targetPages !== input.targetPages;
+  const inputForAcceptedPages = targetChanged ? { ...input, targetPages } : input;
+  const planForAcceptedPages = targetChanged ? normalizePlanPageTargets(plan, targetPages) : plan;
+  const canReuseExactSetups =
+    !targetChanged && draft.pageSetDiagnostics?.renumbered !== true && exactTargetChapterSetups !== undefined;
+
+  return {
+    input: inputForAcceptedPages,
+    plan: planForAcceptedPages,
+    chapterSetups: canReuseExactSetups ? exactTargetChapterSetups : chapterSetupsForPlan(planForAcceptedPages, targetPages)
+  };
+}
+
+async function reportAcceptedWholeBookDraft(
+  generationJobId: string | undefined,
+  draft: WholeBookDraft
+): Promise<string | undefined> {
+  const message = wholeBookDraftAcceptanceMessage(draft);
+  if (!message) {
+    return undefined;
+  }
+  await updateJobProgress(generationJobId, { message });
+  return message;
+}
+
+function wholeBookDraftAcceptanceMessage(draft: WholeBookDraft): string | undefined {
+  const diagnostics = draft.pageSetDiagnostics;
+  if (!diagnostics) {
+    return undefined;
+  }
+  const noteworthy =
+    diagnostics.acceptedPages !== diagnostics.requestedPages ||
+    diagnostics.renumbered ||
+    diagnostics.missingIndexes.length > 0 ||
+    diagnostics.unexpectedIndexes.length > 0 ||
+    diagnostics.duplicateIndexes.length > 0;
+  if (!noteworthy) {
+    return undefined;
+  }
+
+  const details = [
+    diagnostics.missingIndexes.length ? `missing ${diagnostics.missingIndexes.join(", ")}` : "",
+    diagnostics.unexpectedIndexes.length ? `unexpected ${diagnostics.unexpectedIndexes.join(", ")}` : "",
+    diagnostics.duplicateIndexes.length ? `duplicate ${diagnostics.duplicateIndexes.join(", ")}` : ""
+  ].filter(Boolean);
+  const suffix = details.length > 0 ? ` (${details.join("; ")})` : "";
+  return `Accepted ${diagnostics.acceptedPages} generated pages for a ${diagnostics.requestedPages}-page target${suffix}.`;
+}
+
+async function persistAcceptedWholeBookTarget(options: {
+  projectId: string;
+  planId: string;
+  input: CreateProjectInput;
+  plan: BookPlan;
+  draft: WholeBookDraft;
+}): Promise<void> {
+  const diagnostics = options.draft.pageSetDiagnostics;
+  if (!diagnostics || diagnostics.acceptedPages === diagnostics.requestedPages) {
+    return;
+  }
+
+  await prisma.$transaction([
+    prisma.project.update({
+      where: { id: options.projectId },
+      data: { targetPages: diagnostics.acceptedPages }
+    }),
+    prisma.planVersion.update({
+      where: { id: options.planId },
+      data: {
+        inputSnapshot: planInputSnapshot(options.input),
+        planningPackage: jsonInputValue(options.plan)
+      }
+    })
+  ]);
+}
+
 async function generateBookChapterWholePass(options: {
   projectId: string;
   planId: string;
@@ -959,10 +1049,10 @@ async function generateBookDraftThenPolish(options: {
     throw new Error(`Strategy ${options.strategy.id} does not support draft-then-polish generation.`);
   }
 
-  const chapterSetups: ChapterSetup[] = options.strategy.createChapterBriefs
+  const draftChapterSetups: ChapterSetup[] = options.strategy.createChapterBriefs
     ? await prepareChapterSetups(options)
     : chapterSetupsForPlan(options.plan, options.input.targetPages);
-  const chapterBriefs = chapterSetups.flatMap((setup) => (setup.brief ? [setup.brief] : []));
+  const chapterBriefs = draftChapterSetups.flatMap((setup) => (setup.brief ? [setup.brief] : []));
   const research = await prisma.researchSource.findMany({ where: { projectId: options.projectId }, take: 20 });
   await advanceJobStep(options.generationJobId, "briefs", chapterBriefs.length > 0 ? 30 : 20, "Drafting whole book");
   const draft = await generateWholeBookDraft({
@@ -972,19 +1062,26 @@ async function generateBookDraftThenPolish(options: {
     researchNotes: research.map((source) => `${source.title}: ${source.summary}`),
     textModel: options.providers.text
   });
+  const acceptanceMessage = await reportAcceptedWholeBookDraft(options.generationJobId, draft);
+  const effective = effectiveWholeBookDraftContext(options.input, options.plan, draft, draftChapterSetups);
 
-  await advanceJobStep(options.generationJobId, "setup", 35, "Preparing polish records");
-  const chapterIds = await resetBookForDirectGeneration(options.projectId, chapterSetups);
+  await advanceJobStep(
+    options.generationJobId,
+    "setup",
+    35,
+    acceptanceMessage ? `${acceptanceMessage} Preparing polish records.` : "Preparing polish records"
+  );
+  const chapterIds = await resetBookForDirectGeneration(options.projectId, effective.chapterSetups);
   await ensureCharacterReferenceAssets({
     projectId: options.projectId,
     planId: options.planId,
-    input: options.input,
-    plan: options.plan,
+    input: effective.input,
+    plan: effective.plan,
     providers: options.providers,
     strategy: options.strategy,
     generationJobId: options.generationJobId
   });
-  await maybeEnqueueCover(options.projectId, options.planId, options.input);
+  await maybeEnqueueCover(options.projectId, options.planId, effective.input);
   const previousPages: PriorPageContext[] = [];
   const rawPages = draft.pages.map((page) => ({
     index: page.index,
@@ -999,13 +1096,13 @@ async function generateBookDraftThenPolish(options: {
       message: `Polishing page ${pageDraft.index}`
     });
     const continuityNotes = await loadContinuityNotes(options.projectId);
-    const setup = chapterSetupForPage(chapterSetups, pageDraft.index);
+    const setup = chapterSetupForPage(effective.chapterSetups, pageDraft.index);
     const chapterBrief = setup?.brief;
     const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === pageDraft.index);
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup?.chapter);
     const polished = await polishPageDraft({
-      input: options.input,
-      plan: options.plan,
+      input: effective.input,
+      plan: effective.plan,
       chapter: setup?.chapter,
       chapterBrief,
       pageBrief,
@@ -1020,8 +1117,8 @@ async function generateBookDraftThenPolish(options: {
     const saved = await reviewAndSaveGeneratedPage({
       projectId: options.projectId,
       planId: options.planId,
-      input: options.input,
-      plan: options.plan,
+      input: effective.input,
+      plan: effective.plan,
       providers: options.providers,
       strategy: options.strategy,
       draft: { ...polished, index: pageDraft.index },
@@ -1036,6 +1133,13 @@ async function generateBookDraftThenPolish(options: {
     previousPages.push(saved);
   }
 
+  await persistAcceptedWholeBookTarget({
+    projectId: options.projectId,
+    planId: options.planId,
+    input: effective.input,
+    plan: effective.plan,
+    draft
+  });
   await advanceJobStep(options.generationJobId, "enqueue", 90, "Queueing export");
   await maybeEnqueueCompile(options.projectId, options.planId);
 }
@@ -1448,11 +1552,18 @@ async function generateBookWholePass(options: {
     researchNotes: research.map((source) => `${source.title}: ${source.summary}`),
     textModel: options.providers.text
   });
+  const acceptanceMessage = await reportAcceptedWholeBookDraft(options.generationJobId, draft);
+  const effective = effectiveWholeBookDraftContext(options.input, options.plan, draft);
 
-  await advanceJobStep(options.generationJobId, "setup", 55, `Reviewing ${draft.pages.length} generated pages`);
+  await advanceJobStep(
+    options.generationJobId,
+    "setup",
+    55,
+    acceptanceMessage ? `${acceptanceMessage} Reviewing ${draft.pages.length} generated pages.` : `Reviewing ${draft.pages.length} generated pages`
+  );
   const reviewedPages = await reviewWholeBookDraftPages({
-    input: options.input,
-    plan: options.plan,
+    input: effective.input,
+    plan: effective.plan,
     strategy: options.strategy,
     textModel: options.providers.text,
     pages: draft.pages,
@@ -1460,7 +1571,7 @@ async function generateBookWholePass(options: {
   });
 
   await advanceJobStep(options.generationJobId, "setup", 70, `Saving ${reviewedPages.length} generated pages`);
-  const chapterRanges = chapterSetupsForPlan(options.plan, options.input.targetPages);
+  const chapterRanges = effective.chapterSetups;
   const savedPages =   await prisma.$transaction(async (tx) => {
     await tx.imageAsset.deleteMany({ where: { projectId: options.projectId } });
     await tx.page.deleteMany({ where: { projectId: options.projectId } });
@@ -1536,18 +1647,25 @@ async function generateBookWholePass(options: {
   }
 
   await advanceJobStep(options.generationJobId, "enqueue", 88, "Queueing images and export");
+  await persistAcceptedWholeBookTarget({
+    projectId: options.projectId,
+    planId: options.planId,
+    input: effective.input,
+    plan: effective.plan,
+    draft
+  });
   await ensureCharacterReferenceAssets({
     projectId: options.projectId,
     planId: options.planId,
-    input: options.input,
-    plan: options.plan,
+    input: effective.input,
+    plan: effective.plan,
     providers: options.providers,
     strategy: options.strategy,
     generationJobId: options.generationJobId
   });
-  await maybeEnqueueCover(options.projectId, options.planId, options.input);
+  await maybeEnqueueCover(options.projectId, options.planId, effective.input);
   for (const page of savedPages) {
-    if (page.imagePrompt && options.strategy.shouldIllustratePage(options.input, options.plan, page.index)) {
+    if (page.imagePrompt && options.strategy.shouldIllustratePage(effective.input, effective.plan, page.index)) {
       await enqueueWorkerJob({
         projectId: options.projectId,
         type: "GENERATE_IMAGE",
@@ -2186,11 +2304,15 @@ async function compileExport(job: Job) {
   if (!planVersion || !project) {
     throw new Error("Cannot compile export without plan and project");
   }
-  const plan = bookPlanSchema.parse(planVersion.planningPackage);
-  const input = inputForPlanVersion(project, planVersion.inputSnapshot);
+  let plan = bookPlanSchema.parse(planVersion.planningPackage);
+  let input = inputForPlanVersion(project, planVersion.inputSnapshot);
+  let pages: ExportPageForRepair[] = project.pages;
+  const initialStrategy = strategyForInput(input);
+  const exportContext = effectiveSavedWholeBookExportContext(input, plan, initialStrategy, pages);
+  input = exportContext.input;
+  plan = exportContext.plan;
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
-  let pages: ExportPageForRepair[] = project.pages;
   const failedQaPageIndexes = pages.filter((page) => page.status === "FAILED_QA").map((page) => page.index);
   // Parallel-wave drafting relies on the final review as its continuity
   // reconciliation pass, so it runs even when the user disabled final review.
@@ -2947,11 +3069,13 @@ async function maybeEnqueueCompile(projectId: string, planId: string) {
     return;
   }
   const input = inputForPlanVersion(project, planVersion?.inputSnapshot);
-  const [totalPages, completedPages, failedQaPagesWithDraft, openPageJobs, openImageJobs, existingCompileJobs, coverAssets] =
+  const strategy = resolveBookGenerationStrategy(input).strategy;
+  const [pages, openPageJobs, openImageJobs, existingCompileJobs, coverAssets] =
     await Promise.all([
-      prisma.page.count({ where: { projectId } }),
-      prisma.page.count({ where: { projectId, status: "COMPLETED" } }),
-      prisma.page.count({ where: { projectId, status: "FAILED_QA", NOT: { markdown: "" } } }),
+      prisma.page.findMany({
+        where: { projectId },
+        select: { index: true, status: true, markdown: true }
+      }),
       prisma.generationJob.count({
         where: { projectId, type: "GENERATE_PAGE", status: { in: ["QUEUED", "ACTIVE"] } }
       }),
@@ -2965,8 +3089,13 @@ async function maybeEnqueueCompile(projectId: string, planId: string) {
     ]);
   // FAILED_QA pages that kept a draft count as terminal so one stubborn page
   // cannot block the whole export; the final review pass can still repair it.
-  const terminalPages = completedPages + failedQaPagesWithDraft;
-  const pagesReady = totalPages === input.targetPages && terminalPages === input.targetPages && openPageJobs === 0;
+  const acceptedPageTarget = acceptedSavedPageTarget(input, strategy, pages);
+  const terminalPages = terminalSavedPageCount(pages);
+  const pagesReady =
+    acceptedPageTarget !== undefined &&
+    terminalPages === pages.length &&
+    pages.length === acceptedPageTarget &&
+    openPageJobs === 0;
   if (pagesReady && input.mediaSettings.includeCover && coverAssets === 0 && openImageJobs === 0) {
     await maybeEnqueueCover(projectId, planId, input);
     return;

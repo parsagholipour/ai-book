@@ -547,6 +547,109 @@ describe("page quality review", () => {
     expect(draft.pages[0]?.imagePrompt).toMatch(/illustration/i);
   });
 
+  it("accepts and compacts short whole-book drafts within the 50 percent tolerance", async () => {
+    const targetPages = 18;
+    const draft = await generateWholeBookDraft({
+      input: { ...input, targetPages },
+      plan: makeFallbackPlan({ ...input, targetPages }),
+      researchNotes: [],
+      textModel: jsonModel({
+        pages: Array.from({ length: 15 }, (_, index) => ({
+          index: index + 1,
+          title: `Turn ${index + 1}`,
+          markdown: index === 14 ? goodFinalMarkdown() : goodMarkdown(),
+          summary: `Page ${index + 1} summary.`,
+          continuityNotes: []
+        }))
+      })
+    });
+
+    expect(draft.pages).toHaveLength(15);
+    expect(draft.pages.map((page) => page.index)).toEqual(Array.from({ length: 15 }, (_, index) => index + 1));
+    expect(draft.pageSetDiagnostics).toMatchObject({
+      requestedPages: 18,
+      acceptedPages: 15,
+      missingIndexes: [16, 17, 18],
+      unexpectedIndexes: [],
+      duplicateIndexes: [],
+      renumbered: true
+    });
+  });
+
+  it("accepts and compacts whole-book drafts with extra pages up to the 150 percent tolerance", async () => {
+    const targetPages = 4;
+    const draft = await generateWholeBookDraft({
+      input: { ...input, targetPages },
+      plan: makeFallbackPlan({ ...input, targetPages }),
+      researchNotes: [],
+      textModel: jsonModel({
+        pages: Array.from({ length: 6 }, (_, index) => ({
+          index: index + 1,
+          title: `Turn ${index + 1}`,
+          markdown: index === 5 ? goodFinalMarkdown() : goodMarkdown(),
+          summary: `Page ${index + 1} summary.`,
+          continuityNotes: []
+        }))
+      })
+    });
+
+    expect(draft.pages).toHaveLength(6);
+    expect(draft.pages.map((page) => page.index)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(draft.pageSetDiagnostics).toMatchObject({
+      requestedPages: 4,
+      acceptedPages: 6,
+      missingIndexes: [],
+      unexpectedIndexes: [5, 6],
+      duplicateIndexes: [],
+      renumbered: true
+    });
+  });
+
+  it("rejects empty whole-book drafts and drafts outside the 50 percent tolerance", async () => {
+    await expect(
+      generateWholeBookDraft({
+        input: { ...input, targetPages: 18 },
+        plan: makeFallbackPlan({ ...input, targetPages: 18 }),
+        researchNotes: [],
+        textModel: jsonModel({
+          pages: Array.from({ length: 8 }, (_, index) => ({
+            index: index + 1,
+            title: `Turn ${index + 1}`,
+            markdown: goodMarkdown(),
+            summary: `Page ${index + 1} summary.`,
+            continuityNotes: []
+          }))
+        })
+      })
+    ).rejects.toThrow(/expected 9-27 pages/i);
+
+    await expect(
+      generateWholeBookDraft({
+        input: { ...input, targetPages: 4 },
+        plan: makeFallbackPlan({ ...input, targetPages: 4 }),
+        researchNotes: [],
+        textModel: jsonModel({
+          pages: Array.from({ length: 7 }, (_, index) => ({
+            index: index + 1,
+            title: `Turn ${index + 1}`,
+            markdown: goodMarkdown(),
+            summary: `Page ${index + 1} summary.`,
+            continuityNotes: []
+          }))
+        })
+      })
+    ).rejects.toThrow(/expected 2-6 pages/i);
+
+    await expect(
+      generateWholeBookDraft({
+        input: { ...input, targetPages: 3 },
+        plan: makeFallbackPlan({ ...input, targetPages: 3 }),
+        researchNotes: [],
+        textModel: jsonModel({ pages: [] })
+      })
+    ).rejects.toThrow(/returned 0 pages/i);
+  });
+
   it("includes chapter page maps when drafting a whole book", async () => {
     const mapInput = { ...input, targetPages: 2 };
     const mapPlan = makeFallbackPlan(mapInput);
@@ -1037,6 +1140,29 @@ describe("page quality review", () => {
     expect(partialBatchDraft.pages.map((page) => page.index)).toEqual([1]);
     expect(partialLocalBatchDraft.pages.map((page) => page.index)).toEqual([6]);
     await expect(
+      generateChapterDraft({
+        input,
+        plan,
+        chapter: plan.chapters[0]!,
+        chapterPageStart: 2,
+        chapterPageEnd: 3,
+        previousPages: [],
+        continuityNotes: [],
+        researchNotes: [],
+        textModel: jsonModel({
+          pages: [
+            {
+              index: 2,
+              title: "Only Second",
+              markdown: goodMarkdown(),
+              summary: "Missing the requested third page.",
+              continuityNotes: []
+            }
+          ]
+        })
+      })
+    ).rejects.toThrow(/out of order/i);
+    await expect(
       generateBatchDraft({
         input,
         plan,
@@ -1066,6 +1192,29 @@ describe("page quality review", () => {
         })
       })
     ).rejects.toThrow(/out of order/i);
+    await expect(
+      generateBatchDraft({
+        input,
+        plan,
+        chapterBriefs: [],
+        pageStart: 4,
+        pageEnd: 5,
+        previousPages: [],
+        continuityNotes: [],
+        researchNotes: [],
+        textModel: jsonModel({
+          pages: [
+            {
+              index: 6,
+              title: "Unexpected",
+              markdown: goodMarkdown(),
+              summary: "Outside the requested range.",
+              continuityNotes: []
+            }
+          ]
+        })
+      })
+    ).rejects.toThrow(/outside the requested range/i);
   });
 
   it("polishes a page draft into a valid page draft", async () => {

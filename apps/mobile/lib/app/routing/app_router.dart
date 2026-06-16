@@ -5,8 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../features/account/presentation/account_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/generation_progress_screen.dart';
-import '../../features/projects/presentation/new_book_wizard_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
 import '../../features/projects/presentation/projects_home_screen.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
@@ -62,7 +62,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/books/new',
-        builder: (context, state) => const NewBookWizardScreen(),
+        builder: (context, state) => const CreationChatScreen(),
       ),
       GoRoute(
         path: '/projects/:id',
@@ -80,7 +80,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     errorBuilder: (context, state) => Scaffold(
       body: AppErrorState(
         title: 'Screen not found',
-        message: 'That part of Tomeza is not available.',
+        message:
+            'That link does not point to an available Tomeza screen. Go back to your projects to continue.',
+        icon: Icons.explore_off_outlined,
+        actionLabel: 'Back to projects',
+        actionIcon: Icons.home_outlined,
         onRetry: () => context.go('/home'),
       ),
     ),
@@ -96,7 +100,9 @@ class SplashScreen extends StatelessWidget {
       body: Center(
         child: SizedBox.square(
           dimension: 32,
-          child: CircularProgressIndicator(),
+          child: CircularProgressIndicator(
+            semanticsLabel: 'Restoring your session',
+          ),
         ),
       ),
     );

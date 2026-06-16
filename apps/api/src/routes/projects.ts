@@ -1889,7 +1889,7 @@ function projectUpdateDataFromInput(input: CreateProjectInput, templateId: strin
     temperature: input.temperature,
     language: input.language,
     mediaSettings: mediaSettingsSchema.parse(input.mediaSettings),
-    templateId
+    ...(templateId ? { templateId } : {})
   };
 }
 

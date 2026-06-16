@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/feedback/app_feedback.dart';
 import '../domain/billing_models.dart';
 import 'billing_controller.dart';
 
@@ -94,12 +96,9 @@ class BillingPaywall extends ConsumerWidget {
               _BalanceStrip(billing: state.billing),
               const SizedBox(height: 14),
               if (state.loading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 28),
-                  child: Center(child: CircularProgressIndicator()),
-                )
+                const AppLoadingState(message: 'Loading purchase options')
               else if (!state.storeAvailable)
-                _BillingNotice(
+                const AppInlineNotice(
                   icon: Icons.storefront_outlined,
                   title: 'Google Play billing unavailable',
                   message:
@@ -116,7 +115,7 @@ class BillingPaywall extends ConsumerWidget {
                   const SizedBox(height: 10),
                 ],
                 if (state.missingProductIds.isNotEmpty)
-                  _BillingNotice(
+                  AppInlineNotice(
                     icon: Icons.info_outline,
                     title: 'Some products are not live yet',
                     message:
@@ -125,11 +124,21 @@ class BillingPaywall extends ConsumerWidget {
               ],
               if (state.message != null) ...[
                 const SizedBox(height: 12),
-                _StatusBanner(message: state.message!, isError: false),
+                AppInlineNotice(
+                  icon: Icons.check_circle_outline,
+                  title: 'Purchase update',
+                  message: state.message!,
+                  tone: AppNoticeTone.success,
+                ),
               ],
               if (state.error != null) ...[
                 const SizedBox(height: 12),
-                _StatusBanner(message: state.error!, isError: true),
+                AppInlineNotice(
+                  icon: Icons.error_outline,
+                  title: 'Purchase issue',
+                  message: state.error!,
+                  tone: AppNoticeTone.error,
+                ),
               ],
               const SizedBox(height: 14),
               OutlinedButton.icon(
@@ -137,7 +146,10 @@ class BillingPaywall extends ConsumerWidget {
                 icon: state.restoring
                     ? const SizedBox.square(
                         dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          semanticsLabel: 'Restoring purchases',
+                        ),
                       )
                     : const Icon(Icons.restore_outlined),
                 label: const Text('Restore purchases'),
@@ -207,45 +219,55 @@ class _ProductTile extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(_iconFor(product), color: colors.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.title,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(_iconFor(product), color: colors.primary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _productMessage(product),
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        product.benefitLabel,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _productMessage(product),
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    product.benefitLabel,
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            FilledButton(
-              onPressed: available && !pending ? onBuy : null,
-              child: pending
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(storeProduct?.price ?? _fallbackPrice(product)),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton(
+                onPressed: available && !pending ? onBuy : null,
+                child: pending
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          semanticsLabel: 'Purchase pending',
+                        ),
+                      )
+                    : Text(storeProduct?.price ?? _fallbackPrice(product)),
+              ),
             ),
           ],
         ),
@@ -278,82 +300,5 @@ class _ProductTile extends StatelessWidget {
   String _fallbackPrice(MobileBillingProduct product) {
     final price = product.priceMicros / 1000000;
     return '${product.currency} ${price.toStringAsFixed(2)}';
-  }
-}
-
-class _BillingNotice extends StatelessWidget {
-  const _BillingNotice({
-    required this.icon,
-    required this.title,
-    required this.message,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: colors.onSurfaceVariant),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(message),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusBanner extends StatelessWidget {
-  const _StatusBanner({required this.message, required this.isError});
-
-  final String message;
-  final bool isError;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: isError ? colors.errorContainer : colors.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(
-          message,
-          style: TextStyle(
-            color: isError
-                ? colors.onErrorContainer
-                : colors.onPrimaryContainer,
-          ),
-        ),
-      ),
-    );
   }
 }
