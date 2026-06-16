@@ -46,6 +46,7 @@ class CreationChatState {
   const CreationChatState({
     this.initializing = true,
     this.draftId,
+    this.sessionTitle,
     this.messages = const <MobileCreationMessage>[],
     this.assistantTyping = false,
     this.building = false,
@@ -68,6 +69,7 @@ class CreationChatState {
 
   final bool initializing;
   final String? draftId;
+  final String? sessionTitle;
   final List<MobileCreationMessage> messages;
   final bool assistantTyping;
   final bool building;
@@ -89,6 +91,11 @@ class CreationChatState {
 
   bool get hasSession => draftId != null;
 
+  String get displayTitle {
+    final title = sessionTitle?.trim();
+    return title == null || title.isEmpty ? 'New book' : title;
+  }
+
   bool get isBusy => assistantTyping || building;
 
   bool get canBuild => hasSession && readiness.canBuild && !isBusy;
@@ -98,6 +105,7 @@ class CreationChatState {
   CreationChatState copyWith({
     bool? initializing,
     String? draftId,
+    Object? sessionTitle = _sentinel,
     List<MobileCreationMessage>? messages,
     bool? assistantTyping,
     bool? building,
@@ -120,6 +128,9 @@ class CreationChatState {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
       draftId: draftId ?? this.draftId,
+      sessionTitle: sessionTitle == _sentinel
+          ? this.sessionTitle
+          : sessionTitle as String?,
       messages: messages ?? this.messages,
       assistantTyping: assistantTyping ?? this.assistantTyping,
       building: building ?? this.building,
@@ -338,7 +349,21 @@ class CreationChatController extends Notifier<CreationChatState> {
   }
 
   void setTitle(String value) {
-    state = state.copyWith(optionalDetails: _copyOptional(title: value.trim()));
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      state = state.copyWith(optionalDetails: _copyOptional(title: trimmed));
+      return;
+    }
+    state = state.copyWith(
+      optionalDetails: _copyOptional(title: trimmed),
+      sessionTitle: trimmed,
+    );
+  }
+
+  void setSessionTitle(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+    state = state.copyWith(sessionTitle: trimmed);
   }
 
   void setAuthorName(String value) {
@@ -393,6 +418,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       initializing: initializing ?? state.initializing,
       assistantTyping: assistantTyping ?? state.assistantTyping,
       draftId: session?.draftId ?? state.draftId,
+      sessionTitle: session?.title,
       messages: messages,
       createdProjectId: session?.createdProjectId,
       brief: turn.brief,

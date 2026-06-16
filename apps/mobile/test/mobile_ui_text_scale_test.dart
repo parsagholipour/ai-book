@@ -191,6 +191,15 @@ class _FakeCreationRepository implements CreationRepository {
   Future<List<MobileChatSession>> listSessions() async => const [];
 
   @override
+  Future<void> renameSession({
+    required String draftId,
+    required String title,
+  }) async {}
+
+  @override
+  Future<void> deleteSession(String draftId) async {}
+
+  @override
   Future<MobileCreationDraft?> getActiveDraft() async => null;
 
   @override

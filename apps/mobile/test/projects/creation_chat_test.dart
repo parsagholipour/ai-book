@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -103,14 +105,63 @@ void main() {
     await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Title for draft-a'), findsOneWidget);
     expect(find.text('Selected chat draft-a'), findsOneWidget);
 
     await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
     await tester.pumpAndSettle();
 
     expect(creation.resumedDraftIds, ['draft-a', 'draft-b']);
+    expect(find.text('Title for draft-a'), findsNothing);
+    expect(find.text('Title for draft-b'), findsOneWidget);
     expect(find.text('Selected chat draft-a'), findsNothing);
     expect(find.text('Selected chat draft-b'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('selected chat title shows before messages load', (tester) async {
+    final resumeGate = Completer<void>();
+    final creation = _ScriptedCreationRepository(
+      resumeByIdGate: resumeGate.future,
+      sessions: [_chatSession(draftId: 'draft-a', title: 'Title for draft-a')],
+    );
+    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Title for draft-a'), findsOneWidget);
+    expect(find.text('Selected chat draft-a'), findsNothing);
+
+    resumeGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Selected chat draft-a'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('drawer marks the selected chat as active', (tester) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(draftId: 'draft-a', title: 'Title for draft-a'),
+        _chatSession(draftId: 'draft-b', title: 'Title for draft-b'),
+      ],
+    );
+    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+
+    final activeTile = tester.widget<ListTile>(
+      find.widgetWithText(ListTile, 'Title for draft-a'),
+    );
+    final inactiveTile = tester.widget<ListTile>(
+      find.widgetWithText(ListTile, 'Title for draft-b'),
+    );
+    expect(activeTile.selected, isTrue);
+    expect(inactiveTile.selected, isFalse);
 
     await tester.teardownScreen();
   });
@@ -138,6 +189,33 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets(
+    'composer hint only mentions answering when a question is active',
+    (tester) async {
+      final creation = _ScriptedCreationRepository(replyWithQuestion: true);
+      await tester.pumpWidget(_app(creation: creation, startFresh: true));
+      await tester.pumpAndSettle();
+
+      TextField composer() =>
+          tester.widget<TextField>(find.byType(TextField).last);
+
+      expect(composer().decoration?.hintText, 'Describe your book…');
+
+      await tester.enterText(
+        find.byType(TextField).last,
+        'A practical guide for new managers',
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Who is this book for?'), findsOneWidget);
+      expect(composer().decoration?.hintText, 'Answer the question above…');
+
+      await tester.teardownScreen();
+    },
+  );
 }
 
 extension on WidgetTester {
@@ -172,6 +250,7 @@ Map<String, dynamic> _turnJson({
   required String assistantMessage,
   required bool canBuild,
   List<String> quickReplies = const [],
+  Map<String, dynamic>? question,
 }) {
   return {
     'assistantMessage': assistantMessage,
@@ -184,7 +263,7 @@ Map<String, dynamic> _turnJson({
     },
     'detectedLane': 'practical_guide',
     'quickReplies': quickReplies,
-    'question': null,
+    'question': question,
     'readiness': {
       'score': canBuild ? 80 : 10,
       'canBuild': canBuild,
@@ -196,7 +275,32 @@ Map<String, dynamic> _turnJson({
   };
 }
 
+MobileChatSession _chatSession({
+  required String draftId,
+  required String title,
+}) {
+  final now = DateTime.utc(2026, 6, 15);
+  return MobileChatSession(
+    draftId: draftId,
+    title: title,
+    preview: 'Latest message',
+    messageCount: 2,
+    status: 'ACTIVE',
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
 class _ScriptedCreationRepository implements CreationRepository {
+  _ScriptedCreationRepository({
+    this.replyWithQuestion = false,
+    this.resumeByIdGate,
+    List<MobileChatSession>? sessions,
+  }) : sessions = sessions ?? const <MobileChatSession>[];
+
+  final bool replyWithQuestion;
+  final Future<void>? resumeByIdGate;
+  final List<MobileChatSession> sessions;
   final sentMessages = <String>[];
   final startedMessages = <String>[];
   final resumedDraftIds = <String>[];
@@ -204,7 +308,16 @@ class _ScriptedCreationRepository implements CreationRepository {
   String? buildDraftId;
 
   @override
-  Future<List<MobileChatSession>> listSessions() async => const [];
+  Future<List<MobileChatSession>> listSessions() async => sessions;
+
+  @override
+  Future<void> renameSession({
+    required String draftId,
+    required String title,
+  }) async {}
+
+  @override
+  Future<void> deleteSession(String draftId) async {}
 
   @override
   Future<MobileCreationConversationResponse> resumeConversation() async {
@@ -222,9 +335,11 @@ class _ScriptedCreationRepository implements CreationRepository {
     String draftId,
   ) async {
     resumedDraftIds.add(draftId);
+    await resumeByIdGate;
     return MobileCreationConversationResponse.fromJson({
       'session': {
         'draftId': draftId,
+        'title': 'Title for $draftId',
         'status': 'ACTIVE',
         'messages': [
           {'role': 'assistant', 'content': 'Selected chat $draftId'},
@@ -254,6 +369,7 @@ class _ScriptedCreationRepository implements CreationRepository {
     return MobileCreationConversationResponse.fromJson({
       'session': {
         'draftId': 'draft-1',
+        'title': 'New book',
         'status': 'ACTIVE',
         'messages': [
           {'role': 'assistant', 'content': _greeting},
@@ -281,6 +397,7 @@ class _ScriptedCreationRepository implements CreationRepository {
     return MobileCreationConversationResponse.fromJson({
       'session': {
         'draftId': 'draft-1',
+        'title': message,
         'status': 'ACTIVE',
         'messages': [
           {'role': 'assistant', 'content': _greeting},
@@ -292,8 +409,15 @@ class _ScriptedCreationRepository implements CreationRepository {
       },
       'turn': _turnJson(
         assistantMessage: _reply,
-        canBuild: true,
-        quickReplies: const ['Make it shorter'],
+        canBuild: !replyWithQuestion,
+        quickReplies: replyWithQuestion ? const [] : const ['Make it shorter'],
+        question: replyWithQuestion
+            ? const {
+                'prompt': 'Who is this book for?',
+                'options': ['New managers', 'Team leads'],
+                'allowCustom': true,
+              }
+            : null,
       ),
     });
   }

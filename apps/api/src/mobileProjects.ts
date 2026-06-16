@@ -176,6 +176,7 @@ export type MobileCreationDraftResponseDto = {
 
 export type MobileCreationSessionDto = {
   draftId: string;
+  title: string;
   status: string;
   messages: MobileCreationMessage[];
   createdProjectId: string | null;
@@ -1119,6 +1120,65 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     }
   );
 
+  fastify.patch(
+    "/api/mobile/creation-sessions/:id/title",
+    { attachValidation: true, schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = z.object({ title: z.string().trim().min(1).max(160) }).strict().safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide a title between 1 and 160 characters.");
+      }
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id }
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "NOT_FOUND", "Chat session not found.");
+      }
+      const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      if (!parsedPayload.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "This chat session could not be updated.");
+      }
+      const updatedPayload = mobileCreationDraftPayloadSchema.parse({
+        ...parsedPayload.data,
+        optionalDetails: {
+          ...parsedPayload.data.optionalDetails,
+          title: parsed.data.title
+        }
+      });
+      await prisma.mobileCreationDraft.update({
+        where: { id },
+        data: { payload: jsonInputValue(updatedPayload) }
+      });
+      return { ok: true };
+    }
+  );
+
+  fastify.delete(
+    "/api/mobile/creation-sessions/:id",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id },
+        select: { id: true }
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "NOT_FOUND", "Chat session not found.");
+      }
+      await prisma.mobileCreationDraft.delete({ where: { id } });
+      return { ok: true };
+    }
+  );
+
   fastify.post(
     "/api/mobile/creation-sessions/:id/build",
     { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
@@ -1926,6 +1986,7 @@ async function queueInitialMobilePlan(
 }
 
 function _chatTitleForPayload(payload: MobileCreationDraftPayload): string {
+  if (payload.optionalDetails?.title?.trim()) return payload.optionalDetails.title.trim();
   if (payload.recipe?.title?.trim()) return payload.recipe.title.trim();
   if (payload.brief?.topic?.trim()) return payload.brief.topic.trim();
   const firstUser = payload.messages?.find((m) => m.role === "user");
@@ -1962,11 +2023,13 @@ function serializeCreationDraft(draft: {
 }
 
 function serializeCreationSession(
-  draft: { id: string; status: string; createdProjectId: string | null; updatedAt: Date },
+  draft: { id: string; status: string; payload: unknown; createdProjectId: string | null; updatedAt: Date },
   messages: MobileCreationMessage[]
 ): MobileCreationSessionDto {
+  const payload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
   return {
     draftId: draft.id,
+    title: payload.success ? _chatTitleForPayload(payload.data) : "New book",
     status: draft.status,
     messages,
     createdProjectId: draft.createdProjectId,

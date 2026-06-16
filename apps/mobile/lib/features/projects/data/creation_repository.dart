@@ -49,6 +49,13 @@ abstract interface class CreationRepository {
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
   });
+
+  Future<void> renameSession({
+    required String draftId,
+    required String title,
+  });
+
+  Future<void> deleteSession(String draftId);
 }
 
 class MobileCreationRepository implements CreationRepository {
@@ -212,6 +219,22 @@ class MobileCreationRepository implements CreationRepository {
     return MobileCreationFinalizeResponse.fromJson(
       response.data as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<void> renameSession({
+    required String draftId,
+    required String title,
+  }) async {
+    await apiClient.patchJson(
+      '/api/mobile/creation-sessions/$draftId/title',
+      data: <String, dynamic>{'title': title},
+    );
+  }
+
+  @override
+  Future<void> deleteSession(String draftId) async {
+    await apiClient.deleteJson('/api/mobile/creation-sessions/$draftId');
   }
 
   MobileCreationDraft _draftFromResponse(Map<String, dynamic> data) {

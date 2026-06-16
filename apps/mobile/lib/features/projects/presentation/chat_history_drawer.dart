@@ -7,10 +7,13 @@ import '../../billing/domain/billing_models.dart';
 import '../data/creation_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/creation_models.dart';
+import 'creation_chat_controller.dart';
 import 'projects_home_screen.dart';
 
 class ChatHistoryDrawer extends ConsumerWidget {
-  const ChatHistoryDrawer({super.key});
+  const ChatHistoryDrawer({super.key, this.activeDraftId});
+
+  final String? activeDraftId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,7 +31,8 @@ class ChatHistoryDrawer extends ConsumerWidget {
             const SizedBox(height: 8),
             Expanded(
               child: sessions.when(
-                data: (items) => _ChatList(sessions: items),
+                data: (items) =>
+                    _ChatList(sessions: items, activeDraftId: activeDraftId),
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (_, _) => Padding(
                   padding: const EdgeInsets.all(16),
@@ -143,9 +147,10 @@ List<_GroupData> _groupByDate(List<MobileChatSession> sorted) {
 }
 
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.sessions});
+  const _ChatList({required this.sessions, required this.activeDraftId});
 
   final List<MobileChatSession> sessions;
+  final String? activeDraftId;
 
   @override
   Widget build(BuildContext context) {
@@ -168,17 +173,26 @@ class _ChatList extends StatelessWidget {
       itemCount: groups.length,
       itemBuilder: (context, index) {
         final group = groups[index];
-        return _ChatGroup(label: group.label, sessions: group.sessions);
+        return _ChatGroup(
+          label: group.label,
+          sessions: group.sessions,
+          activeDraftId: activeDraftId,
+        );
       },
     );
   }
 }
 
 class _ChatGroup extends StatelessWidget {
-  const _ChatGroup({required this.label, required this.sessions});
+  const _ChatGroup({
+    required this.label,
+    required this.sessions,
+    required this.activeDraftId,
+  });
 
   final String label;
   final List<MobileChatSession> sessions;
+  final String? activeDraftId;
 
   @override
   Widget build(BuildContext context) {
@@ -197,38 +211,55 @@ class _ChatGroup extends StatelessWidget {
             ),
           ),
         ),
-        for (final session in sessions) _ChatTile(session: session),
+        for (final session in sessions)
+          _ChatTile(
+            session: session,
+            isSelected: session.draftId == activeDraftId,
+          ),
       ],
     );
   }
 }
 
-class _ChatTile extends ConsumerWidget {
-  const _ChatTile({required this.session});
+class _ChatTile extends ConsumerStatefulWidget {
+  const _ChatTile({required this.session, required this.isSelected});
 
   final MobileChatSession session;
+  final bool isSelected;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ChatTile> createState() => _ChatTileState();
+}
+
+class _ChatTileState extends ConsumerState<_ChatTile> {
+  @override
+  Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final hasProject = session.createdProjectId != null;
+    final hasProject = widget.session.createdProjectId != null;
+    final selected = widget.isSelected;
 
     return ListTile(
       dense: true,
+      selected: selected,
+      selectedTileColor: colors.primaryContainer.withValues(alpha: 0.55),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       leading: Icon(
         hasProject ? Icons.auto_stories_outlined : Icons.chat_bubble_outline,
         size: 20,
-        color: colors.onSurfaceVariant,
+        color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
       ),
       title: Text(
-        session.title,
+        widget.session.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: selected ? colors.onPrimaryContainer : null,
+          fontWeight: selected ? FontWeight.w700 : null,
+        ),
       ),
-      subtitle: session.preview.isNotEmpty
+      subtitle: widget.session.preview.isNotEmpty
           ? Text(
-              session.preview,
+              widget.session.preview,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(
@@ -236,15 +267,15 @@ class _ChatTile extends ConsumerWidget {
               ).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
             )
           : null,
-      onTap: () => _open(context, ref),
+      onTap: () => _open(context),
+      onLongPress: () => _showOptions(context),
     );
   }
 
-  void _open(BuildContext context, WidgetRef ref) {
+  void _open(BuildContext context) {
     Navigator.of(context).pop();
-    final projectId = session.createdProjectId;
+    final projectId = widget.session.createdProjectId;
     if (projectId != null) {
-      // Chat resulted in a project — open it via the project action routing.
       final projects = ref.read(projectsProvider).asData?.value;
       final project = projects?.where((p) => p.id == projectId).firstOrNull;
       if (project != null) {
@@ -253,8 +284,133 @@ class _ChatTile extends ConsumerWidget {
         context.push('/projects/$projectId');
       }
     } else {
-      // Active chat — open its specific session by draftId.
-      context.go('/books/chat/${session.draftId}');
+      context.go('/books/chat/${widget.session.draftId}');
+    }
+  }
+
+  void _showOptions(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Rename'),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _showRenameDialog(context);
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                'Delete',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              onTap: () {
+                Navigator.of(ctx).pop();
+                _confirmDelete(context);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRenameDialog(BuildContext context) {
+    final controller = TextEditingController(text: widget.session.title);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename chat'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 160,
+          decoration: const InputDecoration(hintText: 'Chat title'),
+          textCapitalization: TextCapitalization.sentences,
+          onSubmitted: (_) => _doRename(ctx, controller.text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => _doRename(ctx, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _doRename(BuildContext ctx, String newTitle) async {
+    final trimmed = newTitle.trim();
+    if (trimmed.isEmpty) return;
+    Navigator.of(ctx).pop();
+    try {
+      await ref
+          .read(creationRepositoryProvider)
+          .renameSession(draftId: widget.session.draftId, title: trimmed);
+      if (widget.isSelected) {
+        ref
+            .read(creationChatControllerProvider.notifier)
+            .setSessionTitle(trimmed);
+      }
+      ref.invalidate(chatSessionsProvider);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not rename the chat.')),
+        );
+      }
+    }
+  }
+
+  void _confirmDelete(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete chat?'),
+        content: const Text('This chat will be permanently deleted.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => _doDelete(ctx),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _doDelete(BuildContext ctx) async {
+    Navigator.of(ctx).pop();
+    try {
+      await ref
+          .read(creationRepositoryProvider)
+          .deleteSession(widget.session.draftId);
+      ref.invalidate(chatSessionsProvider);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not delete the chat.')),
+        );
+      }
     }
   }
 }
@@ -284,13 +440,20 @@ class _DrawerFooter extends StatelessWidget {
             label: const Text('Account'),
           ),
           if (creditLabel != null) ...[
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Text(
-                creditLabel,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.onSurfaceVariant,
+            const SizedBox(width: 8),
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text(
+                    creditLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               ),
             ),

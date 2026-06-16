@@ -11,6 +11,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../data/creation_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
@@ -110,6 +111,20 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
     final state = ref.watch(creationChatControllerProvider);
     final isInPlanStage = _projectId != null;
+    final activeDraftId = widget.draftId ?? state.draftId;
+    final loadingSelectedChat =
+        widget.draftId != null && widget.draftId != state.draftId;
+    final sidebarTitle = ref
+        .watch(chatSessionsProvider)
+        .maybeWhen(
+          data: (sessions) => _titleForDraft(sessions, activeDraftId),
+          orElse: () => null,
+        );
+    final screenTitle = _screenTitle(
+      state,
+      sidebarTitle,
+      preferSidebarTitle: loadingSelectedChat,
+    );
 
     AsyncValue<MobileProjectDetail>? planValue;
     if (isInPlanStage) {
@@ -124,10 +139,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _maybeScrollToBottom(scrollTrigger);
 
     return Scaffold(
-      drawer: const ChatHistoryDrawer(),
+      drawer: ChatHistoryDrawer(activeDraftId: activeDraftId),
+      drawerEdgeDragWidth: MediaQuery.sizeOf(context).width,
       appBar: AppBar(
         leading: const DrawerButton(),
-        title: Text(isInPlanStage ? 'Book plan' : 'New book'),
+        title: Text(isInPlanStage ? 'Book plan' : screenTitle),
         actions: [
           if (isInPlanStage)
             IconButton(
@@ -187,6 +203,31 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
               ),
       ),
     );
+  }
+
+  String _screenTitle(
+    CreationChatState state,
+    String? sidebarTitle, {
+    required bool preferSidebarTitle,
+  }) {
+    final title = sidebarTitle?.trim();
+    if (preferSidebarTitle) {
+      return title == null || title.isEmpty ? 'New book' : title;
+    }
+    if (title != null && title.isNotEmpty && state.sessionTitle == null) {
+      return title;
+    }
+    return state.displayTitle;
+  }
+
+  String? _titleForDraft(List<MobileChatSession> sessions, String? draftId) {
+    if (draftId == null) return null;
+    for (final session in sessions) {
+      if (session.draftId == draftId) {
+        return session.title;
+      }
+    }
+    return null;
   }
 
   Widget _buildPlanFooter(AsyncValue<MobileProjectDetail> planValue) {
@@ -1439,6 +1480,7 @@ class _ConversationFooter extends StatelessWidget {
               _Composer(
                 controller: composerController,
                 enabled: !disabled,
+                hasQuestion: question != null,
                 hasSourceNotes: state.hasSourceNotes,
                 onAttachNotes: onAttachNotes,
                 onSend: onSend,
@@ -1539,6 +1581,7 @@ class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.enabled,
+    required this.hasQuestion,
     required this.hasSourceNotes,
     required this.onAttachNotes,
     required this.onSend,
@@ -1546,6 +1589,7 @@ class _Composer extends StatelessWidget {
 
   final TextEditingController controller;
   final bool enabled;
+  final bool hasQuestion;
   final bool hasSourceNotes;
   final VoidCallback onAttachNotes;
   final ValueChanged<String> onSend;
@@ -1574,7 +1618,9 @@ class _Composer extends StatelessWidget {
             maxLines: 5,
             textInputAction: TextInputAction.newline,
             decoration: InputDecoration(
-              hintText: 'Describe your book or answer above…',
+              hintText: hasQuestion
+                  ? 'Answer the question above…'
+                  : 'Describe your book…',
               filled: true,
               fillColor: colors.surfaceContainerHigh,
               contentPadding: const EdgeInsets.symmetric(

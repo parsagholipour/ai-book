@@ -474,6 +474,7 @@ class MobileCreationTurn {
 class MobileCreationSession {
   const MobileCreationSession({
     required this.draftId,
+    required this.title,
     required this.status,
     required this.messages,
     required this.updatedAt,
@@ -481,6 +482,7 @@ class MobileCreationSession {
   });
 
   final String draftId;
+  final String title;
   final String status;
   final List<MobileCreationMessage> messages;
   final String? createdProjectId;
@@ -490,6 +492,7 @@ class MobileCreationSession {
     final messages = json['messages'] as List<dynamic>? ?? const [];
     return MobileCreationSession(
       draftId: json['draftId'] as String,
+      title: json['title'] as String? ?? 'New book',
       status: json['status'] as String,
       messages: messages
           .map(
@@ -504,10 +507,7 @@ class MobileCreationSession {
 }
 
 class MobileCreationConversationResponse {
-  const MobileCreationConversationResponse({
-    required this.turn,
-    this.session,
-  });
+  const MobileCreationConversationResponse({required this.turn, this.session});
 
   final MobileCreationSession? session;
   final MobileCreationTurn turn;
