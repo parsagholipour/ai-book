@@ -15,8 +15,6 @@ import '../domain/project_models.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
 import 'plan_approval.dart';
-import 'project_detail_screen.dart';
-import 'project_route_error.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({super.key});
@@ -33,7 +31,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   String? _projectId;
   String? _planBusyAction;
   Timer? _planRefreshTimer;
-  int _lastMessageCount = 0;
+  int _lastScrollTrigger = 0;
+
+  // Plan question tracking
+  int _planQuestionIndex = 0;
+  Map<int, String> _planQuestionAnswers = {};
 
   @override
   void initState() {
@@ -57,33 +59,43 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   @override
   Widget build(BuildContext context) {
     ref.listen<String?>(
-      creationChatControllerProvider.select((state) => state.initError),
-      (previous, next) {
+      creationChatControllerProvider.select((s) => s.initError),
+      (_, next) {
         if (next != null) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(next)));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(next)));
           ref.read(creationChatControllerProvider.notifier).clearError();
         }
       },
     );
 
     final state = ref.watch(creationChatControllerProvider);
-    _maybeScrollToBottom(state.messages.length);
+    final isInPlanStage = _projectId != null;
 
-    if (_projectId != null) {
-      return _buildPlanStage(context, _projectId!);
+    AsyncValue<MobileProjectDetail>? planValue;
+    if (isInPlanStage) {
+      planValue = ref.watch(projectDetailProvider(_projectId!));
+      planValue?.whenData(_stopPollingWhenSettled);
     }
+
+    final scrollTrigger = state.messages.length + (isInPlanStage ? 1 : 0) + (state.assistantTyping ? 1 : 0);
+    _maybeScrollToBottom(scrollTrigger);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New book'),
+        title: Text(isInPlanStage ? 'Book plan' : 'New book'),
         actions: [
-          IconButton(
-            tooltip: 'Advanced settings',
-            onPressed: state.hasSession ? () => _openAdvancedSheet(state) : null,
-            icon: const Icon(Icons.tune),
-          ),
+          if (isInPlanStage)
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: () => ref.invalidate(projectDetailProvider(_projectId!)),
+              icon: const Icon(Icons.refresh),
+            )
+          else
+            IconButton(
+              tooltip: 'Advanced settings',
+              onPressed: state.hasSession ? () => _openAdvancedSheet(state) : null,
+              icon: const Icon(Icons.tune),
+            ),
         ],
       ),
       body: SafeArea(
@@ -92,32 +104,67 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
             ? const AppLoadingState(message: 'Starting your Book Studio')
             : Column(
                 children: [
-                  _BriefHeader(state: state),
-                  Expanded(child: _Transcript(state: state, controller: _scrollController)),
-                  _ConversationFooter(
-                    state: state,
-                    composerController: _composerController,
-                    onSend: _send,
-                    onQuickReply: _send,
-                    onAnswerOption: _send,
-                    onAttachNotes: () => _openSourceNotesSheet(state),
-                    onBuild: _build,
+                  if (!isInPlanStage) _BriefHeader(state: state),
+                  Expanded(
+                    child: _Transcript(
+                      state: state,
+                      controller: _scrollController,
+                      planValue: planValue,
+                    ),
                   ),
+                  if (isInPlanStage)
+                    _buildPlanFooter(planValue!)
+                  else
+                    _ConversationFooter(
+                      state: state,
+                      composerController: _composerController,
+                      onSend: _send,
+                      onQuickReply: _send,
+                      onAnswerOption: _send,
+                      onAttachNotes: () => _openSourceNotesSheet(state),
+                      onBuild: _build,
+                    ),
                 ],
               ),
       ),
     );
   }
 
-  void _maybeScrollToBottom(int messageCount) {
-    if (messageCount == _lastMessageCount) {
-      return;
-    }
-    _lastMessageCount = messageCount;
+  Widget _buildPlanFooter(AsyncValue<MobileProjectDetail> planValue) {
+    return planValue.when(
+      loading: () => const _PlanBuildingFooter(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (project) {
+        final plan = project.plan;
+        if (plan == null) {
+          return const _PlanBuildingFooter();
+        }
+        if (plan.isApproved) {
+          return const SizedBox.shrink();
+        }
+        final hasMoreQuestions =
+            plan.questions.isNotEmpty && _planQuestionIndex < plan.questions.length;
+        return _PlanFooter(
+          plan: plan,
+          questionIndex: _planQuestionIndex,
+          hasMoreQuestions: hasMoreQuestions,
+          isBusy: _planBusyAction != null,
+          busyAction: _planBusyAction,
+          revisionController: _revisionController,
+          onSelectOption: (answer) => _onPlanQuestionSelect(project, plan, answer),
+          onSkip: () => _onPlanQuestionSkip(project, plan),
+          onRevise: (msg) => _revise(project, msg),
+          onApprove: () => _approve(project),
+        );
+      },
+    );
+  }
+
+  void _maybeScrollToBottom(int trigger) {
+    if (trigger == _lastScrollTrigger) return;
+    _lastScrollTrigger = trigger;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) {
-        return;
-      }
+      if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
         duration: const Duration(milliseconds: 220),
@@ -128,53 +175,110 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
   Future<void> _send(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) {
-      return;
-    }
+    if (trimmed.isEmpty) return;
     _composerController.clear();
     try {
       await ref.read(creationChatControllerProvider.notifier).sendMessage(trimmed);
-    } catch (_) {
-      // Error surfaced via initError listener.
-    }
+    } catch (_) {}
   }
 
   Future<void> _build() async {
     try {
-      final result = await ref
-          .read(creationChatControllerProvider.notifier)
-          .buildPlan();
+      final result = await ref.read(creationChatControllerProvider.notifier).buildPlan();
       ref.invalidate(projectsProvider);
       ref.invalidate(projectDetailProvider(result.project.id));
       ref.invalidate(billingProvider);
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() => _projectId = result.project.id);
       _startPlanPoll();
     } on ApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       if (error.code == 'INSUFFICIENT_CREDITS') {
-        await showBillingPaywall(
-          context,
-          title: 'Credits needed',
-          message: error.message,
-        );
+        await showBillingPaywall(context, title: 'Credits needed', message: error.message);
         ref.invalidate(billingProvider);
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message)));
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFacingError(error))));
       }
     }
+  }
+
+  Future<void> _revise(MobileProjectDetail project, String message) async {
+    final plan = project.plan;
+    if (plan == null) return;
+    setState(() => _planBusyAction = 'revise');
+    try {
+      final operation = await ref
+          .read(projectsRepositoryProvider)
+          .revisePlan(planId: plan.id, message: message);
+      if (!mounted) return;
+      setState(() {
+        _planBusyAction = null;
+        _revisionController.clear();
+        _planQuestionIndex = 0;
+        _planQuestionAnswers = {};
+      });
+      _startPlanPoll();
+      ref.invalidate(projectDetailProvider(project.id));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(operation.currentAction)));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _planBusyAction = null);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _approve(MobileProjectDetail project) async {
+    final operation = await confirmAndApprovePlan(
+      context,
+      ref,
+      project,
+      onStart: () {
+        if (mounted) setState(() => _planBusyAction = 'approve');
+      },
+      onSettled: () {
+        if (mounted && _planBusyAction == 'approve') setState(() => _planBusyAction = null);
+      },
+    );
+    if (operation == null || !mounted) return;
+    context.push('/projects/${project.id}/handoff', extra: operation.currentAction);
+  }
+
+  void _onPlanQuestionSelect(MobileProjectDetail project, MobilePlan plan, String answer) {
+    _planQuestionAnswers[_planQuestionIndex] = answer;
+    final next = _planQuestionIndex + 1;
+    if (next < plan.questions.length) {
+      setState(() => _planQuestionIndex = next);
+    } else {
+      _maybeSendPlanAnswers(project, plan);
+    }
+  }
+
+  void _onPlanQuestionSkip(MobileProjectDetail project, MobilePlan plan) {
+    final next = _planQuestionIndex + 1;
+    if (next < plan.questions.length) {
+      setState(() => _planQuestionIndex = next);
+    } else {
+      _maybeSendPlanAnswers(project, plan);
+    }
+  }
+
+  Future<void> _maybeSendPlanAnswers(MobileProjectDetail project, MobilePlan plan) async {
+    final answers = Map<int, String>.from(_planQuestionAnswers);
+    setState(() {
+      _planQuestionIndex = plan.questions.length; // show revision bar
+      _planQuestionAnswers = {};
+    });
+    if (answers.isEmpty) return;
+    final lines = ['Please revise the plan using these planning answers:'];
+    for (var i = 0; i < plan.questions.length; i++) {
+      final answer = answers[i];
+      if (answer != null) lines.add('- ${plan.questions[i].prompt}: $answer');
+    }
+    await _revise(project, lines.join('\n'));
   }
 
   Future<void> _openSourceNotesSheet(CreationChatState state) async {
@@ -183,7 +287,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) => _SourceNotesSheet(controller: controller),
+      builder: (_) => _SourceNotesSheet(controller: controller),
     );
     controller.dispose();
     if (saved != null) {
@@ -192,9 +296,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              saved.trim().isEmpty
-                  ? 'Source notes cleared.'
-                  : 'Source notes attached.',
+              saved.trim().isEmpty ? 'Source notes cleared.' : 'Source notes attached.',
             ),
           ),
         );
@@ -208,192 +310,329 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetContext) {
-        return _AdvancedSheet(controller: controller);
-      },
+      builder: (_) => _AdvancedSheet(controller: controller),
     );
-  }
-
-  // ---- Plan stage (Phase C: review/revise/approve in place) ----
-
-  Widget _buildPlanStage(BuildContext context, String projectId) {
-    final projectValue = ref.watch(projectDetailProvider(projectId));
-    final billingValue = ref.watch(billingProvider);
-    projectValue.whenData(_stopPollingWhenSettled);
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Book plan'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: () => ref.invalidate(projectDetailProvider(projectId)),
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: projectValue.when(
-        data: (project) {
-          if (project.plan == null) {
-            return _PlanPending(project: project);
-          }
-          return RefreshIndicator(
-            onRefresh: () async =>
-                ref.invalidate(projectDetailProvider(projectId)),
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 32),
-              children: [
-                const AppInlineNotice(
-                  title: 'Your book plan is ready',
-                  message:
-                      'Read it through, ask for changes by chatting below, then approve to start writing.',
-                  icon: Icons.auto_stories_outlined,
-                  tone: AppNoticeTone.success,
-                ),
-                const SizedBox(height: 16),
-                ProjectPlanReview(
-                  project: project,
-                  plan: project.plan!,
-                  billing: billingValue.asData?.value,
-                  revisionController: _revisionController,
-                  busyAction: _planBusyAction,
-                  onQuestionAnswers: (message) =>
-                      _revise(project, message),
-                  onRevisionRequest: (message) => _revise(project, message),
-                  onApprovePlan: () => _approve(project),
-                ),
-              ],
-            ),
-          );
-        },
-        loading: () => const AppLoadingState(message: 'Loading book plan'),
-        error: (error, stackTrace) => ProjectRouteErrorState(
-          error: error,
-          fallbackTitle: 'Plan unavailable',
-          onRetry: () => ref.invalidate(projectDetailProvider(projectId)),
-          onGoHome: () => context.go('/home'),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _revise(MobileProjectDetail project, String message) async {
-    final plan = project.plan;
-    if (plan == null) {
-      return;
-    }
-    setState(() => _planBusyAction = 'revise');
-    try {
-      final operation = await ref
-          .read(projectsRepositoryProvider)
-          .revisePlan(planId: plan.id, message: message);
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _planBusyAction = null;
-        _revisionController.clear();
-      });
-      _startPlanPoll();
-      ref.invalidate(projectDetailProvider(project.id));
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(operation.currentAction)));
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _planBusyAction = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  Future<void> _approve(MobileProjectDetail project) async {
-    final operation = await confirmAndApprovePlan(
-      context,
-      ref,
-      project,
-      onStart: () {
-        if (mounted) {
-          setState(() => _planBusyAction = 'approve');
-        }
-      },
-      onSettled: () {
-        if (mounted && _planBusyAction == 'approve') {
-          setState(() => _planBusyAction = null);
-        }
-      },
-    );
-    if (operation == null || !mounted) {
-      return;
-    }
-    context.push('/projects/${project.id}/handoff', extra: operation.currentAction);
   }
 
   void _startPlanPoll() {
     _planRefreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
       final id = _projectId;
-      if (id == null) {
-        return;
-      }
-      if (ref.read(projectDetailProvider(id)).isLoading) {
-        return;
-      }
+      if (id == null) return;
+      if (ref.read(projectDetailProvider(id)).isLoading) return;
       ref.invalidate(projectDetailProvider(id));
     });
   }
 
   void _stopPollingWhenSettled(MobileProjectDetail project) {
-    if (_planRefreshTimer == null) {
-      return;
-    }
-    if (project.status == 'planning' || project.plan == null) {
-      return;
-    }
+    if (_planRefreshTimer == null) return;
+    if (project.status == 'planning' || project.plan == null) return;
     _planRefreshTimer?.cancel();
     _planRefreshTimer = null;
   }
 }
 
-class _PlanPending extends StatelessWidget {
-  const _PlanPending({required this.project});
+// ---------------------------------------------------------------------------
+// Plan bubble (shown in the transcript once build is triggered)
+// ---------------------------------------------------------------------------
 
-  final MobileProjectDetail project;
+class _PlanBubble extends StatefulWidget {
+  const _PlanBubble({required this.planValue});
+
+  final AsyncValue<MobileProjectDetail> planValue;
+
+  @override
+  State<_PlanBubble> createState() => _PlanBubbleState();
+}
+
+class _PlanBubbleState extends State<_PlanBubble> {
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox.square(
-                dimension: 40,
-                child: CircularProgressIndicator(),
+    return widget.planValue.when(
+      loading: () => _buildSpinnerBubble(context, 'Building your book plan…'),
+      error: (e, _) => _buildSpinnerBubble(context, 'Waiting for plan…'),
+      data: (project) {
+        final plan = project.plan;
+        if (plan == null) {
+          return _buildSpinnerBubble(
+            context,
+            project.currentAction.isNotEmpty
+                ? project.currentAction
+                : 'Building your book plan…',
+          );
+        }
+        return _buildPlanCard(context, plan);
+      },
+    );
+  }
+
+  Widget _buildSpinnerBubble(BuildContext context, String label) {
+    final colors = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerHighest,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(4),
+            bottomRight: Radius.circular(16),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: colors.primary,
+                semanticsLabel: 'Building plan',
               ),
-              const SizedBox(height: 18),
-              Text(
-                'Building your book plan',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                project.currentAction.isEmpty
-                    ? 'The studio is turning your brief into chapters. This usually takes a moment.'
-                    : project.currentAction,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
                 ),
-                textAlign: TextAlign.center,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlanCard(BuildContext context, MobilePlan plan) {
+    final colors = Theme.of(context).colorScheme;
+    final radius = BorderRadius.circular(16);
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: radius,
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_stories_outlined, color: colors.primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Book plan ready',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          plan.title,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  AppStatusBadge(
+                    label: '${plan.chapters.length} ch.',
+                    icon: Icons.format_list_numbered,
+                    tone: AppNoticeTone.success,
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    color: colors.onSurfaceVariant,
+                    size: 20,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_expanded) ...[
+            Divider(height: 1, color: colors.outlineVariant),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if ((plan.subtitle ?? '').isNotEmpty) ...[
+                    Text(
+                      plan.subtitle!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  _PlanSection(
+                    icon: Icons.lightbulb_outline,
+                    title: 'Premise',
+                    text: plan.premise,
+                  ),
+                  const SizedBox(height: 10),
+                  _PlanSection(
+                    icon: Icons.groups_outlined,
+                    title: 'Audience',
+                    text: plan.audience,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.format_list_numbered, size: 15, color: colors.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Chapters',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  for (final chapter in plan.chapters) ...[
+                    _ChapterRow(chapter: chapter),
+                    if (chapter != plan.chapters.last) const SizedBox(height: 6),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanSection extends StatelessWidget {
+  const _PlanSection({required this.icon, required this.title, required this.text});
+
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 14, color: colors.primary),
+            const SizedBox(width: 5),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(text, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    );
+  }
+}
+
+class _ChapterRow extends StatelessWidget {
+  const _ChapterRow({required this.chapter});
+
+  final MobilePlanChapter chapter;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 22,
+          child: Text(
+            '${chapter.index}.',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              color: colors.primary,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                chapter.title,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              if (chapter.summary.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  chapter.summary,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Plan-stage footer
+// ---------------------------------------------------------------------------
+
+class _PlanBuildingFooter extends StatelessWidget {
+  const _PlanBuildingFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colors.primary,
+                  semanticsLabel: 'Building plan',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Building your book plan…',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -402,6 +641,324 @@ class _PlanPending extends StatelessWidget {
     );
   }
 }
+
+class _PlanFooter extends StatelessWidget {
+  const _PlanFooter({
+    required this.plan,
+    required this.questionIndex,
+    required this.hasMoreQuestions,
+    required this.isBusy,
+    required this.busyAction,
+    required this.revisionController,
+    required this.onSelectOption,
+    required this.onSkip,
+    required this.onRevise,
+    required this.onApprove,
+  });
+
+  final MobilePlan plan;
+  final int questionIndex;
+  final bool hasMoreQuestions;
+  final bool isBusy;
+  final String? busyAction;
+  final TextEditingController revisionController;
+  final ValueChanged<String> onSelectOption;
+  final VoidCallback onSkip;
+  final ValueChanged<String> onRevise;
+  final VoidCallback onApprove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
+    // Show a clear loading state while the plan is being revised.
+    if (busyAction == 'revise') {
+      return Material(
+        color: colors.surface,
+        elevation: 8,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.primary,
+                    semanticsLabel: 'Revising plan',
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Revising the plan…',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Material(
+      color: colors.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (hasMoreQuestions) ...[
+                _PlanQuestionPanel(
+                  key: ValueKey(questionIndex),
+                  plan: plan,
+                  questionIndex: questionIndex,
+                  isBusy: isBusy,
+                  onSelect: onSelectOption,
+                  onSkip: onSkip,
+                ),
+                const SizedBox(height: 10),
+                Divider(height: 1, color: colors.outlineVariant),
+                const SizedBox(height: 10),
+              ],
+              _RevisionComposer(
+                controller: revisionController,
+                enabled: !isBusy,
+                onSend: onRevise,
+              ),
+              const SizedBox(height: 8),
+              _ApproveButton(
+                approving: busyAction == 'approve',
+                onApprove: busyAction == null ? onApprove : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanQuestionPanel extends StatefulWidget {
+  const _PlanQuestionPanel({
+    required this.plan,
+    required this.questionIndex,
+    required this.isBusy,
+    required this.onSelect,
+    required this.onSkip,
+    super.key,
+  });
+
+  final MobilePlan plan;
+  final int questionIndex;
+  final bool isBusy;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onSkip;
+
+  @override
+  State<_PlanQuestionPanel> createState() => _PlanQuestionPanelState();
+}
+
+class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
+  final _customController = TextEditingController();
+  bool _showCustomField = false;
+
+  @override
+  void dispose() {
+    _customController.dispose();
+    super.dispose();
+  }
+
+  void _submitCustom() {
+    final text = _customController.text.trim();
+    if (text.isNotEmpty) widget.onSelect(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final question = widget.plan.questions[widget.questionIndex];
+    final total = widget.plan.questions.length;
+    final colors = Theme.of(context).colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Question ${widget.questionIndex + 1} of $total',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          question.prompt,
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in question.options)
+              ActionChip(
+                label: Text(option),
+                onPressed: widget.isBusy ? null : () => widget.onSelect(option),
+              ),
+            if (question.allowCustom && !_showCustomField)
+              ActionChip(
+                avatar: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Custom…'),
+                onPressed: widget.isBusy
+                    ? null
+                    : () => setState(() => _showCustomField = true),
+              ),
+            ActionChip(
+              avatar: const Icon(Icons.skip_next_outlined, size: 18),
+              label: const Text('Skip'),
+              onPressed: widget.isBusy ? null : widget.onSkip,
+            ),
+          ],
+        ),
+        if (_showCustomField) ...[
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _customController,
+                  enabled: !widget.isBusy,
+                  autofocus: true,
+                  minLines: 1,
+                  maxLines: 3,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => _submitCustom(),
+                  decoration: InputDecoration(
+                    hintText: 'Type your own answer…',
+                    filled: true,
+                    fillColor: colors.surfaceContainerHigh,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _customController,
+                builder: (context, value, _) {
+                  return IconButton.filled(
+                    tooltip: 'Submit answer',
+                    onPressed: (!widget.isBusy && value.text.trim().isNotEmpty)
+                        ? _submitCustom
+                        : null,
+                    icon: const Icon(Icons.send_rounded),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RevisionComposer extends StatelessWidget {
+  const _RevisionComposer({
+    required this.controller,
+    required this.enabled,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final bool enabled;
+  final ValueChanged<String> onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            enabled: enabled,
+            minLines: 1,
+            maxLines: 4,
+            textInputAction: TextInputAction.newline,
+            decoration: InputDecoration(
+              hintText: 'Request a change to the plan…',
+              filled: true,
+              fillColor: colors.surfaceContainerHigh,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: controller,
+          builder: (context, value, _) {
+            final canSend = enabled && value.text.trim().isNotEmpty;
+            return IconButton.filled(
+              tooltip: 'Send revision',
+              onPressed: canSend
+                  ? () {
+                      onSend(controller.text);
+                      controller.clear();
+                    }
+                  : null,
+              icon: const Icon(Icons.send_rounded),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _ApproveButton extends StatelessWidget {
+  const _ApproveButton({required this.approving, required this.onApprove});
+
+  final bool approving;
+  final VoidCallback? onApprove;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: onApprove,
+      icon: approving
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, semanticsLabel: 'Approving'),
+            )
+          : const Icon(Icons.check_circle_outline),
+      label: Text(approving ? 'Approving…' : 'Approve and start writing'),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Chat-stage widgets (brief header, transcript, conversation footer)
+// ---------------------------------------------------------------------------
 
 class _BriefHeader extends StatefulWidget {
   const _BriefHeader({required this.state});
@@ -493,8 +1050,7 @@ class _BriefDetails extends StatelessWidget {
       if ((brief?.audience ?? '').trim().isNotEmpty)
         _BriefRow(audienceLabel(lane), brief!.audience),
       if (promise.trim().isNotEmpty) _BriefRow(promiseLabel(lane), promise),
-      if ((brief?.tone ?? '').trim().isNotEmpty)
-        _BriefRow('Tone', brief!.tone),
+      if ((brief?.tone ?? '').trim().isNotEmpty) _BriefRow('Tone', brief!.tone),
     ];
 
     return Column(
@@ -507,13 +1063,9 @@ class _BriefDetails extends StatelessWidget {
             AppMetricChip(label: 'Type', value: bookTypeLabel(presets.bookType)),
             AppMetricChip(
               label: 'Size',
-              value:
-                  '${pageRangeFor(presets.bookType, presets.lengthPreset)} pages',
+              value: '${pageRangeFor(presets.bookType, presets.lengthPreset)} pages',
             ),
-            AppMetricChip(
-              label: 'Finish',
-              value: qualityLabel(presets.qualityPreset),
-            ),
+            AppMetricChip(label: 'Finish', value: qualityLabel(presets.qualityPreset)),
             AppMetricChip(
               label: 'Visuals',
               value: presets.imagesEnabled ? 'Included' : 'Text-first',
@@ -534,9 +1086,7 @@ class _BriefDetails extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             row.label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 2),
           Text(row.value),
@@ -545,9 +1095,7 @@ class _BriefDetails extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'Helpful to add',
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           for (final item in state.readiness.missing)
@@ -588,25 +1136,34 @@ class _ReadinessPill extends StatelessWidget {
 }
 
 class _Transcript extends StatelessWidget {
-  const _Transcript({required this.state, required this.controller});
+  const _Transcript({
+    required this.state,
+    required this.controller,
+    this.planValue,
+  });
 
   final CreationChatState state;
   final ScrollController controller;
+  final AsyncValue<MobileProjectDetail>? planValue;
 
   @override
   Widget build(BuildContext context) {
-    final itemCount =
-        state.messages.length + (state.assistantTyping ? 1 : 0);
+    final hasPlanBubble = planValue != null;
+    final hasTyping = state.assistantTyping && !hasPlanBubble;
+    final itemCount = state.messages.length + (hasTyping ? 1 : 0) + (hasPlanBubble ? 1 : 0);
+
     return ListView.builder(
       controller: controller,
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        if (index >= state.messages.length) {
+        if (hasPlanBubble && index == state.messages.length) {
+          return _PlanBubble(planValue: planValue!);
+        }
+        if (hasTyping && index == state.messages.length) {
           return const _TypingBubble();
         }
-        final message = state.messages[index];
-        return _MessageBubble(message: message);
+        return _MessageBubble(message: state.messages[index]);
       },
     );
   }
@@ -628,9 +1185,7 @@ class _MessageBubble extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
-        ),
+        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
         decoration: BoxDecoration(
           color: background,
           borderRadius: BorderRadius.only(
@@ -642,9 +1197,7 @@ class _MessageBubble extends StatelessWidget {
         ),
         child: Text(
           message.content,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: foreground),
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: foreground),
         ),
       ),
     );
@@ -745,8 +1298,7 @@ class _ConversationFooter extends StatelessWidget {
                   icon: Icons.bolt_outlined,
                   onSelect: onQuickReply,
                 ),
-              if (question != null || state.quickReplies.isNotEmpty)
-                const SizedBox(height: 8),
+              if (question != null || state.quickReplies.isNotEmpty) const SizedBox(height: 8),
               _Composer(
                 controller: composerController,
                 enabled: !disabled,
@@ -786,9 +1338,7 @@ class _QuestionPanel extends StatelessWidget {
       children: [
         Text(
           question.prompt,
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -832,7 +1382,7 @@ class _ChipRow extends StatelessWidget {
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: options.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final option = options[index];
           return ActionChip(
@@ -886,10 +1436,7 @@ class _Composer extends StatelessWidget {
               hintText: 'Describe your book or answer above…',
               filled: true,
               fillColor: colors.surfaceContainerHigh,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(20),
                 borderSide: BorderSide.none,
@@ -943,6 +1490,10 @@ class _BuildButton extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sheets
+// ---------------------------------------------------------------------------
+
 class _SourceNotesSheet extends StatelessWidget {
   const _SourceNotesSheet({required this.controller});
 
@@ -961,9 +1512,7 @@ class _SourceNotesSheet extends StatelessWidget {
         children: [
           Text(
             'Source notes',
-            style: Theme.of(
-              context,
-            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
           Text(
@@ -995,8 +1544,7 @@ class _SourceNotesSheet extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: () =>
-                      Navigator.of(context).pop(controller.text),
+                  onPressed: () => Navigator.of(context).pop(controller.text),
                   child: const Text('Attach'),
                 ),
               ),
@@ -1028,9 +1576,7 @@ class _AdvancedSheet extends ConsumerWidget {
           children: [
             Text(
               'Advanced settings',
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: 6),
             Text(
@@ -1073,10 +1619,7 @@ class _AdvancedSheet extends ConsumerWidget {
                 children: [
                   const Expanded(child: Text('Visuals')),
                   if (state.userChoices.contains(CreationChoice.visuals))
-                    const AppStatusBadge(
-                      label: 'Your choice',
-                      icon: Icons.tune_outlined,
-                    ),
+                    const AppStatusBadge(label: 'Your choice', icon: Icons.tune_outlined),
                 ],
               ),
               subtitle: Text(
@@ -1134,16 +1677,11 @@ class _AdvancedGroup extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             if (yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
-              ),
+              const AppStatusBadge(label: 'Your choice', icon: Icons.tune_outlined),
           ],
         ),
         const SizedBox(height: 8),
@@ -1175,9 +1713,7 @@ class _LanguageField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final known = creationLanguageOptions.any(
-      (option) => option.code == language,
-    );
+    final known = creationLanguageOptions.any((o) => o.code == language);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1186,32 +1722,23 @@ class _LanguageField extends StatelessWidget {
             Expanded(
               child: Text(
                 'Language',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             if (yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
-              ),
+              const AppStatusBadge(label: 'Your choice', icon: Icons.tune_outlined),
           ],
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           initialValue: known ? language : 'en',
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.translate_outlined),
-          ),
+          decoration: const InputDecoration(prefixIcon: Icon(Icons.translate_outlined)),
           items: [
             for (final option in creationLanguageOptions)
               DropdownMenuItem(value: option.code, child: Text(option.label)),
           ],
           onChanged: (value) {
-            if (value != null) {
-              onChanged(value);
-            }
+            if (value != null) onChanged(value);
           },
         ),
       ],
@@ -1242,16 +1769,11 @@ class _ToneField extends StatelessWidget {
             Expanded(
               child: Text(
                 'Tone',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
               ),
             ),
             if (yourChoice)
-              const AppStatusBadge(
-                label: 'Your choice',
-                icon: Icons.tune_outlined,
-              ),
+              const AppStatusBadge(label: 'Your choice', icon: Icons.tune_outlined),
           ],
         ),
         const SizedBox(height: 8),
