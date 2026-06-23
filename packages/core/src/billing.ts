@@ -11,7 +11,12 @@ export const CREDIT_COSTS = {
   imageGeneration: 45,
   coverRegeneration: 120,
   premiumReview: 200,
-  exportUnlock: 150
+  exportUnlock: 150,
+  planRevision: 40,
+  bookTextEditBase: 25,
+  bookTextEditPerPage: 10,
+  pageRegenerationPerPage: 80,
+  bookReplanBase: 120
 } as const;
 
 export const PROVIDER_COST_ASSUMPTIONS_USD = {
@@ -79,6 +84,10 @@ export type BillingOperation =
   | "COVER_REGENERATION"
   | "PREMIUM_REVIEW"
   | "EXPORT_UNLOCK"
+  | "PLAN_REVISION"
+  | "BOOK_TEXT_EDIT"
+  | "PAGE_REGENERATION"
+  | "BOOK_REPLAN"
   | "PURCHASE_CREDIT_GRANT"
   | "SUBSCRIPTION_CREDIT_GRANT"
   | "ADMIN_GRANT";
@@ -135,6 +144,14 @@ export function creditCostForOperation(operation: BillingOperation): number {
       return CREDIT_COSTS.premiumReview;
     case "EXPORT_UNLOCK":
       return CREDIT_COSTS.exportUnlock;
+    case "PLAN_REVISION":
+      return CREDIT_COSTS.planRevision;
+    case "BOOK_TEXT_EDIT":
+      return CREDIT_COSTS.bookTextEditBase;
+    case "PAGE_REGENERATION":
+      return CREDIT_COSTS.pageRegenerationPerPage;
+    case "BOOK_REPLAN":
+      return CREDIT_COSTS.bookReplanBase;
     case "FULL_BOOK_GENERATION":
       return CREDIT_COSTS.fullBookBase;
     case "PURCHASE_CREDIT_GRANT":

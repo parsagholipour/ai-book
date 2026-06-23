@@ -28,6 +28,7 @@ enum ProjectStatus {
   PLANNING
   PLAN_READY
   GENERATING
+  EDITING
   COMPLETE
   FAILED
 }
@@ -52,6 +53,8 @@ enum JobType {
   GENERATE_PAGE
   GENERATE_IMAGE
   COMPILE_EXPORT
+  APPLY_BOOK_EDIT
+  REPLAN_BOOK
   PREPARE_CHARACTER_CANDIDATES
   BUILD_CHARACTER_PERSONA
   RESEARCH
@@ -139,9 +142,34 @@ enum CreditOperation {
   COVER_REGENERATION
   PREMIUM_REVIEW
   EXPORT_UNLOCK
+  PLAN_REVISION
+  BOOK_TEXT_EDIT
+  PAGE_REGENERATION
+  BOOK_REPLAN
   PURCHASE_CREDIT_GRANT
   SUBSCRIPTION_CREDIT_GRANT
   ADMIN_GRANT
+}
+
+enum ProjectChatMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum BookEditOperationKind {
+  PLAN_REVISION
+  LOCAL_PATCH
+  PAGE_REWRITE
+  BOOK_REPLAN
+}
+
+enum BookEditOperationStatus {
+  QUEUED
+  ACTIVE
+  APPLIED
+  FAILED
+  CANCELED
 }
 
 enum ModerationReportTargetType {
@@ -336,6 +364,7 @@ model CreditLedgerEntry {
   reversesEntry   CreditLedgerEntry? @relation("CreditLedgerReversal", fields: [reversesEntryId], references: [id], onDelete: SetNull)
   reversedByEntry CreditLedgerEntry? @relation("CreditLedgerReversal")
   entitlements    UserEntitlement[]  @relation("LedgerEntryEntitlements")
+  editOperations  BookEditOperation[]
 
   @@index([userId, createdAt])
   @@index([projectId, operation])
@@ -434,6 +463,9 @@ model Project {
   creditLedger       CreditLedgerEntry[]
   entitlements       UserEntitlement[]
   moderationReports  ModerationReport[]
+  chatMessages       ProjectChatMessage[]
+  editOperations     BookEditOperation[]
+  pageEditSnapshots  PageEditSnapshot[]
 
   @@index([userId, updatedAt])
   @@index([userId, createdAt])
@@ -509,8 +541,79 @@ model Page {
   project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   chapter Chapter?     @relation(fields: [chapterId], references: [id], onDelete: SetNull)
   images  ImageAsset[]
+  editSnapshots PageEditSnapshot[]
 
   @@unique([projectId, index])
+}
+
+model ProjectChatMessage {
+  id          String                 @id @default(cuid())
+  projectId   String
+  role        ProjectChatMessageRole
+  content     String
+  operationId String?
+  metadata    Json
+  createdAt   DateTime               @default(now())
+
+  project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  operation BookEditOperation? @relation("ProjectChatOperationMessages", fields: [operationId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt])
+  @@index([operationId])
+}
+
+model BookEditOperation {
+  id                  String                  @id @default(cuid())
+  projectId           String
+  userMessageId       String?
+  assistantMessageId  String?
+  generationJobId     String?
+  ledgerEntryId       String?
+  kind                BookEditOperationKind
+  status              BookEditOperationStatus @default(QUEUED)
+  request             String
+  classifier          Json
+  affectedPageIndexes Int[]
+  creditsCharged      Int                     @default(0)
+  error               String?
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  appliedAt           DateTime?
+
+  project           Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  generationJob     GenerationJob?       @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
+  ledgerEntry       CreditLedgerEntry?   @relation(fields: [ledgerEntryId], references: [id], onDelete: SetNull)
+  snapshots         PageEditSnapshot[]
+  operationMessages ProjectChatMessage[] @relation("ProjectChatOperationMessages")
+
+  @@index([projectId, createdAt])
+  @@index([generationJobId])
+  @@index([ledgerEntryId])
+}
+
+model PageEditSnapshot {
+  id              String   @id @default(cuid())
+  projectId       String
+  pageId          String
+  operationId     String
+  pageIndex       Int
+  titleBefore     String
+  markdownBefore  String
+  summaryBefore   String
+  revisionBefore  Int
+  titleAfter      String?
+  markdownAfter   String?
+  summaryAfter    String?
+  revisionAfter   Int?
+  createdAt       DateTime @default(now())
+
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  page      Page              @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  operation BookEditOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, pageIndex])
+  @@index([operationId])
+  @@index([pageId])
 }
 
 model Character {
@@ -676,6 +779,7 @@ model GenerationJob {
   project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   providerLogs ProviderCallLog[]
   creditLedger CreditLedgerEntry[]
+  editOperations BookEditOperation[]
 }
 
 model ProviderCallLog {

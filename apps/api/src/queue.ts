@@ -28,6 +28,8 @@ const jobNames = {
   GENERATE_PAGE: "generate-page",
   GENERATE_IMAGE: "generate-image",
   COMPILE_EXPORT: "compile-export",
+  APPLY_BOOK_EDIT: "apply-book-edit",
+  REPLAN_BOOK: "replan-book",
   PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
   BUILD_CHARACTER_PERSONA: "build-character-persona",
   RESEARCH: "research"

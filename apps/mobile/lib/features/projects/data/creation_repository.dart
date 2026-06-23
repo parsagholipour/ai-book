@@ -50,10 +50,7 @@ abstract interface class CreationRepository {
     String? language,
   });
 
-  Future<void> renameSession({
-    required String draftId,
-    required String title,
-  });
+  Future<void> renameSession({required String draftId, required String title});
 
   Future<void> deleteSession(String draftId);
 }
@@ -242,8 +239,61 @@ class MobileCreationRepository implements CreationRepository {
   }
 }
 
+class CreationConversationCache {
+  final _byDraftId = <String, MobileCreationConversationResponse>{};
+  String? _activeDraftId;
+
+  MobileCreationConversationResponse? readById(String draftId) {
+    return _byDraftId[draftId];
+  }
+
+  MobileCreationConversationResponse? readActive() {
+    final draftId = _activeDraftId;
+    return draftId == null ? null : _byDraftId[draftId];
+  }
+
+  void write(MobileCreationConversationResponse response) {
+    final session = response.session;
+    if (session == null) return;
+    _byDraftId[session.draftId] = response;
+    if (session.status == 'ACTIVE') {
+      _activeDraftId = session.draftId;
+    }
+  }
+
+  void updateTitle({required String draftId, required String title}) {
+    final current = _byDraftId[draftId];
+    final session = current?.session;
+    if (current == null || session == null) return;
+    _byDraftId[draftId] = MobileCreationConversationResponse(
+      turn: current.turn,
+      session: MobileCreationSession(
+        draftId: session.draftId,
+        title: title,
+        status: session.status,
+        messages: session.messages,
+        createdProjectId: session.createdProjectId,
+        updatedAt: session.updatedAt,
+      ),
+    );
+  }
+
+  void remove(String draftId) {
+    _byDraftId.remove(draftId);
+    if (_activeDraftId == draftId) {
+      _activeDraftId = null;
+    }
+  }
+}
+
 final creationRepositoryProvider = Provider<CreationRepository>((ref) {
   return MobileCreationRepository(apiClient: ref.watch(apiClientProvider));
+});
+
+final creationConversationCacheProvider = Provider<CreationConversationCache>((
+  ref,
+) {
+  return CreationConversationCache();
 });
 
 final chatSessionsProvider = FutureProvider<List<MobileChatSession>>((ref) {

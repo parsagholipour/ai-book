@@ -167,6 +167,8 @@ class CreationChatController extends Notifier<CreationChatState> {
   CreationChatState build() => const CreationChatState();
 
   CreationRepository get _repository => ref.read(creationRepositoryProvider);
+  CreationConversationCache get _cache =>
+      ref.read(creationConversationCacheProvider);
 
   Future<void> init({
     bool fresh = false,
@@ -187,19 +189,43 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (isSessionSwitch) {
       _messageRequestId++;
     }
-    state = isSessionSwitch
-        ? const CreationChatState(initializing: true)
-        : state.copyWith(initializing: true, initError: null);
+    final messageRequestId = _messageRequestId;
+    final cached = fresh
+        ? null
+        : draftId == null
+        ? _cache.readActive()
+        : _cache.readById(draftId);
+    if (cached != null) {
+      _applyConversation(cached, initializing: false, assistantTyping: false);
+    } else {
+      state = isSessionSwitch
+          ? const CreationChatState(initializing: true)
+          : state.copyWith(initializing: true, initError: null);
+    }
     try {
       if (draftId != null) {
         final resumed = await _repository.resumeConversationById(draftId);
-        if (requestId != _initRequestId) return;
+        _cache.write(resumed);
+        if (!_canApplyInitResponse(
+          requestId: requestId,
+          messageRequestId: messageRequestId,
+          expectedDraftId: cached == null ? null : draftId,
+        )) {
+          return;
+        }
         _applyConversation(resumed, initializing: false);
         return;
       }
       if (!fresh) {
         final resumed = await _repository.resumeConversation();
-        if (requestId != _initRequestId) return;
+        _cache.write(resumed);
+        if (!_canApplyInitResponse(
+          requestId: requestId,
+          messageRequestId: messageRequestId,
+          expectedDraftId: cached?.session?.draftId,
+        )) {
+          return;
+        }
         _applyConversation(resumed, initializing: false);
         return;
       }
@@ -209,6 +235,9 @@ class CreationChatController extends Notifier<CreationChatState> {
       );
     } catch (error) {
       if (requestId != _initRequestId) return;
+      if (cached != null) {
+        return;
+      }
       state = state.copyWith(
         initializing: false,
         initError: userFacingError(error),
@@ -260,6 +289,7 @@ class CreationChatController extends Notifier<CreationChatState> {
               optionalDetails: optionalDetails,
             );
       if (requestId != _messageRequestId || state.draftId != draftId) return;
+      _cache.write(response);
       _applyConversation(response, assistantTyping: false);
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
@@ -294,6 +324,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         building: false,
         createdProjectId: response.project.id,
       );
+      _cacheCreatedProject(response.project.id);
       ref.invalidate(chatSessionsProvider);
       return response;
     } catch (error) {
@@ -363,6 +394,10 @@ class CreationChatController extends Notifier<CreationChatState> {
   void setSessionTitle(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return;
+    final draftId = state.draftId;
+    if (draftId != null) {
+      _cache.updateTitle(draftId: draftId, title: trimmed);
+    }
     state = state.copyWith(sessionTitle: trimmed);
   }
 
@@ -394,6 +429,38 @@ class CreationChatController extends Notifier<CreationChatState> {
       authorName: authorName ?? current.authorName,
       mustInclude: mustInclude ?? current.mustInclude,
       tone: tone ?? current.tone,
+    );
+  }
+
+  bool _canApplyInitResponse({
+    required int requestId,
+    required int messageRequestId,
+    required String? expectedDraftId,
+  }) {
+    if (requestId != _initRequestId || messageRequestId != _messageRequestId) {
+      return false;
+    }
+    return expectedDraftId == null || state.draftId == expectedDraftId;
+  }
+
+  void _cacheCreatedProject(String projectId) {
+    final draftId = state.draftId;
+    if (draftId == null) return;
+    final current = _cache.readById(draftId);
+    final session = current?.session;
+    if (current == null || session == null) return;
+    _cache.write(
+      MobileCreationConversationResponse(
+        turn: current.turn,
+        session: MobileCreationSession(
+          draftId: session.draftId,
+          title: session.title,
+          status: session.status,
+          messages: session.messages,
+          createdProjectId: projectId,
+          updatedAt: session.updatedAt,
+        ),
+      ),
     );
   }
 

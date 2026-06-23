@@ -120,6 +120,40 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets(
+    'returning to an opened chat renders cached content immediately',
+    (tester) async {
+      final creation = _ScriptedCreationRepository();
+      await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Selected chat draft-a'), findsOneWidget);
+
+      await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+      await tester.pumpAndSettle();
+
+      final refreshGate = Completer<void>();
+      creation.resumeByIdGate = refreshGate.future;
+      creation.resumeAssistantMessages['draft-a'] = 'Refreshed chat draft-a';
+
+      await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Selected chat draft-a'), findsOneWidget);
+      expect(find.text('Refreshed chat draft-a'), findsNothing);
+      expect(creation.resumedDraftIds, ['draft-a', 'draft-b', 'draft-a']);
+
+      refreshGate.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Selected chat draft-a'), findsNothing);
+      expect(find.text('Refreshed chat draft-a'), findsOneWidget);
+
+      await tester.teardownScreen();
+    },
+  );
+
   testWidgets('selected chat title shows before messages load', (tester) async {
     final resumeGate = Completer<void>();
     final creation = _ScriptedCreationRepository(
@@ -299,11 +333,12 @@ class _ScriptedCreationRepository implements CreationRepository {
   }) : sessions = sessions ?? const <MobileChatSession>[];
 
   final bool replyWithQuestion;
-  final Future<void>? resumeByIdGate;
+  Future<void>? resumeByIdGate;
   final List<MobileChatSession> sessions;
   final sentMessages = <String>[];
   final startedMessages = <String>[];
   final resumedDraftIds = <String>[];
+  final resumeAssistantMessages = <String, String>{};
   MobileCreationPresets? buildPresets;
   String? buildDraftId;
 
@@ -336,19 +371,21 @@ class _ScriptedCreationRepository implements CreationRepository {
   ) async {
     resumedDraftIds.add(draftId);
     await resumeByIdGate;
+    final assistantMessage =
+        resumeAssistantMessages[draftId] ?? 'Selected chat $draftId';
     return MobileCreationConversationResponse.fromJson({
       'session': {
         'draftId': draftId,
         'title': 'Title for $draftId',
         'status': 'ACTIVE',
         'messages': [
-          {'role': 'assistant', 'content': 'Selected chat $draftId'},
+          {'role': 'assistant', 'content': assistantMessage},
         ],
         'createdProjectId': null,
         'updatedAt': '2026-06-15T00:00:00.000Z',
       },
       'turn': _turnJson(
-        assistantMessage: 'Selected chat $draftId',
+        assistantMessage: assistantMessage,
         canBuild: false,
         quickReplies: const [],
       ),

@@ -359,6 +359,9 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
       await ref
           .read(creationRepositoryProvider)
           .renameSession(draftId: widget.session.draftId, title: trimmed);
+      ref
+          .read(creationConversationCacheProvider)
+          .updateTitle(draftId: widget.session.draftId, title: trimmed);
       if (widget.isSelected) {
         ref
             .read(creationChatControllerProvider.notifier)
@@ -404,6 +407,9 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
       await ref
           .read(creationRepositoryProvider)
           .deleteSession(widget.session.draftId);
+      ref
+          .read(creationConversationCacheProvider)
+          .remove(widget.session.draftId);
       ref.invalidate(chatSessionsProvider);
     } catch (_) {
       if (mounted) {
