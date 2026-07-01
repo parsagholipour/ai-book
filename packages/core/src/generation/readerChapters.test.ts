@@ -146,7 +146,6 @@ function inputForPages(targetPages: number): CreateProjectInput {
       includeCover: false,
       coverTemplate: "auto",
       finalReview: true,
-      lessCensored: false,
       toneProfile: "neutral" as const,
       generationStrategy: "research-grounded"
     }

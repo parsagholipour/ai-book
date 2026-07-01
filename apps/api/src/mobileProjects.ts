@@ -12,7 +12,7 @@ import {
   createProjectSchema,
   creditCostForOperation,
   estimateFullBookCreditCost,
-  generateJsonWithJailbreak,
+  generateJsonWithRetry,
   loadConfig,
   mediaSettingsSchema,
   type BookPlan,
@@ -1595,10 +1595,8 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     try {
       const textModel = createFastRoutingTextModel(appConfig);
       const result = await promiseWithTimeout(
-        generateJsonWithJailbreak(textModel, {
+        generateJsonWithRetry(textModel, {
           purpose: "mobile-page-count-preflight",
-          jailbreakRole: "planner",
-          lessCensored: false,
           temperature: 0.2,
           maxTokens: 700,
           schema: mobilePageCountRecommendationAiSchema,
@@ -2409,7 +2407,6 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     includeCover: parsed.imagesEnabled,
     coverTemplate: bookType.coverTemplate,
     finalReview: quality.finalReview,
-    lessCensored: false,
     toneProfile: bookType.toneProfile,
     generationStrategy: AUTO_BOOK_GENERATION_STRATEGY_ID,
     parallelPageGeneration: quality.parallelPageGeneration,

@@ -19,7 +19,7 @@ Prepare the app and backend for Google Play review by adding AI content reportin
    - Store moderation report.
    - Add admin/local review path.
 2. Safety wording:
-   - Remove public `less censored` wording.
+   - Keep public wording focused on supported book categories.
    - Add safer defaults for sensitive categories.
    - Add clear AI-generated content disclosure where appropriate.
 3. Privacy controls:

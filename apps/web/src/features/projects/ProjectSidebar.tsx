@@ -120,8 +120,7 @@ export function ProjectSidebar(props: {
                 ...props.draft,
                 category,
                 subcategory: "",
-                customSubcategory: "",
-                lessCensored: category === "KIDS" ? false : props.draft.lessCensored
+                customSubcategory: ""
               });
             }}
           >
@@ -398,21 +397,6 @@ export function ProjectSidebar(props: {
           />
           Final review before export
         </label>
-        {props.draft.category !== "KIDS" ? (
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={props.draft.lessCensored}
-              onChange={(event) => props.setDraft({ ...props.draft, lessCensored: event.target.checked })}
-            />
-            Direct phrasing for mature topics
-          </label>
-        ) : null}
-        {props.draft.category !== "KIDS" && props.draft.lessCensored ? (
-          <p className="field-hint">
-            Uses clearer drafting prompts for allowed mature topics. Safety filters and provider policy still apply.
-          </p>
-        ) : null}
         <button className="primary-button" onClick={props.onCreateProject} disabled={props.createProjectBusy || props.draft.prompt.length < 10}>
           {props.createProjectBusy ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
           Create & Plan

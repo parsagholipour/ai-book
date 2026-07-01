@@ -68,7 +68,6 @@ describe("book generation strategies", () => {
           includeCover: true,
           coverTemplate: "auto",
           finalReview: true,
-          lessCensored: false,
           toneProfile: "neutral" as const,
           generationStrategy: strategy.id
         }).generationStrategy
@@ -106,7 +105,6 @@ describe("book generation strategies", () => {
         includeCover: true,
         coverTemplate: "auto" as const,
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     };

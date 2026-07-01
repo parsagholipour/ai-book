@@ -16,7 +16,7 @@
 - Added config placeholders for privacy policy, terms, account deletion URL, and support email in backend and Flutter.
 - Added rate limits for mobile generation actions, billing verification, reporting, project deletion, and account deletion requests.
 - Added safe logging redaction for auth, billing, report, deletion, and review-sensitive fields.
-- Reworded public `Less censored` UI copy and softened sensitive category labels.
+- Simplified sensitive category labels.
 - Added Phase 11 legal/policy/Data Safety draft docs and store readiness docs.
 
 ## Decisions

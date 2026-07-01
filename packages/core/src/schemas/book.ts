@@ -513,7 +513,6 @@ export const mediaSettingsSchema = z.object({
   includeCover: z.boolean().default(true),
   coverTemplate: coverTemplateIdSchema.default("auto"),
   finalReview: z.boolean().default(true),
-  lessCensored: z.boolean().default(false),
   imageStyle: z.string().optional(),
   imageModel: imageModelSelectionSchema.optional(),
   generationStrategy: bookGenerationStrategySelectionSchema.optional(),
@@ -554,7 +553,6 @@ export const createProjectSchema = z.object({
     includeCover: true,
     coverTemplate: "auto",
     finalReview: true,
-    lessCensored: false,
     toneProfile: "neutral"
   })
 });

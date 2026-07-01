@@ -23,7 +23,6 @@ describe("billing credit assumptions", () => {
         includeCover: true,
         coverTemplate: "minimal",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral"
       }
     });
@@ -54,7 +53,6 @@ describe("billing credit assumptions", () => {
         includeCover: true,
         coverTemplate: "business",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "confident",
         draftCandidates: 2
       }
@@ -80,7 +78,6 @@ describe("billing credit assumptions", () => {
         includeCover: true,
         coverTemplate: "fiction",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "narrative"
       }
     });

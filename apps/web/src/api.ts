@@ -47,7 +47,6 @@ export type Project = {
     includeCover?: boolean;
     coverTemplate?: string;
     finalReview?: boolean;
-    lessCensored?: boolean;
     audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
     parallelPageGeneration?: boolean;
@@ -112,7 +111,6 @@ export type ProjectInputSnapshot = {
     includeCover?: boolean;
     coverTemplate?: string;
     finalReview?: boolean;
-    lessCensored?: boolean;
     audienceAgeRange?: AudienceAgeRange;
     toneProfile?: string;
     parallelPageGeneration?: boolean;

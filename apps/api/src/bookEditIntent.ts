@@ -1,5 +1,5 @@
 import {
-  generateJsonWithJailbreak,
+  generateJsonWithRetry,
   type TextModelAdapter
 } from "@book-maker/core";
 import { z } from "zod";
@@ -65,18 +65,16 @@ export async function classifyProjectChatMessage(options: {
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
   const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary);
-  if (!options.textModel) {
+  if (!options.textModel || options.stage === "other") {
     return normalizeIntentForStage(heuristic, options.stage);
   }
 
   try {
-    const result = await generateJsonWithJailbreak(options.textModel, {
+    const result = await generateJsonWithRetry(options.textModel, {
       schema: classifierSchema,
       temperature: 0,
       maxTokens: 900,
       purpose: "project_chat.edit_router",
-      lessCensored: false,
-      jailbreakRole: "reviewer",
       messages: [
         {
           role: "system",

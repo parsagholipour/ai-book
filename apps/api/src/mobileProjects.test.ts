@@ -3034,7 +3034,6 @@ describe("mobile project routes", () => {
           includeCover: true,
           coverTemplate: "auto",
           finalReview: true,
-          lessCensored: false,
           generationStrategy: "chaptered-sequential",
           textModel: { provider: "gemini", model: "gemini-3.5-flash" },
           toneProfile: "neutral"
@@ -3110,7 +3109,6 @@ function projectRecord(overrides: Record<string, unknown> = {}) {
       includeCover: true,
       coverTemplate: "business",
       finalReview: true,
-      lessCensored: false,
       toneProfile: "neutral",
       mobile: {
         bookType: "lead_magnet",

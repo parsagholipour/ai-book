@@ -232,7 +232,6 @@ function projectInput(
       includeCover: true,
       coverTemplate: "auto",
       finalReview: true,
-      lessCensored: false,
       generationStrategy: "chaptered-sequential",
       textModel,
       ...(imageModel ? { imageModel } : {}),

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { CreateProjectInput, PageDraft } from "../schemas/book.js";
-import { generateJsonWithJailbreak } from "./generateWithJailbreak.js";
+import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { GeneratePageOptions } from "./pages.js";
 
 const draftJudgementSchema = z.object({
@@ -84,10 +84,8 @@ async function judgePageDrafts(options: {
   drafts: PageDraft[];
   judgeModel: TextModelAdapter;
 }): Promise<number> {
-  const result = await generateJsonWithJailbreak(options.judgeModel, {
+  const result = await generateJsonWithRetry(options.judgeModel, {
     purpose: "judge-page-drafts",
-    lessCensored: options.input.mediaSettings.lessCensored === true,
-    jailbreakRole: "reviewer",
     temperature: 0.1,
     maxTokens: 600,
     schema: draftJudgementSchema,

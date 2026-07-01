@@ -25,7 +25,6 @@ describe("deterministic dry run", () => {
         includeCover: true,
         coverTemplate: "auto" as const,
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     };
@@ -56,7 +55,6 @@ describe("deterministic dry run", () => {
         includeCover: true,
         coverTemplate: "auto" as const,
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     };
@@ -84,7 +82,6 @@ describe("deterministic dry run", () => {
         includeCover: true,
         coverTemplate: "auto" as const,
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     };
@@ -201,7 +198,6 @@ describe("deterministic dry run", () => {
         includeCover: true,
         coverTemplate: "auto" as const,
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     };
@@ -428,7 +424,6 @@ function smallBookInput(): CreateProjectInput {
       includeCover: true,
       coverTemplate: "auto",
       finalReview: true,
-      lessCensored: false,
       toneProfile: "neutral" as const
     }
   };

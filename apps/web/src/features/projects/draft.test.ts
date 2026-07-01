@@ -17,20 +17,18 @@ import {
 } from "./draft.js";
 
 describe("project draft helpers", () => {
-  it("builds project input with custom subcategories and keeps kids projects censored", () => {
+  it("builds project input with custom subcategories and kid-specific settings", () => {
     const input = projectInputFromDraft(
       {
         ...initialDraft,
         category: "KIDS",
         subcategory: CUSTOM_SUBCATEGORY_VALUE,
-        customSubcategory: "Moon etiquette",
-        lessCensored: true
+        customSubcategory: "Moon etiquette"
       },
       DEFAULT_TEXT_MODEL_OPTIONS
     );
 
     expect(input.subcategory).toBe("Moon etiquette");
-    expect(input.mediaSettings.lessCensored).toBe(false);
     expect(input.mediaSettings.audienceAgeRange).toBe("4-6");
   });
 
@@ -60,7 +58,6 @@ describe("project draft helpers", () => {
           complexity: 22,
           temperature: 5,
           mediaSettings: {
-            lessCensored: true,
             audienceAgeRange: "6-8",
             toneProfile: "scholarly"
           }
@@ -76,7 +73,6 @@ describe("project draft helpers", () => {
     expect(draft.complexity).toBe(10);
     expect(draft.temperature).toBe(2);
     expect(draft.audienceAgeRange).toBe("6-8");
-    expect(draft.lessCensored).toBe(false);
     expect(draft.toneProfile).toBe("scholarly");
   });
 

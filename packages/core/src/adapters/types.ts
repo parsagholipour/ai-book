@@ -68,7 +68,6 @@ export type ImageRequest = {
   pageId?: string | undefined;
   referenceImagePaths?: string[] | undefined;
   aspectRatio?: string | undefined;
-  lessCensored?: boolean | undefined;
 };
 
 export type ImageResult = {

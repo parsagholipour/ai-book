@@ -17,7 +17,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     }));
@@ -65,7 +64,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });
@@ -104,7 +102,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     }));
@@ -140,7 +137,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });
@@ -174,7 +170,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     }));
@@ -208,7 +203,6 @@ describe("compileBookMarkdown", () => {
           includeCover: false,
           coverTemplate: "auto",
           finalReview: true,
-          lessCensored: false,
           toneProfile: "neutral" as const
         }
       }),
@@ -278,7 +272,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "fiction",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });
@@ -311,7 +304,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "fiction",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     }));
@@ -345,7 +337,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });
@@ -388,7 +379,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });
@@ -424,7 +414,6 @@ describe("compileBookMarkdown", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });
@@ -461,7 +450,6 @@ describe("compileBookMarkdown", () => {
           includeCover: true,
           coverTemplate: "kids",
           finalReview: false,
-          lessCensored: false,
           toneProfile: "neutral" as const
         }
       }),

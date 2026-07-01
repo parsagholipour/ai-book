@@ -46,7 +46,6 @@ export type DraftProject = {
   fullIllustrations: boolean;
   includeCover: boolean;
   finalReview: boolean;
-  lessCensored: boolean;
   toneProfile: ToneProfile;
   draftCandidates: number;
 };
@@ -324,7 +323,6 @@ export const initialDraft: DraftProject = {
   fullIllustrations: true,
   includeCover: true,
   finalReview: true,
-  lessCensored: false,
   toneProfile: DEFAULT_TONE_PROFILE,
   draftCandidates: 1
 };
@@ -352,7 +350,6 @@ export function projectInputFromDraft(draft: DraftProject, textModelOptions: Tex
       coverTemplate: draft.coverTemplate,
       imageModel: imageModelSelectionFromOption(draft.imageModel),
       finalReview: draft.finalReview,
-      lessCensored: draft.category === "KIDS" ? false : draft.lessCensored,
       generationStrategy: draft.generationStrategy,
       textModel: textModelSelectionFromOption(textModel, draft.textModel),
       ...(draft.category === "KIDS" ? { audienceAgeRange: draft.audienceAgeRange } : {}),
@@ -402,7 +399,6 @@ export function draftFromSavedInputs(project: Project): DraftProject {
     fullIllustrations: firstBoolean(mediaSettings.fullIllustrations, initialDraft.fullIllustrations),
     includeCover: firstBoolean(mediaSettings.includeCover, initialDraft.includeCover),
     finalReview: firstBoolean(mediaSettings.finalReview, initialDraft.finalReview),
-    lessCensored: category === "KIDS" ? false : firstBoolean(mediaSettings.lessCensored, initialDraft.lessCensored),
     audienceAgeRange:
       category === "KIDS" ? audienceAgeRangeFromValue(mediaSettings.audienceAgeRange) : initialDraft.audienceAgeRange,
     toneProfile: toneProfileFromValue(firstString(mediaSettings.toneProfile, initialDraft.toneProfile)),

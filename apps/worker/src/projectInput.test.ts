@@ -16,7 +16,6 @@ describe("worker project input resolution", () => {
         includeCover: false,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         generationStrategy: "draft-then-polish",
         textModel: {
           provider: "gemini",
@@ -102,7 +101,6 @@ function projectSource() {
       includeCover: true,
       coverTemplate: "auto",
       finalReview: true,
-      lessCensored: false,
       generationStrategy: "chaptered-sequential",
       textModel: {
         provider: "deepseek",

@@ -17,7 +17,6 @@ describe("buildContextPack", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });
@@ -51,7 +50,6 @@ describe("buildContextPack", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         toneProfile: "neutral" as const
       }
     });

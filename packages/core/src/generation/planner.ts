@@ -12,7 +12,7 @@ import {
   type ResearchSource,
   type ToneProfile
 } from "../schemas/book.js";
-import { generateJsonWithJailbreak } from "./generateWithJailbreak.js";
+import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 
 export type CreatePlanOptions = {
   input: CreateProjectInput;
@@ -28,7 +28,6 @@ export type RevisePlanOptions = {
   input?: CreateProjectInput | undefined;
   targetPages?: number;
   temperature?: number;
-  lessCensored?: boolean;
   language?: string;
   toneProfile?: ToneProfile;
 };
@@ -53,10 +52,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
   const planningSchema = bookPlanSchemaWithFallback({ ...fallback, researchNotes });
   let result: JsonResult<BookPlan>;
   try {
-    result = await generateJsonWithJailbreak(options.textModel, {
+    result = await generateJsonWithRetry(options.textModel, {
       purpose: "plan-book",
-      lessCensored: options.input.mediaSettings.lessCensored === true,
-      jailbreakRole: "planner",
       temperature: Math.min(0.8, options.input.temperature),
       maxTokens: 8000,
       schema: planningSchema,
@@ -120,10 +117,8 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
   const toneProfile = options.toneProfile ?? "neutral";
   const revisionSchema = bookPlanSchemaWithFallback(options.currentPlan);
   try {
-    const result = await generateJsonWithJailbreak(options.textModel, {
+    const result = await generateJsonWithRetry(options.textModel, {
       purpose: "revise-plan",
-      lessCensored: options.lessCensored === true,
-      jailbreakRole: "planner",
       temperature: options.temperature ?? 0.4,
       maxTokens: 8000,
       schema: revisionSchema,

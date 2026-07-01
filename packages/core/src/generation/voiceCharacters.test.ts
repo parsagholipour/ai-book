@@ -27,7 +27,6 @@ const input: CreateProjectInput = {
     includeCover: true,
     coverTemplate: "auto",
     finalReview: true,
-    lessCensored: false,
     toneProfile: "neutral"
   }
 };

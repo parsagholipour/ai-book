@@ -384,7 +384,6 @@ async function revisePlan(job: Job) {
     input,
     targetPages: input.targetPages,
     temperature: input.temperature,
-    lessCensored: input.mediaSettings.lessCensored === true,
     language: input.language,
     toneProfile: input.mediaSettings.toneProfile
   });
@@ -1984,8 +1983,7 @@ async function generateImage(job: Job) {
     prompt: imagePrompt,
     projectId,
     pageId,
-    referenceImagePaths,
-    lessCensored: input.mediaSettings.lessCensored === true
+    referenceImagePaths
   });
 
   await advanceJobStep(generationJobId, "store", 80, `Storing image for page ${page.index}`);
@@ -2073,8 +2071,7 @@ async function generateCover(job: Job) {
     prompt: artworkPrompt,
     projectId,
     referenceImagePaths,
-    aspectRatio: "3:4",
-    lessCensored: input.mediaSettings.lessCensored === true
+    aspectRatio: "3:4"
   });
 
   await advanceJobStep(generationJobId, "render", 68, "Rendering cover typography");
@@ -2184,8 +2181,7 @@ async function ensureCharacterReferenceAssets(options: {
       image: options.providers.image,
       prompt,
       projectId: options.projectId,
-      aspectRatio: "4:3",
-      lessCensored: options.input.mediaSettings.lessCensored === true
+      aspectRatio: "4:3"
     });
     const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
     const ext = optimizedImage.extension;
@@ -2636,7 +2632,6 @@ async function replanBook(job: Job) {
     input,
     targetPages: input.targetPages,
     temperature: input.temperature,
-    lessCensored: input.mediaSettings.lessCensored === true,
     language: input.language,
     toneProfile: input.mediaSettings.toneProfile
   });
@@ -3138,8 +3133,7 @@ async function generateCharacterProfileImage(options: {
     prompt,
     projectId: options.projectId,
     referenceImagePaths,
-    aspectRatio: "1:1",
-    lessCensored: options.input.mediaSettings.lessCensored === true
+    aspectRatio: "1:1"
   });
   const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
   const ext = optimizedImage.extension;

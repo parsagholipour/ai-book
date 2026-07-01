@@ -1,5 +1,5 @@
 import {
-  generateJsonWithJailbreak,
+  generateJsonWithRetry,
   type TextModelAdapter
 } from "@book-maker/core";
 import { z } from "zod";
@@ -268,10 +268,8 @@ export async function enrichAdvisorWithAi(
   payload: MobileCreationDraftPayload,
   base: MobileBookAdvisorResponse
 ): Promise<Partial<MobileBookAdvisorResponse>> {
-  const result = await generateJsonWithJailbreak(textModel, {
+  const result = await generateJsonWithRetry(textModel, {
     purpose: "mobile-book-advisor",
-    jailbreakRole: "planner",
-    lessCensored: false,
     temperature: 0.2,
     maxTokens: 1200,
     schema: aiAdvisorPatchSchema,
@@ -414,10 +412,8 @@ export async function enrichCreationTurnWithAi(
   request: MobileCreationTurnRequest,
   base: MobileCreationTurn
 ): Promise<Partial<MobileCreationTurn>> {
-  const result = await generateJsonWithJailbreak(textModel, {
+  const result = await generateJsonWithRetry(textModel, {
     purpose: "mobile-book-conversation",
-    jailbreakRole: "planner",
-    lessCensored: false,
     temperature: 0.5,
     maxTokens: 1500,
     schema: creationTurnAiPatchSchema,

@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { ImageAdapter, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
 import { buildContextPack } from "../context/contextPack.js";
-import { jailbreakImagePromptPrefix } from "../prompting/jailbreak.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload,
@@ -14,7 +13,7 @@ import {
   kidsReadingGuidancePayload
 } from "../prompting/readingLevel.js";
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
-import { generateJsonWithJailbreak } from "./generateWithJailbreak.js";
+import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { normalizePlanPageTargets } from "./planner.js";
 import type {
   BookPlan,
@@ -33,10 +32,6 @@ import {
   pageProductionBeatSchema,
   pageQualityReportSchema
 } from "../schemas/book.js";
-
-function isLessCensored(input: CreateProjectInput): boolean {
-  return input.mediaSettings.lessCensored === true;
-}
 
 function plannerToneRules(input: CreateProjectInput): string[] {
   return [...kidsReadingGuidanceLines(input), ...plannerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings))];
@@ -210,7 +205,6 @@ export type GenerateImageBytesOptions = {
   pageId?: string | undefined;
   referenceImagePaths?: string[] | undefined;
   aspectRatio?: string | undefined;
-  lessCensored?: boolean | undefined;
 };
 
 export type GeneratedImageBytes = {
@@ -342,10 +336,8 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
   }));
 
   try {
-    const result = await generateJsonWithJailbreak(options.textModel, {
+    const result = await generateJsonWithRetry(options.textModel, {
       purpose: "generate-page-map",
-      lessCensored: isLessCensored(options.input),
-      jailbreakRole: "planner",
       temperature: Math.min(0.55, options.input.temperature),
       maxTokens: Math.min(12000, Math.max(1800, options.input.targetPages * 180)),
       schema: wholeBookPageMapSchema,
@@ -421,10 +413,8 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
 
 export async function generateChapterBrief(options: GenerateChapterBriefOptions): Promise<ChapterBrief> {
   const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-chapter-brief",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "planner",
     temperature: Math.min(0.7, options.input.temperature),
     maxTokens: 5000,
     schema: z.unknown(),
@@ -495,15 +485,12 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
     semanticMemory: options.semanticMemory,
     entityState: options.entityState,
     tokenBudget: 7000,
-    lessCensored: isLessCensored(options.input),
     readingGuidance: kidsReadingGuidanceLines(options.input)
   });
   const recentPages = compactPriorPages(options.previousPages ?? [], 5, 1000);
 
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-page",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "writer",
     temperature: options.input.temperature,
     maxTokens: 3000,
     schema: pageDraftSchema,
@@ -567,10 +554,8 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
 }
 
 export async function generateWholeBookDraft(options: GenerateWholeBookOptions): Promise<WholeBookDraft> {
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-whole-book",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "writer",
     temperature: options.input.temperature,
     maxTokens: wholeBookMaxTokens(options.input),
     schema: wholeBookDraftSchema,
@@ -641,10 +626,8 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
 
 export async function generateChapterDraft(options: GenerateChapterDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-chapter-draft",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "writer",
     temperature: options.input.temperature,
     maxTokens: Math.min(64000, Math.max(4000, expectedPages.length * 900)),
     schema: z.unknown(),
@@ -714,10 +697,8 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
 
 export async function generateBatchDraft(options: GenerateBatchDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.pageStart, options.pageEnd);
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-page-batch",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "writer",
     temperature: options.input.temperature,
     maxTokens: Math.min(24000, Math.max(4000, expectedPages.length * 900)),
     schema: z.unknown(),
@@ -786,10 +767,8 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
 }
 
 export async function polishPageDraft(options: PolishPageOptions): Promise<PageDraft> {
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "polish-page",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "writer",
     temperature: Math.min(0.65, options.input.temperature),
     maxTokens: 3400,
     schema: pageDraftSchema,
@@ -856,10 +835,8 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
 
   let result: { data: PageQualityReport };
   try {
-    result = await generateJsonWithJailbreak(options.textModel, {
+    result = await generateJsonWithRetry(options.textModel, {
       purpose: "review-page",
-      lessCensored: isLessCensored(options.input),
-      jailbreakRole: "reviewer",
       temperature: 0.15,
       maxTokens: 1800,
       schema: pageQualityReportSchema,
@@ -955,10 +932,8 @@ function shouldUseLocalReviewFallback(error: unknown): boolean {
 }
 
 export async function revisePageDraft(options: RevisePageOptions): Promise<PageDraft> {
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "revise-page",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "writer",
     temperature: Math.min(0.85, options.input.temperature),
     maxTokens: 3200,
     schema: pageDraftSchema,
@@ -1021,10 +996,8 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
 }
 
 export async function repairPageBrief(options: RepairPageBriefOptions): Promise<PageProductionBeat> {
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "repair-page-brief",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "planner",
     temperature: Math.min(0.65, options.input.temperature),
     maxTokens: 2200,
     schema: pageProductionBeatSchema,
@@ -1101,10 +1074,8 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
     };
   }
 
-  const result = await generateJsonWithJailbreak(options.textModel, {
+  const result = await generateJsonWithRetry(options.textModel, {
     purpose: "final-book-qa",
-    lessCensored: isLessCensored(options.input),
-    jailbreakRole: "reviewer",
     temperature: 0.1,
     maxTokens: 2200,
     schema: finalBookQaSchema,
@@ -1182,44 +1153,25 @@ export function shouldIllustratePage(input: CreateProjectInput, plan: BookPlan, 
 }
 
 export async function generateImageBytes(options: GenerateImageBytesOptions): Promise<GeneratedImageBytes> {
-  const lessCensored = options.lessCensored === true;
-  const levels: Array<0 | 1 | 2> = lessCensored ? [0, 1, 2] : [0];
-  let lastError: unknown;
-
-  for (const level of levels) {
-    const prefix = jailbreakImagePromptPrefix(level);
-    const prompt = prefix ? `${prefix}\n\n${options.prompt}` : options.prompt;
-    const request = {
-      prompt,
-      projectId: options.projectId,
-      aspectRatio: options.aspectRatio ?? "4:3",
-      lessCensored,
-      ...(options.referenceImagePaths?.length ? { referenceImagePaths: options.referenceImagePaths } : {}),
-      ...(options.pageId ? { pageId: options.pageId } : {})
-    };
-    try {
-      const result = await options.image.generateImage(request);
-      const bytes = result.data ?? (result.url ? await downloadGeneratedImage(result.url) : undefined);
-      if (!bytes) {
-        throw new Error("Image adapter did not return image bytes or a downloadable URL.");
-      }
-      const output = {
-        bytes,
-        mimeType: result.mimeType,
-        provider: result.provider,
-        model: result.model,
-        fallback: result.fallback
-      };
-      return result.revisedPrompt ? { ...output, revisedPrompt: result.revisedPrompt } : output;
-    } catch (error) {
-      lastError = error;
-      if (!lessCensored || level === 2) {
-        throw error;
-      }
-    }
+  const result = await options.image.generateImage({
+    prompt: options.prompt,
+    projectId: options.projectId,
+    aspectRatio: options.aspectRatio ?? "4:3",
+    ...(options.referenceImagePaths?.length ? { referenceImagePaths: options.referenceImagePaths } : {}),
+    ...(options.pageId ? { pageId: options.pageId } : {})
+  });
+  const bytes = result.data ?? (result.url ? await downloadGeneratedImage(result.url) : undefined);
+  if (!bytes) {
+    throw new Error("Image adapter did not return image bytes or a downloadable URL.");
   }
-
-  throw lastError instanceof Error ? lastError : new Error("Image generation failed.");
+  const output = {
+    bytes,
+    mimeType: result.mimeType,
+    provider: result.provider,
+    model: result.model,
+    fallback: result.fallback
+  };
+  return result.revisedPrompt ? { ...output, revisedPrompt: result.revisedPrompt } : output;
 }
 
 async function downloadGeneratedImage(url: string): Promise<Buffer> {

@@ -461,13 +461,9 @@ export class GeminiImageAdapter implements ImageAdapter {
   }
 
   private imageConfig(request: ImageRequest): Record<string, unknown> {
-    const imageConfig: Record<string, unknown> = {
+    return {
       aspectRatio: request.aspectRatio ?? "4:3"
     };
-    if (request.lessCensored) {
-      imageConfig.safetyFilterLevel = "BLOCK_ONLY_HIGH";
-    }
-    return imageConfig;
   }
 
   private async generateNativeImage(request: ImageRequest): Promise<ImageResult> {
@@ -507,9 +503,6 @@ export class GeminiImageAdapter implements ImageAdapter {
       numberOfImages: 1,
       aspectRatio: request.aspectRatio ?? "4:3"
     };
-    if (request.lessCensored) {
-      config.safetyFilterLevel = "BLOCK_ONLY_HIGH";
-    }
     const response = await this.ai.models.generateImages({
       model: this.model,
       prompt: request.prompt,

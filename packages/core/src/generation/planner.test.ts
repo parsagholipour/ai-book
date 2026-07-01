@@ -80,7 +80,6 @@ function testInput(): CreateProjectInput {
       includeCover: true,
       coverTemplate: "auto",
       finalReview: true,
-      lessCensored: false,
       toneProfile: "neutral"
     }
   };

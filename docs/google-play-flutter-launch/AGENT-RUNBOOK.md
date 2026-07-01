@@ -38,7 +38,7 @@ Use this runbook for every phase in this folder.
 - Flutter must never be the only place where paid access or safety is enforced.
 - Generated content needs report/flag paths before public launch.
 - Avoid child-directed launch positioning until a dedicated child-safety review is complete.
-- Do not use public-facing wording like `less censored`.
+- Keep public wording focused on supported book categories and creation outcomes.
 
 ## Phase Completion Standard
 

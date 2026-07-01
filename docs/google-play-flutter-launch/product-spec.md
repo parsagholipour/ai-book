@@ -117,7 +117,7 @@ Gross revenue is not enough by itself. Later billing and entitlement phases shou
 - No broad "write anything" AI assistant positioning.
 - No public child-directed picture-book positioning.
 - No voice-character or live voice features in the launch MVP.
-- No advanced provider, model, temperature, queue, or jailbreak-style controls in the normal mobile UX.
+- No advanced provider, model, temperature, queue, or internal generation controls in the normal mobile UX.
 
 ## Phase 02 Handoff
 

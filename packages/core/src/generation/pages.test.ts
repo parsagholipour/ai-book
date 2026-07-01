@@ -32,7 +32,6 @@ const input: CreateProjectInput = {
     includeCover: true,
     coverTemplate: "auto",
     finalReview: true,
-    lessCensored: false,
     toneProfile: "neutral" as const
   }
 };
@@ -1906,7 +1905,6 @@ function kidsInput(ageRange: "2-4" | "4-6" | "6-8"): CreateProjectInput {
       includeCover: true,
       coverTemplate: "auto",
       finalReview: true,
-      lessCensored: false,
       audienceAgeRange: ageRange,
       toneProfile: "neutral" as const
     }

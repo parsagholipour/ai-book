@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
-import { generateJsonWithJailbreak } from "./generateWithJailbreak.js";
+import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 
 export const voiceAgeBandSchema = z.enum(["child", "teen", "young_adult", "adult", "elder"]);
@@ -144,10 +144,8 @@ export async function extractVoiceCharacterCandidates(options: {
   const pageChunks = pageSampleChunks(options.pages);
   const modelCandidates: VoiceCharacterCandidate[] = [];
   for (const [chunkIndex, pageChunk] of pageChunks.entries()) {
-    const result = await generateJsonWithJailbreak(options.textModel, {
+    const result = await generateJsonWithRetry(options.textModel, {
       purpose: "extract-voice-character-candidates",
-      lessCensored: false,
-      jailbreakRole: "planner",
       temperature: 0.2,
       schema: voiceCharacterCandidateListSchema,
       messages: [
@@ -207,10 +205,8 @@ export async function buildVoiceCharacterPersona(options: {
   const chunks = pageChunks.length > 0 ? pageChunks : [[]];
   const personaDrafts: PersonaDraft[] = [];
   for (const [chunkIndex, pageChunk] of chunks.entries()) {
-    const result = await generateJsonWithJailbreak(options.textModel, {
+    const result = await generateJsonWithRetry(options.textModel, {
       purpose: "build-voice-character-persona",
-      lessCensored: false,
-      jailbreakRole: "planner",
       temperature: 0.35,
       schema: personaDraftSchema,
       messages: [

@@ -60,7 +60,6 @@ describe("createProjectSchema", () => {
           includeCover: true,
           coverTemplate: "auto",
           finalReview: true,
-          lessCensored: false,
           toneProfile
         }
       });
@@ -78,7 +77,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         audienceAgeRange: "2-4",
         toneProfile: "neutral"
       }
@@ -97,7 +95,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         audienceAgeRange: "5-7",
         toneProfile: "neutral"
       }
@@ -115,7 +112,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         generationStrategy: "chaptered-sequential",
         textModel: {
           provider: "gemini",
@@ -137,7 +133,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         generationStrategy: "chaptered-sequential",
         textModel: {
           provider: "gemini",
@@ -164,7 +159,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         generationStrategy: "chaptered-sequential",
         textModel: {
           provider: "gemini",
@@ -193,7 +187,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         generationStrategy: "chaptered-sequential",
         textModel: {
           provider: "deepseek",
@@ -222,7 +215,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         generationStrategy: "chaptered-sequential",
         textModel: {
           provider: "deepinfra",
@@ -251,7 +243,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         generationStrategy: "chaptered-sequential",
         textModel: {
           provider: "alibaba",
@@ -276,7 +267,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         imageModel: "models/imagen-4.0-fast-generate-preview-06-06",
         toneProfile: "neutral"
       }
@@ -289,7 +279,6 @@ describe("createProjectSchema", () => {
         includeCover: true,
         coverTemplate: "auto",
         finalReview: true,
-        lessCensored: false,
         imageModel: { provider: "alibaba", model: "models/qwen-image-2.0" },
         toneProfile: "neutral"
       }

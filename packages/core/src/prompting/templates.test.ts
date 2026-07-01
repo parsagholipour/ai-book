@@ -74,7 +74,6 @@ function generalInput(): CreateProjectInput {
       includeCover: true,
       coverTemplate: "auto",
       finalReview: true,
-      lessCensored: false,
       toneProfile: "neutral" as const
     }
   };

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
-import { generateJsonWithJailbreak } from "./generateWithJailbreak.js";
+import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { MarkdownPage, ReaderChapter } from "./markdown.js";
 
 const MIN_READER_CHAPTER_PAGES = 8;
@@ -24,10 +24,8 @@ export async function createReaderChaptersForExport(options: CreateReaderChapter
   }
 
   try {
-    const result = await generateJsonWithJailbreak(options.textModel, {
+    const result = await generateJsonWithRetry(options.textModel, {
       purpose: "chapterize-export",
-      lessCensored: options.input.mediaSettings.lessCensored === true,
-      jailbreakRole: "planner",
       temperature: Math.min(0.25, options.input.temperature),
       maxTokens: 2200,
       schema: z.unknown(),

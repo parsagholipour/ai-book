@@ -1,5 +1,4 @@
 import type { BookPlan, ChapterPlan } from "../schemas/book.js";
-import { contextDirectnessLine } from "../prompting/contentPolicy.js";
 
 export type ContextPackInput = {
   plan: BookPlan;
@@ -18,7 +17,6 @@ export type ContextPackInput = {
   /** Current structured character/location state lines. */
   entityState?: string[] | undefined;
   tokenBudget?: number;
-  lessCensored?: boolean;
   readingGuidance?: string[] | undefined;
 };
 
@@ -35,7 +33,6 @@ export type ContextPack = {
 
 export function buildContextPack(input: ContextPackInput): ContextPack {
   const requestedTokens = input.tokenBudget ?? 6000;
-  const directness = contextDirectnessLine(input.lessCensored === true);
   const researchNotes = input.researchNotes.map(sanitizeResearchNote).filter(Boolean);
   const semanticMemory = (input.semanticMemory ?? []).map((entry) => entry.trim()).filter(Boolean);
   const entityState = (input.entityState ?? []).map((entry) => entry.trim()).filter(Boolean);
@@ -66,8 +63,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
       `Writing complexity: ${input.plan.writingComplexity}/10`,
       ...(input.readingGuidance?.length ? [`Reading guidance: ${input.readingGuidance.join(" ")}`] : []),
       `Voice: ${input.plan.voiceGuide.join(" ")}`,
-      `Avoid: ${input.plan.antiAiRules.join(" ")}`,
-      ...(directness ? [directness] : [])
+      `Avoid: ${input.plan.antiAiRules.join(" ")}`
     ].join("\n"),
     outline: [
       input.chapter
