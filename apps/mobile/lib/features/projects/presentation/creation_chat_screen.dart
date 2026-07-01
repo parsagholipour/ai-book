@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'chat_history_drawer.dart';
@@ -17,6 +18,7 @@ import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
+import 'message_actions_menu.dart';
 import 'plan_approval.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
@@ -36,8 +38,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
   String? _projectId;
   String? _planBusyAction;
+  String? _activePlanKey;
+  String? _pendingRevisionPlanKey;
+  String? _pendingRevisionOperationId;
   Timer? _planRefreshTimer;
   int _lastScrollTrigger = 0;
+  bool _projectChatSending = false;
 
   // Plan question tracking
   int _planQuestionIndex = 0;
@@ -90,9 +96,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _revisionController.clear();
     _projectId = null;
     _planBusyAction = null;
+    _activePlanKey = null;
+    _pendingRevisionPlanKey = null;
     _planQuestionIndex = 0;
     _planQuestionAnswers = {};
     _lastScrollTrigger = 0;
+    _projectChatSending = false;
   }
 
   @override
@@ -110,7 +119,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     );
 
     final state = ref.watch(creationChatControllerProvider);
-    final isInPlanStage = _projectId != null;
+    final activeProjectId = _activeProjectId(state);
+    final isInOutputStage = activeProjectId != null;
     final activeDraftId = widget.draftId ?? state.draftId;
     final loadingSelectedChat =
         widget.draftId != null && widget.draftId != state.draftId;
@@ -127,14 +137,28 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     );
 
     AsyncValue<MobileProjectDetail>? planValue;
-    if (isInPlanStage) {
-      planValue = ref.watch(projectDetailProvider(_projectId!));
+    AsyncValue<MobileProjectChat>? projectChatValue;
+    AsyncValue<MobileProjectStatus>? generationStatusValue;
+    if (isInOutputStage) {
+      planValue = ref.watch(projectDetailProvider(activeProjectId));
+      projectChatValue = ref.watch(projectChatProvider(activeProjectId));
+      final project = planValue?.asData?.value;
+      if (_shouldWatchGenerationStatus(project)) {
+        generationStatusValue = ref.watch(
+          projectStatusProvider(activeProjectId),
+        );
+      }
       planValue?.whenData(_stopPollingWhenSettled);
+      projectChatValue?.whenData(_stopPollingWhenRevisionFailed);
     }
 
+    final chat = projectChatValue?.asData?.value;
     final scrollTrigger =
         state.messages.length +
-        (isInPlanStage ? 1 : 0) +
+        (chat?.plans.length ?? (isInOutputStage ? 1 : 0)) +
+        (chat?.messages.length ?? 0) +
+        (chat?.operations.where(_showsOperationInTranscript).length ?? 0) +
+        (generationStatusValue == null ? 0 : 1) +
         (state.assistantTyping ? 1 : 0);
     _maybeScrollToBottom(scrollTrigger);
 
@@ -143,16 +167,31 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       drawerEdgeDragWidth: MediaQuery.sizeOf(context).width,
       appBar: AppBar(
         leading: const DrawerButton(),
-        title: Text(isInPlanStage ? 'Book plan' : screenTitle),
+        title: Text(screenTitle),
         actions: [
-          if (isInPlanStage)
+          if (isInOutputStage) ...[
+            IconButton(
+              tooltip: 'New output in this chat',
+              onPressed: () {
+                setState(() => _projectId = null);
+                ref
+                    .read(creationChatControllerProvider.notifier)
+                    .startNewOutput();
+              },
+              icon: const Icon(Icons.add_circle_outline),
+            ),
+            IconButton(
+              tooltip: 'Book progress',
+              onPressed: () =>
+                  context.push('/projects/$activeProjectId/handoff'),
+              icon: const Icon(Icons.menu_book_outlined),
+            ),
             IconButton(
               tooltip: 'Refresh',
-              onPressed: () =>
-                  ref.invalidate(projectDetailProvider(_projectId!)),
+              onPressed: () => _refreshOutput(activeProjectId),
               icon: const Icon(Icons.refresh),
-            )
-          else ...[
+            ),
+          ] else ...[
             IconButton(
               tooltip: 'New book chat',
               onPressed: () => context.go('/books/new?fresh=true'),
@@ -179,16 +218,31 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
             ? const AppLoadingState(message: 'Loading chat')
             : Column(
                 children: [
-                  if (!isInPlanStage) _BriefHeader(state: state),
+                  if (!isInOutputStage)
+                    _BriefHeader(state: state)
+                  else if (state.outputs.length > 1)
+                    _OutputSwitcher(
+                      outputs: state.outputs,
+                      activeProjectId: activeProjectId,
+                      onSelect: (projectId) {
+                        setState(_resetPlanReviewState);
+                        ref
+                            .read(creationChatControllerProvider.notifier)
+                            .selectOutput(projectId);
+                      },
+                    ),
                   Expanded(
                     child: _Transcript(
                       state: state,
                       controller: _scrollController,
                       planValue: planValue,
+                      projectChatValue: projectChatValue,
+                      generationStatusValue: generationStatusValue,
+                      planBusyAction: _planBusyAction,
                     ),
                   ),
-                  if (isInPlanStage)
-                    _buildPlanFooter(planValue!)
+                  if (isInOutputStage)
+                    _buildOutputFooter(planValue!, activeProjectId)
                   else
                     _ConversationFooter(
                       state: state,
@@ -203,6 +257,28 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
               ),
       ),
     );
+  }
+
+  String? _activeProjectId(CreationChatState state) {
+    if (state.composingNewOutput) return null;
+    return state.activeProjectId ?? _projectId ?? state.createdProjectId;
+  }
+
+  void _resetPlanReviewState() {
+    _planBusyAction = null;
+    _activePlanKey = null;
+    _pendingRevisionPlanKey = null;
+    _pendingRevisionOperationId = null;
+    _planQuestionIndex = 0;
+    _planQuestionAnswers = {};
+  }
+
+  void _refreshOutput(String projectId, {bool refreshStatus = true}) {
+    ref.invalidate(projectDetailProvider(projectId));
+    ref.invalidate(projectChatProvider(projectId));
+    if (refreshStatus) {
+      ref.invalidate(projectStatusProvider(projectId));
+    }
   }
 
   String _screenTitle(
@@ -230,17 +306,44 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     return null;
   }
 
-  Widget _buildPlanFooter(AsyncValue<MobileProjectDetail> planValue) {
+  Widget _buildOutputFooter(
+    AsyncValue<MobileProjectDetail> planValue,
+    String activeProjectId,
+  ) {
     return planValue.when(
-      loading: () => const _PlanBuildingFooter(),
+      loading: () => _PlanBuildingFooter(
+        message: _planBusyAction == 'revise'
+            ? 'Revising your book plan…'
+            : 'Building your book plan…',
+        semanticsLabel: _planBusyAction == 'revise'
+            ? 'Revising plan'
+            : 'Building plan',
+      ),
       error: (_, _) => const SizedBox.shrink(),
       data: (project) {
         final plan = project.plan;
         if (plan == null) {
-          return const _PlanBuildingFooter();
+          return _PlanBuildingFooter(message: _planProgressLabel(project));
+        }
+        _syncPlanQuestionState(plan);
+        if (project.status == 'planning' || _planBusyAction == 'revise') {
+          return _PlanBuildingFooter(
+            message: _planBusyAction == 'revise'
+                ? 'Revising your book plan…'
+                : _planProgressLabel(project),
+            semanticsLabel: 'Revising plan',
+          );
         }
         if (plan.isApproved) {
-          return const SizedBox.shrink();
+          return _ProjectChatFooter(
+            controller: _composerController,
+            enabled: !_projectChatSending,
+            projectStatus: project.status,
+            onSend: (message) => _sendProjectMessage(
+              projectId: activeProjectId,
+              message: message,
+            ),
+          );
         }
         final hasMoreQuestions =
             plan.questions.isNotEmpty &&
@@ -249,7 +352,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
           plan: plan,
           questionIndex: _planQuestionIndex,
           hasMoreQuestions: hasMoreQuestions,
-          isBusy: _planBusyAction != null,
+          isBusy: _planBusyAction != null || _projectChatSending,
           busyAction: _planBusyAction,
           revisionController: _revisionController,
           onSelectOption: (answer) =>
@@ -278,6 +381,13 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   Future<void> _send(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+    final activeProjectId = _activeProjectId(
+      ref.read(creationChatControllerProvider),
+    );
+    if (activeProjectId != null) {
+      await _sendProjectMessage(projectId: activeProjectId, message: trimmed);
+      return;
+    }
     _composerController.clear();
     try {
       await ref
@@ -286,16 +396,70 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     } catch (_) {}
   }
 
-  Future<void> _build() async {
+  Future<MobileProjectChatSendResult?> _sendProjectMessage({
+    required String projectId,
+    required String message,
+  }) async {
+    final trimmed = message.trim();
+    if (trimmed.isEmpty || _projectChatSending) return null;
+    final shouldRestoreComposer = _composerController.text.trim() == trimmed;
+    if (shouldRestoreComposer) {
+      _composerController.clear();
+    }
+    setState(() => _projectChatSending = true);
     try {
       final result = await ref
-          .read(creationChatControllerProvider.notifier)
-          .buildPlan();
+          .read(projectsRepositoryProvider)
+          .sendProjectChatMessage(projectId: projectId, message: trimmed);
+      _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
-      ref.invalidate(projectDetailProvider(result.project.id));
+      ref.invalidate(billingProvider);
+      if (!mounted) return result;
+      setState(() => _projectChatSending = false);
+      if (result.operation != null) {
+        _startPlanPoll();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.operation!.currentAction)),
+        );
+      }
+      return result;
+    } catch (error) {
+      if (!mounted) return null;
+      setState(() => _projectChatSending = false);
+      if (shouldRestoreComposer) {
+        _composerController.text = trimmed;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      return null;
+    }
+  }
+
+  Future<void> _build() async {
+    try {
+      final controller = ref.read(creationChatControllerProvider.notifier);
+      final preflight = await controller.preflightBuildPlan();
+      if (!mounted) return;
+      if (preflight.requiresPageCount) {
+        final selection = await _showPageCountSheet(preflight);
+        if (selection == null) {
+          return;
+        }
+        controller.setCustomTargetPages(
+          selection.targetPages,
+          source: selection.source,
+        );
+      }
+      final result = await controller.buildPlan();
+      ref.invalidate(projectsProvider);
+      _refreshOutput(result.project.id);
       ref.invalidate(billingProvider);
       if (!mounted) return;
-      setState(() => _projectId = result.project.id);
+      setState(() {
+        _projectId = result.project.id;
+        _resetPlanReviewState();
+      });
       _startPlanPoll();
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -320,26 +484,37 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     }
   }
 
+  Future<_PageCountSelection?> _showPageCountSheet(
+    MobileCreationBuildPreflight preflight,
+  ) {
+    return showModalBottomSheet<_PageCountSelection>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _PageCountPromptSheet(preflight: preflight),
+    );
+  }
+
   Future<void> _revise(MobileProjectDetail project, String message) async {
     final plan = project.plan;
     if (plan == null) return;
-    setState(() => _planBusyAction = 'revise');
     try {
-      final operation = await ref
-          .read(projectsRepositoryProvider)
-          .revisePlan(planId: plan.id, message: message);
+      final result = await _sendProjectMessage(
+        projectId: project.id,
+        message: message,
+      );
       if (!mounted) return;
+      final operation = result?.operation;
+      if (operation == null) {
+        setState(() => _planBusyAction = null);
+        return;
+      }
       setState(() {
-        _planBusyAction = null;
+        _planBusyAction = 'revise';
+        _pendingRevisionPlanKey = _activePlanKey ?? _planKey(plan);
+        _pendingRevisionOperationId = operation.id;
         _revisionController.clear();
-        _planQuestionIndex = 0;
-        _planQuestionAnswers = {};
       });
       _startPlanPoll();
-      ref.invalidate(projectDetailProvider(project.id));
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(operation.currentAction)));
     } catch (error) {
       if (!mounted) return;
       setState(() => _planBusyAction = null);
@@ -364,10 +539,13 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       },
     );
     if (operation == null || !mounted) return;
-    context.push(
-      '/projects/${project.id}/handoff',
-      extra: operation.currentAction,
-    );
+    _startPlanPoll();
+    _refreshOutput(project.id);
+    ref.invalidate(projectsProvider);
+    ref.invalidate(billingProvider);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(operation.currentAction)));
   }
 
   void _onPlanQuestionSelect(
@@ -400,7 +578,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     final answers = Map<int, String>.from(_planQuestionAnswers);
     setState(() {
       _planQuestionIndex = plan.questions.length; // show revision bar
-      _planQuestionAnswers = {};
     });
     if (answers.isEmpty) return;
     final lines = ['Please revise the plan using these planning answers:'];
@@ -409,6 +586,20 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       if (answer != null) lines.add('- ${plan.questions[i].prompt}: $answer');
     }
     await _revise(project, lines.join('\n'));
+  }
+
+  void _syncPlanQuestionState(MobilePlan plan) {
+    final planKey = _planKey(plan);
+    if (_activePlanKey == planKey) {
+      if (_planQuestionIndex > plan.questions.length) {
+        _planQuestionIndex = plan.questions.length;
+      }
+      return;
+    }
+
+    _activePlanKey = planKey;
+    _planQuestionIndex = 0;
+    _planQuestionAnswers = {};
   }
 
   Future<void> _openSourceNotesSheet(CreationChatState state) async {
@@ -448,29 +639,329 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
   void _startPlanPoll() {
     _planRefreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
-      final id = _projectId;
+      final id = _activeProjectId(ref.read(creationChatControllerProvider));
       if (id == null) return;
       if (ref.read(projectDetailProvider(id)).isLoading) return;
-      ref.invalidate(projectDetailProvider(id));
+      _refreshOutput(id, refreshStatus: false);
     });
   }
 
   void _stopPollingWhenSettled(MobileProjectDetail project) {
-    if (_planRefreshTimer == null) return;
-    if (project.status == 'planning' || project.plan == null) return;
+    if (project.status == 'planning' ||
+        project.status == 'generating' ||
+        project.status == 'editing' ||
+        project.plan == null) {
+      return;
+    }
+    final settledPlanKey = _planKey(project.plan!);
+    final stillWaitingForRevisedPlan =
+        _pendingRevisionPlanKey != null &&
+        _pendingRevisionPlanKey == settledPlanKey &&
+        project.status != 'failed';
+    if (stillWaitingForRevisedPlan) return;
     _planRefreshTimer?.cancel();
     _planRefreshTimer = null;
+    if (_planBusyAction == 'revise') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _planBusyAction == 'revise') {
+          setState(() {
+            _planBusyAction = null;
+            _pendingRevisionPlanKey = null;
+            _pendingRevisionOperationId = null;
+          });
+        }
+      });
+    }
   }
+
+  void _stopPollingWhenRevisionFailed(MobileProjectChat chat) {
+    final pendingOperationId = _pendingRevisionOperationId;
+    if (pendingOperationId == null) return;
+    final failedPendingRevision = chat.operations.any(
+      (operation) =>
+          operation.id == pendingOperationId &&
+          operation.isPlanRevision &&
+          operation.isFailed,
+    );
+    if (!failedPendingRevision) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _pendingRevisionOperationId != pendingOperationId) {
+        return;
+      }
+      setState(() {
+        _planBusyAction = null;
+        _pendingRevisionPlanKey = null;
+        _pendingRevisionOperationId = null;
+      });
+      _planRefreshTimer?.cancel();
+      _planRefreshTimer = null;
+    });
+  }
+}
+
+String _planKey(MobilePlan plan) => '${plan.id}:${plan.version}';
+
+bool _showsOperationInTranscript(MobileBookEditOperation operation) =>
+    operation.isRunning || (operation.isPlanRevision && operation.isFailed);
+
+String _planSnapshotLabel(MobilePlan plan) {
+  if (plan.isSuperseded) return 'Previous plan';
+  if (plan.version > 1) return 'Revised plan ready';
+  return 'Book plan ready';
+}
+
+String _planProgressLabel(MobileProjectDetail project) {
+  final currentAction = project.currentAction.trim();
+  final hasExistingPlan = project.plan != null;
+  if (hasExistingPlan && project.status == 'planning') {
+    return currentAction.isNotEmpty &&
+            currentAction != 'Creating your book plan.' &&
+            currentAction != 'Ready for review.'
+        ? currentAction
+        : 'Revising your book plan…';
+  }
+  if (hasExistingPlan &&
+      (currentAction.isEmpty || currentAction == 'Creating your book plan.')) {
+    return 'Revising your book plan…';
+  }
+  if (currentAction.isNotEmpty) {
+    return currentAction;
+  }
+  return hasExistingPlan
+      ? 'Revising your book plan…'
+      : 'Building your book plan…';
+}
+
+bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
+  if (project == null) return false;
+  if (project.plan?.isApproved ?? false) return true;
+  return switch (project.status) {
+    'generating' || 'editing' || 'complete' || 'failed' => true,
+    _ => false,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // Plan bubble (shown in the transcript once build is triggered)
 // ---------------------------------------------------------------------------
 
-class _PlanBubble extends StatefulWidget {
-  const _PlanBubble({required this.planValue});
+class _PlanWithGenerationProgress extends StatelessWidget {
+  const _PlanWithGenerationProgress({
+    required this.child,
+    required this.showGeneration,
+    this.statusValue,
+    this.projectId,
+  });
 
-  final AsyncValue<MobileProjectDetail> planValue;
+  final Widget child;
+  final bool showGeneration;
+  final AsyncValue<MobileProjectStatus>? statusValue;
+  final String? projectId;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = statusValue;
+    final id = projectId;
+    if (!showGeneration || status == null || id == null) {
+      return child;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        child,
+        _GenerationProgressBubble(projectId: id, statusValue: status),
+      ],
+    );
+  }
+}
+
+class _GenerationProgressBubble extends StatelessWidget {
+  const _GenerationProgressBubble({
+    required this.projectId,
+    required this.statusValue,
+  });
+
+  final String projectId;
+  final AsyncValue<MobileProjectStatus> statusValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return statusValue.when(
+      loading: () => _GenerationProgressShell(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.primary,
+                semanticsLabel: 'Checking writing progress',
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Flexible(child: Text('Checking writing progress…')),
+          ],
+        ),
+      ),
+      error: (_, _) => _GenerationProgressShell(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Progress is unavailable right now.'),
+            const SizedBox(height: 8),
+            _ViewProgressButton(projectId: projectId),
+          ],
+        ),
+      ),
+      data: (status) {
+        final colors = Theme.of(context).colorScheme;
+        final progress = status.progressPercent.clamp(0, 100).toInt();
+        final failureMessage = status.failureMessage?.trim();
+        final isFailed = status.status == 'failed' || status.hasFailure;
+        final title = status.isComplete
+            ? 'Ready to export'
+            : isFailed
+            ? 'Needs attention'
+            : status.statusLabel;
+        final detail =
+            isFailed && failureMessage != null && failureMessage.isNotEmpty
+            ? failureMessage
+            : status.currentAction;
+        return _GenerationProgressShell(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    isFailed
+                        ? Icons.error_outline
+                        : status.isComplete
+                        ? Icons.check_circle_outline
+                        : Icons.auto_awesome_outlined,
+                    color: isFailed ? colors.error : colors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                detail,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Semantics(
+                      label: 'Book generation progress',
+                      value: '$progress percent complete',
+                      child: ExcludeSemantics(
+                        child: LinearProgressIndicator(value: progress / 100),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '$progress%',
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  AppMetricChip(
+                    icon: Icons.menu_book_outlined,
+                    label:
+                        '${status.pageProgress.completed}/${status.pageProgress.target} pages',
+                  ),
+                  AppMetricChip(
+                    icon: Icons.image_outlined,
+                    label: status.imageCount == 1
+                        ? '1 visual'
+                        : '${status.imageCount} visuals',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _ViewProgressButton(projectId: projectId),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _GenerationProgressShell extends StatelessWidget {
+  const _GenerationProgressShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewProgressButton extends StatelessWidget {
+  const _ViewProgressButton({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: () => context.push('/projects/$projectId/handoff'),
+      icon: const Icon(Icons.menu_book_outlined),
+      label: const Text('View progress'),
+    );
+  }
+}
+
+class _PlanBubble extends StatefulWidget {
+  const _PlanBubble.live({super.key, required this.planValue, this.busyAction})
+    : plan = null;
+
+  const _PlanBubble.snapshot({super.key, required this.plan})
+    : planValue = null,
+      busyAction = null;
+
+  final AsyncValue<MobileProjectDetail>? planValue;
+  final MobilePlan? plan;
+  final String? busyAction;
 
   @override
   State<_PlanBubble> createState() => _PlanBubbleState();
@@ -481,11 +972,38 @@ class _PlanBubbleState extends State<_PlanBubble> {
 
   @override
   Widget build(BuildContext context) {
-    return widget.planValue.when(
-      loading: () => _buildSpinnerBubble(context, 'Building your book plan…'),
+    final snapshot = widget.plan;
+    if (snapshot != null) {
+      if (snapshot.isApproved) {
+        return _buildCompactApprovedPlanCard(context, snapshot);
+      }
+      return _buildPlanCard(
+        context,
+        snapshot,
+        label: _planSnapshotLabel(snapshot),
+      );
+    }
+
+    return widget.planValue!.when(
+      loading: () => _buildSpinnerBubble(
+        context,
+        widget.busyAction == 'revise'
+            ? 'Revising your book plan…'
+            : 'Building your book plan…',
+        semanticsLabel: widget.busyAction == 'revise'
+            ? 'Revising plan'
+            : 'Building plan',
+      ),
       error: (e, _) => _buildSpinnerBubble(context, 'Waiting for plan…'),
       data: (project) {
         final plan = project.plan;
+        if (project.status == 'planning') {
+          return _buildSpinnerBubble(
+            context,
+            _planProgressLabel(project),
+            semanticsLabel: plan == null ? 'Building plan' : 'Revising plan',
+          );
+        }
         if (plan == null) {
           return _buildSpinnerBubble(
             context,
@@ -494,12 +1012,19 @@ class _PlanBubbleState extends State<_PlanBubble> {
                 : 'Building your book plan…',
           );
         }
+        if (plan.isApproved) {
+          return _buildCompactApprovedPlanCard(context, plan);
+        }
         return _buildPlanCard(context, plan);
       },
     );
   }
 
-  Widget _buildSpinnerBubble(BuildContext context, String label) {
+  Widget _buildSpinnerBubble(
+    BuildContext context,
+    String label, {
+    String semanticsLabel = 'Building plan',
+  }) {
     final colors = Theme.of(context).colorScheme;
     return Align(
       alignment: Alignment.centerLeft,
@@ -523,7 +1048,7 @@ class _PlanBubbleState extends State<_PlanBubble> {
               child: CircularProgressIndicator(
                 strokeWidth: 2,
                 color: colors.primary,
-                semanticsLabel: 'Building plan',
+                semanticsLabel: semanticsLabel,
               ),
             ),
             const SizedBox(width: 10),
@@ -541,7 +1066,86 @@ class _PlanBubbleState extends State<_PlanBubble> {
     );
   }
 
-  Widget _buildPlanCard(BuildContext context, MobilePlan plan) {
+  Widget _buildCompactApprovedPlanCard(BuildContext context, MobilePlan plan) {
+    final colors = Theme.of(context).colorScheme;
+    final chapterLabel = plan.chapters.length == 1
+        ? '1 chapter'
+        : '${plan.chapters.length} chapters';
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Card(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          color: colors.surfaceContainerHighest,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => context.push('/projects/${plan.projectId}'),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.task_alt_outlined, color: colors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Book plan approved',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          plan.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            AppStatusBadge(
+                              label: chapterLabel,
+                              icon: Icons.format_list_numbered,
+                              tone: AppNoticeTone.success,
+                            ),
+                            Text(
+                              'Tap to open plan page',
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(color: colors.primary),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.open_in_new_outlined,
+                    size: 18,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlanCard(
+    BuildContext context,
+    MobilePlan plan, {
+    String label = 'Book plan ready',
+  }) {
     final colors = Theme.of(context).colorScheme;
     final radius = BorderRadius.circular(16);
     return Container(
@@ -572,7 +1176,7 @@ class _PlanBubbleState extends State<_PlanBubble> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Book plan ready',
+                          label,
                           style: Theme.of(context).textTheme.labelSmall
                               ?.copyWith(color: colors.onSurfaceVariant),
                         ),
@@ -605,58 +1209,66 @@ class _PlanBubbleState extends State<_PlanBubble> {
             Divider(height: 1, color: colors.outlineVariant),
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if ((plan.subtitle ?? '').isNotEmpty) ...[
-                    Text(
-                      plan.subtitle!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  _PlanSection(
-                    icon: Icons.lightbulb_outline,
-                    title: 'Premise',
-                    text: plan.premise,
-                  ),
-                  const SizedBox(height: 10),
-                  _PlanSection(
-                    icon: Icons.groups_outlined,
-                    title: 'Audience',
-                    text: plan.audience,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.format_list_numbered,
-                        size: 15,
-                        color: colors.primary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Chapters',
-                        style: Theme.of(context).textTheme.labelMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  for (final chapter in plan.chapters) ...[
-                    _ChapterRow(chapter: chapter),
-                    if (chapter != plan.chapters.last)
-                      const SizedBox(height: 6),
-                  ],
-                ],
-              ),
+              child: _PlanDetails(plan: plan),
             ),
           ],
         ],
       ),
+    );
+  }
+}
+
+class _PlanDetails extends StatelessWidget {
+  const _PlanDetails({required this.plan});
+
+  final MobilePlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if ((plan.subtitle ?? '').isNotEmpty) ...[
+          Text(
+            plan.subtitle!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        _PlanSection(
+          icon: Icons.lightbulb_outline,
+          title: 'Premise',
+          text: plan.premise,
+        ),
+        const SizedBox(height: 10),
+        _PlanSection(
+          icon: Icons.groups_outlined,
+          title: 'Audience',
+          text: plan.audience,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Icon(Icons.format_list_numbered, size: 15, color: colors.primary),
+            const SizedBox(width: 6),
+            Text(
+              'Chapters',
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        for (final chapter in plan.chapters) ...[
+          _ChapterRow(chapter: chapter),
+          if (chapter != plan.chapters.last) const SizedBox(height: 6),
+        ],
+      ],
     );
   }
 }
@@ -749,8 +1361,87 @@ class _ChapterRow extends StatelessWidget {
 // Plan-stage footer
 // ---------------------------------------------------------------------------
 
+class _ProjectChatFooter extends StatelessWidget {
+  const _ProjectChatFooter({
+    required this.controller,
+    required this.enabled,
+    required this.projectStatus,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final bool enabled;
+  final String projectStatus;
+  final ValueChanged<String> onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final hintText = projectStatus == 'complete'
+        ? 'Ask for an edit to this book…'
+        : projectStatus == 'generating' || projectStatus == 'editing'
+        ? 'Ask about this book…'
+        : 'Ask for a change…';
+    return Material(
+      color: colors.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  enabled: enabled,
+                  minLines: 1,
+                  maxLines: 5,
+                  textInputAction: TextInputAction.newline,
+                  decoration: InputDecoration(
+                    hintText: hintText,
+                    filled: true,
+                    fillColor: colors.surfaceContainerHigh,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: controller,
+                builder: (context, value, _) {
+                  final canSend = enabled && value.text.trim().isNotEmpty;
+                  return IconButton.filled(
+                    tooltip: 'Send',
+                    onPressed: canSend ? () => onSend(controller.text) : null,
+                    icon: const Icon(Icons.send_rounded),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _PlanBuildingFooter extends StatelessWidget {
-  const _PlanBuildingFooter();
+  const _PlanBuildingFooter({
+    this.message = 'Building your book plan…',
+    this.semanticsLabel = 'Building plan',
+  });
+
+  final String message;
+  final String semanticsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -770,12 +1461,12 @@ class _PlanBuildingFooter extends StatelessWidget {
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: colors.primary,
-                  semanticsLabel: 'Building plan',
+                  semanticsLabel: semanticsLabel,
                 ),
               ),
               const SizedBox(width: 12),
               Text(
-                'Building your book plan…',
+                message,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -883,7 +1574,7 @@ class _PlanFooter extends StatelessWidget {
               const SizedBox(height: 8),
               _ApproveButton(
                 approving: busyAction == 'approve',
-                onApprove: busyAction == null ? onApprove : null,
+                onApprove: (!isBusy && busyAction == null) ? onApprove : null,
               ),
             ],
           ),
@@ -1050,7 +1741,7 @@ class _RevisionComposer extends StatelessWidget {
             maxLines: 4,
             textInputAction: TextInputAction.newline,
             decoration: InputDecoration(
-              hintText: 'Request a change to the plan…',
+              hintText: 'Ask about or request a change to the plan…',
               filled: true,
               fillColor: colors.surfaceContainerHigh,
               contentPadding: const EdgeInsets.symmetric(
@@ -1132,7 +1823,11 @@ class _BriefHeaderState extends State<_BriefHeader> {
     final brief = state.brief;
     final colors = Theme.of(context).colorScheme;
     final presets = state.presets;
-    final lane = state.detectedLane;
+    final typeTitle = bookTypeLabel(
+      state.userChoices.contains(CreationChoice.bookType)
+          ? presets.bookTypeChoice
+          : 'auto',
+    );
 
     return Material(
       color: colors.surfaceContainerHigh,
@@ -1157,7 +1852,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          laneTitle(lane),
+                          typeTitle,
                           style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w800),
                         ),
@@ -1220,13 +1915,13 @@ class _BriefDetails extends StatelessWidget {
           children: [
             AppMetricChip(
               label: 'Type',
-              value: bookTypeLabel(presets.bookType),
+              value: bookTypeLabel(
+                state.userChoices.contains(CreationChoice.bookType)
+                    ? presets.bookTypeChoice
+                    : 'auto',
+              ),
             ),
-            AppMetricChip(
-              label: 'Size',
-              value:
-                  '${pageRangeFor(presets.bookType, presets.lengthPreset)} pages',
-            ),
+            AppMetricChip(label: 'Size', value: pageCountLabelFor(presets)),
             AppMetricChip(
               label: 'Finish',
               value: qualityLabel(presets.qualityPreset),
@@ -1307,38 +2002,207 @@ class _ReadinessPill extends StatelessWidget {
   }
 }
 
+class _OutputSwitcher extends StatelessWidget {
+  const _OutputSwitcher({
+    required this.outputs,
+    required this.activeProjectId,
+    required this.onSelect,
+  });
+
+  final List<MobileCreationOutput> outputs;
+  final String activeProjectId;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surfaceContainerHigh,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: 52,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              itemCount: outputs.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final output = outputs[index];
+                final selected = output.projectId == activeProjectId;
+                return FilterChip(
+                  selected: selected,
+                  avatar: Icon(
+                    selected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 18,
+                  ),
+                  label: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: Text(
+                      output.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  onSelected: (_) => onSelect(output.projectId),
+                );
+              },
+            ),
+          ),
+          Divider(height: 1, color: colors.outlineVariant),
+        ],
+      ),
+    );
+  }
+}
+
 class _Transcript extends StatelessWidget {
   const _Transcript({
     required this.state,
     required this.controller,
     this.planValue,
+    this.projectChatValue,
+    this.generationStatusValue,
+    this.planBusyAction,
   });
 
   final CreationChatState state;
   final ScrollController controller;
   final AsyncValue<MobileProjectDetail>? planValue;
+  final AsyncValue<MobileProjectChat>? projectChatValue;
+  final AsyncValue<MobileProjectStatus>? generationStatusValue;
+  final String? planBusyAction;
 
   @override
   Widget build(BuildContext context) {
-    final hasPlanBubble = planValue != null;
-    final hasTyping = state.assistantTyping && !hasPlanBubble;
+    final projectChat = projectChatValue?.asData?.value;
+    final currentProject = planValue?.asData?.value;
+    final currentPlan = currentProject?.plan;
+    final currentPlanKey = currentPlan == null ? null : _planKey(currentPlan);
+    final showGenerationForCurrentPlan =
+        generationStatusValue != null && (currentPlan?.isApproved ?? false);
+    final projectItems = _projectTranscriptItems(projectChat);
+    final hasLivePlanBubble =
+        planValue != null &&
+        _showsLivePlanBubble(planValue!, projectChat, planBusyAction);
+    final hasTyping = state.assistantTyping && !hasLivePlanBubble;
     final itemCount =
-        state.messages.length + (hasTyping ? 1 : 0) + (hasPlanBubble ? 1 : 0);
+        state.messages.length +
+        (hasTyping ? 1 : 0) +
+        (hasLivePlanBubble ? 1 : 0) +
+        projectItems.length;
 
     return ListView.builder(
       controller: controller,
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        if (hasPlanBubble && index == state.messages.length) {
-          return _PlanBubble(planValue: planValue!);
+        var cursor = state.messages.length;
+        if (index >= cursor && index < cursor + projectItems.length) {
+          final item = projectItems[index - cursor];
+          final plan = item.plan;
+          if (plan != null) {
+            return _PlanWithGenerationProgress(
+              showGeneration:
+                  showGenerationForCurrentPlan &&
+                  currentPlanKey == _planKey(plan),
+              statusValue: generationStatusValue,
+              projectId: plan.projectId,
+              child: _PlanBubble.snapshot(
+                key: ValueKey('project-plan-${plan.id}'),
+                plan: plan,
+              ),
+            );
+          }
+          final operation = item.operation;
+          if (operation != null) {
+            return _OutputOperationBubble(operation: operation);
+          }
+          return _ProjectChatMessageBubble(message: item.message!);
         }
-        if (hasTyping && index == state.messages.length) {
+        cursor += projectItems.length;
+        if (hasLivePlanBubble && index == cursor) {
+          return _PlanWithGenerationProgress(
+            showGeneration: showGenerationForCurrentPlan,
+            statusValue: generationStatusValue,
+            projectId: currentProject?.id,
+            child: _PlanBubble.live(
+              key: const ValueKey('project-plan-live'),
+              planValue: planValue!,
+              busyAction: planBusyAction,
+            ),
+          );
+        }
+        if (hasLivePlanBubble) cursor++;
+        if (hasTyping && index == cursor) {
           return const _TypingBubble();
         }
         return _MessageBubble(message: state.messages[index]);
       },
     );
+  }
+}
+
+List<_ProjectTranscriptItem> _projectTranscriptItems(MobileProjectChat? chat) {
+  if (chat == null) return const <_ProjectTranscriptItem>[];
+  final items = <_ProjectTranscriptItem>[
+    for (final plan in chat.plans) _ProjectTranscriptItem.plan(plan),
+    for (final message in chat.messages)
+      _ProjectTranscriptItem.message(message),
+    for (final operation
+        in chat.operations.where(_showsOperationInTranscript).take(3))
+      _ProjectTranscriptItem.operation(operation),
+  ];
+  items.sort((a, b) {
+    final byTime = a.createdAt.compareTo(b.createdAt);
+    if (byTime != 0) return byTime;
+    return a.sortPriority.compareTo(b.sortPriority);
+  });
+  return items;
+}
+
+bool _showsLivePlanBubble(
+  AsyncValue<MobileProjectDetail> planValue,
+  MobileProjectChat? chat,
+  String? planBusyAction,
+) {
+  final hasSnapshots = (chat?.plans.isNotEmpty ?? false);
+  if (!hasSnapshots) return true;
+  if (planBusyAction == 'revise') return true;
+  return planValue.maybeWhen(
+    data: (project) => project.status == 'planning' || project.plan == null,
+    loading: () => true,
+    orElse: () => false,
+  );
+}
+
+class _ProjectTranscriptItem {
+  const _ProjectTranscriptItem.message(this.message)
+    : plan = null,
+      operation = null;
+
+  const _ProjectTranscriptItem.plan(this.plan)
+    : message = null,
+      operation = null;
+
+  const _ProjectTranscriptItem.operation(this.operation)
+    : message = null,
+      plan = null;
+
+  final MobileProjectChatMessage? message;
+  final MobilePlan? plan;
+  final MobileBookEditOperation? operation;
+
+  DateTime get createdAt =>
+      plan?.createdAt ?? message?.createdAt ?? operation!.createdAt;
+
+  int get sortPriority {
+    if (plan != null) return 0;
+    if (message != null) return 1;
+    return 2;
   }
 }
 
@@ -1355,26 +2219,143 @@ class _MessageBubble extends StatelessWidget {
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: GestureDetector(
+        onLongPressStart: (details) => showMessageActionsMenu(
+          context: context,
+          position: details.globalPosition,
+          message: message.content,
+        ),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+          ),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(16),
+              topRight: const Radius.circular(16),
+              bottomLeft: Radius.circular(isUser ? 16 : 4),
+              bottomRight: Radius.circular(isUser ? 4 : 16),
+            ),
+          ),
+          child: Text(
+            message.content,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: foreground),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ProjectChatMessageBubble extends StatelessWidget {
+  const _ProjectChatMessageBubble({required this.message});
+
+  final MobileProjectChatMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isUser = message.isUser;
+    final background = isUser ? colors.primary : colors.surfaceContainerHighest;
+    final foreground = isUser ? colors.onPrimary : colors.onSurface;
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: GestureDetector(
+        onLongPressStart: (details) => showMessageActionsMenu(
+          context: context,
+          position: details.globalPosition,
+          message: message.content,
+        ),
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+          ),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.only(
+              topLeft: const Radius.circular(16),
+              topRight: const Radius.circular(16),
+              bottomLeft: Radius.circular(isUser ? 16 : 4),
+              bottomRight: Radius.circular(isUser ? 4 : 16),
+            ),
+          ),
+          child: Text(
+            message.content,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: foreground),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OutputOperationBubble extends StatelessWidget {
+  const _OutputOperationBubble({required this.operation});
+
+  final MobileBookEditOperation operation;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isFailed = operation.isFailed;
+    final label = isFailed && operation.isPlanRevision
+        ? 'Plan revision failed. Your previous plan is still available.'
+        : operation.currentAction;
+    return Align(
+      alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         constraints: BoxConstraints(
           maxWidth: MediaQuery.sizeOf(context).width * 0.82,
         ),
         decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(isUser ? 16 : 4),
-            bottomRight: Radius.circular(isUser ? 4 : 16),
+          color: isFailed ? colors.errorContainer : colors.secondaryContainer,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(4),
+            bottomRight: Radius.circular(16),
           ),
         ),
-        child: Text(
-          message.content,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: foreground),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isFailed)
+              Icon(
+                Icons.error_outline,
+                size: 18,
+                color: colors.onErrorContainer,
+                semanticLabel: operation.currentAction,
+              )
+            else
+              SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: colors.primary,
+                  semanticsLabel: operation.currentAction,
+                ),
+              ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                label,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: isFailed ? colors.onErrorContainer : null,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1680,9 +2661,142 @@ class _BuildButton extends StatelessWidget {
   }
 }
 
+class _PageCountSelection {
+  const _PageCountSelection({required this.targetPages, required this.source});
+
+  final int targetPages;
+  final String source;
+}
+
 // ---------------------------------------------------------------------------
 // Sheets
 // ---------------------------------------------------------------------------
+
+class _PageCountPromptSheet extends StatefulWidget {
+  const _PageCountPromptSheet({required this.preflight});
+
+  final MobileCreationBuildPreflight preflight;
+
+  @override
+  State<_PageCountPromptSheet> createState() => _PageCountPromptSheetState();
+}
+
+class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
+  final _customController = TextEditingController();
+
+  @override
+  void dispose() {
+    _customController.dispose();
+    super.dispose();
+  }
+
+  int? get _customPages {
+    final value = int.tryParse(_customController.text.trim());
+    if (value == null || value < 1 || value > 600) {
+      return null;
+    }
+    return value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final colors = Theme.of(context).colorScheme;
+    final recommendations = widget.preflight.recommendations;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, 4, 18, 18 + bottomInset),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'How many pages?',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Pick a page count before I build the plan. These suggestions come from your chat.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final recommendation in recommendations)
+                  ActionChip(
+                    label: Text(recommendation.label),
+                    avatar: const Icon(Icons.auto_awesome_outlined, size: 18),
+                    onPressed: () => Navigator.of(context).pop(
+                      _PageCountSelection(
+                        targetPages: recommendation.targetPages,
+                        source: 'recommended',
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            if (recommendations.isNotEmpty) const SizedBox(height: 16),
+            TextField(
+              controller: _customController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: 'Custom pages',
+                helperText: 'Enter a number from 1 to 600.',
+              ),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) {
+                final pages = _customPages;
+                if (pages != null) {
+                  Navigator.of(context).pop(
+                    _PageCountSelection(targetPages: pages, source: 'settings'),
+                  );
+                }
+              },
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _customController,
+                    builder: (context, value, child) {
+                      final pages = _customPages;
+                      return FilledButton(
+                        onPressed: pages == null
+                            ? null
+                            : () => Navigator.of(context).pop(
+                                _PageCountSelection(
+                                  targetPages: pages,
+                                  source: 'settings',
+                                ),
+                              ),
+                        child: const Text('Use custom'),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class _SourceNotesSheet extends StatelessWidget {
   const _SourceNotesSheet({required this.controller});
@@ -1780,20 +2894,22 @@ class _AdvancedSheet extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            _AdvancedGroup(
+            _BookTypeDropdown(
               title: 'Book type',
               yourChoice: state.userChoices.contains(CreationChoice.bookType),
               options: bookTypePresetOptions,
-              selected: presets.bookType,
+              selected: state.userChoices.contains(CreationChoice.bookType)
+                  ? presets.bookTypeChoice
+                  : 'auto',
               onChanged: controller.setBookType,
             ),
             const SizedBox(height: 14),
-            _AdvancedGroup(
-              title: 'Length',
+            _PageCountControl(
+              title: 'Pages',
               yourChoice: state.userChoices.contains(CreationChoice.length),
-              options: lengthPresetOptions(presets.bookType),
-              selected: presets.lengthPreset,
-              onChanged: controller.setLengthPreset,
+              presets: presets,
+              onAuto: controller.setPageCountAuto,
+              onCustom: controller.setCustomTargetPages,
             ),
             const SizedBox(height: 14),
             _AdvancedGroup(
@@ -1845,6 +2961,212 @@ class _AdvancedSheet extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _BookTypeDropdown extends StatelessWidget {
+  const _BookTypeDropdown({
+    required this.title,
+    required this.yourChoice,
+    required this.options,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final String title;
+  final bool yourChoice;
+  final List<CreationPresetOption> options;
+  final String selected;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedOption = options.firstWhere(
+      (option) => option.value == selected,
+      orElse: () => options.first,
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            if (yourChoice)
+              const AppStatusBadge(
+                label: 'Your choice',
+                icon: Icons.tune_outlined,
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          key: ValueKey('book-type-$selected'),
+          initialValue: selectedOption.value,
+          isExpanded: true,
+          decoration: InputDecoration(
+            prefixIcon: Icon(selectedOption.icon),
+            helperText: selectedOption.subtitle,
+          ),
+          items: [
+            for (final option in options)
+              DropdownMenuItem(
+                value: option.value,
+                child: Row(
+                  children: [
+                    Icon(option.icon, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(option.title)),
+                  ],
+                ),
+              ),
+          ],
+          onChanged: (value) {
+            if (value != null) onChanged(value);
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _PageCountControl extends StatefulWidget {
+  const _PageCountControl({
+    required this.title,
+    required this.yourChoice,
+    required this.presets,
+    required this.onAuto,
+    required this.onCustom,
+  });
+
+  final String title;
+  final bool yourChoice;
+  final MobileCreationPresets presets;
+  final VoidCallback onAuto;
+  final void Function(int targetPages, {String source}) onCustom;
+
+  @override
+  State<_PageCountControl> createState() => _PageCountControlState();
+}
+
+class _PageCountControlState extends State<_PageCountControl> {
+  late final TextEditingController _controller;
+  late bool _customSelected;
+
+  @override
+  void initState() {
+    super.initState();
+    _customSelected = widget.presets.pageCountMode == 'custom';
+    _controller = TextEditingController(
+      text: widget.presets.targetPages?.toString() ?? '',
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _PageCountControl oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final nextCustom = widget.presets.pageCountMode == 'custom';
+    if (nextCustom != _customSelected) {
+      _customSelected = nextCustom;
+    }
+    final nextText = widget.presets.targetPages?.toString() ?? '';
+    if (nextText != _controller.text && nextText.isNotEmpty) {
+      _controller.text = nextText;
+    }
+    if (!nextCustom && _controller.text.isNotEmpty) {
+      _controller.clear();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onCustomChanged(String value) {
+    final pages = int.tryParse(value.trim());
+    if (pages == null || pages < 1 || pages > 600) {
+      return;
+    }
+    widget.onCustom(pages);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            if (widget.yourChoice)
+              const AppStatusBadge(
+                label: 'Your choice',
+                icon: Icons.tune_outlined,
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        AppChoiceTile(
+          selected: !_customSelected,
+          icon: Icons.auto_awesome_outlined,
+          title: 'Auto',
+          subtitle: 'Ask me before building if the chat does not say pages.',
+          onTap: () {
+            setState(() => _customSelected = false);
+            widget.onAuto();
+          },
+        ),
+        const SizedBox(height: 8),
+        AppChoiceTile(
+          selected: _customSelected,
+          icon: Icons.format_list_numbered,
+          title: 'Custom',
+          subtitle: 'Use an exact page count.',
+          onTap: () => setState(() => _customSelected = true),
+        ),
+        if (_customSelected) ...[
+          const SizedBox(height: 8),
+          TextField(
+            controller: _controller,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: InputDecoration(
+              labelText: 'Pages',
+              helperText: 'Enter a number from 1 to 600.',
+              errorText:
+                  _controller.text.isNotEmpty &&
+                      (int.tryParse(_controller.text) == null ||
+                          int.parse(_controller.text) < 1 ||
+                          int.parse(_controller.text) > 600)
+                  ? 'Use 1 to 600 pages.'
+                  : null,
+              filled: true,
+              fillColor: colors.surface,
+            ),
+            onChanged: (value) {
+              setState(() {});
+              _onCustomChanged(value);
+            },
+          ),
+        ],
+      ],
     );
   }
 }

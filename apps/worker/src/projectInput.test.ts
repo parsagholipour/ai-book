@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inputForPlanVersion } from "./projectInput.js";
+import { inputForPlanVersion, inputWithMessageMediaPreferences } from "./projectInput.js";
 
 describe("worker project input resolution", () => {
   it("prefers the plan input snapshot so generation keeps the saved text model", () => {
@@ -44,6 +44,42 @@ describe("worker project input resolution", () => {
 
     expect(input.prompt).toContain("project row prompt");
     expect(input.mediaSettings.generationStrategy).toBe("chaptered-sequential");
+  });
+
+  it("turns negative image and cover revision messages into generation flags", () => {
+    const input = inputForPlanVersion(
+      {
+        ...projectSource(),
+        mediaSettings: {
+          ...projectSource().mediaSettings,
+          mobile: { imagesEnabled: true, bookType: "short_story" }
+        }
+      },
+      null
+    );
+
+    const updated = inputWithMessageMediaPreferences(input, "I don't want images or covers");
+
+    expect(updated.mediaSettings.fullIllustrations).toBe(false);
+    expect(updated.mediaSettings.illustrationCadence).toBe("manual");
+    expect(updated.mediaSettings.includeCover).toBe(false);
+    expect(updated.mediaSettings.mobile).toMatchObject({ imagesEnabled: false, bookType: "short_story" });
+  });
+
+  it("can disable covers without disabling page illustrations", () => {
+    const input = inputForPlanVersion(projectSource(), null);
+
+    const updated = inputWithMessageMediaPreferences(input, "without covers");
+
+    expect(updated.mediaSettings.fullIllustrations).toBe(true);
+    expect(updated.mediaSettings.illustrationCadence).toBe("template-driven");
+    expect(updated.mediaSettings.includeCover).toBe(false);
+  });
+
+  it("leaves media settings alone for unrelated plan revisions", () => {
+    const input = inputForPlanVersion(projectSource(), null);
+
+    expect(inputWithMessageMediaPreferences(input, "Make the audience parents.")).toBe(input);
   });
 });
 

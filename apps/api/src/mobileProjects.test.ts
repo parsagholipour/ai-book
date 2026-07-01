@@ -23,12 +23,15 @@ const mockPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
   user: { upsert: vi.fn() },
   mobileSession: { findUnique: vi.fn() },
-  mobileCreationDraft: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
+  mobileCreationDraft: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  mobileCreationOutput: { create: vi.fn(), findFirst: vi.fn() },
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   page: { findMany: vi.fn() },
-  planVersion: { findFirst: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+  planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
+  projectChatMessage: { create: vi.fn(), findMany: vi.fn() },
+  bookEditOperation: { create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   generationJob: { count: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
   imageAsset: { findFirst: vi.fn(), findMany: vi.fn() },
@@ -99,6 +102,9 @@ const originalEnv = { ...process.env };
 let tempBookStorageDir: string | null = null;
 let tempImageStorageDir: string | null = null;
 let tempVoiceStorageDir: string | null = null;
+let mockProjectChatMessages: any[] = [];
+let mockPlanVersions: any[] = [];
+let mockBookEditOperations: any[] = [];
 
 describe("mobile project routes", () => {
   beforeEach(() => {
@@ -187,6 +193,104 @@ describe("mobile project routes", () => {
     vi.mocked(isBullJobActive).mockResolvedValue(false);
     vi.mocked(requeueGenerationJob).mockResolvedValue(jobRecord({ id: "job-resumed", status: "QUEUED" }));
     vi.mocked(buildProjectStatus).mockResolvedValue(statusRecord());
+    mockPrisma.generationJob.count.mockResolvedValue(0);
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-copy",
+        ...data,
+        currentPlanId: null,
+        currentPlan: null,
+        pages: [],
+        createdAt: new Date("2026-06-15T12:30:00.000Z"),
+        updatedAt: new Date("2026-06-15T12:30:00.000Z")
+      })
+    );
+    mockProjectChatMessages = [];
+    mockPlanVersions = [];
+    mockBookEditOperations = [];
+    mockPrisma.projectChatMessage.create.mockImplementation(async ({ data }: { data: Record<string, any> }) => {
+      const record = {
+        id: `chat-${mockProjectChatMessages.length + 1}`,
+        projectId: data.projectId,
+        role: data.role,
+        content: data.content,
+        operationId: data.operationId ?? null,
+        metadata: data.metadata ?? {},
+        createdAt: new Date(`2026-06-15T12:${String(mockProjectChatMessages.length).padStart(2, "0")}:00.000Z`)
+      };
+      mockProjectChatMessages.push(record);
+      return record;
+    });
+    mockPrisma.projectChatMessage.findMany.mockImplementation(async ({ where, orderBy, take }: { where: { projectId: string }; orderBy?: { createdAt: "asc" | "desc" }; take?: number }) => {
+      const rows = mockProjectChatMessages.filter((message) => message.projectId === where.projectId);
+      const sorted = [...rows].sort((a, b) =>
+        orderBy?.createdAt === "desc"
+          ? b.createdAt.getTime() - a.createdAt.getTime()
+          : a.createdAt.getTime() - b.createdAt.getTime()
+      );
+      return typeof take === "number" ? sorted.slice(0, take) : sorted;
+    });
+    mockPrisma.planVersion.findMany.mockImplementation(async ({ where, orderBy, take }: { where: { projectId: string }; orderBy?: { version: "asc" | "desc" }; take?: number }) => {
+      const rows = mockPlanVersions.filter((planVersion) => planVersion.projectId === where.projectId);
+      const sorted = [...rows].sort((a, b) =>
+        orderBy?.version === "desc" ? b.version - a.version : a.version - b.version
+      );
+      return typeof take === "number" ? sorted.slice(0, take) : sorted;
+    });
+    mockPrisma.bookEditOperation.create.mockImplementation(async ({ data }: { data: Record<string, any> }) => {
+      const record = {
+        id: `operation-${mockBookEditOperations.length + 1}`,
+        projectId: data.projectId,
+        userMessageId: data.userMessageId ?? null,
+        assistantMessageId: null,
+        generationJobId: data.generationJobId ?? null,
+        ledgerEntryId: data.ledgerEntryId ?? null,
+        kind: data.kind,
+        status: data.status ?? "QUEUED",
+        request: data.request,
+        classifier: data.classifier,
+        affectedPageIndexes: data.affectedPageIndexes ?? [],
+        creditsCharged: data.creditsCharged ?? 0,
+        error: null,
+        generationJob: null,
+        createdAt: new Date(`2026-06-15T13:${String(mockBookEditOperations.length).padStart(2, "0")}:00.000Z`),
+        updatedAt: new Date(`2026-06-15T13:${String(mockBookEditOperations.length).padStart(2, "0")}:00.000Z`),
+        appliedAt: null
+      };
+      mockBookEditOperations.push(record);
+      return record;
+    });
+    mockPrisma.bookEditOperation.update.mockImplementation(async ({ where, data, include }: { where: { id: string }; data: Record<string, any>; include?: unknown }) => {
+      const record = mockBookEditOperations.find((operation) => operation.id === where.id);
+      if (!record) {
+        throw new Error(`Operation not found: ${where.id}`);
+      }
+      Object.assign(record, data, { updatedAt: new Date("2026-06-15T13:59:00.000Z") });
+      if (data.generationJobId) {
+        record.generationJob = { id: data.generationJobId, status: "QUEUED" };
+      }
+      return include ? record : { ...record, generationJob: undefined };
+    });
+    mockPrisma.bookEditOperation.findMany.mockImplementation(async ({ where, orderBy, take }: { where: { projectId: string }; orderBy?: { createdAt: "asc" | "desc" }; take?: number }) => {
+      const rows = mockBookEditOperations.filter((operation) => operation.projectId === where.projectId);
+      const sorted = [...rows].sort((a, b) =>
+        orderBy?.createdAt === "asc"
+          ? a.createdAt.getTime() - b.createdAt.getTime()
+          : b.createdAt.getTime() - a.createdAt.getTime()
+      );
+      return typeof take === "number" ? sorted.slice(0, take) : sorted;
+    });
+    mockPrisma.mobileCreationOutput.create.mockImplementation(async ({ data, include }: { data: Record<string, any>; include?: unknown }) => ({
+      id: `output-${data.projectId}`,
+      draftId: data.draftId,
+      projectId: data.projectId,
+      title: data.title,
+      sequence: data.sequence,
+      createdAt: new Date("2026-06-15T12:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+      ...(include ? { project: { title: data.title, updatedAt: new Date("2026-06-15T12:00:00.000Z") } } : {})
+    }));
+    mockPrisma.mobileCreationOutput.findFirst.mockResolvedValue(null);
     tempBookStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-books-"));
     tempImageStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-images-"));
     tempVoiceStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-voice-"));
@@ -345,7 +449,7 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
-  it("returns a complete easy-first child story recipe for a minimal raw idea", async () => {
+  it("keeps a minimal raw idea as Auto for planning", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const app = await buildMobileApp({ advisorEnrichment: false });
 
@@ -362,23 +466,212 @@ describe("mobile project routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.advisor).toMatchObject({
-      detectedLane: "children_story",
+      detectedLane: "auto",
       recommendation: {
-        bookType: "short_story",
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
         lengthPreset: "short",
         qualityPreset: "balanced",
         imagesEnabled: true
       },
       recipe: expect.objectContaining({
-        lane: "children_story",
+        lane: "auto",
         audience: "5 year olds",
-        tone: expect.stringContaining("read-aloud")
+        tone: expect.stringContaining("fitted")
       }),
-      followUpSuggestions: expect.arrayContaining([expect.stringContaining("ending feel")]),
-      bookShapePreview: expect.arrayContaining([expect.stringContaining("read-aloud ending")])
+      followUpSuggestions: expect.arrayContaining([expect.stringContaining("who it is for")]),
+      bookShapePreview: expect.arrayContaining([expect.stringContaining("Planner chooses")])
     });
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
     expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
+    await app.close();
+  });
+
+  it("builds Auto creation sessions as neutral projects for planner-time shape selection", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "Make a 4 page book of rabbit and turtle race",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "Make a 4 page book of rabbit and turtle race" }
+      ],
+      selectedPresets: {
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-general" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-session",
+        title: data.title,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
+    const queuedCall = vi.mocked(enqueueGenerationJob).mock.calls.at(0)?.[0] as { payload: Record<string, any> };
+    const inputSnapshot = queuedCall.payload.inputSnapshot as Record<string, any>;
+
+    expect(response.statusCode).toBe(201);
+    expect(createCall.data).toMatchObject({
+      category: "CUSTOM",
+      subcategory: "Auto",
+      targetPages: 4,
+      mediaSettings: expect.objectContaining({
+        coverTemplate: "auto",
+        mobile: expect.objectContaining({
+          bookType: "custom",
+          bookTypeChoice: "auto",
+          lengthPreset: "custom",
+          pageCountMode: "custom",
+          targetPages: 4,
+          pageCountSource: "chat",
+          messages: expect.arrayContaining([expect.objectContaining({ content: "Make a 4 page book of rabbit and turtle race" })])
+        })
+      })
+    });
+    expect(createCall.data.prompt).toContain("Book type choice: Auto - decide during planning");
+    expect(createCall.data.prompt).toContain("User: Make a 4 page book of rabbit and turtle race");
+    expect(inputSnapshot).toMatchObject({
+      category: "CUSTOM",
+      targetPages: 4,
+      mediaSettings: expect.objectContaining({
+        mobile: expect.objectContaining({ bookTypeChoice: "auto", targetPages: 4, pageCountSource: "chat" })
+      })
+    });
+    await app.close();
+  });
+
+  it("returns page-count preflight recommendations without creating a project when pages are unresolved", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "Make a story about a rabbit and turtle race",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "Make a story about a rabbit and turtle race" }
+      ],
+      selectedPresets: {
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/preflight",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body).toMatchObject({
+      requiresPageCount: true,
+      detectedPageCount: null,
+      recommendations: expect.arrayContaining([expect.objectContaining({ targetPages: expect.any(Number) })])
+    });
+    expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|billing|tokens/);
+    await app.close();
+  });
+
+  it("lets custom page settings override an explicit chat page count", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "Make a 4 page book of rabbit and turtle race",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "Make a 4 page book of rabbit and turtle race" }
+      ],
+      selectedPresets: {
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-general" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-session",
+        title: data.title,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: {
+        presets: {
+          bookType: "lead_magnet",
+          bookTypeChoice: "auto",
+          lengthPreset: "short",
+          qualityPreset: "balanced",
+          imagesEnabled: true,
+          pageCountMode: "custom",
+          targetPages: 10,
+          pageCountSource: "settings"
+        }
+      }
+    });
+    const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
+
+    expect(response.statusCode).toBe(201);
+    expect(createCall.data).toMatchObject({
+      targetPages: 10,
+      mediaSettings: expect.objectContaining({
+        mobile: expect.objectContaining({ lengthPreset: "custom", targetPages: 10, pageCountSource: "settings" })
+      })
+    });
     await app.close();
   });
 
@@ -464,17 +757,68 @@ describe("mobile project routes", () => {
     });
     expect(mockPrisma.mobileCreationDraft.update).toHaveBeenLastCalledWith({
       where: { id: "draft-1" },
-      data: expect.objectContaining({ status: "COMPLETED", createdProjectId: "project-from-draft" })
+      data: expect.objectContaining({ status: "ACTIVE", createdProjectId: "project-from-draft" })
     });
     expect(JSON.stringify(response.json().project)).not.toMatch(/SECRET SOURCE NOTES|provider|model|mediaSettings|temperature/);
     await app.close();
   });
 
-  it("does not finalize completed mobile creation drafts again", async () => {
+  it("creates another output from a completed mobile creation chat", async () => {
     mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "Workbook for new coaches",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "Workbook for new coaches" }
+      ],
+      selectedPresets: {
+        bookType: "workbook",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    };
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
-      creationDraftRecord({ id: "draft-complete", status: "COMPLETED" })
+      creationDraftRecord({
+        id: "draft-complete",
+        status: "COMPLETED",
+        createdProjectId: "project-old",
+        payload,
+        outputs: [
+          {
+            id: "output-old",
+            draftId: "draft-complete",
+            projectId: "project-old",
+            title: "Old output",
+            sequence: 1,
+            createdAt: new Date("2026-06-15T10:00:00.000Z"),
+            updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+            project: { title: "Old output", updatedAt: new Date("2026-06-15T10:00:00.000Z") }
+          }
+        ]
+      })
     );
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-new",
+        title: data.title,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "draft-complete", payload, ...data })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan", projectId: "project-new" }));
     const app = await buildMobileApp();
 
     const response = await app.inject({
@@ -484,10 +828,25 @@ describe("mobile project routes", () => {
       payload: {}
     });
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("DRAFT_NOT_ACTIVE");
-    expect(mockPrisma.project.create).not.toHaveBeenCalled();
-    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      project: { id: "project-new" },
+      output: { projectId: "project-new", sequence: 2 },
+      operation: { projectId: "project-new", status: "planning_queued" }
+    });
+    expect(mockPrisma.mobileCreationOutput.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          draftId: "draft-complete",
+          projectId: "project-new",
+          sequence: 2
+        })
+      })
+    );
+    expect(mockPrisma.mobileCreationDraft.update).toHaveBeenLastCalledWith({
+      where: { id: "draft-complete" },
+      data: expect.objectContaining({ status: "ACTIVE", createdProjectId: "project-new" })
+    });
     await app.close();
   });
 
@@ -537,7 +896,7 @@ describe("mobile project routes", () => {
 
     expect(response.statusCode).toBe(201);
     expect(body.session.draftId).toBe("session-draft");
-    expect(body.turn.detectedLane).toBe("children_story");
+    expect(body.turn.detectedLane).toBe("auto");
     expect(body.turn.readiness.canBuild).toBe(true);
     expect(body.session.messages.map((message: { role: string }) => message.role)).toEqual([
       "assistant",
@@ -579,7 +938,7 @@ describe("mobile project routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.session.draftId).toBe("session-draft");
-    expect(body.turn.detectedLane).toBe("children_story");
+    expect(body.turn.detectedLane).toBe("auto");
     expect(body.turn.readiness.canBuild).toBe(true);
     await app.close();
   });
@@ -598,6 +957,65 @@ describe("mobile project routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().session).toBeNull();
     expect(response.json().turn.assistantMessage).toContain("Tell me about the book");
+    await app.close();
+  });
+
+  it("lists creation sessions with output summaries and legacy output fallback", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findMany.mockResolvedValueOnce([
+      creationDraftRecord({
+        id: "draft-with-output",
+        createdProjectId: "project-new",
+        payload: {
+          payloadVersion: 3,
+          rawIdea: "Workbook for new coaches",
+          messages: [{ role: "user", content: "Workbook for new coaches" }]
+        },
+        outputs: [
+          {
+            id: "output-new",
+            draftId: "draft-with-output",
+            projectId: "project-new",
+            title: "Coach Workbook",
+            sequence: 1,
+            createdAt: new Date("2026-06-15T12:00:00.000Z"),
+            updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+            project: { title: "Coach Workbook", updatedAt: new Date("2026-06-15T12:30:00.000Z") }
+          }
+        ]
+      }),
+      creationDraftRecord({
+        id: "draft-legacy",
+        status: "COMPLETED",
+        createdProjectId: "project-legacy",
+        payload: {
+          payloadVersion: 3,
+          rawIdea: "Legacy story",
+          messages: [{ role: "user", content: "Legacy story" }]
+        }
+      })
+    ]);
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions",
+      headers: bearer("token-a")
+    });
+    const sessions = response.json().sessions;
+
+    expect(response.statusCode).toBe(200);
+    expect(sessions[0]).toMatchObject({
+      draftId: "draft-with-output",
+      activeProjectId: "project-new",
+      outputs: [{ id: "output-new", projectId: "project-new", title: "Coach Workbook", sequence: 1 }]
+    });
+    expect(sessions[1]).toMatchObject({
+      draftId: "draft-legacy",
+      activeProjectId: "project-legacy",
+      outputs: [{ projectId: "project-legacy", title: "Legacy story", sequence: 1 }]
+    });
+    expect(sessions[1].outputs[0].id).toContain("legacy:");
     await app.close();
   });
 
@@ -626,7 +1044,7 @@ describe("mobile project routes", () => {
     };
 
     expect(response.statusCode).toBe(200);
-    expect(body.turn.detectedLane).toBe("children_story");
+    expect(body.turn.detectedLane).toBe("auto");
     expect(body.turn.readiness.canBuild).toBe(true);
     expect(body.session.messages.map((message: { role: string }) => message.role)).toEqual([
       "assistant",
@@ -639,10 +1057,23 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
-  it("rejects messages to a completed creation session", async () => {
+  it("appends messages to a completed creation session so another output can be shaped", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
-      creationDraftRecord({ id: "session-draft", status: "COMPLETED" })
+      creationDraftRecord({
+        id: "session-draft",
+        status: "COMPLETED",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { role: "assistant", content: "Hi! Tell me about your book." },
+            { role: "user", content: "Bedtime story" }
+          ]
+        }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload, status: data.status })
     );
     const app = await buildMobileApp({ creationEnrichment: false });
 
@@ -652,9 +1083,19 @@ describe("mobile project routes", () => {
       headers: bearer("token-a"),
       payload: { message: "Add a dragon" }
     });
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: Record<string, any>; status: string };
+    };
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("SESSION_NOT_ACTIVE");
+    expect(response.statusCode).toBe(200);
+    expect(response.json().session.status).toBe("ACTIVE");
+    expect(updateCall.data.status).toBe("ACTIVE");
+    expect(updateCall.data.payload.messages.map((message: { role: string }) => message.role)).toEqual([
+      "assistant",
+      "user",
+      "user",
+      "assistant"
+    ]);
     await app.close();
   });
 
@@ -720,7 +1161,15 @@ describe("mobile project routes", () => {
       url: "/api/mobile/creation-sessions/session-draft/build",
       headers: bearer("token-a"),
       payload: {
-        presets: { bookType: "workbook", lengthPreset: "standard", qualityPreset: "balanced", imagesEnabled: true },
+        presets: {
+          bookType: "workbook",
+          lengthPreset: "standard",
+          qualityPreset: "balanced",
+          imagesEnabled: true,
+          pageCountMode: "custom",
+          targetPages: 28,
+          pageCountSource: "settings"
+        },
         language: "es"
       }
     });
@@ -749,7 +1198,10 @@ describe("mobile project routes", () => {
         bookType: "short_story",
         lengthPreset: "short",
         qualityPreset: "balanced",
-        imagesEnabled: true
+        imagesEnabled: true,
+        pageCountMode: "custom",
+        targetPages: 8,
+        pageCountSource: "settings"
       }
     };
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
@@ -808,7 +1260,10 @@ describe("mobile project routes", () => {
         bookType: "short_story",
         lengthPreset: "short",
         qualityPreset: "balanced",
-        imagesEnabled: true
+        imagesEnabled: true,
+        pageCountMode: "custom",
+        targetPages: 8,
+        pageCountSource: "settings"
       }
     };
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
@@ -904,12 +1359,16 @@ describe("mobile project routes", () => {
         finalReview: true,
         draftCandidates: 2,
         generationStrategy: "auto",
-        mobile: {
+        mobile: expect.objectContaining({
           bookType: "lead_magnet",
+          bookTypeChoice: "lead_magnet",
           lengthPreset: "standard",
           qualityPreset: "premium",
-          imagesEnabled: true
-        }
+          imagesEnabled: true,
+          pageCountMode: "auto",
+          pageCountSource: "legacy",
+          targetPages: 18
+        })
       })
     });
     expect(Object.keys(body.project).sort()).toMatchInlineSnapshot(`
@@ -1458,7 +1917,11 @@ describe("mobile project routes", () => {
       {
         projectId: "project-1",
         type: "REVISE_PLAN",
-        payload: { planId: "plan-1", message: "Make the examples warmer and more practical." }
+        payload: {
+          planId: "plan-1",
+          message: "Make the examples warmer and more practical.",
+          billingLedgerEntryId: "ledger-PLAN_REVISION"
+        }
       },
       expect.objectContaining({
         projectId: "project-1",
@@ -1466,6 +1929,14 @@ describe("mobile project routes", () => {
         payload: expect.objectContaining({ planId: "plan-1", billingLedgerEntryId: "ledger-FULL_BOOK_GENERATION" })
       })
     ]);
+    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-a",
+        projectId: "project-1",
+        operation: "PLAN_REVISION",
+        amountCredits: expect.any(Number)
+      })
+    );
     expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: "user-a",
@@ -1574,6 +2045,814 @@ describe("mobile project routes", () => {
       }
     });
     expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("answers plan-stage project chat questions without queuing a revision", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "PLAN_READY",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord({ status: "DRAFT", approvedAt: null }),
+        pages: []
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "What is this plan about?" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.messages).toEqual([
+      expect.objectContaining({ role: "user", content: "What is this plan about?" }),
+      expect.objectContaining({ role: "assistant", content: expect.stringContaining("current plan") })
+    ]);
+    expect(body.reply.content).not.toMatch(/book text edits are available after/i);
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("queues soft plan-stage project chat change requests as plan revisions", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "PLAN_READY",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord({ status: "DRAFT", approvedAt: null }),
+        pages: []
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-soft-plan-revise", type: "REVISE_PLAN" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "I want the audience to be parents." }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({ kind: "plan_revision" });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        type: "REVISE_PLAN",
+        payload: expect.objectContaining({
+          planId: "plan-1",
+          message: "I want the audience to be parents."
+        })
+      })
+    );
+    await app.close();
+  });
+
+  it("queues negative media plan preferences as plan revisions", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "PLAN_READY",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord({ status: "DRAFT", approvedAt: null }),
+        pages: []
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-media-plan-revise", type: "REVISE_PLAN" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "I don't want images or covers" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({ kind: "plan_revision" });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        type: "REVISE_PLAN",
+        payload: expect.objectContaining({
+          planId: "plan-1",
+          message: "I don't want images or covers"
+        })
+      })
+    );
+    await app.close();
+  });
+
+  it("treats saved current plans as plan-chat even when project status is not PLAN_READY", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "PLANNING",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord({ status: "DRAFT", approvedAt: null }),
+        pages: []
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "What is this plan about?" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).not.toMatch(/book text edits are available after/i);
+    expect(body.reply.content).toContain("current plan");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("keeps non-plan in-progress project chat edits on the generated-book fallback path", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "GENERATING",
+        currentPlanId: null,
+        currentPlan: null,
+        pages: []
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the book warmer." }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toContain("after the current book work is finished");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("queues a completed-book whole-book style edit across all generated pages", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const pages = generatedPages();
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-edit", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the whole book warmer and simpler." }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "page_rewrite",
+      affectedPageIndexes: [1, 2]
+    });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        type: "APPLY_BOOK_EDIT",
+        payload: expect.objectContaining({
+          affectedPageIndexes: [1, 2],
+          intentKind: "page_rewrite"
+        })
+      })
+    );
+    expect(body.reply.content).toContain("the whole book");
+    await app.close();
+  });
+
+  it("queues a completed-book structural character change as a book replan", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    mockPrisma.mobileCreationOutput.findFirst.mockResolvedValueOnce({
+      id: "output-source",
+      draftId: "draft-1",
+      projectId: "project-1",
+      title: "Owned Book",
+      sequence: 1,
+      createdAt: new Date("2026-06-15T12:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+      draft: creationDraftRecord({
+        id: "draft-1",
+        createdProjectId: "project-1",
+        outputs: [
+          {
+            id: "output-source",
+            draftId: "draft-1",
+            projectId: "project-1",
+            title: "Owned Book",
+            sequence: 1,
+            createdAt: new Date("2026-06-15T12:00:00.000Z"),
+            updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+            project: { title: "Owned Book", updatedAt: new Date("2026-06-15T12:00:00.000Z") }
+          }
+        ]
+      })
+    });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-replan", projectId: "project-copy", type: "REPLAN_BOOK" })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Change the character of rabbit with a fly." }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "book_replan",
+      affectedPageIndexes: []
+    });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-copy",
+        type: "REPLAN_BOOK",
+        payload: expect.objectContaining({
+          sourceProjectId: "project-1",
+          sourcePlanId: "plan-1",
+          affectedPageIndexes: [],
+          intentKind: "book_replan"
+        })
+      })
+    );
+    expect(mockPrisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: "user-a",
+          title: "Owned Book (Revised)",
+          status: "EDITING",
+          mediaSettings: expect.objectContaining({
+            mobile: expect.objectContaining({
+              revisionOfProjectId: "project-1",
+              revisionOperationId: "operation-1",
+              revisionSource: "project_chat_book_replan"
+            })
+          })
+        })
+      })
+    );
+    expect(mockPrisma.mobileCreationOutput.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          draftId: "draft-1",
+          projectId: "project-copy",
+          sequence: 2
+        })
+      })
+    );
+    expect(mockPrisma.mobileCreationDraft.update).toHaveBeenCalledWith({
+      where: { id: "draft-1" },
+      data: { createdProjectId: "project-copy", status: "ACTIVE" }
+    });
+    expect(mockPrisma.project.update).not.toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "EDITING" }
+    });
+    expect(body.reply.content).toContain("new copy");
+    expect(body.reply.content).toContain("stays unchanged");
+    await app.close();
+  });
+
+  it("revises an approved plan from project chat when no generation job is active", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "GENERATING",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: []
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-chat-revise", type: "REVISE_PLAN" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Change rabbit into a fly before writing starts." }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({ kind: "plan_revision" });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        type: "REVISE_PLAN",
+        payload: expect.objectContaining({
+          planId: "plan-1",
+          message: "Change rabbit into a fly before writing starts."
+        })
+      })
+    );
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "PLANNING" }
+    });
+    expect(body.reply.content).toContain("reopen it for review");
+    await app.close();
+  });
+
+  it("serializes failed plan revision operations with error details", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));
+    mockBookEditOperations.push(failedPlanRevisionOperationRecord());
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().operations).toEqual([
+      expect.objectContaining({
+        id: "operation-failed-revision",
+        kind: "plan_revision",
+        status: "failed",
+        currentAction: "Plan revision failed.",
+        error: "AI plan revision failed. No revised plan was created.",
+        job: expect.objectContaining({
+          id: "job-failed-revision",
+          status: "failed"
+        })
+      })
+    ]);
+    await app.close();
+  });
+
+  it("hides recovered failed plan revisions from project chat history", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));
+    mockBookEditOperations.push(failedPlanRevisionOperationRecord());
+    const basePlan = approvedPlanRecord().planningPackage as Record<string, unknown>;
+    mockPlanVersions.push(
+      approvedPlanRecord({
+        id: "plan-recovered",
+        version: 2,
+        status: "DRAFT",
+        approvedAt: null,
+        planningPackage: { ...basePlan, title: "Recovered revised plan" },
+        createdAt: new Date("2026-06-15T13:05:00.000Z"),
+        updatedAt: new Date("2026-06-15T13:05:00.000Z")
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().operations).toEqual([]);
+    expect(response.json().plans).toEqual([
+      expect.objectContaining({
+        id: "plan-recovered",
+        title: "Recovered revised plan"
+      })
+    ]);
+    await app.close();
+  });
+
+  it("serializes plan snapshots in project chat history", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));
+    const basePlan = approvedPlanRecord().planningPackage as Record<string, unknown>;
+    mockPlanVersions.push(
+      approvedPlanRecord({
+        id: "plan-original",
+        version: 1,
+        status: "SUPERSEDED",
+        approvedAt: null,
+        planningPackage: { ...basePlan, title: "Original plan" },
+        createdAt: new Date("2026-06-15T10:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T10:30:00.000Z")
+      }),
+      approvedPlanRecord({
+        id: "plan-revised",
+        version: 2,
+        status: "DRAFT",
+        approvedAt: null,
+        planningPackage: { ...basePlan, title: "Revised plan" },
+        createdAt: new Date("2026-06-15T11:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T11:00:00.000Z")
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.plans).toEqual([
+      expect.objectContaining({
+        id: "plan-original",
+        version: 1,
+        status: "superseded",
+        title: "Original plan"
+      }),
+      expect.objectContaining({
+        id: "plan-revised",
+        version: 2,
+        status: "draft",
+        title: "Revised plan"
+      })
+    ]);
+    await app.close();
+  });
+
+  it("blocks project chat edits while generation is active", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "GENERATING",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: []
+      })
+    );
+    mockPrisma.generationJob.count.mockResolvedValueOnce(1);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the whole book warmer." }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toContain("already being worked on");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("uses a whole-book follow-up to resolve the previous pending edit scope", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockProjectChatMessages.push(
+      {
+        id: "chat-old-user",
+        projectId: "project-1",
+        role: "USER",
+        content: "Replace rabbit with fly",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      },
+      {
+        id: "chat-old-assistant",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "Should I change a specific page, matching phrase, or the whole book?",
+        operationId: null,
+        metadata: {
+          pendingEdit: { request: "Replace rabbit with fly", clarification: "scope" }
+        },
+        createdAt: new Date("2026-06-15T11:01:00.000Z")
+      }
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-follow-up", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "whole book" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "local_patch",
+      affectedPageIndexes: [1, 2]
+    });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+          type: "APPLY_BOOK_EDIT",
+          payload: expect.objectContaining({
+          request: "Replace rabbit with fly throughout the whole book.",
+          exactReplacement: { from: "rabbit", to: "fly" },
+          affectedPageIndexes: [1, 2]
+        })
+      })
+    );
+    expect(body.reply.content).not.toContain("I can help with questions");
+    await app.close();
+  });
+
+  it("recovers a whole-book follow-up from legacy scope questions without pending metadata", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockProjectChatMessages.push(
+      {
+        id: "chat-old-user",
+        projectId: "project-1",
+        role: "USER",
+        content: "Replace rabbit with fly",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      },
+      {
+        id: "chat-old-assistant",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "Which page or exact phrase should I change?",
+        operationId: null,
+        metadata: {
+          intent: {
+            kind: "clarify",
+            assistantMessage: "Which page or exact phrase should I change?",
+            affectedPageIndexes: []
+          },
+          charged: false
+        },
+        createdAt: new Date("2026-06-15T11:01:00.000Z")
+      },
+      {
+        id: "chat-stranded-user",
+        projectId: "project-1",
+        role: "USER",
+        content: "whole book",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:02:00.000Z")
+      },
+      {
+        id: "chat-stranded-assistant",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "I can help with questions about the book or make edits if you tell me what to change.",
+        operationId: null,
+        metadata: {
+          intent: { kind: "answer", reasoning: "No edit intent was detected.", affectedPageIndexes: [] },
+          charged: false
+        },
+        createdAt: new Date("2026-06-15T11:03:00.000Z")
+      }
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-legacy-follow-up", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "I said whole book" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "local_patch",
+      affectedPageIndexes: [1, 2]
+    });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "APPLY_BOOK_EDIT",
+        payload: expect.objectContaining({
+          request: "Replace rabbit with fly throughout the whole book.",
+          exactReplacement: { from: "rabbit", to: "fly" },
+          affectedPageIndexes: [1, 2]
+        })
+      })
+    );
+    expect(body.reply.content).not.toContain("I can help with questions");
+    await app.close();
+  });
+
+  it("uses a stranded whole-book scope when the user confirms the old edit", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockProjectChatMessages.push(
+      {
+        id: "chat-old-user",
+        projectId: "project-1",
+        role: "USER",
+        content: "Replace rabbit with fly",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      },
+      {
+        id: "chat-old-assistant",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "Which page or exact phrase should I change?",
+        operationId: null,
+        metadata: {
+          intent: {
+            kind: "clarify",
+            assistantMessage: "Which page or exact phrase should I change?",
+            affectedPageIndexes: []
+          },
+          charged: false
+        },
+        createdAt: new Date("2026-06-15T11:01:00.000Z")
+      },
+      {
+        id: "chat-stranded-user",
+        projectId: "project-1",
+        role: "USER",
+        content: "whole book",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:02:00.000Z")
+      },
+      {
+        id: "chat-stranded-assistant",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "I can help with questions about the book or make edits if you tell me what to change.",
+        operationId: null,
+        metadata: {
+          intent: { kind: "answer", reasoning: "No edit intent was detected.", affectedPageIndexes: [] },
+          charged: false
+        },
+        createdAt: new Date("2026-06-15T11:03:00.000Z")
+      }
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-legacy-ok", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "ok" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "local_patch",
+      affectedPageIndexes: [1, 2]
+    });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "APPLY_BOOK_EDIT",
+        payload: expect.objectContaining({
+          request: "Replace rabbit with fly throughout the whole book.",
+          exactReplacement: { from: "rabbit", to: "fly" },
+          affectedPageIndexes: [1, 2]
+        })
+      })
+    );
+    expect(body.messages.at(-2).metadata.resolvedPendingEdit).toMatchObject({
+      request: "Replace rabbit with fly",
+      scope: "all_pages",
+      scopeMessage: "ok"
+    });
+    await app.close();
+  });
+
+  it("recovers stranded edit context for frustrated follow-ups instead of generic help", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockProjectChatMessages.push(
+      {
+        id: "chat-old-user",
+        projectId: "project-1",
+        role: "USER",
+        content: "Replace rabbit with fly",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      },
+      {
+        id: "chat-old-assistant",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "Which page or exact phrase should I change?",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:01:00.000Z")
+      },
+      {
+        id: "chat-stranded-user",
+        projectId: "project-1",
+        role: "USER",
+        content: "whole book",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:02:00.000Z")
+      },
+      {
+        id: "chat-stranded-assistant",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "I can help with questions about the book or make edits if you tell me what to change.",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:03:00.000Z")
+      }
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "wow" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toContain("I still have your earlier edit");
+    expect(body.reply.content).toContain("whole book");
+    expect(body.reply.content).not.toContain("I can help with questions");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -1850,6 +3129,111 @@ function projectRecord(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date("2026-06-01T12:00:00.000Z"),
     ...overrides
   };
+}
+
+function approvedPlanRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "plan-1",
+    projectId: "project-1",
+    version: 1,
+    status: "APPROVED",
+    planningPackage: {
+      title: "The Race Between Rabbit and Turtle",
+      premise: "Rabbit and Turtle learn that steady effort matters.",
+      audience: "Young readers",
+      writingComplexity: 3,
+      voiceGuide: ["Warm", "Simple"],
+      antiAiRules: ["No meta commentary"],
+      questions: [],
+      chapters: [
+        {
+          index: 1,
+          title: "The Race",
+          summary: "Rabbit and Turtle begin their race.",
+          targetPages: 2,
+          keyBeats: ["Rabbit runs fast.", "Turtle keeps going."]
+        }
+      ],
+      characters: [
+        {
+          name: "Rabbit",
+          role: "Racer",
+          description: "A fast and overconfident rabbit.",
+          traits: ["quick"],
+          visualRules: ["small rabbit"]
+        },
+        {
+          name: "Turtle",
+          role: "Racer",
+          description: "A steady turtle.",
+          traits: ["patient"],
+          visualRules: ["green turtle"]
+        }
+      ],
+      locations: [],
+      continuityRules: [],
+      researchQueries: [],
+      researchNotes: [],
+      illustrationPlan: {
+        cadence: "template-driven",
+        globalStyle: "Warm children's storybook art",
+        characterReferencePrompts: [],
+        pageRules: []
+      }
+    },
+    inputSnapshot: {},
+    messages: [],
+    createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+    approvedAt: new Date("2026-06-15T10:05:00.000Z"),
+    ...overrides
+  };
+}
+
+function failedPlanRevisionOperationRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "operation-failed-revision",
+    projectId: "project-1",
+    userMessageId: "chat-user-1",
+    assistantMessageId: "chat-assistant-1",
+    generationJobId: "job-failed-revision",
+    ledgerEntryId: "ledger-PLAN_REVISION",
+    kind: "PLAN_REVISION",
+    status: "FAILED",
+    request: "Make it brighter.",
+    classifier: {},
+    affectedPageIndexes: [],
+    creditsCharged: 40,
+    error: "AI plan revision failed. No revised plan was created.",
+    generationJob: { id: "job-failed-revision", status: "FAILED" },
+    createdAt: new Date("2026-06-15T13:00:00.000Z"),
+    updatedAt: new Date("2026-06-15T13:01:00.000Z"),
+    appliedAt: null,
+    ...overrides
+  };
+}
+
+function generatedPages() {
+  return [
+    {
+      id: "page-1",
+      index: 1,
+      title: "Rabbit Starts Fast",
+      markdown: "Rabbit runs ahead at the start of the race.",
+      summary: "Rabbit starts the race quickly.",
+      imagePrompt: null,
+      status: "COMPLETED"
+    },
+    {
+      id: "page-2",
+      index: 2,
+      title: "Rabbit Learns",
+      markdown: "Rabbit sees Turtle finish and learns to be kind.",
+      summary: "Rabbit learns from Turtle.",
+      imagePrompt: null,
+      status: "COMPLETED"
+    }
+  ];
 }
 
 function creationPayload(

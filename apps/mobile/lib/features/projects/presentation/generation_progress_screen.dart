@@ -40,7 +40,7 @@ class _GenerationProgressScreenState
   void initState() {
     super.initState();
     _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      _refresh();
+      _refreshDetails();
     });
   }
 
@@ -60,6 +60,11 @@ class _GenerationProgressScreenState
       appBar: AppBar(
         title: const Text('Book progress'),
         actions: [
+          IconButton(
+            tooltip: 'Book chat',
+            onPressed: () => context.push('/projects/${widget.projectId}/chat'),
+            icon: const Icon(Icons.chat_bubble_outline),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: _refresh,
@@ -96,6 +101,10 @@ class _GenerationProgressScreenState
 
   void _refresh() {
     ref.invalidate(projectStatusProvider(widget.projectId));
+    _refreshDetails();
+  }
+
+  void _refreshDetails() {
     ref.invalidate(projectDetailProvider(widget.projectId));
   }
 

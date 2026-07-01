@@ -307,6 +307,8 @@ class MobilePlan {
   }
 
   bool get isApproved => status == 'approved';
+
+  bool get isSuperseded => status == 'superseded';
 }
 
 class MobilePlanQuestion {
@@ -424,6 +426,172 @@ class MobileQueuedJob {
       id: json['id'] as String,
       status: json['status'] as String,
       currentAction: json['currentAction'] as String,
+    );
+  }
+}
+
+class MobileProjectChatMessage {
+  const MobileProjectChatMessage({
+    required this.id,
+    required this.projectId,
+    required this.role,
+    required this.content,
+    required this.metadata,
+    required this.createdAt,
+    this.operationId,
+  });
+
+  final String id;
+  final String projectId;
+  final String role;
+  final String content;
+  final String? operationId;
+  final Map<String, dynamic> metadata;
+  final DateTime createdAt;
+
+  factory MobileProjectChatMessage.fromJson(Map<String, dynamic> json) {
+    return MobileProjectChatMessage(
+      id: json['id'] as String,
+      projectId: json['projectId'] as String,
+      role: json['role'] as String,
+      content: json['content'] as String,
+      operationId: json['operationId'] as String?,
+      metadata:
+          (json['metadata'] as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+
+  bool get isUser => role == 'user';
+
+  bool get isAssistant => role == 'assistant';
+
+  bool get hasInsufficientCredits =>
+      metadata['insufficientCredits'] is Map<String, dynamic> ||
+      metadata['insufficientCredits'] is Map;
+}
+
+class MobileBookEditOperation {
+  const MobileBookEditOperation({
+    required this.id,
+    required this.projectId,
+    required this.kind,
+    required this.status,
+    required this.affectedPageIndexes,
+    required this.creditsCharged,
+    required this.currentAction,
+    required this.createdAt,
+    this.error,
+    this.job,
+    this.appliedAt,
+  });
+
+  final String id;
+  final String projectId;
+  final String kind;
+  final String status;
+  final List<int> affectedPageIndexes;
+  final int creditsCharged;
+  final String currentAction;
+  final String? error;
+  final MobileQueuedJob? job;
+  final DateTime createdAt;
+  final DateTime? appliedAt;
+
+  factory MobileBookEditOperation.fromJson(Map<String, dynamic> json) {
+    final affected = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
+    return MobileBookEditOperation(
+      id: json['id'] as String,
+      projectId: json['projectId'] as String,
+      kind: json['kind'] as String,
+      status: json['status'] as String,
+      affectedPageIndexes: affected.map((value) => value as int).toList(),
+      creditsCharged: json['creditsCharged'] as int,
+      currentAction: json['currentAction'] as String,
+      error: json['error'] as String?,
+      job: json['job'] == null
+          ? null
+          : MobileQueuedJob.fromJson(json['job'] as Map<String, dynamic>),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      appliedAt: json['appliedAt'] == null
+          ? null
+          : DateTime.parse(json['appliedAt'] as String),
+    );
+  }
+
+  bool get isRunning => status == 'queued' || status == 'active';
+
+  bool get isApplied => status == 'applied';
+
+  bool get isFailed => status == 'failed';
+
+  bool get isPlanRevision => kind == 'plan_revision';
+}
+
+class MobileProjectChat {
+  const MobileProjectChat({
+    required this.messages,
+    required this.operations,
+    this.plans = const [],
+  });
+
+  final List<MobileProjectChatMessage> messages;
+  final List<MobilePlan> plans;
+  final List<MobileBookEditOperation> operations;
+
+  factory MobileProjectChat.fromJson(Map<String, dynamic> json) {
+    final messages = json['messages'] as List<dynamic>? ?? const [];
+    final plans = json['plans'] as List<dynamic>? ?? const [];
+    final operations = json['operations'] as List<dynamic>? ?? const [];
+    return MobileProjectChat(
+      messages: messages
+          .map(
+            (message) => MobileProjectChatMessage.fromJson(
+              message as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+      plans: plans
+          .map((plan) => MobilePlan.fromJson(plan as Map<String, dynamic>))
+          .toList(),
+      operations: operations
+          .map(
+            (operation) => MobileBookEditOperation.fromJson(
+              operation as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
+class MobileProjectChatSendResult extends MobileProjectChat {
+  const MobileProjectChatSendResult({
+    required super.messages,
+    required super.operations,
+    super.plans,
+    required this.reply,
+    this.operation,
+  });
+
+  final MobileProjectChatMessage reply;
+  final MobileBookEditOperation? operation;
+
+  factory MobileProjectChatSendResult.fromJson(Map<String, dynamic> json) {
+    final chat = MobileProjectChat.fromJson(json);
+    return MobileProjectChatSendResult(
+      messages: chat.messages,
+      plans: chat.plans,
+      operations: chat.operations,
+      reply: MobileProjectChatMessage.fromJson(
+        json['reply'] as Map<String, dynamic>,
+      ),
+      operation: json['operation'] == null
+          ? null
+          : MobileBookEditOperation.fromJson(
+              json['operation'] as Map<String, dynamic>,
+            ),
     );
   }
 }

@@ -7,15 +7,22 @@ import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/generation_progress_screen.dart';
+import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final authState = ref.watch(authControllerProvider);
+  final authRefresh = ValueNotifier(0);
+  ref.listen(authControllerProvider, (_, _) {
+    authRefresh.value += 1;
+  });
+  ref.onDispose(authRefresh.dispose);
 
-  return GoRouter(
+  final router = GoRouter(
     initialLocation: '/home',
+    refreshListenable: authRefresh,
     redirect: (context, state) {
+      final authState = ref.read(authControllerProvider);
       final path = state.uri.path;
       final isAuthRoute = path.startsWith('/auth');
       final isSplash = path == '/splash';
@@ -68,9 +75,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/books/chat/:draftId',
-        builder: (context, state) => CreationChatScreen(
-          draftId: state.pathParameters['draftId'],
-        ),
+        builder: (context, state) =>
+            CreationChatScreen(draftId: state.pathParameters['draftId']),
       ),
       GoRoute(
         path: '/projects/:id',
@@ -83,6 +89,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           projectId: state.pathParameters['id']!,
           initialMessage: state.extra as String?,
         ),
+      ),
+      GoRoute(
+        path: '/projects/:id/chat',
+        builder: (context, state) =>
+            ProjectChatScreen(projectId: state.pathParameters['id']!),
       ),
     ],
     errorBuilder: (context, state) => Scaffold(
@@ -97,6 +108,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ),
   );
+  ref.onDispose(router.dispose);
+  return router;
 });
 
 class SplashScreen extends StatelessWidget {

@@ -1698,7 +1698,7 @@ function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityRepor
 
   if (hasExcessiveDashUse(currentBody)) {
     checks.styleNatural = false;
-    issues.push("Page overuses em/en dashes in a way that makes the prose sound generated.");
+    issues.push("Page overuses inline em/en dashes in a way that makes the prose sound generated.");
   }
 
   if (hasDuplicatePagePrefix(options.pageIndex, options.draft.title)) {
@@ -2036,13 +2036,46 @@ function hasFormulaicAdjacentContrast(text: string): boolean {
 }
 
 function hasExcessiveDashUse(text: string): boolean {
-  const dashCount = (text.match(/[—–]/g) ?? []).length;
+  const dashCount = countStyleDashes(text);
   if (dashCount < 4) {
     return false;
   }
   const wordCount = Math.max(1, tokenize(text).length);
   const sentenceCount = Math.max(1, splitSentences(text).length);
   return dashCount / wordCount >= 0.018 || dashCount / sentenceCount >= 0.35;
+}
+
+function countStyleDashes(text: string): number {
+  let count = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const dashIndexes = [...line.matchAll(/[—–]/g)].map((match) => match.index ?? 0);
+    if (dashIndexes.length === 0) {
+      continue;
+    }
+
+    const ignored = new Set<number>();
+    const firstContentIndex = line.search(/\S/);
+    if (firstContentIndex >= 0 && isDash(line[firstContentIndex])) {
+      ignored.add(firstContentIndex);
+      const attributionDashIndex = dashIndexes.find(
+        (index) => index !== firstContentIndex && isDialogueAttributionDash(line, index)
+      );
+      if (attributionDashIndex !== undefined) {
+        ignored.add(attributionDashIndex);
+      }
+    }
+
+    count += dashIndexes.filter((index) => !ignored.has(index)).length;
+  }
+  return count;
+}
+
+function isDash(value: string | undefined): boolean {
+  return value === "—" || value === "–";
+}
+
+function isDialogueAttributionDash(line: string, index: number): boolean {
+  return /\s$/.test(line.slice(0, index)) && /^\s*\p{L}/u.test(line.slice(index + 1));
 }
 
 function splitSentences(text: string): string[] {

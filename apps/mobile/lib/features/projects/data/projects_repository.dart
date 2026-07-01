@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +25,15 @@ abstract interface class ProjectsRepository {
   Future<MobilePlanOperation> approvePlan(String planId);
 
   Future<MobileProjectStatus> getProjectStatus(String id);
+
+  Stream<MobileProjectStatus> watchProjectStatus(String id);
+
+  Future<MobileProjectChat> getProjectChat(String id);
+
+  Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    required String projectId,
+    required String message,
+  });
 
   Future<MobileProjectRecovery> resumeProject(String id);
 
@@ -130,6 +140,42 @@ class MobileProjectsRepository implements ProjectsRepository {
     final response = await apiClient.getJson('/api/mobile/projects/$id/status');
     final data = response.data as Map<String, dynamic>;
     return MobileProjectStatus.fromJson(data['status'] as Map<String, dynamic>);
+  }
+
+  @override
+  Stream<MobileProjectStatus> watchProjectStatus(String id) async* {
+    await for (final event in apiClient.getServerSentEvents(
+      '/api/mobile/projects/$id/status/events',
+    )) {
+      if (event.event != 'status') {
+        continue;
+      }
+      final decoded = jsonDecode(event.data) as Map<String, dynamic>;
+      final status = decoded['status'] is Map<String, dynamic>
+          ? decoded['status'] as Map<String, dynamic>
+          : decoded;
+      yield MobileProjectStatus.fromJson(status);
+    }
+  }
+
+  @override
+  Future<MobileProjectChat> getProjectChat(String id) async {
+    final response = await apiClient.getJson('/api/mobile/projects/$id/chat');
+    return MobileProjectChat.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    required String projectId,
+    required String message,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/chat/messages',
+      data: {'message': message},
+    );
+    return MobileProjectChatSendResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
   }
 
   @override
@@ -246,9 +292,14 @@ final projectDetailProvider = FutureProvider.autoDispose
       return ref.watch(projectsRepositoryProvider).getProject(id);
     });
 
-final projectStatusProvider = FutureProvider.autoDispose
+final projectStatusProvider = StreamProvider.autoDispose
     .family<MobileProjectStatus, String>((ref, id) {
-      return ref.watch(projectsRepositoryProvider).getProjectStatus(id);
+      return _watchProjectStatus(ref.watch(projectsRepositoryProvider), id);
+    });
+
+final projectChatProvider = FutureProvider.autoDispose
+    .family<MobileProjectChat, String>((ref, id) {
+      return ref.watch(projectsRepositoryProvider).getProjectChat(id);
     });
 
 final projectAssetHeadersProvider =
@@ -270,4 +321,41 @@ Map<String, dynamic> _reportPayload({required String reason, String? comment}) {
     'reason': reason,
     if (comment != null && comment.trim().isNotEmpty) 'comment': comment.trim(),
   };
+}
+
+Stream<MobileProjectStatus> _watchProjectStatus(
+  ProjectsRepository repository,
+  String id,
+) async* {
+  try {
+    var emittedStatus = false;
+    await for (final status in repository.watchProjectStatus(id)) {
+      emittedStatus = true;
+      yield status;
+      if (!_isLiveProjectStatus(status)) {
+        return;
+      }
+    }
+    if (emittedStatus) {
+      return;
+    }
+  } catch (_) {
+    // Older API builds, local proxies, or transient stream failures fall back
+    // to short polling so the progress UI remains live enough to trust.
+  }
+
+  while (true) {
+    final status = await repository.getProjectStatus(id);
+    yield status;
+    if (!_isLiveProjectStatus(status)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(seconds: 3));
+  }
+}
+
+bool _isLiveProjectStatus(MobileProjectStatus status) {
+  return status.status == 'planning' ||
+      status.status == 'generating' ||
+      status.status == 'editing';
 }

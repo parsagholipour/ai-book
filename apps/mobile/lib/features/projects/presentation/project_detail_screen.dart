@@ -48,6 +48,11 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
         title: const Text('Book plan'),
         actions: [
           IconButton(
+            tooltip: 'Book chat',
+            onPressed: () => context.push('/projects/${widget.projectId}/chat'),
+            icon: const Icon(Icons.chat_bubble_outline),
+          ),
+          IconButton(
             tooltip: 'Refresh',
             onPressed: () =>
                 ref.invalidate(projectDetailProvider(widget.projectId)),

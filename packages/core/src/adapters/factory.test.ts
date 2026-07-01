@@ -7,6 +7,7 @@ import { DeepSeekAdapter } from "./deepseek.js";
 import { FakeTextModelAdapter } from "./fake.js";
 import { GeminiTextAdapter } from "./gemini.js";
 import {
+  createFastRoutingTextModel,
   createLanguageDetectionTextModel,
   createProviders,
   imageModelOptions,
@@ -68,6 +69,18 @@ describe("text model provider selection", () => {
       createLanguageDetectionTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "", GEMINI_API_KEY: "", ALIBABA_API_KEY: "alibaba-key" }))
     ).toBeInstanceOf(AlibabaTextAdapter);
     expect(createLanguageDetectionTextModel(testConfig({ MOCK_AI: "true" }))).toBeInstanceOf(FakeTextModelAdapter);
+  });
+
+  it("uses the same lightest available text adapter for fast routing", () => {
+    expect(createFastRoutingTextModel(testConfig({}))).toBeInstanceOf(DeepSeekAdapter);
+    expect(createFastRoutingTextModel(testConfig({ DEEPSEEK_API_KEY: "" }))).toBeInstanceOf(DeepInfraAdapter);
+    expect(
+      createFastRoutingTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "" }))
+    ).toBeInstanceOf(GeminiTextAdapter);
+    expect(
+      createFastRoutingTextModel(testConfig({ DEEPSEEK_API_KEY: "", DEEPINFRA_API_KEY: "", GEMINI_API_KEY: "", ALIBABA_API_KEY: "alibaba-key" }))
+    ).toBeInstanceOf(AlibabaTextAdapter);
+    expect(createFastRoutingTextModel(testConfig({ MOCK_AI: "true" }))).toBeInstanceOf(FakeTextModelAdapter);
   });
 
   it("exposes DeepInfra effort options only when configured", () => {

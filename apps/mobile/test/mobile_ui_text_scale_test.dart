@@ -261,6 +261,17 @@ class _FakeCreationRepository implements CreationRepository {
   }
 
   @override
+  Future<MobileCreationBuildPreflight> preflightBuildConversation({
+    required String draftId,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+    String? language,
+  }) {
+    throw UnimplementedError('Preflight is not used in this test.');
+  }
+
+  @override
   Future<MobileCreationFinalizeResponse> buildConversation({
     required String draftId,
     MobileCreationPresets? presets,

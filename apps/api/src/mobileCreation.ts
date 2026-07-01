@@ -5,8 +5,22 @@ import {
 import { z } from "zod";
 
 const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
+export const mobileBookTypeChoiceSchema = z.enum([
+  "auto",
+  "lead_magnet",
+  "practical_guide",
+  "offer_guide",
+  "workbook",
+  "client_tool",
+  "short_story",
+  "adult_story",
+  "children_story"
+]);
 const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
 const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium"]);
+export const mobilePageCountModeSchema = z.enum(["auto", "custom"]);
+export const mobilePageCountSourceSchema = z.enum(["chat", "settings", "recommended", "legacy"]);
+export const mobileTargetPagesSchema = z.coerce.number().int().min(1).max(600);
 
 export const mobileCreationIntentSchema = z.enum([
   "collect_leads",
@@ -17,6 +31,7 @@ export const mobileCreationIntentSchema = z.enum([
 ]);
 
 export const mobileCreationLaneSchema = z.enum([
+  "auto",
   "lead_magnet",
   "workbook",
   "client_tool",
@@ -64,9 +79,13 @@ export const mobileCreationBriefSchema = z
 export const mobileCreationPresetsSchema = z
   .object({
     bookType: mobileBookTypeSchema,
+    bookTypeChoice: mobileBookTypeChoiceSchema.optional(),
     lengthPreset: mobileLengthPresetSchema,
     qualityPreset: mobileQualityPresetSchema,
-    imagesEnabled: z.boolean()
+    imagesEnabled: z.boolean(),
+    pageCountMode: mobilePageCountModeSchema.optional(),
+    targetPages: mobileTargetPagesSchema.optional(),
+    pageCountSource: mobilePageCountSourceSchema.optional()
   })
   .strict();
 
@@ -158,6 +177,9 @@ export type MobileCreationBrief = z.infer<typeof mobileCreationBriefSchema>;
 export type MobileCreationLane = z.infer<typeof mobileCreationLaneSchema>;
 export type MobileBookRecipe = z.infer<typeof mobileBookRecipeSchema>;
 export type MobileCreationPresets = z.infer<typeof mobileCreationPresetsSchema>;
+export type MobileBookTypeChoice = z.infer<typeof mobileBookTypeChoiceSchema>;
+export type MobilePageCountMode = z.infer<typeof mobilePageCountModeSchema>;
+export type MobilePageCountSource = z.infer<typeof mobilePageCountSourceSchema>;
 export type MobileCreationOptionalDetails = z.infer<typeof mobileCreationOptionalDetailsSchema>;
 export type MobileCreationMessage = z.infer<typeof mobileCreationMessageSchema>;
 export type MobileCreationDraftPayload = z.infer<typeof mobileCreationDraftPayloadSchema>;
@@ -180,9 +202,12 @@ export async function adviseMobileBook(
 
   try {
     const patch = await withTimeout(options.enrich(parsed, base), options.timeoutMs ?? 2500);
+    const cleaned = cleanAdvisorPatch(patch);
+    const recipe = cleaned.recipe ? mobileBookRecipeSchema.parse({ ...cleaned.recipe, lane: base.detectedLane }) : base.recipe;
     return mobileBookAdvisorResponseSchema.parse({
       ...base,
-      ...cleanAdvisorPatch(patch),
+      ...cleaned,
+      recipe,
       recommendation: base.recommendation,
       detectedLane: base.detectedLane,
       briefScore: base.briefScore,
@@ -195,9 +220,13 @@ export async function adviseMobileBook(
 
 export function deterministicAdvisor(payload: MobileCreationDraftPayload): MobileBookAdvisorResponse {
   const normalized = normalizePayload(payload);
-  const detectedLane = normalized.detectedLane ?? normalized.recipe?.lane ?? detectLane(normalized);
+  const detectedLane = laneForPayload(normalized);
   const recipe = completeRecipe(normalized, detectedLane);
-  const recommendation = normalized.selectedPresets ?? recommendedPresets(detectedLane, normalized);
+  const recommendation = resolveCreationPresets(
+    normalized.selectedPresets,
+    detectedLane,
+    recommendedPresets(detectedLane, normalized)
+  );
   const warnings = warningMessages(normalized, detectedLane);
   const followUpSuggestions = followUpSuggestionsFor(recipe);
   const briefScore = recipeStrengthScore(normalized, recipe, warnings);
@@ -215,6 +244,23 @@ export function deterministicAdvisor(payload: MobileCreationDraftPayload): Mobil
     titleSuggestions,
     rationale: rationaleFor(detectedLane)
   };
+}
+
+export function explicitTargetPagesForMobilePayload(payload: MobileCreationDraftPayload): number | undefined {
+  const normalized = normalizePayload(payload);
+  const searchText = pageCountSearchText(normalized);
+  const matches = [
+    ...capturePageCounts(searchText, /\b(\d{1,3})\s*[- ]?\s*(?:page|pages|pg|pgs)\s*(?:book|ebook|story|guide|workbook|project|plan)?\b/gi),
+    ...capturePageCounts(searchText, /\b(?:make|create|write|build|draft|set|keep|turn)\s+(?:it|this|the\s+book|the\s+story|the\s+guide)?\s*(?:to|at|as)?\s*(\d{1,3})\s*(?:page|pages|pg|pgs)\b/gi),
+    ...capturePageCounts(searchText, /\b(?:page|pages|pg|pgs)\s*(?:count|length)?\s*(?:is|=|:|to|should\s+be)?\s*(\d{1,3})\b/gi)
+  ];
+  for (const value of matches.reverse()) {
+    const parsed = mobileTargetPagesSchema.safeParse(value);
+    if (parsed.success) {
+      return parsed.data;
+    }
+  }
+  return undefined;
 }
 
 export async function enrichAdvisorWithAi(
@@ -340,7 +386,7 @@ export function greetingCreationTurn(): MobileCreationTurn {
 export function deterministicCreationTurn(request: MobileCreationTurnRequest): MobileCreationTurn {
   const payload = payloadFromTurnRequest(request);
   const base = deterministicAdvisor(payload);
-  const presets = request.presets ?? base.recommendation;
+  const presets = base.recommendation;
   const userTurns = request.messages.filter((message) => message.role === "user").length;
   const hasIdea = payload.rawIdea.trim().length >= 3;
   const question = hasIdea ? questionForTurn(base.detectedLane, userTurns) : null;
@@ -382,7 +428,7 @@ export async function enrichCreationTurnWithAi(
           "You are a warm, concise book creation assistant for an AI book maker app. You help one person turn a rough idea into a clear book brief through a short chat. " +
           "Rules: reply in 1-3 short sentences with no jargon. Ask AT MOST ONE focused follow-up question per turn, and always give 2-4 short tappable options plus allow a custom answer. " +
           "Never block the user; they can build the plan whenever they want, so do not insist on more detail. Once the brief is clear, set question to null and encourage them to build the plan. " +
-          "Support every kind of book: children's stories, adult short stories, lead magnets, workbooks, and practical guides. Keep refining the structured brief from the whole conversation. " +
+          "Support every kind of book: children's stories, adult short stories, lead magnets, offer guides, client tools, workbooks, and practical guides. If currentPresets.bookTypeChoice is auto, keep the book type unresolved and ask neutral book-shaping questions instead of declaring a genre. Keep refining the structured brief from the whole conversation. " +
           "If the user asks for a different format, length, or visuals, update presets accordingly. Never mention AI models, providers, credits, billing, or safety systems."
       },
       {
@@ -411,6 +457,15 @@ export async function enrichCreationTurnWithAi(
 }
 
 export function payloadFromTurnRequest(request: MobileCreationTurnRequest): MobileCreationDraftPayload {
+  const forcedLane = laneFromBookTypeChoice(request.presets?.bookTypeChoice);
+  const unresolvedAuto = !forcedLane && (!request.presets || request.presets.bookTypeChoice === "auto");
+  const lane = forcedLane ?? (unresolvedAuto ? "auto" : request.brief?.lane);
+  const recipe = request.brief
+    ? {
+        ...request.brief,
+        ...(lane ? { lane } : {})
+      }
+    : undefined;
   const userText = request.messages
     .filter((message) => message.role === "user")
     .map((message) => message.content.trim())
@@ -422,8 +477,8 @@ export function payloadFromTurnRequest(request: MobileCreationTurnRequest): Mobi
     rawIdea: userText,
     optionalDetails: request.optionalDetails ?? { mustInclude: "", tone: "" },
     sourceNotes: request.sourceNotes ?? "",
-    detectedLane: request.brief?.lane,
-    recipe: request.brief,
+    ...(lane ? { detectedLane: lane } : {}),
+    recipe,
     selectedPresets: request.presets,
     messages: request.messages
   });
@@ -443,6 +498,13 @@ function questionForTurn(lane: MobileCreationLane, userTurns: number): MobileCre
 }
 
 function questionSequenceForLane(lane: MobileCreationLane): MobileCreationTurnQuestion[] {
+  if (lane === "auto") {
+    return [
+      { prompt: "Who is this book for?", options: ["Young readers", "Clients or students", "General readers"], allowCustom: true },
+      { prompt: "What should the book feel like?", options: ["Warm and simple", "Practical and clear", "Imaginative and fun"], allowCustom: true },
+      { prompt: "What should the reader remember?", options: ["A useful lesson", "A clear next step", "A memorable ending"], allowCustom: true }
+    ];
+  }
   if (lane === "children_story") {
     return [
       { prompt: "Who is this story for?", options: ["3-4 year olds", "5-6 year olds", "7-8 year olds"], allowCustom: true },
@@ -478,6 +540,12 @@ function deterministicAssistantMessage(
 ): string {
   if (!hasIdea) {
     return "Tell me about the book you want to make, or tap an example to start.";
+  }
+  if (base.detectedLane === "auto") {
+    if (question) {
+      return `Got it. ${question.prompt}`;
+    }
+    return "This is shaping up well. When you're ready, tap Build the plan and I'll choose the best book shape from this chat.";
   }
   const lane = laneLabel(base.detectedLane).toLowerCase();
   if (question) {
@@ -523,12 +591,19 @@ function cleanCreationTurnPatch(patch: z.infer<typeof creationTurnAiPatchSchema>
 }
 
 function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<MobileCreationTurn>): MobileCreationTurn {
-  const brief = patch.brief ?? base.brief;
+  const brief = mobileBookRecipeSchema.parse({ ...(patch.brief ?? base.brief), lane: base.detectedLane });
+  const patchedPresets = patch.presets
+    ? mobileCreationPresetsSchema.parse({
+        ...patch.presets,
+        bookType: base.presets.bookType,
+        bookTypeChoice: base.presets.bookTypeChoice
+      })
+    : base.presets;
   return {
     assistantMessage: patch.assistantMessage ?? base.assistantMessage,
     brief,
-    presets: patch.presets ?? base.presets,
-    detectedLane: brief.lane,
+    presets: patchedPresets,
+    detectedLane: base.detectedLane,
     quickReplies: patch.quickReplies ?? base.quickReplies,
     question: patch.question !== undefined ? patch.question : base.question,
     readiness: base.readiness,
@@ -548,10 +623,14 @@ export function composeMobileProjectPrompt(
 ): string {
   const normalized = normalizePayload(payload);
   const recipe = normalized.recipe ?? advisor.recipe;
+  const autoMode = recipe.lane === "auto" || normalized.selectedPresets?.bookTypeChoice === "auto";
   const lines = [
-    `Create a ${bookTypeLabel(advisor.recommendation.bookType)}.`,
+    autoMode
+      ? "Create the best-fitting book from the user's creation chat. Decide the real book shape during planning; do not rely on the neutral project category."
+      : `Create a ${laneLabel(recipe.lane).toLowerCase()}.`,
     fieldLine("Original idea", normalized.rawIdea),
-    fieldLine("Book lane", laneLabel(recipe.lane)),
+    fieldLine("Book type choice", autoMode ? "Auto - decide during planning" : laneLabel(recipe.lane)),
+    fieldLine("Creation chat", chatTranscriptForPrompt(normalized.messages)),
     fieldLine("Artifact", recipe.artifact),
     fieldLine("Audience or reader", recipe.audience),
     fieldLine("Promise or story shape", recipe.promise),
@@ -566,7 +645,9 @@ export function composeMobileProjectPrompt(
     normalized.sourceNotes.trim()
       ? "Use the pasted source notes stored in the mobile creation metadata as private reference material. Preserve user intent, but do not invent unsupported factual claims."
       : "",
-    `Recommended shape: ${advisor.bookShapePreview.join(" ")}`
+    autoMode
+      ? "Planning instruction: choose the most appropriate shape directly, such as children's fable, short story, workbook, practical guide, client tool, offer guide, or lead magnet, based on the chat history."
+      : `Recommended shape: ${advisor.bookShapePreview.join(" ")}`
   ].filter(Boolean);
   return lines.join("\n");
 }
@@ -582,6 +663,7 @@ export function mobileBriefMetadata(
     rawIdea: normalized.rawIdea,
     optionalDetails: normalized.optionalDetails,
     sourceNotes: normalized.sourceNotes,
+    messages: normalized.messages ?? [],
     detectedLane: recipe.lane,
     recipe,
     selectedPresets: normalized.selectedPresets ?? advisor.recommendation,
@@ -629,7 +711,7 @@ export function briefForMobilePayload(
   if (normalized.brief && !normalized.rawIdea.trim() && !normalized.recipe) {
     return normalized.brief;
   }
-  const recipe = normalized.recipe ?? advisor?.recipe ?? completeRecipe(normalized, normalized.detectedLane ?? detectLane(normalized));
+  const recipe = normalized.recipe ?? advisor?.recipe ?? completeRecipe(normalized, normalized.detectedLane ?? "auto");
   return mobileCreationBriefSchema.parse({
     intent: intentForLane(recipe.lane),
     topic: normalized.rawIdea || recipe.title || recipe.artifact,
@@ -724,27 +806,21 @@ function normalizePayload(payload: MobileCreationDraftPayload): MobileCreationDr
   });
 }
 
-function detectLane(payload: MobileCreationDraftPayload): MobileCreationLane {
-  const text = searchableText(payload);
-  if (/\b([2-9]|10|11|12)\s*(-| )?(year|yr)s?\s*olds?\b/i.test(text) || /\b(children|kids|bedtime|read[- ]aloud|picture book)\b/i.test(text)) {
-    return "children_story";
+function laneForPayload(payload: MobileCreationDraftPayload): MobileCreationLane {
+  const forcedLane = laneFromBookTypeChoice(payload.selectedPresets?.bookTypeChoice);
+  if (forcedLane) {
+    return forcedLane;
   }
-  if (/\b(short story|story|fiction|mystery|character|novella)\b/i.test(text)) {
-    return "adult_story";
+  if (payload.selectedPresets?.bookTypeChoice === "auto") {
+    return "auto";
   }
-  if (/\b(workbook|worksheet|exercise|practice|lesson|course|class)\b/i.test(text)) {
-    return "workbook";
+  if (payload.selectedPresets) {
+    return laneFromProductBookType(payload.selectedPresets.bookType);
   }
-  if (/\b(client|coaching|homework|onboarding)\b/i.test(text)) {
-    return "client_tool";
+  if (!payload.selectedPresets && payload.payloadVersion === 3) {
+    return "auto";
   }
-  if (/\b(offer|service|method|proposal|sales page)\b/i.test(text)) {
-    return "offer_guide";
-  }
-  if (/\b(lead magnet|opt[- ]?in|checklist|pricing|email signup)\b/i.test(text)) {
-    return "lead_magnet";
-  }
-  return /\b(guide|how to|steps|tips|explain|teach)\b/i.test(text) ? "practical_guide" : "practical_guide";
+  return payload.detectedLane ?? payload.recipe?.lane ?? "auto";
 }
 
 function completeRecipe(payload: MobileCreationDraftPayload, lane: MobileCreationLane): MobileBookRecipe {
@@ -776,17 +852,85 @@ function recommendedPresets(
   lane: MobileCreationLane,
   payload: MobileCreationDraftPayload
 ): MobileCreationPresets {
+  const explicitTargetPages = explicitTargetPagesForMobilePayload(payload);
+  if (lane === "auto") {
+    return presetsWithPageCount({
+      bookType: "lead_magnet",
+      bookTypeChoice: "auto",
+      lengthPreset: payload.sourceNotes.length > 1200 ? "standard" : "short",
+      qualityPreset: "balanced",
+      imagesEnabled: true
+    }, explicitTargetPages);
+  }
   if (lane === "workbook" || lane === "client_tool") {
-    return { bookType: "workbook", lengthPreset: "standard", qualityPreset: "balanced", imagesEnabled: true };
+    return presetsWithPageCount(
+      { bookType: "workbook", bookTypeChoice: "auto", lengthPreset: "standard", qualityPreset: "balanced", imagesEnabled: true },
+      explicitTargetPages
+    );
   }
   if (lane === "adult_story" || lane === "children_story") {
-    return { bookType: "short_story", lengthPreset: payload.sourceNotes.length > 800 ? "standard" : "short", qualityPreset: "balanced", imagesEnabled: true };
+    return presetsWithPageCount({
+      bookType: "short_story",
+      bookTypeChoice: "auto",
+      lengthPreset: payload.sourceNotes.length > 800 ? "standard" : "short",
+      qualityPreset: "balanced",
+      imagesEnabled: true
+    }, explicitTargetPages);
   }
-  return {
+  return presetsWithPageCount({
     bookType: "lead_magnet",
+    bookTypeChoice: "auto",
     lengthPreset: payload.sourceNotes.length > 1200 || lane === "offer_guide" || lane === "practical_guide" ? "standard" : "short",
     qualityPreset: lane === "offer_guide" ? "premium" : "balanced",
     imagesEnabled: true
+  }, explicitTargetPages);
+}
+
+function presetsWithPageCount(
+  presets: Omit<MobileCreationPresets, "pageCountMode" | "targetPages" | "pageCountSource">,
+  targetPages: number | undefined
+): MobileCreationPresets {
+  return targetPages
+    ? { ...presets, pageCountMode: "custom", targetPages, pageCountSource: "chat" }
+    : { ...presets, pageCountMode: "auto" };
+}
+
+function resolveCreationPresets(
+  selectedPresets: MobileCreationPresets | undefined,
+  lane: MobileCreationLane,
+  fallback: MobileCreationPresets
+): MobileCreationPresets {
+  if (!selectedPresets) {
+    return fallback;
+  }
+  const forcedLane = laneFromBookTypeChoice(selectedPresets.bookTypeChoice);
+  const selectedPageCount = selectedPresets.pageCountMode === "custom" && selectedPresets.targetPages
+    ? {
+        pageCountMode: "custom" as const,
+        targetPages: selectedPresets.targetPages,
+        pageCountSource: selectedPresets.pageCountSource ?? "settings" as const
+      }
+    : undefined;
+  if (selectedPresets.bookTypeChoice === "auto") {
+    return {
+      ...fallback,
+      lengthPreset: selectedPresets.lengthPreset,
+      qualityPreset: selectedPresets.qualityPreset,
+      imagesEnabled: selectedPresets.imagesEnabled,
+      bookTypeChoice: "auto",
+      ...selectedPageCount
+    };
+  }
+  if (forcedLane) {
+    return {
+      ...selectedPresets,
+      bookType: productBookTypeForLane(forcedLane),
+      bookTypeChoice: selectedPresets.bookTypeChoice
+    };
+  }
+  return {
+    ...selectedPresets,
+    bookType: selectedPresets.bookType ?? productBookTypeForLane(lane)
   };
 }
 
@@ -814,13 +958,16 @@ function warningMessages(payload: MobileCreationDraftPayload, lane: MobileCreati
   if (looksFactualOrCurrent(text) && !payload.sourceNotes.trim()) {
     warnings.push("This sounds factual or current. Add source notes if exact claims matter.");
   }
-  if (wordCount(payload.rawIdea) < 3 && lane !== "children_story") {
+  if (wordCount(payload.rawIdea) < 3 && lane !== "children_story" && lane !== "auto") {
     warnings.push("This is enough to start, but one more detail would make the recipe sharper.");
   }
   return warnings;
 }
 
 function followUpSuggestionsFor(recipe: MobileBookRecipe): string[] {
+  if (recipe.lane === "auto") {
+    return ["Want to improve this? Add who it is for.", "Want to sharpen it? Add the feeling or outcome you want."];
+  }
   if (recipe.lane === "children_story") {
     return ["Want to improve this? Add the ending feel.", "Want to tune it? Add the read-aloud vibe."];
   }
@@ -834,6 +981,9 @@ function followUpSuggestionsFor(recipe: MobileBookRecipe): string[] {
 }
 
 function shapePreview(recipe: MobileBookRecipe, recommendation: MobileCreationPresets): string[] {
+  if (recipe.lane === "auto") {
+    return ["Planner chooses the best book shape", "Structure follows the chat history", "Pages stay Auto until you choose or mention them", "Tone and visuals follow your details"];
+  }
   if (recipe.lane === "children_story") {
     return ["Gentle opening and character setup", "Small problem or adventure", "Warm lesson or emotional turn", "Reassuring read-aloud ending"];
   }
@@ -851,6 +1001,9 @@ function titleSuggestionsFor(
   bookType: MobileCreationPresets["bookType"]
 ): string[] {
   const topic = cleanTitlePart(recipe.title || recipe.promise || recipe.artifact) || fallbackTopic(bookType);
+  if (recipe.lane === "auto") {
+    return [`${topic}`, `${topic} Book`, `${topic} Story`];
+  }
   if (recipe.lane === "children_story") {
     return [`${topic}`, `${topic} at Bedtime`, `The Little ${topic}`];
   }
@@ -864,6 +1017,9 @@ function titleSuggestionsFor(
 }
 
 function rationaleFor(lane: MobileCreationLane): string {
+  if (lane === "auto") {
+    return "Auto is selected, so the planner will choose the best book shape from the full chat history.";
+  }
   if (lane === "children_story") {
     return "Best fit because the idea names a young reader and needs a simple, read-aloud story shape.";
   }
@@ -929,6 +1085,16 @@ function fieldLine(label: string, value: string | undefined): string {
   return text ? `${label}: ${text}` : "";
 }
 
+function chatTranscriptForPrompt(messages: MobileCreationMessage[] | undefined): string {
+  const transcript = messages
+    ?.slice(-40)
+    .map((message) => `${message.role === "assistant" ? "Assistant" : "User"}: ${message.content.trim()}`)
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .trim();
+  return transcript ? transcript.slice(0, 2200) : "";
+}
+
 function searchableText(payload: MobileCreationDraftPayload): string {
   return [
     payload.rawIdea,
@@ -941,6 +1107,36 @@ function searchableText(payload: MobileCreationDraftPayload): string {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function pageCountSearchText(payload: MobileCreationDraftPayload): string {
+  const userMessages =
+    payload.messages
+      ?.filter((message) => message.role === "user")
+      .map((message) => message.content)
+      .join("\n") ?? "";
+  return [
+    userMessages,
+    payload.rawIdea,
+    payload.optionalDetails.mustInclude,
+    payload.brief?.topic,
+    payload.brief?.desiredOutcome,
+    payload.sourceNotes
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(-6000);
+}
+
+function capturePageCounts(text: string, pattern: RegExp): number[] {
+  const matches: number[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const value = Number.parseInt(match[1] ?? "", 10);
+    if (Number.isFinite(value)) {
+      matches.push(value);
+    }
+  }
+  return matches;
 }
 
 function audienceFor(rawIdea: string, lane: MobileCreationLane): string {
@@ -957,6 +1153,7 @@ function audienceFor(rawIdea: string, lane: MobileCreationLane): string {
 
 function audienceFallback(lane: MobileCreationLane): string {
   return {
+    auto: "readers implied by the idea",
     children_story: "young children",
     adult_story: "adult fiction readers",
     workbook: "learners",
@@ -977,6 +1174,7 @@ function titleFromIdea(rawIdea: string, lane: MobileCreationLane): string {
 
 function artifactForLane(lane: MobileCreationLane): string {
   return {
+    auto: "Book",
     children_story: "Children's story",
     adult_story: "Short story",
     workbook: "Workbook",
@@ -989,6 +1187,7 @@ function artifactForLane(lane: MobileCreationLane): string {
 
 function toneFallback(lane: MobileCreationLane): string {
   return {
+    auto: "clear and fitted to the intended book shape",
     children_story: "warm, simple, and read-aloud friendly",
     adult_story: "immersive and emotionally clear",
     workbook: "clear, encouraging, and practical",
@@ -1000,6 +1199,7 @@ function toneFallback(lane: MobileCreationLane): string {
 }
 
 function promiseFallback(rawIdea: string, lane: MobileCreationLane): string {
+  if (lane === "auto") return `become the best-fitting book for ${cleanTitlePart(rawIdea).toLowerCase() || "the idea"}`;
   if (lane === "children_story") return "a gentle story children can follow and enjoy";
   if (lane === "adult_story") return "a compact story with a clear emotional turn";
   if (lane === "workbook" || lane === "client_tool") return "complete useful practice and leave with a next step";
@@ -1054,6 +1254,36 @@ function laneForLegacyIntent(intent: MobileCreationBrief["intent"]): MobileCreat
   return lanes[intent];
 }
 
+function laneFromBookTypeChoice(choice: MobileBookTypeChoice | undefined): MobileCreationLane | undefined {
+  if (!choice || choice === "auto") {
+    return undefined;
+  }
+  if (choice === "short_story") {
+    return "adult_story";
+  }
+  return choice;
+}
+
+function laneFromProductBookType(bookType: MobileCreationPresets["bookType"]): MobileCreationLane {
+  if (bookType === "workbook") {
+    return "workbook";
+  }
+  if (bookType === "short_story") {
+    return "adult_story";
+  }
+  return "lead_magnet";
+}
+
+function productBookTypeForLane(lane: MobileCreationLane): MobileCreationPresets["bookType"] {
+  if (lane === "workbook" || lane === "client_tool") {
+    return "workbook";
+  }
+  if (lane === "adult_story" || lane === "children_story") {
+    return "short_story";
+  }
+  return "lead_magnet";
+}
+
 function intentForLane(lane: MobileCreationLane): MobileCreationBrief["intent"] {
   if (lane === "workbook") return "teach_practice";
   if (lane === "client_tool") return "support_clients";
@@ -1064,6 +1294,7 @@ function intentForLane(lane: MobileCreationLane): MobileCreationBrief["intent"] 
 
 function laneLabel(lane: MobileCreationLane): string {
   return {
+    auto: "Auto",
     children_story: "Children's story",
     adult_story: "Short story",
     workbook: "Workbook",

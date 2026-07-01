@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -322,6 +324,31 @@ class FakeProjectsRepository implements ProjectsRepository {
   Future<Map<String, String>> assetHeaders() async => const {};
 
   @override
+  Future<MobileProjectChat> getProjectChat(String id) async {
+    return const MobileProjectChat(messages: [], operations: []);
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    required String projectId,
+    required String message,
+  }) async {
+    final reply = MobileProjectChatMessage(
+      id: 'reply',
+      projectId: projectId,
+      role: 'assistant',
+      content: 'Okay.',
+      metadata: const {},
+      createdAt: DateTime(2026),
+    );
+    return MobileProjectChatSendResult(
+      messages: [reply],
+      operations: const [],
+      reply: reply,
+    );
+  }
+
+  @override
   Future<ProjectDeletionReceipt> deleteProject(String id) async {
     return ProjectDeletionReceipt(
       deletedProjectId: id,
@@ -361,6 +388,11 @@ class FakeProjectsRepository implements ProjectsRepository {
       exports: fakeExports(),
       updatedAt: DateTime.utc(2026, 6, 16),
     );
+  }
+
+  @override
+  Stream<MobileProjectStatus> watchProjectStatus(String id) async* {
+    yield await getProjectStatus(id);
   }
 
   @override

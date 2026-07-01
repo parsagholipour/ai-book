@@ -73,6 +73,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Do not create more chapters than targetPages, because every chapter must contain at least one page.",
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",
             "Preserve concrete user intent and ask only questions that materially improve the result.",
+            ...mobileAutoPlanningGuidance(options.input),
             "For each question, include 2-4 concise premade answer options and allow a custom answer unless the question is informational only.",
             "For every recurring character, include concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details suitable for a reusable character reference sheet.",
             "Illustration prompts must use exact recurring character names whenever those characters appear.",
@@ -131,7 +132,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
           role: "system",
           content:
             [
-              `Revise this book generation plan. Keep the same JSON schema and return the plan fields at the JSON root, not nested under plan, data, or result. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference.`,
+              `Revise this book generation plan. Return a JSON object with revised plan fields at the JSON root, not nested under plan, data, or result. You may omit unchanged fields because the server preserves them from the current plan. Do not re-emit unchanged researchNotes; existing research notes are preserved server-side. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference.`,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               ...targetLanguageGenerationGuidance(options.language),
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
@@ -142,7 +143,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
           role: "user",
           content: JSON.stringify(
             {
-              currentPlan: options.currentPlan,
+              currentPlan: compactPlanForRevisionPrompt(options.currentPlan),
               userMessage: options.userMessage,
               toneProfile,
               language: targetLanguagePayload(options.language),
@@ -157,10 +158,39 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
         }
       ]
     });
-    return normalizePlanPageTargets(revisionSchema.parse(result.data), targetPages);
+    const revised = revisionSchema.parse(result.data);
+    return normalizePlanPageTargets(
+      {
+        ...revised,
+        researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
+      },
+      targetPages
+    );
   } catch (error) {
     throw new Error(`AI plan revision failed. No revised plan was created. ${formatErrorMessage(error)}`);
   }
+}
+
+function compactPlanForRevisionPrompt(plan: BookPlan): Omit<BookPlan, "researchNotes"> & {
+  researchNotesSummary: Array<{
+    query: string;
+    title: string;
+    summaryPreview: string;
+    publishedAt?: string | undefined;
+  }>;
+  researchNoteCount: number;
+} {
+  const { researchNotes: _researchNotes, ...rest } = plan;
+  return {
+    ...rest,
+    researchNoteCount: plan.researchNotes.length,
+    researchNotesSummary: plan.researchNotes.slice(0, 8).map((source) => ({
+      query: source.query,
+      title: source.title,
+      summaryPreview: source.summary.slice(0, 240),
+      ...(source.publishedAt ? { publishedAt: source.publishedAt } : {})
+    }))
+  };
 }
 
 export function normalizePlanPageTargets(plan: BookPlan, targetPages: number): BookPlan {
@@ -336,4 +366,21 @@ function formatErrorMessage(error: unknown): string {
     return error.message;
   }
   return "Unknown error.";
+}
+
+function mobileAutoPlanningGuidance(input: CreateProjectInput): string[] {
+  const mobile = jsonRecord(jsonRecord(input.mediaSettings).mobile);
+  if (mobile.bookTypeChoice !== "auto") {
+    return [];
+  }
+  return [
+    "This mobile project kept Book type as Auto until planning.",
+    "Decide the real book shape from the user's creation chat, source notes, and manual settings. Valid shapes include children's fable, short story, workbook, practical guide, client tool, offer guide, and lead magnet.",
+    "The CUSTOM category and general-book template are only a neutral routing shell; do not treat them as the user's requested genre.",
+    "If the chat implies a specific form, such as a children's fable or a workbook, plan that form directly."
+  ];
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

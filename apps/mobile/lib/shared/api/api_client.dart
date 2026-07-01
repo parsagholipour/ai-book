@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,6 +35,18 @@ class ApiClient {
 
   Future<Response<dynamic>> getJson(String path, {bool requiresAuth = true}) {
     return _request('GET', path, requiresAuth: requiresAuth);
+  }
+
+  Stream<ServerSentEvent> getServerSentEvents(
+    String path, {
+    bool requiresAuth = true,
+  }) async* {
+    final response = await _streamRequest(path, requiresAuth: requiresAuth);
+    final body = response.data;
+    if (body == null) {
+      return;
+    }
+    yield* _decodeServerSentEvents(body.stream);
   }
 
   Future<Map<String, String>> authHeaders() async {
@@ -157,6 +171,49 @@ class ApiClient {
     }
   }
 
+  Future<Response<ResponseBody>> _streamRequest(
+    String path, {
+    bool requiresAuth = true,
+    bool retryOnAuthFailure = true,
+  }) async {
+    final options = Options(
+      method: 'GET',
+      responseType: ResponseType.stream,
+      receiveTimeout: Duration.zero,
+      headers: {'Accept': 'text/event-stream'},
+    );
+    if (requiresAuth) {
+      final accessToken = await _validAccessToken();
+      options.headers = {
+        ...?options.headers,
+        'Authorization': 'Bearer $accessToken',
+      };
+    }
+
+    try {
+      return await dio.request<ResponseBody>(path, options: options);
+    } on DioException catch (error) {
+      if (requiresAuth &&
+          retryOnAuthFailure &&
+          error.response?.statusCode == 401) {
+        final tokens = await refreshTokens();
+        return dio.request<ResponseBody>(
+          path,
+          options: Options(
+            method: 'GET',
+            responseType: ResponseType.stream,
+            receiveTimeout: Duration.zero,
+            headers: {
+              'Accept': 'text/event-stream',
+              'Authorization': 'Bearer ${tokens.accessToken}',
+            },
+          ),
+        );
+      }
+      throw _mapDioException(error);
+    }
+  }
+
   Future<String> _validAccessToken() async {
     final tokens = await tokenStore.read();
     if (tokens == null) {
@@ -209,5 +266,56 @@ class ApiClient {
       message: response?.statusMessage ?? 'Something went wrong.',
       statusCode: response?.statusCode,
     );
+  }
+}
+
+class ServerSentEvent {
+  const ServerSentEvent({required this.event, required this.data});
+
+  final String event;
+  final String data;
+}
+
+Stream<ServerSentEvent> _decodeServerSentEvents(
+  Stream<List<int>> stream,
+) async* {
+  var event = 'message';
+  final dataLines = <String>[];
+
+  void reset() {
+    event = 'message';
+    dataLines.clear();
+  }
+
+  await for (final line
+      in stream.transform(utf8.decoder).transform(const LineSplitter())) {
+    if (line.isEmpty) {
+      if (dataLines.isNotEmpty) {
+        yield ServerSentEvent(event: event, data: dataLines.join('\n'));
+      }
+      reset();
+      continue;
+    }
+    if (line.startsWith(':')) {
+      continue;
+    }
+
+    final separator = line.indexOf(':');
+    final field = separator == -1 ? line : line.substring(0, separator);
+    var value = separator == -1 ? '' : line.substring(separator + 1);
+    if (value.startsWith(' ')) {
+      value = value.substring(1);
+    }
+
+    switch (field) {
+      case 'event':
+        event = value;
+      case 'data':
+        dataLines.add(value);
+    }
+  }
+
+  if (dataLines.isNotEmpty) {
+    yield ServerSentEvent(event: event, data: dataLines.join('\n'));
   }
 }

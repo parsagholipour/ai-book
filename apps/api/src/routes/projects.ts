@@ -158,8 +158,8 @@ const pdfExportQuerySchema = z.object({
   disposition: z.enum(["attachment", "inline"]).optional()
 });
 const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
-const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
-const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
+const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
+const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
 const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 const BOOK_MARKDOWN_FILENAME = "book.md";
 const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
@@ -1984,7 +1984,7 @@ function canRecoverGenerationJob(
     );
   }
 
-  return type === "COMPILE_EXPORT";
+  return type === "COMPILE_EXPORT" || type === "APPLY_BOOK_EDIT" || type === "REPLAN_BOOK";
 }
 
 function isPlanningRecoveryJob(type: GenerationJobType): boolean {

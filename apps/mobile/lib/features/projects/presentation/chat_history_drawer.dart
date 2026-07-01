@@ -5,10 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../data/creation_repository.dart';
-import '../data/projects_repository.dart';
 import '../domain/creation_models.dart';
 import 'creation_chat_controller.dart';
-import 'projects_home_screen.dart';
 
 class ChatHistoryDrawer extends ConsumerWidget {
   const ChatHistoryDrawer({super.key, this.activeDraftId});
@@ -235,7 +233,6 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final hasProject = widget.session.createdProjectId != null;
     final selected = widget.isSelected;
 
     return ListTile(
@@ -244,7 +241,7 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
       selectedTileColor: colors.primaryContainer.withValues(alpha: 0.55),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       leading: Icon(
-        hasProject ? Icons.auto_stories_outlined : Icons.chat_bubble_outline,
+        Icons.chat_bubble_outline,
         size: 20,
         color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
       ),
@@ -274,18 +271,7 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
 
   void _open(BuildContext context) {
     Navigator.of(context).pop();
-    final projectId = widget.session.createdProjectId;
-    if (projectId != null) {
-      final projects = ref.read(projectsProvider).asData?.value;
-      final project = projects?.where((p) => p.id == projectId).firstOrNull;
-      if (project != null) {
-        context.push(ProjectHomeAction.forProject(project).pathFor(project));
-      } else {
-        context.push('/projects/$projectId');
-      }
-    } else {
-      context.go('/books/chat/${widget.session.draftId}');
-    }
+    context.go('/books/chat/${widget.session.draftId}');
   }
 
   void _showOptions(BuildContext context) {

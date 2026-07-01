@@ -10,8 +10,18 @@ import {
 } from "./mobileCreation.js";
 
 describe("runCreationTurn", () => {
-  const childRequest: MobileCreationTurnRequest = {
+  const autoRequest: MobileCreationTurnRequest = {
     messages: [{ role: "user", content: "Bedtime story for 5 year olds" }]
+  };
+  const childRequest: MobileCreationTurnRequest = {
+    messages: [{ role: "user", content: "Bedtime story for 5 year olds" }],
+    presets: {
+      bookType: "short_story",
+      bookTypeChoice: "children_story",
+      lengthPreset: "short",
+      qualityPreset: "balanced",
+      imagesEnabled: true
+    }
   };
 
   it("greeting turn invites the user without allowing a build yet", () => {
@@ -23,33 +33,108 @@ describe("runCreationTurn", () => {
     expect(turn.assistantMessage.length).toBeGreaterThan(0);
   });
 
-  it("returns a deterministic, schema-valid turn without enrichment", async () => {
-    const turn = await runCreationTurn(childRequest);
+  it("keeps Auto unresolved during creation chat", async () => {
+    const turn = await runCreationTurn(autoRequest);
 
-    expect(turn.detectedLane).toBe("children_story");
-    expect(turn.brief.lane).toBe("children_story");
+    expect(turn.detectedLane).toBe("auto");
+    expect(turn.brief.lane).toBe("auto");
+    expect(turn.presets.bookTypeChoice).toBe("auto");
     expect(turn.readiness.canBuild).toBe(true);
-    expect(deterministicCreationTurn(childRequest).detectedLane).toBe("children_story");
+    expect(turn.assistantMessage).toBe("Got it. Who is this book for?");
+    expect(deterministicCreationTurn(autoRequest).detectedLane).toBe("auto");
+  });
+
+  it("keeps a rabbit and turtle race unresolved while book type is Auto", () => {
+    const turn = deterministicCreationTurn({
+      messages: [{ role: "user", content: "Make a 4 page book of rabbit and turtle race" }],
+      presets: {
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    });
+
+    expect(turn.detectedLane).toBe("auto");
+    expect(turn.presets.bookType).toBe("lead_magnet");
+    expect(turn.presets.bookTypeChoice).toBe("auto");
+    expect(turn.assistantMessage).not.toContain("practical guide");
+    expect(turn.question?.prompt).toBe("Who is this book for?");
+  });
+
+  it("does not classify the latest chat while book type is Auto", () => {
+    const turn = deterministicCreationTurn({
+      messages: [
+        { role: "user", content: "Create a practical pricing guide for consultants." },
+        { role: "assistant", content: "Got it - this sounds like a practical guide." },
+        { role: "user", content: "Actually make it a bedtime story for 5 year olds." }
+      ],
+      brief: {
+        lane: "practical_guide",
+        title: "",
+        artifact: "",
+        audience: "",
+        promise: "",
+        tone: "",
+        mainCharacter: "",
+        conflict: "",
+        ending: "",
+        theme: "",
+        nextStep: "",
+        exercises: "",
+        mustInclude: ""
+      },
+      presets: {
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    });
+
+    expect(turn.detectedLane).toBe("auto");
+    expect(turn.presets.bookType).toBe("lead_magnet");
+    expect(turn.presets.bookTypeChoice).toBe("auto");
+  });
+
+  it("honors an explicit richer book type choice", () => {
+    const turn = deterministicCreationTurn({
+      messages: [{ role: "user", content: "Create a practical guide for onboarding consulting clients." }],
+      presets: {
+        bookType: "workbook",
+        bookTypeChoice: "client_tool",
+        lengthPreset: "standard",
+        qualityPreset: "balanced",
+        imagesEnabled: true
+      }
+    });
+
+    expect(turn.detectedLane).toBe("client_tool");
+    expect(turn.brief.lane).toBe("client_tool");
+    expect(turn.presets.bookType).toBe("workbook");
+    expect(turn.presets.bookTypeChoice).toBe("client_tool");
   });
 
   it("falls back to the deterministic turn when enrichment throws", async () => {
-    const turn = await runCreationTurn(childRequest, {
+    const turn = await runCreationTurn(autoRequest, {
       enrich: async () => {
         throw new Error("model unavailable");
       }
     });
 
-    expect(turn.detectedLane).toBe("children_story");
+    expect(turn.detectedLane).toBe("auto");
     expect(turn.assistantMessage.length).toBeGreaterThan(0);
   });
 
   it("falls back to the deterministic turn when enrichment times out", async () => {
-    const turn = await runCreationTurn(childRequest, {
+    const turn = await runCreationTurn(autoRequest, {
       enrich: () => new Promise<never>(() => undefined),
       timeoutMs: 5
     });
 
-    expect(turn.detectedLane).toBe("children_story");
+    expect(turn.detectedLane).toBe("auto");
     expect(turn.readiness.canBuild).toBe(true);
   });
 

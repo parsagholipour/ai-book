@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
+import 'creation_labels.dart';
 
 const _defaultPresets = MobileCreationPresets(
   bookType: 'lead_magnet',
+  bookTypeChoice: 'auto',
   lengthPreset: 'short',
   qualityPreset: 'balanced',
   imagesEnabled: true,
@@ -23,9 +25,9 @@ const _localGreetingText =
 
 const _localGreetingTurn = MobileCreationTurn(
   assistantMessage: _localGreetingText,
-  brief: MobileBookRecipe(lane: 'practical_guide'),
+  brief: MobileBookRecipe(lane: 'auto'),
   presets: _defaultPresets,
-  detectedLane: 'practical_guide',
+  detectedLane: 'auto',
   quickReplies: <String>[
     'Bedtime story for 5 year olds',
     'Lead magnet about pricing',
@@ -52,19 +54,22 @@ class CreationChatState {
     this.building = false,
     this.brief,
     this.presets = _defaultPresets,
-    this.detectedLane = 'practical_guide',
+    this.detectedLane = 'auto',
     this.quickReplies = const <String>[],
     this.question,
     this.readiness = _emptyReadiness,
     this.titleSuggestions = const <String>[],
     this.shapePreview = const <String>[],
     this.warnings = const <String>[],
+    this.outputs = const <MobileCreationOutput>[],
     this.sourceNotes = '',
     this.optionalDetails = const MobileCreationOptionalDetails(),
     this.language = 'en',
     this.userChoices = const <CreationChoice>{},
     this.initError,
     this.createdProjectId,
+    this.activeProjectId,
+    this.composingNewOutput = false,
   });
 
   final bool initializing;
@@ -82,12 +87,15 @@ class CreationChatState {
   final List<String> titleSuggestions;
   final List<String> shapePreview;
   final List<String> warnings;
+  final List<MobileCreationOutput> outputs;
   final String sourceNotes;
   final MobileCreationOptionalDetails optionalDetails;
   final String language;
   final Set<CreationChoice> userChoices;
   final String? initError;
   final String? createdProjectId;
+  final String? activeProjectId;
+  final bool composingNewOutput;
 
   bool get hasSession => draftId != null;
 
@@ -101,6 +109,9 @@ class CreationChatState {
   bool get canBuild => hasSession && readiness.canBuild && !isBusy;
 
   bool get hasSourceNotes => sourceNotes.trim().isNotEmpty;
+
+  bool get hasActiveOutput =>
+      !composingNewOutput && (activeProjectId ?? createdProjectId) != null;
 
   CreationChatState copyWith({
     bool? initializing,
@@ -118,12 +129,15 @@ class CreationChatState {
     List<String>? titleSuggestions,
     List<String>? shapePreview,
     List<String>? warnings,
+    List<MobileCreationOutput>? outputs,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
     Set<CreationChoice>? userChoices,
     Object? initError = _sentinel,
     Object? createdProjectId = _sentinel,
+    Object? activeProjectId = _sentinel,
+    bool? composingNewOutput,
   }) {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
@@ -145,6 +159,7 @@ class CreationChatState {
       titleSuggestions: titleSuggestions ?? this.titleSuggestions,
       shapePreview: shapePreview ?? this.shapePreview,
       warnings: warnings ?? this.warnings,
+      outputs: outputs ?? this.outputs,
       sourceNotes: sourceNotes ?? this.sourceNotes,
       optionalDetails: optionalDetails ?? this.optionalDetails,
       language: language ?? this.language,
@@ -153,6 +168,10 @@ class CreationChatState {
       createdProjectId: createdProjectId == _sentinel
           ? this.createdProjectId
           : createdProjectId as String?,
+      activeProjectId: activeProjectId == _sentinel
+          ? this.activeProjectId
+          : activeProjectId as String?,
+      composingNewOutput: composingNewOutput ?? this.composingNewOutput,
     );
   }
 
@@ -256,7 +275,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (trimmed.isEmpty || state.isBusy) {
       return;
     }
-    final presets = state.presets;
+    final presets = _presetsForRequest();
     final sourceNotes = state.hasSourceNotes ? state.sourceNotes.trim() : null;
     final optionalDetails = state.optionalDetails.hasContent
         ? state.optionalDetails
@@ -313,7 +332,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     try {
       final response = await _repository.buildConversation(
         draftId: draftId,
-        presets: state.presets,
+        presets: _presetsForRequest(),
         sourceNotes: state.hasSourceNotes ? state.sourceNotes.trim() : null,
         optionalDetails: state.optionalDetails.hasContent
             ? state.optionalDetails
@@ -323,8 +342,11 @@ class CreationChatController extends Notifier<CreationChatState> {
       state = state.copyWith(
         building: false,
         createdProjectId: response.project.id,
+        activeProjectId: response.project.id,
+        composingNewOutput: false,
+        outputs: _mergeOutput(response.output),
       );
-      _cacheCreatedProject(response.project.id);
+      _cacheCreatedProject(response.project.id, response.output);
       ref.invalidate(chatSessionsProvider);
       return response;
     } catch (error) {
@@ -333,16 +355,81 @@ class CreationChatController extends Notifier<CreationChatState> {
     }
   }
 
+  Future<MobileCreationBuildPreflight> preflightBuildPlan() async {
+    final draftId = state.draftId;
+    if (draftId == null) {
+      throw const ApiException(
+        code: 'SESSION_NOT_READY',
+        message: 'Start describing your book before building the plan.',
+      );
+    }
+    state = state.copyWith(building: true);
+    try {
+      final response = await _repository.preflightBuildConversation(
+        draftId: draftId,
+        presets: _presetsForRequest(),
+        sourceNotes: state.hasSourceNotes ? state.sourceNotes.trim() : null,
+        optionalDetails: state.optionalDetails.hasContent
+            ? state.optionalDetails
+            : null,
+        language: state.language == 'en' ? null : state.language,
+      );
+      state = state.copyWith(building: false);
+      return response;
+    } catch (error) {
+      state = state.copyWith(building: false);
+      rethrow;
+    }
+  }
+
   void setBookType(String value) {
+    final choices = {...state.userChoices};
+    if (value == 'auto') {
+      choices.remove(CreationChoice.bookType);
+    } else {
+      choices.add(CreationChoice.bookType);
+    }
     state = state.copyWith(
-      presets: state.presets.copyWith(bookType: value),
-      userChoices: {...state.userChoices, CreationChoice.bookType},
+      presets: state.presets.copyWith(
+        bookType: productBookTypeForChoice(
+          value,
+          detectedLane: state.detectedLane,
+        ),
+        bookTypeChoice: value,
+      ),
+      userChoices: choices,
     );
   }
 
   void setLengthPreset(String value) {
     state = state.copyWith(
       presets: state.presets.copyWith(lengthPreset: value),
+      userChoices: {...state.userChoices, CreationChoice.length},
+    );
+  }
+
+  void setPageCountAuto() {
+    final choices = {...state.userChoices}..remove(CreationChoice.length);
+    state = state.copyWith(
+      presets: state.presets.copyWith(
+        pageCountMode: 'auto',
+        targetPages: null,
+        pageCountSource: null,
+      ),
+      userChoices: choices,
+    );
+  }
+
+  void setCustomTargetPages(int targetPages, {String source = 'settings'}) {
+    if (targetPages < 1 || targetPages > 600) {
+      return;
+    }
+    state = state.copyWith(
+      presets: state.presets.copyWith(
+        pageCountMode: 'custom',
+        targetPages: targetPages,
+        pageCountSource: source,
+      ),
       userChoices: {...state.userChoices, CreationChoice.length},
     );
   }
@@ -417,6 +504,18 @@ class CreationChatController extends Notifier<CreationChatState> {
     }
   }
 
+  void startNewOutput() {
+    state = state.copyWith(composingNewOutput: true, activeProjectId: null);
+  }
+
+  void selectOutput(String projectId) {
+    if (projectId.trim().isEmpty) return;
+    state = state.copyWith(
+      activeProjectId: projectId,
+      composingNewOutput: false,
+    );
+  }
+
   MobileCreationOptionalDetails _copyOptional({
     String? title,
     String? authorName,
@@ -432,6 +531,18 @@ class CreationChatController extends Notifier<CreationChatState> {
     );
   }
 
+  MobileCreationPresets? _presetsForRequest() {
+    if (state.userChoices.isEmpty) {
+      return null;
+    }
+    return state.presets.copyWith(
+      bookType: productBookTypeForChoice(
+        state.presets.bookTypeChoice,
+        detectedLane: state.detectedLane,
+      ),
+    );
+  }
+
   bool _canApplyInitResponse({
     required int requestId,
     required int messageRequestId,
@@ -443,12 +554,30 @@ class CreationChatController extends Notifier<CreationChatState> {
     return expectedDraftId == null || state.draftId == expectedDraftId;
   }
 
-  void _cacheCreatedProject(String projectId) {
+  List<MobileCreationOutput> _mergeOutput(MobileCreationOutput? output) {
+    if (output == null) {
+      return state.outputs;
+    }
+    final next = state.outputs
+        .where((existing) => existing.projectId != output.projectId)
+        .toList();
+    next.add(output);
+    next.sort((a, b) => a.sequence.compareTo(b.sequence));
+    return next;
+  }
+
+  void _cacheCreatedProject(String projectId, MobileCreationOutput? output) {
     final draftId = state.draftId;
     if (draftId == null) return;
     final current = _cache.readById(draftId);
     final session = current?.session;
     if (current == null || session == null) return;
+    final outputs = output == null
+        ? session.outputs
+        : ([
+            ...session.outputs.where((item) => item.projectId != projectId),
+            output,
+          ]..sort((a, b) => a.sequence.compareTo(b.sequence)));
     _cache.write(
       MobileCreationConversationResponse(
         turn: current.turn,
@@ -458,6 +587,8 @@ class CreationChatController extends Notifier<CreationChatState> {
           status: session.status,
           messages: session.messages,
           createdProjectId: projectId,
+          activeProjectId: projectId,
+          outputs: outputs,
           updatedAt: session.updatedAt,
         ),
       ),
@@ -497,6 +628,8 @@ class CreationChatController extends Notifier<CreationChatState> {
       titleSuggestions: turn.titleSuggestions,
       shapePreview: turn.shapePreview,
       warnings: turn.warnings,
+      outputs: session?.outputs ?? state.outputs,
+      activeProjectId: session?.activeProjectId ?? session?.createdProjectId,
     );
   }
 
@@ -511,9 +644,21 @@ class CreationChatController extends Notifier<CreationChatState> {
       bookType: choices.contains(CreationChoice.bookType)
           ? current.bookType
           : null,
+      bookTypeChoice: choices.contains(CreationChoice.bookType)
+          ? current.bookTypeChoice
+          : null,
       lengthPreset: choices.contains(CreationChoice.length)
           ? current.lengthPreset
           : null,
+      pageCountMode: choices.contains(CreationChoice.length)
+          ? current.pageCountMode
+          : null,
+      targetPages: choices.contains(CreationChoice.length)
+          ? current.targetPages
+          : incoming.targetPages,
+      pageCountSource: choices.contains(CreationChoice.length)
+          ? current.pageCountSource
+          : incoming.pageCountSource,
       qualityPreset: choices.contains(CreationChoice.finish)
           ? current.qualityPreset
           : null,

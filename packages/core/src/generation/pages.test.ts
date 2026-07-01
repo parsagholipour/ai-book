@@ -1434,6 +1434,59 @@ describe("page quality review", () => {
     expect(report.issues.join(" ")).toMatch(/dash/i);
   });
 
+  it("allows Portuguese-style dialogue dashes without treating them as AI-styled prose", async () => {
+    const report = await review({
+      title: "Palavras no Jardim",
+      markdown: [
+        "Naquela tarde, Natalia chegou ao jardim com o caderno aberto e o lapis preso atras da orelha. Parsa estava perto do canteiro do girassol, mexendo a terra com cuidado. O broto parecia mais alto, e as folhas pequenas brilhavam depois da chuva.",
+        "",
+        "— Aab.",
+        "",
+        "— Aab — repetiu Natalia, bem devagar.",
+        "",
+        "Parsa sorriu e apontou para o regador azul.",
+        "",
+        "— Agua.",
+        "",
+        "— Agua — disse ele, tentando copiar o som.",
+        "",
+        "Natalia bateu palmas baixinho para nao assustar os passaros. Depois desenhou uma gota no caderno e escreveu as duas palavras uma ao lado da outra. Parsa olhou para o desenho como se fosse uma pequena placa no caminho.",
+        "",
+        "— Aftab.",
+        "",
+        "— Sol — respondeu Natalia, levantando o rosto para a luz.",
+        "",
+        "Eles continuaram assim por muitos minutos, trocando sons, risos e gestos. Cada palavra nova parecia uma semente colocada na terra. Quando o vento passou pelo jardim, o broto se mexeu um pouco, e Natalia sentiu que tambem estava criando raizes ali."
+      ].join("\n"),
+      summary: "Natalia and Parsa trade simple words while caring for the sunflower, deepening their friendship through patient dialogue.",
+      continuityNotes: []
+    });
+
+    expect(report.approved).toBe(true);
+    expect(report.checks.styleNatural).toBe(true);
+  });
+
+  it("still rejects inline dash overuse when dialogue dashes are present", async () => {
+    const report = await review({
+      title: "Dialogue and Overwritten Prose",
+      markdown: [
+        "— Aab.",
+        "",
+        "— Agua — disse Natalia.",
+        "",
+        "The garden waited — not because the seed needed silence — but because every sentence wanted to announce its meaning. Natalia crossed the path — slowly, visibly, with the notebook in her hand — and Parsa watched the moment become heavier than the scene required. The bell sounded – thin and metallic – from the street beyond the gate.",
+        "",
+        "The extra cuts in the paragraph made each beat explain itself before the reader could feel it, and the rhythm began to resemble a generated passage reaching for drama instead of trusting the simple scene."
+      ].join("\n"),
+      summary: "The dialogue markers are acceptable, but the prose paragraph overuses inline dashes.",
+      continuityNotes: []
+    });
+
+    expect(report.approved).toBe(false);
+    expect(report.checks.styleNatural).toBe(false);
+    expect(report.issues.join(" ")).toMatch(/inline.*dash/i);
+  });
+
   it("rejects duplicate page-label titles", async () => {
     const report = await review({
       title: "Page 1: Page 1: Chapter 1: The Door Opens",

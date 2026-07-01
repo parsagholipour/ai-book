@@ -1,7 +1,7 @@
 import { Job, Queue, UnrecoverableError, Worker, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   assertBookLikeMarkdown,
@@ -72,8 +72,9 @@ import {
   withRecoverableNetworkRetry
 } from "@book-maker/core";
 import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
-import { refundLatestProjectOperationCredits } from "@book-maker/db/billing";
-import { inputForPlanVersion, inputFromProject, inputFromSnapshot } from "./projectInput.js";
+import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
+import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
+import { inputForPlanVersion, inputFromProject, inputFromSnapshot, inputWithMessageMediaPreferences } from "./projectInput.js";
 import {
   acceptedSavedPageTarget,
   effectiveSavedWholeBookExportContext,
@@ -164,6 +165,17 @@ const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> 
     { key: "pdf", label: "Generate PDF" },
     { key: "epub", label: "Generate EPUB" }
   ],
+  "apply-book-edit": [
+    { key: "prepare", label: "Prepare edit" },
+    { key: "snapshot", label: "Snapshot pages" },
+    { key: "apply", label: "Apply edits" },
+    { key: "export", label: "Refresh exports" }
+  ],
+  "replan-book": [
+    { key: "revise", label: "Revise plan" },
+    { key: "save", label: "Save approved plan" },
+    { key: "generate", label: "Queue regeneration" }
+  ],
   "prepare-character-candidates": [
     { key: "detect", label: "Detect characters" },
     { key: "save", label: "Save candidates" }
@@ -209,6 +221,12 @@ const worker = new Worker(
           break;
         case "compile-export":
           await compileExport(job);
+          break;
+        case "apply-book-edit":
+          await applyBookEdit(job);
+          break;
+        case "replan-book":
+          await replanBook(job);
           break;
         case "prepare-character-candidates":
           await prepareCharacterCandidates(job);
@@ -354,7 +372,7 @@ async function revisePlan(job: Job) {
   if (!planVersion) {
     throw new Error("Plan not found");
   }
-  const input = inputForPlanVersion(planVersion.project, planVersion.inputSnapshot);
+  const input = inputWithMessageMediaPreferences(inputForPlanVersion(planVersion.project, planVersion.inputSnapshot), message);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
@@ -389,7 +407,12 @@ async function revisePlan(job: Job) {
     });
     await tx.project.update({
       where: { id: projectId },
-      data: { currentPlanId: newPlan.id, status: "PLAN_READY", title: revised.title }
+      data: {
+        currentPlanId: newPlan.id,
+        status: "PLAN_READY",
+        title: revised.title,
+        mediaSettings: planMediaSettingsSnapshot(input)
+      }
     });
   });
   await advanceJobStep(generationJobId, "save", 90);
@@ -2438,6 +2461,453 @@ async function compileExport(job: Job) {
   await maybeEnqueueCharacterCandidatePreparation(projectId, planId);
 }
 
+async function applyBookEdit(job: Job) {
+  const {
+    projectId,
+    operationId,
+    request,
+    affectedPageIndexes,
+    planId,
+    exactReplacement
+  } = job.data as {
+    projectId: string;
+    operationId: string;
+    request: string;
+    affectedPageIndexes: number[];
+    planId?: string;
+    exactReplacement?: { from: string; to: string };
+  };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  const operation = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
+  if (!operation) {
+    throw new Error("Book edit operation not found");
+  }
+  await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
+  await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
+  await advanceJobStep(generationJobId, "prepare", 20, "Preparing page edit");
+
+  const [project, planVersion] = await Promise.all([
+    getProjectOrThrow(projectId),
+    prisma.planVersion.findUnique({ where: { id: planId ?? "" } })
+  ]);
+  if (!project.currentPlanId && !planId) {
+    throw new Error("Cannot edit a book without a current plan");
+  }
+  const effectivePlanVersion =
+    planVersion ?? (project.currentPlanId ? await prisma.planVersion.findUnique({ where: { id: project.currentPlanId } }) : null);
+  if (!effectivePlanVersion) {
+    throw new Error("Current plan not found");
+  }
+  const input = inputForPlanVersion(project, effectivePlanVersion.inputSnapshot);
+  const plan = bookPlanSchema.parse(effectivePlanVersion.planningPackage);
+  const strategy = strategyForInput(input);
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const pages = await prisma.page.findMany({
+    where: { projectId, index: { in: affectedPageIndexes } },
+    orderBy: { index: "asc" },
+    include: { chapter: true }
+  });
+  if (pages.length === 0) {
+    throw new Error("No matching pages found for this edit");
+  }
+
+  await advanceJobStep(generationJobId, "snapshot", 35, `Snapshotting ${pages.length} page edit target(s)`);
+  const snapshots = new Map<number, string>();
+  for (const page of pages) {
+    const snapshot = await prisma.pageEditSnapshot.create({
+      data: {
+        projectId,
+        pageId: page.id,
+        operationId,
+        pageIndex: page.index,
+        titleBefore: page.title,
+        markdownBefore: page.markdown,
+        summaryBefore: page.summary,
+        revisionBefore: page.revision
+      }
+    });
+    snapshots.set(page.index, snapshot.id);
+  }
+
+  const updatedPageIndexes: number[] = [];
+  for (const [offset, page] of pages.entries()) {
+    await updateJobProgress(generationJobId, {
+      progress: 40 + Math.round((offset / Math.max(pages.length, 1)) * 35),
+      message: `Applying edit to page ${page.index}`
+    });
+    const updated = exactReplacement && page.markdown.includes(exactReplacement.from)
+      ? locallyPatchedPage(page, exactReplacement)
+      : await rewritePageForUserRequest({
+          projectId,
+          page,
+          input,
+          plan,
+          strategy,
+          providers,
+          request,
+          generationJobId
+        });
+
+    const saved = await prisma.page.update({
+      where: { id: page.id },
+      data: {
+        title: updated.title,
+        markdown: updated.markdown,
+        summary: updated.summary,
+        imagePrompt: updated.imagePrompt ?? page.imagePrompt,
+        status: "COMPLETED",
+        revision: { increment: 1 },
+        qualityReport: updated.qualityReport as Prisma.InputJsonValue
+      }
+    });
+    const snapshotId = snapshots.get(page.index);
+    if (snapshotId) {
+      await prisma.pageEditSnapshot.update({
+        where: { id: snapshotId },
+        data: {
+          titleAfter: saved.title,
+          markdownAfter: saved.markdown,
+          summaryAfter: saved.summary,
+          revisionAfter: saved.revision
+        }
+      });
+    }
+    if (updated.continuityNotes.length > 0) {
+      await prisma.continuityNote.createMany({
+        data: updated.continuityNotes.map((body) => ({
+          projectId,
+          scope: `page:${page.index}:edit:${operationId}`,
+          body,
+          tags: ["page", String(page.index), "edit"]
+        }))
+      });
+    }
+    await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
+    updatedPageIndexes.push(page.index);
+  }
+
+  await advanceJobStep(generationJobId, "export", 85, "Refreshing exports");
+  await invalidateProjectExports(projectId);
+  await prisma.bookEditOperation.update({
+    where: { id: operationId },
+    data: {
+      status: "APPLIED",
+      affectedPageIndexes: updatedPageIndexes,
+      appliedAt: new Date()
+    }
+  });
+  await maybeEnqueueCompile(projectId, effectivePlanVersion.id);
+}
+
+async function replanBook(job: Job) {
+  const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId } = job.data as {
+    projectId: string;
+    operationId: string;
+    request: string;
+    planId?: string;
+    sourceProjectId?: string;
+    sourcePlanId?: string | null;
+  };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
+  await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
+  await advanceJobStep(generationJobId, "revise", 30, "Rebuilding book plan");
+
+  const targetProject = await getProjectOrThrow(projectId);
+  const sourceProject = sourceProjectId && sourceProjectId !== projectId
+    ? await getProjectOrThrow(sourceProjectId)
+    : targetProject;
+  const currentPlanId = sourcePlanId ?? planId ?? sourceProject.currentPlanId;
+  if (!currentPlanId) {
+    throw new Error("Cannot replan without a current plan");
+  }
+  const planVersion = await prisma.planVersion.findUnique({ where: { id: currentPlanId }, include: { project: true } });
+  if (!planVersion) {
+    throw new Error("Current plan not found");
+  }
+  const input = inputWithMessageMediaPreferences(inputForPlanVersion(sourceProject, planVersion.inputSnapshot), request);
+  const strategy = strategyForInput(input);
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
+  const revised = await strategy.revisePlan({
+    currentPlan,
+    userMessage: request,
+    textModel: providers.text,
+    input,
+    targetPages: input.targetPages,
+    temperature: input.temperature,
+    lessCensored: input.mediaSettings.lessCensored === true,
+    language: input.language,
+    toneProfile: input.mediaSettings.toneProfile
+  });
+  const version = await nextPlanVersion(projectId);
+  const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];
+  await advanceJobStep(generationJobId, "save", 65, "Saving approved plan");
+
+  let newPlanId = "";
+  await prisma.$transaction(async (tx) => {
+    if (sourceProject.id === targetProject.id) {
+      await tx.planVersion.updateMany({
+        where: { projectId, id: { not: currentPlanId } },
+        data: { status: "SUPERSEDED" }
+      });
+      await tx.planVersion.update({ where: { id: currentPlanId }, data: { status: "SUPERSEDED" } });
+    } else {
+      await tx.planVersion.updateMany({
+        where: { projectId },
+        data: { status: "SUPERSEDED" }
+      });
+    }
+    const newPlan = await tx.planVersion.create({
+      data: {
+        projectId,
+        version,
+        status: "APPROVED",
+        approvedAt: new Date(),
+        planningPackage: revised,
+        inputSnapshot: planInputSnapshot(input),
+        messages: [...priorMessages, { role: "user", content: request, at: new Date().toISOString(), source: "book_replan" }]
+      }
+    });
+    newPlanId = newPlan.id;
+    await tx.project.update({
+      where: { id: projectId },
+      data: {
+        currentPlanId: newPlan.id,
+        status: "GENERATING",
+        title: revised.title,
+        mediaSettings: planMediaSettingsSnapshot(input)
+      }
+    });
+    await replaceProjectPlanReferenceRecords(tx, projectId, revised);
+  });
+
+  await invalidateProjectExports(projectId);
+  await advanceJobStep(generationJobId, "generate", 85, "Queueing regenerated book");
+  const generateJob = await enqueueWorkerJobDirect({
+    projectId,
+    type: "GENERATE_BOOK",
+    name: "generate-book",
+    payload: {
+      planId: newPlanId,
+      replanOperationId: operationId,
+      billingLedgerEntryId: job.data.billingLedgerEntryId
+    }
+  });
+  await prisma.bookEditOperation.update({
+    where: { id: operationId },
+    data: {
+      status: "APPLIED",
+      generationJobId: generateJob.id,
+      appliedAt: new Date()
+    }
+  });
+}
+
+async function replaceProjectPlanReferenceRecords(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  plan: BookPlan
+): Promise<void> {
+  await tx.character.deleteMany({ where: { projectId } });
+  await tx.location.deleteMany({ where: { projectId } });
+  await tx.researchSource.deleteMany({ where: { projectId } });
+
+  if (plan.characters.length > 0) {
+    await tx.character.createMany({
+      data: plan.characters.map((character) => ({
+        projectId,
+        name: character.name,
+        role: character.role,
+        description: character.description,
+        traits: character.traits,
+        visualRules: character.visualRules
+      }))
+    });
+  }
+
+  if (plan.locations.length > 0) {
+    await tx.location.createMany({
+      data: plan.locations.map((location) => ({
+        projectId,
+        name: location.name,
+        description: location.description,
+        rules: location.rules
+      }))
+    });
+  }
+
+  if (plan.researchNotes.length > 0) {
+    await tx.researchSource.createMany({
+      data: plan.researchNotes.map((source) => ({
+        projectId,
+        query: source.query,
+        title: source.title,
+        url: source.url ?? null,
+        summary: source.summary,
+        publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
+      }))
+    });
+  }
+}
+
+function locallyPatchedPage(
+  page: { title: string; markdown: string; summary: string; imagePrompt: string | null; qualityReport: unknown },
+  replacement: { from: string; to: string }
+): PageDraft & { qualityReport: PageQualityReport } {
+  const markdown = page.markdown.split(replacement.from).join(replacement.to);
+  return {
+    title: page.title.split(replacement.from).join(replacement.to),
+    markdown,
+    summary: page.summary.split(replacement.from).join(replacement.to),
+    imagePrompt: page.imagePrompt ?? undefined,
+    continuityNotes: [],
+    qualityReport: {
+      approved: true,
+      score: 90,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Applied exact user-requested text replacement.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    }
+  };
+}
+
+async function rewritePageForUserRequest(options: {
+  projectId: string;
+  page: {
+    id: string;
+    index: number;
+    title: string;
+    markdown: string;
+    summary: string;
+    imagePrompt: string | null;
+    chapterId: string | null;
+    chapter?: { index: number; productionBrief: unknown } | null;
+  };
+  input: CreateProjectInput;
+  plan: BookPlan;
+  strategy: BookGenerationStrategy;
+  providers: ProviderSet;
+  request: string;
+  generationJobId?: string | undefined;
+}): Promise<PageDraft & { qualityReport: PageQualityReport }> {
+  const previousPages = await prisma.page.findMany({
+    where: { projectId: options.projectId, index: { lt: options.page.index }, status: "COMPLETED" },
+    orderBy: { index: "desc" },
+    take: 18
+  });
+  const priorPageContext = previousPages.reverse().map(toPriorPageContext);
+  const continuityNotes = await loadContinuityNotes(options.projectId);
+  const chapterPlan = options.plan.chapters.find((chapter) => chapter.index === options.page.chapter?.index);
+  const chapterBrief = parseChapterBrief(options.page.chapter?.productionBrief);
+  const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === options.page.index);
+  const report: PageQualityReport = {
+    approved: false,
+    score: 50,
+    issues: [`User requested this page edit: ${options.request}`],
+    requiredRevisions: [
+      "Revise the existing page to satisfy the user's requested edit.",
+      "Keep the same page role and overall book structure unless the request explicitly requires otherwise.",
+      "Return a complete replacement page draft, not a diff."
+    ],
+    notes: "User-requested book edit.",
+    checks: {
+      placeholderFree: true,
+      promptLeakFree: true,
+      titleClean: true,
+      repetitionOk: true,
+      progressionOk: true,
+      styleNatural: true
+    }
+  };
+  const draft = await revisePageDraftWithRestart({
+    strategy: options.strategy,
+    generationJobId: options.generationJobId,
+    progress: 62,
+    context: `User edit page ${options.page.index}`,
+    reviseOptions: {
+      input: options.input,
+      plan: options.plan,
+      chapter: chapterPlan,
+      chapterBrief,
+      pageBrief,
+      pageIndex: options.page.index,
+      draft: {
+        title: options.page.title,
+        markdown: options.page.markdown,
+        summary: options.page.summary,
+        imagePrompt: options.page.imagePrompt ?? undefined,
+        continuityNotes: []
+      },
+      report,
+      previousPages: priorPageContext,
+      continuityNotes,
+      textModel: options.providers.text
+    }
+  });
+  const qualityReport = await options.strategy.reviewPageDraft({
+    input: options.input,
+    plan: options.plan,
+    chapter: chapterPlan,
+    chapterBrief,
+    pageBrief,
+    pageIndex: options.page.index,
+    draft,
+    previousPages: priorPageContext,
+    continuityNotes,
+    textModel: options.providers.text
+  });
+  return { ...draft, qualityReport };
+}
+
+async function invalidateProjectExports(projectId: string): Promise<void> {
+  const projectDir = join(config.BOOK_STORAGE_DIR, projectId);
+  await Promise.all(
+    ["book.md", "README.md", "book.pdf", "book.epub"].map((filename) =>
+      rm(join(projectDir, filename), { force: true }).catch(() => undefined)
+    )
+  );
+}
+
+async function enqueueWorkerJobDirect(options: {
+  projectId: string;
+  type: "GENERATE_BOOK";
+  name: "generate-book";
+  payload: Record<string, unknown>;
+}) {
+  const generationJob = await prisma.generationJob.create({
+    data: {
+      projectId: options.projectId,
+      type: options.type,
+      status: "QUEUED",
+      progress: 0,
+      message: "Queued",
+      payload: options.payload as Prisma.InputJsonValue
+    }
+  });
+  const bullJob = await queue.add(
+    options.name,
+    {
+      ...options.payload,
+      projectId: options.projectId,
+      generationJobId: generationJob.id
+    },
+    jobOptionsForName(options.name)
+  );
+  return prisma.generationJob.update({
+    where: { id: generationJob.id },
+    data: { bullJobId: bullJob.id ?? null }
+  });
+}
+
 async function maybeEnqueueCharacterCandidatePreparation(projectId: string, planId: string) {
   const [existingCharacters, openJobs] = await Promise.all([
     prisma.voiceCharacter.count({
@@ -4457,6 +4927,7 @@ async function markActive(job: Job) {
       ...(steps.length ? { steps: steps as Prisma.InputJsonValue } : {})
     }
   });
+  await markEditOperationActive(job);
 }
 
 async function markCompleted(job: Job) {
@@ -4470,11 +4941,13 @@ async function markCompleted(job: Job) {
     where: { id: generationJobId },
     data: { status: "COMPLETED", finishedAt: new Date(), message: "Completed", progress: 100 }
   });
+  await markEditOperationCompleted(job);
 }
 
 async function markFailed(job: Job, error: unknown) {
   const generationJobId = job.data.generationJobId as string | undefined;
   const projectId = job.data.projectId as string | undefined;
+  const editOperationId = editOperationIdFromJob(job);
   if (generationJobId) {
     await failActiveJobStep(generationJobId);
     await prisma.generationJob.update({
@@ -4487,11 +4960,22 @@ async function markFailed(job: Job, error: unknown) {
       }
     });
   }
+  if (editOperationId) {
+    await failEditOperation(editOperationId, errorMessage(error));
+    if (projectId && job.name === "revise-plan") {
+      if (await restoreProjectAfterFailedPlanRevision(prisma, projectId)) {
+        return;
+      }
+    }
+    if (projectId) {
+      await prisma.project
+        .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: "COMPLETE" } })
+        .catch(() => ({ count: 0 }));
+    }
+    return;
+  }
   if (projectId && job.name === "revise-plan") {
-    const restored = await prisma.project
-      .updateMany({ where: { id: projectId, currentPlanId: { not: null } }, data: { status: "PLAN_READY" } })
-      .catch(() => ({ count: 0 }));
-    if (restored.count > 0) {
+    if (await restoreProjectAfterFailedPlanRevision(prisma, projectId)) {
       return;
     }
   }
@@ -4503,6 +4987,55 @@ async function markFailed(job: Job, error: unknown) {
 
 function shouldFailProjectForJob(jobName: string): boolean {
   return !["prepare-character-candidates", "build-character-persona"].includes(jobName);
+}
+
+async function markEditOperationActive(job: Job): Promise<void> {
+  const editOperationId = editOperationIdFromJob(job);
+  if (!editOperationId) {
+    return;
+  }
+  await prisma.bookEditOperation
+    .updateMany({ where: { id: editOperationId, status: "QUEUED" }, data: { status: "ACTIVE" } })
+    .catch(() => ({ count: 0 }));
+}
+
+async function markEditOperationCompleted(job: Job): Promise<void> {
+  const editOperationId = editOperationIdFromJob(job);
+  if (!editOperationId) {
+    return;
+  }
+  if (job.name === "apply-book-edit" || job.name === "replan-book") {
+    return;
+  }
+  await prisma.bookEditOperation
+    .updateMany({
+      where: { id: editOperationId, status: { in: ["QUEUED", "ACTIVE"] } },
+      data: { status: "APPLIED", appliedAt: new Date() }
+    })
+    .catch(() => ({ count: 0 }));
+}
+
+async function failEditOperation(operationId: string, reason: string): Promise<void> {
+  const operation = await prisma.bookEditOperation.findUnique({
+    where: { id: operationId },
+    select: { ledgerEntryId: true }
+  });
+  if (operation?.ledgerEntryId) {
+    await refundCreditLedgerEntry(operation.ledgerEntryId, reason).catch((error) => {
+      console.error(`Failed to refund edit operation ${operationId}`, error);
+    });
+  }
+  await prisma.bookEditOperation
+    .update({
+      where: { id: operationId },
+      data: { status: "FAILED", error: reason }
+    })
+    .catch(() => undefined);
+}
+
+function editOperationIdFromJob(job: Job): string | null {
+  const value = job.data.operationId ?? job.data.editOperationId ?? job.data.replanOperationId;
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 async function markStopped(job: Job) {
@@ -4615,6 +5148,10 @@ async function getProjectOrThrow(projectId: string) {
 
 function planInputSnapshot(input: CreateProjectInput): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(input)) as Prisma.InputJsonValue;
+}
+
+function planMediaSettingsSnapshot(input: CreateProjectInput): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(input.mediaSettings)) as Prisma.InputJsonValue;
 }
 
 function coverMetadataFromProject(

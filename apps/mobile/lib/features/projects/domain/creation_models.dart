@@ -71,7 +71,7 @@ class MobileBookRecipe {
 
   factory MobileBookRecipe.fromJson(Map<String, dynamic> json) {
     return MobileBookRecipe(
-      lane: json['lane'] as String? ?? 'practical_guide',
+      lane: json['lane'] as String? ?? 'auto',
       title: json['title'] as String? ?? '',
       artifact: json['artifact'] as String? ?? '',
       audience: json['audience'] as String? ?? '',
@@ -141,47 +141,77 @@ class MobileBookRecipe {
 class MobileCreationPresets {
   const MobileCreationPresets({
     required this.bookType,
+    this.bookTypeChoice = 'auto',
     required this.lengthPreset,
     required this.qualityPreset,
     required this.imagesEnabled,
+    this.pageCountMode = 'auto',
+    this.targetPages,
+    this.pageCountSource,
   });
 
   final String bookType;
+  final String bookTypeChoice;
   final String lengthPreset;
   final String qualityPreset;
   final bool imagesEnabled;
+  final String pageCountMode;
+  final int? targetPages;
+  final String? pageCountSource;
 
   factory MobileCreationPresets.fromJson(Map<String, dynamic> json) {
     return MobileCreationPresets(
       bookType: json['bookType'] as String,
+      bookTypeChoice: json['bookTypeChoice'] as String? ?? 'auto',
       lengthPreset: json['lengthPreset'] as String,
       qualityPreset: json['qualityPreset'] as String,
       imagesEnabled: json['imagesEnabled'] as bool,
+      pageCountMode: json['pageCountMode'] as String? ?? 'auto',
+      targetPages: json['targetPages'] as int?,
+      pageCountSource: json['pageCountSource'] as String?,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'bookType': bookType,
+      'bookTypeChoice': bookTypeChoice,
       'lengthPreset': lengthPreset,
       'qualityPreset': qualityPreset,
       'imagesEnabled': imagesEnabled,
+      'pageCountMode': pageCountMode,
+      if (targetPages != null) 'targetPages': targetPages,
+      if (pageCountSource != null) 'pageCountSource': pageCountSource,
     };
   }
 
   MobileCreationPresets copyWith({
     String? bookType,
+    String? bookTypeChoice,
     String? lengthPreset,
     String? qualityPreset,
     bool? imagesEnabled,
+    String? pageCountMode,
+    Object? targetPages = _sentinel,
+    Object? pageCountSource = _sentinel,
   }) {
     return MobileCreationPresets(
       bookType: bookType ?? this.bookType,
+      bookTypeChoice: bookTypeChoice ?? this.bookTypeChoice,
       lengthPreset: lengthPreset ?? this.lengthPreset,
       qualityPreset: qualityPreset ?? this.qualityPreset,
       imagesEnabled: imagesEnabled ?? this.imagesEnabled,
+      pageCountMode: pageCountMode ?? this.pageCountMode,
+      targetPages: targetPages == _sentinel
+          ? this.targetPages
+          : targetPages as int?,
+      pageCountSource: pageCountSource == _sentinel
+          ? this.pageCountSource
+          : pageCountSource as String?,
     );
   }
+
+  static const _sentinel = Object();
 }
 
 class MobileCreationDraftPayload {
@@ -456,7 +486,7 @@ class MobileCreationTurn {
       presets: MobileCreationPresets.fromJson(
         json['presets'] as Map<String, dynamic>,
       ),
-      detectedLane: json['detectedLane'] as String? ?? 'practical_guide',
+      detectedLane: json['detectedLane'] as String? ?? 'auto',
       quickReplies: _stringList(json['quickReplies']),
       question: question is Map<String, dynamic>
           ? MobileCreationQuestion.fromJson(question)
@@ -478,7 +508,9 @@ class MobileCreationSession {
     required this.status,
     required this.messages,
     required this.updatedAt,
+    this.outputs = const [],
     this.createdProjectId,
+    this.activeProjectId,
   });
 
   final String draftId;
@@ -486,10 +518,13 @@ class MobileCreationSession {
   final String status;
   final List<MobileCreationMessage> messages;
   final String? createdProjectId;
+  final String? activeProjectId;
+  final List<MobileCreationOutput> outputs;
   final DateTime updatedAt;
 
   factory MobileCreationSession.fromJson(Map<String, dynamic> json) {
     final messages = json['messages'] as List<dynamic>? ?? const [];
+    final outputs = json['outputs'] as List<dynamic>? ?? const [];
     return MobileCreationSession(
       draftId: json['draftId'] as String,
       title: json['title'] as String? ?? 'New book',
@@ -501,6 +536,47 @@ class MobileCreationSession {
           )
           .toList(),
       createdProjectId: json['createdProjectId'] as String?,
+      activeProjectId:
+          json['activeProjectId'] as String? ??
+          json['createdProjectId'] as String?,
+      outputs: outputs
+          .map(
+            (output) =>
+                MobileCreationOutput.fromJson(output as Map<String, dynamic>),
+          )
+          .toList(),
+      updatedAt: DateTime.parse(json['updatedAt'] as String),
+    );
+  }
+}
+
+class MobileCreationOutput {
+  const MobileCreationOutput({
+    required this.id,
+    required this.draftId,
+    required this.projectId,
+    required this.title,
+    required this.sequence,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String draftId;
+  final String projectId;
+  final String title;
+  final int sequence;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory MobileCreationOutput.fromJson(Map<String, dynamic> json) {
+    return MobileCreationOutput(
+      id: json['id'] as String,
+      draftId: json['draftId'] as String,
+      projectId: json['projectId'] as String,
+      title: json['title'] as String? ?? 'Book output',
+      sequence: json['sequence'] as int? ?? 1,
+      createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
@@ -525,18 +601,94 @@ class MobileCreationConversationResponse {
   }
 }
 
+class MobilePageCountRecommendation {
+  const MobilePageCountRecommendation({
+    required this.targetPages,
+    required this.label,
+    required this.description,
+  });
+
+  final int targetPages;
+  final String label;
+  final String description;
+
+  factory MobilePageCountRecommendation.fromJson(Map<String, dynamic> json) {
+    return MobilePageCountRecommendation(
+      targetPages: json['targetPages'] as int,
+      label: json['label'] as String? ?? '${json['targetPages']} pages',
+      description: json['description'] as String? ?? '',
+    );
+  }
+}
+
+class MobileDetectedPageCount {
+  const MobileDetectedPageCount({
+    required this.targetPages,
+    required this.source,
+  });
+
+  final int targetPages;
+  final String source;
+
+  factory MobileDetectedPageCount.fromJson(Map<String, dynamic> json) {
+    return MobileDetectedPageCount(
+      targetPages: json['targetPages'] as int,
+      source: json['source'] as String? ?? 'chat',
+    );
+  }
+}
+
+class MobileCreationBuildPreflight {
+  const MobileCreationBuildPreflight({
+    required this.requiresPageCount,
+    required this.recommendations,
+    this.detectedPageCount,
+  });
+
+  final bool requiresPageCount;
+  final MobileDetectedPageCount? detectedPageCount;
+  final List<MobilePageCountRecommendation> recommendations;
+
+  factory MobileCreationBuildPreflight.fromJson(Map<String, dynamic> json) {
+    final detected = json['detectedPageCount'];
+    final recommendations = json['recommendations'] as List<dynamic>? ?? const [];
+    return MobileCreationBuildPreflight(
+      requiresPageCount: json['requiresPageCount'] as bool? ?? false,
+      detectedPageCount: detected == null
+          ? null
+          : MobileDetectedPageCount.fromJson(detected as Map<String, dynamic>),
+      recommendations: recommendations
+          .map(
+            (item) => MobilePageCountRecommendation.fromJson(
+              item as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
 class MobileCreationFinalizeResponse {
-  const MobileCreationFinalizeResponse({required this.project, this.operation});
+  const MobileCreationFinalizeResponse({
+    required this.project,
+    this.output,
+    this.operation,
+  });
 
   final MobileProjectDetail project;
+  final MobileCreationOutput? output;
   final MobilePlanOperation? operation;
 
   factory MobileCreationFinalizeResponse.fromJson(Map<String, dynamic> json) {
     final operation = json['operation'];
+    final output = json['output'];
     return MobileCreationFinalizeResponse(
       project: MobileProjectDetail.fromJson(
         json['project'] as Map<String, dynamic>,
       ),
+      output: output == null
+          ? null
+          : MobileCreationOutput.fromJson(output as Map<String, dynamic>),
       operation: operation == null
           ? null
           : MobilePlanOperation.fromJson(operation as Map<String, dynamic>),
@@ -553,7 +705,9 @@ class MobileChatSession {
     required this.status,
     required this.createdAt,
     required this.updatedAt,
+    this.outputs = const [],
     this.createdProjectId,
+    this.activeProjectId,
   });
 
   final String draftId;
@@ -562,12 +716,15 @@ class MobileChatSession {
   final int messageCount;
   final String status;
   final String? createdProjectId;
+  final String? activeProjectId;
+  final List<MobileCreationOutput> outputs;
   final DateTime createdAt;
   final DateTime updatedAt;
 
   bool get isActive => status == 'ACTIVE';
 
   factory MobileChatSession.fromJson(Map<String, dynamic> json) {
+    final outputs = json['outputs'] as List<dynamic>? ?? const [];
     return MobileChatSession(
       draftId: json['draftId'] as String,
       title: json['title'] as String,
@@ -575,6 +732,15 @@ class MobileChatSession {
       messageCount: json['messageCount'] as int,
       status: json['status'] as String,
       createdProjectId: json['createdProjectId'] as String?,
+      activeProjectId:
+          json['activeProjectId'] as String? ??
+          json['createdProjectId'] as String?,
+      outputs: outputs
+          .map(
+            (output) =>
+                MobileCreationOutput.fromJson(output as Map<String, dynamic>),
+          )
+          .toList(),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );

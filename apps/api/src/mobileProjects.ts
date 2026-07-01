@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
@@ -6,14 +7,17 @@ import {
   CREDIT_COSTS,
   DEFAULT_BILLING_PRODUCTS,
   bookPlanSchema,
+  createFastRoutingTextModel,
   createLanguageDetectionTextModel,
   createProjectSchema,
   creditCostForOperation,
   estimateFullBookCreditCost,
+  generateJsonWithJailbreak,
   loadConfig,
   mediaSettingsSchema,
   type BookPlan,
   type CreateProjectInput,
+  type TextModelAdapter,
   type ToneProfile
 } from "@book-maker/core";
 import { ensureSeedTemplates, Prisma, prisma } from "@book-maker/db";
@@ -68,26 +72,47 @@ import {
   composeMobileProjectPrompt,
   enrichAdvisorWithAi,
   enrichCreationTurnWithAi,
+  explicitTargetPagesForMobilePayload,
   greetingCreationTurn,
   mobileBookAdvisorBodySchema,
   mobileBookAdvisorResponseSchema,
+  mobileBookTypeChoiceSchema,
   mobileBriefMetadata,
   mobileCreationBriefSchema,
   mobileCreationDraftPayloadSchema,
   mobileCreationMessageSchema,
   mobileCreationOptionalDetailsSchema,
+  mobilePageCountModeSchema,
+  mobilePageCountSourceSchema,
   mobileCreationPresetsSchema,
+  mobileTargetPagesSchema,
   runCreationTurn,
   authorForMobilePayload,
   briefForMobilePayload,
   titleForMobilePayload,
   type MobileBookAdvisorResponse,
+  type MobileBookTypeChoice,
   type MobileCreationBrief,
   type MobileCreationDraftPayload,
   type MobileCreationMessage,
+  type MobilePageCountMode,
+  type MobilePageCountSource,
   type MobileCreationTurn,
   type MobileCreationTurnRequest
 } from "./mobileCreation.js";
+import {
+  bookEditScopeFromMessage,
+  classifyProjectChatMessage,
+  isBookEditScopeOnlyMessage,
+  messageWithScope,
+  quotedTexts,
+  replacementTermsFromMessage,
+  type BookEditIntent,
+  type BookEditIntentKind,
+  type BookEditPageContext,
+  type BookEditProjectStage,
+  type BookEditScope
+} from "./bookEditIntent.js";
 
 const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
 const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
@@ -96,8 +121,8 @@ const idParamsSchema = z.object({ id: z.string().min(1) });
 const assetParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().min(1) });
 const mobileAssetFilenameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/);
 const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
-const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
-const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
+const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
+const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
 const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 const DEFAULT_GENERATION_RATE_LIMIT = { maxAttempts: 12, windowMs: 60 * 60 * 1000 };
 const DEFAULT_BILLING_VERIFICATION_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
@@ -113,12 +138,16 @@ type MobileJsonValue = string | number | boolean | null | MobileJsonValue[] | { 
 
 export type MobileProjectCreateRequestDto = {
   bookType: MobileBookType;
+  bookTypeChoice?: MobileBookTypeChoice | undefined;
   title?: string | undefined;
   authorName?: string | undefined;
   prompt: string;
   lengthPreset?: MobileLengthPreset | undefined;
   qualityPreset?: MobileQualityPreset | undefined;
   imagesEnabled?: boolean | undefined;
+  pageCountMode?: MobilePageCountMode | undefined;
+  targetPages?: number | undefined;
+  pageCountSource?: MobilePageCountSource | undefined;
   language?: string | undefined;
   creationBrief?: MobileCreationBrief | undefined;
   creationPayload?: MobileCreationDraftPayload | undefined;
@@ -180,6 +209,18 @@ export type MobileCreationSessionDto = {
   status: string;
   messages: MobileCreationMessage[];
   createdProjectId: string | null;
+  activeProjectId: string | null;
+  outputs: MobileCreationOutputDto[];
+  updatedAt: string;
+};
+
+export type MobileCreationOutputDto = {
+  id: string;
+  draftId: string;
+  projectId: string;
+  title: string;
+  sequence: number;
+  createdAt: string;
   updatedAt: string;
 };
 
@@ -192,15 +233,32 @@ export type MobileBookAdvisorResponseDto = {
   advisor: MobileBookAdvisorResponse;
 };
 
+export type MobilePageCountRecommendationDto = {
+  targetPages: number;
+  label: string;
+  description: string;
+};
+
+export type MobileCreationBuildPreflightResponseDto = {
+  requiresPageCount: boolean;
+  detectedPageCount: { targetPages: number; source: MobilePageCountSource } | null;
+  recommendations: MobilePageCountRecommendationDto[];
+};
+
 export type MobileCreationFinalizeResponseDto = {
   project: MobileProjectDetailDto;
+  output: MobileCreationOutputDto;
   operation: MobilePlanOperationDto | null;
 };
 
 type FinalizeOutcome =
-  | { ok: true; project: MobileProjectDetailDto; operation: MobilePlanOperationDto | null }
+  | { ok: true; project: MobileProjectDetailDto; output: MobileCreationOutputDto; operation: MobilePlanOperationDto | null }
   | { ok: false; status: number; code: string; message: string }
   | { ok: false; insufficient: InsufficientCreditsError };
+
+type MobilePageCountResolution =
+  | { resolved: true; targetPages: number; source: MobilePageCountSource; mode: MobilePageCountMode }
+  | { resolved: false };
 
 export type MobilePlanDto = {
   id: string;
@@ -250,6 +308,41 @@ export type MobilePlanOperationDto = {
 };
 
 export type MobilePlanRevisionResponseDto = MobilePlanOperationDto;
+
+export type MobileProjectChatMessageDto = {
+  id: string;
+  projectId: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  operationId: string | null;
+  metadata: MobileJsonValue;
+  createdAt: string;
+};
+
+export type MobileBookEditOperationDto = {
+  id: string;
+  projectId: string;
+  kind: "plan_revision" | "local_patch" | "page_rewrite" | "book_replan";
+  status: "queued" | "active" | "applied" | "failed" | "canceled";
+  affectedPageIndexes: number[];
+  creditsCharged: number;
+  currentAction: string;
+  error: string | null;
+  job: MobileQueuedJobDto | null;
+  createdAt: string;
+  appliedAt: string | null;
+};
+
+export type MobileProjectChatResponseDto = {
+  messages: MobileProjectChatMessageDto[];
+  plans: MobilePlanDto[];
+  operations: MobileBookEditOperationDto[];
+};
+
+export type MobileProjectChatMessageResponseDto = MobileProjectChatResponseDto & {
+  reply: MobileProjectChatMessageDto;
+  operation: MobileBookEditOperationDto | null;
+};
 
 export type MobileProjectRecoveryDto = {
   projectId: string;
@@ -306,10 +399,14 @@ export type MobileExportSetDto = {
 
 type MobileMediaMetadata = {
   [key: string]: MobileJsonValue;
-  bookType: MobileBookType;
-  lengthPreset: MobileLengthPreset;
+  bookType: MobileBookType | "custom";
+  bookTypeChoice: MobileBookTypeChoice;
+  lengthPreset: MobileLengthPreset | "custom";
   qualityPreset: MobileQualityPreset;
   imagesEnabled: boolean;
+  pageCountMode: MobilePageCountMode;
+  targetPages: number;
+  pageCountSource: MobilePageCountSource;
 };
 
 type MobileCreateProjectInput = CreateProjectInput & {
@@ -320,6 +417,7 @@ type MobileCreateProjectInput = CreateProjectInput & {
 
 type MobileProjectRecord = {
   id: string;
+  userId?: string;
   title: string;
   subtitle: string | null;
   authorName: string | null;
@@ -333,6 +431,7 @@ type MobileProjectRecord = {
   language: string;
   mediaSettings: unknown;
   status: string;
+  templateId?: string | null;
   currentPlanId: string | null;
   currentPlan?: MobilePlanRecord | null;
   pages?: MobilePageRecord[];
@@ -344,6 +443,17 @@ type MobileProjectRecord = {
   };
   createdAt: Date;
   updatedAt: Date;
+};
+
+type MobileCreationOutputRecord = {
+  id: string;
+  draftId: string;
+  projectId: string;
+  title: string;
+  sequence: number;
+  createdAt: Date;
+  updatedAt: Date;
+  project?: { title: string; updatedAt?: Date } | null;
 };
 
 type MobilePlanRecord = {
@@ -374,6 +484,29 @@ type MobileImageRecord = {
   type: string;
   path: string;
   metadata: unknown;
+};
+
+type MobileProjectChatMessageRecord = {
+  id: string;
+  projectId: string;
+  role: string;
+  content: string;
+  operationId: string | null;
+  metadata: unknown;
+  createdAt: Date;
+};
+
+type MobileBookEditOperationRecord = {
+  id: string;
+  projectId: string;
+  kind: string;
+  status: string;
+  affectedPageIndexes: number[];
+  creditsCharged: number;
+  error?: string | null;
+  generationJob?: { id: string; status: string } | null;
+  createdAt: Date;
+  appliedAt: Date | null;
 };
 
 type ProjectStatusResult = NonNullable<Awaited<ReturnType<typeof buildProjectStatus>>>;
@@ -421,12 +554,16 @@ export type MobileGooglePlayVerificationResponseDto = {
 const mobileProjectCreateBodySchema = z
   .object({
     bookType: mobileBookTypeSchema,
+    bookTypeChoice: mobileBookTypeChoiceSchema.optional(),
     title: z.string().trim().min(2).max(160).optional(),
     authorName: z.string().trim().min(1).max(120).optional(),
     prompt: z.string().trim().min(10).max(5000),
     lengthPreset: mobileLengthPresetSchema.default("standard"),
     qualityPreset: mobileQualityPresetSchema.default("balanced"),
     imagesEnabled: z.boolean().default(true),
+    pageCountMode: mobilePageCountModeSchema.default("auto"),
+    targetPages: mobileTargetPagesSchema.optional(),
+    pageCountSource: mobilePageCountSourceSchema.optional(),
     language: z.string().trim().min(2).max(40).default("en"),
     creationBrief: mobileCreationBriefSchema.optional(),
     creationPayload: mobileCreationDraftPayloadSchema.optional(),
@@ -435,6 +572,12 @@ const mobileProjectCreateBodySchema = z
   .strict();
 
 const mobilePlanRevisionBodySchema = z
+  .object({
+    message: z.string().trim().min(1).max(5000)
+  })
+  .strict();
+
+const mobileProjectChatMessageBodySchema = z
   .object({
     message: z.string().trim().min(1).max(5000)
   })
@@ -468,6 +611,22 @@ const mobileCreationBuildBodySchema = z
   })
   .strict();
 
+const mobilePageCountRecommendationSchema = z
+  .object({
+    targetPages: mobileTargetPagesSchema,
+    label: z.string().trim().min(1).max(80),
+    description: z.string().trim().min(1).max(180)
+  })
+  .strict();
+
+const mobilePageCountRecommendationAiSchema = z
+  .object({
+    recommendations: z.array(mobilePageCountRecommendationSchema).min(2).max(4)
+  })
+  .strict();
+
+type MobileCreationBuildOverrides = z.infer<typeof mobileCreationBuildBodySchema>;
+
 const emptyMobilePlanBodySchema = z.object({}).strict().default({});
 const mobileGooglePlayVerificationBodySchema = z
   .object({
@@ -485,7 +644,7 @@ const MOBILE_BOOK_TYPE_SETTINGS: Record<
     category: CreateProjectInput["category"];
     templateSlug: string;
     subcategory: string;
-    coverTemplate: "business" | "minimal" | "fiction";
+    coverTemplate: "auto" | "business" | "minimal" | "fiction";
     toneProfile: ToneProfile;
     targetPages: Record<MobileLengthPreset, number>;
   }
@@ -514,6 +673,22 @@ const MOBILE_BOOK_TYPE_SETTINGS: Record<
     toneProfile: "narrative",
     targetPages: { short: 8, standard: 16, expanded: 24 }
   }
+};
+
+const MOBILE_AUTO_BOOK_TYPE_SETTINGS = {
+  category: "CUSTOM",
+  templateSlug: "general-book",
+  subcategory: "Auto",
+  coverTemplate: "auto",
+  toneProfile: "neutral",
+  targetPages: { short: 12, standard: 18, expanded: 24 }
+} as const satisfies {
+  category: CreateProjectInput["category"];
+  templateSlug: string;
+  subcategory: string;
+  coverTemplate: "auto";
+  toneProfile: ToneProfile;
+  targetPages: Record<MobileLengthPreset, number>;
 };
 
 export const MOBILE_PRODUCT_PRESETS: Record<
@@ -573,12 +748,16 @@ const mobileProjectCreateOpenApiBody = {
   additionalProperties: false,
   properties: {
     bookType: { type: "string", enum: mobileBookTypeSchema.options },
+    bookTypeChoice: { type: "string", enum: mobileBookTypeChoiceSchema.options },
     title: { type: "string", minLength: 2, maxLength: 160 },
     authorName: { type: "string", minLength: 1, maxLength: 120 },
     prompt: { type: "string", minLength: 10, maxLength: 5000 },
     lengthPreset: { type: "string", enum: mobileLengthPresetSchema.options, default: "standard" },
     qualityPreset: { type: "string", enum: mobileQualityPresetSchema.options, default: "balanced" },
     imagesEnabled: { type: "boolean", default: true },
+    pageCountMode: { type: "string", enum: mobilePageCountModeSchema.options, default: "auto" },
+    targetPages: { type: "integer", minimum: 1, maximum: 600 },
+    pageCountSource: { type: "string", enum: mobilePageCountSourceSchema.options },
     language: { type: "string", minLength: 2, maxLength: 40, default: "en" },
     creationBrief: { type: "object" },
     creationPayload: { type: "object" },
@@ -588,6 +767,15 @@ const mobileProjectCreateOpenApiBody = {
 } as const;
 
 const mobilePlanRevisionOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    message: { type: "string", minLength: 1, maxLength: 5000 }
+  },
+  required: ["message"]
+} as const;
+
+const mobileProjectChatMessageOpenApiBody = {
   type: "object",
   additionalProperties: false,
   properties: {
@@ -610,12 +798,20 @@ export type MobileProjectRoutesOptions = {
   creationEnrichment?:
     | false
     | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>);
+  pageCountRecommendationTimeoutMs?: number;
 };
 
 export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions> = async (fastify, options) => {
   await ensureSeedTemplates();
   await ensureDefaultProductCatalog();
   const appConfig = loadConfig();
+  const safeFastRoutingTextModel = (): TextModelAdapter | undefined => {
+    try {
+      return createFastRoutingTextModel(appConfig);
+    } catch {
+      return undefined;
+    }
+  };
   const googlePlayVerifier = options.googlePlayVerifier ?? createGooglePlayVerifierFromConfig(appConfig);
   const generationLimiter = new InMemoryRateLimiter({
     ...DEFAULT_GENERATION_RATE_LIMIT,
@@ -887,7 +1083,8 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       const drafts = await prisma.mobileCreationDraft.findMany({
         where: { userId: auth.user.id },
         orderBy: { updatedAt: "desc" },
-        take: 100
+        take: 100,
+        include: mobileCreationDraftOutputsInclude()
       });
       const sessions = drafts.flatMap((draft) => {
         const parsed = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
@@ -897,6 +1094,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         const title = _chatTitleForPayload(payload);
         const lastMsg = messages.length > 0 ? messages[messages.length - 1] : undefined;
         const preview = lastMsg ? lastMsg.content.trim().slice(0, 100) : "";
+        const outputs = creationOutputsForDraft(draft, payload);
         return [{
           draftId: draft.id,
           title,
@@ -904,6 +1102,8 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           messageCount: messages.length,
           status: draft.status,
           createdProjectId: draft.createdProjectId,
+          activeProjectId: activeProjectIdForDraft(draft, outputs),
+          outputs,
           createdAt: draft.createdAt.toISOString(),
           updatedAt: draft.updatedAt.toISOString()
         }];
@@ -922,7 +1122,8 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       }
       const draft = await prisma.mobileCreationDraft.findFirst({
         where: { userId: auth.user.id, status: "ACTIVE" },
-        orderBy: { updatedAt: "desc" }
+        orderBy: { updatedAt: "desc" },
+        include: mobileCreationDraftOutputsInclude()
       });
       if (!draft) {
         return { session: null, turn: greetingCreationTurn() } satisfies MobileCreationConversationResponseDto;
@@ -956,7 +1157,8 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       }
       const { id } = idParamsSchema.parse(request.params);
       const draft = await prisma.mobileCreationDraft.findFirst({
-        where: { id, userId: auth.user.id }
+        where: { id, userId: auth.user.id },
+        include: mobileCreationDraftOutputsInclude()
       });
       if (!draft) {
         return sendMobileError(reply, 404, "NOT_FOUND", "Chat session not found.");
@@ -1066,13 +1268,11 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a short message to continue the chat.");
       }
       const draft = await prisma.mobileCreationDraft.findFirst({
-        where: { id, userId: auth.user.id }
+        where: { id, userId: auth.user.id },
+        include: mobileCreationDraftOutputsInclude()
       });
       if (!draft) {
         return sendMobileError(reply, 404, "SESSION_NOT_FOUND", "This book chat was not found.");
-      }
-      if (draft.status !== "ACTIVE") {
-        return sendMobileError(reply, 409, "SESSION_NOT_ACTIVE", "This book chat has already been used to start a book.");
       }
       const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
       if (!parsedPayload.success) {
@@ -1087,7 +1287,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       const turnRequest: MobileCreationTurnRequest = {
         messages: nextMessages,
         brief: parsedPayload.data.recipe,
-        presets: parsedBody.data.presets ?? parsedPayload.data.selectedPresets,
+        presets: parsedBody.data.presets ?? persistedPresetsForTurn(parsedPayload.data),
         sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
         optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails
       };
@@ -1111,10 +1311,10 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       });
       const updated = await prisma.mobileCreationDraft.update({
         where: { id },
-        data: { payload: jsonInputValue(updatedPayload) }
+        data: { payload: jsonInputValue(updatedPayload), status: "ACTIVE" }
       });
       return {
-        session: serializeCreationSession(updated, persistedMessages),
+        session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persistedMessages),
         turn
       } satisfies MobileCreationConversationResponseDto;
     }
@@ -1180,6 +1380,37 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   );
 
   fastify.post(
+    "/api/mobile/creation-sessions/:id/preflight",
+    { attachValidation: true, schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-preflight")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsedBody = mobileCreationBuildBodySchema.safeParse(request.body ?? {});
+      if (!parsedBody.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "These book settings are not supported.");
+      }
+      const prepared = await prepareMobileCreationBuild(auth.user.id, id, parsedBody.data);
+      if (!prepared.ok) {
+        return sendMobileError(reply, prepared.status, prepared.code, prepared.message);
+      }
+      const recommendations = await pageCountRecommendationsForPreflight(prepared.finalPayload, prepared.finalAdvisor);
+      return {
+        requiresPageCount: !prepared.pageCount.resolved,
+        detectedPageCount: prepared.pageCount.resolved
+          ? { targetPages: prepared.pageCount.targetPages, source: prepared.pageCount.source }
+          : null,
+        recommendations
+      } satisfies MobileCreationBuildPreflightResponseDto;
+    }
+  );
+
+  fastify.post(
     "/api/mobile/creation-sessions/:id/build",
     { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
     async (request, reply) => {
@@ -1197,30 +1428,31 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       }
       return sendFinalizeOutcome(
         reply,
-        await finalizeMobileCreationDraft(auth.user.id, id, parsedBody.data)
+        await finalizeMobileCreationDraft(auth.user.id, id, parsedBody.data, { requireResolvedPageCount: true })
       );
     }
   );
 
-  async function finalizeMobileCreationDraft(
+  async function prepareMobileCreationBuild(
     userId: string,
     draftId: string,
-    overrides: z.infer<typeof mobileCreationBuildBodySchema> = {}
-  ): Promise<FinalizeOutcome> {
+    overrides: MobileCreationBuildOverrides = {}
+  ) {
     const draft = await prisma.mobileCreationDraft.findFirst({
-      where: { id: draftId, userId }
+      where: { id: draftId, userId },
+      include: mobileCreationDraftOutputsInclude()
     });
     if (!draft) {
-      return { ok: false, status: 404, code: "DRAFT_NOT_FOUND", message: "Creation draft not found." };
+      return { ok: false as const, status: 404, code: "DRAFT_NOT_FOUND", message: "Creation draft not found." };
     }
-    if (draft.status !== "ACTIVE") {
-      return { ok: false, status: 409, code: "DRAFT_NOT_ACTIVE", message: "This creation draft has already been used." };
+    if (draft.status !== "ACTIVE" && draft.status !== "COMPLETED") {
+      return { ok: false as const, status: 409, code: "DRAFT_NOT_ACTIVE", message: "This creation draft is not available for building." };
     }
 
     const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
     if (!parsedPayload.success) {
       return {
-        ok: false,
+        ok: false as const,
         status: 400,
         code: "VALIDATION_ERROR",
         message: "This creation draft needs to be updated before it can create a project."
@@ -1241,51 +1473,89 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           timeoutMs: options.advisorTimeoutMs
         });
     const selectedPresets = mergedPayload.selectedPresets ?? advisor.recommendation;
+    const unresolvedAuto = selectedPresets.bookTypeChoice === "auto";
+    const effectiveAdvisor = unresolvedAuto && advisor.detectedLane !== "auto"
+      ? await adviseMobileBook(
+          mobileCreationDraftPayloadSchema.parse({
+            ...mergedPayload,
+            selectedPresets: { ...selectedPresets, bookTypeChoice: "auto" },
+            detectedLane: "auto",
+            recipe: undefined
+          }),
+          { enrich: advisorEnrichment, timeoutMs: options.advisorTimeoutMs }
+        )
+      : advisor;
     const finalPayload = mobileCreationDraftPayloadSchema.parse({
       ...mergedPayload,
       selectedPresets,
-      detectedLane: mergedPayload.detectedLane ?? advisor.detectedLane,
-      recipe: mergedPayload.recipe ?? advisor.recipe
+      detectedLane: unresolvedAuto ? effectiveAdvisor.detectedLane : mergedPayload.detectedLane ?? effectiveAdvisor.detectedLane,
+      recipe: unresolvedAuto ? effectiveAdvisor.recipe : mergedPayload.recipe ?? effectiveAdvisor.recipe
     });
     const finalAdvisor: MobileBookAdvisorResponse = {
-      ...advisor,
+      ...effectiveAdvisor,
       recommendation: selectedPresets,
-      detectedLane: finalPayload.detectedLane ?? advisor.detectedLane,
-      recipe: finalPayload.recipe ?? advisor.recipe
+      detectedLane: finalPayload.detectedLane ?? effectiveAdvisor.detectedLane,
+      recipe: finalPayload.recipe ?? effectiveAdvisor.recipe
+    };
+    return {
+      ok: true as const,
+      draft,
+      selectedPresets,
+      finalPayload,
+      finalAdvisor,
+      pageCount: resolveMobilePageCount(finalPayload, selectedPresets)
+    };
+  }
+
+  async function finalizeMobileCreationDraft(
+    userId: string,
+    draftId: string,
+    overrides: MobileCreationBuildOverrides = {},
+    options: { requireResolvedPageCount?: boolean } = {}
+  ): Promise<FinalizeOutcome> {
+    const prepared = await prepareMobileCreationBuild(userId, draftId, overrides);
+    if (!prepared.ok) {
+      return prepared;
+    }
+    if (options.requireResolvedPageCount && !prepared.pageCount.resolved) {
+      return { ok: false, status: 409, code: "PAGE_COUNT_REQUIRED", message: "Choose how many pages this book should be before building the plan." };
+    }
+
+    const { draft } = prepared;
+    const selectedPresets = presetsWithResolvedPageCount(prepared.selectedPresets, prepared.pageCount);
+    const finalPayload = mobileCreationDraftPayloadSchema.parse({
+      ...prepared.finalPayload,
+      selectedPresets
+    });
+    const finalAdvisor: MobileBookAdvisorResponse = {
+      ...prepared.finalAdvisor,
+      recommendation: selectedPresets
     };
 
-    let project = draft.createdProjectId ? await loadMobileProjectDetail(userId, draft.createdProjectId) : null;
-    if (draft.createdProjectId && !project) {
-      return {
-        ok: false,
-        status: 409,
-        code: "PROJECT_NOT_FOUND",
-        message: "The project created from this draft is no longer available."
-      };
-    }
-    if (!project) {
-      const input = buildMobileCreateProjectInput({
-        bookType: selectedPresets.bookType,
-        lengthPreset: selectedPresets.lengthPreset,
-        qualityPreset: selectedPresets.qualityPreset,
-        imagesEnabled: selectedPresets.imagesEnabled,
-        title: titleForMobilePayload(finalPayload, finalAdvisor),
-        authorName: authorForMobilePayload(finalPayload),
-        prompt: composeMobileProjectPrompt(finalPayload, finalAdvisor),
-        language: overrides.language ?? "en",
-        creationBrief: briefForMobilePayload(finalPayload, finalAdvisor),
-        creationPayload: finalPayload,
-        advisor: finalAdvisor
-      });
-      project = await createMobileProjectRecord(userId, input);
-      await prisma.mobileCreationDraft.update({
-        where: { id: draftId },
-        data: {
-          createdProjectId: project.id,
-          advisorSnapshot: jsonInputValue(finalAdvisor)
-        }
-      });
-    }
+    const input = buildMobileCreateProjectInput({
+      bookType: selectedPresets.bookType,
+      bookTypeChoice: selectedPresets.bookTypeChoice,
+      lengthPreset: selectedPresets.lengthPreset,
+      qualityPreset: selectedPresets.qualityPreset,
+      imagesEnabled: selectedPresets.imagesEnabled,
+      pageCountMode: selectedPresets.pageCountMode,
+      targetPages: selectedPresets.targetPages,
+      pageCountSource: selectedPresets.pageCountSource,
+      title: titleForMobilePayload(finalPayload, finalAdvisor),
+      authorName: authorForMobilePayload(finalPayload),
+      prompt: composeMobileProjectPrompt(finalPayload, finalAdvisor),
+      language: overrides.language ?? "en",
+      creationBrief: briefForMobilePayload(finalPayload, finalAdvisor),
+      creationPayload: finalPayload,
+      advisor: finalAdvisor
+    });
+    const project = await createMobileProjectRecord(userId, input);
+    const output = await createCreationOutputForProject({
+      draftId,
+      projectId: project.id,
+      title: project.title,
+      existingOutputs: creationOutputsForDraft(draft, finalPayload)
+    });
 
     let operation: MobilePlanOperationDto | null = null;
     try {
@@ -1303,7 +1573,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     await prisma.mobileCreationDraft.update({
       where: { id: draftId },
       data: {
-        status: "COMPLETED",
+        status: "ACTIVE",
         advisorSnapshot: jsonInputValue(finalAdvisor),
         createdProjectId: project.id
       }
@@ -1312,14 +1582,62 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     return {
       ok: true,
       project: await serializeProjectDetail(refreshedProject, appConfig, userId),
+      output: serializeCreationOutput(output),
       operation
     };
+  }
+
+  async function pageCountRecommendationsForPreflight(
+    payload: MobileCreationDraftPayload,
+    advisor: MobileBookAdvisorResponse
+  ): Promise<MobilePageCountRecommendationDto[]> {
+    const fallback = deterministicPageCountRecommendations(payload, advisor);
+    try {
+      const textModel = createFastRoutingTextModel(appConfig);
+      const result = await promiseWithTimeout(
+        generateJsonWithJailbreak(textModel, {
+          purpose: "mobile-page-count-preflight",
+          jailbreakRole: "planner",
+          lessCensored: false,
+          temperature: 0.2,
+          maxTokens: 700,
+          schema: mobilePageCountRecommendationAiSchema,
+          messages: [
+            {
+              role: "system",
+              content:
+                "Recommend 2-4 practical page counts for a mobile book creator. Keep options concise. Do not mention AI models, providers, tokens, billing, or internal systems."
+            },
+            {
+              role: "user",
+              content: JSON.stringify(
+                {
+                  chat: payload.messages?.slice(-20) ?? [],
+                  rawIdea: payload.rawIdea,
+                  sourceNotesPreview: payload.sourceNotes.slice(0, 600),
+                  detectedLane: advisor.detectedLane,
+                  recipe: advisor.recipe,
+                  fallback
+                },
+                null,
+                2
+              )
+            }
+          ]
+        }),
+        options.pageCountRecommendationTimeoutMs ?? 2500
+      );
+      return normalizePageCountRecommendations(result.data.recommendations, fallback);
+    } catch {
+      return fallback;
+    }
   }
 
   function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcome): FastifyReply {
     if (outcome.ok) {
       return reply.code(201).send({
         project: outcome.project,
+        output: outcome.output,
         operation: outcome.operation
       } satisfies MobileCreationFinalizeResponseDto);
     }
@@ -1422,6 +1740,139 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   );
 
   fastify.get(
+    "/api/mobile/projects/:id/chat",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const project = await prisma.project.findFirst({ where: { id, userId: auth.user.id }, select: { id: true } });
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+      return loadProjectChatResponse(id);
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/projects/:id/chat/messages",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileProjectChatMessageOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileProjectChatMessageBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a chat message.");
+      }
+
+      const project = await loadProjectForChat(auth.user.id, id);
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+
+      const pendingScope = await findPendingScopeClarification(id, parsed.data.message);
+      const currentScope = bookEditScopeFromMessage(parsed.data.message);
+      const pendingResolutionScope = currentScope !== "none" ? currentScope : pendingScope?.scope ?? "none";
+      const resolvesPendingScope = Boolean(
+        pendingScope &&
+          (currentScope !== "none" ||
+            (pendingResolutionScope !== "none" && isPendingEditConfirmationMessage(parsed.data.message)))
+      );
+      const resolvedPendingEdit =
+        pendingScope && resolvesPendingScope
+          ? {
+              request: pendingScope.request,
+              scope: pendingResolutionScope,
+              scopeMessage: parsed.data.message
+            }
+          : null;
+      const resolvedMessage = resolvedPendingEdit
+        ? messageWithScope(resolvedPendingEdit.request, resolvedPendingEdit.scope)
+        : parsed.data.message;
+
+      const userMessage = await prisma.projectChatMessage.create({
+        data: {
+          projectId: id,
+          role: "USER",
+          content: parsed.data.message,
+          metadata: jsonInputValue(resolvedPendingEdit ? { resolvedPendingEdit } : {})
+        }
+      });
+
+      if (pendingScope && !resolvesPendingScope && isPendingEditNudgeMessage(parsed.data.message)) {
+        const replyMessage = await createAssistantChatMessage({
+          projectId: id,
+          content: pendingScopeRecoveryMessage(pendingScope),
+          metadata: {
+            pendingEdit: { request: pendingScope.request, clarification: "scope" },
+            recoveredPendingScope: pendingScope.scope,
+            charged: false
+          }
+        });
+        return {
+          ...(await loadProjectChatResponse(id)),
+          reply: serializeProjectChatMessage(replyMessage),
+          operation: null
+        } satisfies MobileProjectChatMessageResponseDto;
+      }
+
+      const pages = chatPagesForProject(project);
+      const stage = chatStageForProject(project.status, project.currentPlan);
+      const routingTextModel = safeFastRoutingTextModel();
+      const intent = await classifyProjectChatMessage({
+        message: resolvedMessage,
+        stage,
+        pages,
+        planSummary: project.currentPlan ? planSummaryForClassifier(project.currentPlan) : undefined,
+        textModel: routingTextModel
+      });
+
+      const openEditBlocked = await hasOpenProjectWork(id);
+      if (openEditBlocked && intent.kind !== "answer") {
+        const replyMessage = await createAssistantChatMessage({
+          projectId: id,
+          content: "I can answer questions, but I can’t edit while this book is already being worked on. Try again when the current job finishes.",
+          metadata: { intent, blockedByActiveJob: true }
+        });
+        return {
+          ...(await loadProjectChatResponse(id)),
+          reply: serializeProjectChatMessage(replyMessage),
+          operation: null
+        } satisfies MobileProjectChatMessageResponseDto;
+      }
+
+      const outcome = await handleProjectChatIntent({
+        userId: auth.user.id,
+        project,
+        userMessageId: userMessage.id,
+        message: resolvedMessage,
+        intent
+      });
+
+      return {
+        ...(await loadProjectChatResponse(id)),
+        reply: serializeProjectChatMessage(outcome.reply),
+        operation: outcome.operation ? serializeBookEditOperation(outcome.operation) : null
+      } satisfies MobileProjectChatMessageResponseDto;
+    }
+  );
+
+  fastify.get(
     "/api/mobile/projects/:id/status",
     { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
     async (request, reply) => {
@@ -1437,12 +1888,81 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       if (!project) {
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
       }
-      const status = await buildProjectStatus(id);
+      const status = await loadSerializedProjectStatus(id, appConfig, auth.user.id);
       if (!status) {
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
       }
-      const exports = await serializeExportSet(id, status.project.title, appConfig, auth.user.id);
-      return { status: serializeProjectStatus(status, exports) };
+      return { status };
+    }
+  );
+
+  fastify.get(
+    "/api/mobile/projects/:id/status/events",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const project = await prisma.project.findFirst({
+        where: { id, userId: auth.user.id },
+        select: { id: true }
+      });
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+
+      let closed = false;
+      let sending = false;
+      let timer: ReturnType<typeof setInterval> | null = null;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+        reply.raw.end();
+      };
+
+      const sendStatus = async () => {
+        if (closed || sending) {
+          return;
+        }
+        sending = true;
+        try {
+          const status = await loadSerializedProjectStatus(id, appConfig, auth.user.id);
+          if (!status) {
+            reply.raw.write(`event: error\ndata: ${JSON.stringify({ code: "PROJECT_NOT_FOUND" })}\n\n`);
+            close();
+            return;
+          }
+          reply.raw.write(`event: status\ndata: ${JSON.stringify({ status })}\n\n`);
+          if (!isLiveProjectStatus(status.status)) {
+            close();
+          }
+        } catch (error) {
+          request.log.warn({ err: error, projectId: id }, "Could not stream mobile project status");
+          reply.raw.write(`event: error\ndata: ${JSON.stringify({ code: "STATUS_STREAM_ERROR" })}\n\n`);
+        } finally {
+          sending = false;
+        }
+      };
+
+      request.raw.on("close", close);
+      await sendStatus();
+      if (!closed) {
+        timer = setInterval(sendStatus, 1000);
+      }
     }
   );
 
@@ -1566,12 +2086,21 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 400, "PLAN_ALREADY_APPROVED", "Approved plans cannot be revised.");
       }
 
-      const job = await enqueueGenerationJob({
-        projectId: plan.projectId,
-        type: "REVISE_PLAN",
-        payload: { planId: id, message: parsed.data.message }
-      });
-      return reply.code(202).send(planOperation("revision_queued", plan.projectId, id, job, "Revising your book plan."));
+      try {
+        const { job } = await queueChargedPlanRevision({
+          userId: auth.user.id,
+          projectId: plan.projectId,
+          planId: id,
+          message: parsed.data.message,
+          idempotencyKey: `mobile:plan:${id}:revision:${hashString(parsed.data.message)}`
+        });
+        return reply.code(202).send(planOperation("revision_queued", plan.projectId, id, job, "Revising your book plan."));
+      } catch (error) {
+        if (error instanceof InsufficientCreditsError) {
+          return sendInsufficientCredits(reply, error);
+        }
+        throw error;
+      }
     }
   );
 
@@ -1807,13 +2336,23 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
 
 export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestDto): MobileCreateProjectInput {
   const parsed = mobileProjectCreateBodySchema.parse(input);
-  const bookType = MOBILE_BOOK_TYPE_SETTINGS[parsed.bookType];
+  const bookTypeChoice = bookTypeChoiceForMobileCreate(parsed);
+  const isAutoBookType = bookTypeChoice === "auto";
+  const bookType = isAutoBookType ? MOBILE_AUTO_BOOK_TYPE_SETTINGS : MOBILE_BOOK_TYPE_SETTINGS[parsed.bookType];
   const quality = MOBILE_PRODUCT_PRESETS[parsed.qualityPreset];
+  const exactTargetPages = parsed.pageCountMode === "custom" && parsed.targetPages ? parsed.targetPages : undefined;
+  const targetPages = exactTargetPages ?? bookType.targetPages[parsed.lengthPreset];
+  const pageCountMode: MobilePageCountMode = exactTargetPages ? "custom" : parsed.pageCountMode;
+  const pageCountSource: MobilePageCountSource = exactTargetPages ? parsed.pageCountSource ?? "settings" : parsed.pageCountSource ?? "legacy";
   const mobileMetadata: MobileMediaMetadata = {
-    bookType: parsed.bookType,
-    lengthPreset: parsed.lengthPreset,
+    bookType: isAutoBookType ? "custom" : parsed.bookType,
+    bookTypeChoice: bookTypeChoice ?? parsed.bookType,
+    lengthPreset: exactTargetPages ? "custom" : parsed.lengthPreset,
     qualityPreset: parsed.qualityPreset,
-    imagesEnabled: parsed.imagesEnabled
+    imagesEnabled: parsed.imagesEnabled,
+    pageCountMode,
+    targetPages,
+    pageCountSource
   };
   if (parsed.creationBrief && parsed.advisor) {
     const legacyCreationPayload =
@@ -1830,9 +2369,13 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
         sourceNotes: parsed.creationBrief.sourceNotes,
         selectedPresets: {
           bookType: parsed.bookType,
+          ...(bookTypeChoice ? { bookTypeChoice } : {}),
           lengthPreset: parsed.lengthPreset,
           qualityPreset: parsed.qualityPreset,
-          imagesEnabled: parsed.imagesEnabled
+          imagesEnabled: parsed.imagesEnabled,
+          pageCountMode,
+          targetPages,
+          pageCountSource
         },
         brief: parsed.creationBrief
       });
@@ -1879,7 +2422,7 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     category: bookType.category,
     subcategory: bookType.subcategory,
     templateSlug: bookType.templateSlug,
-    targetPages: bookType.targetPages[parsed.lengthPreset],
+    targetPages,
     complexity: quality.complexity,
     temperature: quality.temperature,
     language: parsed.language,
@@ -1893,6 +2436,111 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
       mobile: mobileMetadata
     }
   };
+}
+
+function bookTypeChoiceForMobileCreate(parsed: z.infer<typeof mobileProjectCreateBodySchema>): MobileBookTypeChoice | undefined {
+  return parsed.bookTypeChoice ?? parsed.creationPayload?.selectedPresets?.bookTypeChoice ?? parsed.advisor?.recommendation.bookTypeChoice;
+}
+
+function resolveMobilePageCount(
+  payload: MobileCreationDraftPayload,
+  selectedPresets: MobileCreationDraftPayload["selectedPresets"]
+): MobilePageCountResolution {
+  if (selectedPresets?.pageCountMode === "custom" && selectedPresets.targetPages) {
+    return {
+      resolved: true,
+      targetPages: selectedPresets.targetPages,
+      source: selectedPresets.pageCountSource ?? "settings",
+      mode: "custom"
+    };
+  }
+  const explicitTargetPages = explicitTargetPagesForMobilePayload(payload);
+  if (explicitTargetPages) {
+    return { resolved: true, targetPages: explicitTargetPages, source: "chat", mode: "custom" };
+  }
+  return { resolved: false };
+}
+
+function presetsWithResolvedPageCount(
+  presets: MobileCreationDraftPayload["selectedPresets"],
+  pageCount: MobilePageCountResolution
+): NonNullable<MobileCreationDraftPayload["selectedPresets"]> {
+  if (!presets) {
+    throw new Error("Cannot resolve page count without selected mobile presets.");
+  }
+  if (!pageCount.resolved) {
+    return { ...presets, pageCountMode: presets.pageCountMode ?? "auto", pageCountSource: presets.pageCountSource ?? "legacy" };
+  }
+  return {
+    ...presets,
+    pageCountMode: "custom",
+    targetPages: pageCount.targetPages,
+    pageCountSource: pageCount.source
+  };
+}
+
+function deterministicPageCountRecommendations(
+  payload: MobileCreationDraftPayload,
+  advisor: MobileBookAdvisorResponse
+): MobilePageCountRecommendationDto[] {
+  const lane = advisor.recipe.lane === "auto" ? advisor.detectedLane : advisor.recipe.lane;
+  const bookType = advisor.recommendation.bookType;
+  if (lane === "workbook" || lane === "client_tool" || bookType === "workbook") {
+    return [
+      { targetPages: 16, label: "16 pages", description: "A focused workbook with a few exercises." },
+      { targetPages: 28, label: "28 pages", description: "Recommended for lessons, examples, and practice." },
+      { targetPages: 40, label: "40 pages", description: "A fuller workbook with more sections." }
+    ];
+  }
+  if (lane === "children_story" || lane === "adult_story" || bookType === "short_story") {
+    return [
+      { targetPages: 4, label: "4 pages", description: "Very short and simple." },
+      { targetPages: 8, label: "8 pages", description: "Recommended for a compact story arc." },
+      { targetPages: 12, label: "12 pages", description: "More room for scenes and details." }
+    ];
+  }
+  const hasLongNotes = payload.sourceNotes.trim().length > 1200;
+  return [
+    { targetPages: 8, label: "8 pages", description: "A quick, concise read." },
+    { targetPages: hasLongNotes ? 18 : 12, label: hasLongNotes ? "18 pages" : "12 pages", description: "Recommended for a useful first draft." },
+    { targetPages: 24, label: "24 pages", description: "More space for examples and depth." }
+  ];
+}
+
+function normalizePageCountRecommendations(
+  recommendations: MobilePageCountRecommendationDto[],
+  fallback: MobilePageCountRecommendationDto[]
+): MobilePageCountRecommendationDto[] {
+  const seen = new Set<number>();
+  const cleaned: MobilePageCountRecommendationDto[] = [];
+  for (const item of recommendations) {
+    const parsed = mobilePageCountRecommendationSchema.safeParse(item);
+    if (!parsed.success || seen.has(parsed.data.targetPages)) {
+      continue;
+    }
+    seen.add(parsed.data.targetPages);
+    cleaned.push(parsed.data);
+    if (cleaned.length >= 4) {
+      break;
+    }
+  }
+  return cleaned.length >= 2 ? cleaned : fallback;
+}
+
+function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Timed out.")), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
 }
 
 async function createMobileProjectRecord(userId: string, input: MobileCreateProjectInput): Promise<MobileProjectRecord> {
@@ -1916,6 +2564,91 @@ async function createMobileProjectRecord(userId: string, input: MobileCreateProj
     },
     include: mobileProjectDetailInclude()
   })) as MobileProjectRecord;
+}
+
+async function createReplanProjectCopy(options: {
+  userId: string;
+  sourceProject: ProjectForChat;
+  request: string;
+  operationId: string;
+}): Promise<MobileProjectRecord> {
+  const source = options.sourceProject;
+  const sourceMediaSettings = mediaSettingsSchema.parse(source.mediaSettings);
+  const mobileMetadata = jsonRecord(sourceMediaSettings.mobile);
+  const copyMediaSettings = mediaSettingsSchema.parse({
+    ...sourceMediaSettings,
+    mobile: {
+      ...mobileMetadata,
+      revisionOfProjectId: source.id,
+      revisionOperationId: options.operationId,
+      revisionRequest: options.request,
+      revisionSource: "project_chat_book_replan"
+    }
+  });
+  const copy = (await prisma.project.create({
+    data: {
+      userId: options.userId,
+      title: revisedCopyTitle(source.title),
+      ...(source.subtitle ? { subtitle: source.subtitle } : {}),
+      ...(source.authorName ? { authorName: source.authorName } : {}),
+      ...(source.coverTagline ? { coverTagline: source.coverTagline } : {}),
+      prompt: source.prompt,
+      category: source.category,
+      ...(source.subcategory ? { subcategory: source.subcategory } : {}),
+      targetPages: source.targetPages,
+      complexity: source.complexity,
+      temperature: source.temperature,
+      language: source.language,
+      mediaSettings: jsonInputValue(copyMediaSettings),
+      status: "EDITING",
+      ...(source.templateId ? { templateId: source.templateId } : {})
+    },
+    include: mobileProjectDetailInclude()
+  })) as MobileProjectRecord;
+
+  await attachReplanCopyToCreationSession({
+    sourceProjectId: source.id,
+    copyProjectId: copy.id,
+    copyTitle: copy.title
+  });
+  return copy;
+}
+
+async function attachReplanCopyToCreationSession(options: {
+  sourceProjectId: string;
+  copyProjectId: string;
+  copyTitle: string;
+}): Promise<void> {
+  const sourceOutput = await prisma.mobileCreationOutput.findFirst({
+    where: { projectId: options.sourceProjectId },
+    include: { draft: { include: mobileCreationDraftOutputsInclude() } },
+    orderBy: { createdAt: "desc" }
+  });
+  if (!sourceOutput?.draft) {
+    return;
+  }
+  const parsed = mobileCreationDraftPayloadSchema.safeParse(sourceOutput.draft.payload);
+  if (!parsed.success) {
+    return;
+  }
+  await createCreationOutputForProject({
+    draftId: sourceOutput.draftId,
+    projectId: options.copyProjectId,
+    title: options.copyTitle,
+    existingOutputs: creationOutputsForDraft(sourceOutput.draft, parsed.data)
+  });
+  await prisma.mobileCreationDraft.update({
+    where: { id: sourceOutput.draftId },
+    data: { createdProjectId: options.copyProjectId, status: "ACTIVE" }
+  });
+}
+
+function revisedCopyTitle(title: string): string {
+  const suffix = " (Revised)";
+  if (title.endsWith(suffix)) {
+    return title;
+  }
+  return `${title.slice(0, 160 - suffix.length)}${suffix}`;
 }
 
 async function loadMobileProjectDetail(userId: string, projectId: string): Promise<MobileProjectRecord | null> {
@@ -1994,6 +2727,74 @@ function _chatTitleForPayload(payload: MobileCreationDraftPayload): string {
   return "New book";
 }
 
+function mobileCreationDraftOutputsInclude() {
+  return {
+    outputs: {
+      orderBy: { sequence: "asc" },
+      include: { project: { select: { title: true, updatedAt: true } } }
+    }
+  } as const;
+}
+
+function creationOutputsForDraft(
+  draft: { id: string; createdProjectId: string | null; updatedAt: Date; outputs?: MobileCreationOutputRecord[] },
+  payload: MobileCreationDraftPayload
+): MobileCreationOutputDto[] {
+  const outputs = (draft.outputs ?? []).map((output) => serializeCreationOutput(output));
+  if (outputs.length > 0 || !draft.createdProjectId) {
+    return outputs;
+  }
+  return [
+    {
+      id: `legacy:${draft.id}:${draft.createdProjectId}`,
+      draftId: draft.id,
+      projectId: draft.createdProjectId,
+      title: _chatTitleForPayload(payload),
+      sequence: 1,
+      createdAt: draft.updatedAt.toISOString(),
+      updatedAt: draft.updatedAt.toISOString()
+    }
+  ];
+}
+
+function activeProjectIdForDraft(
+  draft: { createdProjectId: string | null },
+  outputs: MobileCreationOutputDto[]
+): string | null {
+  return outputs.at(-1)?.projectId ?? draft.createdProjectId;
+}
+
+function serializeCreationOutput(output: MobileCreationOutputRecord): MobileCreationOutputDto {
+  return {
+    id: output.id,
+    draftId: output.draftId,
+    projectId: output.projectId,
+    title: output.project?.title ?? output.title,
+    sequence: output.sequence,
+    createdAt: output.createdAt.toISOString(),
+    updatedAt: (output.project?.updatedAt ?? output.updatedAt).toISOString()
+  };
+}
+
+async function createCreationOutputForProject(options: {
+  draftId: string;
+  projectId: string;
+  title: string;
+  existingOutputs: MobileCreationOutputDto[];
+}): Promise<MobileCreationOutputRecord> {
+  const nextSequence =
+    options.existingOutputs.reduce((max, output) => Math.max(max, output.sequence), 0) + 1;
+  return prisma.mobileCreationOutput.create({
+    data: {
+      draftId: options.draftId,
+      projectId: options.projectId,
+      title: options.title,
+      sequence: nextSequence
+    },
+    include: { project: { select: { title: true, updatedAt: true } } }
+  });
+}
+
 function serializeCreationDraft(draft: {
   id: string;
   payload: unknown;
@@ -2023,18 +2824,796 @@ function serializeCreationDraft(draft: {
 }
 
 function serializeCreationSession(
-  draft: { id: string; status: string; payload: unknown; createdProjectId: string | null; updatedAt: Date },
+  draft: {
+    id: string;
+    status: string;
+    payload: unknown;
+    createdProjectId: string | null;
+    updatedAt: Date;
+    outputs?: MobileCreationOutputRecord[];
+  },
   messages: MobileCreationMessage[]
 ): MobileCreationSessionDto {
   const payload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+  const outputs = payload.success ? creationOutputsForDraft(draft, payload.data) : [];
   return {
     draftId: draft.id,
     title: payload.success ? _chatTitleForPayload(payload.data) : "New book",
     status: draft.status,
     messages,
     createdProjectId: draft.createdProjectId,
+    activeProjectId: activeProjectIdForDraft(draft, outputs),
+    outputs,
     updatedAt: draft.updatedAt.toISOString()
   };
+}
+
+async function loadProjectChatResponse(projectId: string): Promise<MobileProjectChatResponseDto> {
+  const [messages, planVersions, operations] = await Promise.all([
+    prisma.projectChatMessage.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "asc" },
+      take: 150
+    }),
+    prisma.planVersion.findMany({
+      where: { projectId },
+      orderBy: { version: "asc" },
+      take: 50
+    }),
+    prisma.bookEditOperation.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: { generationJob: { select: { id: true, status: true } } }
+    })
+  ]);
+  return {
+    messages: messages.map((message) => serializeProjectChatMessage(message)),
+    plans: planVersions.map((planVersion) => serializePlan(planVersion)),
+    operations: operations
+      .filter((operation) => shouldExposeChatOperation(operation, planVersions))
+      .map((operation) => serializeBookEditOperation(operation))
+  };
+}
+
+function shouldExposeChatOperation(
+  operation: MobileBookEditOperationRecord,
+  planVersions: Array<{ createdAt: Date }>
+): boolean {
+  if (operation.kind !== "PLAN_REVISION" || operation.status !== "FAILED") {
+    return true;
+  }
+  return !planVersions.some((planVersion) => planVersion.createdAt > operation.createdAt);
+}
+
+async function findPendingScopeClarification(
+  projectId: string,
+  currentMessage: string
+): Promise<{ request: string; scope: BookEditScope } | null> {
+  const currentScope = bookEditScopeFromMessage(currentMessage);
+  const messages = await prisma.projectChatMessage.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "desc" },
+    take: 24
+  });
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index]!;
+    if (message.role !== "ASSISTANT") {
+      continue;
+    }
+    const metadata = jsonRecord(message.metadata);
+    const pending = jsonRecord(metadata.pendingEdit);
+    const request = typeof pending.request === "string" ? pending.request.trim() : "";
+    if (pending.clarification === "scope" && request.length > 0) {
+      return { request, scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index)) };
+    }
+    if (isScopeClarificationAssistantMessage(message.content)) {
+      const priorUser = messages
+        .slice(index + 1)
+        .find((candidate) => candidate.role === "USER" && !isBookEditScopeOnlyMessage(candidate.content));
+      const priorRequest = priorUser?.content.trim();
+      if (priorRequest) {
+        return {
+          request: priorRequest,
+          scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index))
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function scopeFromRecentUserMessages(messages: MobileProjectChatMessageRecord[]): BookEditScope {
+  for (const message of messages) {
+    if (message.role !== "USER" || !isBookEditScopeOnlyMessage(message.content)) {
+      continue;
+    }
+    const scope = bookEditScopeFromMessage(message.content);
+    if (scope !== "none") {
+      return scope;
+    }
+  }
+  return "none";
+}
+
+function isPendingEditConfirmationMessage(message: string): boolean {
+  return /^(?:ok|okay|yes|yep|yeah|sure|do it|apply it|go ahead|please do|start|run it)$/i.test(
+    normalizeShortFollowUpMessage(message)
+  );
+}
+
+function isPendingEditNudgeMessage(message: string): boolean {
+  const normalized = normalizeShortFollowUpMessage(message);
+  return isPendingEditConfirmationMessage(message) ||
+    /^(?:wow|come on|seriously|same thing|again|i already said it|i said it|why)$/i.test(normalized) ||
+    /^i\s+(?:already\s+)?said\b/i.test(normalized);
+}
+
+function normalizeShortFollowUpMessage(message: string): string {
+  return message
+    .toLowerCase()
+    .replace(/[.!?]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function pendingScopeRecoveryMessage(pending: { request: string; scope: BookEditScope }): string {
+  if (pending.scope === "all_pages") {
+    return `I still have your earlier edit: “${pending.request}”, and I saw that you want it for the whole book. Say “apply it” to start that edit, or send a new edit.`;
+  }
+  return `I still have your earlier edit: “${pending.request}”. Should I apply it to the whole book, matching text, or a specific page?`;
+}
+
+function isScopeClarificationAssistantMessage(content: string): boolean {
+  return /which\s+page\s+or\s+exact\s+phrase\s+should\s+i\s+(?:change|edit)/i.test(content) ||
+    /should\s+i\s+(?:change|edit|rewrite)\s+(?:a\s+)?specific\s+page/i.test(content);
+}
+
+async function loadProjectForChat(userId: string, projectId: string) {
+  return prisma.project.findFirst({
+    where: { id: projectId, userId },
+    include: {
+      currentPlan: true,
+      pages: {
+        orderBy: { index: "asc" },
+        select: {
+          id: true,
+          index: true,
+          title: true,
+          markdown: true,
+          summary: true,
+          status: true
+        }
+      }
+    }
+  });
+}
+
+type ProjectForChat = NonNullable<Awaited<ReturnType<typeof loadProjectForChat>>>;
+
+async function handleProjectChatIntent(options: {
+  userId: string;
+  project: ProjectForChat;
+  userMessageId: string;
+  message: string;
+  intent: BookEditIntent;
+}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+  const { userId, project, userMessageId, message, intent } = options;
+  if (intent.kind === "answer" || intent.kind === "clarify") {
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      content: intent.assistantMessage,
+      metadata: {
+        intent,
+        charged: false,
+        ...(intent.kind === "clarify" && intent.clarification === "scope"
+          ? { pendingEdit: { request: message, clarification: "scope" } }
+          : {})
+      }
+    });
+    return { reply, operation: null };
+  }
+
+  if (intent.kind === "plan_revision") {
+    if (!project.currentPlan) {
+      const reply = await createAssistantChatMessage({
+        projectId: project.id,
+        content: "I need a saved book plan before I can revise it.",
+        metadata: { intent, charged: false }
+      });
+      return { reply, operation: null };
+    }
+    return queueChatPlanRevision({ userId, project, userMessageId, message, intent });
+  }
+
+  if (project.status !== "COMPLETE") {
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      content: "Book text edits are available after the latest book has finished generating.",
+      metadata: { intent, charged: false }
+    });
+    return { reply, operation: null };
+  }
+
+  return queueChatBookEdit({ userId, project, userMessageId, message, intent });
+}
+
+async function queueChatPlanRevision(options: {
+  userId: string;
+  project: ProjectForChat;
+  userMessageId: string;
+  message: string;
+  intent: BookEditIntent;
+}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+  const { userId, project, userMessageId, message, intent } = options;
+  const planId = project.currentPlan!.id;
+  const credits = creditCostForOperation("PLAN_REVISION");
+  const operation = await prisma.bookEditOperation.create({
+    data: {
+      projectId: project.id,
+      userMessageId,
+      kind: "PLAN_REVISION",
+      status: "QUEUED",
+      request: message,
+      classifier: jsonInputValue(intent),
+      affectedPageIndexes: [],
+      creditsCharged: 0
+    }
+  });
+  try {
+    const { job, ledgerEntry } = await queueChargedPlanRevision({
+      userId,
+      projectId: project.id,
+      planId,
+      message,
+      operationId: operation.id,
+      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:plan-revision`
+    });
+    const updated = await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: {
+        generationJobId: job.id,
+        ledgerEntryId: ledgerEntry?.id ?? null,
+        creditsCharged: credits
+      },
+      include: { generationJob: { select: { id: true, status: true } } }
+    });
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      operationId: operation.id,
+      content:
+        project.currentPlan?.status === "APPROVED"
+          ? `I’ll revise the approved plan and reopen it for review. This uses ${credits} credits.`
+          : `I’ll revise the plan now. This uses ${credits} credits.`,
+      metadata: { intent, charged: true, creditsCharged: credits }
+    });
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { assistantMessageId: reply.id }
+    });
+    return { reply, operation: updated };
+  } catch (error) {
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { status: "FAILED", error: errorMessage(error) }
+    });
+    if (error instanceof InsufficientCreditsError) {
+      const reply = await insufficientCreditsChatMessage(project.id, intent, error);
+      return { reply, operation: null };
+    }
+    throw error;
+  }
+}
+
+async function queueChatBookReplanCopy(options: {
+  userId: string;
+  project: ProjectForChat;
+  userMessageId: string;
+  message: string;
+  intent: BookEditIntent;
+}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+  const { userId, project, userMessageId, message, intent } = options;
+  const cost = bookEditCreditCost(intent.kind, 0, project);
+  const operation = await prisma.bookEditOperation.create({
+    data: {
+      projectId: project.id,
+      userMessageId,
+      kind: "BOOK_REPLAN",
+      status: "QUEUED",
+      request: message,
+      classifier: jsonInputValue(intent),
+      affectedPageIndexes: [],
+      creditsCharged: 0
+    }
+  });
+
+  let reservation: CreditLedgerEntryRecord | null = null;
+  let spend: CreditLedgerEntryRecord | null = null;
+  let copy: MobileProjectRecord | null = null;
+  try {
+    reservation = await reserveCredits({
+      userId,
+      projectId: project.id,
+      operation: "BOOK_REPLAN",
+      amountCredits: cost,
+      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:book-replan`,
+      description: "Mobile book replan copy",
+      metadata: {
+        intent,
+        sourceProjectId: project.id,
+        operationId: operation.id
+      }
+    });
+    copy = await createReplanProjectCopy({ userId, sourceProject: project, request: message, operationId: operation.id });
+    spend = reservation ? await commitReservedCredits(reservation.id) : null;
+    const job = await enqueueGenerationJob({
+      projectId: copy.id,
+      type: "REPLAN_BOOK",
+      payload: {
+        operationId: operation.id,
+        sourceProjectId: project.id,
+        sourcePlanId: project.currentPlanId,
+        request: message,
+        affectedPageIndexes: [],
+        intentKind: intent.kind,
+        ...(spend ? { billingLedgerEntryId: spend.id } : {})
+      }
+    });
+    const updated = await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: {
+        generationJobId: job.id,
+        ledgerEntryId: spend?.id ?? null,
+        creditsCharged: cost,
+        classifier: jsonInputValue({
+          ...intent,
+          replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id }
+        })
+      },
+      include: { generationJob: { select: { id: true, status: true } } }
+    });
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      operationId: operation.id,
+      content: `I created a new copy and I’ll rebuild the plan and book there. This book stays unchanged. This uses ${cost} credits.`,
+      metadata: {
+        intent,
+        charged: true,
+        creditsCharged: cost,
+        replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id }
+      }
+    });
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { assistantMessageId: reply.id }
+    });
+    return { reply, operation: updated };
+  } catch (error) {
+    const entryToRefund = spend ?? reservation;
+    if (entryToRefund) {
+      await refundCreditLedgerEntry(entryToRefund.id, "Book replan copy could not be queued.");
+    }
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { status: "FAILED", error: errorMessage(error) }
+    });
+    if (copy) {
+      await prisma.project.update({ where: { id: copy.id }, data: { status: "FAILED" } }).catch(() => undefined);
+    }
+    if (error instanceof InsufficientCreditsError) {
+      const reply = await insufficientCreditsChatMessage(project.id, intent, error);
+      return { reply, operation: null };
+    }
+    throw error;
+  }
+}
+
+async function queueChatBookEdit(options: {
+  userId: string;
+  project: ProjectForChat;
+  userMessageId: string;
+  message: string;
+  intent: BookEditIntent;
+}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+  const { userId, project, userMessageId, message, intent } = options;
+  if (intent.kind === "book_replan") {
+    return queueChatBookReplanCopy({ userId, project, userMessageId, message, intent });
+  }
+
+  const affectedPageIndexes = affectedPagesForIntent(intent, message, project.pages);
+  if (affectedPageIndexes.length === 0) {
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      content: "Which page or exact phrase should I edit?",
+      metadata: {
+        intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "scope" },
+        pendingEdit: { request: message, clarification: "scope" },
+        charged: false
+      }
+    });
+    return { reply, operation: null };
+  }
+
+  const cost = bookEditCreditCost(intent.kind, affectedPageIndexes.length, project);
+  const operationKind = operationKindForIntent(intent.kind);
+  const billingOperation = billingOperationForIntent(intent.kind);
+  const operation = await prisma.bookEditOperation.create({
+    data: {
+      projectId: project.id,
+      userMessageId,
+      kind: operationKind,
+      status: "QUEUED",
+      request: message,
+      classifier: jsonInputValue(intent),
+      affectedPageIndexes,
+      creditsCharged: 0
+    }
+  });
+
+  let reservation: CreditLedgerEntryRecord | null = null;
+  let spend: CreditLedgerEntryRecord | null = null;
+  try {
+    reservation = await reserveCredits({
+      userId,
+      projectId: project.id,
+      operation: billingOperation,
+      amountCredits: cost,
+      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:charge`,
+      description: `Mobile ${operationKind.toLowerCase().replaceAll("_", " ")} edit`,
+      metadata: { intent, affectedPageIndexes }
+    });
+    spend = reservation ? await commitReservedCredits(reservation.id) : null;
+    await prisma.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
+    const job = await enqueueGenerationJob({
+      projectId: project.id,
+      type: "APPLY_BOOK_EDIT",
+      payload: {
+        operationId: operation.id,
+        request: message,
+        affectedPageIndexes,
+        intentKind: intent.kind,
+        ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
+        ...(spend ? { billingLedgerEntryId: spend.id } : {}),
+        ...(exactReplacementFromMessage(message) ? { exactReplacement: exactReplacementFromMessage(message) } : {})
+      }
+    });
+    const updated = await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: {
+        generationJobId: job.id,
+        ledgerEntryId: spend?.id ?? null,
+        creditsCharged: cost
+      },
+      include: { generationJob: { select: { id: true, status: true } } }
+    });
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      operationId: operation.id,
+      content: operationQueuedMessage(intent.kind, affectedPageIndexes, cost, intent),
+      metadata: { intent, charged: true, creditsCharged: cost }
+    });
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { assistantMessageId: reply.id }
+    });
+    return { reply, operation: updated };
+  } catch (error) {
+    const entryToRefund = spend ?? reservation;
+    if (entryToRefund) {
+      await refundCreditLedgerEntry(entryToRefund.id, "Book edit could not be queued.");
+    }
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { status: "FAILED", error: errorMessage(error) }
+    });
+    await prisma.project.update({ where: { id: project.id }, data: { status: "COMPLETE" } }).catch(() => undefined);
+    if (error instanceof InsufficientCreditsError) {
+      const reply = await insufficientCreditsChatMessage(project.id, intent, error);
+      return { reply, operation: null };
+    }
+    throw error;
+  }
+}
+
+async function queueChargedPlanRevision(options: {
+  userId: string;
+  projectId: string;
+  planId: string;
+  message: string;
+  idempotencyKey: string;
+  operationId?: string | undefined;
+}): Promise<{ job: Awaited<ReturnType<typeof enqueueGenerationJob>>; ledgerEntry: CreditLedgerEntryRecord | null }> {
+  const amountCredits = creditCostForOperation("PLAN_REVISION");
+  let reservation: CreditLedgerEntryRecord | null = null;
+  let spend: CreditLedgerEntryRecord | null = null;
+  try {
+    reservation = await reserveCredits({
+      userId: options.userId,
+      projectId: options.projectId,
+      operation: "PLAN_REVISION",
+      amountCredits,
+      idempotencyKey: options.idempotencyKey,
+      description: "Mobile plan revision",
+      metadata: {
+        planId: options.planId,
+        ...(options.operationId ? { operationId: options.operationId } : {})
+      }
+    });
+    spend = reservation ? await commitReservedCredits(reservation.id) : null;
+    await prisma.project.update({ where: { id: options.projectId }, data: { status: "PLANNING" } });
+    const job = await enqueueGenerationJob({
+      projectId: options.projectId,
+      type: "REVISE_PLAN",
+      payload: {
+        planId: options.planId,
+        message: options.message,
+        ...(spend ? { billingLedgerEntryId: spend.id } : {}),
+        ...(options.operationId ? { editOperationId: options.operationId } : {})
+      }
+    });
+    return { job, ledgerEntry: spend };
+  } catch (error) {
+    const entryToRefund = spend ?? reservation;
+    if (entryToRefund) {
+      await refundCreditLedgerEntry(entryToRefund.id, "Plan revision could not be queued.");
+    }
+    throw error;
+  }
+}
+
+async function createAssistantChatMessage(options: {
+  projectId: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  operationId?: string | undefined;
+}): Promise<MobileProjectChatMessageRecord> {
+  return prisma.projectChatMessage.create({
+    data: {
+      projectId: options.projectId,
+      role: "ASSISTANT",
+      content: options.content,
+      ...(options.operationId ? { operationId: options.operationId } : {}),
+      metadata: jsonInputValue(options.metadata)
+    }
+  });
+}
+
+async function insufficientCreditsChatMessage(
+  projectId: string,
+  intent: BookEditIntent,
+  error: InsufficientCreditsError
+): Promise<MobileProjectChatMessageRecord> {
+  return createAssistantChatMessage({
+    projectId,
+    content: `You need ${error.requiredCredits} credits for that edit, but you have ${error.availableCredits}. Add credits, then send the edit again.`,
+    metadata: {
+      intent,
+      charged: false,
+      insufficientCredits: {
+        requiredCredits: error.requiredCredits,
+        availableCredits: error.availableCredits,
+        reservedCredits: error.reservedCredits
+      }
+    }
+  });
+}
+
+function serializeProjectChatMessage(message: MobileProjectChatMessageRecord): MobileProjectChatMessageDto {
+  return {
+    id: message.id,
+    projectId: message.projectId,
+    role: message.role.toLowerCase() as MobileProjectChatMessageDto["role"],
+    content: message.content,
+    operationId: message.operationId,
+    metadata: jsonValue(message.metadata),
+    createdAt: message.createdAt.toISOString()
+  };
+}
+
+function serializeBookEditOperation(operation: MobileBookEditOperationRecord): MobileBookEditOperationDto {
+  return {
+    id: operation.id,
+    projectId: operation.projectId,
+    kind: operation.kind.toLowerCase() as MobileBookEditOperationDto["kind"],
+    status: operation.status.toLowerCase() as MobileBookEditOperationDto["status"],
+    affectedPageIndexes: operation.affectedPageIndexes,
+    creditsCharged: operation.creditsCharged,
+    currentAction: currentActionForEditOperation(operation),
+    error: operation.error ?? null,
+    job: operation.generationJob
+      ? {
+          id: operation.generationJob.id,
+          status: normalizeJobStatus(operation.generationJob.status),
+          currentAction: currentActionForEditOperation(operation)
+        }
+      : null,
+    createdAt: operation.createdAt.toISOString(),
+    appliedAt: operation.appliedAt?.toISOString() ?? null
+  };
+}
+
+function chatPagesForProject(project: ProjectForChat): BookEditPageContext[] {
+  return project.pages.map((page) => ({
+    id: page.id,
+    index: page.index,
+    title: page.title,
+    summary: page.summary,
+    previewText: generatedPagePreview(page.markdown, page.summary)
+  }));
+}
+
+function chatStageForProject(status: string, currentPlan: ProjectForChat["currentPlan"]): BookEditProjectStage {
+  if (status === "COMPLETE") {
+    return "complete";
+  }
+  if (currentPlan?.status === "APPROVED") {
+    return "approved_plan";
+  }
+  if (currentPlan || status === "PLAN_READY") {
+    return "plan_ready";
+  }
+  return "other";
+}
+
+function planSummaryForClassifier(planVersion: { planningPackage: unknown }): string {
+  const parsed = bookPlanSchema.safeParse(planVersion.planningPackage);
+  if (!parsed.success) {
+    return "";
+  }
+  return [
+    parsed.data.title,
+    parsed.data.premise,
+    parsed.data.audience,
+    ...parsed.data.chapters.slice(0, 8).map((chapter) => `${chapter.index}. ${chapter.title}: ${chapter.summary}`)
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 3000);
+}
+
+async function hasOpenProjectWork(projectId: string): Promise<boolean> {
+  const count = await prisma.generationJob.count({
+    where: {
+      projectId,
+      status: { in: ["QUEUED", "ACTIVE"] },
+      type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH"] }
+    }
+  });
+  return count > 0;
+}
+
+function affectedPagesForIntent(
+  intent: BookEditIntent,
+  message: string,
+  pages: ProjectForChat["pages"]
+): number[] {
+  const available = new Set(pages.map((page) => page.index));
+  const explicit = intent.affectedPageIndexes.filter((index) => available.has(index));
+  if (explicit.length > 0) {
+    return [...new Set(explicit)].sort((a, b) => a - b);
+  }
+  if (intent.kind === "book_replan") {
+    return [];
+  }
+  if (intent.scope === "all_pages") {
+    return pages.map((page) => page.index).sort((a, b) => a - b);
+  }
+  if (intent.scope === "matching_pages") {
+    return pagesMatchingEditText(message, pages);
+  }
+  const quotedMatches = pagesMatchingQuotedText(message, pages);
+  if (quotedMatches.length > 0) {
+    return quotedMatches;
+  }
+  return [];
+}
+
+function bookEditCreditCost(kind: BookEditIntentKind, affectedPageCount: number, project: ProjectForChat): number {
+  if (kind === "local_patch") {
+    return CREDIT_COSTS.bookTextEditBase + Math.max(1, affectedPageCount) * CREDIT_COSTS.bookTextEditPerPage;
+  }
+  if (kind === "page_rewrite") {
+    return Math.max(1, affectedPageCount) * CREDIT_COSTS.pageRegenerationPerPage;
+  }
+  if (kind === "book_replan") {
+    const input = createProjectSchema.parse(inputSnapshotFromProject(project));
+    return CREDIT_COSTS.bookReplanBase + estimateFullBookCreditCost(input).totalCredits;
+  }
+  return creditCostForOperation("PLAN_REVISION");
+}
+
+function operationKindForIntent(kind: BookEditIntentKind): "LOCAL_PATCH" | "PAGE_REWRITE" | "BOOK_REPLAN" {
+  if (kind === "page_rewrite") {
+    return "PAGE_REWRITE";
+  }
+  if (kind === "book_replan") {
+    return "BOOK_REPLAN";
+  }
+  return "LOCAL_PATCH";
+}
+
+function billingOperationForIntent(kind: BookEditIntentKind): "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" {
+  if (kind === "page_rewrite") {
+    return "PAGE_REGENERATION";
+  }
+  if (kind === "book_replan") {
+    return "BOOK_REPLAN";
+  }
+  return "BOOK_TEXT_EDIT";
+}
+
+function exactReplacementFromMessage(message: string): { from: string; to: string } | null {
+  return replacementTermsFromMessage(message);
+}
+
+function pagesMatchingEditText(message: string, pages: ProjectForChat["pages"]): number[] {
+  const replacement = replacementTermsFromMessage(message);
+  if (replacement) {
+    return pagesMatchingNeedle(replacement.from, pages);
+  }
+  return pagesMatchingQuotedText(message, pages);
+}
+
+function pagesMatchingQuotedText(message: string, pages: ProjectForChat["pages"]): number[] {
+  const quotes = quotedTexts(message);
+  if (quotes.length === 0) {
+    return [];
+  }
+  return pagesMatchingNeedle(quotes[0]!, pages);
+}
+
+function pagesMatchingNeedle(needleSource: string, pages: ProjectForChat["pages"]): number[] {
+  const needle = needleSource.toLowerCase();
+  if (!needle) {
+    return [];
+  }
+  return pages
+    .filter((page) =>
+      [page.markdown, page.title, page.summary].some((value) => value.toLowerCase().includes(needle))
+    )
+    .map((page) => page.index)
+    .sort((a, b) => a - b);
+}
+
+function operationQueuedMessage(kind: BookEditIntentKind, affectedPageIndexes: number[], credits: number, intent: BookEditIntent): string {
+  if (kind === "book_replan") {
+    return `I’ll rebuild the plan and regenerate the book. This uses ${credits} credits.`;
+  }
+  const pageText =
+    intent.scope === "all_pages"
+      ? "the whole book"
+      : intent.scope === "matching_pages"
+        ? affectedPageIndexes.length === 1
+          ? `the matching text on page ${affectedPageIndexes[0]}`
+          : `matching text on pages ${affectedPageIndexes.join(", ")}`
+        : affectedPageIndexes.length === 1
+      ? `page ${affectedPageIndexes[0]}`
+      : `pages ${affectedPageIndexes.join(", ")}`;
+  return kind === "page_rewrite"
+    ? `I’ll rewrite ${pageText} and refresh the exports. This uses ${credits} credits.`
+    : `I’ll edit ${pageText} and refresh the exports. This uses ${credits} credits.`;
+}
+
+function currentActionForEditOperation(operation: MobileBookEditOperationRecord): string {
+  if (operation.status === "FAILED") {
+    if (operation.kind === "PLAN_REVISION") {
+      return "Plan revision failed.";
+    }
+    return "Edit failed.";
+  }
+  if (operation.status === "APPLIED") {
+    return "Edit applied.";
+  }
+  if (operation.kind === "BOOK_REPLAN") {
+    return "Rebuilding a new copy.";
+  }
+  if (operation.kind === "PAGE_REWRITE") {
+    return "Rewriting selected pages.";
+  }
+  if (operation.kind === "PLAN_REVISION") {
+    return "Revising the plan.";
+  }
+  return "Applying text edits.";
 }
 
 function conversationMessagesFromPayload(payload: MobileCreationDraftPayload): MobileCreationMessage[] {
@@ -2053,10 +3632,14 @@ function turnRequestFromPayload(
   return {
     messages,
     brief: payload.recipe,
-    presets: payload.selectedPresets,
+    presets: persistedPresetsForTurn(payload),
     sourceNotes: payload.sourceNotes,
     optionalDetails: payload.optionalDetails
   };
+}
+
+function persistedPresetsForTurn(payload: MobileCreationDraftPayload): MobileCreationDraftPayload["selectedPresets"] {
+  return payload.selectedPresets;
 }
 
 function userTextFromMessages(messages: MobileCreationMessage[]): string {
@@ -2074,6 +3657,14 @@ function jsonInputValue(value: unknown): Prisma.InputJsonValue {
 
 function jsonValue(value: unknown): MobileJsonValue {
   return JSON.parse(JSON.stringify(value)) as MobileJsonValue;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+function hashString(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }
 
 async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): Promise<MobileAuthContext | null> {
@@ -2194,6 +3785,7 @@ async function serializeProjectSummary(
   const pageCount = project._count?.pages ?? project.pages?.length ?? 0;
   const imageCount = project._count?.images ?? 0;
   const progressPercent = projectProgressPercent(project.status, pageCount, project.targetPages);
+  const hasExistingPlan = Boolean(project.currentPlanId || project.currentPlan);
 
   return {
     id: project.id,
@@ -2207,12 +3799,12 @@ async function serializeProjectSummary(
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
-    currentAction: currentActionForProject(project.status, progressPercent),
+    currentAction: currentActionForProject(project.status, progressPercent, { hasExistingPlan }),
     promptPreview: previewText(project.prompt),
     targetPages: project.targetPages,
     pageCount,
     imageCount,
-    hasPlan: Boolean(project.currentPlanId || project.currentPlan),
+    hasPlan: hasExistingPlan,
     exports: await serializeExportSet(project.id, project.title, appConfig, userId),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString()
@@ -2351,6 +3943,19 @@ function serializeExport(
   };
 }
 
+async function loadSerializedProjectStatus(
+  projectId: string,
+  appConfig: ReturnType<typeof loadConfig>,
+  userId: string
+): Promise<MobileProjectStatusDto | null> {
+  const status = await buildProjectStatus(projectId);
+  if (!status) {
+    return null;
+  }
+  const exports = await serializeExportSet(projectId, status.project.title, appConfig, userId);
+  return serializeProjectStatus(status, exports);
+}
+
 function serializeProjectStatus(status: ProjectStatusResult, exports: MobileExportSetDto): MobileProjectStatusDto {
   const project = status.project;
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
@@ -2412,6 +4017,9 @@ function statusProgressPercent(status: ProjectStatusResult): number {
   if (projectStatus === "PLAN_READY") {
     return 20;
   }
+  if (projectStatus === "EDITING") {
+    return 92;
+  }
 
   const pageTarget = Math.max(1, status.progress.pages.target);
   const pageRatio = Math.max(0, Math.min(1, status.progress.pages.complete / pageTarget));
@@ -2433,6 +4041,9 @@ function projectProgressPercent(status: string, completePages: number, targetPag
   }
   if (status === "PLAN_READY") {
     return 20;
+  }
+  if (status === "EDITING") {
+    return 92;
   }
   const pageRatio = Math.max(0, Math.min(1, completePages / Math.max(targetPages, 1)));
   return status === "GENERATING" ? 20 + Math.round(pageRatio * 60) : Math.round(pageRatio * 80);
@@ -2459,16 +4070,22 @@ function currentActionFromSteps(
   return currentActionForProject(status, progressPercent);
 }
 
-function currentActionForProject(status: string, progressPercent: number): string {
+function currentActionForProject(
+  status: string,
+  progressPercent: number,
+  options: { hasExistingPlan?: boolean } = {}
+): string {
   switch (status) {
     case "DRAFT":
       return "Ready to create a book plan.";
     case "PLANNING":
-      return "Creating your book plan.";
+      return options.hasExistingPlan ? "Revising your book plan." : "Creating your book plan.";
     case "PLAN_READY":
       return "Ready for review.";
     case "GENERATING":
       return progressPercent >= 90 ? "Preparing downloads." : "Writing your book.";
+    case "EDITING":
+      return "Editing your book.";
     case "COMPLETE":
       return "Ready to download.";
     case "FAILED":
@@ -2488,6 +4105,8 @@ function statusLabel(status: string): string {
       return "Review your book plan";
     case "GENERATING":
       return "Generating your book";
+    case "EDITING":
+      return "Editing your book";
     case "COMPLETE":
       return "Ready to export";
     case "FAILED":
@@ -2505,6 +4124,8 @@ function failureMessageForJob(type: GenerationJobType, rawError: string | null):
     GENERATE_PAGE: "writing a page",
     GENERATE_IMAGE: "creating a visual",
     COMPILE_EXPORT: "preparing downloads",
+    APPLY_BOOK_EDIT: "editing your book",
+    REPLAN_BOOK: "rebuilding your book plan",
     PREPARE_CHARACTER_CANDIDATES: "preparing voice characters",
     BUILD_CHARACTER_PERSONA: "building a voice character",
     RESEARCH: "checking research"
@@ -2572,17 +4193,33 @@ function hasPlannerPendingMobileTitle(mediaSettings: unknown): boolean {
 
 function mobileMetadataFromMediaSettings(mediaSettings: unknown): MobileMediaMetadata | null {
   const metadata = jsonRecord(jsonRecord(mediaSettings).mobile);
-  const bookType = mobileBookTypeSchema.safeParse(metadata.bookType);
-  const lengthPreset = mobileLengthPresetSchema.safeParse(metadata.lengthPreset);
+  const bookType = z.union([mobileBookTypeSchema, z.literal("custom")]).safeParse(metadata.bookType);
+  const bookTypeChoice = mobileBookTypeChoiceSchema.optional().safeParse(metadata.bookTypeChoice);
+  const lengthPreset = z.union([mobileLengthPresetSchema, z.literal("custom")]).safeParse(metadata.lengthPreset);
   const qualityPreset = mobileQualityPresetSchema.safeParse(metadata.qualityPreset);
-  if (!bookType.success || !lengthPreset.success || !qualityPreset.success || typeof metadata.imagesEnabled !== "boolean") {
+  const pageCountMode = mobilePageCountModeSchema.default("auto").safeParse(metadata.pageCountMode);
+  const targetPages = mobileTargetPagesSchema.safeParse(metadata.targetPages);
+  const pageCountSource = mobilePageCountSourceSchema.default("legacy").safeParse(metadata.pageCountSource);
+  if (
+    !bookType.success ||
+    !bookTypeChoice.success ||
+    !lengthPreset.success ||
+    !qualityPreset.success ||
+    !pageCountMode.success ||
+    !pageCountSource.success ||
+    typeof metadata.imagesEnabled !== "boolean"
+  ) {
     return null;
   }
   return {
     bookType: bookType.data,
+    bookTypeChoice: bookTypeChoice.data ?? (bookType.data === "custom" ? "auto" : bookType.data),
     lengthPreset: lengthPreset.data,
     qualityPreset: qualityPreset.data,
-    imagesEnabled: metadata.imagesEnabled
+    imagesEnabled: metadata.imagesEnabled,
+    pageCountMode: pageCountMode.data,
+    targetPages: targetPages.success ? targetPages.data : 0,
+    pageCountSource: pageCountSource.data
   };
 }
 
@@ -2606,6 +4243,10 @@ function imagesEnabledFromMediaSettings(mediaSettings: unknown): boolean {
 
 function normalizeProjectStatus(status: string): string {
   return status.toLowerCase();
+}
+
+function isLiveProjectStatus(status: string): boolean {
+  return status === "planning" || status === "generating" || status === "editing";
 }
 
 function normalizePlanStatus(status: string): MobilePlanDto["status"] {
@@ -2737,7 +4378,7 @@ function canRecoverGenerationJob(
     );
   }
 
-  return type === "COMPILE_EXPORT";
+  return type === "COMPILE_EXPORT" || type === "APPLY_BOOK_EDIT" || type === "REPLAN_BOOK";
 }
 
 function isPlanningRecoveryJob(type: GenerationJobType): boolean {

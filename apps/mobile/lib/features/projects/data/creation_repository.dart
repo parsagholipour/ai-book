@@ -50,6 +50,14 @@ abstract interface class CreationRepository {
     String? language,
   });
 
+  Future<MobileCreationBuildPreflight> preflightBuildConversation({
+    required String draftId,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+    String? language,
+  });
+
   Future<void> renameSession({required String draftId, required String title});
 
   Future<void> deleteSession(String draftId);
@@ -219,6 +227,28 @@ class MobileCreationRepository implements CreationRepository {
   }
 
   @override
+  Future<MobileCreationBuildPreflight> preflightBuildConversation({
+    required String draftId,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+    String? language,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/creation-sessions/$draftId/preflight',
+      data: <String, dynamic>{
+        'presets': ?presets?.toJson(),
+        'sourceNotes': ?sourceNotes,
+        'optionalDetails': ?optionalDetails?.toJson(),
+        'language': ?language,
+      },
+    );
+    return MobileCreationBuildPreflight.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
   Future<void> renameSession({
     required String draftId,
     required String title,
@@ -273,6 +303,8 @@ class CreationConversationCache {
         status: session.status,
         messages: session.messages,
         createdProjectId: session.createdProjectId,
+        activeProjectId: session.activeProjectId,
+        outputs: session.outputs,
         updatedAt: session.updatedAt,
       ),
     );

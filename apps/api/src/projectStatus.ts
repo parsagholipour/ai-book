@@ -60,8 +60,8 @@ export type JobImageFallbackDetails = {
 };
 
 const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
-const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"];
-const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK"];
+const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
+const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
 const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 const config = loadConfig();
 
@@ -382,6 +382,8 @@ function jobQueueName(type: string): string | null {
       GENERATE_PAGE: "generate-page",
       GENERATE_IMAGE: "generate-image",
       COMPILE_EXPORT: "compile-export",
+      APPLY_BOOK_EDIT: "apply-book-edit",
+      REPLAN_BOOK: "replan-book",
       PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
       BUILD_CHARACTER_PERSONA: "build-character-persona",
       RESEARCH: "research"
@@ -468,8 +470,14 @@ export function buildPipelineSteps(input: {
       (job.status === "QUEUED" || job.status === "ACTIVE")
   );
   const pagesDone = pageProgress.complete >= pageProgress.target && pageProgress.target > 0;
+  const editActive = jobs.some(
+    (job) =>
+      (job.type === "APPLY_BOOK_EDIT" || job.type === "REPLAN_BOOK") &&
+      (job.status === "QUEUED" || job.status === "ACTIVE")
+  );
   const pagesActive =
-    projectStatus === "GENERATING" && !pagesDone && pageProgress.target > 0;
+    (projectStatus === "GENERATING" && !pagesDone && pageProgress.target > 0) ||
+    (projectStatus === "EDITING" && editActive);
   const exportActive = jobs.some(
     (job) => job.type === "COMPILE_EXPORT" && (job.status === "QUEUED" || job.status === "ACTIVE")
   );
@@ -479,10 +487,10 @@ export function buildPipelineSteps(input: {
   const imagesDone =
     exportDone || (pagesDone && openImageJobs === 0 && (imageCount > 0 || projectStatus === "COMPLETE"));
 
-  const planDone = ["PLAN_READY", "GENERATING", "COMPLETE"].includes(projectStatus);
+  const planDone = ["PLAN_READY", "GENERATING", "EDITING", "COMPLETE"].includes(projectStatus);
 
   const planDetail = planActive ? "Planning in progress" : planDone ? "Plan ready" : undefined;
-  const exportDetail = exportDone ? "Markdown & PDF ready" : exportActive ? "Compiling export" : undefined;
+  const exportDetail = exportDone ? "Markdown & PDF ready" : exportActive ? "Compiling export" : editActive ? "Waiting for edits" : undefined;
 
   return [
     {
@@ -494,7 +502,7 @@ export function buildPipelineSteps(input: {
     {
       key: "pages",
       label: "Pages",
-      status: pagesDone ? "done" : pagesActive ? "active" : "pending",
+      status: pagesActive ? "active" : pagesDone ? "done" : "pending",
       detail: `${pageProgress.complete}/${pageProgress.target} pages`
     },
     {
@@ -563,7 +571,7 @@ function canRecoverGenerationJob(
     );
   }
 
-  return type === "COMPILE_EXPORT";
+  return type === "COMPILE_EXPORT" || type === "APPLY_BOOK_EDIT" || type === "REPLAN_BOOK";
 }
 
 function payloadPlanId(payload: Record<string, unknown>): string | null {

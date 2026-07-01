@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +12,7 @@ import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/shared/api/api_error.dart';
 
 void main() {
   testWidgets('auth gate routes signed-out users to sign in and sign up', (
@@ -45,6 +48,39 @@ void main() {
     expect(find.text('A kids book'), findsOneWidget);
     expect(find.text('Create your account'), findsNothing);
   });
+
+  testWidgets('failed sign in keeps the email field filled', (tester) async {
+    await tester.pumpWidget(
+      testApp(
+        authRepository: FakeAuthRepository(
+          signInError: const ApiException(
+            code: 'INVALID_CREDENTIALS',
+            message: 'Email or password is incorrect.',
+            statusCode: 401,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email'),
+      'reader@example.com',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      'wrong-password',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+    await tester.pumpAndSettle();
+
+    final emailField = tester.widget<TextFormField>(
+      find.widgetWithText(TextFormField, 'Email'),
+    );
+    expect(emailField.controller?.text, 'reader@example.com');
+    expect(find.text('Email or password is incorrect.'), findsOneWidget);
+  });
 }
 
 Widget testApp({
@@ -71,9 +107,11 @@ Widget testApp({
 }
 
 class FakeAuthRepository implements AuthRepository {
-  FakeAuthRepository({AuthSession? initialSession}) : _session = initialSession;
+  FakeAuthRepository({AuthSession? initialSession, this.signInError})
+    : _session = initialSession;
 
   AuthSession? _session;
+  final Object? signInError;
 
   @override
   Future<AuthSession?> restoreSession() async => _session;
@@ -83,6 +121,10 @@ class FakeAuthRepository implements AuthRepository {
     required String email,
     required String password,
   }) async {
+    final error = signInError;
+    if (error != null) {
+      throw error;
+    }
     _session = fakeSession(email: email);
     return _session!;
   }
@@ -187,6 +229,17 @@ class FakeCreationRepository implements CreationRepository {
   }) {
     throw UnimplementedError('Conversation is not used in this test.');
   }
+
+  @override
+  Future<MobileCreationBuildPreflight> preflightBuildConversation({
+    required String draftId,
+    MobileCreationPresets? presets,
+    String? sourceNotes,
+    MobileCreationOptionalDetails? optionalDetails,
+    String? language,
+  }) {
+    throw UnimplementedError('Conversation is not used in this test.');
+  }
 }
 
 MobileCreationConversationResponse fakeGreetingConversation({
@@ -249,6 +302,31 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileProjectChat> getProjectChat(String id) async {
+    return const MobileProjectChat(messages: [], operations: []);
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> sendProjectChatMessage({
+    required String projectId,
+    required String message,
+  }) async {
+    final reply = MobileProjectChatMessage(
+      id: 'reply',
+      projectId: projectId,
+      role: 'assistant',
+      content: 'Okay.',
+      metadata: const {},
+      createdAt: DateTime(2026),
+    );
+    return MobileProjectChatSendResult(
+      messages: [reply],
+      operations: const [],
+      reply: reply,
+    );
+  }
+
+  @override
   Future<ProjectDeletionReceipt> deleteProject(String id) async {
     return ProjectDeletionReceipt(
       deletedProjectId: id,
@@ -276,6 +354,11 @@ class FakeProjectsRepository implements ProjectsRepository {
   @override
   Future<MobileProjectStatus> getProjectStatus(String id) async {
     return fakeProjectStatus(projectId: id);
+  }
+
+  @override
+  Stream<MobileProjectStatus> watchProjectStatus(String id) async* {
+    yield await getProjectStatus(id);
   }
 
   @override

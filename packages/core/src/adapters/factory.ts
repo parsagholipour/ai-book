@@ -201,7 +201,7 @@ export function createProviders(config: AppConfig, input?: CreateProjectInput): 
   };
 }
 
-export function createLanguageDetectionTextModel(config: AppConfig): TextModelAdapter {
+export function createFastRoutingTextModel(config: AppConfig): TextModelAdapter {
   if (config.MOCK_AI) {
     return new FakeTextModelAdapter();
   }
@@ -237,6 +237,10 @@ export function createLanguageDetectionTextModel(config: AppConfig): TextModelAd
   }
 
   throw new Error("A text model API key is required for prompt language detection when MOCK_AI=false.");
+}
+
+export function createLanguageDetectionTextModel(config: AppConfig): TextModelAdapter {
+  return createFastRoutingTextModel(config);
 }
 
 function createTextModelAdapter(config: AppConfig, selection: TextModelSelection): TextModelAdapter {
