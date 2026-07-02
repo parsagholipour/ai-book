@@ -813,6 +813,85 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('a chat build request starts the build without tapping the button', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(replyWithBuildRequest: true);
+    await tester.pumpWidget(
+      _app(creation: creation, projects: _PlanProjectsRepository()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).last, 'Ok, build it');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(creation.buildCount, 1);
+    expect(creation.buildDraftId, 'draft-1');
+    expect(find.text(_planTitle), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('assistant content cards render book content in the chat', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(
+          draftId: 'draft-done',
+          title: 'Completed book',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(status: 'complete', plan: _approvedPlan()),
+    );
+    projects.chatMessages.add(
+      MobileProjectChatMessage(
+        id: 'chat-card-1',
+        projectId: 'project-1',
+        role: 'assistant',
+        content: 'Here’s the outline of your book.',
+        metadata: const {
+          'contentCard': {
+            'type': 'outline',
+            'title': 'Your book outline',
+            'sections': [
+              {
+                'label': '1. Set the promise',
+                'body': 'Define the result the student should get.',
+              },
+            ],
+          },
+        },
+        createdAt: DateTime.utc(2026, 6, 15, 12),
+      ),
+    );
+
+    await tester.pumpWidget(
+      _app(creation: creation, projects: projects, draftId: 'draft-done'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Here’s the outline of your book.'), findsOneWidget);
+    expect(find.text('Your book outline'), findsOneWidget);
+    expect(find.text('1. Set the promise'), findsOneWidget);
+    expect(
+      find.text('Define the result the student should get.'),
+      findsOneWidget,
+    );
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('one chat can build multiple outputs and selects the latest', (
     tester,
   ) async {
@@ -978,6 +1057,7 @@ Map<String, dynamic> _turnJson({
   List<String> quickReplies = const [],
   Map<String, dynamic>? question,
   int? targetPages,
+  bool buildRequested = false,
 }) {
   return {
     'assistantMessage': assistantMessage,
@@ -1003,6 +1083,7 @@ Map<String, dynamic> _turnJson({
     'titleSuggestions': <dynamic>[],
     'shapePreview': ['Intro'],
     'warnings': <dynamic>[],
+    'buildRequested': buildRequested,
   };
 }
 
@@ -1032,12 +1113,14 @@ MobileChatSession _chatSession({
 class _ScriptedCreationRepository implements CreationRepository {
   _ScriptedCreationRepository({
     this.replyWithQuestion = false,
+    this.replyWithBuildRequest = false,
     this.preflightRequiresPageCount = false,
     this.resumeByIdGate,
     List<MobileChatSession>? sessions,
   }) : sessions = sessions ?? const <MobileChatSession>[];
 
   final bool replyWithQuestion;
+  final bool replyWithBuildRequest;
   final bool preflightRequiresPageCount;
   final List<MobilePageCountRecommendation> preflightRecommendations = const [
     MobilePageCountRecommendation(
@@ -1198,6 +1281,7 @@ class _ScriptedCreationRepository implements CreationRepository {
                 'allowCustom': true,
               }
             : null,
+        buildRequested: replyWithBuildRequest,
       ),
     });
   }

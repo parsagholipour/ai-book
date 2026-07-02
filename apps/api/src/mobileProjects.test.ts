@@ -2514,7 +2514,7 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
-  it("blocks project chat edits while generation is active", async () => {
+  it("queues project chat edits as a pending request while generation is active", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({
@@ -2538,7 +2538,11 @@ describe("mobile project routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(body.operation).toBeNull();
-    expect(body.reply.content).toContain("already being worked on");
+    expect(body.reply.content).toContain("saved that request");
+    expect(body.reply.metadata).toMatchObject({
+      blockedByActiveJob: true,
+      pendingEdit: { request: "Make the whole book warmer.", clarification: "busy" }
+    });
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
     await app.close();
   });
@@ -3121,6 +3125,7 @@ function projectRecord(overrides: Record<string, unknown> = {}) {
     templateId: null,
     currentPlanId: null,
     currentPlan: null,
+    chapters: [],
     pages: [],
     _count: { pages: 0, images: 0, jobs: 0 },
     createdAt: new Date("2026-06-01T12:00:00.000Z"),

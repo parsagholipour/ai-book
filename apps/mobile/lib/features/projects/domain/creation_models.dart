@@ -465,6 +465,8 @@ class MobileCreationTurn {
     required this.shapePreview,
     required this.warnings,
     this.question,
+    this.language,
+    this.buildRequested = false,
   });
 
   final String assistantMessage;
@@ -477,6 +479,12 @@ class MobileCreationTurn {
   final List<String> titleSuggestions;
   final List<String> shapePreview;
   final List<String> warnings;
+
+  /// Book language detected from the chat ("fa", "es", ...), if any.
+  final String? language;
+
+  /// True when the user asked in chat to build the plan ("ok build it").
+  final bool buildRequested;
 
   factory MobileCreationTurn.fromJson(Map<String, dynamic> json) {
     final question = json['question'];
@@ -497,6 +505,8 @@ class MobileCreationTurn {
       titleSuggestions: _stringList(json['titleSuggestions']),
       shapePreview: _stringList(json['shapePreview']),
       warnings: _stringList(json['warnings']),
+      language: json['language'] as String?,
+      buildRequested: json['buildRequested'] as bool? ?? false,
     );
   }
 }

@@ -107,6 +107,7 @@ import {
   messageWithScope,
   quotedTexts,
   replacementTermsFromMessage,
+  type BookEditChapterContext,
   type BookEditIntent,
   type BookEditIntentKind,
   type BookEditPageContext,
@@ -322,7 +323,7 @@ export type MobileProjectChatMessageDto = {
 export type MobileBookEditOperationDto = {
   id: string;
   projectId: string;
-  kind: "plan_revision" | "local_patch" | "page_rewrite" | "book_replan";
+  kind: "plan_revision" | "local_patch" | "page_rewrite" | "chapter_regenerate" | "book_replan";
   status: "queued" | "active" | "applied" | "failed" | "canceled";
   affectedPageIndexes: number[];
   creditsCharged: number;
@@ -1232,6 +1233,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           detectedLane: turn.brief.lane,
           recipe: turn.brief,
           selectedPresets: turn.presets,
+          ...(turn.language ? { language: turn.language } : {}),
           messages
         });
       } else {
@@ -1280,41 +1282,46 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       }
 
       const priorMessages = conversationMessagesFromPayload(parsedPayload.data);
-      const nextMessages: MobileCreationMessage[] = [
-        ...priorMessages,
-        { role: "user" as const, content: parsedBody.data.message }
-      ].slice(-60);
+      const incoming = foldCreationTranscript(
+        [...priorMessages, { role: "user" as const, content: parsedBody.data.message }],
+        parsedPayload.data.conversationSummary
+      );
       const turnRequest: MobileCreationTurnRequest = {
-        messages: nextMessages,
+        messages: incoming.messages,
         brief: parsedPayload.data.recipe,
         presets: parsedBody.data.presets ?? persistedPresetsForTurn(parsedPayload.data),
         sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
-        optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails
+        optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails,
+        language: parsedPayload.data.language,
+        conversationSummary: incoming.conversationSummary
       };
       const turn = await runCreationTurn(turnRequest, {
         enrich: creationEnrichment,
         timeoutMs: options.creationTurnTimeoutMs
       });
-      const persistedMessages: MobileCreationMessage[] = [
-        ...nextMessages,
-        { role: "assistant" as const, content: turn.assistantMessage }
-      ].slice(-60);
+      const persisted = foldCreationTranscript(
+        [...incoming.messages, { role: "assistant" as const, content: turn.assistantMessage }],
+        incoming.conversationSummary
+      );
+      const language = turn.language ?? parsedPayload.data.language;
       const updatedPayload = mobileCreationDraftPayloadSchema.parse({
         payloadVersion: 3,
-        rawIdea: userTextFromMessages(persistedMessages),
+        rawIdea: userTextFromMessages(persisted.messages),
         optionalDetails: turnRequest.optionalDetails ?? { mustInclude: "", tone: "" },
         sourceNotes: turnRequest.sourceNotes ?? "",
         detectedLane: turn.brief.lane,
         recipe: turn.brief,
         selectedPresets: turn.presets,
-        messages: persistedMessages
+        ...(language ? { language } : {}),
+        ...(persisted.conversationSummary ? { conversationSummary: persisted.conversationSummary } : {}),
+        messages: persisted.messages
       });
       const updated = await prisma.mobileCreationDraft.update({
         where: { id },
         data: { payload: jsonInputValue(updatedPayload), status: "ACTIVE" }
       });
       return {
-        session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persistedMessages),
+        session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persisted.messages),
         turn
       } satisfies MobileCreationConversationResponseDto;
     }
@@ -1544,7 +1551,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       title: titleForMobilePayload(finalPayload, finalAdvisor),
       authorName: authorForMobilePayload(finalPayload),
       prompt: composeMobileProjectPrompt(finalPayload, finalAdvisor),
-      language: overrides.language ?? "en",
+      language: overrides.language ?? prepared.finalPayload.language ?? "en",
       creationBrief: briefForMobilePayload(finalPayload, finalAdvisor),
       creationPayload: finalPayload,
       advisor: finalAdvisor
@@ -1786,10 +1793,15 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       const pendingScope = await findPendingScopeClarification(id, parsed.data.message);
       const currentScope = bookEditScopeFromMessage(parsed.data.message);
       const pendingResolutionScope = currentScope !== "none" ? currentScope : pendingScope?.scope ?? "none";
+      // Busy-queued edits carry their full target already; a bare confirmation
+      // ("apply it") is enough to resume them. Scope clarifications still need
+      // an actual scope answer.
       const resolvesPendingScope = Boolean(
         pendingScope &&
-          (currentScope !== "none" ||
-            (pendingResolutionScope !== "none" && isPendingEditConfirmationMessage(parsed.data.message)))
+          (pendingScope.clarification === "busy"
+            ? isPendingEditConfirmationMessage(parsed.data.message) || currentScope !== "none"
+            : currentScope !== "none" ||
+              (pendingResolutionScope !== "none" && isPendingEditConfirmationMessage(parsed.data.message)))
       );
       const resolvedPendingEdit =
         pendingScope && resolvesPendingScope
@@ -1800,7 +1812,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
             }
           : null;
       const resolvedMessage = resolvedPendingEdit
-        ? messageWithScope(resolvedPendingEdit.request, resolvedPendingEdit.scope)
+        ? pendingScope?.clarification === "busy" && resolvedPendingEdit.scope === "none"
+          ? resolvedPendingEdit.request
+          : messageWithScope(resolvedPendingEdit.request, resolvedPendingEdit.scope)
         : parsed.data.message;
 
       const userMessage = await prisma.projectChatMessage.create({
@@ -1836,16 +1850,27 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         message: resolvedMessage,
         stage,
         pages,
+        chapters: chatChaptersForProject(project),
         planSummary: project.currentPlan ? planSummaryForClassifier(project.currentPlan) : undefined,
         textModel: routingTextModel
       });
 
+      // Answering questions and reading content are always allowed while a job
+      // runs; edit requests get saved as the project's one pending edit and can
+      // be applied with a quick confirmation once the work settles.
       const openEditBlocked = await hasOpenProjectWork(id);
-      if (openEditBlocked && intent.kind !== "answer") {
+      const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content"];
+      if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
         const replyMessage = await createAssistantChatMessage({
           projectId: id,
-          content: "I can answer questions, but I can’t edit while this book is already being worked on. Try again when the current job finishes.",
-          metadata: { intent, blockedByActiveJob: true }
+          content:
+            "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll run it. You can keep asking questions in the meantime.",
+          metadata: {
+            intent,
+            blockedByActiveJob: true,
+            charged: false,
+            pendingEdit: { request: resolvedMessage, clarification: "busy" }
+          }
         });
         return {
           ...(await loadProjectChatResponse(id)),
@@ -2886,7 +2911,7 @@ function shouldExposeChatOperation(
 async function findPendingScopeClarification(
   projectId: string,
   currentMessage: string
-): Promise<{ request: string; scope: BookEditScope } | null> {
+): Promise<{ request: string; scope: BookEditScope; clarification: "scope" | "busy" } | null> {
   const currentScope = bookEditScopeFromMessage(currentMessage);
   const messages = await prisma.projectChatMessage.findMany({
     where: { projectId },
@@ -2895,14 +2920,22 @@ async function findPendingScopeClarification(
   });
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
+    if (message.role === "USER" && jsonRecord(jsonRecord(message.metadata).resolvedPendingEdit).request !== undefined) {
+      // The most recent pending edit was already applied; don't re-apply it.
+      return null;
+    }
     if (message.role !== "ASSISTANT") {
       continue;
     }
     const metadata = jsonRecord(message.metadata);
     const pending = jsonRecord(metadata.pendingEdit);
     const request = typeof pending.request === "string" ? pending.request.trim() : "";
-    if (pending.clarification === "scope" && request.length > 0) {
-      return { request, scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index)) };
+    if ((pending.clarification === "scope" || pending.clarification === "busy") && request.length > 0) {
+      return {
+        request,
+        scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index)),
+        clarification: pending.clarification
+      };
     }
     if (isScopeClarificationAssistantMessage(message.content)) {
       const priorUser = messages
@@ -2912,7 +2945,8 @@ async function findPendingScopeClarification(
       if (priorRequest) {
         return {
           request: priorRequest,
-          scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index))
+          scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index)),
+          clarification: "scope"
         };
       }
     }
@@ -2971,6 +3005,10 @@ async function loadProjectForChat(userId: string, projectId: string) {
     where: { id: projectId, userId },
     include: {
       currentPlan: true,
+      chapters: {
+        orderBy: { index: "asc" },
+        select: { id: true, index: true, title: true, summary: true }
+      },
       pages: {
         orderBy: { index: "asc" },
         select: {
@@ -2979,11 +3017,23 @@ async function loadProjectForChat(userId: string, projectId: string) {
           title: true,
           markdown: true,
           summary: true,
-          status: true
+          status: true,
+          chapter: { select: { index: true } }
         }
       }
     }
   });
+}
+
+function chatChaptersForProject(project: ProjectForChat): BookEditChapterContext[] {
+  return project.chapters.map((chapter) => ({
+    index: chapter.index,
+    title: chapter.title,
+    pageIndexes: project.pages
+      .filter((page) => page.chapter?.index === chapter.index)
+      .map((page) => page.index)
+      .sort((a, b) => a - b)
+  }));
 }
 
 type ProjectForChat = NonNullable<Awaited<ReturnType<typeof loadProjectForChat>>>;
@@ -3008,6 +3058,16 @@ async function handleProjectChatIntent(options: {
           : {})
       }
     });
+    return { reply, operation: null };
+  }
+
+  if (intent.kind === "show_content") {
+    const reply = await replyWithContentCard(project, intent);
+    return { reply, operation: null };
+  }
+
+  if (intent.kind === "undo_last_edit") {
+    const reply = await undoLastBookEdit(project, intent);
     return { reply, operation: null };
   }
 
@@ -3221,7 +3281,10 @@ async function queueChatBookEdit(options: {
   if (affectedPageIndexes.length === 0) {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
-      content: "Which page or exact phrase should I edit?",
+      content:
+        intent.kind === "chapter_regenerate"
+          ? `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book. Which chapter or pages should I rewrite?`.replace("  ", " ")
+          : "Which page or exact phrase should I edit?",
       metadata: {
         intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "scope" },
         pendingEdit: { request: message, clarification: "scope" },
@@ -3358,6 +3421,179 @@ async function queueChargedPlanRevision(options: {
   }
 }
 
+type MobileContentCard = {
+  type: "outline" | "chapter" | "page";
+  title: string;
+  sections: Array<{ label: string; body: string }>;
+};
+
+/**
+ * Free read-only replies: outline, chapter, or page content rendered by the
+ * mobile app as a structured content card.
+ */
+async function replyWithContentCard(
+  project: ProjectForChat,
+  intent: BookEditIntent
+): Promise<MobileProjectChatMessageRecord> {
+  const target = intent.contentTarget ?? { type: "outline" as const };
+  const card = contentCardForTarget(project, target);
+  if (!card) {
+    return createAssistantChatMessage({
+      projectId: project.id,
+      content:
+        target.type === "page"
+          ? "I couldn’t find that page yet. Pages appear here once they’re generated."
+          : target.type === "chapter"
+            ? "I couldn’t find that chapter yet."
+            : "There’s no plan outline for this book yet.",
+      metadata: { intent, charged: false }
+    });
+  }
+  return createAssistantChatMessage({
+    projectId: project.id,
+    content: intent.assistantMessage,
+    metadata: { intent, charged: false, contentCard: card }
+  });
+}
+
+function contentCardForTarget(
+  project: ProjectForChat,
+  target: NonNullable<BookEditIntent["contentTarget"]>
+): MobileContentCard | null {
+  if (target.type === "outline") {
+    const plan = project.currentPlan ? bookPlanSchema.safeParse(project.currentPlan.planningPackage) : null;
+    if (plan?.success) {
+      return {
+        type: "outline",
+        title: plan.data.title || project.title,
+        sections: plan.data.chapters.map((chapter) => ({
+          label: `${chapter.index}. ${chapter.title}`,
+          body: chapter.summary
+        }))
+      };
+    }
+    if (project.chapters.length > 0) {
+      return {
+        type: "outline",
+        title: project.title,
+        sections: project.chapters.map((chapter) => ({
+          label: `${chapter.index}. ${chapter.title}`,
+          body: chapter.summary
+        }))
+      };
+    }
+    return null;
+  }
+  if (target.type === "chapter") {
+    const chapter = project.chapters.find((candidate) => candidate.index === target.index);
+    const chapterPages = project.pages.filter((page) => page.chapter?.index === target.index);
+    if (!chapter && chapterPages.length === 0) {
+      return null;
+    }
+    return {
+      type: "chapter",
+      title: chapter ? `Chapter ${target.index}: ${chapter.title}` : `Chapter ${target.index}`,
+      sections:
+        chapterPages.length > 0
+          ? chapterPages.map((page) => ({
+              label: `Page ${page.index}${page.title ? ` — ${page.title}` : ""}`,
+              body: page.summary || page.markdown.slice(0, 280)
+            }))
+          : [{ label: chapter!.title, body: chapter!.summary }]
+    };
+  }
+  const page = project.pages.find((candidate) => candidate.index === target.index);
+  if (!page) {
+    return null;
+  }
+  return {
+    type: "page",
+    title: `Page ${page.index}${page.title ? `: ${page.title}` : ""}`,
+    sections: [{ label: page.title || `Page ${page.index}`, body: page.markdown.slice(0, 6000) }]
+  };
+}
+
+const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE"] as const;
+
+/**
+ * Restores the before-snapshots of the most recent applied text edit, then
+ * queues an export refresh. Free: nothing is regenerated.
+ */
+async function undoLastBookEdit(
+  project: ProjectForChat,
+  intent: BookEditIntent
+): Promise<MobileProjectChatMessageRecord> {
+  const recentOperations = await prisma.bookEditOperation.findMany({
+    where: {
+      projectId: project.id,
+      status: "APPLIED",
+      kind: { in: [...UNDOABLE_EDIT_KINDS] }
+    },
+    orderBy: [{ appliedAt: "desc" }, { createdAt: "desc" }],
+    take: 10,
+    include: { snapshots: true }
+  });
+  const operation = recentOperations.find(
+    (candidate) => candidate.snapshots.length > 0 && jsonRecord(candidate.classifier).undoneAt === undefined
+  );
+  if (!operation) {
+    return createAssistantChatMessage({
+      projectId: project.id,
+      content: "There’s no recent text edit I can undo on this book.",
+      metadata: { intent, charged: false }
+    });
+  }
+
+  const restoredPageIndexes: number[] = [];
+  await prisma.$transaction(async (tx) => {
+    for (const snapshot of operation.snapshots) {
+      await tx.page.update({
+        where: { id: snapshot.pageId },
+        data: {
+          title: snapshot.titleBefore,
+          markdown: snapshot.markdownBefore,
+          summary: snapshot.summaryBefore,
+          status: "COMPLETED",
+          revision: { increment: 1 }
+        }
+      });
+      restoredPageIndexes.push(snapshot.pageIndex);
+    }
+    await tx.bookEditOperation.update({
+      where: { id: operation.id },
+      data: {
+        classifier: jsonInputValue({
+          ...jsonRecord(operation.classifier),
+          undoneAt: new Date().toISOString()
+        })
+      }
+    });
+  });
+  restoredPageIndexes.sort((a, b) => a - b);
+
+  if (project.currentPlanId) {
+    await enqueueGenerationJob({
+      projectId: project.id,
+      type: "COMPILE_EXPORT",
+      payload: { planId: project.currentPlanId }
+    }).catch(() => undefined);
+  }
+
+  const pageText =
+    restoredPageIndexes.length === 1
+      ? `page ${restoredPageIndexes[0]}`
+      : `pages ${restoredPageIndexes.join(", ")}`;
+  return createAssistantChatMessage({
+    projectId: project.id,
+    content: `Done - I restored ${pageText} to how they were before “${operation.request.slice(0, 120)}” and I’m refreshing the exports. Undo is free.`,
+    metadata: {
+      intent,
+      charged: false,
+      undo: { operationId: operation.id, restoredPageIndexes }
+    }
+  });
+}
+
 async function createAssistantChatMessage(options: {
   projectId: string;
   content: string;
@@ -3485,6 +3721,12 @@ function affectedPagesForIntent(
   pages: ProjectForChat["pages"]
 ): number[] {
   const available = new Set(pages.map((page) => page.index));
+  if (intent.kind === "chapter_regenerate" && intent.affectedChapterIndex) {
+    return pages
+      .filter((page) => page.chapter?.index === intent.affectedChapterIndex)
+      .map((page) => page.index)
+      .sort((a, b) => a - b);
+  }
   const explicit = intent.affectedPageIndexes.filter((index) => available.has(index));
   if (explicit.length > 0) {
     return [...new Set(explicit)].sort((a, b) => a - b);
@@ -3509,7 +3751,8 @@ function bookEditCreditCost(kind: BookEditIntentKind, affectedPageCount: number,
   if (kind === "local_patch") {
     return CREDIT_COSTS.bookTextEditBase + Math.max(1, affectedPageCount) * CREDIT_COSTS.bookTextEditPerPage;
   }
-  if (kind === "page_rewrite") {
+  // Chapter regeneration is priced like a multi-page rewrite of that chapter.
+  if (kind === "page_rewrite" || kind === "chapter_regenerate") {
     return Math.max(1, affectedPageCount) * CREDIT_COSTS.pageRegenerationPerPage;
   }
   if (kind === "book_replan") {
@@ -3519,9 +3762,14 @@ function bookEditCreditCost(kind: BookEditIntentKind, affectedPageCount: number,
   return creditCostForOperation("PLAN_REVISION");
 }
 
-function operationKindForIntent(kind: BookEditIntentKind): "LOCAL_PATCH" | "PAGE_REWRITE" | "BOOK_REPLAN" {
+function operationKindForIntent(
+  kind: BookEditIntentKind
+): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" {
   if (kind === "page_rewrite") {
     return "PAGE_REWRITE";
+  }
+  if (kind === "chapter_regenerate") {
+    return "CHAPTER_REGENERATE";
   }
   if (kind === "book_replan") {
     return "BOOK_REPLAN";
@@ -3530,7 +3778,7 @@ function operationKindForIntent(kind: BookEditIntentKind): "LOCAL_PATCH" | "PAGE
 }
 
 function billingOperationForIntent(kind: BookEditIntentKind): "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" {
-  if (kind === "page_rewrite") {
+  if (kind === "page_rewrite" || kind === "chapter_regenerate") {
     return "PAGE_REGENERATION";
   }
   if (kind === "book_replan") {
@@ -3576,6 +3824,10 @@ function operationQueuedMessage(kind: BookEditIntentKind, affectedPageIndexes: n
   if (kind === "book_replan") {
     return `I’ll rebuild the plan and regenerate the book. This uses ${credits} credits.`;
   }
+  if (kind === "chapter_regenerate") {
+    const chapterText = intent.affectedChapterIndex ? `chapter ${intent.affectedChapterIndex}` : "that chapter";
+    return `I’ll rewrite ${chapterText} (${affectedPageIndexes.length} page${affectedPageIndexes.length === 1 ? "" : "s"}) with that direction and refresh the exports. This uses ${credits} credits.`;
+  }
   const pageText =
     intent.scope === "all_pages"
       ? "the whole book"
@@ -3607,6 +3859,9 @@ function currentActionForEditOperation(operation: MobileBookEditOperationRecord)
   if (operation.kind === "PAGE_REWRITE") {
     return "Rewriting selected pages.";
   }
+  if (operation.kind === "CHAPTER_REGENERATE") {
+    return "Rewriting the chapter.";
+  }
   if (operation.kind === "PLAN_REVISION") {
     return "Revising the plan.";
   }
@@ -3631,8 +3886,35 @@ function turnRequestFromPayload(
     brief: payload.recipe,
     presets: persistedPresetsForTurn(payload),
     sourceNotes: payload.sourceNotes,
-    optionalDetails: payload.optionalDetails
+    optionalDetails: payload.optionalDetails,
+    language: payload.language,
+    conversationSummary: payload.conversationSummary
   };
+}
+
+const CREATION_TRANSCRIPT_CAP = 60;
+const CREATION_SUMMARY_MAX = 2400;
+
+/**
+ * Folds messages that fall past the transcript cap into a compact rolling
+ * summary instead of silently dropping them, so long chats keep their context.
+ */
+function foldCreationTranscript(
+  messages: MobileCreationMessage[],
+  existingSummary: string | undefined
+): { messages: MobileCreationMessage[]; conversationSummary: string | undefined } {
+  if (messages.length <= CREATION_TRANSCRIPT_CAP) {
+    return { messages, conversationSummary: existingSummary };
+  }
+  const dropped = messages.slice(0, messages.length - CREATION_TRANSCRIPT_CAP);
+  const kept = messages.slice(-CREATION_TRANSCRIPT_CAP);
+  const droppedLines = dropped
+    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content.replace(/\s+/g, " ").slice(0, 160)}`)
+    .join("\n");
+  const combined = [existingSummary?.trim(), droppedLines].filter(Boolean).join("\n");
+  // Keep the newest folded content when the summary itself overflows.
+  const conversationSummary = combined.length > CREATION_SUMMARY_MAX ? combined.slice(-CREATION_SUMMARY_MAX) : combined;
+  return { messages: kept, conversationSummary: conversationSummary || undefined };
 }
 
 function persistedPresetsForTurn(payload: MobileCreationDraftPayload): MobileCreationDraftPayload["selectedPresets"] {

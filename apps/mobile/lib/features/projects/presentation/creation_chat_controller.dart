@@ -70,6 +70,7 @@ class CreationChatState {
     this.createdProjectId,
     this.activeProjectId,
     this.composingNewOutput = false,
+    this.pendingBuildRequest = false,
   });
 
   final bool initializing;
@@ -96,6 +97,10 @@ class CreationChatState {
   final String? createdProjectId;
   final String? activeProjectId;
   final bool composingNewOutput;
+
+  /// True when the user asked to build from chat and the screen should start
+  /// the same preflight/build flow as the Build button.
+  final bool pendingBuildRequest;
 
   bool get hasSession => draftId != null;
 
@@ -138,6 +143,7 @@ class CreationChatState {
     Object? createdProjectId = _sentinel,
     Object? activeProjectId = _sentinel,
     bool? composingNewOutput,
+    bool? pendingBuildRequest,
   }) {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
@@ -172,6 +178,7 @@ class CreationChatState {
           ? this.activeProjectId
           : activeProjectId as String?,
       composingNewOutput: composingNewOutput ?? this.composingNewOutput,
+      pendingBuildRequest: pendingBuildRequest ?? this.pendingBuildRequest,
     );
   }
 
@@ -309,7 +316,11 @@ class CreationChatController extends Notifier<CreationChatState> {
             );
       if (requestId != _messageRequestId || state.draftId != draftId) return;
       _cache.write(response);
-      _applyConversation(response, assistantTyping: false);
+      _applyConversation(
+        response,
+        assistantTyping: false,
+        allowBuildRequest: true,
+      );
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
       state = state.copyWith(
@@ -595,10 +606,18 @@ class CreationChatController extends Notifier<CreationChatState> {
     );
   }
 
+  /// Marks the chat-initiated build request as handled by the screen.
+  void clearBuildRequest() {
+    if (state.pendingBuildRequest) {
+      state = state.copyWith(pendingBuildRequest: false);
+    }
+  }
+
   void _applyConversation(
     MobileCreationConversationResponse response, {
     bool? initializing,
     bool? assistantTyping,
+    bool allowBuildRequest = false,
   }) {
     final turn = response.turn;
     final session = response.session;
@@ -612,6 +631,11 @@ class CreationChatController extends Notifier<CreationChatState> {
                   content: turn.assistantMessage,
                 ),
               ]);
+    final detectedLanguage = turn.language?.trim();
+    final applyDetectedLanguage =
+        detectedLanguage != null &&
+        detectedLanguage.isNotEmpty &&
+        !state.userChoices.contains(CreationChoice.language);
     state = state.copyWith(
       initializing: initializing ?? state.initializing,
       assistantTyping: assistantTyping ?? state.assistantTyping,
@@ -630,41 +654,56 @@ class CreationChatController extends Notifier<CreationChatState> {
       warnings: turn.warnings,
       outputs: session?.outputs ?? state.outputs,
       activeProjectId: session?.activeProjectId ?? session?.createdProjectId,
+      language: applyDetectedLanguage ? detectedLanguage : null,
+      pendingBuildRequest: allowBuildRequest && turn.buildRequested,
     );
+    _lastSyncedPresets = turn.presets;
   }
 
-  /// Keeps manual advanced-sheet selections sticky across AI turns.
+  /// Presets from the previous server turn; used to tell chat-driven setting
+  /// changes apart from the server echoing our own sticky selections back.
+  MobileCreationPresets? _lastSyncedPresets;
+
+  /// Keeps manual advanced-sheet selections sticky across AI turns, while
+  /// accepting changes the user made from chat (the server only alters a
+  /// field we sent when the chat asked for it).
   MobileCreationPresets _mergeUserPresets(MobileCreationPresets incoming) {
     final choices = state.userChoices;
     if (choices.isEmpty) {
       return incoming;
     }
     final current = state.presets;
+    final synced = _lastSyncedPresets;
+    bool serverChanged<T>(T Function(MobileCreationPresets presets) select) {
+      return synced != null && select(incoming) != select(synced);
+    }
+
+    final keepBookType =
+        choices.contains(CreationChoice.bookType) &&
+        !serverChanged((presets) => presets.bookTypeChoice);
+    final keepLength =
+        choices.contains(CreationChoice.length) &&
+        !serverChanged(
+          (presets) =>
+              '${presets.lengthPreset}|${presets.pageCountMode}|${presets.targetPages}',
+        );
+    final keepFinish =
+        choices.contains(CreationChoice.finish) &&
+        !serverChanged((presets) => presets.qualityPreset);
+    final keepVisuals =
+        choices.contains(CreationChoice.visuals) &&
+        !serverChanged((presets) => presets.imagesEnabled);
     return incoming.copyWith(
-      bookType: choices.contains(CreationChoice.bookType)
-          ? current.bookType
-          : null,
-      bookTypeChoice: choices.contains(CreationChoice.bookType)
-          ? current.bookTypeChoice
-          : null,
-      lengthPreset: choices.contains(CreationChoice.length)
-          ? current.lengthPreset
-          : null,
-      pageCountMode: choices.contains(CreationChoice.length)
-          ? current.pageCountMode
-          : null,
-      targetPages: choices.contains(CreationChoice.length)
-          ? current.targetPages
-          : incoming.targetPages,
-      pageCountSource: choices.contains(CreationChoice.length)
+      bookType: keepBookType ? current.bookType : null,
+      bookTypeChoice: keepBookType ? current.bookTypeChoice : null,
+      lengthPreset: keepLength ? current.lengthPreset : null,
+      pageCountMode: keepLength ? current.pageCountMode : null,
+      targetPages: keepLength ? current.targetPages : incoming.targetPages,
+      pageCountSource: keepLength
           ? current.pageCountSource
           : incoming.pageCountSource,
-      qualityPreset: choices.contains(CreationChoice.finish)
-          ? current.qualityPreset
-          : null,
-      imagesEnabled: choices.contains(CreationChoice.visuals)
-          ? current.imagesEnabled
-          : null,
+      qualityPreset: keepFinish ? current.qualityPreset : null,
+      imagesEnabled: keepVisuals ? current.imagesEnabled : null,
     );
   }
 }

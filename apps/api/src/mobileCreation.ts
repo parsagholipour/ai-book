@@ -138,6 +138,10 @@ export const mobileCreationDraftPayloadSchema = z
     detectedLane: mobileCreationLaneSchema.optional(),
     recipe: mobileBookRecipeSchema.optional(),
     selectedPresets: mobileCreationPresetsSchema.optional(),
+    // Book language detected from chat or chosen in settings ("fa", "es", ...).
+    language: z.string().trim().min(2).max(40).optional(),
+    // Compact summary of chat turns that were dropped past the transcript cap.
+    conversationSummary: z.string().trim().max(2400).optional(),
     // Chat transcript for the conversational Book Studio (version 3 payloads).
     messages: z.array(mobileCreationMessageSchema).max(80).optional(),
     // Legacy V2 payloads are accepted so active drafts made before V3 can resume.
@@ -313,7 +317,11 @@ export const mobileCreationTurnSchema = z
       .strict(),
     titleSuggestions: z.array(z.string().trim().min(1).max(160)).max(5).default([]),
     shapePreview: z.array(z.string().trim().min(1).max(160)).min(1).max(8),
-    warnings: z.array(z.string().trim().min(1).max(280)).max(5).default([])
+    warnings: z.array(z.string().trim().min(1).max(280)).max(5).default([]),
+    // Detected or confirmed book language for this conversation ("fa", "es", ...).
+    language: z.string().trim().min(2).max(40).optional(),
+    // True when the user asked to build the plan from chat ("ok build it").
+    buildRequested: z.boolean().default(false)
   })
   .strict();
 
@@ -326,7 +334,9 @@ const creationTurnAiPatchSchema = z
     question: creationTurnQuestionSchema.nullable().optional(),
     titleSuggestions: z.array(z.string()).max(5).optional(),
     shapePreview: z.array(z.string()).min(1).max(8).optional(),
-    warnings: z.array(z.string()).max(5).optional()
+    warnings: z.array(z.string()).max(5).optional(),
+    language: z.string().trim().min(2).max(40).optional(),
+    buildRequested: z.boolean().optional()
   })
   .strict();
 
@@ -339,6 +349,8 @@ export type MobileCreationTurnRequest = {
   presets?: MobileCreationPresets | undefined;
   optionalDetails?: MobileCreationOptionalDetails | undefined;
   sourceNotes?: string | undefined;
+  language?: string | undefined;
+  conversationSummary?: string | undefined;
 };
 
 type CreationTurnOptions = {
@@ -382,30 +394,60 @@ export function greetingCreationTurn(): MobileCreationTurn {
 }
 
 export function deterministicCreationTurn(request: MobileCreationTurnRequest): MobileCreationTurn {
-  const payload = payloadFromTurnRequest(request);
+  const effectiveRequest = requestWithChatSettings(request);
+  const payload = payloadFromTurnRequest(effectiveRequest);
   const base = deterministicAdvisor(payload);
   const presets = base.recommendation;
-  const userTurns = request.messages.filter((message) => message.role === "user").length;
+  const userTurns = effectiveRequest.messages.filter((message) => message.role === "user").length;
+  const latestUserMessage = latestUserMessageText(effectiveRequest.messages);
   const hasIdea = payload.rawIdea.trim().length >= 3;
-  const question = hasIdea ? questionForTurn(base.detectedLane, userTurns) : null;
-  const readiness = {
-    score: base.briefScore,
-    canBuild: hasIdea,
-    missing: question ? [stripTrailingPunctuation(question.prompt)] : []
-  };
+  const buildRequested = hasIdea && isBuildRequestMessage(latestUserMessage);
+  const metaAnswer = metaAnswerForMessage(latestUserMessage);
+  const settingsAck = chatSettingsAcknowledgement(request, effectiveRequest);
+  const question =
+    hasIdea && !buildRequested && !metaAnswer
+      ? nextQuestionForRecipe(base.detectedLane, base.recipe, effectiveRequest.messages, userTurns)
+      : null;
+  const language = effectiveRequest.language ?? detectMessageLanguage(latestUserMessage);
+  const readiness = deterministicReadiness({
+    base,
+    hasIdea,
+    buildRequested,
+    userTurns,
+    question
+  });
   return mobileCreationTurnSchema.parse({
-    assistantMessage: deterministicAssistantMessage(base, question, hasIdea),
+    assistantMessage: deterministicAssistantMessage(base, question, hasIdea, {
+      userTurns,
+      buildRequested,
+      metaAnswer,
+      settingsAck
+    }),
     brief: base.recipe,
     presets,
     detectedLane: base.detectedLane,
-    quickReplies: deterministicQuickReplies(question),
+    quickReplies: deterministicQuickReplies(question, buildRequested, metaAnswer !== null),
     question,
     readiness,
     titleSuggestions: base.titleSuggestions,
     shapePreview: base.bookShapePreview,
-    warnings: base.warnings
+    warnings: base.warnings,
+    ...(language ? { language } : {}),
+    buildRequested
   });
 }
+
+const CREATION_ASSISTANT_FACTS = [
+  "The app turns the chat into a book plan (title, premise, chapters) that the user reviews and can revise before anything is written.",
+  "After the user approves the plan, the app writes the full book page by page, can add a cover and interior visuals, and produces PDF and EPUB downloads.",
+  "Supported book shapes: children's stories, adult short stories, lead magnets, offer guides, client tools, workbooks, and practical guides.",
+  "Books can be written in almost any language; the user can just write in their language or ask for one.",
+  "Page count can be set in chat (for example: make it 40 pages) or picked when building; 1 to 600 pages are supported.",
+  "Visuals can be turned off for a text-first book by asking in chat or in Advanced settings.",
+  "Building the plan and generating the book use credits from the account balance; the exact amount is always shown before anything is charged.",
+  "A typical book takes a few minutes to plan and several minutes to fully write, depending on length.",
+  "After generation the user can keep chatting to fix wording, rewrite pages or chapters, undo the last edit, or rebuild the whole book as a new copy."
+].join(" ");
 
 export async function enrichCreationTurnWithAi(
   textModel: TextModelAdapter,
@@ -421,26 +463,34 @@ export async function enrichCreationTurnWithAi(
       {
         role: "system",
         content:
-          "You are a warm, concise book creation assistant for an AI book maker app. You help one person turn a rough idea into a clear book brief through a short chat. " +
-          "Rules: reply in 1-3 short sentences with no jargon. Ask AT MOST ONE focused follow-up question per turn, and always give 2-4 short tappable options plus allow a custom answer. " +
-          "Never block the user; they can build the plan whenever they want, so do not insist on more detail. Once the brief is clear, set question to null and encourage them to build the plan. " +
-          "Support every kind of book: children's stories, adult short stories, lead magnets, offer guides, client tools, workbooks, and practical guides. If currentPresets.bookTypeChoice is auto, keep the book type unresolved and ask neutral book-shaping questions instead of declaring a genre. Keep refining the structured brief from the whole conversation. " +
-          "If the user asks for a different format, length, or visuals, update presets accordingly. Never mention AI models, providers, credits, billing, or safety systems."
+          "You are the interviewer for an AI book maker app: a warm, concise assistant who turns one person's rough idea into a clear book brief through a short chat. You lead the conversation; a deterministic engine only provides a fallback suggestion. " +
+          "Interview style: look at what is still genuinely missing from the brief (audience, promise or conflict, tone, character, ending, exercises, next step - whichever fit this kind of book) and ask about the single most valuable gap. Ask AT MOST ONE focused question per turn with 2-4 short tappable options plus a custom answer. Never re-ask something the user already answered or skipped, and stop asking once the brief is solid - then set question to null and encourage them to build the plan. " +
+          "Language: always reply in the language the user writes in. Set the language field to the BCP-47 code of the language the book should be written in whenever it is clear (for example fa, es, de). " +
+          "Settings from chat: if the user asks for a different book type, page count, visuals on/off, tone, title, or language, apply it - update presets/brief accordingly and confirm the change in one short sentence. If you are unsure the user really wants to switch book type, ask a confirmation question like 'Switch this to a children's story?' with Yes/No options instead of switching silently. " +
+          "Build requests: if the user says the brief is good and asks to build/start/go ahead, set buildRequested to true, set question to null, and reply with one short confirmation sentence. " +
+          "Questions about the app: answer capability and process questions briefly and accurately using ONLY these facts, then steer back to the book: " +
+          CREATION_ASSISTANT_FACTS +
+          " Off-topic messages: respond kindly in one short sentence, do not lecture, and gently bring the chat back to the book. " +
+          "Support every kind of book. If currentPresets.bookTypeChoice is auto, keep the book type unresolved and ask neutral book-shaping questions instead of declaring a genre. Keep refining the structured brief from the whole conversation, including conversationSummary if present. " +
+          "Reply in 1-3 short sentences with no jargon. Never mention AI models, providers, or internal systems. Never state specific credit prices."
       },
       {
         role: "user",
         content: JSON.stringify(
           {
             conversation: request.messages,
+            conversationSummary: request.conversationSummary ?? null,
             currentBrief: base.brief,
             currentPresets: base.presets,
             detectedLane: base.detectedLane,
+            currentLanguage: request.language ?? base.language ?? null,
             deterministicSuggestion: {
               assistantMessage: base.assistantMessage,
               question: base.question,
               quickReplies: base.quickReplies,
               shapePreview: base.shapePreview,
-              titleSuggestions: base.titleSuggestions
+              titleSuggestions: base.titleSuggestions,
+              buildRequested: base.buildRequested
             }
           },
           null,
@@ -476,6 +526,8 @@ export function payloadFromTurnRequest(request: MobileCreationTurnRequest): Mobi
     ...(lane ? { detectedLane: lane } : {}),
     recipe,
     selectedPresets: request.presets,
+    ...(request.language ? { language: request.language } : {}),
+    ...(request.conversationSummary ? { conversationSummary: request.conversationSummary } : {}),
     messages: request.messages
   });
 }
@@ -484,77 +536,524 @@ function turnHasEnoughSubstance(request: MobileCreationTurnRequest): boolean {
   return request.messages.some((message) => message.role === "user" && message.content.trim().length >= 2);
 }
 
-function questionForTurn(lane: MobileCreationLane, userTurns: number): MobileCreationTurnQuestion | null {
-  const sequence = questionSequenceForLane(lane);
-  const index = userTurns - 1;
-  if (index < 0 || index >= sequence.length) {
-    return null;
-  }
-  return creationTurnQuestionSchema.parse(sequence[index]);
-}
+// ---------------------------------------------------------------------------
+// Adaptive gap-driven interviewer
+// ---------------------------------------------------------------------------
 
-function questionSequenceForLane(lane: MobileCreationLane): MobileCreationTurnQuestion[] {
+type GapQuestion = MobileCreationTurnQuestion & {
+  /** Recipe field this question fills; used to detect answered gaps. */
+  field: keyof MobileBookRecipe;
+};
+
+const MAX_INTERVIEW_QUESTIONS = 6;
+
+function questionBankForLane(lane: MobileCreationLane): GapQuestion[] {
   if (lane === "auto") {
     return [
-      { prompt: "Who is this book for?", options: ["Young readers", "Clients or students", "General readers"], allowCustom: true },
-      { prompt: "What should the book feel like?", options: ["Warm and simple", "Practical and clear", "Imaginative and fun"], allowCustom: true },
-      { prompt: "What should the reader remember?", options: ["A useful lesson", "A clear next step", "A memorable ending"], allowCustom: true }
+      { field: "audience", prompt: "Who is this book for?", options: ["Young readers", "Clients or students", "General readers"], allowCustom: true },
+      { field: "tone", prompt: "What should the book feel like?", options: ["Warm and simple", "Practical and clear", "Imaginative and fun"], allowCustom: true },
+      { field: "promise", prompt: "What should the reader remember?", options: ["A useful lesson", "A clear next step", "A memorable ending"], allowCustom: true },
+      { field: "mustInclude", prompt: "Anything the book must include?", options: ["A specific scene or topic", "A favorite character", "Nothing special"], allowCustom: true }
     ];
   }
   if (lane === "children_story") {
     return [
-      { prompt: "Who is this story for?", options: ["3-4 year olds", "5-6 year olds", "7-8 year olds"], allowCustom: true },
-      { prompt: "Who is the main character?", options: ["A curious child", "A gentle animal", "A magical friend"], allowCustom: true },
-      { prompt: "How should it end?", options: ["Cozy and reassuring", "Happy and funny", "A gentle lesson"], allowCustom: true }
+      { field: "audience", prompt: "Who is this story for?", options: ["3-4 year olds", "5-6 year olds", "7-8 year olds"], allowCustom: true },
+      { field: "mainCharacter", prompt: "Who is the main character?", options: ["A curious child", "A gentle animal", "A magical friend"], allowCustom: true },
+      { field: "ending", prompt: "How should it end?", options: ["Cozy and reassuring", "Happy and funny", "A gentle lesson"], allowCustom: true },
+      { field: "theme", prompt: "What feeling or lesson should it carry?", options: ["Courage", "Kindness", "Bedtime calm"], allowCustom: true },
+      { field: "conflict", prompt: "What small problem or adventure happens?", options: ["Something goes missing", "A new friend appears", "A big first time"], allowCustom: true }
     ];
   }
   if (lane === "adult_story") {
     return [
-      { prompt: "Who is this story for?", options: ["Mystery lovers", "Hopeful literary readers", "Romance readers"], allowCustom: true },
-      { prompt: "Who is the main character?", options: ["An ordinary person facing a choice", "A reluctant hero", "A pair with a secret"], allowCustom: true },
-      { prompt: "What is the central conflict?", options: ["A hidden truth surfaces", "A hard decision", "A race against time"], allowCustom: true }
+      { field: "audience", prompt: "Who is this story for?", options: ["Mystery lovers", "Hopeful literary readers", "Romance readers"], allowCustom: true },
+      { field: "mainCharacter", prompt: "Who is the main character?", options: ["An ordinary person facing a choice", "A reluctant hero", "A pair with a secret"], allowCustom: true },
+      { field: "conflict", prompt: "What is the central conflict?", options: ["A hidden truth surfaces", "A hard decision", "A race against time"], allowCustom: true },
+      { field: "ending", prompt: "How should it end?", options: ["Hopeful", "Bittersweet", "A sharp twist"], allowCustom: true },
+      { field: "tone", prompt: "What mood should it have?", options: ["Tense and moody", "Warm and human", "Wry and funny"], allowCustom: true }
     ];
   }
   if (lane === "workbook" || lane === "client_tool") {
     return [
-      { prompt: "Who will use this workbook?", options: ["Beginners", "Clients or students", "A team"], allowCustom: true },
-      { prompt: "What should they be able to do after?", options: ["Follow a clear plan", "Practice a skill", "Make a decision"], allowCustom: true },
-      { prompt: "What practice should it include?", options: ["Checklists", "Reflection prompts", "Step-by-step exercises"], allowCustom: true }
+      { field: "audience", prompt: "Who will use this workbook?", options: ["Beginners", "Clients or students", "A team"], allowCustom: true },
+      { field: "promise", prompt: "What should they be able to do after?", options: ["Follow a clear plan", "Practice a skill", "Make a decision"], allowCustom: true },
+      { field: "exercises", prompt: "What practice should it include?", options: ["Checklists", "Reflection prompts", "Step-by-step exercises"], allowCustom: true },
+      { field: "conflict", prompt: "What do they struggle with today?", options: ["Not knowing where to start", "Staying consistent", "Too much conflicting advice"], allowCustom: true },
+      { field: "tone", prompt: "How should it sound?", options: ["Encouraging coach", "No-nonsense practical", "Friendly teacher"], allowCustom: true }
     ];
   }
   return [
-    { prompt: "Who is this guide for?", options: ["Solo founders", "Coaches and consultants", "Beginners in the topic"], allowCustom: true },
-    { prompt: "What is the main win for the reader?", options: ["A quick practical result", "A clear framework", "Confidence to act"], allowCustom: true },
-    { prompt: "What next step should it point to?", options: ["Book a call", "Use a checklist", "Try the method"], allowCustom: true }
+    { field: "audience", prompt: "Who is this guide for?", options: ["Solo founders", "Coaches and consultants", "Beginners in the topic"], allowCustom: true },
+    { field: "promise", prompt: "What is the main win for the reader?", options: ["A quick practical result", "A clear framework", "Confidence to act"], allowCustom: true },
+    { field: "nextStep", prompt: "What next step should it point to?", options: ["Book a call", "Use a checklist", "Try the method"], allowCustom: true },
+    { field: "conflict", prompt: "What problem does the reader have right now?", options: ["Confused by options", "Stuck getting started", "Results have stalled"], allowCustom: true },
+    { field: "tone", prompt: "How should it sound?", options: ["Confident expert", "Plainspoken and friendly", "Polished and premium"], allowCustom: true }
   ];
 }
+
+/**
+ * Picks the next interview question from what is actually missing in the
+ * recipe instead of a fixed per-turn script. Skips questions the user has
+ * already answered (the recipe field holds a real value, not a lane fallback),
+ * skips questions already asked in the transcript, and stops entirely once
+ * enough has been gathered.
+ */
+function nextQuestionForRecipe(
+  lane: MobileCreationLane,
+  recipe: MobileBookRecipe,
+  messages: MobileCreationMessage[],
+  userTurns: number
+): MobileCreationTurnQuestion | null {
+  if (userTurns < 1 || userTurns > MAX_INTERVIEW_QUESTIONS) {
+    return null;
+  }
+  const assistantText = messages
+    .filter((message) => message.role === "assistant")
+    .map((message) => message.content)
+    .join("\n");
+  const skippedRecently = /\bskip\b/i.test(latestUserMessageText(messages));
+  const bank = questionBankForLane(lane);
+  const gaps = bank.filter(
+    (candidate) =>
+      !recipeFieldAnswered(recipe, candidate.field, lane) && !assistantText.includes(candidate.prompt)
+  );
+  const next = gaps[0];
+  if (!next || (skippedRecently && gaps.length <= 1)) {
+    return null;
+  }
+  const { field: _field, ...question } = next;
+  return creationTurnQuestionSchema.parse(question);
+}
+
+/** True when the recipe field holds real user-driven content, not a generic lane fallback. */
+function recipeFieldAnswered(recipe: MobileBookRecipe, field: keyof MobileBookRecipe, lane: MobileCreationLane): boolean {
+  const value = (recipe[field] ?? "").trim();
+  if (!value) {
+    return false;
+  }
+  const lowered = value.toLowerCase();
+  // promiseFallback() embeds the idea text, so match its stable prefixes.
+  if (lowered.startsWith("become the best-fitting book for") || lowered.startsWith("get a useful first step for")) {
+    return false;
+  }
+  const fallbacks = laneFallbackValues(lane);
+  return !fallbacks.has(lowered);
+}
+
+function laneFallbackValues(lane: MobileCreationLane): Set<string> {
+  return new Set(
+    [
+      audienceFallback(lane),
+      toneFallback(lane),
+      mainCharacterFor("", lane),
+      conflictFallback(lane),
+      endingFallback(lane),
+      themeFallback(lane),
+      nextStepFallback(lane),
+      exercisesFallback(lane),
+      promiseFallback("", lane),
+      "readers implied by the idea"
+    ]
+      .filter(Boolean)
+      .map((value) => value.toLowerCase())
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Build requests, meta questions, and chat-driven settings
+// ---------------------------------------------------------------------------
+
+export function isBuildRequestMessage(message: string): boolean {
+  const normalized = message
+    .toLowerCase()
+    .replace(/[.!?]+$/g, "")
+    .replace(/^(ok|okay|yes|yeah|alright|great|perfect|sounds good|looks good)[,.\s]*/i, "")
+    .trim();
+  if (!normalized) {
+    return false;
+  }
+  return (
+    /^(?:just\s+)?(?:build|make|create|generate|start|do)\s+(?:it|the\s+(?:plan|book)|my\s+book|this)(?:\s+now)?$/i.test(normalized) ||
+    /^(?:build|make)\s+the\s+plan\b/i.test(normalized) ||
+    /^(?:go\s+ahead|let'?s\s+(?:go|build|do\s+it|start)|start\s+building|i'?m\s+ready|ready\s+to\s+build)$/i.test(normalized)
+  );
+}
+
+/** Deterministic grounded answers for common capability/process questions. */
+export function metaAnswerForMessage(message: string): string | null {
+  const text = message.toLowerCase().trim();
+  if (!text || text.length > 400) {
+    return null;
+  }
+  const asksQuestion = /\?|^(what|how|can|do|does|is|are|will|when|where|which)\b/i.test(text);
+  if (!asksQuestion) {
+    return null;
+  }
+  if (/\b(cost|price|credit|charge|pay|free)\b/.test(text)) {
+    return "Building a plan and generating the book use credits from your balance, and you always see the exact amount before anything is charged. Reading and chatting here are free.";
+  }
+  if (/\b(formats?|pdf|epub|downloads?|exports?|files?)\b/.test(text)) {
+    return "You get your finished book as PDF and EPUB downloads, ready to share or publish.";
+  }
+  if (/\bhow long\b|\btake\b.*\b(time|minutes|long)\b|\bhow (?:fast|quick)\b/.test(text)) {
+    return "Planning takes a couple of minutes, and writing the full book usually takes several more depending on length. You can watch progress live.";
+  }
+  if (/\b(language|languages|farsi|persian|spanish|french|german|arabic|translate)\b/.test(text)) {
+    return "Yes - I can write your book in almost any language. Just chat in your language or tell me which one to use.";
+  }
+  if (/\b(how (?:do|does) (?:this|it) work|what can you do|what do you do|what is this)\b/.test(text)) {
+    return "Tell me your book idea and I'll shape it into a plan you can review. Once you approve it, I write the full book with visuals and give you PDF and EPUB downloads. You can keep editing by chat afterwards.";
+  }
+  if (/\b(picture|image|images|illustration|visual|cover)s?\b/.test(text) && /\b(can|do|does|will|add|include|without|no)\b/.test(text)) {
+    return "Yes - books get a cover and can include interior visuals. Say the word if you'd rather have a text-first book with no images.";
+  }
+  if (/\b(edit|change|fix|revise|rewrite|undo)\b/.test(text) && /\b(after|later|once|when|can)\b/.test(text)) {
+    return "After your book is generated you can keep chatting to fix wording, rewrite pages or chapters, undo the last edit, or rebuild the whole book.";
+  }
+  return null;
+}
+
+type ChatSettingChanges = {
+  imagesEnabled?: boolean;
+  bookTypeChoice?: MobileBookTypeChoice;
+  tone?: string;
+  language?: string;
+};
+
+/** Parses explicit setting changes ("no images", "make it a workbook") from the latest message. */
+export function chatSettingChangesFromMessage(message: string): ChatSettingChanges {
+  const changes: ChatSettingChanges = {};
+  const text = message.trim();
+  if (!text) {
+    return changes;
+  }
+  if (/\b(?:no|without|skip|remove|disable|turn\s+off|don'?t\s+(?:want|need|add|include))\b.{0,40}\b(?:images?|pictures?|visuals?|illustrations?|artwork)\b/i.test(text) ||
+      /\btext[- ]?(?:only|first)\b/i.test(text)) {
+    changes.imagesEnabled = false;
+  } else if (/\b(?:add|include|enable|turn\s+on|with|want)\b.{0,40}\b(?:images?|pictures?|visuals?|illustrations?|artwork)\b/i.test(text) &&
+      !/\bno\b/i.test(text)) {
+    changes.imagesEnabled = true;
+  }
+  const explicitType = explicitBookTypeChoiceFromText(text);
+  if (explicitType) {
+    changes.bookTypeChoice = explicitType;
+  }
+  const toneMatch = text.match(/\b(?:make\s+(?:it|the\s+tone)|tone\s+(?:should\s+be|is|:)|keep\s+it)\s+(?:more\s+)?(warm|funny|playful|serious|practical|polished|gentle|professional|casual|formal|poetic|dark|cozy|encouraging)\b/i);
+  if (toneMatch?.[1]) {
+    changes.tone = toneMatch[1].toLowerCase();
+  }
+  const language = explicitLanguageFromText(text);
+  if (language) {
+    changes.language = language;
+  }
+  return changes;
+}
+
+function explicitBookTypeChoiceFromText(text: string): MobileBookTypeChoice | undefined {
+  const wantsChange =
+    /\b(?:make|turn|change|switch|actually|instead|rather|convert)\b/i.test(text) ||
+    /\b(?:it|this)\s+(?:should|must)\s+be\b/i.test(text);
+  if (!wantsChange) {
+    return undefined;
+  }
+  const candidates: Array<[RegExp, MobileBookTypeChoice]> = [
+    [/\b(?:children'?s?|kids?|bedtime)\s+(?:story|book|tale)\b/i, "children_story"],
+    [/\bworkbook\b|\bstudy\s+guide\b/i, "workbook"],
+    [/\bclient\s+(?:tool|workbook|guide)\b/i, "client_tool"],
+    [/\boffer\s+guide\b|\bsales\s+guide\b/i, "offer_guide"],
+    [/\blead\s+magnet\b|\bopt[- ]?in\b/i, "lead_magnet"],
+    [/\bpractical\s+guide\b|\bhow[- ]?to\s+guide\b/i, "practical_guide"],
+    [/\b(?:short\s+story|novel(?:la)?|fiction)\b/i, "short_story"]
+  ];
+  for (const [pattern, choice] of candidates) {
+    if (pattern.test(text)) {
+      return choice;
+    }
+  }
+  return undefined;
+}
+
+const EXPLICIT_LANGUAGE_NAMES: Record<string, string> = {
+  english: "en",
+  spanish: "es",
+  french: "fr",
+  german: "de",
+  italian: "it",
+  portuguese: "pt",
+  dutch: "nl",
+  turkish: "tr",
+  russian: "ru",
+  arabic: "ar",
+  farsi: "fa",
+  persian: "fa",
+  hindi: "hi",
+  chinese: "zh",
+  mandarin: "zh",
+  japanese: "ja",
+  korean: "ko",
+  hebrew: "he",
+  greek: "el",
+  thai: "th",
+  swedish: "sv",
+  norwegian: "no",
+  danish: "da",
+  polish: "pl",
+  ukrainian: "uk"
+};
+
+function explicitLanguageFromText(text: string): string | undefined {
+  const match = text.match(/\b(?:in|write\s+(?:it\s+)?in|use|language\s*(?:is|:|should\s+be)?)\s+(\p{L}+)\b/iu);
+  const name = match?.[1]?.toLowerCase();
+  if (name && EXPLICIT_LANGUAGE_NAMES[name]) {
+    return EXPLICIT_LANGUAGE_NAMES[name];
+  }
+  return undefined;
+}
+
+/**
+ * Detects the language a message is written in from its script. Latin-script
+ * languages return undefined (the AI patch handles those); non-Latin scripts
+ * are reliable enough to detect deterministically.
+ */
+export function detectMessageLanguage(message: string): string | undefined {
+  const text = message.trim();
+  if (!text) {
+    return undefined;
+  }
+  const explicit = explicitLanguageFromText(text);
+  if (explicit) {
+    return explicit;
+  }
+  const counts = (pattern: RegExp) => (text.match(pattern) ?? []).length;
+  const letters = counts(/\p{L}/gu);
+  if (letters < 4) {
+    return undefined;
+  }
+  const threshold = letters * 0.4;
+  if (counts(/[\u067E\u0686\u0698\u06AF\u06A9\u06CC]/g) >= 1 && counts(/[\u0600-\u06FF]/g) >= threshold) {
+    return "fa";
+  }
+  if (counts(/[\u0600-\u06FF]/g) >= threshold) {
+    return "ar";
+  }
+  if (counts(/[\u0400-\u04FF]/g) >= threshold) {
+    return "ru";
+  }
+  if (counts(/[\u0590-\u05FF]/g) >= threshold) {
+    return "he";
+  }
+  if (counts(/[\u0370-\u03FF]/g) >= threshold) {
+    return "el";
+  }
+  if (counts(/[\u3040-\u30FF]/g) >= 2) {
+    return "ja";
+  }
+  if (counts(/[\uAC00-\uD7AF]/g) >= threshold) {
+    return "ko";
+  }
+  if (counts(/[\u4E00-\u9FFF]/g) >= threshold) {
+    return "zh";
+  }
+  if (counts(/[\u0E00-\u0E7F]/g) >= threshold) {
+    return "th";
+  }
+  if (counts(/[\u0900-\u097F]/g) >= threshold) {
+    return "hi";
+  }
+  return undefined;
+}
+
+/** Applies chat-stated setting changes to the request presets/details before advising. */
+function requestWithChatSettings(request: MobileCreationTurnRequest): MobileCreationTurnRequest {
+  const latest = latestUserMessageText(request.messages);
+  const changes = chatSettingChangesFromMessage(latest);
+  if (Object.keys(changes).length === 0) {
+    return request;
+  }
+  const basePresets: MobileCreationPresets =
+    request.presets ??
+    {
+      bookType: "lead_magnet",
+      bookTypeChoice: "auto",
+      lengthPreset: "short",
+      qualityPreset: "balanced",
+      imagesEnabled: true
+    };
+  const presets: MobileCreationPresets = {
+    ...basePresets,
+    ...(changes.imagesEnabled !== undefined ? { imagesEnabled: changes.imagesEnabled } : {}),
+    ...(changes.bookTypeChoice
+      ? {
+          bookTypeChoice: changes.bookTypeChoice,
+          bookType: productBookTypeForLane(laneFromBookTypeChoice(changes.bookTypeChoice) ?? "lead_magnet")
+        }
+      : {})
+  };
+  return {
+    ...request,
+    presets,
+    ...(changes.language ? { language: changes.language } : {}),
+    ...(changes.tone
+      ? {
+          optionalDetails: {
+            ...(request.optionalDetails ?? { mustInclude: "", tone: "" }),
+            tone: changes.tone
+          }
+        }
+      : {})
+  };
+}
+
+function chatSettingsAcknowledgement(
+  original: MobileCreationTurnRequest,
+  effective: MobileCreationTurnRequest
+): string | null {
+  if (original === effective) {
+    return null;
+  }
+  const parts: string[] = [];
+  const before = original.presets;
+  const after = effective.presets;
+  if (after && after.bookTypeChoice !== (before?.bookTypeChoice ?? "auto")) {
+    const lane = laneFromBookTypeChoice(after.bookTypeChoice);
+    if (lane) {
+      parts.push(`I've switched this to a ${laneLabel(lane).toLowerCase()}`);
+    }
+  }
+  if (after && after.imagesEnabled !== (before?.imagesEnabled ?? true)) {
+    parts.push(after.imagesEnabled ? "visuals are on" : "this will be text-first with no images");
+  }
+  if (effective.language && effective.language !== original.language) {
+    parts.push(`I'll write the book in ${languageDisplayName(effective.language)}`);
+  }
+  if (effective.optionalDetails?.tone && effective.optionalDetails.tone !== original.optionalDetails?.tone) {
+    parts.push(`tone set to ${effective.optionalDetails.tone}`);
+  }
+  if (parts.length === 0) {
+    return null;
+  }
+  const sentence = parts.join(", ");
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
+function languageDisplayName(code: string): string {
+  for (const [name, value] of Object.entries(EXPLICIT_LANGUAGE_NAMES)) {
+    if (value === code) {
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    }
+  }
+  return code;
+}
+
+function latestUserMessageText(messages: MobileCreationMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "user") {
+      return message.content.trim();
+    }
+  }
+  return "";
+}
+
+function deterministicReadiness(options: {
+  base: MobileBookAdvisorResponse;
+  hasIdea: boolean;
+  buildRequested: boolean;
+  userTurns: number;
+  question: MobileCreationTurnQuestion | null;
+}): MobileCreationTurn["readiness"] {
+  const { base, hasIdea, buildRequested, userTurns, question } = options;
+  const hasEssential = recipeFieldAnswered(base.recipe, "audience", base.detectedLane) ||
+    recipeFieldAnswered(base.recipe, "promise", base.detectedLane) ||
+    recipeFieldAnswered(base.recipe, "mainCharacter", base.detectedLane) ||
+    recipeFieldAnswered(base.recipe, "conflict", base.detectedLane);
+  const canBuild = hasIdea && (buildRequested || hasEssential || userTurns >= 2);
+  return {
+    score: base.briefScore,
+    canBuild,
+    missing: question ? [stripTrailingPunctuation(question.prompt)] : []
+  };
+}
+
+const BUILD_ACK_MESSAGES = [
+  "Great - building your plan now. You'll see chapters to review in a moment.",
+  "On it! I'm turning this chat into a book plan you can review."
+];
+
+const READY_MESSAGES = [
+  "This is shaping up well. When you're ready, tap Build the plan and I'll draft chapters you can refine.",
+  "I have what I need to make a strong first plan. Tap Build the plan whenever you're ready.",
+  "Looking good! Add any final details, or tap Build the plan and I'll take it from here."
+];
+
+const READY_AUTO_MESSAGES = [
+  "This is shaping up well. When you're ready, tap Build the plan and I'll choose the best book shape from this chat.",
+  "I have a good picture now. Tap Build the plan and I'll pick the best book shape from everything you told me.",
+  "Nice - this is coming together. Build the plan whenever you're ready and I'll shape the book from this chat."
+];
 
 function deterministicAssistantMessage(
   base: MobileBookAdvisorResponse,
   question: MobileCreationTurnQuestion | null,
-  hasIdea: boolean
+  hasIdea: boolean,
+  context: {
+    userTurns: number;
+    buildRequested: boolean;
+    metaAnswer: string | null;
+    settingsAck: string | null;
+  }
 ): string {
   if (!hasIdea) {
     return "Tell me about the book you want to make, or tap an example to start.";
   }
+  if (context.buildRequested) {
+    return pickVariant(BUILD_ACK_MESSAGES, context.userTurns);
+  }
+  if (context.metaAnswer) {
+    return context.metaAnswer;
+  }
+  const ackPrefix = context.settingsAck ? `${context.settingsAck} ` : "";
   if (base.detectedLane === "auto") {
     if (question) {
-      return `Got it. ${question.prompt}`;
+      return `${ackPrefix}${questionLeadIn(context.userTurns)}${question.prompt}`;
     }
-    return "This is shaping up well. When you're ready, tap Build the plan and I'll choose the best book shape from this chat.";
+    return ackPrefix + pickVariant(READY_AUTO_MESSAGES, context.userTurns);
   }
   const lane = laneLabel(base.detectedLane).toLowerCase();
   if (question) {
-    return `Got it - this sounds like a ${lane}. ${question.prompt}`;
+    if (context.userTurns <= 1) {
+      return `${ackPrefix}Got it - this sounds like a ${lane}. ${question.prompt}`;
+    }
+    return `${ackPrefix}${questionLeadIn(context.userTurns)}${question.prompt}`;
   }
-  return "This is shaping up well. When you're ready, tap Build the plan and I'll draft chapters you can refine.";
+  return ackPrefix + pickVariant(READY_MESSAGES, context.userTurns);
 }
 
-function deterministicQuickReplies(question: MobileCreationTurnQuestion | null): string[] {
+function questionLeadIn(userTurns: number): string {
+  const leadIns = ["Got it. ", "Thanks! ", "Noted. ", "Lovely. ", "Perfect. "];
+  return leadIns[(Math.max(1, userTurns) - 1) % leadIns.length]!;
+}
+
+function pickVariant(variants: readonly string[], seed: number): string {
+  return variants[Math.abs(seed) % variants.length]!;
+}
+
+function deterministicQuickReplies(
+  question: MobileCreationTurnQuestion | null,
+  buildRequested: boolean,
+  answeredMeta: boolean
+): string[] {
+  if (buildRequested) {
+    return [];
+  }
+  if (answeredMeta) {
+    return ["Back to my book"];
+  }
   if (question) {
     return ["You decide"];
   }
-  return ["Make it longer", "Add more detail"];
+  return ["Build the plan", "Make it longer", "Add more detail"];
 }
 
 function cleanCreationTurnPatch(patch: z.infer<typeof creationTurnAiPatchSchema>): Partial<MobileCreationTurn> {
@@ -583,29 +1082,49 @@ function cleanCreationTurnPatch(patch: z.infer<typeof creationTurnAiPatchSchema>
   if (patch.warnings) {
     cleaned.warnings = patch.warnings.map((item) => item.trim()).filter(Boolean).slice(0, 5);
   }
+  if (patch.language?.trim()) {
+    cleaned.language = patch.language.trim().toLowerCase();
+  }
+  if (patch.buildRequested !== undefined) {
+    cleaned.buildRequested = patch.buildRequested;
+  }
   return cleaned;
 }
 
 function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<MobileCreationTurn>): MobileCreationTurn {
-  const brief = mobileBookRecipeSchema.parse({ ...(patch.brief ?? base.brief), lane: base.detectedLane });
+  // The AI may switch the book type mid-chat (e.g. "actually make it a
+  // children's story"). Accept the switch when its patched presets name a
+  // concrete bookTypeChoice different from the base; the prompt instructs it
+  // to confirm ambiguous switches with a question first.
+  const patchedChoice = patch.presets?.bookTypeChoice;
+  const laneFromPatch =
+    patchedChoice && patchedChoice !== "auto" && patchedChoice !== base.presets.bookTypeChoice
+      ? laneFromBookTypeChoice(patchedChoice)
+      : undefined;
+  const detectedLane = laneFromPatch ?? base.detectedLane;
+  const brief = mobileBookRecipeSchema.parse({ ...(patch.brief ?? base.brief), lane: detectedLane });
   const patchedPresets = patch.presets
     ? mobileCreationPresetsSchema.parse({
         ...patch.presets,
-        bookType: base.presets.bookType,
-        bookTypeChoice: base.presets.bookTypeChoice
+        bookType: laneFromPatch ? productBookTypeForLane(laneFromPatch) : base.presets.bookType,
+        bookTypeChoice: laneFromPatch ? patchedChoice : base.presets.bookTypeChoice
       })
     : base.presets;
+  const buildRequested = patch.buildRequested ?? base.buildRequested;
+  const readiness = buildRequested ? { ...base.readiness, canBuild: true } : base.readiness;
   return {
     assistantMessage: patch.assistantMessage ?? base.assistantMessage,
     brief,
     presets: patchedPresets,
-    detectedLane: base.detectedLane,
+    detectedLane,
     quickReplies: patch.quickReplies ?? base.quickReplies,
     question: patch.question !== undefined ? patch.question : base.question,
-    readiness: base.readiness,
+    readiness,
     titleSuggestions: patch.titleSuggestions ?? base.titleSuggestions,
     shapePreview: patch.shapePreview && patch.shapePreview.length > 0 ? patch.shapePreview : base.shapePreview,
-    warnings: patch.warnings ?? base.warnings
+    warnings: patch.warnings ?? base.warnings,
+    ...(patch.language ?? base.language ? { language: patch.language ?? base.language } : {}),
+    buildRequested
   };
 }
 
@@ -755,9 +1274,19 @@ function explicitTitleFromText(text: string | undefined): string | undefined {
   }
 
   const quotedTitle =
-    source.match(/\b(?:title\s+(?:is|should\s+be)|called|titled|named)\s+["']([^"'\n]{2,160})["']/i)?.[1] ??
+    source.match(/\b(?:title\s+(?:is|should\s+be)|called|titled|named|call\s+it|name\s+it|title\s+it)\s+["']([^"'\n]{2,160})["']/i)?.[1] ??
     source.match(/\b(?:called|titled|named)\s+'([^'\n]{2,160})'/i)?.[1];
-  return cleanExplicitTitle(quotedTitle);
+  const cleanedQuoted = cleanExplicitTitle(quotedTitle);
+  if (cleanedQuoted) {
+    return cleanedQuoted;
+  }
+
+  // Unquoted statements like "call it Midnight Garden" or "the title should be
+  // Brave Little Fox" - capture to the end of the sentence.
+  const unquotedTitle =
+    source.match(/\b(?:call|name|title)\s+(?:it|this|the\s+book)\s+([^.!?\n]{2,160})/i)?.[1] ??
+    source.match(/\b(?:the\s+)?title\s+(?:is|should\s+be)\s+([^.!?\n]{2,160})/i)?.[1];
+  return cleanExplicitTitle(unquotedTitle);
 }
 
 function cleanExplicitTitle(value: string | undefined): string | undefined {

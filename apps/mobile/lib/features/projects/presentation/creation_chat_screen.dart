@@ -117,6 +117,17 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
         }
       },
     );
+    // "Ok, build it" from chat starts the same preflight/build flow as the
+    // Build button.
+    ref.listen<bool>(
+      creationChatControllerProvider.select((s) => s.pendingBuildRequest),
+      (previous, next) {
+        if (next && previous != true) {
+          ref.read(creationChatControllerProvider.notifier).clearBuildRequest();
+          unawaited(_build());
+        }
+      },
+    );
 
     final state = ref.watch(creationChatControllerProvider);
     final activeProjectId = _activeProjectId(state);
@@ -2263,36 +2274,118 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     final isUser = message.isUser;
     final background = isUser ? colors.primary : colors.surfaceContainerHighest;
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
+    final contentCard = message.isAssistant ? message.contentCard : null;
+    final bubble = GestureDetector(
+      onLongPressStart: (details) => showMessageActionsMenu(
+        context: context,
+        position: details.globalPosition,
+        message: message.content,
+      ),
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+        ),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isUser ? 16 : 4),
+            bottomRight: Radius.circular(isUser ? 4 : 16),
+          ),
+        ),
+        child: Text(
+          message.content,
+          style: Theme.of(
+            context,
+          ).textTheme.bodyMedium?.copyWith(color: foreground),
+        ),
+      ),
+    );
+    if (contentCard == null) {
+      return Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: bubble,
+      );
+    }
     return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        onLongPressStart: (details) => showMessageActionsMenu(
-          context: context,
-          position: details.globalPosition,
-          message: message.content,
-        ),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 5),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width * 0.82,
+      alignment: Alignment.centerLeft,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          bubble,
+          _ContentCardBubble(card: contentCard),
+        ],
+      ),
+    );
+  }
+}
+
+/// Read-only book content (outline, chapter, or page) shown in the chat.
+class _ContentCardBubble extends StatelessWidget {
+  const _ContentCardBubble({required this.card});
+
+  final MobileChatContentCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final icon = switch (card.type) {
+      'page' => Icons.description_outlined,
+      'chapter' => Icons.bookmark_outline,
+      _ => Icons.list_alt_outlined,
+    };
+    return Container(
+      margin: const EdgeInsets.only(bottom: 5),
+      padding: const EdgeInsets.all(14),
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.88,
+      ),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: colors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  card.title,
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+            ],
           ),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.only(
-              topLeft: const Radius.circular(16),
-              topRight: const Radius.circular(16),
-              bottomLeft: Radius.circular(isUser ? 16 : 4),
-              bottomRight: Radius.circular(isUser ? 4 : 16),
-            ),
-          ),
-          child: Text(
-            message.content,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: foreground),
-          ),
-        ),
+          for (final section in card.sections) ...[
+            const SizedBox(height: 10),
+            if (section.label.trim().isNotEmpty)
+              Text(
+                section.label,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            if (section.body.trim().isNotEmpty) ...[
+              const SizedBox(height: 2),
+              Text(
+                section.body.length > 1200
+                    ? '${section.body.substring(0, 1200)}…'
+                    : section.body,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ],
+        ],
       ),
     );
   }
@@ -2362,8 +2455,41 @@ class _OutputOperationBubble extends StatelessWidget {
   }
 }
 
-class _TypingBubble extends StatelessWidget {
+class _TypingBubble extends StatefulWidget {
   const _TypingBubble();
+
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble> {
+  // Staged status text so long turns feel alive rather than stuck.
+  static const _stages = <String>[
+    'Thinking…',
+    'Thinking about your book…',
+    'Shaping the details…',
+    'Almost there…',
+  ];
+
+  Timer? _timer;
+  int _stage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted) return;
+      setState(() {
+        _stage = (_stage + 1 < _stages.length) ? _stage + 1 : _stage;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2394,11 +2520,15 @@ class _TypingBubble extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              'Thinking…',
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: Text(
+                _stages[_stage],
+                key: ValueKey(_stage),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
             ),
           ],
         ),

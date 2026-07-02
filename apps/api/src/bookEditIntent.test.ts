@@ -25,6 +25,11 @@ const pages = [
   }
 ];
 
+const chapters = [
+  { index: 1, title: "The Race Begins", pageIndexes: [1] },
+  { index: 2, title: "Steady Wins", pageIndexes: [2] }
+];
+
 describe("book edit intent heuristics", () => {
   it("treats generated-book questions as answers", () => {
     const intent = classifyWithHeuristics("How many pages are in the book?", "complete", pages);
@@ -144,6 +149,76 @@ describe("book edit intent heuristics", () => {
     expect(intent.kind).toBe("page_rewrite");
     expect(intent.scope).toBe("all_pages");
     expect(intent.impact).toBe("style_rewrite");
+  });
+
+  it("routes read requests to show_content with the right target", () => {
+    const outline = classifyWithHeuristics("Show me the outline", "complete", pages, undefined, chapters);
+    expect(outline.kind).toBe("show_content");
+    expect(outline.contentTarget).toEqual({ type: "outline" });
+
+    const chapter = classifyWithHeuristics("Read chapter 2", "complete", pages, undefined, chapters);
+    expect(chapter.kind).toBe("show_content");
+    expect(chapter.contentTarget).toEqual({ type: "chapter", index: 2 });
+
+    const page = classifyWithHeuristics("Show me page 1", "complete", pages, undefined, chapters);
+    expect(page.kind).toBe("show_content");
+    expect(page.contentTarget).toEqual({ type: "page", index: 1 });
+    expect(page.affectedPageIndexes).toEqual([1]);
+  });
+
+  it("does not treat edit requests that mention chapters as read requests", () => {
+    const intent = classifyWithHeuristics("Rewrite chapter 2 and make it funnier.", "complete", pages, undefined, chapters);
+
+    expect(intent.kind).toBe("chapter_regenerate");
+    expect(intent.affectedChapterIndex).toBe(2);
+    expect(intent.affectedPageIndexes).toEqual([2]);
+    expect(intent.impact).toBe("style_rewrite");
+  });
+
+  it("routes chapter regeneration requests in plan stage to plan revision", () => {
+    const intent = classifyWithHeuristics("Rewrite chapter 2 and make it funnier.", "plan_ready", pages, undefined, chapters);
+
+    expect(intent.kind).toBe("plan_revision");
+  });
+
+  it("routes undo requests to undo_last_edit", () => {
+    for (const message of ["Undo that last change", "Please revert the last edit", "Roll back that edit"]) {
+      const intent = classifyWithHeuristics(message, "complete", pages, undefined, chapters);
+
+      expect(intent.kind).toBe("undo_last_edit");
+      expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
+    }
+  });
+
+  it("short-circuits read/undo/chapter intents without calling the AI router", async () => {
+    const model = fakeTextModel({
+      kind: "answer",
+      confidence: 0.9,
+      reasoning: "Should never be used.",
+      affectedPageIndexes: [],
+      assistantMessage: "Model reply",
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Show me the outline",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    expect(model.generateJson).not.toHaveBeenCalled();
+    expect(intent.kind).toBe("show_content");
+  });
+
+  it("routes plan-stage structure requests to plan revision with structural impact", () => {
+    const intent = classifyWithHeuristics("Move the ending earlier in the outline.", "plan_ready", pages, undefined, chapters);
+
+    expect(intent.kind).toBe("plan_revision");
+    expect(intent.impact).toBe("structural_replan");
   });
 
   it("recognizes a scope-only follow-up that can resolve a pending edit", () => {

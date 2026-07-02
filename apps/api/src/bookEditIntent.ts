@@ -10,6 +10,9 @@ export type BookEditIntentKind =
   | "plan_revision"
   | "local_patch"
   | "page_rewrite"
+  | "chapter_regenerate"
+  | "undo_last_edit"
+  | "show_content"
   | "book_replan";
 
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
@@ -25,10 +28,22 @@ export type BookEditPageContext = {
   previewText: string;
 };
 
+export type BookEditChapterContext = {
+  index: number;
+  title: string;
+  pageIndexes: number[];
+};
+
 export type BookEditReplacement = {
   from: string;
   to: string;
 };
+
+/** What the user asked to read when the intent is show_content. */
+export type ShowContentTarget =
+  | { type: "outline" }
+  | { type: "chapter"; index: number }
+  | { type: "page"; index: number };
 
 export type BookEditIntent = {
   kind: BookEditIntentKind;
@@ -39,20 +54,35 @@ export type BookEditIntent = {
   scope: BookEditScope;
   impact: BookEditImpact;
   clarification: BookEditClarification;
+  /** Chapter index when the intent targets a whole chapter (chapter_regenerate). */
+  affectedChapterIndex?: number | null;
+  /** Set for show_content intents. */
+  contentTarget?: ShowContentTarget | null;
 };
 
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
 
 const classifierSchema = z
   .object({
-    kind: z.enum(["answer", "clarify", "plan_revision", "local_patch", "page_rewrite", "book_replan"]),
+    kind: z.enum([
+      "answer",
+      "clarify",
+      "plan_revision",
+      "local_patch",
+      "page_rewrite",
+      "chapter_regenerate",
+      "undo_last_edit",
+      "show_content",
+      "book_replan"
+    ]),
     confidence: z.number().min(0).max(1),
     reasoning: z.string().trim().min(1).max(600),
     affectedPageIndexes: z.array(z.number().int().positive()).max(100).default([]),
     assistantMessage: z.string().trim().min(1).max(1200),
     scope: z.enum(["none", "explicit_pages", "matching_pages", "all_pages"]).default("none"),
     impact: z.enum(["small_text", "style_rewrite", "structural_replan"]).default("small_text"),
-    clarification: z.enum(["none", "scope"]).default("none")
+    clarification: z.enum(["none", "scope"]).default("none"),
+    affectedChapterIndex: z.number().int().positive().nullable().default(null)
   })
   .strict();
 
@@ -60,11 +90,22 @@ export async function classifyProjectChatMessage(options: {
   message: string;
   stage: BookEditProjectStage;
   pages: BookEditPageContext[];
+  chapters?: BookEditChapterContext[] | undefined;
   planSummary?: string | undefined;
   textModel?: TextModelAdapter | undefined;
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
-  const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary);
+  const chapters = options.chapters ?? [];
+  const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters);
+  // Read/undo/chapter intents are detected deterministically with high
+  // precision; skip the model round-trip for them.
+  if (
+    heuristic.kind === "show_content" ||
+    heuristic.kind === "undo_last_edit" ||
+    heuristic.kind === "chapter_regenerate"
+  ) {
+    return normalizeIntentForStage(heuristic, options.stage);
+  }
   if (!options.textModel || options.stage === "other") {
     return normalizeIntentForStage(heuristic, options.stage);
   }
@@ -82,11 +123,15 @@ export async function classifyProjectChatMessage(options: {
             "Classify a user's chat message for an AI book-making app.",
             "Return answer for general questions that should not edit the book.",
             "Return clarify when the user wants an edit but the target/scope is still unclear.",
+            "Return show_content when the user wants to read or see the outline, plan, table of contents, a chapter, or a page without changing it.",
+            "Return undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
             "Return plan_revision when the project is in plan review or has an approved plan that can be revised before writing.",
             "For plan-stage projects, route planning preferences as plan_revision, including media choices such as no images, no covers, without covers, skip visuals, disable illustrations, or turn off images.",
+            "For plan-stage projects, also route structure requests like move the ending earlier, reorder chapters, or restructure the outline as plan_revision.",
             "Return local_patch for exact replacements, renames, typos, grammar, and small wording edits.",
             "Return page_rewrite for same-structure page or whole-book style/content rewrites.",
-            "Return book_replan for main character, species, title, premise, audience, ending, chapter, length, visual identity, or structure changes.",
+            "Return chapter_regenerate when the user asks to rewrite, regenerate, or redo one specific chapter, and set affectedChapterIndex to that chapter number.",
+            "Return book_replan for main character, species, title, premise, audience, ending, chapter-structure, length, visual identity, or structure changes on a finished book.",
             "Use scope all_pages for whole book, all pages, every page, everywhere, globally, throughout, or across the book.",
             "Use scope matching_pages for exact replacements when matching pages should be found from the existing text.",
             "Use affectedPageIndexes only when the target page is explicit or strongly inferable.",
@@ -101,6 +146,11 @@ export async function classifyProjectChatMessage(options: {
             planSummary: options.planSummary ?? null,
             heuristicIntent: heuristic,
             heuristicInstruction: "Use heuristicIntent only as a hint. Prefer the user's actual meaning and projectStage.",
+            chapters: chapters.map((chapter) => ({
+              index: chapter.index,
+              title: chapter.title,
+              pageIndexes: chapter.pageIndexes
+            })),
             pages: options.pages.map((page) => ({
               index: page.index,
               title: page.title,
@@ -111,17 +161,26 @@ export async function classifyProjectChatMessage(options: {
         }
       ]
     });
-    return normalizeIntentForStage(result.data, options.stage);
+    return normalizeIntentForStage(withDeterministicContentTarget(result.data, message), options.stage);
   } catch {
     return normalizeIntentForStage(heuristic, options.stage);
   }
+}
+
+/** The model cannot emit structured content targets; recover them from the message. */
+function withDeterministicContentTarget(intent: BookEditIntent, message: string): BookEditIntent {
+  if (intent.kind !== "show_content") {
+    return intent;
+  }
+  return { ...intent, contentTarget: showContentTargetFromMessage(message) ?? { type: "outline" } };
 }
 
 export function classifyWithHeuristics(
   message: string,
   stage: BookEditProjectStage,
   pages: BookEditPageContext[],
-  planSummary?: string | undefined
+  planSummary?: string | undefined,
+  chapters: BookEditChapterContext[] = []
 ): BookEditIntent {
   const lower = message.toLowerCase();
   const isPlanStage = stage === "plan_ready" || stage === "approved_plan";
@@ -131,21 +190,69 @@ export function classifyWithHeuristics(
   const replacement = replacementTermsFromMessage(message);
   const matchedReplacementPages = replacement ? pageIndexesMatchingText(replacement.from, pages) : [];
   const hasEditVerb =
-    /\b(change|edit|rewrite|revise|fix|replace|rename|swap|switch|remove|delete|add|insert|update|make|turn|shorten|expand|polish|regenerate)\b/i.test(
+    /\b(change|edit|rewrite|revise|fix|replace|rename|swap|switch|remove|delete|add|insert|update|make|turn|shorten|expand|polish|regenerate|move|reorder|restructure|redo|rework)\b/i.test(
       message
     );
   const asksQuestion = /\?$|^(what|why|how|can you explain|tell me|summari[sz]e|where|when)\b/i.test(message.trim());
   const scopeOnly = isBookEditScopeOnlyMessage(message);
+  const contentTarget = showContentTargetFromMessage(message);
+  const undoRequest = isUndoRequestMessage(message);
+  const chapterRegen = chapterRegenerateFromMessage(message);
   const structural =
     /\b(add|remove|delete|new)\s+(a\s+)?(chapter|section|page)\b/i.test(message) ||
-    /\b(change|switch|replace|swap|turn|make)\b.{0,80}\b(audience|premise|book type|length|structure|outline|plan|ending|title|cover|visual identity|illustration style)\b/i.test(
+    /\b(change|switch|replace|swap|turn|make|move|reorder|restructure)\b.{0,80}\b(audience|premise|book type|length|structure|outline|plan|ending|title|cover|visual identity|illustration style)\b/i.test(
       message
     ) ||
     /\b(change|switch|replace|swap|turn|make)\b.{0,80}\b(main character|character|protagonist|hero|species|animal)\b/i.test(
       message
     ) ||
     /\b(main character|protagonist|hero|species|animal)\b.{0,80}\b(to|with|into)\b/i.test(message) ||
+    /\b(move|reorder)\b.{0,60}\b(chapters?|ending|beginning|scenes?|sections?)\b/i.test(message) ||
     /\bmake\s+it\s+(twice|half|much)\b/i.test(lower);
+
+  if (contentTarget && !hasEditVerbBeyondShow(message)) {
+    return {
+      kind: "show_content",
+      confidence: 0.9,
+      reasoning: "The user wants to read book content, not change it.",
+      affectedPageIndexes: contentTarget.type === "page" ? [contentTarget.index] : [],
+      assistantMessage: showContentAcknowledgement(contentTarget),
+      scope: "none",
+      impact: "small_text",
+      clarification: "none",
+      contentTarget
+    };
+  }
+
+  if (undoRequest) {
+    return {
+      kind: "undo_last_edit",
+      confidence: 0.9,
+      reasoning: "The user asked to undo the most recent edit.",
+      affectedPageIndexes: [],
+      assistantMessage: "I’ll undo the last edit and restore the previous version of those pages.",
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    };
+  }
+
+  if (chapterRegen !== null && !isPlanStage) {
+    const chapter = chapters.find((candidate) => candidate.index === chapterRegen);
+    return {
+      kind: "chapter_regenerate",
+      confidence: 0.88,
+      reasoning: "The user asked to regenerate a specific chapter.",
+      affectedPageIndexes: chapter?.pageIndexes ?? [],
+      assistantMessage: chapter
+        ? `I’ll rewrite chapter ${chapterRegen} (“${chapter.title}”) with that direction.`
+        : `I’ll rewrite chapter ${chapterRegen} with that direction.`,
+      scope: "explicit_pages",
+      impact: "style_rewrite",
+      clarification: "none",
+      affectedChapterIndex: chapterRegen
+    };
+  }
   const patch =
     replacement !== null ||
     /\b(typo|spelling|grammar|punctuation|capitali[sz]ation|rename)\b/i.test(message) ||
@@ -339,10 +446,13 @@ function normalizeIntentForStage(intent: BookEditIntent, stage: BookEditProjectS
     impact: intent.impact ?? "small_text",
     clarification: intent.clarification ?? "none"
   };
-  if ((stage === "plan_ready" || stage === "approved_plan") && ["local_patch", "page_rewrite", "book_replan"].includes(bounded.kind)) {
+  if (
+    (stage === "plan_ready" || stage === "approved_plan") &&
+    ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate"].includes(bounded.kind)
+  ) {
     return { ...bounded, kind: "plan_revision" };
   }
-  if (bounded.confidence < BOOK_EDIT_CONFIDENCE_THRESHOLD && bounded.kind !== "answer") {
+  if (bounded.confidence < BOOK_EDIT_CONFIDENCE_THRESHOLD && bounded.kind !== "answer" && bounded.kind !== "show_content") {
     return {
       ...bounded,
       kind: "clarify",
@@ -351,6 +461,78 @@ function normalizeIntentForStage(intent: BookEditIntent, stage: BookEditProjectS
     };
   }
   return bounded;
+}
+
+/**
+ * Detects requests to read (not change) the outline, a chapter, or a page.
+ * Returns null when the message does not look like a read request.
+ */
+export function showContentTargetFromMessage(message: string): ShowContentTarget | null {
+  const text = message.trim();
+  const readVerb = /\b(?:show|read|see|view|display|open|give)\s+(?:me\s+)?/i;
+  const wantsRead =
+    readVerb.test(text) ||
+    // "what's in chapter 2", "what does page 3 say" - but not broad questions
+    // like "what is this plan about?", which deserve a summarized answer.
+    /^what(?:'s|\s+is)\s+(?:in|on)\b/i.test(text) ||
+    /\bwhat\s+does\s+(?:chapter|page)\s+\d+\s+say\b/i.test(text) ||
+    /^let me (?:see|read)\b/i.test(text) ||
+    /\bread\s+(?:it|that)\s+(?:back|to me)\b/i.test(text);
+  if (!wantsRead) {
+    return null;
+  }
+  const pageMatch = text.match(/\bpage\s+(\d{1,3})\b/i);
+  if (pageMatch && !/\b(?:outline|plan|chapters?|table of contents|toc)\b/i.test(text)) {
+    return { type: "page", index: Number(pageMatch[1]) };
+  }
+  const chapterMatch = text.match(/\bchapter\s+(\d{1,2})\b/i);
+  if (chapterMatch) {
+    return { type: "chapter", index: Number(chapterMatch[1]) };
+  }
+  if (/\b(?:outline|plan|table of contents|toc|chapters|chapter list|structure)\b/i.test(text)) {
+    return { type: "outline" };
+  }
+  return null;
+}
+
+/** True when the message combines a read phrase with an actual edit request. */
+function hasEditVerbBeyondShow(message: string): boolean {
+  return /\b(change|edit|rewrite|revise|fix|replace|rename|swap|remove|delete|insert|update|shorten|expand|polish|regenerate|redo|rework|make\s+it)\b/i.test(
+    message
+  );
+}
+
+function showContentAcknowledgement(target: ShowContentTarget): string {
+  if (target.type === "page") {
+    return `Here’s page ${target.index}.`;
+  }
+  if (target.type === "chapter") {
+    return `Here’s chapter ${target.index}.`;
+  }
+  return "Here’s the current outline.";
+}
+
+export function isUndoRequestMessage(message: string): boolean {
+  const normalized = message.toLowerCase().replace(/[.!?]+$/g, "").trim();
+  return (
+    /^(?:please\s+)?(?:can\s+you\s+|could\s+you\s+)?(?:undo|revert|roll\s*back)\b/.test(normalized) ||
+    /\b(?:undo|revert|roll\s*back)\s+(?:the\s+|that\s+|my\s+)?(?:last|latest|previous|recent)?\s*(?:edit|change|revision|rewrite)?$/.test(
+      normalized
+    )
+  );
+}
+
+/** Extracts the chapter index from "rewrite chapter 3, make it funnier"-style requests. */
+export function chapterRegenerateFromMessage(message: string): number | null {
+  const match = message.match(
+    /\b(?:rewrite|regenerate|redo|rework|revise|refresh|improve)\s+(?:the\s+)?chapter\s+(\d{1,2})\b/i
+  ) ??
+    message.match(/\bchapter\s+(\d{1,2})\b.{0,40}\b(?:rewrite|regenerate|redo|rework|from scratch|again)\b/i);
+  if (!match?.[1]) {
+    return null;
+  }
+  const index = Number(match[1]);
+  return Number.isInteger(index) && index > 0 ? index : null;
 }
 
 export function pageIndexesFromMessage(message: string, pages: BookEditPageContext[]): number[] {

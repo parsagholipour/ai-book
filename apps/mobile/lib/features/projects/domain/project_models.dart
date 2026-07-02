@@ -470,6 +470,51 @@ class MobileProjectChatMessage {
   bool get hasInsufficientCredits =>
       metadata['insufficientCredits'] is Map<String, dynamic> ||
       metadata['insufficientCredits'] is Map;
+
+  /// Structured read-only book content (outline/chapter/page) attached to
+  /// this message by the show-content intent.
+  MobileChatContentCard? get contentCard {
+    final raw = metadata['contentCard'];
+    if (raw is! Map) return null;
+    return MobileChatContentCard.fromJson(raw.cast<String, dynamic>());
+  }
+}
+
+class MobileChatContentCard {
+  const MobileChatContentCard({
+    required this.type,
+    required this.title,
+    required this.sections,
+  });
+
+  /// One of: outline, chapter, page.
+  final String type;
+  final String title;
+  final List<MobileChatContentSection> sections;
+
+  factory MobileChatContentCard.fromJson(Map<String, dynamic> json) {
+    final sections = json['sections'] as List<dynamic>? ?? const [];
+    return MobileChatContentCard(
+      type: json['type'] as String? ?? 'outline',
+      title: json['title'] as String? ?? '',
+      sections: sections
+          .whereType<Map>()
+          .map(
+            (section) => MobileChatContentSection(
+              label: section['label'] as String? ?? '',
+              body: section['body'] as String? ?? '',
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class MobileChatContentSection {
+  const MobileChatContentSection({required this.label, required this.body});
+
+  final String label;
+  final String body;
 }
 
 class MobileBookEditOperation {
