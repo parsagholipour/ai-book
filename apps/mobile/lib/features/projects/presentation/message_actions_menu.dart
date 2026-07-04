@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-enum _MessageAction { copy }
+enum _MessageAction { copy, edit }
 
 Future<void> showMessageActionsMenu({
   required BuildContext context,
   required Offset position,
   required String message,
+  VoidCallback? onEdit,
 }) async {
   final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
   if (overlay is! RenderBox) return;
@@ -17,8 +18,8 @@ Future<void> showMessageActionsMenu({
       Rect.fromPoints(position, position),
       Offset.zero & overlay.size,
     ),
-    items: const [
-      PopupMenuItem<_MessageAction>(
+    items: [
+      const PopupMenuItem<_MessageAction>(
         value: _MessageAction.copy,
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -29,9 +30,25 @@ Future<void> showMessageActionsMenu({
           ],
         ),
       ),
+      if (onEdit != null)
+        const PopupMenuItem<_MessageAction>(
+          value: _MessageAction.edit,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_outlined),
+              SizedBox(width: 12),
+              Text('Edit'),
+            ],
+          ),
+        ),
     ],
   );
 
+  if (action == _MessageAction.edit) {
+    onEdit?.call();
+    return;
+  }
   if (action != _MessageAction.copy) return;
 
   await Clipboard.setData(ClipboardData(text: message));

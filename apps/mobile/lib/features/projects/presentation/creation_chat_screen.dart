@@ -45,6 +45,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   int _lastScrollTrigger = 0;
   bool _projectChatSending = false;
   bool _projectChatBranchSwitching = false;
+  String? _editingProjectMessageId;
 
   // Plan question tracking
   int _planQuestionIndex = 0;
@@ -104,6 +105,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _lastScrollTrigger = 0;
     _projectChatSending = false;
     _projectChatBranchSwitching = false;
+    _editingProjectMessageId = null;
   }
 
   @override
@@ -254,8 +256,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                       planBusyAction: _planBusyAction,
                       switchingProjectBranch: _projectChatBranchSwitching,
                       onSwitchProjectBranch: _switchProjectBranch,
+                      onEditProjectMessage: _startProjectMessageEdit,
                     ),
                   ),
+                  if (_editingProjectMessageId != null)
+                    _EditingMessageBanner(onCancel: _cancelProjectMessageEdit),
                   if (isInOutputStage)
                     _buildOutputFooter(planValue!, activeProjectId)
                   else
@@ -280,6 +285,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   }
 
   void _resetPlanReviewState() {
+    _editingProjectMessageId = null;
     _planBusyAction = null;
     _activePlanKey = null;
     _pendingRevisionPlanKey = null;
@@ -417,20 +423,32 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   }) async {
     final trimmed = message.trim();
     if (trimmed.isEmpty || _projectChatSending) return null;
+    final editingMessageId = _editingProjectMessageId;
     final shouldRestoreComposer = _composerController.text.trim() == trimmed;
     if (shouldRestoreComposer) {
       _composerController.clear();
     }
     setState(() => _projectChatSending = true);
     try {
-      final result = await ref
-          .read(projectsRepositoryProvider)
-          .sendProjectChatMessage(projectId: projectId, message: trimmed);
+      final repository = ref.read(projectsRepositoryProvider);
+      final result = editingMessageId != null
+          ? await repository.editProjectChatMessage(
+              projectId: projectId,
+              messageId: editingMessageId,
+              message: trimmed,
+            )
+          : await repository.sendProjectChatMessage(
+              projectId: projectId,
+              message: trimmed,
+            );
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);
       if (!mounted) return result;
-      setState(() => _projectChatSending = false);
+      setState(() {
+        _projectChatSending = false;
+        _editingProjectMessageId = null;
+      });
       if (result.operation != null) {
         _startPlanPoll();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -449,6 +467,24 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
       return null;
     }
+  }
+
+  void _startProjectMessageEdit(MobileProjectChatMessage message) {
+    if (_projectChatSending) return;
+    setState(() {
+      _editingProjectMessageId = message.id;
+      _composerController.text = message.content;
+      _composerController.selection = TextSelection.collapsed(
+        offset: _composerController.text.length,
+      );
+    });
+  }
+
+  void _cancelProjectMessageEdit() {
+    setState(() {
+      _editingProjectMessageId = null;
+      _composerController.clear();
+    });
   }
 
   Future<void> _switchProjectBranch(
@@ -2110,6 +2146,7 @@ class _Transcript extends StatelessWidget {
     this.planBusyAction,
     this.switchingProjectBranch = false,
     this.onSwitchProjectBranch,
+    this.onEditProjectMessage,
   });
 
   final CreationChatState state;
@@ -2121,6 +2158,7 @@ class _Transcript extends StatelessWidget {
   final bool switchingProjectBranch;
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchProjectBranch;
+  final void Function(MobileProjectChatMessage message)? onEditProjectMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -2171,6 +2209,7 @@ class _Transcript extends StatelessWidget {
             message: item.message!,
             switchingBranch: switchingProjectBranch,
             onSwitchBranch: onSwitchProjectBranch,
+            onEdit: onEditProjectMessage,
           );
         }
         cursor += projectItems.length;
@@ -2256,6 +2295,41 @@ class _ProjectTranscriptItem {
   }
 }
 
+class _EditingMessageBanner extends StatelessWidget {
+  const _EditingMessageBanner({required this.onCancel});
+
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
+        child: Row(
+          children: [
+            Icon(Icons.edit_outlined, size: 18, color: colors.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Editing message',
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+            IconButton(
+              tooltip: 'Cancel edit',
+              visualDensity: VisualDensity.compact,
+              onPressed: onCancel,
+              icon: const Icon(Icons.close, size: 18),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({required this.message});
 
@@ -2307,12 +2381,14 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     required this.message,
     required this.switchingBranch,
     this.onSwitchBranch,
+    this.onEdit,
   });
 
   final MobileProjectChatMessage message;
   final bool switchingBranch;
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchBranch;
+  final void Function(MobileProjectChatMessage message)? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -2327,6 +2403,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         context: context,
         position: details.globalPosition,
         message: message.content,
+        onEdit: isUser && onEdit != null ? () => onEdit!(message) : null,
       ),
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 5),

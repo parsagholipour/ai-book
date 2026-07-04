@@ -407,14 +407,11 @@ class _ProjectMessageBubble extends StatelessWidget {
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onLongPressStart: (details) {
-          if (isUser && onStartEdit != null) {
-            onStartEdit!();
-            return;
-          }
           showMessageActionsMenu(
             context: context,
             position: details.globalPosition,
             message: message.content,
+            onEdit: isUser ? onStartEdit : null,
           );
         },
         child: ConstrainedBox(
