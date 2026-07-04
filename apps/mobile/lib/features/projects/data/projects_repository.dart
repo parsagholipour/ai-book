@@ -35,6 +35,18 @@ abstract interface class ProjectsRepository {
     required String message,
   });
 
+  Future<MobileProjectChatSendResult> editProjectChatMessage({
+    required String projectId,
+    required String messageId,
+    required String message,
+  });
+
+  Future<MobileProjectChat> switchProjectChatBranch({
+    required String projectId,
+    required String messageId,
+    required String direction,
+  });
+
   Future<MobileProjectRecovery> resumeProject(String id);
 
   Future<ProjectDeletionReceipt> deleteProject(String id);
@@ -176,6 +188,34 @@ class MobileProjectsRepository implements ProjectsRepository {
     return MobileProjectChatSendResult.fromJson(
       response.data as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> editProjectChatMessage({
+    required String projectId,
+    required String messageId,
+    required String message,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/chat/messages',
+      data: {'message': message, 'editMessageId': messageId},
+    );
+    return MobileProjectChatSendResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileProjectChat> switchProjectChatBranch({
+    required String projectId,
+    required String messageId,
+    required String direction,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/chat/branches',
+      data: {'messageId': messageId, 'direction': direction},
+    );
+    return MobileProjectChat.fromJson(response.data as Map<String, dynamic>);
   }
 
   @override

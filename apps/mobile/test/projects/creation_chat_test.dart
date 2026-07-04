@@ -813,29 +813,30 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('a chat build request starts the build without tapping the button', (
-    tester,
-  ) async {
-    final creation = _ScriptedCreationRepository(replyWithBuildRequest: true);
-    await tester.pumpWidget(
-      _app(creation: creation, projects: _PlanProjectsRepository()),
-    );
-    await tester.pumpAndSettle();
+  testWidgets(
+    'a chat build request starts the build without tapping the button',
+    (tester) async {
+      final creation = _ScriptedCreationRepository(replyWithBuildRequest: true);
+      await tester.pumpWidget(
+        _app(creation: creation, projects: _PlanProjectsRepository()),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField).last, 'Ok, build it');
-    await tester.pump();
-    await tester.tap(find.byTooltip('Send'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.pump(const Duration(milliseconds: 50));
-    await tester.pump(const Duration(milliseconds: 50));
+      await tester.enterText(find.byType(TextField).last, 'Ok, build it');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
 
-    expect(creation.buildCount, 1);
-    expect(creation.buildDraftId, 'draft-1');
-    expect(find.text(_planTitle), findsOneWidget);
+      expect(creation.buildCount, 1);
+      expect(creation.buildDraftId, 'draft-1');
+      expect(find.text(_planTitle), findsOneWidget);
 
-    await tester.teardownScreen();
-  });
+      await tester.teardownScreen();
+    },
+  );
 
   testWidgets('assistant content cards render book content in the chat', (
     tester,
@@ -1591,6 +1592,24 @@ class _PlanProjectsRepository implements ProjectsRepository {
       reply: assistantMessage,
       operation: operation,
     );
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> editProjectChatMessage({
+    required String projectId,
+    required String messageId,
+    required String message,
+  }) {
+    return sendProjectChatMessage(projectId: projectId, message: message);
+  }
+
+  @override
+  Future<MobileProjectChat> switchProjectChatBranch({
+    required String projectId,
+    required String messageId,
+    required String direction,
+  }) {
+    return getProjectChat(projectId);
   }
 
   @override

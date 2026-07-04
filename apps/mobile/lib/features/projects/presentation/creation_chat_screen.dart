@@ -44,6 +44,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   Timer? _planRefreshTimer;
   int _lastScrollTrigger = 0;
   bool _projectChatSending = false;
+  bool _projectChatBranchSwitching = false;
 
   // Plan question tracking
   int _planQuestionIndex = 0;
@@ -102,6 +103,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _planQuestionAnswers = {};
     _lastScrollTrigger = 0;
     _projectChatSending = false;
+    _projectChatBranchSwitching = false;
   }
 
   @override
@@ -250,6 +252,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                       projectChatValue: projectChatValue,
                       generationStatusValue: generationStatusValue,
                       planBusyAction: _planBusyAction,
+                      switchingProjectBranch: _projectChatBranchSwitching,
+                      onSwitchProjectBranch: _switchProjectBranch,
                     ),
                   ),
                   if (isInOutputStage)
@@ -444,6 +448,32 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
       return null;
+    }
+  }
+
+  Future<void> _switchProjectBranch(
+    MobileProjectChatMessage message,
+    String direction,
+  ) async {
+    if (_projectChatBranchSwitching) return;
+    setState(() => _projectChatBranchSwitching = true);
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .switchProjectChatBranch(
+            projectId: message.projectId,
+            messageId: message.id,
+            direction: direction,
+          );
+      _refreshOutput(message.projectId, refreshStatus: false);
+      if (!mounted) return;
+      setState(() => _projectChatBranchSwitching = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _projectChatBranchSwitching = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -2078,6 +2108,8 @@ class _Transcript extends StatelessWidget {
     this.projectChatValue,
     this.generationStatusValue,
     this.planBusyAction,
+    this.switchingProjectBranch = false,
+    this.onSwitchProjectBranch,
   });
 
   final CreationChatState state;
@@ -2086,6 +2118,9 @@ class _Transcript extends StatelessWidget {
   final AsyncValue<MobileProjectChat>? projectChatValue;
   final AsyncValue<MobileProjectStatus>? generationStatusValue;
   final String? planBusyAction;
+  final bool switchingProjectBranch;
+  final void Function(MobileProjectChatMessage message, String direction)?
+  onSwitchProjectBranch;
 
   @override
   Widget build(BuildContext context) {
@@ -2132,7 +2167,11 @@ class _Transcript extends StatelessWidget {
           if (operation != null) {
             return _OutputOperationBubble(operation: operation);
           }
-          return _ProjectChatMessageBubble(message: item.message!);
+          return _ProjectChatMessageBubble(
+            message: item.message!,
+            switchingBranch: switchingProjectBranch,
+            onSwitchBranch: onSwitchProjectBranch,
+          );
         }
         cursor += projectItems.length;
         if (hasLivePlanBubble && index == cursor) {
@@ -2264,9 +2303,16 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _ProjectChatMessageBubble extends StatelessWidget {
-  const _ProjectChatMessageBubble({required this.message});
+  const _ProjectChatMessageBubble({
+    required this.message,
+    required this.switchingBranch,
+    this.onSwitchBranch,
+  });
 
   final MobileProjectChatMessage message;
+  final bool switchingBranch;
+  final void Function(MobileProjectChatMessage message, String direction)?
+  onSwitchBranch;
 
   @override
   Widget build(BuildContext context) {
@@ -2275,6 +2321,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     final background = isUser ? colors.primary : colors.surfaceContainerHighest;
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
     final contentCard = message.isAssistant ? message.contentCard : null;
+    final branch = message.branch;
     final bubble = GestureDetector(
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
@@ -2296,11 +2343,26 @@ class _ProjectChatMessageBubble extends StatelessWidget {
             bottomRight: Radius.circular(isUser ? 4 : 16),
           ),
         ),
-        child: Text(
-          message.content,
-          style: Theme.of(
-            context,
-          ).textTheme.bodyMedium?.copyWith(color: foreground),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message.content,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: foreground),
+            ),
+            if (branch != null && onSwitchBranch != null) ...[
+              const SizedBox(height: 8),
+              _ProjectBranchNavigator(
+                branch: branch,
+                foreground: foreground,
+                switching: switchingBranch,
+                onPrevious: () => onSwitchBranch!(message, 'previous'),
+                onNext: () => onSwitchBranch!(message, 'next'),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -2320,6 +2382,55 @@ class _ProjectChatMessageBubble extends StatelessWidget {
           _ContentCardBubble(card: contentCard),
         ],
       ),
+    );
+  }
+}
+
+class _ProjectBranchNavigator extends StatelessWidget {
+  const _ProjectBranchNavigator({
+    required this.branch,
+    required this.foreground,
+    required this.switching,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final MobileProjectChatBranch branch;
+  final Color foreground;
+  final bool switching;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = foreground.withValues(alpha: 0.85);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Previous branch',
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          padding: EdgeInsets.zero,
+          onPressed: switching || !branch.canGoPrevious ? null : onPrevious,
+          icon: Icon(Icons.chevron_left, color: color, size: 20),
+        ),
+        Text(
+          '${branch.index}/${branch.total}',
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        IconButton(
+          tooltip: 'Next branch',
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          padding: EdgeInsets.zero,
+          onPressed: switching || !branch.canGoNext ? null : onNext,
+          icon: Icon(Icons.chevron_right, color: color, size: 20),
+        ),
+      ],
     );
   }
 }
@@ -2359,10 +2470,7 @@ class _ContentCardBubble extends StatelessWidget {
               Icon(icon, size: 18, color: colors.primary),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  card.title,
-                  style: theme.textTheme.titleSmall,
-                ),
+                child: Text(card.title, style: theme.textTheme.titleSmall),
               ),
             ],
           ),

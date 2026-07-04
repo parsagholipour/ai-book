@@ -438,27 +438,37 @@ class MobileProjectChatMessage {
     required this.content,
     required this.metadata,
     required this.createdAt,
+    this.parentId,
     this.operationId,
+    this.branch,
   });
 
   final String id;
   final String projectId;
+  final String? parentId;
   final String role;
   final String content;
   final String? operationId;
   final Map<String, dynamic> metadata;
+  final MobileProjectChatBranch? branch;
   final DateTime createdAt;
 
   factory MobileProjectChatMessage.fromJson(Map<String, dynamic> json) {
     return MobileProjectChatMessage(
       id: json['id'] as String,
       projectId: json['projectId'] as String,
+      parentId: json['parentId'] as String?,
       role: json['role'] as String,
       content: json['content'] as String,
       operationId: json['operationId'] as String?,
       metadata:
           (json['metadata'] as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{},
+      branch: json['branch'] == null
+          ? null
+          : MobileProjectChatBranch.fromJson(
+              json['branch'] as Map<String, dynamic>,
+            ),
       createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
@@ -477,6 +487,29 @@ class MobileProjectChatMessage {
     final raw = metadata['contentCard'];
     if (raw is! Map) return null;
     return MobileChatContentCard.fromJson(raw.cast<String, dynamic>());
+  }
+}
+
+class MobileProjectChatBranch {
+  const MobileProjectChatBranch({
+    required this.index,
+    required this.total,
+    required this.canGoPrevious,
+    required this.canGoNext,
+  });
+
+  final int index;
+  final int total;
+  final bool canGoPrevious;
+  final bool canGoNext;
+
+  factory MobileProjectChatBranch.fromJson(Map<String, dynamic> json) {
+    return MobileProjectChatBranch(
+      index: json['index'] as int? ?? 1,
+      total: json['total'] as int? ?? 1,
+      canGoPrevious: json['canGoPrevious'] as bool? ?? false,
+      canGoNext: json['canGoNext'] as bool? ?? false,
+    );
   }
 }
 

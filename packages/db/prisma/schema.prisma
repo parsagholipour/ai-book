@@ -568,18 +568,24 @@ model Page {
 }
 
 model ProjectChatMessage {
-  id          String                 @id @default(cuid())
-  projectId   String
-  role        ProjectChatMessageRole
-  content     String
-  operationId String?
-  metadata    Json
-  createdAt   DateTime               @default(now())
+  id            String                 @id @default(cuid())
+  projectId     String
+  parentId      String?
+  role          ProjectChatMessageRole
+  content       String
+  operationId   String?
+  metadata      Json
+  isActiveChild Boolean                @default(true)
+  createdAt     DateTime               @default(now())
 
   project   Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent    ProjectChatMessage? @relation("ProjectChatMessageBranches", fields: [parentId], references: [id], onDelete: SetNull)
+  children  ProjectChatMessage[] @relation("ProjectChatMessageBranches")
   operation BookEditOperation? @relation("ProjectChatOperationMessages", fields: [operationId], references: [id], onDelete: SetNull)
 
   @@index([projectId, createdAt])
+  @@index([projectId, parentId])
+  @@index([parentId])
   @@index([operationId])
 }
 

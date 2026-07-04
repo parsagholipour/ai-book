@@ -313,11 +313,20 @@ export type MobilePlanRevisionResponseDto = MobilePlanOperationDto;
 export type MobileProjectChatMessageDto = {
   id: string;
   projectId: string;
+  parentId: string | null;
   role: "user" | "assistant" | "system";
   content: string;
   operationId: string | null;
   metadata: MobileJsonValue;
+  branch: MobileProjectChatBranchDto | null;
   createdAt: string;
+};
+
+export type MobileProjectChatBranchDto = {
+  index: number;
+  total: number;
+  canGoPrevious: boolean;
+  canGoNext: boolean;
 };
 
 export type MobileBookEditOperationDto = {
@@ -490,16 +499,20 @@ type MobileImageRecord = {
 type MobileProjectChatMessageRecord = {
   id: string;
   projectId: string;
+  parentId?: string | null;
   role: string;
   content: string;
   operationId: string | null;
   metadata: unknown;
+  isActiveChild?: boolean;
   createdAt: Date;
 };
 
 type MobileBookEditOperationRecord = {
   id: string;
   projectId: string;
+  userMessageId?: string | null;
+  assistantMessageId?: string | null;
   kind: string;
   status: string;
   affectedPageIndexes: number[];
@@ -580,7 +593,15 @@ const mobilePlanRevisionBodySchema = z
 
 const mobileProjectChatMessageBodySchema = z
   .object({
-    message: z.string().trim().min(1).max(5000)
+    message: z.string().trim().min(1).max(5000),
+    editMessageId: z.string().trim().min(1).max(128).optional()
+  })
+  .strict();
+
+const mobileProjectChatBranchBodySchema = z
+  .object({
+    messageId: z.string().trim().min(1).max(128),
+    direction: z.enum(["previous", "next"])
   })
   .strict();
 
@@ -780,9 +801,20 @@ const mobileProjectChatMessageOpenApiBody = {
   type: "object",
   additionalProperties: false,
   properties: {
-    message: { type: "string", minLength: 1, maxLength: 5000 }
+    message: { type: "string", minLength: 1, maxLength: 5000 },
+    editMessageId: { type: "string", minLength: 1, maxLength: 128 }
   },
   required: ["message"]
+} as const;
+
+const mobileProjectChatBranchOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    messageId: { type: "string", minLength: 1, maxLength: 128 },
+    direction: { type: "string", enum: ["previous", "next"] }
+  },
+  required: ["messageId", "direction"]
 } as const;
 
 export type MobileProjectRoutesOptions = {
@@ -1790,7 +1822,24 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
       }
 
-      const pendingScope = await findPendingScopeClarification(id, parsed.data.message);
+      const editMessageId = parsed.data.editMessageId;
+      const editedMessage = editMessageId
+        ? await prisma.projectChatMessage.findFirst({
+            where: { id: editMessageId, projectId: id, role: "USER" }
+          })
+        : null;
+      if (editMessageId && !editedMessage) {
+        return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That chat message was not found.");
+      }
+
+      const activeMessages = await loadActiveProjectChatMessages(id);
+      const activeEditedMessage = editedMessage
+        ? activeMessages.find((message) => message.id === editedMessage.id)
+        : null;
+      const parentId = editedMessage
+        ? activeEditedMessage?.parentId ?? editedMessage.parentId ?? null
+        : activeProjectChatLeafId(activeMessages);
+      const pendingScope = editMessageId ? null : await findPendingScopeClarification(id, parsed.data.message);
       const currentScope = bookEditScopeFromMessage(parsed.data.message);
       const pendingResolutionScope = currentScope !== "none" ? currentScope : pendingScope?.scope ?? "none";
       // Busy-queued edits carry their full target already; a bare confirmation
@@ -1817,18 +1866,22 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           : messageWithScope(resolvedPendingEdit.request, resolvedPendingEdit.scope)
         : parsed.data.message;
 
-      const userMessage = await prisma.projectChatMessage.create({
-        data: {
-          projectId: id,
-          role: "USER",
-          content: parsed.data.message,
-          metadata: jsonInputValue(resolvedPendingEdit ? { resolvedPendingEdit } : {})
-        }
+      const userMessage = await createUserProjectChatMessage({
+        projectId: id,
+        parentId,
+        content: parsed.data.message,
+        metadata: resolvedPendingEdit
+          ? { resolvedPendingEdit }
+          : editedMessage
+            ? { editedFromMessageId: editedMessage.id }
+            : {},
+        selectSibling: Boolean(editedMessage)
       });
 
       if (pendingScope && !resolvesPendingScope && isPendingEditNudgeMessage(parsed.data.message)) {
         const replyMessage = await createAssistantChatMessage({
           projectId: id,
+          parentId: userMessage.id,
           content: pendingScopeRecoveryMessage(pendingScope),
           metadata: {
             pendingEdit: { request: pendingScope.request, clarification: "scope" },
@@ -1863,6 +1916,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
         const replyMessage = await createAssistantChatMessage({
           projectId: id,
+          parentId: userMessage.id,
           content:
             "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll run it. You can keep asking questions in the meantime.",
           metadata: {
@@ -1892,6 +1946,43 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         reply: serializeProjectChatMessage(outcome.reply),
         operation: outcome.operation ? serializeBookEditOperation(outcome.operation) : null
       } satisfies MobileProjectChatMessageResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/projects/:id/chat/branches",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileProjectChatBranchOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileProjectChatBranchBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose a chat branch.");
+      }
+      const project = await prisma.project.findFirst({ where: { id, userId: auth.user.id }, select: { id: true } });
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+
+      const switched = await switchProjectChatBranch({
+        projectId: id,
+        messageId: parsed.data.messageId,
+        direction: parsed.data.direction
+      });
+      if (!switched) {
+        return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That chat branch was not found.");
+      }
+      return loadProjectChatResponse(id);
     }
   );
 
@@ -2878,7 +2969,7 @@ async function loadProjectChatResponse(projectId: string): Promise<MobileProject
     prisma.projectChatMessage.findMany({
       where: { projectId },
       orderBy: { createdAt: "asc" },
-      take: 150
+      take: 500
     }),
     prisma.planVersion.findMany({
       where: { projectId },
@@ -2892,13 +2983,197 @@ async function loadProjectChatResponse(projectId: string): Promise<MobileProject
       include: { generationJob: { select: { id: true, status: true } } }
     })
   ]);
+  const activeChat = linearizeProjectChatMessages(messages);
+  const exposedMessages = activeChat.messages.slice(0, 150);
+  const activeMessageIds = new Set(activeChat.messages.map((message) => message.id));
   return {
-    messages: messages.map((message) => serializeProjectChatMessage(message)),
+    messages: exposedMessages.map((message) => serializeProjectChatMessage(message, activeChat.branches.get(message.id) ?? null)),
     plans: planVersions.map((planVersion) => serializePlan(planVersion)),
     operations: operations
       .filter((operation) => shouldExposeChatOperation(operation, planVersions))
+      .filter((operation) => shouldExposeChatOperationForBranch(operation, activeMessageIds))
       .map((operation) => serializeBookEditOperation(operation))
   };
+}
+
+async function loadActiveProjectChatMessages(projectId: string): Promise<MobileProjectChatMessageRecord[]> {
+  const messages = await prisma.projectChatMessage.findMany({
+    where: { projectId },
+    orderBy: { createdAt: "asc" },
+    take: 500
+  });
+  return linearizeProjectChatMessages(messages).messages;
+}
+
+function shouldExposeChatOperationForBranch(
+  operation: MobileBookEditOperationRecord,
+  activeMessageIds: Set<string>
+): boolean {
+  if (activeMessageIds.size === 0) {
+    return true;
+  }
+  const userMessageId = operation.userMessageId ?? null;
+  const assistantMessageId = operation.assistantMessageId ?? null;
+  if (!userMessageId && !assistantMessageId) {
+    return true;
+  }
+  return Boolean(
+    (userMessageId && activeMessageIds.has(userMessageId)) ||
+      (assistantMessageId && activeMessageIds.has(assistantMessageId))
+  );
+}
+
+function activeProjectChatLeafId(messages: MobileProjectChatMessageRecord[]): string | null {
+  return messages.at(-1)?.id ?? null;
+}
+
+function linearizeProjectChatMessages(messages: MobileProjectChatMessageRecord[]): {
+  messages: MobileProjectChatMessageRecord[];
+  branches: Map<string, MobileProjectChatBranchDto>;
+} {
+  const sorted = normalizeLegacyProjectChatParents([...messages].sort(compareProjectChatMessages));
+  const childrenByParent = new Map<string, MobileProjectChatMessageRecord[]>();
+  const branches = new Map<string, MobileProjectChatBranchDto>();
+
+  for (const message of sorted) {
+    const key = projectChatParentKey(message.parentId ?? null);
+    const siblings = childrenByParent.get(key) ?? [];
+    siblings.push(message);
+    childrenByParent.set(key, siblings);
+  }
+
+  for (const siblings of childrenByParent.values()) {
+    siblings.sort(compareProjectChatMessages);
+    if (siblings.length <= 1) {
+      continue;
+    }
+    siblings.forEach((message, index) => {
+      branches.set(message.id, {
+        index: index + 1,
+        total: siblings.length,
+        canGoPrevious: index > 0,
+        canGoNext: index < siblings.length - 1
+      });
+    });
+  }
+
+  const linearized: MobileProjectChatMessageRecord[] = [];
+  const visited = new Set<string>();
+  let next = selectedProjectChatChild(childrenByParent.get(projectChatParentKey(null)) ?? []);
+  while (next && !visited.has(next.id)) {
+    linearized.push(next);
+    visited.add(next.id);
+    next = selectedProjectChatChild(childrenByParent.get(projectChatParentKey(next.id)) ?? []);
+  }
+
+  return { messages: linearized, branches };
+}
+
+function normalizeLegacyProjectChatParents(
+  messages: MobileProjectChatMessageRecord[]
+): MobileProjectChatMessageRecord[] {
+  if (messages.length <= 1 || messages.some((message) => message.parentId != null)) {
+    return messages;
+  }
+  return messages.map((message, index) =>
+    index === 0
+      ? { ...message, parentId: null }
+      : { ...message, parentId: messages[index - 1]!.id, isActiveChild: message.isActiveChild ?? true }
+  );
+}
+
+function selectedProjectChatChild(siblings: MobileProjectChatMessageRecord[]): MobileProjectChatMessageRecord | null {
+  if (siblings.length === 0) {
+    return null;
+  }
+  return [...siblings].reverse().find((message) => message.isActiveChild !== false) ?? siblings.at(-1)!;
+}
+
+function compareProjectChatMessages(a: MobileProjectChatMessageRecord, b: MobileProjectChatMessageRecord): number {
+  const byCreatedAt = a.createdAt.getTime() - b.createdAt.getTime();
+  if (byCreatedAt !== 0) {
+    return byCreatedAt;
+  }
+  return a.id.localeCompare(b.id);
+}
+
+function projectChatParentKey(parentId: string | null): string {
+  return parentId ?? "__project_chat_root__";
+}
+
+async function createUserProjectChatMessage(options: {
+  projectId: string;
+  parentId: string | null;
+  content: string;
+  metadata: Record<string, unknown>;
+  selectSibling?: boolean;
+}): Promise<MobileProjectChatMessageRecord> {
+  const data = {
+    projectId: options.projectId,
+    parentId: options.parentId,
+    role: "USER" as const,
+    content: options.content,
+    metadata: jsonInputValue(options.metadata),
+    isActiveChild: true
+  };
+  if (!options.selectSibling) {
+    return prisma.projectChatMessage.create({ data });
+  }
+  return prisma.$transaction(async (tx) => {
+    await tx.projectChatMessage.updateMany({
+      where: projectChatSiblingWhere(options.projectId, options.parentId),
+      data: { isActiveChild: false }
+    });
+    return tx.projectChatMessage.create({ data });
+  });
+}
+
+async function switchProjectChatBranch(options: {
+  projectId: string;
+  messageId: string;
+  direction: "previous" | "next";
+}): Promise<boolean> {
+  const messages = await prisma.projectChatMessage.findMany({
+    where: { projectId: options.projectId },
+    orderBy: { createdAt: "asc" },
+    take: 500
+  });
+  const current = messages.find((message) => message.id === options.messageId);
+  if (!current) {
+    return false;
+  }
+  const parentId = current.parentId ?? null;
+  const siblings = messages
+    .filter((message) => (message.parentId ?? null) === parentId)
+    .sort(compareProjectChatMessages);
+  if (siblings.length <= 1) {
+    return true;
+  }
+  const currentIndex = siblings.findIndex((message) => message.id === current.id);
+  const targetIndex = options.direction === "previous" ? currentIndex - 1 : currentIndex + 1;
+  const target = siblings[targetIndex];
+  if (!target) {
+    return true;
+  }
+  await selectProjectChatSibling(options.projectId, parentId, target.id);
+  return true;
+}
+
+async function selectProjectChatSibling(projectId: string, parentId: string | null, messageId: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.projectChatMessage.updateMany({
+      where: projectChatSiblingWhere(projectId, parentId),
+      data: { isActiveChild: false }
+    });
+    await tx.projectChatMessage.updateMany({
+      where: { projectId, id: messageId },
+      data: { isActiveChild: true }
+    });
+  });
+}
+
+function projectChatSiblingWhere(projectId: string, parentId: string | null): { projectId: string; parentId: string | null } {
+  return { projectId, parentId };
 }
 
 function shouldExposeChatOperation(
@@ -2916,11 +3191,7 @@ async function findPendingScopeClarification(
   currentMessage: string
 ): Promise<{ request: string; scope: BookEditScope; clarification: "scope" | "busy" } | null> {
   const currentScope = bookEditScopeFromMessage(currentMessage);
-  const messages = await prisma.projectChatMessage.findMany({
-    where: { projectId },
-    orderBy: { createdAt: "desc" },
-    take: 24
-  });
+  const messages = (await loadActiveProjectChatMessages(projectId)).reverse().slice(0, 24);
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
     if (message.role === "USER" && jsonRecord(jsonRecord(message.metadata).resolvedPendingEdit).request !== undefined) {
@@ -3052,6 +3323,7 @@ async function handleProjectChatIntent(options: {
   if (intent.kind === "answer" || intent.kind === "clarify") {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
+      parentId: userMessageId,
       content: intent.assistantMessage,
       metadata: {
         intent,
@@ -3065,12 +3337,12 @@ async function handleProjectChatIntent(options: {
   }
 
   if (intent.kind === "show_content") {
-    const reply = await replyWithContentCard(project, intent);
+    const reply = await replyWithContentCard(project, intent, userMessageId);
     return { reply, operation: null };
   }
 
   if (intent.kind === "undo_last_edit") {
-    const reply = await undoLastBookEdit(project, intent);
+    const reply = await undoLastBookEdit(project, intent, userMessageId);
     return { reply, operation: null };
   }
 
@@ -3078,6 +3350,7 @@ async function handleProjectChatIntent(options: {
     if (!project.currentPlan) {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
+        parentId: userMessageId,
         content: "I need a saved book plan before I can revise it.",
         metadata: { intent, charged: false }
       });
@@ -3089,6 +3362,7 @@ async function handleProjectChatIntent(options: {
   if (project.status !== "COMPLETE") {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
+      parentId: userMessageId,
       content: "Book text edits are available after the latest book has finished generating.",
       metadata: { intent, charged: false }
     });
@@ -3140,6 +3414,7 @@ async function queueChatPlanRevision(options: {
     });
     const reply = await createAssistantChatMessage({
       projectId: project.id,
+      parentId: userMessageId,
       operationId: operation.id,
       content:
         project.currentPlan?.status === "APPROVED"
@@ -3158,7 +3433,7 @@ async function queueChatPlanRevision(options: {
       data: { status: "FAILED", error: errorMessage(error) }
     });
     if (error instanceof InsufficientCreditsError) {
-      const reply = await insufficientCreditsChatMessage(project.id, intent, error);
+      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
       return { reply, operation: null };
     }
     throw error;
@@ -3243,6 +3518,7 @@ async function queueChatBookReplanCopy(options: {
     });
     const reply = await createAssistantChatMessage({
       projectId: project.id,
+      parentId: userMessageId,
       operationId: operation.id,
       content: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged. This uses ${cost} credits.`,
       metadata: {
@@ -3270,7 +3546,7 @@ async function queueChatBookReplanCopy(options: {
       await prisma.project.update({ where: { id: copy.id }, data: { status: "FAILED" } }).catch(() => undefined);
     }
     if (error instanceof InsufficientCreditsError) {
-      const reply = await insufficientCreditsChatMessage(project.id, intent, error);
+      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
       return { reply, operation: null };
     }
     throw error;
@@ -3293,6 +3569,7 @@ async function queueChatBookEdit(options: {
   if (affectedPageIndexes.length === 0) {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
+      parentId: userMessageId,
       content:
         intent.kind === "chapter_regenerate"
           ? `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book. Which chapter or pages should I rewrite?`.replace("  ", " ")
@@ -3360,6 +3637,7 @@ async function queueChatBookEdit(options: {
     });
     const reply = await createAssistantChatMessage({
       projectId: project.id,
+      parentId: userMessageId,
       operationId: operation.id,
       content: operationQueuedMessage(intent.kind, affectedPageIndexes, cost, intent),
       metadata: { intent, charged: true, creditsCharged: cost }
@@ -3380,7 +3658,7 @@ async function queueChatBookEdit(options: {
     });
     await prisma.project.update({ where: { id: project.id }, data: { status: "COMPLETE" } }).catch(() => undefined);
     if (error instanceof InsufficientCreditsError) {
-      const reply = await insufficientCreditsChatMessage(project.id, intent, error);
+      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
       return { reply, operation: null };
     }
     throw error;
@@ -3445,13 +3723,15 @@ type MobileContentCard = {
  */
 async function replyWithContentCard(
   project: ProjectForChat,
-  intent: BookEditIntent
+  intent: BookEditIntent,
+  parentId: string
 ): Promise<MobileProjectChatMessageRecord> {
   const target = intent.contentTarget ?? { type: "outline" as const };
   const card = contentCardForTarget(project, target);
   if (!card) {
     return createAssistantChatMessage({
       projectId: project.id,
+      parentId,
       content:
         target.type === "page"
           ? "I couldn’t find that page yet. Pages appear here once they’re generated."
@@ -3463,6 +3743,7 @@ async function replyWithContentCard(
   }
   return createAssistantChatMessage({
     projectId: project.id,
+    parentId,
     content: intent.assistantMessage,
     metadata: { intent, charged: false, contentCard: card }
   });
@@ -3533,7 +3814,8 @@ const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE"
  */
 async function undoLastBookEdit(
   project: ProjectForChat,
-  intent: BookEditIntent
+  intent: BookEditIntent,
+  parentId: string
 ): Promise<MobileProjectChatMessageRecord> {
   const recentOperations = await prisma.bookEditOperation.findMany({
     where: {
@@ -3551,6 +3833,7 @@ async function undoLastBookEdit(
   if (!operation) {
     return createAssistantChatMessage({
       projectId: project.id,
+      parentId,
       content: "There’s no recent text edit I can undo on this book.",
       metadata: { intent, charged: false }
     });
@@ -3597,6 +3880,7 @@ async function undoLastBookEdit(
       : `pages ${restoredPageIndexes.join(", ")}`;
   return createAssistantChatMessage({
     projectId: project.id,
+    parentId,
     content: `Done - I restored ${pageText} to how they were before “${operation.request.slice(0, 120)}” and I’m refreshing the exports. Undo is free.`,
     metadata: {
       intent,
@@ -3608,6 +3892,7 @@ async function undoLastBookEdit(
 
 async function createAssistantChatMessage(options: {
   projectId: string;
+  parentId: string;
   content: string;
   metadata: Record<string, unknown>;
   operationId?: string | undefined;
@@ -3615,6 +3900,7 @@ async function createAssistantChatMessage(options: {
   return prisma.projectChatMessage.create({
     data: {
       projectId: options.projectId,
+      parentId: options.parentId,
       role: "ASSISTANT",
       content: options.content,
       ...(options.operationId ? { operationId: options.operationId } : {}),
@@ -3625,11 +3911,13 @@ async function createAssistantChatMessage(options: {
 
 async function insufficientCreditsChatMessage(
   projectId: string,
+  parentId: string,
   intent: BookEditIntent,
   error: InsufficientCreditsError
 ): Promise<MobileProjectChatMessageRecord> {
   return createAssistantChatMessage({
     projectId,
+    parentId,
     content: `You need ${error.requiredCredits} credits for that edit, but you have ${error.availableCredits}. Add credits, then send the edit again.`,
     metadata: {
       intent,
@@ -3643,14 +3931,19 @@ async function insufficientCreditsChatMessage(
   });
 }
 
-function serializeProjectChatMessage(message: MobileProjectChatMessageRecord): MobileProjectChatMessageDto {
+function serializeProjectChatMessage(
+  message: MobileProjectChatMessageRecord,
+  branch: MobileProjectChatBranchDto | null = null
+): MobileProjectChatMessageDto {
   return {
     id: message.id,
     projectId: message.projectId,
+    parentId: message.parentId ?? null,
     role: message.role.toLowerCase() as MobileProjectChatMessageDto["role"],
     content: message.content,
     operationId: message.operationId,
     metadata: jsonValue(message.metadata),
+    branch,
     createdAt: message.createdAt.toISOString()
   };
 }

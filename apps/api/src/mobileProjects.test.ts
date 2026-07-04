@@ -30,7 +30,7 @@ const mockPrisma = vi.hoisted(() => ({
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   page: { findMany: vi.fn() },
   planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
-  projectChatMessage: { create: vi.fn(), findMany: vi.fn() },
+  projectChatMessage: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: { create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   generationJob: { count: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
@@ -212,23 +212,39 @@ describe("mobile project routes", () => {
       const record = {
         id: `chat-${mockProjectChatMessages.length + 1}`,
         projectId: data.projectId,
+        parentId: data.parentId ?? null,
         role: data.role,
         content: data.content,
         operationId: data.operationId ?? null,
         metadata: data.metadata ?? {},
+        isActiveChild: data.isActiveChild ?? true,
         createdAt: new Date(`2026-06-15T12:${String(mockProjectChatMessages.length).padStart(2, "0")}:00.000Z`)
       };
       mockProjectChatMessages.push(record);
       return record;
     });
-    mockPrisma.projectChatMessage.findMany.mockImplementation(async ({ where, orderBy, take }: { where: { projectId: string }; orderBy?: { createdAt: "asc" | "desc" }; take?: number }) => {
-      const rows = mockProjectChatMessages.filter((message) => message.projectId === where.projectId);
+    mockPrisma.projectChatMessage.findFirst.mockImplementation(async ({ where }: { where: Record<string, any> }) => {
+      return mockProjectChatMessages.find((message) => matchesProjectChatWhere(message, where)) ?? null;
+    });
+    mockPrisma.projectChatMessage.findMany.mockImplementation(async ({ where, orderBy, take }: { where: Record<string, any>; orderBy?: { createdAt: "asc" | "desc" }; take?: number }) => {
+      const rows = mockProjectChatMessages.filter((message) => matchesProjectChatWhere(message, where));
       const sorted = [...rows].sort((a, b) =>
         orderBy?.createdAt === "desc"
-          ? b.createdAt.getTime() - a.createdAt.getTime()
-          : a.createdAt.getTime() - b.createdAt.getTime()
+          ? b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id)
+          : a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
       );
       return typeof take === "number" ? sorted.slice(0, take) : sorted;
+    });
+    mockPrisma.projectChatMessage.updateMany.mockImplementation(async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
+      let count = 0;
+      for (const message of mockProjectChatMessages) {
+        if (!matchesProjectChatWhere(message, where)) {
+          continue;
+        }
+        Object.assign(message, data);
+        count += 1;
+      }
+      return { count };
     });
     mockPrisma.planVersion.findMany.mockImplementation(async ({ where, orderBy, take }: { where: { projectId: string }; orderBy?: { version: "asc" | "desc" }; take?: number }) => {
       const rows = mockPlanVersions.filter((planVersion) => planVersion.projectId === where.projectId);
@@ -2080,6 +2096,159 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("branches project chat history when editing a previous user message", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockProjectChatMessages.push(
+      {
+        id: "chat-old-user",
+        projectId: "project-1",
+        parentId: null,
+        role: "USER",
+        content: "What is this plan about?",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      },
+      {
+        id: "chat-old-assistant",
+        projectId: "project-1",
+        parentId: "chat-old-user",
+        role: "ASSISTANT",
+        content: "This plan is about a rabbit race.",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:01:00.000Z")
+      },
+      {
+        id: "chat-old-follow-up",
+        projectId: "project-1",
+        parentId: "chat-old-assistant",
+        role: "USER",
+        content: "Make it warmer.",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:02:00.000Z")
+      },
+      {
+        id: "chat-old-follow-up-reply",
+        projectId: "project-1",
+        parentId: "chat-old-follow-up",
+        role: "ASSISTANT",
+        content: "I’ll revise the plan now.",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:03:00.000Z")
+      }
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "PLAN_READY",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord({ status: "DRAFT", approvedAt: null }),
+        pages: []
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { editMessageId: "chat-old-user", message: "What is this plan really about?" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0]).toMatchObject({
+      id: "chat-5",
+      parentId: null,
+      role: "user",
+      content: "What is this plan really about?",
+      branch: { index: 2, total: 2, canGoPrevious: true, canGoNext: false }
+    });
+    expect(body.messages[1]).toMatchObject({
+      parentId: "chat-5",
+      role: "assistant"
+    });
+    expect(body.messages.map((message: any) => message.id)).not.toContain("chat-old-follow-up");
+    expect(mockProjectChatMessages.find((message) => message.id === "chat-old-user")?.isActiveChild).toBe(false);
+    await app.close();
+  });
+
+  it("switches between project chat sibling branches", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockProjectChatMessages.push(
+      {
+        id: "chat-old-user",
+        projectId: "project-1",
+        parentId: null,
+        role: "USER",
+        content: "What is this plan about?",
+        operationId: null,
+        metadata: {},
+        isActiveChild: false,
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      },
+      {
+        id: "chat-old-assistant",
+        projectId: "project-1",
+        parentId: "chat-old-user",
+        role: "ASSISTANT",
+        content: "This plan is about a rabbit race.",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:01:00.000Z")
+      },
+      {
+        id: "chat-new-user",
+        projectId: "project-1",
+        parentId: null,
+        role: "USER",
+        content: "What is this plan really about?",
+        operationId: null,
+        metadata: { editedFromMessageId: "chat-old-user" },
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:02:00.000Z")
+      },
+      {
+        id: "chat-new-assistant",
+        projectId: "project-1",
+        parentId: "chat-new-user",
+        role: "ASSISTANT",
+        content: "This plan is about a warmer rabbit race.",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:03:00.000Z")
+      }
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/branches",
+      headers: bearer("token-a"),
+      payload: { messageId: "chat-new-user", direction: "previous" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.messages.map((message: any) => message.id)).toEqual(["chat-old-user", "chat-old-assistant"]);
+    expect(body.messages[0].branch).toMatchObject({ index: 1, total: 2, canGoPrevious: false, canGoNext: true });
+    expect(mockProjectChatMessages.find((message) => message.id === "chat-old-user")?.isActiveChild).toBe(true);
+    expect(mockProjectChatMessages.find((message) => message.id === "chat-new-user")?.isActiveChild).toBe(false);
+    await app.close();
+  });
+
   it("queues soft plan-stage project chat change requests as plan revisions", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
@@ -3290,6 +3459,22 @@ function failedPlanRevisionOperationRecord(overrides: Record<string, unknown> = 
     appliedAt: null,
     ...overrides
   };
+}
+
+function matchesProjectChatWhere(message: Record<string, any>, where: Record<string, any>): boolean {
+  if (where.projectId !== undefined && message.projectId !== where.projectId) {
+    return false;
+  }
+  if (where.id !== undefined && message.id !== where.id) {
+    return false;
+  }
+  if (where.role !== undefined && message.role !== where.role) {
+    return false;
+  }
+  if (Object.prototype.hasOwnProperty.call(where, "parentId") && (message.parentId ?? null) !== where.parentId) {
+    return false;
+  }
+  return true;
 }
 
 function generatedPages() {

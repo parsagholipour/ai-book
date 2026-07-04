@@ -22,12 +22,17 @@ class ProjectChatScreen extends ConsumerStatefulWidget {
 
 class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   final _controller = TextEditingController();
+  final _editController = TextEditingController();
   final _scrollController = ScrollController();
   bool _sending = false;
+  bool _editing = false;
+  bool _switchingBranch = false;
+  String? _editingMessageId;
 
   @override
   void dispose() {
     _controller.dispose();
+    _editController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -80,6 +85,18 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                       for (final message in chat.messages) ...[
                         _ProjectMessageBubble(
                           message: message,
+                          editController: _editController,
+                          editing: _editingMessageId == message.id,
+                          submittingEdit:
+                              _editing && _editingMessageId == message.id,
+                          switchingBranch: _switchingBranch,
+                          onStartEdit: message.isUser
+                              ? () => _startEdit(message)
+                              : null,
+                          onCancelEdit: _cancelEdit,
+                          onSubmitEdit: _submitEdit,
+                          onSwitchBranch: (direction) =>
+                              _switchBranch(message, direction),
                           onOpenPaywall: message.hasInsufficientCredits
                               ? () => _openPaywall(projectValue.asData?.value)
                               : null,
@@ -92,7 +109,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
             ),
             _ProjectChatComposer(
               controller: _controller,
-              sending: _sending,
+              sending: _sending || _editing,
               onSend: _send,
             ),
           ],
@@ -143,6 +160,89 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() => _sending = false);
       _controller.text = message;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  void _startEdit(MobileProjectChatMessage message) {
+    if (_sending || _editing) return;
+    setState(() {
+      _editingMessageId = message.id;
+      _editController.text = message.content;
+      _editController.selection = TextSelection.collapsed(
+        offset: _editController.text.length,
+      );
+    });
+  }
+
+  void _cancelEdit() {
+    setState(() {
+      _editingMessageId = null;
+      _editController.clear();
+    });
+  }
+
+  Future<void> _submitEdit() async {
+    final messageId = _editingMessageId;
+    final message = _editController.text.trim();
+    if (messageId == null || message.isEmpty || _editing) return;
+    setState(() => _editing = true);
+    try {
+      final result = await ref
+          .read(projectsRepositoryProvider)
+          .editProjectChatMessage(
+            projectId: widget.projectId,
+            messageId: messageId,
+            message: message,
+          );
+      ref.invalidate(projectChatProvider(widget.projectId));
+      ref.invalidate(projectDetailProvider(widget.projectId));
+      ref.invalidate(projectStatusProvider(widget.projectId));
+      ref.invalidate(projectsProvider);
+      ref.invalidate(billingProvider);
+      if (!mounted) return;
+      setState(() {
+        _editing = false;
+        _editingMessageId = null;
+        _editController.clear();
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      if (result.operation != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.operation!.currentAction)),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _editing = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _switchBranch(
+    MobileProjectChatMessage message,
+    String direction,
+  ) async {
+    if (_switchingBranch) return;
+    setState(() => _switchingBranch = true);
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .switchProjectChatBranch(
+            projectId: widget.projectId,
+            messageId: message.id,
+            direction: direction,
+          );
+      ref.invalidate(projectChatProvider(widget.projectId));
+      if (!mounted) return;
+      setState(() => _switchingBranch = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _switchingBranch = false);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
@@ -264,28 +364,64 @@ class _OperationBubble extends StatelessWidget {
 }
 
 class _ProjectMessageBubble extends StatelessWidget {
-  const _ProjectMessageBubble({required this.message, this.onOpenPaywall});
+  const _ProjectMessageBubble({
+    required this.message,
+    required this.editController,
+    required this.editing,
+    required this.submittingEdit,
+    required this.switchingBranch,
+    required this.onSwitchBranch,
+    this.onStartEdit,
+    this.onCancelEdit,
+    this.onSubmitEdit,
+    this.onOpenPaywall,
+  });
 
   final MobileProjectChatMessage message;
+  final TextEditingController editController;
+  final bool editing;
+  final bool submittingEdit;
+  final bool switchingBranch;
+  final ValueChanged<String> onSwitchBranch;
+  final VoidCallback? onStartEdit;
+  final VoidCallback? onCancelEdit;
+  final VoidCallback? onSubmitEdit;
   final VoidCallback? onOpenPaywall;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final isUser = message.isUser;
+    final branch = message.branch;
+    final background = editing
+        ? colors.surfaceContainerHighest
+        : isUser
+        ? colors.primary
+        : colors.surfaceContainerHighest;
+    final foreground = editing
+        ? colors.onSurface
+        : isUser
+        ? colors.onPrimary
+        : colors.onSurface;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
-        onLongPressStart: (details) => showMessageActionsMenu(
-          context: context,
-          position: details.globalPosition,
-          message: message.content,
-        ),
+        onLongPressStart: (details) {
+          if (isUser && onStartEdit != null) {
+            onStartEdit!();
+            return;
+          }
+          showMessageActionsMenu(
+            context: context,
+            position: details.globalPosition,
+            message: message.content,
+          );
+        },
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: isUser ? colors.primary : colors.surfaceContainerHighest,
+              color: background,
               borderRadius: BorderRadius.circular(18),
             ),
             child: Padding(
@@ -293,12 +429,54 @@ class _ProjectMessageBubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    message.content,
-                    style: TextStyle(
-                      color: isUser ? colors.onPrimary : colors.onSurface,
+                  if (editing)
+                    _InlineMessageEditor(
+                      controller: editController,
+                      submitting: submittingEdit,
+                      onCancel: onCancelEdit,
+                      onSubmit: onSubmitEdit,
+                    )
+                  else
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            message.content,
+                            style: TextStyle(color: foreground),
+                          ),
+                        ),
+                        if (isUser && onStartEdit != null) ...[
+                          const SizedBox(width: 4),
+                          IconButton(
+                            tooltip: 'Edit message',
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                            padding: EdgeInsets.zero,
+                            onPressed: onStartEdit,
+                            icon: Icon(
+                              Icons.edit_outlined,
+                              size: 18,
+                              color: foreground,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ),
+                  if (branch != null) ...[
+                    const SizedBox(height: 8),
+                    _BranchNavigator(
+                      branch: branch,
+                      foreground: foreground,
+                      switching: switchingBranch,
+                      onPrevious: () => onSwitchBranch('previous'),
+                      onNext: () => onSwitchBranch('next'),
+                    ),
+                  ],
                   if (onOpenPaywall != null) ...[
                     const SizedBox(height: 10),
                     FilledButton.icon(
@@ -313,6 +491,111 @@ class _ProjectMessageBubble extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _InlineMessageEditor extends StatelessWidget {
+  const _InlineMessageEditor({
+    required this.controller,
+    required this.submitting,
+    this.onCancel,
+    this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final bool submitting;
+  final VoidCallback? onCancel;
+  final VoidCallback? onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: controller,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 6,
+          textInputAction: TextInputAction.newline,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            TextButton(
+              onPressed: submitting ? null : onCancel,
+              child: const Text('Cancel'),
+            ),
+            FilledButton.icon(
+              onPressed: submitting ? null : onSubmit,
+              icon: submitting
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.send_outlined),
+              label: const Text('Save & Submit'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _BranchNavigator extends StatelessWidget {
+  const _BranchNavigator({
+    required this.branch,
+    required this.foreground,
+    required this.switching,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final MobileProjectChatBranch branch;
+  final Color foreground;
+  final bool switching;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = foreground.withValues(alpha: 0.85);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'Previous branch',
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          padding: EdgeInsets.zero,
+          onPressed: switching || !branch.canGoPrevious ? null : onPrevious,
+          icon: Icon(Icons.chevron_left, color: color, size: 20),
+        ),
+        Text(
+          '${branch.index}/${branch.total}',
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        IconButton(
+          tooltip: 'Next branch',
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+          padding: EdgeInsets.zero,
+          onPressed: switching || !branch.canGoNext ? null : onNext,
+          icon: Icon(Icons.chevron_right, color: color, size: 20),
+        ),
+      ],
     );
   }
 }

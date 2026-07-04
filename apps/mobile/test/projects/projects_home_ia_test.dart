@@ -349,6 +349,24 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileProjectChatSendResult> editProjectChatMessage({
+    required String projectId,
+    required String messageId,
+    required String message,
+  }) {
+    return sendProjectChatMessage(projectId: projectId, message: message);
+  }
+
+  @override
+  Future<MobileProjectChat> switchProjectChatBranch({
+    required String projectId,
+    required String messageId,
+    required String direction,
+  }) {
+    return getProjectChat(projectId);
+  }
+
+  @override
   Future<ProjectDeletionReceipt> deleteProject(String id) async {
     return ProjectDeletionReceipt(
       deletedProjectId: id,
