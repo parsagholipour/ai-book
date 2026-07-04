@@ -9,6 +9,7 @@ import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/generation_progress_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
+import '../../shared/api/api_error.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -30,6 +31,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final hasSession = currentSession != null;
 
       if (authState.isLoading && currentSession == null) {
+        return isAuthRoute || isSplash ? null : '/splash';
+      }
+
+      if (authState.hasError && currentSession == null) {
         return isAuthRoute || isSplash ? null : '/splash';
       }
 
@@ -112,11 +117,27 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return router;
 });
 
-class SplashScreen extends StatelessWidget {
+class SplashScreen extends ConsumerWidget {
   const SplashScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authControllerProvider);
+    final error = authState.error;
+
+    if (error != null) {
+      return Scaffold(
+        body: Center(
+          child: AppErrorState(
+            title: 'Connection problem',
+            message: userFacingError(error),
+            actionLabel: 'Retry',
+            onRetry: () => ref.invalidate(authControllerProvider),
+          ),
+        ),
+      );
+    }
+
     return const Scaffold(
       body: Center(
         child: SizedBox.square(

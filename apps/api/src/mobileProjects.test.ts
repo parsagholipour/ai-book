@@ -2357,6 +2357,82 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("queues a completed-book English language version as a new copy", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        title: "Encontros em Lisboa",
+        language: "pt",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-replan", projectId: "project-copy", type: "REPLAN_BOOK" })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Now generate the English version" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "book_replan",
+      affectedPageIndexes: []
+    });
+    expect(mockPrisma.bookEditOperation.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          classifier: expect.objectContaining({
+            kind: "book_replan",
+            targetLanguage: "en"
+          })
+        })
+      })
+    );
+    expect(mockPrisma.project.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          title: "Encontros em Lisboa (Revised)",
+          language: "en",
+          status: "EDITING",
+          mediaSettings: expect.objectContaining({
+            mobile: expect.objectContaining({
+              revisionOfProjectId: "project-1",
+              revisionTargetLanguage: "en"
+            })
+          })
+        })
+      })
+    );
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-copy",
+        type: "REPLAN_BOOK",
+        payload: expect.objectContaining({
+          sourceProjectId: "project-1",
+          sourcePlanId: "plan-1",
+          targetLanguage: "en",
+          intentKind: "book_replan"
+        })
+      })
+    );
+    expect(mockPrisma.project.update).not.toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "EDITING" }
+    });
+    expect(body.reply.content).toContain("English copy");
+    await app.close();
+  });
+
   it("revises an approved plan from project chat when no generation job is active", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(

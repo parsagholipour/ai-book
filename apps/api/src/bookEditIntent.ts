@@ -1,5 +1,6 @@
 import {
   generateJsonWithRetry,
+  normalizeProjectLanguage,
   type TextModelAdapter
 } from "@book-maker/core";
 import { z } from "zod";
@@ -58,6 +59,8 @@ export type BookEditIntent = {
   affectedChapterIndex?: number | null;
   /** Set for show_content intents. */
   contentTarget?: ShowContentTarget | null;
+  /** Target book language for language-version replans. */
+  targetLanguage?: string | null;
 };
 
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
@@ -82,7 +85,8 @@ const classifierSchema = z
     scope: z.enum(["none", "explicit_pages", "matching_pages", "all_pages"]).default("none"),
     impact: z.enum(["small_text", "style_rewrite", "structural_replan"]).default("small_text"),
     clarification: z.enum(["none", "scope"]).default("none"),
-    affectedChapterIndex: z.number().int().positive().nullable().default(null)
+    affectedChapterIndex: z.number().int().positive().nullable().default(null),
+    targetLanguage: z.string().trim().min(2).max(40).nullable().default(null)
   })
   .strict();
 
@@ -102,7 +106,8 @@ export async function classifyProjectChatMessage(options: {
   if (
     heuristic.kind === "show_content" ||
     heuristic.kind === "undo_last_edit" ||
-    heuristic.kind === "chapter_regenerate"
+    heuristic.kind === "chapter_regenerate" ||
+    (heuristic.kind === "book_replan" && !!heuristic.targetLanguage)
   ) {
     return normalizeIntentForStage(heuristic, options.stage);
   }
@@ -132,6 +137,7 @@ export async function classifyProjectChatMessage(options: {
             "Return page_rewrite for same-structure page or whole-book style/content rewrites.",
             "Return chapter_regenerate when the user asks to rewrite, regenerate, or redo one specific chapter, and set affectedChapterIndex to that chapter number.",
             "Return book_replan for main character, species, title, premise, audience, ending, chapter-structure, length, visual identity, or structure changes on a finished book.",
+            "Return book_replan with targetLanguage when the user asks for a generated, rewritten, translated, or new language version/copy of a finished book.",
             "Use scope all_pages for whole book, all pages, every page, everywhere, globally, throughout, or across the book.",
             "Use scope matching_pages for exact replacements when matching pages should be found from the existing text.",
             "Use affectedPageIndexes only when the target page is explicit or strongly inferable.",
@@ -189,10 +195,12 @@ export function classifyWithHeuristics(
   const explicitScope: BookEditScope = explicitPages.length > 0 ? "explicit_pages" : broadScope ? "all_pages" : "none";
   const replacement = replacementTermsFromMessage(message);
   const matchedReplacementPages = replacement ? pageIndexesMatchingText(replacement.from, pages) : [];
+  const targetLanguage = targetLanguageFromLanguageVersionRequest(message);
+  const languageVersionRequest = targetLanguage !== null;
   const hasEditVerb =
     /\b(change|edit|rewrite|revise|fix|replace|rename|swap|switch|remove|delete|add|insert|update|make|turn|shorten|expand|polish|regenerate|move|reorder|restructure|redo|rework)\b/i.test(
       message
-    );
+    ) || languageVersionRequest;
   const asksQuestion = /\?$|^(what|why|how|can you explain|tell me|summari[sz]e|where|when)\b/i.test(message.trim());
   const scopeOnly = isBookEditScopeOnlyMessage(message);
   const contentTarget = showContentTargetFromMessage(message);
@@ -304,7 +312,8 @@ export function classifyWithHeuristics(
           : "I’ll revise the book plan with that direction.",
       scope: explicitScope,
       impact: structural ? "structural_replan" : rewrite ? "style_rewrite" : "small_text",
-      clarification: "none"
+      clarification: "none",
+      ...(targetLanguage ? { targetLanguage } : {})
     };
   }
 
@@ -360,6 +369,20 @@ export function classifyWithHeuristics(
       scope: "none",
       impact: "small_text",
       clarification: "none"
+    };
+  }
+
+  if (languageVersionRequest) {
+    return {
+      kind: "book_replan",
+      confidence: 0.91,
+      reasoning: "The user asked to create a generated language version of the completed book.",
+      affectedPageIndexes: [],
+      assistantMessage: `I’ll create a new ${languageDisplayName(targetLanguage)} copy and regenerate the book there. This book stays unchanged.`,
+      scope: "all_pages",
+      impact: "structural_replan",
+      clarification: "none",
+      targetLanguage
     };
   }
 
@@ -461,6 +484,82 @@ function normalizeIntentForStage(intent: BookEditIntent, stage: BookEditProjectS
     };
   }
   return bounded;
+}
+
+const targetLanguageAliases: Record<string, string> = {
+  english: "en",
+  spanish: "es",
+  french: "fr",
+  german: "de",
+  italian: "it",
+  portuguese: "pt",
+  dutch: "nl",
+  turkish: "tr",
+  russian: "ru",
+  arabic: "ar",
+  farsi: "fa",
+  persian: "fa",
+  hindi: "hi",
+  chinese: "zh",
+  mandarin: "zh",
+  japanese: "ja",
+  korean: "ko",
+  hebrew: "he",
+  greek: "el",
+  thai: "th",
+  swedish: "sv",
+  norwegian: "no",
+  danish: "da",
+  polish: "pl",
+  ukrainian: "uk"
+};
+
+const targetLanguageNamePattern = Object.keys(targetLanguageAliases)
+  .sort((a, b) => b.length - a.length)
+  .map(escapeRegExp)
+  .join("|");
+
+function targetLanguageFromLanguageVersionRequest(message: string): string | null {
+  const patterns = [
+    new RegExp(
+      `\\b(?:generate|create|make|regenerate|rewrite|translate|convert|build|produce)\\b.{0,100}\\b(${targetLanguageNamePattern})\\s+(?:version|copy|edition|translation)\\b`,
+      "iu"
+    ),
+    new RegExp(
+      `\\b(?:generate|create|make|regenerate|rewrite|translate|convert|build|produce)\\b.{0,100}\\b(?:in|to|into)\\s+(${targetLanguageNamePattern})\\b`,
+      "iu"
+    ),
+    new RegExp(
+      `\\b(?:translate|convert|rewrite|regenerate)\\b.{0,100}\\b(?:to|into|in)\\s+(${targetLanguageNamePattern})\\b`,
+      "iu"
+    ),
+    new RegExp(
+      `\\b(?:change|switch|set|make|turn|translate|convert)\\b.{0,80}\\blanguage\\b.{0,20}\\b(?:to|into|as|in|should\\s+be|:)\\s+(${targetLanguageNamePattern})\\b`,
+      "iu"
+    ),
+    new RegExp(
+      `\\blanguage\\s+(?:to|into|as|in|should\\s+be|:)\\s+(${targetLanguageNamePattern})\\b`,
+      "iu"
+    )
+  ];
+
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    const rawLanguage = match?.[1]?.toLowerCase();
+    const alias = rawLanguage ? targetLanguageAliases[rawLanguage] : undefined;
+    if (alias) {
+      return normalizeProjectLanguage(alias);
+    }
+  }
+  return null;
+}
+
+function languageDisplayName(language: string | null): string {
+  return language === "en" ? "English" : language ?? "translated";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**

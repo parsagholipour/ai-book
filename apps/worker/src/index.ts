@@ -2596,13 +2596,14 @@ async function applyBookEdit(job: Job) {
 }
 
 async function replanBook(job: Job) {
-  const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId } = job.data as {
+  const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId, targetLanguage } = job.data as {
     projectId: string;
     operationId: string;
     request: string;
     planId?: string;
     sourceProjectId?: string;
     sourcePlanId?: string | null;
+    targetLanguage?: string | null;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
   await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
@@ -2621,7 +2622,9 @@ async function replanBook(job: Job) {
   if (!planVersion) {
     throw new Error("Current plan not found");
   }
-  const input = inputWithMessageMediaPreferences(inputForPlanVersion(sourceProject, planVersion.inputSnapshot), request);
+  const requestedLanguage = cleanTargetLanguage(targetLanguage);
+  const sourceInput = inputWithMessageMediaPreferences(inputForPlanVersion(sourceProject, planVersion.inputSnapshot), request);
+  const input = requestedLanguage ? { ...sourceInput, language: requestedLanguage } : sourceInput;
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
@@ -2671,6 +2674,7 @@ async function replanBook(job: Job) {
         currentPlanId: newPlan.id,
         status: "GENERATING",
         title: revised.title,
+        language: input.language,
         mediaSettings: planMediaSettingsSnapshot(input)
       }
     });
@@ -4779,6 +4783,11 @@ function safePathPart(value: string): string {
 
 function jsonInputValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(safeJsonStringify(value)) as Prisma.InputJsonValue;
+}
+
+function cleanTargetLanguage(language: string | null | undefined): string | null {
+  const trimmed = language?.trim();
+  return trimmed ? trimmed.slice(0, 40) : null;
 }
 
 function buildStepTemplate(jobName: string): JobStep[] {

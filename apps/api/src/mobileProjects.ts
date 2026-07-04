@@ -2593,8 +2593,10 @@ async function createReplanProjectCopy(options: {
   sourceProject: ProjectForChat;
   request: string;
   operationId: string;
+  targetLanguage?: string | null;
 }): Promise<MobileProjectRecord> {
   const source = options.sourceProject;
+  const targetLanguage = cleanTargetLanguage(options.targetLanguage);
   const sourceMediaSettings = mediaSettingsSchema.parse(source.mediaSettings);
   const mobileMetadata = jsonRecord(sourceMediaSettings.mobile);
   const copyMediaSettings = mediaSettingsSchema.parse({
@@ -2604,7 +2606,8 @@ async function createReplanProjectCopy(options: {
       revisionOfProjectId: source.id,
       revisionOperationId: options.operationId,
       revisionRequest: options.request,
-      revisionSource: "project_chat_book_replan"
+      revisionSource: "project_chat_book_replan",
+      ...(targetLanguage ? { revisionTargetLanguage: targetLanguage } : {})
     }
   });
   const copy = (await prisma.project.create({
@@ -2620,7 +2623,7 @@ async function createReplanProjectCopy(options: {
       targetPages: source.targetPages,
       complexity: source.complexity,
       temperature: source.temperature,
-      language: source.language,
+      language: targetLanguage ?? source.language,
       mediaSettings: jsonInputValue(copyMediaSettings),
       status: "EDITING",
       ...(source.templateId ? { templateId: source.templateId } : {})
@@ -3171,6 +3174,7 @@ async function queueChatBookReplanCopy(options: {
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const cost = bookEditCreditCost(intent.kind, 0, project);
+  const targetLanguage = cleanTargetLanguage(intent.targetLanguage);
   const operation = await prisma.bookEditOperation.create({
     data: {
       projectId: project.id,
@@ -3198,10 +3202,17 @@ async function queueChatBookReplanCopy(options: {
       metadata: {
         intent,
         sourceProjectId: project.id,
-        operationId: operation.id
+        operationId: operation.id,
+        ...(targetLanguage ? { targetLanguage } : {})
       }
     });
-    copy = await createReplanProjectCopy({ userId, sourceProject: project, request: message, operationId: operation.id });
+    copy = await createReplanProjectCopy({
+      userId,
+      sourceProject: project,
+      request: message,
+      operationId: operation.id,
+      targetLanguage
+    });
     spend = reservation ? await commitReservedCredits(reservation.id) : null;
     const job = await enqueueGenerationJob({
       projectId: copy.id,
@@ -3213,6 +3224,7 @@ async function queueChatBookReplanCopy(options: {
         request: message,
         affectedPageIndexes: [],
         intentKind: intent.kind,
+        ...(targetLanguage ? { targetLanguage } : {}),
         ...(spend ? { billingLedgerEntryId: spend.id } : {})
       }
     });
@@ -3224,7 +3236,7 @@ async function queueChatBookReplanCopy(options: {
         creditsCharged: cost,
         classifier: jsonInputValue({
           ...intent,
-          replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id }
+          replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id, ...(targetLanguage ? { targetLanguage } : {}) }
         })
       },
       include: { generationJob: { select: { id: true, status: true } } }
@@ -3232,12 +3244,12 @@ async function queueChatBookReplanCopy(options: {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       operationId: operation.id,
-      content: `I created a new copy and I’ll rebuild the plan and book there. This book stays unchanged. This uses ${cost} credits.`,
+      content: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged. This uses ${cost} credits.`,
       metadata: {
         intent,
         charged: true,
         creditsCharged: cost,
-        replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id }
+        replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id, ...(targetLanguage ? { targetLanguage } : {}) }
       }
     });
     await prisma.bookEditOperation.update({
@@ -3841,6 +3853,15 @@ function operationQueuedMessage(kind: BookEditIntentKind, affectedPageIndexes: n
   return kind === "page_rewrite"
     ? `I’ll rewrite ${pageText} and refresh the exports. This uses ${credits} credits.`
     : `I’ll edit ${pageText} and refresh the exports. This uses ${credits} credits.`;
+}
+
+function cleanTargetLanguage(language: string | null | undefined): string | null {
+  const trimmed = language?.trim();
+  return trimmed ? trimmed.slice(0, 40) : null;
+}
+
+function languageDisplayName(language: string): string {
+  return language === "en" ? "English" : language;
 }
 
 function currentActionForEditOperation(operation: MobileBookEditOperationRecord): string {

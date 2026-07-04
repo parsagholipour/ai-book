@@ -49,6 +49,29 @@ void main() {
     expect(find.text('Create your account'), findsNothing);
   });
 
+  testWidgets('restore network errors stay on a retryable splash screen', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testApp(
+        authRepository: FakeAuthRepository(
+          initialSession: fakeSession(),
+          restoreError: const ApiException(
+            code: 'NETWORK_ERROR',
+            message: 'Check your connection and try again.',
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connection problem'), findsOneWidget);
+    expect(find.text('Check your connection and try again.'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Welcome back'), findsNothing);
+  });
+
   testWidgets('failed sign in keeps the email field filled', (tester) async {
     await tester.pumpWidget(
       testApp(
@@ -107,14 +130,24 @@ Widget testApp({
 }
 
 class FakeAuthRepository implements AuthRepository {
-  FakeAuthRepository({AuthSession? initialSession, this.signInError})
-    : _session = initialSession;
+  FakeAuthRepository({
+    AuthSession? initialSession,
+    this.restoreError,
+    this.signInError,
+  }) : _session = initialSession;
 
   AuthSession? _session;
+  final Object? restoreError;
   final Object? signInError;
 
   @override
-  Future<AuthSession?> restoreSession() async => _session;
+  Future<AuthSession?> restoreSession() async {
+    final error = restoreError;
+    if (error != null) {
+      throw error;
+    }
+    return _session;
+  }
 
   @override
   Future<AuthSession> signIn({

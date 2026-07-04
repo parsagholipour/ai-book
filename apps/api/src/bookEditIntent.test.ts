@@ -128,6 +128,16 @@ describe("book edit intent heuristics", () => {
     expect(intent.impact).toBe("structural_replan");
   });
 
+  it("routes completed-book language version requests to replan with a target language", () => {
+    const intent = classifyWithHeuristics("Now generate the English version", "complete", pages);
+
+    expect(intent.kind).toBe("book_replan");
+    expect(intent.kind).not.toBe("answer");
+    expect(intent.targetLanguage).toBe("en");
+    expect(intent.scope).toBe("all_pages");
+    expect(intent.impact).toBe("structural_replan");
+  });
+
   it("routes main character changes to replan", () => {
     const intent = classifyWithHeuristics("Change the character of rabbit with a fly.", "complete", pages);
 
