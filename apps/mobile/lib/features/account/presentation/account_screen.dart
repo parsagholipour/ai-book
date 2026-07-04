@@ -5,6 +5,9 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../auth/presentation/auth_controller.dart';
+import '../../billing/data/billing_repository.dart';
+import '../../billing/domain/billing_models.dart';
+import '../../billing/presentation/billing_paywall.dart';
 import '../data/account_repository.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
@@ -20,10 +23,17 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(appConfigProvider);
+    final billing = ref.watch(billingProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Account')),
       body: AppScreenLayout(
         children: [
+          _AccountCreditsCard(
+            billing: billing,
+            onAddCredits: _openBillingPaywall,
+            onRetry: () => ref.invalidate(billingProvider),
+          ),
+          const SizedBox(height: 12),
           AccountPrivacyControls(
             config: config,
             requestingDeletion: _requestingDeletion,
@@ -34,6 +44,18 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _openBillingPaywall() async {
+    await showBillingPaywall(
+      context,
+      title: 'Add book credits',
+      message:
+          'Credits are used when you approve a full book or unlock finished exports.',
+    );
+    if (mounted) {
+      ref.invalidate(billingProvider);
+    }
   }
 
   Future<void> _requestAccountDeletion() async {
@@ -74,6 +96,70 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         setState(() => _requestingDeletion = false);
       }
     }
+  }
+}
+
+class _AccountCreditsCard extends StatelessWidget {
+  const _AccountCreditsCard({
+    required this.billing,
+    required this.onAddCredits,
+    required this.onRetry,
+  });
+
+  final AsyncValue<MobileBilling> billing;
+  final VoidCallback onAddCredits;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final balance = billing.when(
+      data: (value) => '${value.credits.available} credits available',
+      loading: () => 'Checking your credit balance',
+      error: (error, stackTrace) => userFacingError(error),
+    );
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: colors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Book credits',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(balance, style: TextStyle(color: colors.onSurfaceVariant)),
+            const SizedBox(height: 12),
+            billing.hasError
+                ? OutlinedButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  )
+                : FilledButton.icon(
+                    onPressed: onAddCredits,
+                    icon: const Icon(Icons.add_card_outlined),
+                    label: const Text('Add credits'),
+                  ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../billing/presentation/billing_paywall.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'creation_chat_controller.dart';
@@ -438,12 +439,24 @@ class _DrawerFooter extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 12),
-                  child: Text(
-                    creditLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: colors.onSurfaceVariant,
+                  child: TextButton(
+                    onPressed: () {
+                      final navigator = Navigator.of(context);
+                      navigator.pop();
+                      showBillingPaywall(
+                        navigator.context,
+                        title: 'Add book credits',
+                        message:
+                            'Credits are used when you approve a full book or unlock finished exports.',
+                      );
+                    },
+                    child: Text(
+                      creditLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),
