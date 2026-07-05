@@ -34,9 +34,12 @@ import {
   loadConfig,
   normalizePlanPageTargets,
   optimizeImageForStorage,
+  PREMIUM_COVER_IMAGE_MODEL,
+  PREMIUM_FALLBACK_IMAGE_MODEL,
   publicAssetUrl,
   resolveImageModelSelection,
   resolveTextModelSelection,
+  RoutingTextModelAdapter,
   resolvePublicImageUrl,
   reviewPageDraftLocally,
   normalizeVoiceProfile,
@@ -2038,7 +2041,14 @@ async function generateCover(job: Job) {
   }
 
   const strategy = strategyForInput(input);
-  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const coverImageSelection = coverImageSelectionForInput(input);
+  const baseProviders = createProviders(config, input);
+  const providers = createLoggedProviders(
+    job,
+    coverImageSelection ? { ...baseProviders, image: createImageAdapterForSelection(coverImageSelection) } : baseProviders,
+    input,
+    { imageSelection: coverImageSelection }
+  );
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const metadata = coverMetadataFromProject(project, plan);
   const characterReferences = await ensureCharacterReferenceAssets({
@@ -3857,7 +3867,12 @@ type LoggedTextModel = {
   model: string;
 };
 
-function createLoggedProviders(job: Job, providers: ProviderSet, input?: CreateProjectInput | undefined): ProviderSet {
+function createLoggedProviders(
+  job: Job,
+  providers: ProviderSet,
+  input?: CreateProjectInput | undefined,
+  options?: { imageSelection?: ImageModelSelection | undefined }
+): ProviderSet {
   const logger = createRunLogger(job);
   const generationJobId = job.data.generationJobId as string | undefined;
   const projectId = job.data.projectId as string | undefined;
@@ -3865,9 +3880,20 @@ function createLoggedProviders(job: Job, providers: ProviderSet, input?: CreateP
   return {
     text: new LoggingTextModelAdapter(providers.text, logger, generationJobId, projectId, textModel),
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
-    image: createLoggedImageAdapter(providers.image, logger, generationJobId, input),
+    image: createLoggedImageAdapter(providers.image, logger, generationJobId, input, options?.imageSelection),
     embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId)
   };
+}
+
+/**
+ * Premium-tier covers render once per book, so they use the strongest image
+ * model. Explicit operator image selections are respected as-is.
+ */
+function coverImageSelectionForInput(input: CreateProjectInput): ImageModelSelection | undefined {
+  if (config.MOCK_AI || input.mediaSettings.imageModel || input.mediaSettings.modelTier !== "premium") {
+    return undefined;
+  }
+  return { provider: "gemini", model: PREMIUM_COVER_IMAGE_MODEL };
 }
 
 function loggedTextModel(input?: CreateProjectInput | undefined): LoggedTextModel {
@@ -3945,14 +3971,15 @@ function createLoggedImageAdapter(
   primaryAdapter: ImageAdapter,
   logger: RunLogger,
   generationJobId: string | undefined,
-  input?: CreateProjectInput | undefined
+  input?: CreateProjectInput | undefined,
+  selectionOverride?: ImageModelSelection | undefined
 ): ImageAdapter {
   if (!input || config.MOCK_AI) {
     return new LoggingImageAdapter(primaryAdapter, logger, generationJobId);
   }
 
-  const primary = resolveImageModelSelection(config, input);
-  const fallback = imageFallbackSelection(primary);
+  const primary = selectionOverride ?? resolveImageModelSelection(config, input);
+  const fallback = imageFallbackSelection(primary, input);
   return new FallbackImageAdapter({
     primary: {
       provider: primary.provider,
@@ -3981,11 +4008,15 @@ function createLoggedImageAdapter(
   });
 }
 
-function imageFallbackSelection(primary: ImageModelSelection): ImageModelSelection {
+function imageFallbackSelection(primary: ImageModelSelection, input?: CreateProjectInput | undefined): ImageModelSelection {
   if (primary.provider === "alibaba") {
     return { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
   }
-  return { provider: "alibaba", model: config.ALIBABA_IMAGE_MODEL };
+  // Premium-tier books fall back to Alibaba's higher-quality image model so
+  // a Gemini outage doesn't silently downgrade a premium book.
+  const alibabaModel =
+    input?.mediaSettings.modelTier === "premium" ? PREMIUM_FALLBACK_IMAGE_MODEL : config.ALIBABA_IMAGE_MODEL;
+  return { provider: "alibaba", model: alibabaModel };
 }
 
 function createImageAdapterForSelection(selection: ImageModelSelection): ImageAdapter {
@@ -4011,14 +4042,23 @@ class LoggingTextModelAdapter implements TextModelAdapter {
     private readonly textModel: LoggedTextModel
   ) {}
 
+  private textModelForPurpose(purpose: string | undefined): LoggedTextModel {
+    if (this.delegate instanceof RoutingTextModelAdapter) {
+      const selection = this.delegate.selectionForPurpose(purpose);
+      return { provider: selection.provider, model: selection.model };
+    }
+    return this.textModel;
+  }
+
   async generateText(options: GenerateTextOptions) {
     const callId = randomUUID();
     const requestAt = await this.logger.append("text.generateText.request", { callId, request: logTextRequest(options) });
+    const textModel = this.textModelForPurpose(options.purpose);
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
       generationJobId: this.generationJobId,
-      provider: this.textModel.provider,
-      model: this.textModel.model,
+      provider: textModel.provider,
+      model: textModel.model,
       purpose: options.purpose ?? "text.generateText",
       operation: "text.generateText",
       callId,
@@ -4072,11 +4112,12 @@ class LoggingTextModelAdapter implements TextModelAdapter {
   async generateJson<T>(options: GenerateJsonOptions<T>) {
     const callId = randomUUID();
     const requestAt = await this.logger.append("text.generateJson.request", { callId, request: logTextRequest(options) });
+    const textModel = this.textModelForPurpose(options.purpose);
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
       generationJobId: this.generationJobId,
-      provider: this.textModel.provider,
-      model: this.textModel.model,
+      provider: textModel.provider,
+      model: textModel.model,
       purpose: options.purpose ?? "text.generateJson",
       operation: "text.generateJson",
       callId,
@@ -4143,11 +4184,12 @@ class LoggingTextModelAdapter implements TextModelAdapter {
   async *streamText(options: GenerateTextOptions) {
     const callId = randomUUID();
     const requestAt = await this.logger.append("text.streamText.request", { callId, request: logTextRequest(options) });
+    const textModel = this.textModelForPurpose(options.purpose);
     const liveUsage = await beginLiveTextUsage({
       projectId: options.projectId ?? this.projectId,
       generationJobId: this.generationJobId,
-      provider: this.textModel.provider,
-      model: this.textModel.model,
+      provider: textModel.provider,
+      model: textModel.model,
       purpose: options.purpose ?? "text.streamText",
       operation: "text.streamText",
       callId,

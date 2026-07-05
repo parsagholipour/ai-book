@@ -1456,7 +1456,8 @@ describe("mobile project routes", () => {
         fullIllustrations: false,
         generationStrategy: "auto",
         parallelPageGeneration: true,
-        draftCandidates: 1
+        draftCandidates: 1,
+        modelTier: "fast"
       })
     });
     expect(balanced).toMatchObject({
@@ -1464,16 +1465,22 @@ describe("mobile project routes", () => {
       targetPages: 28,
       complexity: 5,
       temperature: 0.65,
-      mediaSettings: expect.objectContaining({ finalReview: true, draftCandidates: 1 })
+      mediaSettings: expect.objectContaining({ finalReview: true, draftCandidates: 1, modelTier: "balanced" })
     });
     expect(premium).toMatchObject({
       category: "BUSINESS",
       targetPages: 24,
       complexity: 6,
       temperature: 0.55,
-      mediaSettings: expect.objectContaining({ finalReview: true, draftCandidates: 2, parallelPageGeneration: false })
+      mediaSettings: expect.objectContaining({
+        finalReview: true,
+        draftCandidates: 2,
+        parallelPageGeneration: false,
+        modelTier: "premium"
+      })
     });
-    expect(JSON.stringify({ fast, balanced, premium })).not.toMatch(/provider|model/);
+    // Mobile inputs carry a tier name, never a concrete provider/model selection.
+    expect(JSON.stringify({ fast, balanced, premium })).not.toMatch(/provider|textModel|imageModel/);
   });
 
   it("lists and reads only the signed-in user's mobile project DTOs", async () => {

@@ -9,9 +9,13 @@ import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
 import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeTextModelAdapter } from "./fake.js";
 import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
 import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, TextModelAdapter } from "./types.js";
+import { modelTierImageSelection, modelTierTextFallbackSelection, modelTierTextSelections } from "./modelTiers.js";
+import { RoutingTextModelAdapter } from "./textRouting.js";
+import { FallbackTextModelAdapter } from "./textFallback.js";
 import type {
   CreateProjectInput,
   ImageModelSelection,
+  ModelTier,
   TextModelSelection,
   TextModelThinkingEffort
 } from "../schemas/book.js";
@@ -168,12 +172,38 @@ export function imageModelOptions(config: AppConfig): ImageModelProviderOption[]
   ];
 }
 
+export type ResolvedTextModelSelections = {
+  prose: TextModelSelection;
+  mechanical: TextModelSelection;
+  /** Set only when the selections came from a quality tier (not an explicit model choice). */
+  tier?: ModelTier;
+};
+
+export function resolveTextModelSelections(config: AppConfig, input?: CreateProjectInput): ResolvedTextModelSelections {
+  const explicit = input?.mediaSettings.textModel;
+  if (explicit) {
+    return { prose: explicit, mechanical: explicit };
+  }
+  const tier = input?.mediaSettings.modelTier;
+  if (tier) {
+    return { ...modelTierTextSelections(tier, config), tier };
+  }
+  const legacy: TextModelSelection = { provider: "deepseek", model: config.DEEPSEEK_MODEL };
+  return { prose: legacy, mechanical: legacy };
+}
+
 export function resolveTextModelSelection(config: AppConfig, input?: CreateProjectInput): TextModelSelection {
-  return input?.mediaSettings.textModel ?? { provider: "deepseek", model: config.DEEPSEEK_MODEL };
+  return resolveTextModelSelections(config, input).prose;
 }
 
 export function resolveImageModelSelection(config: AppConfig, input?: CreateProjectInput): ImageModelSelection {
-  return input?.mediaSettings.imageModel ?? { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
+  const explicit = input?.mediaSettings.imageModel;
+  if (explicit) {
+    return explicit;
+  }
+  const tier = input?.mediaSettings.modelTier;
+  const tierSelection = tier ? modelTierImageSelection(tier) : undefined;
+  return tierSelection ?? { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
 }
 
 export function createProviders(config: AppConfig, input?: CreateProjectInput): ProviderSet {
@@ -186,7 +216,7 @@ export function createProviders(config: AppConfig, input?: CreateProjectInput): 
     };
   }
 
-  const textModel = createTextModelAdapter(config, resolveTextModelSelection(config, input));
+  const textModel = createRoutedTextModel(config, resolveTextModelSelections(config, input));
   return {
     text: textModel,
     research: new GeminiResearchAdapter({
@@ -241,6 +271,59 @@ export function createFastRoutingTextModel(config: AppConfig): TextModelAdapter 
 
 export function createLanguageDetectionTextModel(config: AppConfig): TextModelAdapter {
   return createFastRoutingTextModel(config);
+}
+
+function createRoutedTextModel(config: AppConfig, selections: ResolvedTextModelSelections): TextModelAdapter {
+  const prose = createTierTextAdapter(config, selections.prose, selections.tier);
+  if (sameTextSelection(selections.prose, selections.mechanical)) {
+    return prose;
+  }
+  const mechanical = createTierTextAdapter(config, selections.mechanical, selections.tier);
+  return new RoutingTextModelAdapter(
+    { selection: selections.prose, adapter: prose },
+    { selection: selections.mechanical, adapter: mechanical }
+  );
+}
+
+function createTierTextAdapter(
+  config: AppConfig,
+  selection: TextModelSelection,
+  tier: ModelTier | undefined
+): TextModelAdapter {
+  const adapter = createTextModelAdapter(config, selection);
+  // Only tier-derived Gemini selections get a cross-provider fallback;
+  // explicit operator choices keep exact single-model behavior.
+  if (!tier || selection.provider !== "gemini" || !config.DEEPSEEK_API_KEY) {
+    return adapter;
+  }
+  const fallbackSelection = modelTierTextFallbackSelection(selection, config);
+  return new FallbackTextModelAdapter({
+    primary: { selection, adapter },
+    fallback: {
+      selection: fallbackSelection,
+      adapter: () => createTextModelAdapter(config, fallbackSelection)
+    },
+    shouldFallback: (error) => !isStopOrAbortError(error)
+  });
+}
+
+function sameTextSelection(a: TextModelSelection, b: TextModelSelection): boolean {
+  return (
+    a.provider === b.provider &&
+    a.model === b.model &&
+    a.thinkingBudget === b.thinkingBudget &&
+    a.thinkingEnabled === b.thinkingEnabled &&
+    a.thinkingEffort === b.thinkingEffort
+  );
+}
+
+function isStopOrAbortError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const name = error.name.toLowerCase();
+  const message = error.message.toLowerCase();
+  return name.includes("abort") || name.includes("stoprequested") || message.includes("stop requested") || message.includes("aborted");
 }
 
 function createTextModelAdapter(config: AppConfig, selection: TextModelSelection): TextModelAdapter {

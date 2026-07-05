@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   CREDIT_COSTS,
+  PROVIDER_COST_ASSUMPTIONS_USD,
   buildMarginEstimate,
   estimateFullBookCreditCost,
   estimateInteriorImageCount,
-  estimateProviderCostForProject
+  estimateProviderCostForProject,
+  providerCostAssumptionsForInput
 } from "./billing.js";
 import { createProjectSchema } from "./schemas/book.js";
 
@@ -63,6 +65,45 @@ describe("billing credit assumptions", () => {
     expect(estimate.assumptions.includesPremiumReview).toBe(true);
     expect(estimate.lineItems).toContainEqual(
       expect.objectContaining({ code: "PREMIUM_REVIEW", credits: CREDIT_COSTS.premiumReview })
+    );
+  });
+
+  it("adjusts provider cost assumptions per model tier without changing credit prices", () => {
+    const mediaSettings = {
+      fullIllustrations: true,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "business",
+      finalReview: true,
+      toneProfile: "confident"
+    };
+    const inputForTier = (modelTier?: "fast" | "balanced" | "premium") =>
+      createProjectSchema.parse({
+        prompt: "Create a premium guide about pricing consulting retainers.",
+        category: "BUSINESS",
+        subcategory: "Lead Magnet Ebook",
+        targetPages: 24,
+        mediaSettings: { ...mediaSettings, ...(modelTier ? { modelTier } : {}) }
+      });
+
+    expect(providerCostAssumptionsForInput(inputForTier())).toEqual(PROVIDER_COST_ASSUMPTIONS_USD);
+    expect(providerCostAssumptionsForInput(inputForTier("balanced"))).toEqual(PROVIDER_COST_ASSUMPTIONS_USD);
+    expect(providerCostAssumptionsForInput(inputForTier("fast"))).toMatchObject({ textPerPage: 0.008 });
+    expect(providerCostAssumptionsForInput(inputForTier("premium"))).toMatchObject({
+      textPerPage: 0.05,
+      imageGeneration: 0.067,
+      coverIncluded: 0.134
+    });
+
+    const fastEstimate = estimateProviderCostForProject(inputForTier("fast"));
+    const balancedEstimate = estimateProviderCostForProject(inputForTier("balanced"));
+    const premiumEstimate = estimateProviderCostForProject(inputForTier("premium"));
+    expect(fastEstimate.estimatedUsd).toBeLessThan(balancedEstimate.estimatedUsd);
+    expect(premiumEstimate.estimatedUsd).toBeGreaterThan(balancedEstimate.estimatedUsd);
+
+    // Credit charges are tier-independent: tiers change what we spend, not what users pay.
+    expect(estimateFullBookCreditCost(inputForTier("premium")).totalCredits).toBe(
+      estimateFullBookCreditCost(inputForTier("fast")).totalCredits
     );
   });
 

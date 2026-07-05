@@ -13,8 +13,10 @@ import {
   imageModelOptions,
   resolveImageModelSelection,
   resolveTextModelSelection,
+  resolveTextModelSelections,
   textModelOptions
 } from "./factory.js";
+import { RoutingTextModelAdapter } from "./textRouting.js";
 
 describe("text model provider selection", () => {
   it("defaults to the configured DeepSeek model", () => {
@@ -176,6 +178,69 @@ describe("text model provider selection", () => {
     );
   });
 
+  it("maps quality tiers to prose/mechanical/image model selections", () => {
+    const config = testConfig({});
+
+    expect(resolveTextModelSelections(config, tierProjectInput("premium"))).toEqual({
+      prose: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
+      mechanical: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 },
+      tier: "premium"
+    });
+    expect(resolveTextModelSelections(config, tierProjectInput("balanced"))).toEqual({
+      prose: { provider: "deepseek", model: "deepseek-v4-pro" },
+      mechanical: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+      tier: "balanced"
+    });
+    expect(resolveTextModelSelections(config, tierProjectInput("fast"))).toEqual({
+      prose: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+      mechanical: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
+      tier: "fast"
+    });
+    expect(resolveImageModelSelection(config, tierProjectInput("premium"))).toEqual({
+      provider: "gemini",
+      model: "gemini-3.1-flash-image"
+    });
+    expect(resolveImageModelSelection(config, tierProjectInput("balanced"))).toEqual({
+      provider: "gemini",
+      model: config.GEMINI_IMAGE_MODEL
+    });
+  });
+
+  it("wraps tiered providers in a routing adapter only when models differ", () => {
+    const config = testConfig({});
+
+    expect(createProviders(config, tierProjectInput("premium")).text).toBeInstanceOf(RoutingTextModelAdapter);
+    expect(createProviders(config, tierProjectInput("balanced")).text).toBeInstanceOf(RoutingTextModelAdapter);
+    expect(createProviders(config, tierProjectInput("fast")).text).toBeInstanceOf(DeepSeekAdapter);
+    expect(createProviders(config).text).toBeInstanceOf(DeepSeekAdapter);
+  });
+
+  it("lets an explicit text model selection override the tier", () => {
+    const config = testConfig({});
+    const input = tierProjectInput("premium", { provider: "deepseek", model: "deepseek-writer" });
+
+    expect(resolveTextModelSelections(config, input)).toEqual({
+      prose: { provider: "deepseek", model: "deepseek-writer" },
+      mechanical: { provider: "deepseek", model: "deepseek-writer" }
+    });
+    expect(createProviders(config, input).text).toBeInstanceOf(DeepSeekAdapter);
+  });
+
+  it("keeps legacy inputs without a tier on the single default model", () => {
+    const config = testConfig({ DEEPSEEK_MODEL: "deepseek-live" });
+    const legacy = resolveTextModelSelections(config);
+
+    expect(legacy.prose).toEqual({ provider: "deepseek", model: "deepseek-live" });
+    expect(legacy.mechanical).toEqual({ provider: "deepseek", model: "deepseek-live" });
+    expect(legacy.tier).toBeUndefined();
+  });
+
+  it("keeps mock mode on fake adapters for tiered inputs", () => {
+    const providers = createProviders(testConfig({ MOCK_AI: "true" }), tierProjectInput("premium"));
+
+    expect(providers.text).toBeInstanceOf(FakeTextModelAdapter);
+  });
+
   it("uses selected image model and exposes configured image options", () => {
     const config = testConfig({ GEMINI_IMAGE_MODEL: "gemini-3-pro-image-preview" });
     const input = projectInput(
@@ -236,6 +301,25 @@ function projectInput(
       textModel,
       ...(imageModel ? { imageModel } : {}),
       toneProfile: "neutral"
+    }
+  });
+}
+
+function tierProjectInput(
+  modelTier: "fast" | "balanced" | "premium",
+  textModel?: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba"; model: string }
+) {
+  return createProjectSchema.parse({
+    prompt: "A practical book about choosing the right generation model for long-form writing.",
+    mediaSettings: {
+      fullIllustrations: true,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      toneProfile: "neutral",
+      modelTier,
+      ...(textModel ? { textModel } : {})
     }
   });
 }

@@ -471,6 +471,7 @@ export const subcategorySchema = z.preprocess(
 export const bookGenerationStrategyIdSchema = z.enum(BOOK_GENERATION_STRATEGY_IDS);
 export const bookGenerationStrategySelectionSchema = z.enum(["auto", ...BOOK_GENERATION_STRATEGY_IDS]);
 export const textModelThinkingEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "max"]);
+export const modelTierSchema = z.enum(["fast", "balanced", "premium"]);
 export const textModelSelectionSchema = z.object({
   provider: z.enum(["deepseek", "deepinfra", "gemini", "alibaba", "openai-compatible"]),
   model: z.string().min(1).max(120),
@@ -517,6 +518,12 @@ export const mediaSettingsSchema = z.object({
   imageModel: imageModelSelectionSchema.optional(),
   generationStrategy: bookGenerationStrategySelectionSchema.optional(),
   textModel: textModelSelectionSchema.optional(),
+  /**
+   * Quality tier that routes prose vs mechanical generation phases to
+   * different models. Explicit textModel/imageModel selections take
+   * precedence; unset keeps the legacy single-model behavior.
+   */
+  modelTier: modelTierSchema.optional(),
   audienceAgeRange: audienceAgeRangeSchema.optional(),
   toneProfile: toneProfileSchema,
   /**
@@ -813,6 +820,7 @@ export const finalBookQaSchema = z.preprocess(
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 export type MediaSettings = z.infer<typeof mediaSettingsSchema>;
 export type TextModelThinkingEffort = z.infer<typeof textModelThinkingEffortSchema>;
+export type ModelTier = z.infer<typeof modelTierSchema>;
 export type TextModelSelection = z.infer<typeof textModelSelectionSchema>;
 export type ImageModelSelection = z.infer<typeof imageModelSelectionSchema>;
 export type CoverTemplateId = z.infer<typeof coverTemplateIdSchema>;

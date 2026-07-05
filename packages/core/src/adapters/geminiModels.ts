@@ -18,6 +18,13 @@ const BASE_GEMINI_IMAGE_MODEL_OPTIONS: GeminiImageModelOption[] = [
     description: "Best for books with recurring characters."
   },
   {
+    model: "gemini-3.1-flash-image",
+    label: "Gemini 3.1 Flash Image",
+    costUsd: 0.067,
+    supportsReferenceImages: true,
+    description: "Higher quality with stronger character consistency (premium tier default)."
+  },
+  {
     model: IMAGEN_4_FAST_IMAGE_MODEL,
     label: "Imagen 4 Fast",
     costUsd: 0.02,

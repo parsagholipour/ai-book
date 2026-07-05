@@ -95,7 +95,7 @@ const qualityPresetOptions = <CreationPresetOption>[
   CreationPresetOption(
     value: 'premium',
     title: 'Extra polish',
-    subtitle: 'More review for a public-facing draft.',
+    subtitle: 'Our most advanced AI models, plus extra review and polish.',
     icon: Icons.workspace_premium_outlined,
   ),
 ];

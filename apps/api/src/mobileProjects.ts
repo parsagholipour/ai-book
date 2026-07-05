@@ -17,6 +17,7 @@ import {
   mediaSettingsSchema,
   type BookPlan,
   type CreateProjectInput,
+  type ModelTier,
   type TextModelAdapter,
   type ToneProfile
 } from "@book-maker/core";
@@ -722,6 +723,7 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     finalReview: boolean;
     draftCandidates: 1 | 2;
     parallelPageGeneration?: boolean;
+    modelTier: ModelTier;
   }
 > = {
   fast: {
@@ -730,7 +732,8 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     temperature: 0.65,
     finalReview: false,
     draftCandidates: 1,
-    parallelPageGeneration: true
+    parallelPageGeneration: true,
+    modelTier: "fast"
   },
   balanced: {
     label: "Balanced",
@@ -738,7 +741,8 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     temperature: 0.65,
     finalReview: true,
     draftCandidates: 1,
-    parallelPageGeneration: true
+    parallelPageGeneration: true,
+    modelTier: "balanced"
   },
   premium: {
     label: "Premium",
@@ -746,7 +750,8 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     temperature: 0.55,
     finalReview: true,
     draftCandidates: 2,
-    parallelPageGeneration: false
+    parallelPageGeneration: false,
+    modelTier: "premium"
   }
 };
 
@@ -2526,7 +2531,8 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     toneProfile: bookType.toneProfile,
     generationStrategy: AUTO_BOOK_GENERATION_STRATEGY_ID,
     parallelPageGeneration: quality.parallelPageGeneration,
-    draftCandidates: quality.draftCandidates
+    draftCandidates: quality.draftCandidates,
+    modelTier: quality.modelTier
   });
   const projectInput = createProjectSchema.parse({
     title: parsed.title ?? UNTITLED_MOBILE_PROJECT_TITLE,

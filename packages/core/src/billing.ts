@@ -1,4 +1,4 @@
-import type { CreateProjectInput } from "./schemas/book.js";
+import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
 
 export const CREDIT_USD_VALUE = 0.01;
 export const STANDARD_EXPORT_CREDIT_AMOUNT = 1_000;
@@ -27,6 +27,33 @@ export const PROVIDER_COST_ASSUMPTIONS_USD = {
   premiumReview: 0.12,
   exportCompile: 0.03
 } as const;
+
+export type ProviderCostAssumptions = { [K in keyof typeof PROVIDER_COST_ASSUMPTIONS_USD]: number };
+
+/**
+ * Per-tier provider cost assumptions. Fast books draft on flash-class models;
+ * premium books pay for gemini-2.5-pro prose (with best-of candidates and
+ * bounded thinking), the 3.1 flash image model, and a pro cover — while the
+ * mechanical review/QA phases run on cheap flash models in every tier.
+ */
+const MODEL_TIER_COST_ASSUMPTIONS_USD: Partial<Record<ModelTier, ProviderCostAssumptions>> = {
+  fast: {
+    ...PROVIDER_COST_ASSUMPTIONS_USD,
+    textPerPage: 0.008
+  },
+  premium: {
+    ...PROVIDER_COST_ASSUMPTIONS_USD,
+    textPerPage: 0.05,
+    imageGeneration: 0.067,
+    coverIncluded: 0.134,
+    premiumReview: 0.05
+  }
+};
+
+export function providerCostAssumptionsForInput(input: CreateProjectInput): ProviderCostAssumptions {
+  const tier = input.mediaSettings.modelTier;
+  return (tier && MODEL_TIER_COST_ASSUMPTIONS_USD[tier]) || PROVIDER_COST_ASSUMPTIONS_USD;
+}
 
 export const DEFAULT_BILLING_PRODUCTS = [
   {
@@ -113,7 +140,7 @@ export type CreditCostEstimate = {
 
 export type ProviderCostEstimate = {
   estimatedUsd: number;
-  assumptions: typeof PROVIDER_COST_ASSUMPTIONS_USD & {
+  assumptions: ProviderCostAssumptions & {
     estimatedInteriorImages: number;
     includesCover: boolean;
     includesPremiumReview: boolean;
@@ -213,21 +240,22 @@ export function estimateFullBookCreditCost(input: CreateProjectInput): CreditCos
 }
 
 export function estimateProviderCostForProject(input: CreateProjectInput): ProviderCostEstimate {
+  const assumptions = providerCostAssumptionsForInput(input);
   const estimatedInteriorImages = estimateInteriorImageCount(input);
   const includesCover = input.mediaSettings.includeCover === true;
   const includesPremiumReview = isPremiumProject(input);
   const estimatedUsd =
-    PROVIDER_COST_ASSUMPTIONS_USD.textBase +
-    input.targetPages * PROVIDER_COST_ASSUMPTIONS_USD.textPerPage +
-    estimatedInteriorImages * PROVIDER_COST_ASSUMPTIONS_USD.imageGeneration +
-    (includesCover ? PROVIDER_COST_ASSUMPTIONS_USD.coverIncluded : 0) +
-    (includesPremiumReview ? PROVIDER_COST_ASSUMPTIONS_USD.premiumReview : 0) +
-    PROVIDER_COST_ASSUMPTIONS_USD.exportCompile;
+    assumptions.textBase +
+    input.targetPages * assumptions.textPerPage +
+    estimatedInteriorImages * assumptions.imageGeneration +
+    (includesCover ? assumptions.coverIncluded : 0) +
+    (includesPremiumReview ? assumptions.premiumReview : 0) +
+    assumptions.exportCompile;
 
   return {
     estimatedUsd: roundUsd(estimatedUsd),
     assumptions: {
-      ...PROVIDER_COST_ASSUMPTIONS_USD,
+      ...assumptions,
       estimatedInteriorImages,
       includesCover,
       includesPremiumReview
