@@ -948,6 +948,76 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('replan copy reference switches to the copied output', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(
+          draftId: 'draft-done',
+          title: 'Completed book',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+          activeProjectId: 'project-1',
+          outputs: [
+            _creationOutput(
+              projectId: 'project-1',
+              title: 'Original book',
+              sequence: 1,
+            ),
+            _creationOutput(
+              projectId: 'project-2',
+              title: 'English book',
+              sequence: 2,
+            ),
+          ],
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(status: 'complete', plan: _approvedPlan()),
+    );
+    projects.chatMessages.add(
+      MobileProjectChatMessage(
+        id: 'chat-replan-copy-1',
+        projectId: 'project-1',
+        role: 'assistant',
+        content: 'I created a new copy of your book.',
+        metadata: const {
+          'replanCopy': {
+            'sourceProjectId': 'project-1',
+            'targetProjectId': 'project-2',
+            'targetLanguage': 'en',
+          },
+        },
+        createdAt: DateTime.utc(2026, 6, 15, 12),
+      ),
+    );
+
+    await tester.pumpWidget(
+      _app(creation: creation, projects: projects, draftId: 'draft-done'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open the new book'), findsOneWidget);
+    var chips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
+    expect(chips, hasLength(2));
+    expect(chips.first.selected, isTrue);
+    expect(chips.last.selected, isFalse);
+
+    await tester.tap(find.text('Open the new book'));
+    await tester.pumpAndSettle();
+
+    expect(projects.requestedProjectIds, contains('project-2'));
+    chips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
+    expect(chips.first.selected, isFalse);
+    expect(chips.last.selected, isTrue);
+    expect(find.text('Open the new book'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('one chat can build multiple outputs and selects the latest', (
     tester,
   ) async {
@@ -1161,6 +1231,23 @@ MobileChatSession _chatSession({
     createdProjectId: createdProjectId,
     activeProjectId: activeProjectId ?? createdProjectId,
     outputs: outputs,
+    createdAt: now,
+    updatedAt: now,
+  );
+}
+
+MobileCreationOutput _creationOutput({
+  required String projectId,
+  required String title,
+  required int sequence,
+}) {
+  final now = DateTime.utc(2026, 6, 15, 12, sequence);
+  return MobileCreationOutput(
+    id: 'output-$sequence',
+    draftId: 'draft-done',
+    projectId: projectId,
+    title: title,
+    sequence: sequence,
     createdAt: now,
     updatedAt: now,
   );

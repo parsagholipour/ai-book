@@ -255,9 +255,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                       projectChatValue: projectChatValue,
                       generationStatusValue: generationStatusValue,
                       planBusyAction: _planBusyAction,
+                      activeProjectId: activeProjectId,
                       switchingProjectBranch: _projectChatBranchSwitching,
                       onSwitchProjectBranch: _switchProjectBranch,
                       onEditProjectMessage: _startProjectMessageEdit,
+                      onOpenReplanCopy: _openReplanCopy,
                     ),
                   ),
                   if (_editingProjectMessageId != null)
@@ -293,6 +295,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _pendingRevisionOperationId = null;
     _planQuestionIndex = 0;
     _planQuestionAnswers = {};
+  }
+
+  void _openReplanCopy(String projectId) {
+    setState(_resetPlanReviewState);
+    ref.read(creationChatControllerProvider.notifier).selectOutput(projectId);
   }
 
   void _refreshOutput(String projectId, {bool refreshStatus = true}) {
@@ -2224,9 +2231,11 @@ class _Transcript extends StatelessWidget {
     this.projectChatValue,
     this.generationStatusValue,
     this.planBusyAction,
+    this.activeProjectId,
     this.switchingProjectBranch = false,
     this.onSwitchProjectBranch,
     this.onEditProjectMessage,
+    this.onOpenReplanCopy,
   });
 
   final CreationChatState state;
@@ -2235,10 +2244,12 @@ class _Transcript extends StatelessWidget {
   final AsyncValue<MobileProjectChat>? projectChatValue;
   final AsyncValue<MobileProjectStatus>? generationStatusValue;
   final String? planBusyAction;
+  final String? activeProjectId;
   final bool switchingProjectBranch;
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchProjectBranch;
   final void Function(MobileProjectChatMessage message)? onEditProjectMessage;
+  final ValueChanged<String>? onOpenReplanCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -2288,8 +2299,10 @@ class _Transcript extends StatelessWidget {
           return _ProjectChatMessageBubble(
             message: item.message!,
             switchingBranch: switchingProjectBranch,
+            activeProjectId: activeProjectId,
             onSwitchBranch: onSwitchProjectBranch,
             onEdit: onEditProjectMessage,
+            onOpenReplanCopy: onOpenReplanCopy,
           );
         }
         cursor += projectItems.length;
@@ -2460,15 +2473,19 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   const _ProjectChatMessageBubble({
     required this.message,
     required this.switchingBranch,
+    this.activeProjectId,
     this.onSwitchBranch,
     this.onEdit,
+    this.onOpenReplanCopy,
   });
 
   final MobileProjectChatMessage message;
   final bool switchingBranch;
+  final String? activeProjectId;
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchBranch;
   final void Function(MobileProjectChatMessage message)? onEdit;
+  final ValueChanged<String>? onOpenReplanCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -2478,6 +2495,13 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
     final contentCard = message.isAssistant ? message.contentCard : null;
     final branch = message.branch;
+    final replanCopyTargetProjectId = message.isAssistant
+        ? message.replanCopyTargetProjectId
+        : null;
+    final showReplanCopyLink =
+        replanCopyTargetProjectId != null &&
+        replanCopyTargetProjectId != activeProjectId &&
+        onOpenReplanCopy != null;
     final bubble = GestureDetector(
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
@@ -2517,6 +2541,14 @@ class _ProjectChatMessageBubble extends StatelessWidget {
                 switching: switchingBranch,
                 onPrevious: () => onSwitchBranch!(message, 'previous'),
                 onNext: () => onSwitchBranch!(message, 'next'),
+              ),
+            ],
+            if (showReplanCopyLink) ...[
+              const SizedBox(height: 10),
+              ActionChip(
+                avatar: const Icon(Icons.open_in_new_outlined, size: 18),
+                label: const Text('Open the new book'),
+                onPressed: () => onOpenReplanCopy!(replanCopyTargetProjectId),
               ),
             ],
           ],

@@ -100,6 +100,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                           onOpenPaywall: message.hasInsufficientCredits
                               ? () => _openPaywall(projectValue.asData?.value)
                               : null,
+                          onOpenReplanCopy:
+                              _replanCopyTargetProjectId(message) == null
+                              ? null
+                              : () => context.push(
+                                  '/projects/${_replanCopyTargetProjectId(message)}/chat',
+                                ),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -129,6 +135,13 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     ref.invalidate(projectChatProvider(widget.projectId));
     ref.invalidate(projectDetailProvider(widget.projectId));
     ref.invalidate(projectStatusProvider(widget.projectId));
+  }
+
+  String? _replanCopyTargetProjectId(MobileProjectChatMessage message) {
+    if (!message.isAssistant) return null;
+    final targetProjectId = message.replanCopyTargetProjectId;
+    if (targetProjectId == widget.projectId) return null;
+    return targetProjectId;
   }
 
   Future<void> _send() async {
@@ -375,6 +388,7 @@ class _ProjectMessageBubble extends StatelessWidget {
     this.onCancelEdit,
     this.onSubmitEdit,
     this.onOpenPaywall,
+    this.onOpenReplanCopy,
   });
 
   final MobileProjectChatMessage message;
@@ -387,6 +401,7 @@ class _ProjectMessageBubble extends StatelessWidget {
   final VoidCallback? onCancelEdit;
   final VoidCallback? onSubmitEdit;
   final VoidCallback? onOpenPaywall;
+  final VoidCallback? onOpenReplanCopy;
 
   @override
   Widget build(BuildContext context) {
@@ -480,6 +495,14 @@ class _ProjectMessageBubble extends StatelessWidget {
                       onPressed: onOpenPaywall,
                       icon: const Icon(Icons.add_card_outlined),
                       label: const Text('Add credits'),
+                    ),
+                  ],
+                  if (onOpenReplanCopy != null) ...[
+                    const SizedBox(height: 10),
+                    ActionChip(
+                      avatar: const Icon(Icons.open_in_new_outlined, size: 18),
+                      label: const Text('Open the new book'),
+                      onPressed: onOpenReplanCopy,
                     ),
                   ],
                 ],

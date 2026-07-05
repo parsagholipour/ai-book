@@ -488,6 +488,15 @@ class MobileProjectChatMessage {
     if (raw is! Map) return null;
     return MobileChatContentCard.fromJson(raw.cast<String, dynamic>());
   }
+
+  String? get replanCopyTargetProjectId {
+    final raw = metadata['replanCopy'];
+    if (raw is! Map) return null;
+    final targetProjectId = raw['targetProjectId'];
+    if (targetProjectId is! String) return null;
+    final trimmed = targetProjectId.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
 }
 
 class MobileProjectChatBranch {
