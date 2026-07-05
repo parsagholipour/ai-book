@@ -715,6 +715,61 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('completed generation downloads an unlocked export in chat', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] =
+        'Original completed chat transcript';
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(
+        status: 'complete',
+        currentAction: 'Ready to download.',
+        plan: _approvedPlan(),
+      ),
+      status: _projectStatus(
+        status: 'complete',
+        progressPercent: 100,
+        currentAction: 'Ready to download.',
+        completedPages: 28,
+        targetPages: 28,
+        imageCount: 1,
+        exports: _unlockedExports,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerApp(
+        creation: creation,
+        projects: projects,
+        initialLocation: '/books/chat/draft-done',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ready to export'), findsOneWidget);
+    expect(find.text('Download PDF'), findsOneWidget);
+    expect(find.text('View progress'), findsOneWidget);
+
+    await tester.tap(find.text('Download PDF'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(projects.downloadedFormats, ['pdf']);
+    expect(find.text('Saved book.pdf for sharing.'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets(
     'failed generation keeps approved plan and shows attention copy',
     (tester) async {
@@ -1387,6 +1442,7 @@ class _PlanProjectsRepository implements ProjectsRepository {
   final chatMessages = <MobileProjectChatMessage>[];
   final planSnapshots = <MobilePlan>[];
   final chatOperations = <MobileBookEditOperation>[];
+  final downloadedFormats = <String>[];
 
   @override
   Future<MobileProjectDetail> getProject(String id) async {
@@ -1616,6 +1672,19 @@ class _PlanProjectsRepository implements ProjectsRepository {
   Future<List<MobileProjectSummary>> listProjects() async => const [];
 
   @override
+  Future<ProjectExportFile> downloadExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {
+    downloadedFormats.add(export.format);
+    return ProjectExportFile(
+      format: export.format,
+      filename: export.filename,
+      path: '/tmp/${export.filename}',
+    );
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) {
     throw UnimplementedError('Not used in this test.');
   }
@@ -1688,6 +1757,7 @@ MobileProjectStatus _projectStatus({
   int completedPages = 3,
   int targetPages = 28,
   int imageCount = 1,
+  MobileExportSet exports = _exports,
 }) {
   final complete = status == 'complete';
   final failed = status == 'failed';
@@ -1728,7 +1798,7 @@ MobileProjectStatus _projectStatus({
       target: targetPages,
     ),
     imageCount: imageCount,
-    exports: _exports,
+    exports: exports,
     updatedAt: DateTime.utc(2026, 6, 15),
   );
 }
@@ -1857,6 +1927,27 @@ const _exports = MobileExportSet(
     available: false,
     unlocked: false,
     creditsRequired: 150,
+    downloadUrl: '/api/mobile/projects/project-1/export/epub',
+    filename: 'book.epub',
+    contentType: 'application/epub+zip',
+  ),
+);
+
+const _unlockedExports = MobileExportSet(
+  pdf: MobileExportAvailability(
+    format: 'pdf',
+    available: true,
+    unlocked: true,
+    creditsRequired: 0,
+    downloadUrl: '/api/mobile/projects/project-1/export/pdf',
+    filename: 'book.pdf',
+    contentType: 'application/pdf',
+  ),
+  epub: MobileExportAvailability(
+    format: 'epub',
+    available: true,
+    unlocked: true,
+    creditsRequired: 0,
     downloadUrl: '/api/mobile/projects/project-1/export/epub',
     filename: 'book.epub',
     contentType: 'application/epub+zip',

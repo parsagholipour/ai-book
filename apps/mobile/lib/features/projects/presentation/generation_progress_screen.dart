@@ -10,10 +10,10 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
-import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'project_route_error.dart';
+import 'project_export_actions.dart';
 
 class GenerationProgressScreen extends ConsumerStatefulWidget {
   const GenerationProgressScreen({
@@ -134,47 +134,51 @@ class _GenerationProgressScreenState
   }
 
   Future<void> _downloadExport(MobileExportAvailability export) async {
-    await _runExportAction(
-      action: 'download-${export.format}',
+    setState(() => _busyAction = projectExportDownloadAction(export));
+    final file = await downloadProjectExport(
+      context: context,
+      ref: ref,
+      projectId: widget.projectId,
       export: export,
-      task: () => ref
-          .read(projectsRepositoryProvider)
-          .downloadExport(projectId: widget.projectId, export: export),
-      onComplete: (file) {
-        _downloadedFiles[export.format] = file;
-        ref.invalidate(billingProvider);
-        _refresh();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved ${file.filename} for sharing.')),
-        );
-      },
+      isMounted: () => mounted,
+      onRefresh: _refresh,
     );
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _busyAction = null;
+      if (file != null) {
+        _downloadedFiles[export.format] = file;
+      }
+    });
   }
 
   Future<void> _shareExport(MobileExportAvailability export) async {
-    await _runExportAction<void>(
-      action: 'share-${export.format}',
+    setState(() => _busyAction = projectExportShareAction(export));
+    await shareProjectExport(
+      context: context,
+      ref: ref,
+      projectId: widget.projectId,
       export: export,
-      task: () => ref
-          .read(projectsRepositoryProvider)
-          .shareExport(projectId: widget.projectId, export: export),
-      onComplete: (_) {
-        ref.invalidate(billingProvider);
-        _refresh();
-      },
+      isMounted: () => mounted,
+      onRefresh: _refresh,
     );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _busyAction = null);
   }
 
   Future<void> _openExportPaywall(MobileExportAvailability export) async {
-    await showBillingPaywall(
-      context,
+    await openProjectExportPaywall(
+      context: context,
+      ref: ref,
       projectId: widget.projectId,
-      title: 'Unlock exports',
-      message:
-          'This ${export.format.toUpperCase()} is ready. Add credits to unlock protected downloads for this book.',
+      export: export,
+      isMounted: () => mounted,
+      onRefresh: _refresh,
     );
-    ref.invalidate(billingProvider);
-    _refresh();
   }
 
   Future<void> _reportProject() async {
@@ -230,31 +234,6 @@ class _GenerationProgressScreenState
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Report sent for review.')));
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _busyAction = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  Future<void> _runExportAction<T>({
-    required String action,
-    required MobileExportAvailability export,
-    required Future<T> Function() task,
-    required void Function(T value) onComplete,
-  }) async {
-    setState(() => _busyAction = action);
-    try {
-      final result = await task();
-      if (!mounted) {
-        return;
-      }
-      setState(() => _busyAction = null);
-      onComplete(result);
     } catch (error) {
       if (!mounted) {
         return;
@@ -959,15 +938,11 @@ class _ExportFormatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final format = export.format.toUpperCase();
-    final downloadAction = 'download-${export.format}';
-    final shareAction = 'share-${export.format}';
+    final downloadAction = projectExportDownloadAction(export);
+    final shareAction = projectExportShareAction(export);
     final isDownloading = busyAction == downloadAction;
     final isSharing = busyAction == shareAction;
-    final needsCredits =
-        export.available &&
-        !export.unlocked &&
-        availableCredits != null &&
-        availableCredits! < export.creditsRequired;
+    final needsCredits = projectExportNeedsCredits(export, availableCredits);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -988,7 +963,7 @@ class _ExportFormatTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    _exportStateText(export),
+                    projectExportStateText(export, availableCredits),
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: colors.onSurfaceVariant,
                     ),
@@ -1031,7 +1006,7 @@ class _ExportFormatTile extends StatelessWidget {
                           ? Icons.add_card_outlined
                           : Icons.lock_open_outlined,
                     ),
-              label: Text(_downloadLabel(export, needsCredits)),
+              label: Text(projectExportDownloadLabel(export, needsCredits)),
             ),
             OutlinedButton.icon(
               onPressed:
@@ -1056,33 +1031,5 @@ class _ExportFormatTile extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  String _exportStateText(MobileExportAvailability export) {
-    if (!export.available) {
-      return 'Preparing this file after generation finishes.';
-    }
-    if (export.unlocked) {
-      return 'Ready to download and share.';
-    }
-    if (availableCredits != null &&
-        availableCredits! < export.creditsRequired) {
-      return 'Ready after export unlock. You need ${export.creditsRequired} credits and have $availableCredits.';
-    }
-    return 'Ready after export unlock. This uses ${export.creditsRequired} credits if not already included.';
-  }
-
-  String _downloadLabel(MobileExportAvailability export, bool needsCredits) {
-    final format = export.format.toUpperCase();
-    if (!export.available) {
-      return 'Preparing $format';
-    }
-    if (export.unlocked) {
-      return 'Download $format';
-    }
-    if (needsCredits) {
-      return 'Get credits';
-    }
-    return 'Unlock $format';
   }
 }

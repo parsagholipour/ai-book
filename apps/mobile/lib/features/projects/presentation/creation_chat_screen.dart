@@ -20,6 +20,7 @@ import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
 import 'message_actions_menu.dart';
 import 'plan_approval.dart';
+import 'project_export_actions.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({super.key, this.startFresh = false, this.draftId});
@@ -852,7 +853,7 @@ class _PlanWithGenerationProgress extends StatelessWidget {
   }
 }
 
-class _GenerationProgressBubble extends StatelessWidget {
+class _GenerationProgressBubble extends ConsumerStatefulWidget {
   const _GenerationProgressBubble({
     required this.projectId,
     required this.statusValue,
@@ -862,8 +863,41 @@ class _GenerationProgressBubble extends StatelessWidget {
   final AsyncValue<MobileProjectStatus> statusValue;
 
   @override
+  ConsumerState<_GenerationProgressBubble> createState() =>
+      _GenerationProgressBubbleState();
+}
+
+class _GenerationProgressBubbleState
+    extends ConsumerState<_GenerationProgressBubble> {
+  String? _busyAction;
+
+  Future<void> _downloadExport(MobileExportAvailability export) async {
+    if (_busyAction != null) {
+      return;
+    }
+    setState(() => _busyAction = projectExportDownloadAction(export));
+    await downloadProjectExport(
+      context: context,
+      ref: ref,
+      projectId: widget.projectId,
+      export: export,
+      isMounted: () => mounted,
+      onRefresh: _refreshExportState,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _busyAction = null);
+  }
+
+  void _refreshExportState() {
+    ref.invalidate(projectStatusProvider(widget.projectId));
+    ref.invalidate(projectDetailProvider(widget.projectId));
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return statusValue.when(
+    return widget.statusValue.when(
       loading: () => _GenerationProgressShell(
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -887,7 +921,7 @@ class _GenerationProgressBubble extends StatelessWidget {
           children: [
             const Text('Progress is unavailable right now.'),
             const SizedBox(height: 8),
-            _ViewProgressButton(projectId: projectId),
+            _ViewProgressButton(projectId: widget.projectId),
           ],
         ),
       ),
@@ -896,6 +930,9 @@ class _GenerationProgressBubble extends StatelessWidget {
         final progress = status.progressPercent.clamp(0, 100).toInt();
         final failureMessage = status.failureMessage?.trim();
         final isFailed = status.status == 'failed' || status.hasFailure;
+        final downloadExport = status.isComplete
+            ? primaryUnlockedAvailableExport(status.exports)
+            : null;
         final title = status.isComplete
             ? 'Ready to export'
             : isFailed
@@ -977,7 +1014,19 @@ class _GenerationProgressBubble extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              _ViewProgressButton(projectId: projectId),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (downloadExport != null)
+                    _CompletionDownloadButton(
+                      export: downloadExport,
+                      busyAction: _busyAction,
+                      onDownload: _downloadExport,
+                    ),
+                  _ViewProgressButton(projectId: widget.projectId),
+                ],
+              ),
             ],
           ),
         );
@@ -1009,6 +1058,37 @@ class _GenerationProgressShell extends StatelessWidget {
           child: child,
         ),
       ),
+    );
+  }
+}
+
+class _CompletionDownloadButton extends StatelessWidget {
+  const _CompletionDownloadButton({
+    required this.export,
+    required this.busyAction,
+    required this.onDownload,
+  });
+
+  final MobileExportAvailability export;
+  final String? busyAction;
+  final Future<void> Function(MobileExportAvailability export) onDownload;
+
+  @override
+  Widget build(BuildContext context) {
+    final action = projectExportDownloadAction(export);
+    final isDownloading = busyAction == action;
+    return FilledButton.icon(
+      onPressed: isDownloading ? null : () => onDownload(export),
+      icon: isDownloading
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                semanticsLabel: 'Downloading export',
+              ),
+            )
+          : const Icon(Icons.download_outlined),
+      label: Text(projectExportDownloadLabel(export, false)),
     );
   }
 }
