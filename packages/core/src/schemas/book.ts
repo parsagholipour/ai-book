@@ -747,7 +747,9 @@ export const pageDraftSchema = z.preprocess(
   normalizePageDraft,
   z.object({
     title: z.string(),
-    markdown: z.string(),
+    markdown: z
+      .string()
+      .refine((value) => value.trim().length > 0, { message: "Page markdown must not be empty." }),
     summary: z.string(),
     continuityNotes: z.array(z.string()).default([]),
     imagePrompt: z.string().optional()

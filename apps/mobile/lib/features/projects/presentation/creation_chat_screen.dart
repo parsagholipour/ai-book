@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'chat_history_drawer.dart';
 
@@ -47,6 +50,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   bool _projectChatSending = false;
   bool _projectChatBranchSwitching = false;
   String? _editingProjectMessageId;
+  final Set<String> _requestedReplanCopyOutputSyncs = <String>{};
 
   // Plan question tracking
   int _planQuestionIndex = 0;
@@ -107,6 +111,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _projectChatSending = false;
     _projectChatBranchSwitching = false;
     _editingProjectMessageId = null;
+    _requestedReplanCopyOutputSyncs.clear();
   }
 
   @override
@@ -169,6 +174,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     }
 
     final chat = projectChatValue?.asData?.value;
+    _syncMissingReplanCopyOutputs(state, chat);
     final scrollTrigger =
         state.messages.length +
         (chat?.plans.length ?? (isInOutputStage ? 1 : 0)) +
@@ -273,7 +279,17 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                       onSend: _send,
                       onQuickReply: _send,
                       onAnswerOption: _send,
-                      onAttachNotes: () => _openSourceNotesSheet(state),
+                      onAttach: () => _openAttachMenu(state),
+                      onRetryAttachment: (localId) => unawaited(
+                        ref
+                            .read(creationChatControllerProvider.notifier)
+                            .retryAttachment(localId),
+                      ),
+                      onRemoveAttachment: (localId) => unawaited(
+                        ref
+                            .read(creationChatControllerProvider.notifier)
+                            .removeAttachment(localId),
+                      ),
                       onBuild: _build,
                     ),
                 ],
@@ -287,6 +303,42 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     return state.activeProjectId ?? _projectId ?? state.createdProjectId;
   }
 
+  bool _hasOutput(CreationChatState state, String projectId) {
+    return state.outputs.any((output) => output.projectId == projectId);
+  }
+
+  void _syncMissingReplanCopyOutputs(
+    CreationChatState state,
+    MobileProjectChat? chat,
+  ) {
+    if (chat == null || state.draftId == null) return;
+    final knownOutputIds = state.outputs
+        .map((output) => output.projectId)
+        .toSet();
+    var shouldSync = false;
+    for (final message in chat.messages) {
+      if (!message.isAssistant) continue;
+      final targetProjectId = message.replanCopyTargetProjectId;
+      if (targetProjectId == null ||
+          knownOutputIds.contains(targetProjectId) ||
+          _requestedReplanCopyOutputSyncs.contains(targetProjectId)) {
+        continue;
+      }
+      _requestedReplanCopyOutputSyncs.add(targetProjectId);
+      shouldSync = true;
+    }
+    if (!shouldSync) return;
+    unawaited(_syncOutputsSilently());
+  }
+
+  Future<void> _syncOutputsSilently() async {
+    try {
+      await ref.read(creationChatControllerProvider.notifier).syncOutputs();
+    } catch (_) {
+      // The chip action retries and surfaces an error if the user taps it.
+    }
+  }
+
   void _resetPlanReviewState() {
     _editingProjectMessageId = null;
     _planBusyAction = null;
@@ -297,9 +349,27 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _planQuestionAnswers = {};
   }
 
-  void _openReplanCopy(String projectId) {
+  Future<void> _openReplanCopy(String projectId) async {
+    final controller = ref.read(creationChatControllerProvider.notifier);
+    var state = ref.read(creationChatControllerProvider);
+    if (!_hasOutput(state, projectId)) {
+      try {
+        await controller.syncOutputs();
+      } catch (error) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+        return;
+      }
+      if (!mounted) return;
+      state = ref.read(creationChatControllerProvider);
+    }
+    if (!_hasOutput(state, projectId)) {
+      return;
+    }
     setState(_resetPlanReviewState);
-    ref.read(creationChatControllerProvider.notifier).selectOutput(projectId);
+    controller.selectOutput(projectId);
   }
 
   void _refreshOutput(String projectId, {bool refreshStatus = true}) {
@@ -409,20 +479,180 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
   Future<void> _send(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
-    final activeProjectId = _activeProjectId(
-      ref.read(creationChatControllerProvider),
-    );
+    final state = ref.read(creationChatControllerProvider);
+    final activeProjectId = _activeProjectId(state);
     if (activeProjectId != null) {
+      if (trimmed.isEmpty) return;
       await _sendProjectMessage(projectId: activeProjectId, message: trimmed);
       return;
     }
+    // Attachment-only sends are allowed, like handing a file to a person.
+    if (trimmed.isEmpty && !state.hasReadyAttachments) return;
     _composerController.clear();
     try {
       await ref
           .read(creationChatControllerProvider.notifier)
           .sendMessage(trimmed);
     } catch (_) {}
+  }
+
+  Future<void> _openAttachMenu(CreationChatState state) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Photo library'),
+              subtitle: const Text('Use a photo as inspiration or notes'),
+              onTap: () => Navigator.of(sheetContext).pop('gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.of(sheetContext).pop('camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Document'),
+              subtitle: const Text('PDF, Word, EPUB, text, or Markdown'),
+              onTap: () => Navigator.of(sheetContext).pop('document'),
+            ),
+            ListTile(
+              leading: Icon(
+                state.hasSourceNotes
+                    ? Icons.sticky_note_2
+                    : Icons.sticky_note_2_outlined,
+              ),
+              title: const Text('Paste text notes'),
+              subtitle: state.hasSourceNotes
+                  ? const Text('Source notes added')
+                  : null,
+              onTap: () => Navigator.of(sheetContext).pop('notes'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    switch (action) {
+      case 'gallery':
+        await _pickPhoto(ImageSource.gallery);
+      case 'camera':
+        await _pickPhoto(ImageSource.camera);
+      case 'document':
+        await _pickDocument();
+      case 'notes':
+        await _openSourceNotesSheet(ref.read(creationChatControllerProvider));
+    }
+  }
+
+  Future<void> _pickPhoto(ImageSource source) async {
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageQuality: 85,
+      );
+      if (picked == null || !mounted) return;
+      final bytes = await picked.readAsBytes();
+      await ref
+          .read(creationChatControllerProvider.notifier)
+          .attachFile(
+            filename: picked.name,
+            bytes: bytes,
+            isPhoto: true,
+            mimeType: picked.mimeType,
+            localPath: picked.path,
+          );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            source == ImageSource.camera
+                ? 'Could not open the camera.'
+                : 'Could not open your photos.',
+          ),
+        ),
+      );
+    }
+  }
+
+  static const _documentTypeGroup = XTypeGroup(
+    label: 'Documents',
+    extensions: [
+      'pdf',
+      'docx',
+      'epub',
+      'txt',
+      'md',
+      'markdown',
+      'csv',
+      'tsv',
+      'json',
+      'html',
+      'htm',
+      'rtf',
+      'yaml',
+      'yml',
+      'srt',
+      'log',
+    ],
+    mimeTypes: [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/epub+zip',
+      'application/rtf',
+      'application/json',
+      'text/*',
+    ],
+    uniformTypeIdentifiers: [
+      'com.adobe.pdf',
+      'org.openxmlformats.wordprocessingml.document',
+      'org.idpf.epub-container',
+      'public.text',
+      'public.html',
+      'public.rtf',
+      'public.json',
+      'net.daringfireball.markdown',
+      'public.comma-separated-values-text',
+    ],
+  );
+
+  Future<void> _pickDocument() async {
+    try {
+      final file = await openFile(
+        acceptedTypeGroups: const [_documentTypeGroup],
+      );
+      if (file == null || !mounted) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        _showAttachError('Could not read that file.');
+        return;
+      }
+      if (bytes.length > 20 * 1024 * 1024) {
+        _showAttachError('That file is too large. Files up to 20 MB work.');
+        return;
+      }
+      if (!mounted) return;
+      await ref
+          .read(creationChatControllerProvider.notifier)
+          .attachFile(filename: file.name, bytes: bytes, isPhoto: false);
+    } catch (_) {
+      _showAttachError('Could not open that file.');
+    }
+  }
+
+  void _showAttachError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<MobileProjectChatSendResult?> _sendProjectMessage({
@@ -2322,7 +2552,10 @@ class _Transcript extends StatelessWidget {
         if (hasTyping && index == cursor) {
           return const _TypingBubble();
         }
-        return _MessageBubble(message: state.messages[index]);
+        return _MessageBubble(
+          message: state.messages[index],
+          attachmentThumbnails: state.attachmentThumbnails,
+        );
       },
     );
   }
@@ -2424,9 +2657,13 @@ class _EditingMessageBanner extends StatelessWidget {
 }
 
 class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+  const _MessageBubble({
+    required this.message,
+    this.attachmentThumbnails = const <String, String>{},
+  });
 
   final MobileCreationMessage message;
+  final Map<String, String> attachmentThumbnails;
 
   @override
   Widget build(BuildContext context) {
@@ -2434,6 +2671,7 @@ class _MessageBubble extends StatelessWidget {
     final isUser = message.isUser;
     final background = isUser ? colors.primary : colors.surfaceContainerHighest;
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
+    final hasText = message.content.trim().isNotEmpty;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
@@ -2457,13 +2695,99 @@ class _MessageBubble extends StatelessWidget {
               bottomRight: Radius.circular(isUser ? 4 : 16),
             ),
           ),
-          child: Text(
-            message.content,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(color: foreground),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (message.hasAttachments) ...[
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final attachment in message.attachments)
+                      _MessageAttachmentChip(
+                        attachment: attachment,
+                        thumbnailPath: attachmentThumbnails[attachment.id],
+                        foreground: foreground,
+                      ),
+                  ],
+                ),
+                if (hasText) const SizedBox(height: 6),
+              ],
+              if (hasText)
+                Text(
+                  message.content,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(color: foreground),
+                ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _MessageAttachmentChip extends StatelessWidget {
+  const _MessageAttachmentChip({
+    required this.attachment,
+    required this.foreground,
+    this.thumbnailPath,
+  });
+
+  final MobileCreationMessageAttachment attachment;
+  final Color foreground;
+  final String? thumbnailPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = thumbnailPath;
+    if (attachment.isPhoto && path != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.file(
+          File(path),
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _fallbackChip(context),
+        ),
+      );
+    }
+    return _fallbackChip(context);
+  }
+
+  Widget _fallbackChip(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: foreground.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            attachment.isPhoto
+                ? Icons.photo_outlined
+                : Icons.description_outlined,
+            size: 16,
+            color: foreground,
+          ),
+          const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              attachment.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: foreground),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2841,7 +3165,9 @@ class _ConversationFooter extends StatelessWidget {
     required this.onSend,
     required this.onQuickReply,
     required this.onAnswerOption,
-    required this.onAttachNotes,
+    required this.onAttach,
+    required this.onRetryAttachment,
+    required this.onRemoveAttachment,
     required this.onBuild,
   });
 
@@ -2850,7 +3176,9 @@ class _ConversationFooter extends StatelessWidget {
   final ValueChanged<String> onSend;
   final ValueChanged<String> onQuickReply;
   final ValueChanged<String> onAnswerOption;
-  final VoidCallback onAttachNotes;
+  final VoidCallback onAttach;
+  final ValueChanged<String> onRetryAttachment;
+  final ValueChanged<String> onRemoveAttachment;
   final Future<void> Function() onBuild;
 
   @override
@@ -2885,12 +3213,23 @@ class _ConversationFooter extends StatelessWidget {
                 ),
               if (question != null || state.quickReplies.isNotEmpty)
                 const SizedBox(height: 8),
+              if (state.pendingAttachments.isNotEmpty) ...[
+                _PendingAttachmentsRow(
+                  attachments: state.pendingAttachments,
+                  onRetry: onRetryAttachment,
+                  onRemove: onRemoveAttachment,
+                ),
+                const SizedBox(height: 8),
+              ],
               _Composer(
                 controller: composerController,
                 enabled: !disabled,
                 hasQuestion: question != null,
-                hasSourceNotes: state.hasSourceNotes,
-                onAttachNotes: onAttachNotes,
+                hasAttachments: state.pendingAttachments.isNotEmpty,
+                canSendWithoutText:
+                    state.hasReadyAttachments && !state.hasUploadingAttachments,
+                waitingOnAttachments: state.hasUploadingAttachments,
+                onAttach: onAttach,
                 onSend: onSend,
               ),
               const SizedBox(height: 8),
@@ -2903,6 +3242,150 @@ class _ConversationFooter extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PendingAttachmentsRow extends StatelessWidget {
+  const _PendingAttachmentsRow({
+    required this.attachments,
+    required this.onRetry,
+    required this.onRemove,
+  });
+
+  final List<PendingCreationAttachment> attachments;
+  final ValueChanged<String> onRetry;
+  final ValueChanged<String> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: attachments.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final attachment = attachments[index];
+          return _PendingAttachmentChip(
+            attachment: attachment,
+            onRetry: () => onRetry(attachment.localId),
+            onRemove: () => onRemove(attachment.localId),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _PendingAttachmentChip extends StatelessWidget {
+  const _PendingAttachmentChip({
+    required this.attachment,
+    required this.onRetry,
+    required this.onRemove,
+  });
+
+  final PendingCreationAttachment attachment;
+  final VoidCallback onRetry;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context).textTheme;
+    final statusLabel = attachment.isUploading
+        ? 'Reading…'
+        : attachment.isFailed
+        ? 'Failed — tap to retry'
+        : attachment.attachment?.pages != null
+        ? '${attachment.attachment!.pages} pages read'
+        : 'Ready to send';
+    return Semantics(
+      label: 'Attachment ${attachment.name}, $statusLabel',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: attachment.isFailed ? onRetry : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: attachment.isFailed
+                ? colors.errorContainer
+                : colors.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _attachmentLeading(colors),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 140),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      attachment.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.labelMedium,
+                    ),
+                    Text(
+                      statusLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.labelSmall?.copyWith(
+                        color: attachment.isFailed
+                            ? colors.onErrorContainer
+                            : colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onRemove,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close, size: 16),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _attachmentLeading(ColorScheme colors) {
+    if (attachment.isUploading) {
+      return const SizedBox.square(
+        dimension: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    }
+    if (attachment.isFailed) {
+      return Icon(Icons.refresh, size: 20, color: colors.onErrorContainer);
+    }
+    final localPath = attachment.localPath;
+    if (attachment.isPhoto && localPath != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Image.file(
+          File(localPath),
+          width: 32,
+          height: 32,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) =>
+              const Icon(Icons.photo_outlined, size: 20),
+        ),
+      );
+    }
+    return Icon(
+      attachment.isPhoto ? Icons.photo_outlined : Icons.description_outlined,
+      size: 20,
     );
   }
 }
@@ -2990,16 +3473,24 @@ class _Composer extends StatelessWidget {
     required this.controller,
     required this.enabled,
     required this.hasQuestion,
-    required this.hasSourceNotes,
-    required this.onAttachNotes,
+    required this.hasAttachments,
+    required this.canSendWithoutText,
+    required this.waitingOnAttachments,
+    required this.onAttach,
     required this.onSend,
   });
 
   final TextEditingController controller;
   final bool enabled;
   final bool hasQuestion;
-  final bool hasSourceNotes;
-  final VoidCallback onAttachNotes;
+  final bool hasAttachments;
+
+  /// Ready attachments allow sending with an empty message.
+  final bool canSendWithoutText;
+
+  /// While a file is still being read, sending waits so it isn't left behind.
+  final bool waitingOnAttachments;
+  final VoidCallback onAttach;
   final ValueChanged<String> onSend;
 
   @override
@@ -3009,13 +3500,11 @@ class _Composer extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         IconButton(
-          tooltip: hasSourceNotes
-              ? 'Source notes attached'
-              : 'Attach source notes',
-          onPressed: onAttachNotes,
+          tooltip: 'Attach a photo, document, or notes',
+          onPressed: enabled ? onAttach : null,
           icon: Icon(
-            hasSourceNotes ? Icons.attach_file : Icons.attach_file_outlined,
-            color: hasSourceNotes ? colors.primary : null,
+            hasAttachments ? Icons.attach_file : Icons.attach_file_outlined,
+            color: hasAttachments ? colors.primary : null,
           ),
         ),
         Expanded(
@@ -3026,7 +3515,9 @@ class _Composer extends StatelessWidget {
             maxLines: 5,
             textInputAction: TextInputAction.newline,
             decoration: InputDecoration(
-              hintText: hasQuestion
+              hintText: hasAttachments
+                  ? 'Add a note about the file…'
+                  : hasQuestion
                   ? 'Answer the question above…'
                   : 'Describe your book…',
               filled: true,
@@ -3046,9 +3537,12 @@ class _Composer extends StatelessWidget {
         ValueListenableBuilder<TextEditingValue>(
           valueListenable: controller,
           builder: (context, value, _) {
-            final canSend = enabled && value.text.trim().isNotEmpty;
+            final canSend =
+                enabled &&
+                !waitingOnAttachments &&
+                (value.text.trim().isNotEmpty || canSendWithoutText);
             return IconButton.filled(
-              tooltip: 'Send',
+              tooltip: waitingOnAttachments ? 'Reading your file…' : 'Send',
               onPressed: canSend ? () => onSend(controller.text) : null,
               icon: const Icon(Icons.send_rounded),
             );

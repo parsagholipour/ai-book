@@ -253,6 +253,7 @@ class _FakeCreationRepository implements CreationRepository {
   Future<MobileCreationConversationResponse> sendConversationMessage({
     required String draftId,
     required String message,
+    List<String>? attachmentIds,
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
@@ -270,6 +271,29 @@ class _FakeCreationRepository implements CreationRepository {
   }) {
     throw UnimplementedError('Preflight is not used in this test.');
   }
+
+
+  @override
+  Future<MobileCreationAttachment> uploadAttachment({
+    required String draftId,
+    required List<int> bytes,
+    required String filename,
+    String? mimeType,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    return MobileCreationAttachment(
+      id: 'att-fake',
+      kind: 'document',
+      name: filename,
+      sizeBytes: bytes.length,
+    );
+  }
+
+  @override
+  Future<void> deleteAttachment({
+    required String draftId,
+    required String attachmentId,
+  }) async {}
 
   @override
   Future<MobileCreationFinalizeResponse> buildConversation({

@@ -77,7 +77,13 @@ import {
 import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
 import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
-import { inputForPlanVersion, inputFromProject, inputFromSnapshot, inputWithMessageMediaPreferences } from "./projectInput.js";
+import {
+  inputForPlanVersion,
+  inputFromProject,
+  inputFromSnapshot,
+  inputWithMessageMediaPreferences,
+  inputWithMobileSourceMaterial
+} from "./projectInput.js";
 import {
   acceptedSavedPageTarget,
   effectiveSavedWholeBookExportContext,
@@ -300,7 +306,9 @@ async function planBook(job: Job) {
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   await advanceJobStep(generationJobId, "research", 20);
   const plan = await strategy.createPlan({
-    input,
+    // Planning sees pasted notes and uploaded-file digests; the stored
+    // snapshot below stays clean so page generation input is unchanged.
+    input: inputWithMobileSourceMaterial(input),
     textModel: providers.text,
     research: providers.research,
     forceFallback: config.MOCK_AI
@@ -384,7 +392,7 @@ async function revisePlan(job: Job) {
     currentPlan,
     userMessage: message,
     textModel: providers.text,
-    input,
+    input: inputWithMobileSourceMaterial(input),
     targetPages: input.targetPages,
     temperature: input.temperature,
     language: input.language,
@@ -1203,6 +1211,7 @@ async function reviewAndSaveGeneratedPage(options: {
     continuityNotes,
     textModel: options.providers.text
   });
+  let best = { draft, revision, report: qualityReport };
 
   while (!qualityReport.approved && revision < MAX_PAGE_QA_CANDIDATES) {
     const nextRevision = revision + 1;
@@ -1265,12 +1274,24 @@ async function reviewAndSaveGeneratedPage(options: {
       continuityNotes,
       textModel: options.providers.text
     });
+    if (qualityReport.score > best.report.score) {
+      best = { draft, revision, report: qualityReport };
+    }
   }
 
   if (!qualityReport.approved) {
-    throw new Error(formatQualityFailure(options.draft.index, qualityReport));
+    // Page-level failure isolation: keep the best draft with its honest
+    // report, flag the page, and let the rest of the book continue. The
+    // compile-time final review repairs FAILED_QA pages before export.
+    draft = best.draft;
+    revision = best.revision;
+    qualityReport = best.report;
+    await updateJobProgress(options.generationJobId, {
+      message: `Page ${options.draft.index} kept its best draft but failed quality review; the final review will repair it. ${formatQualityFailure(options.draft.index, qualityReport)}`
+    });
   }
 
+  const pageStatus = qualityReport.approved ? "COMPLETED" : "FAILED_QA";
   const page = await prisma.page.upsert({
     where: { projectId_index: { projectId: options.projectId, index: options.draft.index } },
     create: {
@@ -1281,7 +1302,7 @@ async function reviewAndSaveGeneratedPage(options: {
       markdown: draft.markdown,
       summary: draft.summary,
       imagePrompt: draft.imagePrompt ?? null,
-      status: "COMPLETED",
+      status: pageStatus,
       revision,
       qualityReport: qualityReport as Prisma.InputJsonValue
     },
@@ -1291,11 +1312,22 @@ async function reviewAndSaveGeneratedPage(options: {
       markdown: draft.markdown,
       summary: draft.summary,
       imagePrompt: draft.imagePrompt ?? null,
-      status: "COMPLETED",
+      status: pageStatus,
       revision,
       qualityReport: qualityReport as Prisma.InputJsonValue
     }
   });
+
+  if (!qualityReport.approved) {
+    // Skip continuity notes, embeddings, and illustration for a flagged page;
+    // the final review rewrites it and the repaired version feeds those steps.
+    return {
+      index: options.draft.index,
+      title: draft.title,
+      markdown: draft.markdown,
+      summary: draft.summary
+    };
+  }
 
   if (draft.continuityNotes.length > 0) {
     await prisma.continuityNote.createMany({
@@ -2642,7 +2674,7 @@ async function replanBook(job: Job) {
     currentPlan,
     userMessage: request,
     textModel: providers.text,
-    input,
+    input: inputWithMobileSourceMaterial(input),
     targetPages: input.targetPages,
     temperature: input.temperature,
     language: input.language,

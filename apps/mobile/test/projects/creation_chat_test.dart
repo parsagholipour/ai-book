@@ -12,6 +12,7 @@ import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
 
@@ -951,6 +952,16 @@ void main() {
   testWidgets('replan copy reference switches to the copied output', (
     tester,
   ) async {
+    final originalOutput = _creationOutput(
+      projectId: 'project-1',
+      title: 'Original book',
+      sequence: 1,
+    );
+    final englishOutput = _creationOutput(
+      projectId: 'project-2',
+      title: 'English book',
+      sequence: 2,
+    );
     final creation = _ScriptedCreationRepository(
       sessions: [
         _chatSession(
@@ -959,22 +970,15 @@ void main() {
           status: 'COMPLETED',
           createdProjectId: 'project-1',
           activeProjectId: 'project-1',
-          outputs: [
-            _creationOutput(
-              projectId: 'project-1',
-              title: 'Original book',
-              sequence: 1,
-            ),
-            _creationOutput(
-              projectId: 'project-2',
-              title: 'English book',
-              sequence: 2,
-            ),
-          ],
+          outputs: [originalOutput],
         ),
       ],
     );
     creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+    creation.resumeSyncedOutputs['draft-done'] = [
+      originalOutput,
+      englishOutput,
+    ];
     final projects = _PlanProjectsRepository(
       project: _plannedProject(status: 'complete', plan: _approvedPlan()),
     );
@@ -1000,12 +1004,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('I created a new copy of your book.'), findsOneWidget);
     expect(find.text('Open the new book'), findsOneWidget);
+    expect(find.widgetWithText(FilterChip, 'English book'), findsOneWidget);
     var chips = tester.widgetList<FilterChip>(find.byType(FilterChip)).toList();
     expect(chips, hasLength(2));
     expect(chips.first.selected, isTrue);
     expect(chips.last.selected, isFalse);
 
+    await tester.ensureVisible(find.text('Open the new book'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Open the new book'));
     await tester.pumpAndSettle();
 
@@ -1098,6 +1106,137 @@ void main() {
       await tester.teardownScreen();
     },
   );
+
+  testWidgets('attaching a document shows a ready chip and sends it with the '
+      'message', (tester) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(CreationChatScreen)),
+    ).read(creationChatControllerProvider.notifier);
+    await controller.attachFile(
+      filename: 'outline.txt',
+      bytes: const [104, 101, 108, 108, 111],
+      isPhoto: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('outline.txt'), findsOneWidget);
+    expect(find.text('Ready to send'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).last, 'Use this outline');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(creation.sentMessages, contains('Use this outline'));
+    expect(creation.sentAttachmentIds.last, ['att-1']);
+    // The chip left the composer and now renders on the sent message bubble.
+    expect(find.text('Ready to send'), findsNothing);
+    expect(find.text('outline.txt'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('a photo can be sent without any text, like a real chat', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(CreationChatScreen)),
+    ).read(creationChatControllerProvider.notifier);
+
+    // Nothing attached and no text: send stays disabled.
+    expect(
+      tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded)).onPressed,
+      isNull,
+    );
+
+    await controller.attachFile(
+      filename: 'cover-idea.jpg',
+      bytes: const [1, 2, 3],
+      isPhoto: true,
+      mimeType: 'image/jpeg',
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded)).onPressed,
+      isNotNull,
+    );
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(creation.sentMessages.last, isEmpty);
+    expect(creation.sentAttachmentIds.last, ['att-1']);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('failed uploads offer retry and removal', (tester) async {
+    final creation = _ScriptedCreationRepository()
+      ..uploadError = Exception('network down');
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    final controller = ProviderScope.containerOf(
+      tester.element(find.byType(CreationChatScreen)),
+    ).read(creationChatControllerProvider.notifier);
+    await controller.attachFile(
+      filename: 'draft.pdf',
+      bytes: const [1, 2, 3],
+      isPhoto: false,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Failed — tap to retry'), findsOneWidget);
+    // Sending is not possible with only a failed attachment.
+    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded)).onPressed, isNull);
+
+    // The scripted upload error was consumed, so the retry succeeds.
+    await tester.tap(find.text('Failed — tap to retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ready to send'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+
+    expect(find.text('draft.pdf'), findsNothing);
+    expect(creation.deletedAttachmentIds, ['att-1']);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('attach menu offers photos, documents, and pasted notes', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byTooltip('Attach a photo, document, or notes'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Photo library'), findsOneWidget);
+    expect(find.text('Take a photo'), findsOneWidget);
+    expect(find.text('Document'), findsOneWidget);
+    expect(find.text('Paste text notes'), findsOneWidget);
+
+    await tester.tap(find.text('Paste text notes'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Source notes'), findsWidgets);
+
+    await tester.teardownScreen();
+  });
 }
 
 extension on WidgetTester {
@@ -1280,9 +1419,15 @@ class _ScriptedCreationRepository implements CreationRepository {
   Future<void>? resumeByIdGate;
   final List<MobileChatSession> sessions;
   final sentMessages = <String>[];
+  final sentAttachmentIds = <List<String>>[];
   final startedMessages = <String>[];
+  final uploadedAttachments = <String, MobileCreationAttachment>{};
+  final deletedAttachmentIds = <String>[];
+  Object? uploadError;
+  int uploadCount = 0;
   final resumedDraftIds = <String>[];
   final resumeAssistantMessages = <String, String>{};
+  final resumeSyncedOutputs = <String, List<MobileCreationOutput>>{};
   MobileCreationPresets? buildPresets;
   String? buildDraftId;
   int buildCount = 0;
@@ -1317,6 +1462,11 @@ class _ScriptedCreationRepository implements CreationRepository {
     resumedDraftIds.add(draftId);
     await resumeByIdGate;
     final session = _sessionFor(draftId);
+    final resumeCount = resumedDraftIds.where((id) => id == draftId).length;
+    final sessionOutputs = session?.outputs ?? const <MobileCreationOutput>[];
+    final outputs = resumeCount > 1
+        ? resumeSyncedOutputs[draftId] ?? sessionOutputs
+        : sessionOutputs;
     final assistantMessage =
         resumeAssistantMessages[draftId] ?? 'Selected chat $draftId';
     return MobileCreationConversationResponse.fromJson({
@@ -1330,8 +1480,7 @@ class _ScriptedCreationRepository implements CreationRepository {
         'createdProjectId': session?.createdProjectId,
         'activeProjectId': session?.activeProjectId,
         'outputs': [
-          for (final output
-              in session?.outputs ?? const <MobileCreationOutput>[])
+          for (final output in outputs)
             {
               'id': output.id,
               'draftId': output.draftId,
@@ -1395,11 +1544,13 @@ class _ScriptedCreationRepository implements CreationRepository {
   Future<MobileCreationConversationResponse> sendConversationMessage({
     required String draftId,
     required String message,
+    List<String>? attachmentIds,
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
   }) async {
     sentMessages.add(message);
+    sentAttachmentIds.add(attachmentIds ?? const <String>[]);
     return MobileCreationConversationResponse.fromJson({
       'session': {
         'draftId': 'draft-1',
@@ -1407,7 +1558,19 @@ class _ScriptedCreationRepository implements CreationRepository {
         'status': 'ACTIVE',
         'messages': [
           {'role': 'assistant', 'content': _greeting},
-          {'role': 'user', 'content': message},
+          {
+            'role': 'user',
+            'content': message,
+            if (attachmentIds != null && attachmentIds.isNotEmpty)
+              'attachments': [
+                for (final id in attachmentIds)
+                  {
+                    'id': id,
+                    'kind': uploadedAttachments[id]?.kind ?? 'document',
+                    'name': uploadedAttachments[id]?.name ?? 'file',
+                  },
+              ],
+          },
           {'role': 'assistant', 'content': _reply},
         ],
         'createdProjectId': null,
@@ -1510,6 +1673,39 @@ class _ScriptedCreationRepository implements CreationRepository {
   @override
   Future<MobileCreationFinalizeResponse> finalizeDraft(String id) {
     throw UnimplementedError();
+  }
+
+  @override
+  Future<MobileCreationAttachment> uploadAttachment({
+    required String draftId,
+    required List<int> bytes,
+    required String filename,
+    String? mimeType,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final error = uploadError;
+    if (error != null) {
+      uploadError = null;
+      throw error;
+    }
+    uploadCount += 1;
+    final attachment = MobileCreationAttachment(
+      id: 'att-$uploadCount',
+      kind: (mimeType ?? '').startsWith('image/') ? 'photo' : 'document',
+      name: filename,
+      sizeBytes: bytes.length,
+      summary: 'Summary of $filename',
+    );
+    uploadedAttachments[attachment.id] = attachment;
+    return attachment;
+  }
+
+  @override
+  Future<void> deleteAttachment({
+    required String draftId,
+    required String attachmentId,
+  }) async {
+    deletedAttachmentIds.add(attachmentId);
   }
 }
 

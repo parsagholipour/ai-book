@@ -1659,7 +1659,8 @@ function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityRepor
   }
 
   const adjacentPage = options.previousPages.at(-1);
-  if (adjacentPage && normalizeTitle(adjacentPage.title) === normalizeTitle(options.draft.title)) {
+  const normalizedDraftTitle = normalizeTitle(options.draft.title);
+  if (adjacentPage && normalizedDraftTitle.length > 0 && normalizeTitle(adjacentPage.title) === normalizedDraftTitle) {
     checks.titleClean = false;
     checks.repetitionOk = false;
     issues.push(`Page title repeats adjacent page ${adjacentPage.index}.`);
@@ -1677,7 +1678,9 @@ function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityRepor
   }
 
   const kidsGuidance = kidsReadingGuidanceForInput(options.input);
-  const wordCount = kidsGuidance ? countReadableWords(currentBody) : tokenize(currentBody).length;
+  // countReadableWords is Unicode-aware; tokenize-based counts undercount or
+  // zero out non-Latin scripts (e.g. Persian) and must not gate progression.
+  const wordCount = countReadableWords(currentBody);
   const minWords = kidsGuidance?.targetWordsPerPage.min ?? (options.input.category === "STORY" ? 70 : 90);
   if (wordCount < minWords) {
     checks.progressionOk = false;
@@ -1892,7 +1895,7 @@ function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
     .replace(/^page\s+\d+\s*[:\-]\s*/i, "")
-    .replace(/[^a-z0-9\s']/g, " ")
+    .replace(/[^\p{L}\p{N}\s']/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -1938,7 +1941,7 @@ function shingles(tokens: string[], size: number): Set<string> {
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s']/g, " ")
+    .replace(/[^\p{L}\p{N}\s']/gu, " ")
     .split(/\s+/)
     .filter((token) => token.length > 2);
 }
@@ -1992,7 +1995,7 @@ function hasExcessiveDashUse(text: string): boolean {
   if (dashCount < 4) {
     return false;
   }
-  const wordCount = Math.max(1, tokenize(text).length);
+  const wordCount = Math.max(1, countReadableWords(text));
   const sentenceCount = Math.max(1, splitSentences(text).length);
   return dashCount / wordCount >= 0.018 || dashCount / sentenceCount >= 0.35;
 }
@@ -2033,7 +2036,7 @@ function isDialogueAttributionDash(line: string, index: number): boolean {
 function splitSentences(text: string): string[] {
   return text
     .replace(/\s+/g, " ")
-    .split(/(?<=[.!?])\s+/)
+    .split(/(?<=[.!?؟۔…])\s+/)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 }

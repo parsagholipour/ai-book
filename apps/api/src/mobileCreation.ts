@@ -1,5 +1,9 @@
 import {
+  CREATION_ATTACHMENT_MAX_COUNT,
+  creationAttachmentKindSchema,
+  creationAttachmentSchema,
   generateJsonWithRetry,
+  type CreationAttachment,
   type TextModelAdapter
 } from "@book-maker/core";
 import { z } from "zod";
@@ -118,12 +122,26 @@ export const mobileBookRecipeSchema = z
 
 export const mobileCreationMessageRoleSchema = z.enum(["user", "assistant"]);
 
+/** Lightweight reference from a chat message to an uploaded attachment. */
+export const mobileCreationMessageAttachmentSchema = z
+  .object({
+    id: z.string().trim().min(1).max(64),
+    kind: creationAttachmentKindSchema,
+    name: z.string().trim().min(1).max(200)
+  })
+  .strict();
+
 export const mobileCreationMessageSchema = z
   .object({
     role: mobileCreationMessageRoleSchema,
-    content: z.string().trim().min(1).max(4000)
+    // Attachment-only messages carry empty text, so emptiness is checked below.
+    content: z.string().trim().max(4000),
+    attachments: z.array(mobileCreationMessageAttachmentSchema).max(6).optional()
   })
-  .strict();
+  .strict()
+  .refine((message) => message.content.length > 0 || (message.attachments?.length ?? 0) > 0, {
+    message: "A chat message needs text or an attachment."
+  });
 
 export const mobileCreationDraftPayloadSchema = z
   .object({
@@ -144,6 +162,8 @@ export const mobileCreationDraftPayloadSchema = z
     conversationSummary: z.string().trim().max(2400).optional(),
     // Chat transcript for the conversational Book Studio (version 3 payloads).
     messages: z.array(mobileCreationMessageSchema).max(80).optional(),
+    // Files uploaded into the chat, already digested into text at upload time.
+    attachments: z.array(creationAttachmentSchema).max(CREATION_ATTACHMENT_MAX_COUNT).optional(),
     // Legacy V2 payloads are accepted so active drafts made before V3 can resume.
     brief: mobileCreationBriefSchema.optional()
   })
@@ -186,6 +206,7 @@ export type MobilePageCountMode = z.infer<typeof mobilePageCountModeSchema>;
 export type MobilePageCountSource = z.infer<typeof mobilePageCountSourceSchema>;
 export type MobileCreationOptionalDetails = z.infer<typeof mobileCreationOptionalDetailsSchema>;
 export type MobileCreationMessage = z.infer<typeof mobileCreationMessageSchema>;
+export type MobileCreationMessageAttachment = z.infer<typeof mobileCreationMessageAttachmentSchema>;
 export type MobileCreationDraftPayload = z.infer<typeof mobileCreationDraftPayloadSchema>;
 export type MobileBookAdvisorResponse = z.infer<typeof mobileBookAdvisorResponseSchema>;
 
@@ -349,6 +370,8 @@ export type MobileCreationTurnRequest = {
   presets?: MobileCreationPresets | undefined;
   optionalDetails?: MobileCreationOptionalDetails | undefined;
   sourceNotes?: string | undefined;
+  /** Digested uploads for this chat; summaries/excerpts feed every turn. */
+  attachments?: CreationAttachment[] | undefined;
   language?: string | undefined;
   conversationSummary?: string | undefined;
 };
@@ -400,10 +423,14 @@ export function deterministicCreationTurn(request: MobileCreationTurnRequest): M
   const presets = base.recommendation;
   const userTurns = effectiveRequest.messages.filter((message) => message.role === "user").length;
   const latestUserMessage = latestUserMessageText(effectiveRequest.messages);
-  const hasIdea = payload.rawIdea.trim().length >= 3;
+  const hasAttachmentSubstance = (effectiveRequest.attachments ?? []).some(
+    (attachment) => attachment.content.trim().length > 0 || attachment.summary.trim().length > 0
+  );
+  const hasIdea = payload.rawIdea.trim().length >= 3 || hasAttachmentSubstance;
   const buildRequested = hasIdea && isBuildRequestMessage(latestUserMessage);
   const metaAnswer = metaAnswerForMessage(latestUserMessage);
   const settingsAck = chatSettingsAcknowledgement(request, effectiveRequest);
+  const attachmentAck = attachmentAcknowledgement(latestUserMessageAttachments(effectiveRequest.messages));
   const question =
     hasIdea && !buildRequested && !metaAnswer
       ? nextQuestionForRecipe(base.detectedLane, base.recipe, effectiveRequest.messages, userTurns)
@@ -421,7 +448,8 @@ export function deterministicCreationTurn(request: MobileCreationTurnRequest): M
       userTurns,
       buildRequested,
       metaAnswer,
-      settingsAck
+      settingsAck,
+      attachmentAck
     }),
     brief: base.recipe,
     presets,
@@ -440,6 +468,7 @@ export function deterministicCreationTurn(request: MobileCreationTurnRequest): M
 const CREATION_ASSISTANT_FACTS = [
   "The app turns the chat into a book plan (title, premise, chapters) that the user reviews and can revise before anything is written.",
   "After the user approves the plan, the app writes the full book page by page, can add a cover and interior visuals, and produces PDF and EPUB downloads.",
+  "The user can attach photos and documents (PDF, Word, EPUB, plain text, Markdown) with the paperclip; they are read once and used as source material, inspiration, or instructions for the book.",
   "Supported book shapes: children's stories, adult short stories, lead magnets, offer guides, client tools, workbooks, and practical guides.",
   "Books can be written in almost any language; the user can just write in their language or ask for one.",
   "Page count can be set in chat (for example: make it 40 pages) or picked when building; 1 to 600 pages are supported.",
@@ -467,6 +496,7 @@ export async function enrichCreationTurnWithAi(
           "Interview style: look at what is still genuinely missing from the brief (audience, promise or conflict, tone, character, ending, exercises, next step - whichever fit this kind of book) and ask about the single most valuable gap. Ask AT MOST ONE focused question per turn with 2-4 short tappable options plus a custom answer. Never re-ask something the user already answered or skipped, and stop asking once the brief is solid - then set question to null and encourage them to build the plan. " +
           "Language: always reply in the language the user writes in. Set the language field to the BCP-47 code of the language the book should be written in whenever it is clear (for example fa, es, de). " +
           "Settings from chat: if the user asks for a different book type, page count, visuals on/off, tone, title, or language, apply it - update presets/brief accordingly and confirm the change in one short sentence. If you are unsure the user really wants to switch book type, ask a confirmation question like 'Switch this to a children's story?' with Yes/No options instead of switching silently. " +
+          "Uploaded files: the user can attach documents and photos; each arrives already read, with a summary and extracted text under 'attachments' (messages reference them by name). Treat documents as the user's source material or instructions - stay faithful to their facts and wording, follow instructions they contain, and fold what they cover into the brief. Treat photos as inspiration, references, or notes to transcribe. When a file arrives with the latest message, acknowledge in one natural sentence what you understood from it, then continue the interview using what it already answers instead of re-asking. Answer questions about the files from their extracted content. Never say you cannot open or see files. " +
           "Build requests: if the user says the brief is good and asks to build/start/go ahead, set buildRequested to true, set question to null, and reply with one short confirmation sentence. " +
           "Questions about the app: answer capability and process questions briefly and accurately using ONLY these facts, then steer back to the book: " +
           CREATION_ASSISTANT_FACTS +
@@ -480,6 +510,7 @@ export async function enrichCreationTurnWithAi(
           {
             conversation: request.messages,
             conversationSummary: request.conversationSummary ?? null,
+            attachments: attachmentContextForTurn(request.attachments),
             currentBrief: base.brief,
             currentPresets: base.presets,
             detectedLane: base.detectedLane,
@@ -500,6 +531,45 @@ export async function enrichCreationTurnWithAi(
     ]
   });
   return cleanCreationTurnPatch(result.data);
+}
+
+/** Per-turn budget for attachment excerpts sent to the chat model. */
+const TURN_ATTACHMENT_EXCERPT_MAX = 2500;
+const TURN_ATTACHMENT_EXCERPT_TOTAL_MAX = 7500;
+
+/**
+ * Compact attachment view for every chat turn: summaries always, excerpts
+ * within a fixed budget (newest files first) so turn cost stays flat no
+ * matter how much material was uploaded.
+ */
+export function attachmentContextForTurn(attachments: CreationAttachment[] | undefined): Array<{
+  name: string;
+  kind: string;
+  pages?: number | undefined;
+  summary: string;
+  excerpt: string;
+  excerptTruncated: boolean;
+}> {
+  if (!attachments || attachments.length === 0) {
+    return [];
+  }
+  let remaining = TURN_ATTACHMENT_EXCERPT_TOTAL_MAX;
+  // Newest uploads get excerpt budget first; older ones may fall back to summary only.
+  const byNewest = [...attachments].reverse();
+  const contexts = byNewest.map((attachment) => {
+    const budget = Math.min(TURN_ATTACHMENT_EXCERPT_MAX, remaining);
+    const excerpt = attachment.content.slice(0, budget);
+    remaining -= excerpt.length;
+    return {
+      name: attachment.name,
+      kind: attachment.kind,
+      ...(attachment.pages ? { pages: attachment.pages } : {}),
+      summary: attachment.summary,
+      excerpt,
+      excerptTruncated: attachment.truncated || excerpt.length < attachment.content.length
+    };
+  });
+  return contexts.reverse();
 }
 
 export function payloadFromTurnRequest(request: MobileCreationTurnRequest): MobileCreationDraftPayload {
@@ -526,6 +596,7 @@ export function payloadFromTurnRequest(request: MobileCreationTurnRequest): Mobi
     ...(lane ? { detectedLane: lane } : {}),
     recipe,
     selectedPresets: request.presets,
+    ...(request.attachments && request.attachments.length > 0 ? { attachments: request.attachments } : {}),
     ...(request.language ? { language: request.language } : {}),
     ...(request.conversationSummary ? { conversationSummary: request.conversationSummary } : {}),
     messages: request.messages
@@ -533,7 +604,12 @@ export function payloadFromTurnRequest(request: MobileCreationTurnRequest): Mobi
 }
 
 function turnHasEnoughSubstance(request: MobileCreationTurnRequest): boolean {
-  return request.messages.some((message) => message.role === "user" && message.content.trim().length >= 2);
+  return (
+    request.messages.some(
+      (message) =>
+        message.role === "user" && (message.content.trim().length >= 2 || (message.attachments?.length ?? 0) > 0)
+    ) || (request.attachments?.length ?? 0) > 0
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -692,6 +768,10 @@ export function metaAnswerForMessage(message: string): string | null {
   }
   if (/\b(cost|price|credit|charge|pay|free)\b/.test(text)) {
     return "Building a plan and generating the book use credits from your balance, and you always see the exact amount before anything is charged. Reading and chatting here are free.";
+  }
+  if (/\b(upload|attach|send|share|give)\b.*\b(photo|image|picture|file|document|pdf|docx?|word|epub|notes?)s?\b/.test(text) ||
+      /\b(can|how)\b.*\b(upload|attach)\b/.test(text)) {
+    return "Yes - tap the paperclip to attach photos or documents (PDF, Word, EPUB, or plain text). I'll read them and use them as source material or instructions for your book.";
   }
   if (/\b(formats?|pdf|epub|downloads?|exports?|files?)\b/.test(text)) {
     return "You get your finished book as PDF and EPUB downloads, ready to share or publish.";
@@ -956,6 +1036,36 @@ function latestUserMessageText(messages: MobileCreationMessage[]): string {
   return "";
 }
 
+function latestUserMessageAttachments(messages: MobileCreationMessage[]): MobileCreationMessageAttachment[] {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "user") {
+      return message.attachments ?? [];
+    }
+  }
+  return [];
+}
+
+/** Human acknowledgement for files that arrived with the latest user message. */
+export function attachmentAcknowledgement(attachments: MobileCreationMessageAttachment[]): string | null {
+  if (attachments.length === 0) {
+    return null;
+  }
+  if (attachments.length === 1) {
+    const attachment = attachments[0]!;
+    return attachment.kind === "photo"
+      ? `I've looked at ${attachment.name}.`
+      : `I've read ${attachment.name} and will use it as source material.`;
+  }
+  const documents = attachments.filter((attachment) => attachment.kind === "document").length;
+  const photos = attachments.length - documents;
+  const parts = [
+    documents > 0 ? (documents === 1 ? "the document" : `${documents} documents`) : "",
+    photos > 0 ? (photos === 1 ? "the photo" : `${photos} photos`) : ""
+  ].filter(Boolean);
+  return `I've gone through ${parts.join(" and ")} you sent and will use them for the book.`;
+}
+
 function deterministicReadiness(options: {
   base: MobileBookAdvisorResponse;
   hasIdea: boolean;
@@ -1002,18 +1112,21 @@ function deterministicAssistantMessage(
     buildRequested: boolean;
     metaAnswer: string | null;
     settingsAck: string | null;
+    attachmentAck: string | null;
   }
 ): string {
+  const attachmentPrefix = context.attachmentAck ? `${context.attachmentAck} ` : "";
   if (!hasIdea) {
-    return "Tell me about the book you want to make, or tap an example to start.";
+    return `${attachmentPrefix}Tell me about the book you want to make, or tap an example to start.`;
   }
   if (context.buildRequested) {
-    return pickVariant(BUILD_ACK_MESSAGES, context.userTurns);
+    return attachmentPrefix + pickVariant(BUILD_ACK_MESSAGES, context.userTurns);
   }
   if (context.metaAnswer) {
-    return context.metaAnswer;
+    return attachmentPrefix + context.metaAnswer;
   }
-  const ackPrefix = context.settingsAck ? `${context.settingsAck} ` : "";
+  const acks = [context.attachmentAck, context.settingsAck].filter(Boolean).join(" ");
+  const ackPrefix = acks ? `${acks} ` : "";
   if (base.detectedLane === "auto") {
     if (question) {
       return `${ackPrefix}${questionLeadIn(context.userTurns)}${question.prompt}`;
@@ -1139,6 +1252,7 @@ export function composeMobileProjectPrompt(
   const normalized = normalizePayload(payload);
   const recipe = normalized.recipe ?? advisor.recipe;
   const autoMode = recipe.lane === "auto" || normalized.selectedPresets?.bookTypeChoice === "auto";
+  const attachments = normalized.attachments ?? [];
   const lines = [
     autoMode
       ? "Create the best-fitting book from the user's creation chat. Decide the real book shape during planning; do not rely on the neutral project category."
@@ -1157,8 +1271,15 @@ export function composeMobileProjectPrompt(
     fieldLine("Next step", recipe.nextStep),
     fieldLine("Exercises", recipe.exercises),
     fieldLine("Must include", recipe.mustInclude || normalized.optionalDetails.mustInclude),
+    // The material itself stays out of this user-visible prompt; the worker
+    // injects it into the planner input from the mobile creation metadata.
     normalized.sourceNotes.trim()
       ? "Use the pasted source notes stored in the mobile creation metadata as private reference material. Preserve user intent, but do not invent unsupported factual claims."
+      : "",
+    attachments.length > 0
+      ? `Use the ${attachments.length === 1 ? "uploaded file" : `${attachments.length} uploaded files`} stored in the mobile creation metadata (${attachments
+          .map((attachment) => attachment.name)
+          .join(", ")}) as private source material. Follow explicit instructions they contain and stay faithful to their facts.`
       : "",
     autoMode
       ? "Planning instruction: choose the most appropriate shape directly, such as children's fable, short story, workbook, practical guide, client tool, offer guide, or lead magnet, based on the chat history."
@@ -1179,6 +1300,7 @@ export function mobileBriefMetadata(
     optionalDetails: normalized.optionalDetails,
     sourceNotes: normalized.sourceNotes,
     messages: normalized.messages ?? [],
+    attachments: normalized.attachments ?? [],
     detectedLane: recipe.lane,
     recipe,
     selectedPresets: normalized.selectedPresets ?? advisor.recommendation,
@@ -1378,11 +1500,12 @@ function recommendedPresets(
   payload: MobileCreationDraftPayload
 ): MobileCreationPresets {
   const explicitTargetPages = explicitTargetPagesForMobilePayload(payload);
+  const referenceLength = payload.sourceNotes.length + attachmentContentLength(payload);
   if (lane === "auto") {
     return presetsWithPageCount({
       bookType: "lead_magnet",
       bookTypeChoice: "auto",
-      lengthPreset: payload.sourceNotes.length > 1200 ? "standard" : "short",
+      lengthPreset: referenceLength > 1200 ? "standard" : "short",
       qualityPreset: "balanced",
       imagesEnabled: true
     }, explicitTargetPages);
@@ -1397,7 +1520,7 @@ function recommendedPresets(
     return presetsWithPageCount({
       bookType: "short_story",
       bookTypeChoice: "auto",
-      lengthPreset: payload.sourceNotes.length > 800 ? "standard" : "short",
+      lengthPreset: referenceLength > 800 ? "standard" : "short",
       qualityPreset: "balanced",
       imagesEnabled: true
     }, explicitTargetPages);
@@ -1405,10 +1528,14 @@ function recommendedPresets(
   return presetsWithPageCount({
     bookType: "lead_magnet",
     bookTypeChoice: "auto",
-    lengthPreset: payload.sourceNotes.length > 1200 || lane === "offer_guide" || lane === "practical_guide" ? "standard" : "short",
+    lengthPreset: referenceLength > 1200 || lane === "offer_guide" || lane === "practical_guide" ? "standard" : "short",
     qualityPreset: lane === "offer_guide" ? "premium" : "balanced",
     imagesEnabled: true
   }, explicitTargetPages);
+}
+
+function attachmentContentLength(payload: MobileCreationDraftPayload): number {
+  return (payload.attachments ?? []).reduce((total, attachment) => total + attachment.content.length, 0);
 }
 
 function presetsWithPageCount(
@@ -1469,7 +1596,7 @@ function recipeStrengthScore(
   if (recipe.promise.trim() || recipe.conflict.trim()) score += 10;
   if (recipe.tone.trim()) score += 5;
   if (recipe.mainCharacter.trim() || recipe.nextStep.trim() || recipe.exercises.trim()) score += 8;
-  if (payload.sourceNotes.trim()) score += 7;
+  if (payload.sourceNotes.trim() || (payload.attachments?.length ?? 0) > 0) score += 7;
   score -= Math.min(15, warnings.length * 5);
   return Math.max(0, Math.min(100, score));
 }
@@ -1480,7 +1607,10 @@ function warningMessages(payload: MobileCreationDraftPayload, lane: MobileCreati
   if (payload.sourceNotes.length > 9000) {
     warnings.push("The pasted notes are long. The planner will treat them as reference material, not a full manuscript.");
   }
-  if (looksFactualOrCurrent(text) && !payload.sourceNotes.trim()) {
+  if (attachmentContentLength(payload) > 20000) {
+    warnings.push("The uploaded files are long. The planner will treat them as reference material, not a full manuscript.");
+  }
+  if (looksFactualOrCurrent(text) && !payload.sourceNotes.trim() && (payload.attachments?.length ?? 0) === 0) {
     warnings.push("This sounds factual or current. Add source notes if exact claims matter.");
   }
   if (wordCount(payload.rawIdea) < 3 && lane !== "children_story" && lane !== "auto") {
@@ -1586,6 +1716,9 @@ function cleanAdvisorPatch(
 }
 
 function payloadHasEnoughSubstance(payload: MobileCreationDraftPayload): boolean {
+  if (attachmentContentLength(payload) >= 80) {
+    return true;
+  }
   return [payload.rawIdea, payload.sourceNotes, payload.optionalDetails.mustInclude].join(" ").trim().length >= 80;
 }
 

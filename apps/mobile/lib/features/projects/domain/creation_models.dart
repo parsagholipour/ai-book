@@ -394,22 +394,106 @@ class MobileCreationDraft {
 }
 
 class MobileCreationMessage {
-  const MobileCreationMessage({required this.role, required this.content});
+  const MobileCreationMessage({
+    required this.role,
+    required this.content,
+    this.attachments = const [],
+  });
 
   final String role;
   final String content;
+  final List<MobileCreationMessageAttachment> attachments;
 
   bool get isUser => role == 'user';
 
+  bool get hasAttachments => attachments.isNotEmpty;
+
   factory MobileCreationMessage.fromJson(Map<String, dynamic> json) {
+    final attachments = json['attachments'] as List<dynamic>? ?? const [];
     return MobileCreationMessage(
       role: json['role'] as String,
       content: json['content'] as String,
+      attachments: attachments
+          .map(
+            (attachment) => MobileCreationMessageAttachment.fromJson(
+              attachment as Map<String, dynamic>,
+            ),
+          )
+          .toList(),
     );
   }
 
   Map<String, dynamic> toJson() {
-    return {'role': role, 'content': content};
+    return {
+      'role': role,
+      'content': content,
+      if (attachments.isNotEmpty)
+        'attachments': attachments
+            .map((attachment) => attachment.toJson())
+            .toList(),
+    };
+  }
+}
+
+/// Reference from a chat message to a file uploaded into the conversation.
+class MobileCreationMessageAttachment {
+  const MobileCreationMessageAttachment({
+    required this.id,
+    required this.kind,
+    required this.name,
+  });
+
+  final String id;
+  final String kind;
+  final String name;
+
+  bool get isPhoto => kind == 'photo';
+
+  factory MobileCreationMessageAttachment.fromJson(Map<String, dynamic> json) {
+    return MobileCreationMessageAttachment(
+      id: json['id'] as String,
+      kind: json['kind'] as String? ?? 'document',
+      name: json['name'] as String? ?? 'attachment',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'id': id, 'kind': kind, 'name': name};
+  }
+}
+
+/// A file uploaded into the creation chat, already read by the server.
+class MobileCreationAttachment {
+  const MobileCreationAttachment({
+    required this.id,
+    required this.kind,
+    required this.name,
+    required this.sizeBytes,
+    this.summary = '',
+    this.pages,
+    this.truncated = false,
+  });
+
+  final String id;
+  final String kind;
+  final String name;
+  final int sizeBytes;
+  final String summary;
+  final int? pages;
+  final bool truncated;
+
+  bool get isPhoto => kind == 'photo';
+
+  factory MobileCreationAttachment.fromJson(Map<String, dynamic> json) {
+    return MobileCreationAttachment(
+      id: json['id'] as String,
+      kind: json['kind'] as String? ?? 'document',
+      name: json['name'] as String? ?? 'attachment',
+      sizeBytes: json['sizeBytes'] as int? ?? 0,
+      summary: json['summary'] as String? ?? '',
+      pages: json['pages'] as int?,
+      truncated: json['truncated'] as bool? ?? false,
+    );
   }
 }
 
@@ -519,6 +603,7 @@ class MobileCreationSession {
     required this.messages,
     required this.updatedAt,
     this.outputs = const [],
+    this.attachments = const [],
     this.createdProjectId,
     this.activeProjectId,
   });
@@ -530,11 +615,15 @@ class MobileCreationSession {
   final String? createdProjectId;
   final String? activeProjectId;
   final List<MobileCreationOutput> outputs;
+
+  /// Every file uploaded into this chat (sent or still pending in composer).
+  final List<MobileCreationAttachment> attachments;
   final DateTime updatedAt;
 
   factory MobileCreationSession.fromJson(Map<String, dynamic> json) {
     final messages = json['messages'] as List<dynamic>? ?? const [];
     final outputs = json['outputs'] as List<dynamic>? ?? const [];
+    final attachments = json['attachments'] as List<dynamic>? ?? const [];
     return MobileCreationSession(
       draftId: json['draftId'] as String,
       title: json['title'] as String? ?? 'New book',
@@ -553,6 +642,13 @@ class MobileCreationSession {
           .map(
             (output) =>
                 MobileCreationOutput.fromJson(output as Map<String, dynamic>),
+          )
+          .toList(),
+      attachments: attachments
+          .map(
+            (attachment) => MobileCreationAttachment.fromJson(
+              attachment as Map<String, dynamic>,
+            ),
           )
           .toList(),
       updatedAt: DateTime.parse(json['updatedAt'] as String),

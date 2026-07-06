@@ -3626,3 +3626,173 @@ async function buildOperatorApp(): Promise<FastifyInstance> {
   await app.register(projectRoutes);
   return app;
 }
+
+describe("creation chat attachments API", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  const readyAttachment = {
+    id: "att_ready1",
+    kind: "document" as const,
+    name: "notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 64,
+    summary: "Pricing notes for consultants.",
+    content: "Anchor high and offer three tiers.",
+    truncated: false,
+    createdAt: "2026-07-06T00:00:00.000Z"
+  };
+  const sessionPayload = {
+    payloadVersion: 3,
+    rawIdea: "A pricing guide",
+    messages: [
+      { role: "assistant", content: "Hi!" },
+      { role: "user", content: "A pricing guide" }
+    ]
+  };
+
+  it("uploads a file, digests it, and persists it on the draft", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload: sessionPayload })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", ...data })
+    );
+    const ingestion = vi.fn().mockResolvedValue(readyAttachment);
+    const app = await buildMobileApp({ attachmentIngestion: ingestion });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/attachments?filename=notes.txt&mimeType=text%2Fplain",
+      headers: { ...bearer("token-a"), "content-type": "application/octet-stream" },
+      payload: Buffer.from("Anchor high and offer three tiers.", "utf8")
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      attachment: { id: "att_ready1", kind: "document", name: "notes.txt", pages: null }
+    });
+    // Digested text stays server-side.
+    expect(JSON.stringify(response.json())).not.toContain("Anchor high");
+    expect(ingestion).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "notes.txt", mimeType: "text/plain" })
+    );
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: { attachments: Array<Record<string, unknown>> } };
+    };
+    expect(updateCall.data.payload.attachments).toHaveLength(1);
+    expect(updateCall.data.payload.attachments[0]).toMatchObject({ id: "att_ready1", content: "Anchor high and offer three tiers." });
+    await app.close();
+  });
+
+  it("returns friendly errors for unsupported files", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload: sessionPayload })
+    );
+    const { CreationAttachmentError } = await import("@book-maker/core");
+    const app = await buildMobileApp({
+      attachmentIngestion: vi.fn().mockRejectedValue(
+        new CreationAttachmentError("UNSUPPORTED_TYPE", "That file type isn't supported yet.")
+      )
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/attachments?filename=song.mp3",
+      headers: { ...bearer("token-a"), "content-type": "application/octet-stream" },
+      payload: Buffer.from([1, 2, 3])
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({ error: { code: "UNSUPPORTED_TYPE" } });
+    await app.close();
+  });
+
+  it("binds uploaded attachments to a chat message and acknowledges them", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = { ...sessionPayload, attachments: [readyAttachment] };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", ...data })
+    );
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "", attachmentIds: ["att_ready1"] }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.turn.assistantMessage).toContain("notes.txt");
+    expect(body.session.attachments).toHaveLength(1);
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: { messages: Array<Record<string, unknown>>; attachments: Array<Record<string, unknown>> } };
+    };
+    const userMessages = updateCall.data.payload.messages.filter((message) => message.role === "user");
+    expect(userMessages.at(-1)).toMatchObject({
+      attachments: [{ id: "att_ready1", kind: "document", name: "notes.txt" }]
+    });
+    expect(updateCall.data.payload.attachments).toHaveLength(1);
+    await app.close();
+  });
+
+  it("rejects messages that reference unknown attachments", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload: sessionPayload })
+    );
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Use my file", attachmentIds: ["att_missing"] }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error: { code: "ATTACHMENT_NOT_FOUND" } });
+    await app.close();
+  });
+
+  it("removes unsent attachments but protects ones already in the conversation", async () => {
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-a" });
+    const sentRef = { id: "att_ready1", kind: "document", name: "notes.txt" };
+    const payloadWithSent = {
+      ...sessionPayload,
+      messages: [...sessionPayload.messages, { role: "user", content: "", attachments: [sentRef] }],
+      attachments: [readyAttachment, { ...readyAttachment, id: "att_unsent", name: "draft.md" }]
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(
+      creationDraftRecord({ id: "session-draft", payload: payloadWithSent })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", ...data })
+    );
+    const app = await buildMobileApp();
+
+    const removeUnsent = await app.inject({
+      method: "DELETE",
+      url: "/api/mobile/creation-sessions/session-draft/attachments/att_unsent",
+      headers: bearer("token-a")
+    });
+    const removeSent = await app.inject({
+      method: "DELETE",
+      url: "/api/mobile/creation-sessions/session-draft/attachments/att_ready1",
+      headers: bearer("token-a")
+    });
+
+    expect(removeUnsent.statusCode).toBe(200);
+    expect(removeSent.statusCode).toBe(409);
+    expect(removeSent.json()).toMatchObject({ error: { code: "ATTACHMENT_IN_USE" } });
+    await app.close();
+  });
+});

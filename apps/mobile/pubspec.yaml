@@ -42,7 +42,8 @@ dependencies:
   in_app_purchase_android: ^0.4.0
   path_provider: ^2.1.5
   share_plus: ^13.1.0
-
+  image_picker: ^1.2.3
+  file_selector: ^1.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

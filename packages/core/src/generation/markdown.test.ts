@@ -549,3 +549,71 @@ function withPageLikeChapters(plan: ReturnType<typeof makeFallbackPlan>): Return
     }))
   };
 }
+
+describe("non-Latin headings", () => {
+  it("keeps a Persian heading that does not repeat the page title", () => {
+    const plan = makeFallbackPlan({
+      prompt: "یک داستان کودکانه درباره چمنزار خواب‌آلود.",
+      category: "CUSTOM",
+      targetPages: 1,
+      complexity: 5,
+      temperature: 0.8,
+      language: "fa",
+      mediaSettings: {
+        fullIllustrations: false,
+        illustrationCadence: "template-driven",
+        includeCover: false,
+        coverTemplate: "auto",
+        finalReview: true,
+        toneProfile: "neutral" as const
+      }
+    });
+
+    const markdown = compileBookMarkdown({
+      plan,
+      pages: [
+        {
+          index: 1,
+          title: "شب‌بخیر، چمنزار",
+          markdown: "## ستاره‌های بیدار\n\nخرگوش کوچولو زیر آسمان پرستاره دراز کشیده بود."
+        }
+      ]
+    });
+
+    expect(markdown).toContain("ستاره‌های بیدار");
+    expect(markdown).toContain("خرگوش کوچولو زیر آسمان پرستاره دراز کشیده بود.");
+  });
+
+  it("still strips a heading that repeats the Persian page title", () => {
+    const plan = makeFallbackPlan({
+      prompt: "یک داستان کودکانه درباره چمنزار خواب‌آلود.",
+      category: "CUSTOM",
+      targetPages: 1,
+      complexity: 5,
+      temperature: 0.8,
+      language: "fa",
+      mediaSettings: {
+        fullIllustrations: false,
+        illustrationCadence: "template-driven",
+        includeCover: false,
+        coverTemplate: "auto",
+        finalReview: true,
+        toneProfile: "neutral" as const
+      }
+    });
+
+    const markdown = compileBookMarkdown({
+      plan,
+      pages: [
+        {
+          index: 1,
+          title: "شب‌بخیر، چمنزار",
+          markdown: "## شب‌بخیر، چمنزار\n\nخرگوش کوچولو زیر آسمان پرستاره دراز کشیده بود."
+        }
+      ]
+    });
+
+    expect(markdown).not.toContain("## شب‌بخیر، چمنزار");
+    expect(markdown).toContain("خرگوش کوچولو زیر آسمان پرستاره دراز کشیده بود.");
+  });
+});

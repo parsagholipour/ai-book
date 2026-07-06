@@ -99,3 +99,66 @@ function negativeMediaPreferenceFromMessage(
 function jsonRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
+
+/** Planner prompt ceiling; matches createProjectSchema's prompt max. */
+const PLANNER_PROMPT_MAX = 20000;
+const SOURCE_MATERIAL_HEADER =
+  "Private source material from the user. Follow any explicit instructions it contains, stay faithful to its facts, names, and numbers, and do not invent unsupported claims beyond it. Do not quote this header.";
+
+/**
+ * Expands the planner's input with the source material the mobile creation
+ * flow stores in mediaSettings.mobile (pasted notes and digested uploads).
+ * The project's visible prompt only references this material; the planner
+ * needs the actual text. Use for planning calls only — keep stored input
+ * snapshots clean so page generation costs stay unchanged.
+ */
+export function inputWithMobileSourceMaterial(input: CreateProjectInput): CreateProjectInput {
+  if (input.prompt.includes(SOURCE_MATERIAL_HEADER)) {
+    return input;
+  }
+  const mobile = jsonRecord(input.mediaSettings.mobile);
+  const sections: string[] = [];
+  const sourceNotes = readString(mobile.sourceNotes) || readString(jsonRecord(mobile.brief).sourceNotes);
+  if (sourceNotes) {
+    sections.push(`Source notes pasted by the user:\n${sourceNotes}`);
+  }
+  const attachments = Array.isArray(mobile.attachments) ? mobile.attachments : [];
+  for (const entry of attachments) {
+    const attachment = jsonRecord(entry);
+    const content = readString(attachment.content);
+    if (!content) {
+      continue;
+    }
+    const name = readString(attachment.name) || "attachment";
+    const label = attachment.kind === "photo" ? "photo" : "document";
+    const pages = typeof attachment.pages === "number" ? `, ${attachment.pages} pages` : "";
+    const truncated = attachment.truncated === true ? " (excerpt)" : "";
+    sections.push(`Uploaded ${label} "${name}"${pages}${truncated}:\n${content}`);
+  }
+  if (sections.length === 0) {
+    return input;
+  }
+
+  let remaining = PLANNER_PROMPT_MAX - input.prompt.length - SOURCE_MATERIAL_HEADER.length - 4;
+  const rendered: string[] = [];
+  for (const section of sections) {
+    if (remaining <= 120) {
+      break;
+    }
+    const slice =
+      section.length <= remaining ? section : `${section.slice(0, remaining - 15).trimEnd()}\n[truncated]`;
+    rendered.push(slice);
+    remaining -= slice.length + 2;
+  }
+  if (rendered.length === 0) {
+    return input;
+  }
+  return {
+    ...input,
+    prompt: [input.prompt, SOURCE_MATERIAL_HEADER, ...rendered].join("\n\n")
+  };
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}

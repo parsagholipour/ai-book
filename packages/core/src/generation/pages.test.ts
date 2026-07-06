@@ -15,6 +15,7 @@ import {
   polishPageDraft,
   repairPageBrief,
   reviewPageDraft,
+  reviewPageDraftLocally,
   revisePageDraft,
   shouldIllustratePage
 } from "./pages.js";
@@ -2003,3 +2004,71 @@ function capturingJsonModel(rawData: unknown): {
   };
   return capture;
 }
+
+describe("non-Latin local quality review", () => {
+  const persianInput: CreateProjectInput = {
+    ...input,
+    prompt: "یک داستان آرام شبانه درباره چمنزار خواب‌آلود.",
+    category: "CUSTOM",
+    language: "fa",
+    targetPages: 5
+  };
+  const persianPlan = makeFallbackPlan(persianInput);
+  const persianBody = [
+    "خرگوش کوچولو در چمنزار سبز و نرم دراز کشیده بود و به آسمان شب نگاه می‌کرد.",
+    "ستاره‌ها یکی‌یکی روشن می‌شدند و برای او چشمک می‌زدند.",
+    "مادرش کنار او نشست و پتوی گرم و پشمی را روی شانه‌هایش کشید.",
+    "باد ملایمی میان علف‌های بلند می‌پیچید و بوی گل‌های وحشی را با خود می‌آورد.",
+    "جیرجیرک‌ها آواز آرام شبانه‌شان را از گوشه‌ی چمنزار شروع کرده بودند.",
+    "خرگوش کوچولو خمیازه‌ای بلند کشید و گفت که هنوز خوابش نمی‌آید.",
+    "مادرش آرام خندید و قصه‌ی قدیمی ماه و تپه‌ی نقره‌ای را برایش تعریف کرد.",
+    "ماه از پشت تپه بالا آمد و نور نقره‌ای‌اش را روی تمام چمنزار پاشید.",
+    "کم‌کم پلک‌های خرگوش کوچولو سنگین و سنگین‌تر شد.",
+    "او در میان لالایی نسیم و عطر علف‌های تازه به خوابی شیرین رفت."
+  ].join(" ");
+
+  it("counts Persian prose as real words instead of rejecting the page as empty", () => {
+    const report = reviewPageDraftLocally({
+      input: persianInput,
+      plan: persianPlan,
+      pageIndex: 1,
+      draft: {
+        title: "چمنزار خواب‌آلود",
+        markdown: persianBody,
+        summary: "خرگوش کوچولو زیر آسمان پرستاره آماده خواب می‌شود.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes: []
+    });
+
+    expect(report.issues.find((issue) => issue.includes("too short"))).toBeUndefined();
+    expect(report.checks.progressionOk).toBe(true);
+  });
+
+  it("does not flag distinct Persian titles as duplicates of the previous page", () => {
+    const report = reviewPageDraftLocally({
+      input: persianInput,
+      plan: persianPlan,
+      pageIndex: 2,
+      draft: {
+        title: "ستاره‌های بیدار",
+        markdown: persianBody,
+        summary: "ستاره‌ها برای چمنزار آواز شبانه می‌خوانند.",
+        continuityNotes: []
+      },
+      previousPages: [
+        {
+          index: 1,
+          title: "چمنزار خواب‌آلود",
+          markdown: "مهتاب روی رودخانه می‌درخشید و قورباغه‌ها آواز می‌خواندند و شب‌تاب‌ها می‌رقصیدند.",
+          summary: "شب در کنار رودخانه آغاز می‌شود."
+        }
+      ],
+      continuityNotes: []
+    });
+
+    expect(report.issues.find((issue) => issue.includes("title repeats"))).toBeUndefined();
+    expect(report.checks.titleClean).toBe(true);
+  });
+});

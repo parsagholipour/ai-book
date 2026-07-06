@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { inputForPlanVersion, inputWithMessageMediaPreferences } from "./projectInput.js";
+import { inputForPlanVersion, inputWithMessageMediaPreferences, inputWithMobileSourceMaterial } from "./projectInput.js";
+import { createProjectSchema } from "@book-maker/core";
 
 describe("worker project input resolution", () => {
   it("prefers the plan input snapshot so generation keeps the saved text model", () => {
@@ -110,3 +111,66 @@ function projectSource() {
     }
   };
 }
+
+describe("inputWithMobileSourceMaterial", () => {
+  const baseInput = () =>
+    createProjectSchema.parse({
+      prompt: "Create a lead magnet.\nUse the uploaded file stored in the mobile creation metadata.",
+      category: "BUSINESS",
+      subcategory: "Lead Magnet Ebook",
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        toneProfile: "neutral",
+        mobile: {
+          sourceNotes: "Anchor high. Offer three tiers.",
+          attachments: [
+            {
+              id: "att_1",
+              kind: "document",
+              name: "pricing.pdf",
+              content: "Never discount without removing scope.",
+              pages: 3,
+              truncated: false
+            },
+            { id: "att_2", kind: "photo", name: "cover.jpg", content: "A calm blue cover concept." }
+          ]
+        }
+      }
+    });
+
+  it("appends pasted notes and uploaded digests to the planner prompt", () => {
+    const enriched = inputWithMobileSourceMaterial(baseInput());
+
+    expect(enriched.prompt).toContain("Anchor high. Offer three tiers.");
+    expect(enriched.prompt).toContain('Uploaded document "pricing.pdf", 3 pages');
+    expect(enriched.prompt).toContain("Never discount without removing scope.");
+    expect(enriched.prompt).toContain('Uploaded photo "cover.jpg"');
+    expect(enriched.prompt.length).toBeLessThanOrEqual(20000);
+  });
+
+  it("is idempotent and a no-op without mobile material", () => {
+    const enriched = inputWithMobileSourceMaterial(baseInput());
+    expect(inputWithMobileSourceMaterial(enriched).prompt).toBe(enriched.prompt);
+
+    const plain = createProjectSchema.parse({
+      prompt: "Create a short story about tides.",
+      category: "STORY",
+      subcategory: "Short Story"
+    });
+    expect(inputWithMobileSourceMaterial(plain)).toEqual(plain);
+  });
+
+  it("truncates oversized material to the planner prompt budget", () => {
+    const input = baseInput();
+    const mobile = (input.mediaSettings.mobile ?? {}) as Record<string, unknown>;
+    mobile.sourceNotes = "x".repeat(30000);
+    const enriched = inputWithMobileSourceMaterial(input);
+
+    expect(enriched.prompt.length).toBeLessThanOrEqual(20000);
+    expect(enriched.prompt).toContain("[truncated]");
+  });
+});

@@ -4,19 +4,26 @@ import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
+  CREATION_ATTACHMENT_MAX_BYTES,
+  CREATION_ATTACHMENT_MAX_COUNT,
   CREDIT_COSTS,
+  CreationAttachmentError,
   DEFAULT_BILLING_PRODUCTS,
   bookPlanSchema,
   createFastRoutingTextModel,
+  createFileDigestAdapter,
   createLanguageDetectionTextModel,
   createProjectSchema,
   creditCostForOperation,
   estimateFullBookCreditCost,
   generateJsonWithRetry,
+  ingestCreationAttachment,
   loadConfig,
   mediaSettingsSchema,
   type BookPlan,
   type CreateProjectInput,
+  type CreationAttachment,
+  type IngestCreationAttachmentInput,
   type ModelTier,
   type TextModelAdapter,
   type ToneProfile
@@ -121,6 +128,11 @@ const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
 const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium"]);
 const idParamsSchema = z.object({ id: z.string().min(1) });
 const assetParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().min(1) });
+const attachmentParamsSchema = z.object({ id: z.string().min(1), attachmentId: z.string().min(1).max(64) });
+const attachmentUploadQuerySchema = z.object({
+  filename: z.string().trim().min(1).max(300),
+  mimeType: z.string().trim().max(160).optional()
+});
 const mobileAssetFilenameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/);
 const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
@@ -130,6 +142,7 @@ const DEFAULT_GENERATION_RATE_LIMIT = { maxAttempts: 12, windowMs: 60 * 60 * 100
 const DEFAULT_BILLING_VERIFICATION_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
 const DEFAULT_ADVISOR_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
 const DEFAULT_DRAFT_RATE_LIMIT = { maxAttempts: 120, windowMs: 60 * 60 * 1000 };
+const DEFAULT_ATTACHMENT_RATE_LIMIT = { maxAttempts: 60, windowMs: 60 * 60 * 1000 };
 const UNTITLED_MOBILE_PROJECT_TITLE = "Untitled Book";
 const MOBILE_TITLE_SOURCE_PLANNER_PENDING = "planner_pending";
 
@@ -213,7 +226,24 @@ export type MobileCreationSessionDto = {
   createdProjectId: string | null;
   activeProjectId: string | null;
   outputs: MobileCreationOutputDto[];
+  /** Uploaded files (display metadata only; digested content stays server-side). */
+  attachments: MobileCreationAttachmentDto[];
   updatedAt: string;
+};
+
+export type MobileCreationAttachmentDto = {
+  id: string;
+  kind: "document" | "photo";
+  name: string;
+  sizeBytes: number;
+  summary: string;
+  pages: number | null;
+  truncated: boolean;
+  createdAt: string;
+};
+
+export type MobileCreationAttachmentResponseDto = {
+  attachment: MobileCreationAttachmentDto;
 };
 
 export type MobileCreationOutputDto = {
@@ -608,12 +638,17 @@ const mobileProjectChatBranchBodySchema = z
 
 const mobileCreationMessageBodySchema = z
   .object({
-    message: z.string().trim().min(1).max(4000),
+    // Empty text is allowed when the message carries attachments.
+    message: z.string().trim().max(4000).default(""),
+    attachmentIds: z.array(z.string().trim().min(1).max(64)).max(6).optional(),
     presets: mobileCreationPresetsSchema.optional(),
     sourceNotes: z.string().trim().max(12000).optional(),
     optionalDetails: mobileCreationOptionalDetailsSchema.optional()
   })
-  .strict();
+  .strict()
+  .refine((body) => body.message.length > 0 || (body.attachmentIds?.length ?? 0) > 0, {
+    message: "Send a message or an attachment."
+  });
 
 const mobileCreationSessionStartBodySchema = z
   .object({
@@ -828,6 +863,9 @@ export type MobileProjectRoutesOptions = {
   billingVerificationRateLimit?: Partial<RateLimitConfig>;
   advisorRateLimit?: Partial<RateLimitConfig>;
   draftRateLimit?: Partial<RateLimitConfig>;
+  attachmentRateLimit?: Partial<RateLimitConfig>;
+  /** Test seam for attachment ingestion; defaults to the core pipeline. */
+  attachmentIngestion?: (input: IngestCreationAttachmentInput) => Promise<CreationAttachment>;
   advisorTimeoutMs?: number;
   advisorEnrichment?:
     | false
@@ -867,6 +905,23 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     ...DEFAULT_DRAFT_RATE_LIMIT,
     ...options.draftRateLimit
   });
+  const attachmentLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_ATTACHMENT_RATE_LIMIT,
+    ...options.attachmentRateLimit
+  });
+  const attachmentIngestion =
+    options.attachmentIngestion ??
+    ((input: IngestCreationAttachmentInput) =>
+      ingestCreationAttachment(input, {
+        fileDigest: createFileDigestAdapter(appConfig),
+        summaryModel: safeFastRoutingTextModel()
+      }));
+  // Raw binary uploads for chat attachments; metadata travels in the query string.
+  fastify.addContentTypeParser(
+    "application/octet-stream",
+    { parseAs: "buffer" },
+    (_request, body, done) => done(null, body)
+  );
   const advisorEnrichment =
     options.advisorEnrichment === false
       ? undefined
@@ -1318,9 +1373,30 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "This book chat needs to be restarted.");
       }
 
+      const attachmentPool = parsedPayload.data.attachments ?? [];
+      const requestedAttachmentIds = parsedBody.data.attachmentIds ?? [];
+      const attachedNow = requestedAttachmentIds.map((attachmentId) =>
+        attachmentPool.find((attachment) => attachment.id === attachmentId)
+      );
+      if (attachedNow.some((attachment) => attachment === undefined)) {
+        return sendMobileError(reply, 404, "ATTACHMENT_NOT_FOUND", "That attachment was not found. Re-attach the file and try again.");
+      }
+      const attachmentRefs = attachedNow.map((attachment) => ({
+        id: attachment!.id,
+        kind: attachment!.kind,
+        name: attachment!.name
+      }));
+
       const priorMessages = conversationMessagesFromPayload(parsedPayload.data);
       const incoming = foldCreationTranscript(
-        [...priorMessages, { role: "user" as const, content: parsedBody.data.message }],
+        [
+          ...priorMessages,
+          {
+            role: "user" as const,
+            content: parsedBody.data.message,
+            ...(attachmentRefs.length > 0 ? { attachments: attachmentRefs } : {})
+          }
+        ],
         parsedPayload.data.conversationSummary
       );
       const turnRequest: MobileCreationTurnRequest = {
@@ -1329,6 +1405,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         presets: parsedBody.data.presets ?? persistedPresetsForTurn(parsedPayload.data),
         sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
         optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails,
+        attachments: attachmentPool,
         language: parsedPayload.data.language,
         conversationSummary: incoming.conversationSummary
       };
@@ -1349,6 +1426,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         detectedLane: turn.brief.lane,
         recipe: turn.brief,
         selectedPresets: turn.presets,
+        ...(attachmentPool.length > 0 ? { attachments: attachmentPool } : {}),
         ...(language ? { language } : {}),
         ...(persisted.conversationSummary ? { conversationSummary: persisted.conversationSummary } : {}),
         messages: persisted.messages
@@ -1361,6 +1439,130 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persisted.messages),
         turn
       } satisfies MobileCreationConversationResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/creation-sessions/:id/attachments",
+    {
+      bodyLimit: CREATION_ATTACHMENT_MAX_BYTES + 64 * 1024,
+      schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError, 422: mobileAuthError } }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(attachmentLimiter, request, reply, auth.user.id, "creation-attachment-upload")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const query = attachmentUploadQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the file with a filename.");
+      }
+      const data = request.body;
+      if (!Buffer.isBuffer(data) || data.length === 0) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the file as the request body.");
+      }
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id }
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "SESSION_NOT_FOUND", "This book chat was not found.");
+      }
+      const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      if (!parsedPayload.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "This book chat needs to be restarted.");
+      }
+      const existing = parsedPayload.data.attachments ?? [];
+      if (existing.length >= CREATION_ATTACHMENT_MAX_COUNT) {
+        return sendMobileError(
+          reply,
+          409,
+          "ATTACHMENT_LIMIT",
+          `This chat already has ${CREATION_ATTACHMENT_MAX_COUNT} files. Remove one before adding another.`
+        );
+      }
+
+      let attachment: CreationAttachment;
+      try {
+        attachment = await attachmentIngestion({
+          data,
+          name: query.data.filename,
+          mimeType: query.data.mimeType,
+          language: parsedPayload.data.language
+        });
+      } catch (error) {
+        if (error instanceof CreationAttachmentError) {
+          return sendMobileError(reply, 422, error.code, error.message);
+        }
+        request.log.warn({ err: error, draftId: id }, "Creation attachment ingestion failed");
+        return sendMobileError(
+          reply,
+          422,
+          "ATTACHMENT_FAILED",
+          "That file could not be read. Try a different file or paste the text instead."
+        );
+      }
+
+      const updatedPayload = mobileCreationDraftPayloadSchema.parse({
+        ...parsedPayload.data,
+        attachments: [...existing, attachment]
+      });
+      await prisma.mobileCreationDraft.update({
+        where: { id },
+        data: { payload: jsonInputValue(updatedPayload) }
+      });
+      return reply
+        .code(201)
+        .send({ attachment: serializeCreationAttachment(attachment) } satisfies MobileCreationAttachmentResponseDto);
+    }
+  );
+
+  fastify.delete(
+    "/api/mobile/creation-sessions/:id/attachments/:attachmentId",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id, attachmentId } = attachmentParamsSchema.parse(request.params);
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id }
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "SESSION_NOT_FOUND", "This book chat was not found.");
+      }
+      const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      if (!parsedPayload.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "This book chat needs to be restarted.");
+      }
+      const attachments = parsedPayload.data.attachments ?? [];
+      if (!attachments.some((attachment) => attachment.id === attachmentId)) {
+        return sendMobileError(reply, 404, "ATTACHMENT_NOT_FOUND", "That attachment was not found.");
+      }
+      const referenced = (parsedPayload.data.messages ?? []).some((message) =>
+        (message.attachments ?? []).some((ref) => ref.id === attachmentId)
+      );
+      if (referenced) {
+        return sendMobileError(
+          reply,
+          409,
+          "ATTACHMENT_IN_USE",
+          "That file is already part of the conversation and can't be removed."
+        );
+      }
+      const updatedPayload = mobileCreationDraftPayloadSchema.parse({
+        ...parsedPayload.data,
+        attachments: attachments.filter((attachment) => attachment.id !== attachmentId)
+      });
+      await prisma.mobileCreationDraft.update({
+        where: { id },
+        data: { payload: jsonInputValue(updatedPayload) }
+      });
+      return { ok: true };
     }
   );
 
@@ -2966,7 +3168,23 @@ function serializeCreationSession(
     createdProjectId: draft.createdProjectId,
     activeProjectId: activeProjectIdForDraft(draft, outputs),
     outputs,
+    attachments: payload.success
+      ? (payload.data.attachments ?? []).map((attachment) => serializeCreationAttachment(attachment))
+      : [],
     updatedAt: draft.updatedAt.toISOString()
+  };
+}
+
+function serializeCreationAttachment(attachment: CreationAttachment): MobileCreationAttachmentDto {
+  return {
+    id: attachment.id,
+    kind: attachment.kind,
+    name: attachment.name,
+    sizeBytes: attachment.sizeBytes,
+    summary: attachment.summary,
+    pages: attachment.pages ?? null,
+    truncated: attachment.truncated,
+    createdAt: attachment.createdAt
   };
 }
 
@@ -4207,6 +4425,7 @@ function turnRequestFromPayload(
     presets: persistedPresetsForTurn(payload),
     sourceNotes: payload.sourceNotes,
     optionalDetails: payload.optionalDetails,
+    attachments: payload.attachments,
     language: payload.language,
     conversationSummary: payload.conversationSummary
   };

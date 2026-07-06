@@ -37,9 +37,23 @@ abstract interface class CreationRepository {
   Future<MobileCreationConversationResponse> sendConversationMessage({
     required String draftId,
     required String message,
+    List<String>? attachmentIds,
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+  });
+
+  Future<MobileCreationAttachment> uploadAttachment({
+    required String draftId,
+    required List<int> bytes,
+    required String filename,
+    String? mimeType,
+    void Function(int sent, int total)? onProgress,
+  });
+
+  Future<void> deleteAttachment({
+    required String draftId,
+    required String attachmentId,
   });
 
   Future<MobileCreationFinalizeResponse> buildConversation({
@@ -186,6 +200,7 @@ class MobileCreationRepository implements CreationRepository {
   Future<MobileCreationConversationResponse> sendConversationMessage({
     required String draftId,
     required String message,
+    List<String>? attachmentIds,
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
@@ -194,6 +209,8 @@ class MobileCreationRepository implements CreationRepository {
       '/api/mobile/creation-sessions/$draftId/messages',
       data: <String, dynamic>{
         'message': message,
+        if (attachmentIds != null && attachmentIds.isNotEmpty)
+          'attachmentIds': attachmentIds,
         'presets': ?presets?.toJson(),
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),
@@ -201,6 +218,39 @@ class MobileCreationRepository implements CreationRepository {
     );
     return MobileCreationConversationResponse.fromJson(
       response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileCreationAttachment> uploadAttachment({
+    required String draftId,
+    required List<int> bytes,
+    required String filename,
+    String? mimeType,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final response = await apiClient.postBytes(
+      '/api/mobile/creation-sessions/$draftId/attachments',
+      bytes: bytes,
+      queryParameters: {
+        'filename': filename,
+        if (mimeType != null && mimeType.isNotEmpty) 'mimeType': mimeType,
+      },
+      onSendProgress: onProgress,
+    );
+    final data = response.data as Map<String, dynamic>;
+    return MobileCreationAttachment.fromJson(
+      data['attachment'] as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<void> deleteAttachment({
+    required String draftId,
+    required String attachmentId,
+  }) async {
+    await apiClient.deleteJson(
+      '/api/mobile/creation-sessions/$draftId/attachments/$attachmentId',
     );
   }
 
@@ -305,6 +355,7 @@ class CreationConversationCache {
         createdProjectId: session.createdProjectId,
         activeProjectId: session.activeProjectId,
         outputs: session.outputs,
+        attachments: session.attachments,
         updatedAt: session.updatedAt,
       ),
     );

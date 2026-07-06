@@ -23,6 +23,8 @@ export * from "./adapters/textRouting.js";
 export * from "./adapters/textFallback.js";
 export * from "./adapters/geminiModels.js";
 export * from "./adapters/gemini.js";
+export * from "./adapters/fileUnderstanding.js";
+export * from "./ingestion/creationAttachments.js";
 export * from "./adapters/fake.js";
 export * from "./adapters/factory.js";
 export * from "./context/contextPack.js";

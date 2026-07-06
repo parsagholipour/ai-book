@@ -437,12 +437,12 @@ function shouldStripLeadingHeading(
   if (
     pagePrefix.test(normalizedHeading) ||
     /^page(?:\s+\d+\b|\s+title\b|\s+like\b)/i.test(normalizedHeading) ||
-    normalizedHeading === normalizedPageTitle
+    (normalizedHeading.length > 0 && normalizedHeading === normalizedPageTitle)
   ) {
     return true;
   }
 
-  if (!chapter) {
+  if (!chapter || normalizedHeading.length === 0) {
     return false;
   }
 
@@ -456,7 +456,7 @@ function normalizeHeadingText(text: string): string {
   return text
     .toLowerCase()
     .replace(/[*_`]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

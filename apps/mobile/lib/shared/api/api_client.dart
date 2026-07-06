@@ -70,6 +70,54 @@ class ApiClient {
     return _request('PATCH', path, data: data, requiresAuth: requiresAuth);
   }
 
+  /// Uploads raw bytes (chat attachments); metadata travels as query params.
+  Future<Response<dynamic>> postBytes(
+    String path, {
+    required List<int> bytes,
+    Map<String, String>? queryParameters,
+    void Function(int sent, int total)? onSendProgress,
+  }) async {
+    Options buildOptions(String accessToken) {
+      return Options(
+        method: 'POST',
+        contentType: 'application/octet-stream',
+        sendTimeout: const Duration(minutes: 3),
+        receiveTimeout: const Duration(minutes: 3),
+        headers: {
+          'Authorization': 'Bearer $accessToken',
+          Headers.contentLengthHeader: bytes.length.toString(),
+        },
+      );
+    }
+
+    final accessToken = await _validAccessToken();
+    try {
+      return await dio.request<dynamic>(
+        path,
+        data: Stream.fromIterable([bytes]),
+        queryParameters: queryParameters,
+        options: buildOptions(accessToken),
+        onSendProgress: onSendProgress,
+      );
+    } on DioException catch (error) {
+      if (error.response?.statusCode == 401) {
+        final tokens = await refreshTokens();
+        try {
+          return await dio.request<dynamic>(
+            path,
+            data: Stream.fromIterable([bytes]),
+            queryParameters: queryParameters,
+            options: buildOptions(tokens.accessToken),
+            onSendProgress: onSendProgress,
+          );
+        } on DioException catch (retryError) {
+          throw _mapDioException(retryError);
+        }
+      }
+      throw _mapDioException(error);
+    }
+  }
+
   Future<Response<dynamic>> deleteJson(
     String path, {
     Object? data,

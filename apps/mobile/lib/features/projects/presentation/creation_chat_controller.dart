@@ -43,6 +43,68 @@ const _localGreetingTurn = MobileCreationTurn(
 /// Keys tracked for "Your choice" badges in the live brief / advanced sheet.
 enum CreationChoice { bookType, length, finish, visuals, language, tone }
 
+enum PendingAttachmentStatus { uploading, ready, failed }
+
+/// A file picked in the composer: uploading, ready to send, or failed.
+@immutable
+class PendingCreationAttachment {
+  const PendingCreationAttachment({
+    required this.localId,
+    required this.name,
+    required this.kind,
+    required this.status,
+    this.attachment,
+    this.localPath,
+    this.bytes,
+    this.mimeType,
+    this.error,
+  });
+
+  final String localId;
+  final String name;
+
+  /// 'photo' or 'document'.
+  final String kind;
+  final PendingAttachmentStatus status;
+
+  /// Server record once the upload and reading finished.
+  final MobileCreationAttachment? attachment;
+
+  /// Local file path used for photo thumbnails during this app session.
+  final String? localPath;
+
+  /// Kept while uploading/failed so a retry does not re-pick the file.
+  final List<int>? bytes;
+  final String? mimeType;
+  final String? error;
+
+  bool get isPhoto => kind == 'photo';
+  bool get isReady => status == PendingAttachmentStatus.ready;
+  bool get isUploading => status == PendingAttachmentStatus.uploading;
+  bool get isFailed => status == PendingAttachmentStatus.failed;
+
+  PendingCreationAttachment copyWith({
+    PendingAttachmentStatus? status,
+    MobileCreationAttachment? attachment,
+    Object? bytes = _sentinel,
+    Object? error = _sentinel,
+  }) {
+    return PendingCreationAttachment(
+      localId: localId,
+      name: name,
+      kind: kind,
+      status: status ?? this.status,
+      attachment: attachment ?? this.attachment,
+      localPath: localPath,
+      bytes: bytes == _sentinel ? this.bytes : bytes as List<int>?,
+      mimeType: mimeType,
+      error: error == _sentinel ? this.error : error as String?,
+    );
+  }
+
+  static const _sentinel = Object();
+}
+
 @immutable
 class CreationChatState {
   const CreationChatState({
@@ -71,6 +133,8 @@ class CreationChatState {
     this.activeProjectId,
     this.composingNewOutput = false,
     this.pendingBuildRequest = false,
+    this.pendingAttachments = const <PendingCreationAttachment>[],
+    this.attachmentThumbnails = const <String, String>{},
   });
 
   final bool initializing;
@@ -102,7 +166,19 @@ class CreationChatState {
   /// the same preflight/build flow as the Build button.
   final bool pendingBuildRequest;
 
+  /// Files picked in the composer that have not been sent with a message yet.
+  final List<PendingCreationAttachment> pendingAttachments;
+
+  /// Local photo paths by server attachment id, for transcript thumbnails.
+  final Map<String, String> attachmentThumbnails;
+
   bool get hasSession => draftId != null;
+
+  bool get hasReadyAttachments =>
+      pendingAttachments.any((attachment) => attachment.isReady);
+
+  bool get hasUploadingAttachments =>
+      pendingAttachments.any((attachment) => attachment.isUploading);
 
   String get displayTitle {
     final title = sessionTitle?.trim();
@@ -144,6 +220,8 @@ class CreationChatState {
     Object? activeProjectId = _sentinel,
     bool? composingNewOutput,
     bool? pendingBuildRequest,
+    List<PendingCreationAttachment>? pendingAttachments,
+    Map<String, String>? attachmentThumbnails,
   }) {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
@@ -179,6 +257,8 @@ class CreationChatState {
           : activeProjectId as String?,
       composingNewOutput: composingNewOutput ?? this.composingNewOutput,
       pendingBuildRequest: pendingBuildRequest ?? this.pendingBuildRequest,
+      pendingAttachments: pendingAttachments ?? this.pendingAttachments,
+      attachmentThumbnails: attachmentThumbnails ?? this.attachmentThumbnails,
     );
   }
 
@@ -188,6 +268,7 @@ class CreationChatState {
 class CreationChatController extends Notifier<CreationChatState> {
   int _initRequestId = 0;
   int _messageRequestId = 0;
+  Future<void>? _syncOutputsRequest;
 
   @override
   CreationChatState build() => const CreationChatState();
@@ -279,7 +360,12 @@ class CreationChatController extends Notifier<CreationChatState> {
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
     final draftId = state.draftId;
-    if (trimmed.isEmpty || state.isBusy) {
+    final readyAttachments = state.pendingAttachments
+        .where((attachment) => attachment.isReady && attachment.attachment != null)
+        .toList();
+    if ((trimmed.isEmpty && readyAttachments.isEmpty) ||
+        state.isBusy ||
+        state.hasUploadingAttachments) {
       return;
     }
     final presets = _presetsForRequest();
@@ -287,17 +373,41 @@ class CreationChatController extends Notifier<CreationChatState> {
     final optionalDetails = state.optionalDetails.hasContent
         ? state.optionalDetails
         : null;
+    final attachmentIds = readyAttachments
+        .map((pending) => pending.attachment!.id)
+        .toList();
     final requestId = ++_messageRequestId;
     final optimistic = [
       ...state.messages,
-      MobileCreationMessage(role: 'user', content: trimmed),
+      MobileCreationMessage(
+        role: 'user',
+        content: trimmed,
+        attachments: [
+          for (final pending in readyAttachments)
+            MobileCreationMessageAttachment(
+              id: pending.attachment!.id,
+              kind: pending.kind,
+              name: pending.name,
+            ),
+        ],
+      ),
     ];
+    final thumbnails = {
+      ...state.attachmentThumbnails,
+      for (final pending in readyAttachments)
+        if (pending.isPhoto && pending.localPath != null)
+          pending.attachment!.id: pending.localPath!,
+    };
     state = state.copyWith(
       messages: optimistic,
       assistantTyping: true,
       quickReplies: const <String>[],
       question: null,
       initError: null,
+      attachmentThumbnails: thumbnails,
+      pendingAttachments: state.pendingAttachments
+          .where((pending) => !readyAttachments.contains(pending))
+          .toList(),
     );
     try {
       final response = draftId == null
@@ -310,6 +420,7 @@ class CreationChatController extends Notifier<CreationChatState> {
           : await _repository.sendConversationMessage(
               draftId: draftId,
               message: trimmed,
+              attachmentIds: attachmentIds.isEmpty ? null : attachmentIds,
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
@@ -330,6 +441,159 @@ class CreationChatController extends Notifier<CreationChatState> {
       rethrow;
     }
   }
+
+  /// Uploads a picked file into this chat; starts the session first if the
+  /// user attaches before saying anything.
+  Future<void> attachFile({
+    required String filename,
+    required List<int> bytes,
+    required bool isPhoto,
+    String? mimeType,
+    String? localPath,
+  }) async {
+    final localId = 'local_${_nextAttachmentLocalId++}';
+    final pending = PendingCreationAttachment(
+      localId: localId,
+      name: filename,
+      kind: isPhoto ? 'photo' : 'document',
+      status: PendingAttachmentStatus.uploading,
+      localPath: localPath,
+      bytes: bytes,
+      mimeType: mimeType,
+    );
+    state = state.copyWith(
+      pendingAttachments: [...state.pendingAttachments, pending],
+      initError: null,
+    );
+    await _uploadPendingAttachment(localId);
+  }
+
+  Future<void> retryAttachment(String localId) async {
+    final pending = _pendingById(localId);
+    if (pending == null || !pending.isFailed || pending.bytes == null) {
+      return;
+    }
+    _updatePendingAttachment(
+      localId,
+      (entry) =>
+          entry.copyWith(status: PendingAttachmentStatus.uploading, error: null),
+    );
+    await _uploadPendingAttachment(localId);
+  }
+
+  Future<void> removeAttachment(String localId) async {
+    final pending = _pendingById(localId);
+    if (pending == null) {
+      return;
+    }
+    state = state.copyWith(
+      pendingAttachments: state.pendingAttachments
+          .where((entry) => entry.localId != localId)
+          .toList(),
+    );
+    final draftId = state.draftId;
+    final attachmentId = pending.attachment?.id;
+    if (draftId != null && attachmentId != null) {
+      try {
+        await _repository.deleteAttachment(
+          draftId: draftId,
+          attachmentId: attachmentId,
+        );
+      } catch (_) {
+        // The file simply stays in the session pool; harmless.
+      }
+    }
+  }
+
+  /// Uploads run one at a time; parallel uploads would race the server-side
+  /// draft update and could drop a file.
+  Future<void> _uploadPendingAttachment(String localId) {
+    final run = _uploadChain.then(
+      (_) => _runPendingAttachmentUpload(localId),
+    );
+    _uploadChain = run.catchError((_) {});
+    return run;
+  }
+
+  Future<void> _uploadChain = Future<void>.value();
+
+  Future<void> _runPendingAttachmentUpload(String localId) async {
+    try {
+      final draftId = await _ensureSession();
+      final pending = _pendingById(localId);
+      if (pending == null) {
+        return;
+      }
+      final attachment = await _repository.uploadAttachment(
+        draftId: draftId,
+        bytes: pending.bytes ?? const <int>[],
+        filename: pending.name,
+        mimeType: pending.mimeType,
+      );
+      _updatePendingAttachment(
+        localId,
+        (entry) => entry.copyWith(
+          status: PendingAttachmentStatus.ready,
+          attachment: attachment,
+          bytes: null,
+          error: null,
+        ),
+      );
+    } catch (error) {
+      _updatePendingAttachment(
+        localId,
+        (entry) => entry.copyWith(
+          status: PendingAttachmentStatus.failed,
+          error: userFacingError(error),
+        ),
+      );
+    }
+  }
+
+  /// Creates the chat session on demand so files can be attached first.
+  Future<String> _ensureSession() async {
+    final existing = state.draftId;
+    if (existing != null) {
+      return existing;
+    }
+    final response = await _repository.startConversation();
+    _cache.write(response);
+    if (state.draftId == null) {
+      _applyConversation(response, initializing: false);
+      ref.invalidate(chatSessionsProvider);
+    }
+    final draftId = response.session?.draftId ?? state.draftId;
+    if (draftId == null) {
+      throw const ApiException(
+        code: 'SESSION_NOT_READY',
+        message: 'Could not start the chat. Try again.',
+      );
+    }
+    return draftId;
+  }
+
+  PendingCreationAttachment? _pendingById(String localId) {
+    for (final pending in state.pendingAttachments) {
+      if (pending.localId == localId) {
+        return pending;
+      }
+    }
+    return null;
+  }
+
+  void _updatePendingAttachment(
+    String localId,
+    PendingCreationAttachment Function(PendingCreationAttachment entry) update,
+  ) {
+    state = state.copyWith(
+      pendingAttachments: [
+        for (final pending in state.pendingAttachments)
+          if (pending.localId == localId) update(pending) else pending,
+      ],
+    );
+  }
+
+  int _nextAttachmentLocalId = 1;
 
   Future<MobileCreationFinalizeResponse> buildPlan() async {
     final draftId = state.draftId;
@@ -527,6 +791,25 @@ class CreationChatController extends Notifier<CreationChatState> {
     );
   }
 
+  Future<void> syncOutputs() {
+    final draftId = state.draftId;
+    if (draftId == null) {
+      return Future<void>.value();
+    }
+    final existing = _syncOutputsRequest;
+    if (existing != null) {
+      return existing;
+    }
+    late final Future<void> request;
+    request = _syncOutputsForDraft(draftId).whenComplete(() {
+      if (identical(_syncOutputsRequest, request)) {
+        _syncOutputsRequest = null;
+      }
+    });
+    _syncOutputsRequest = request;
+    return request;
+  }
+
   MobileCreationOptionalDetails _copyOptional({
     String? title,
     String? authorName,
@@ -569,12 +852,76 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (output == null) {
       return state.outputs;
     }
-    final next = state.outputs
-        .where((existing) => existing.projectId != output.projectId)
-        .toList();
-    next.add(output);
+    return _mergeOutputsInto(state.outputs, [output]);
+  }
+
+  Future<void> _syncOutputsForDraft(String draftId) async {
+    final response = await _repository.resumeConversationById(draftId);
+    final session = response.session;
+    if (state.draftId != draftId ||
+        session == null ||
+        session.draftId != draftId) {
+      return;
+    }
+    final outputs = session.outputs;
+    if (outputs.isEmpty) {
+      return;
+    }
+    final mergedOutputs = _mergeOutputsInto(state.outputs, outputs);
+    _cacheSyncedOutputs(
+      draftId: draftId,
+      response: response,
+      outputs: mergedOutputs,
+    );
+    if (state.draftId != draftId) {
+      return;
+    }
+    state = state.copyWith(outputs: mergedOutputs);
+  }
+
+  List<MobileCreationOutput> _mergeOutputsInto(
+    List<MobileCreationOutput> current,
+    Iterable<MobileCreationOutput> incoming,
+  ) {
+    final next = [...current];
+    for (final output in incoming) {
+      final index = next.indexWhere(
+        (existing) => existing.projectId == output.projectId,
+      );
+      if (index == -1) {
+        next.add(output);
+      } else {
+        next[index] = output;
+      }
+    }
     next.sort((a, b) => a.sequence.compareTo(b.sequence));
     return next;
+  }
+
+  void _cacheSyncedOutputs({
+    required String draftId,
+    required MobileCreationConversationResponse response,
+    required List<MobileCreationOutput> outputs,
+  }) {
+    final current = _cache.readById(draftId);
+    final session = current?.session ?? response.session;
+    if (session == null) return;
+    _cache.write(
+      MobileCreationConversationResponse(
+        turn: current?.turn ?? response.turn,
+        session: MobileCreationSession(
+          draftId: session.draftId,
+          title: session.title,
+          status: session.status,
+          messages: session.messages,
+          createdProjectId: session.createdProjectId,
+          activeProjectId: session.activeProjectId,
+          outputs: outputs,
+          attachments: session.attachments,
+          updatedAt: session.updatedAt,
+        ),
+      ),
+    );
   }
 
   void _cacheCreatedProject(String projectId, MobileCreationOutput? output) {
@@ -600,6 +947,7 @@ class CreationChatController extends Notifier<CreationChatState> {
           createdProjectId: projectId,
           activeProjectId: projectId,
           outputs: outputs,
+          attachments: session.attachments,
           updatedAt: session.updatedAt,
         ),
       ),
@@ -636,7 +984,11 @@ class CreationChatController extends Notifier<CreationChatState> {
         detectedLanguage != null &&
         detectedLanguage.isNotEmpty &&
         !state.userChoices.contains(CreationChoice.language);
+    final pendingAttachments = session == null
+        ? state.pendingAttachments
+        : _reconcilePendingAttachments(session);
     state = state.copyWith(
+      pendingAttachments: pendingAttachments,
       initializing: initializing ?? state.initializing,
       assistantTyping: assistantTyping ?? state.assistantTyping,
       draftId: session?.draftId ?? state.draftId,
@@ -658,6 +1010,45 @@ class CreationChatController extends Notifier<CreationChatState> {
       pendingBuildRequest: allowBuildRequest && turn.buildRequested,
     );
     _lastSyncedPresets = turn.presets;
+  }
+
+  /// Keeps composer chips in sync with the server: files uploaded but not yet
+  /// sent with a message reappear as ready chips (also across app restarts),
+  /// while local uploads still in flight are preserved.
+  List<PendingCreationAttachment> _reconcilePendingAttachments(
+    MobileCreationSession session,
+  ) {
+    final referencedIds = <String>{
+      for (final message in session.messages)
+        for (final attachment in message.attachments) attachment.id,
+    };
+    final serverIds = session.attachments
+        .map((attachment) => attachment.id)
+        .toSet();
+    final localByServerId = <String, PendingCreationAttachment>{
+      for (final pending in state.pendingAttachments)
+        if (pending.attachment != null) pending.attachment!.id: pending,
+    };
+    return [
+      for (final attachment in session.attachments)
+        if (!referencedIds.contains(attachment.id))
+          localByServerId[attachment.id] ??
+              PendingCreationAttachment(
+                localId: 'server_${attachment.id}',
+                name: attachment.name,
+                kind: attachment.kind,
+                status: PendingAttachmentStatus.ready,
+                attachment: attachment,
+              ),
+      // Local entries the server response does not know about yet: uploads in
+      // flight, failures awaiting retry, and just-finished uploads racing a
+      // stale response.
+      for (final pending in state.pendingAttachments)
+        if (pending.attachment == null ||
+            (!serverIds.contains(pending.attachment!.id) &&
+                !referencedIds.contains(pending.attachment!.id)))
+          pending,
+    ];
   }
 
   /// Presets from the previous server turn; used to tell chat-driven setting
