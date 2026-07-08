@@ -22,13 +22,11 @@ void main() {
               retryAvailable: true,
             ),
             project: fakeProjectWithPreview(),
-            downloadedFiles: const {},
             onRefresh: () async {},
             onResume: () async {
               retried = true;
             },
             onDownload: (_) async {},
-            onShare: (_) async {},
             onOpenPaywall: (_) async {},
           ),
         ),
@@ -52,7 +50,6 @@ void main() {
 
   testWidgets('export panel shows locked and unlocked states', (tester) async {
     final downloadedFormats = <String>[];
-    final sharedFormats = <String>[];
     final paywalledFormats = <String>[];
 
     await tester.pumpWidget(
@@ -66,12 +63,8 @@ void main() {
               epubAvailable: true,
             ),
             billing: fakeBilling(availableCredits: 200),
-            downloadedFiles: const {},
             onDownload: (export) async {
               downloadedFormats.add(export.format);
-            },
-            onShare: (export) async {
-              sharedFormats.add(export.format);
             },
             onOpenPaywall: (export) async {
               paywalledFormats.add(export.format);
@@ -82,22 +75,21 @@ void main() {
     );
 
     expect(find.text('Unlock PDF'), findsOneWidget);
-    expect(find.text('Download EPUB'), findsOneWidget);
+    expect(find.text('Get EPUB'), findsOneWidget);
     expect(
       find.text(
         'Ready after export unlock. This uses 150 credits if not already included.',
       ),
       findsOneWidget,
     );
-    expect(find.text('Ready to download and share.'), findsOneWidget);
+    expect(find.text('Ready to save or share.'), findsOneWidget);
 
     await tester.tap(find.text('Unlock PDF'));
     await tester.pump();
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Share').last);
+    await tester.tap(find.text('Get EPUB'));
     await tester.pump();
 
-    expect(downloadedFormats, ['pdf']);
-    expect(sharedFormats, ['epub']);
+    expect(downloadedFormats, ['pdf', 'epub']);
     expect(paywalledFormats, isEmpty);
   });
 
@@ -117,9 +109,7 @@ void main() {
               epubAvailable: true,
             ),
             billing: fakeBilling(availableCredits: 25),
-            downloadedFiles: const {},
             onDownload: (_) async {},
-            onShare: (_) async {},
             onOpenPaywall: (export) async {
               paywalledFormats.add(export.format);
             },

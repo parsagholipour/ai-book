@@ -10,9 +10,6 @@ import '../domain/project_models.dart';
 String projectExportDownloadAction(MobileExportAvailability export) =>
     'download-${export.format}';
 
-String projectExportShareAction(MobileExportAvailability export) =>
-    'share-${export.format}';
-
 bool projectExportNeedsCredits(
   MobileExportAvailability export,
   int? availableCredits,
@@ -31,7 +28,7 @@ String projectExportStateText(
     return 'Preparing this file after generation finishes.';
   }
   if (export.unlocked) {
-    return 'Ready to download and share.';
+    return 'Ready to save or share.';
   }
   if (availableCredits != null && availableCredits < export.creditsRequired) {
     return 'Ready after export unlock. You need ${export.creditsRequired} credits and have $availableCredits.';
@@ -48,7 +45,7 @@ String projectExportDownloadLabel(
     return 'Preparing $format';
   }
   if (export.unlocked) {
-    return 'Download $format';
+    return 'Get $format';
   }
   if (needsCredits) {
     return 'Get credits';
@@ -65,36 +62,6 @@ MobileExportAvailability? primaryUnlockedAvailableExport(
     }
   }
   return null;
-}
-
-Future<ProjectExportFile?> downloadProjectExport({
-  required BuildContext context,
-  required WidgetRef ref,
-  required String projectId,
-  required MobileExportAvailability export,
-  required bool Function() isMounted,
-  VoidCallback? onRefresh,
-}) async {
-  final messenger = ScaffoldMessenger.of(context);
-  try {
-    final file = await ref
-        .read(projectsRepositoryProvider)
-        .downloadExport(projectId: projectId, export: export);
-    if (!isMounted()) {
-      return file;
-    }
-    ref.invalidate(billingProvider);
-    onRefresh?.call();
-    messenger.showSnackBar(
-      SnackBar(content: Text('Saved ${file.filename} for sharing.')),
-    );
-    return file;
-  } catch (error) {
-    if (isMounted()) {
-      messenger.showSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-    return null;
-  }
 }
 
 Future<bool> shareProjectExport({

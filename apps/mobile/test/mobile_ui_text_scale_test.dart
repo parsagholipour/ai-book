@@ -72,10 +72,8 @@ void main() {
         child: ProjectGenerationView(
           status: _fakeStatus(),
           billing: _fakeBilling(),
-          downloadedFiles: const {},
           onRefresh: () async {},
           onDownload: (_) async {},
-          onShare: (_) async {},
           onOpenPaywall: (_) async {},
         ),
       ),

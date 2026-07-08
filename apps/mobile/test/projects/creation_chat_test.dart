@@ -758,15 +758,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Ready to export'), findsOneWidget);
-    expect(find.text('Download PDF'), findsOneWidget);
+    expect(find.text('Get PDF'), findsOneWidget);
     expect(find.text('View progress'), findsOneWidget);
 
-    await tester.tap(find.text('Download PDF'));
+    await tester.tap(find.text('Get PDF'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(projects.downloadedFormats, ['pdf']);
-    expect(find.text('Saved book.pdf for sharing.'), findsOneWidget);
+    expect(projects.sharedFormats, ['pdf']);
 
     await tester.teardownScreen();
   });
@@ -1800,6 +1799,7 @@ class _PlanProjectsRepository implements ProjectsRepository {
   final planSnapshots = <MobilePlan>[];
   final chatOperations = <MobileBookEditOperation>[];
   final downloadedFormats = <String>[];
+  final sharedFormats = <String>[];
 
   @override
   Future<MobileProjectDetail> getProject(String id) async {
@@ -2039,6 +2039,14 @@ class _PlanProjectsRepository implements ProjectsRepository {
       filename: export.filename,
       path: '/tmp/${export.filename}',
     );
+  }
+
+  @override
+  Future<void> shareExport({
+    required String projectId,
+    required MobileExportAvailability export,
+  }) async {
+    sharedFormats.add(export.format);
   }
 
   @override

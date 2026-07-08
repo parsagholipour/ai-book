@@ -28,10 +28,8 @@ void main() {
             body: ProjectGenerationView(
               status: fakeStatus(),
               project: fakeProjectWithVisuals(),
-              downloadedFiles: const {},
               onRefresh: () async {},
               onDownload: (_) async {},
-              onShare: (_) async {},
               onOpenPaywall: (_) async {},
               onReportProject: () async {
                 bookReports += 1;
