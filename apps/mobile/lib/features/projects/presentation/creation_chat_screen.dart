@@ -48,7 +48,9 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   String? _pendingRevisionPlanKey;
   String? _pendingRevisionOperationId;
   Timer? _planRefreshTimer;
-  int _lastScrollTrigger = 0;
+  Timer? _stickScrollTimer;
+  Object? _lastScrollTrigger;
+  bool _stickToBottom = true;
   bool _projectChatSending = false;
   bool _projectChatBranchSwitching = false;
   String? _editingProjectMessageId;
@@ -78,6 +80,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   @override
   void dispose() {
     _planRefreshTimer?.cancel();
+    _stickScrollTimer?.cancel();
     _composerController.dispose();
     _revisionController.dispose();
     _scrollController.dispose();
@@ -109,7 +112,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _pendingRevisionPlanKey = null;
     _planQuestionIndex = 0;
     _planQuestionAnswers = {};
-    _lastScrollTrigger = 0;
+    _lastScrollTrigger = null;
+    _stickToBottom = true;
+    _stickScrollTimer?.cancel();
+    _stickScrollTimer = null;
     _projectChatSending = false;
     _projectChatBranchSwitching = false;
     _editingProjectMessageId = null;
@@ -181,13 +187,14 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
     final chat = projectChatValue?.asData?.value;
     _syncMissingReplanCopyOutputs(state, chat);
-    final scrollTrigger =
-        state.messages.length +
-        (chat?.plans.length ?? (isInOutputStage ? 1 : 0)) +
-        (chat?.messages.length ?? 0) +
-        (chat?.operations.where(_showsOperationInTranscript).length ?? 0) +
-        (generationStatusValue == null ? 0 : 1) +
-        (state.assistantTyping ? 1 : 0);
+    final scrollTrigger = (
+      state.messages.length,
+      chat?.plans.length ?? (isInOutputStage ? 1 : 0),
+      chat?.messages.length ?? 0,
+      chat?.operations.where(_showsOperationInTranscript).length ?? 0,
+      state.assistantTyping,
+      _generationScrollKey(generationStatusValue),
+    );
     _maybeScrollToBottom(scrollTrigger);
 
     return Scaffold(
@@ -275,37 +282,40 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                   if (state.warnings.isNotEmpty)
                     _ChatWarningsBanner(warnings: state.warnings),
                   Expanded(
-                    child: _Transcript(
-                      state: state,
-                      controller: _scrollController,
-                      planValue: planValue,
-                      projectChatValue: projectChatValue,
-                      generationStatusValue: generationStatusValue,
-                      planBusyAction: _planBusyAction,
-                      activeProjectId: activeProjectId,
-                      switchingProjectBranch: _projectChatBranchSwitching,
-                      onSwitchProjectBranch: _switchProjectBranch,
-                      onEditProjectMessage: _startProjectMessageEdit,
-                      onOpenReplanCopy: _openReplanCopy,
-                      onOpenPaywall: (message) => unawaited(
-                        _openProjectChatPaywall(
-                          projectId: activeProjectId,
-                          project: planValue?.asData?.value,
+                    child: NotificationListener<Notification>(
+                      onNotification: _onTranscriptScrollNotification,
+                      child: _Transcript(
+                        state: state,
+                        controller: _scrollController,
+                        planValue: planValue,
+                        projectChatValue: projectChatValue,
+                        generationStatusValue: generationStatusValue,
+                        planBusyAction: _planBusyAction,
+                        activeProjectId: activeProjectId,
+                        switchingProjectBranch: _projectChatBranchSwitching,
+                        onSwitchProjectBranch: _switchProjectBranch,
+                        onEditProjectMessage: _startProjectMessageEdit,
+                        onOpenReplanCopy: _openReplanCopy,
+                        onOpenPaywall: (message) => unawaited(
+                          _openProjectChatPaywall(
+                            projectId: activeProjectId,
+                            project: planValue?.asData?.value,
+                          ),
                         ),
-                      ),
-                      onRetryFailedMessage: (localId) => unawaited(
-                        ref
+                        onRetryFailedMessage: (localId) => unawaited(
+                          ref
+                              .read(creationChatControllerProvider.notifier)
+                              .retryFailedMessage(localId)
+                              .catchError((_) {}),
+                        ),
+                        onDismissFailedMessage: (localId) => ref
                             .read(creationChatControllerProvider.notifier)
-                            .retryFailedMessage(localId)
-                            .catchError((_) {}),
-                      ),
-                      onDismissFailedMessage: (localId) => ref
-                          .read(creationChatControllerProvider.notifier)
-                          .dismissFailedMessage(localId),
-                      onRetryFailedOperation: (operation) => unawaited(
-                        _retryFailedOperation(
-                          project: planValue?.asData?.value,
-                          operation: operation,
+                            .dismissFailedMessage(localId),
+                        onRetryFailedOperation: (operation) => unawaited(
+                          _retryFailedOperation(
+                            project: planValue?.asData?.value,
+                            operation: operation,
+                          ),
                         ),
                       ),
                     ),
@@ -550,15 +560,51 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     );
   }
 
-  void _maybeScrollToBottom(int trigger) {
-    if (trigger == _lastScrollTrigger) return;
-    _lastScrollTrigger = trigger;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
+  void _syncStickToBottomFromUserScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    _stickToBottom = position.maxScrollExtent - position.pixels <= 80;
+  }
+
+  bool _onTranscriptScrollNotification(Notification notification) {
+    if (notification is UserScrollNotification) {
+      if (notification.metrics.axis != Axis.vertical) return false;
+      _syncStickToBottomFromUserScroll();
+      return false;
+    }
+    if (notification is ScrollMetricsNotification && _stickToBottom) {
+      if (notification.metrics.axis != Axis.vertical) return false;
+      // Content grew after the initial scroll (export card, images, etc.).
+      _scheduleStickyScroll(delay: const Duration(milliseconds: 48));
+    }
+    return false;
+  }
+
+  void _maybeScrollToBottom(Object trigger) {
+    final contentChanged = trigger != _lastScrollTrigger;
+    if (contentChanged) {
+      _lastScrollTrigger = trigger;
+    }
+    if (!contentChanged || !_stickToBottom) return;
+    // Wait a beat so the new bubble can finish its first layout pass.
+    _scheduleStickyScroll(delay: const Duration(milliseconds: 16));
+  }
+
+  void _scheduleStickyScroll({required Duration delay}) {
+    _stickScrollTimer?.cancel();
+    _stickScrollTimer = Timer(delay, () {
+      _stickScrollTimer = null;
+      if (!mounted || !_stickToBottom || !_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      final distance =
+          (target - _scrollController.position.pixels).abs();
+      if (distance <= 1) return;
+      // Short glide for small growth (export expand); longer for new messages.
+      final durationMs = distance < 120 ? 180 : 260;
       _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
+        target,
+        duration: Duration(milliseconds: durationMs),
+        curve: Curves.easeOutCubic,
       );
     });
   }
@@ -1145,6 +1191,21 @@ bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
     'generating' || 'editing' || 'complete' || 'failed' => true,
     _ => false,
   };
+}
+
+Object? _generationScrollKey(AsyncValue<MobileProjectStatus>? statusValue) {
+  if (statusValue == null) return null;
+  return statusValue.when(
+    loading: () => 'loading',
+    error: (error, _) => 'error:$error',
+    data: (status) => (
+      status.status,
+      status.isComplete,
+      status.hasFailure,
+      // Export actions change the bubble height when they appear.
+      primaryUnlockedAvailableExport(status.exports)?.format,
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------
