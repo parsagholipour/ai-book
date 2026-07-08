@@ -275,6 +275,7 @@ class CreationChatState {
 class CreationChatController extends Notifier<CreationChatState> {
   int _initRequestId = 0;
   int _messageRequestId = 0;
+  int _nextOptimisticMessageId = 0;
   Future<void>? _syncOutputsRequest;
 
   @override
@@ -359,9 +360,8 @@ class CreationChatController extends Notifier<CreationChatState> {
     }
   }
 
-  Future<void> retryInit() {
-    state = const CreationChatState();
-    return init();
+  Future<void> retryInit({bool fresh = false, String? draftId}) {
+    return init(fresh: fresh, draftId: draftId, force: true);
   }
 
   Future<void> sendMessage(String text) async {
@@ -377,6 +377,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     }
     final presets = _presetsForRequest();
     final sourceNotes = state.hasSourceNotes ? state.sourceNotes.trim() : null;
+    final includedSourceNotes = sourceNotes != null && sourceNotes.isNotEmpty;
     final optionalDetails = state.optionalDetails.hasContent
         ? state.optionalDetails
         : null;
@@ -384,11 +385,16 @@ class CreationChatController extends Notifier<CreationChatState> {
         .map((pending) => pending.attachment!.id)
         .toList();
     final requestId = ++_messageRequestId;
+    final localId = 'local_msg_${_nextOptimisticMessageId++}';
     final optimistic = [
       ...state.messages,
       MobileCreationMessage(
         role: 'user',
         content: trimmed,
+        localId: localId,
+        createdAt: DateTime.now(),
+        sendStatus: CreationMessageSendStatus.sending,
+        includedSourceNotes: includedSourceNotes,
         attachments: [
           for (final pending in readyAttachments)
             MobileCreationMessageAttachment(
@@ -402,7 +408,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     final thumbnails = {
       ...state.attachmentThumbnails,
       for (final pending in readyAttachments)
-        if (pending.isPhoto && pending.localPath != null)
+        if (pending.localPath != null)
           pending.attachment!.id: pending.localPath!,
     };
     final urls = {
@@ -448,12 +454,114 @@ class CreationChatController extends Notifier<CreationChatState> {
       );
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
+      final message = userFacingError(error);
       state = state.copyWith(
         assistantTyping: false,
-        initError: userFacingError(error),
+        initError: message,
+        messages: [
+          for (final entry in state.messages)
+            if (entry.localId == localId)
+              entry.copyWith(
+                sendStatus: CreationMessageSendStatus.failed,
+                sendError: message,
+              )
+            else
+              entry,
+        ],
       );
       rethrow;
     }
+  }
+
+  /// Retries a failed optimistic user message without re-picking attachments.
+  Future<void> retryFailedMessage(String localId) async {
+    MobileCreationMessage? failed;
+    for (final message in state.messages) {
+      if (message.localId == localId && message.isFailedSend) {
+        failed = message;
+        break;
+      }
+    }
+    if (failed == null || state.isBusy || state.hasUploadingAttachments) {
+      return;
+    }
+    final draftId = state.draftId;
+    final presets = _presetsForRequest();
+    final sourceNotes = failed.includedSourceNotes && state.hasSourceNotes
+        ? state.sourceNotes.trim()
+        : null;
+    final optionalDetails = state.optionalDetails.hasContent
+        ? state.optionalDetails
+        : null;
+    final attachmentIds = [
+      for (final attachment in failed.attachments) attachment.id,
+    ];
+    final requestId = ++_messageRequestId;
+    state = state.copyWith(
+      messages: [
+        for (final entry in state.messages)
+          if (entry.localId == localId)
+            entry.copyWith(
+              sendStatus: CreationMessageSendStatus.sending,
+              sendError: null,
+            )
+          else
+            entry,
+      ],
+      assistantTyping: true,
+      initError: null,
+    );
+    try {
+      final response = draftId == null
+          ? await _repository.startConversation(
+              message: failed.content,
+              presets: presets,
+              sourceNotes: sourceNotes,
+              optionalDetails: optionalDetails,
+            )
+          : await _repository.sendConversationMessage(
+              draftId: draftId,
+              message: failed.content,
+              attachmentIds: attachmentIds.isEmpty ? null : attachmentIds,
+              presets: presets,
+              sourceNotes: sourceNotes,
+              optionalDetails: optionalDetails,
+            );
+      if (requestId != _messageRequestId || state.draftId != draftId) return;
+      _cache.write(response);
+      _applyConversation(
+        response,
+        assistantTyping: false,
+        allowBuildRequest: true,
+      );
+      ref.invalidate(chatSessionsProvider);
+    } catch (error) {
+      final message = userFacingError(error);
+      state = state.copyWith(
+        assistantTyping: false,
+        initError: message,
+        messages: [
+          for (final entry in state.messages)
+            if (entry.localId == localId)
+              entry.copyWith(
+                sendStatus: CreationMessageSendStatus.failed,
+                sendError: message,
+              )
+            else
+              entry,
+        ],
+      );
+      rethrow;
+    }
+  }
+
+  void dismissFailedMessage(String localId) {
+    state = state.copyWith(
+      messages: [
+        for (final entry in state.messages)
+          if (entry.localId != localId) entry,
+      ],
+    );
   }
 
   /// Uploads a picked file into this chat; starts the session first if the
@@ -1030,6 +1138,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       activeProjectId: session?.activeProjectId ?? session?.createdProjectId,
       language: applyDetectedLanguage ? detectedLanguage : null,
       pendingBuildRequest: allowBuildRequest && turn.buildRequested,
+      initError: null,
     );
     _lastSyncedPresets = turn.presets;
   }

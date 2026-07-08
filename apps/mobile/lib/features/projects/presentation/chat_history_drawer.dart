@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
@@ -19,25 +20,47 @@ class ChatHistoryDrawer extends ConsumerWidget {
     final sessions = ref.watch(chatSessionsProvider);
     final billing = ref.watch(billingProvider);
     final colors = Theme.of(context).colorScheme;
+    final drawerBackground =
+        DrawerTheme.of(context).backgroundColor ?? colors.surfaceContainerLow;
 
     return Drawer(
+      backgroundColor: drawerBackground,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _DrawerHeader(colors: colors),
-            _NewBookButton(colors: colors),
-            const SizedBox(height: 8),
+            ColoredBox(
+              color: drawerBackground,
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _DrawerHeader(),
+                  _NewBookButton(),
+                  SizedBox(height: 8),
+                ],
+              ),
+            ),
             Expanded(
-              child: sessions.when(
-                data: (items) =>
-                    _ChatList(sessions: items, activeDraftId: activeDraftId),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (_, _) => Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Could not load your chats.',
-                    style: TextStyle(color: colors.onSurfaceVariant),
+              child: ClipRect(
+                key: const ValueKey('chat-history-scroll-clip'),
+                child: sessions.when(
+                  data: (items) => items.isEmpty
+                      ? const AppEmptyState(
+                          title: 'No chats yet',
+                          message: 'Start a new book to begin a conversation.',
+                          icon: Icons.chat_bubble_outline,
+                        )
+                      : _ChatList(
+                          sessions: items,
+                          activeDraftId: activeDraftId,
+                        ),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
+                  error: (_, _) => AppErrorState(
+                    title: 'Chats unavailable',
+                    message: 'Could not load your chats.',
+                    onRetry: () => ref.invalidate(chatSessionsProvider),
                   ),
                 ),
               ),
@@ -52,12 +75,12 @@ class ChatHistoryDrawer extends ConsumerWidget {
 }
 
 class _DrawerHeader extends StatelessWidget {
-  const _DrawerHeader({required this.colors});
-
-  final ColorScheme colors;
+  const _DrawerHeader();
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
       child: Row(
@@ -84,9 +107,7 @@ class _DrawerHeader extends StatelessWidget {
 }
 
 class _NewBookButton extends StatelessWidget {
-  const _NewBookButton({required this.colors});
-
-  final ColorScheme colors;
+  const _NewBookButton();
 
   @override
   Widget build(BuildContext context) {
@@ -235,38 +256,49 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final selected = widget.isSelected;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    );
 
-    return ListTile(
-      dense: true,
-      selected: selected,
-      selectedTileColor: colors.primaryContainer.withValues(alpha: 0.55),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      leading: Icon(
-        Icons.chat_bubble_outline,
-        size: 20,
-        color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
-      ),
-      title: Text(
-        widget.session.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: selected ? colors.onPrimaryContainer : null,
-          fontWeight: selected ? FontWeight.w700 : null,
+    return Material(
+      color: selected
+          ? colors.primaryContainer.withValues(alpha: 0.55)
+          : Colors.transparent,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: ListTile(
+        dense: true,
+        selected: selected,
+        tileColor: Colors.transparent,
+        selectedTileColor: Colors.transparent,
+        shape: shape,
+        leading: Icon(
+          Icons.chat_bubble_outline,
+          size: 20,
+          color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
         ),
+        title: Text(
+          widget.session.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: selected ? colors.onPrimaryContainer : null,
+            fontWeight: selected ? FontWeight.w700 : null,
+          ),
+        ),
+        subtitle: widget.session.preview.isNotEmpty
+            ? Text(
+                widget.session.preview,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              )
+            : null,
+        onTap: () => _open(context),
+        onLongPress: () => _showOptions(context),
       ),
-      subtitle: widget.session.preview.isNotEmpty
-          ? Text(
-              widget.session.preview,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
-            )
-          : null,
-      onTap: () => _open(context),
-      onLongPress: () => _showOptions(context),
     );
   }
 

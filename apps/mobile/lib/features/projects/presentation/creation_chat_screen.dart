@@ -20,6 +20,7 @@ import '../data/creation_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
+import 'chat_media_preview.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
 import 'message_actions_menu.dart';
@@ -117,17 +118,21 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<String?>(
-      creationChatControllerProvider.select((s) => s.initError),
-      (_, next) {
-        if (next != null) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(next)));
-          ref.read(creationChatControllerProvider.notifier).clearError();
-        }
-      },
-    );
+    ref.listen<CreationChatState>(creationChatControllerProvider, (_, next) {
+      final error = next.initError;
+      if (error == null) return;
+      // Full-screen recovery handles empty-chat init failures.
+      if (next.messages.isEmpty && !next.initializing) return;
+      // Failed bubbles already show the send error; avoid a duplicate snackbar.
+      if (next.messages.any((message) => message.isFailedSend)) {
+        ref.read(creationChatControllerProvider.notifier).clearError();
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
+      ref.read(creationChatControllerProvider.notifier).clearError();
+    });
     // "Ok, build it" from chat starts the same preflight/build flow as the
     // Build button.
     ref.listen<bool>(
@@ -239,6 +244,19 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
         bottom: false,
         child: state.initializing
             ? const AppLoadingState(message: 'Loading chat')
+            : state.initError != null && state.messages.isEmpty
+            ? AppErrorState(
+                title: 'Chat unavailable',
+                message: state.initError!,
+                onRetry: () => unawaited(
+                  ref
+                      .read(creationChatControllerProvider.notifier)
+                      .retryInit(
+                        fresh: widget.startFresh,
+                        draftId: widget.draftId,
+                      ),
+                ),
+              )
             : Column(
                 children: [
                   if (!isInOutputStage)
@@ -254,6 +272,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                             .selectOutput(projectId);
                       },
                     ),
+                  if (state.warnings.isNotEmpty)
+                    _ChatWarningsBanner(warnings: state.warnings),
                   Expanded(
                     child: _Transcript(
                       state: state,
@@ -267,6 +287,27 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                       onSwitchProjectBranch: _switchProjectBranch,
                       onEditProjectMessage: _startProjectMessageEdit,
                       onOpenReplanCopy: _openReplanCopy,
+                      onOpenPaywall: (message) => unawaited(
+                        _openProjectChatPaywall(
+                          projectId: activeProjectId,
+                          project: planValue?.asData?.value,
+                        ),
+                      ),
+                      onRetryFailedMessage: (localId) => unawaited(
+                        ref
+                            .read(creationChatControllerProvider.notifier)
+                            .retryFailedMessage(localId)
+                            .catchError((_) {}),
+                      ),
+                      onDismissFailedMessage: (localId) => ref
+                          .read(creationChatControllerProvider.notifier)
+                          .dismissFailedMessage(localId),
+                      onRetryFailedOperation: (operation) => unawaited(
+                        _retryFailedOperation(
+                          project: planValue?.asData?.value,
+                          operation: operation,
+                        ),
+                      ),
                     ),
                   ),
                   if (_editingProjectMessageId != null)
@@ -295,6 +336,47 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                     ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Future<void> _openProjectChatPaywall({
+    required String? projectId,
+    MobileProjectDetail? project,
+  }) async {
+    await showBillingPaywall(
+      context,
+      projectId: projectId,
+      title: 'Add credits',
+      message: project == null
+          ? 'Add credits to apply this edit.'
+          : 'Add credits to edit "${project.title}".',
+    );
+    ref.invalidate(billingProvider);
+    if (projectId != null) {
+      _refreshOutput(projectId);
+    }
+  }
+
+  Future<void> _retryFailedOperation({
+    required MobileProjectDetail? project,
+    required MobileBookEditOperation operation,
+  }) async {
+    if (project == null || !operation.isPlanRevision) {
+      _refreshOutput(operation.projectId);
+      return;
+    }
+    final message = _revisionController.text.trim();
+    if (message.isNotEmpty) {
+      await _revise(project, message);
+      return;
+    }
+    // Fall back to refreshing so the user can re-enter a revision.
+    _refreshOutput(project.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Enter a revision below, then send it again.'),
       ),
     );
   }
@@ -419,7 +501,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
             ? 'Revising plan'
             : 'Building plan',
       ),
-      error: (_, _) => const SizedBox.shrink(),
+      error: (error, _) => _PlanErrorFooter(
+        message: userFacingError(error),
+        onRetry: () => _refreshOutput(activeProjectId),
+      ),
       data: (project) {
         final plan = project.plan;
         if (plan == null) {
@@ -643,7 +728,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       if (!mounted) return;
       await ref
           .read(creationChatControllerProvider.notifier)
-          .attachFile(filename: file.name, bytes: bytes, isPhoto: false);
+          .attachFile(
+            filename: file.name,
+            bytes: bytes,
+            isPhoto: false,
+            localPath: file.path,
+          );
     } catch (_) {
       _showAttachError('Could not open that file.');
     }
@@ -2467,6 +2557,10 @@ class _Transcript extends StatelessWidget {
     this.onSwitchProjectBranch,
     this.onEditProjectMessage,
     this.onOpenReplanCopy,
+    this.onOpenPaywall,
+    this.onRetryFailedMessage,
+    this.onDismissFailedMessage,
+    this.onRetryFailedOperation,
   });
 
   final CreationChatState state;
@@ -2481,6 +2575,10 @@ class _Transcript extends StatelessWidget {
   onSwitchProjectBranch;
   final void Function(MobileProjectChatMessage message)? onEditProjectMessage;
   final ValueChanged<String>? onOpenReplanCopy;
+  final void Function(MobileProjectChatMessage message)? onOpenPaywall;
+  final ValueChanged<String>? onRetryFailedMessage;
+  final ValueChanged<String>? onDismissFailedMessage;
+  final void Function(MobileBookEditOperation operation)? onRetryFailedOperation;
 
   @override
   Widget build(BuildContext context) {
@@ -2503,6 +2601,7 @@ class _Transcript extends StatelessWidget {
 
     return ListView.builder(
       controller: controller,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
       itemCount: itemCount,
       itemBuilder: (context, index) {
@@ -2525,7 +2624,12 @@ class _Transcript extends StatelessWidget {
           }
           final operation = item.operation;
           if (operation != null) {
-            return _OutputOperationBubble(operation: operation);
+            return _OutputOperationBubble(
+              operation: operation,
+              onRetry: operation.isFailed && onRetryFailedOperation != null
+                  ? () => onRetryFailedOperation!(operation)
+                  : null,
+            );
           }
           return _ProjectChatMessageBubble(
             message: item.message!,
@@ -2534,6 +2638,9 @@ class _Transcript extends StatelessWidget {
             onSwitchBranch: onSwitchProjectBranch,
             onEdit: onEditProjectMessage,
             onOpenReplanCopy: onOpenReplanCopy,
+            onOpenPaywall: item.message!.hasInsufficientCredits
+                ? onOpenPaywall
+                : null,
           );
         }
         cursor += projectItems.length;
@@ -2557,6 +2664,8 @@ class _Transcript extends StatelessWidget {
           message: state.messages[index],
           attachmentThumbnails: state.attachmentThumbnails,
           attachmentUrls: state.attachmentUrls,
+          onRetryFailed: onRetryFailedMessage,
+          onDismissFailed: onDismissFailedMessage,
         );
       },
     );
@@ -2658,24 +2767,125 @@ class _EditingMessageBanner extends StatelessWidget {
   }
 }
 
+class _ChatWarningsBanner extends StatelessWidget {
+  const _ChatWarningsBanner({required this.warnings});
+
+  final List<String> warnings;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 18,
+              color: colors.onTertiaryContainer,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                warnings.join(' '),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: colors.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanErrorFooter extends StatelessWidget {
+  const _PlanErrorFooter({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Row(
+            children: [
+              Icon(Icons.error_outline, color: colors.error, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  message,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String? _formatChatTimestamp(DateTime? value) {
+  if (value == null) return null;
+  final local = value.toLocal();
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$hour:$minute';
+}
+
 class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
     this.attachmentThumbnails = const <String, String>{},
     this.attachmentUrls = const <String, String>{},
+    this.onRetryFailed,
+    this.onDismissFailed,
   });
 
   final MobileCreationMessage message;
   final Map<String, String> attachmentThumbnails;
   final Map<String, String> attachmentUrls;
+  final ValueChanged<String>? onRetryFailed;
+  final ValueChanged<String>? onDismissFailed;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final isUser = message.isUser;
-    final background = isUser ? colors.primary : colors.surfaceContainerHighest;
-    final foreground = isUser ? colors.onPrimary : colors.onSurface;
+    final failed = message.isFailedSend;
+    final background = failed
+        ? colors.errorContainer
+        : isUser
+        ? colors.primary
+        : colors.surfaceContainerHighest;
+    final foreground = failed
+        ? colors.onErrorContainer
+        : isUser
+        ? colors.onPrimary
+        : colors.onSurface;
     final hasText = message.content.trim().isNotEmpty;
+    final timestamp = _formatChatTimestamp(message.createdAt);
+    final localId = message.localId;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
@@ -2703,6 +2913,16 @@ class _MessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (message.includedSourceNotes) ...[
+                Text(
+                  'Included source notes',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: foreground.withValues(alpha: 0.85),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
               if (message.hasAttachments) ...[
                 Wrap(
                   spacing: 6,
@@ -2726,6 +2946,49 @@ class _MessageBubble extends StatelessWidget {
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: foreground),
                 ),
+              if (timestamp != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  timestamp,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: foreground.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+              if (failed && localId != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  message.sendError ?? 'Message failed to send.',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    if (onRetryFailed != null)
+                      TextButton(
+                        onPressed: () => onRetryFailed!(localId),
+                        style: TextButton.styleFrom(
+                          foregroundColor: foreground,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: const Text('Retry'),
+                      ),
+                    if (onDismissFailed != null)
+                      TextButton(
+                        onPressed: () => onDismissFailed!(localId),
+                        style: TextButton.styleFrom(
+                          foregroundColor: foreground,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        child: const Text('Dismiss'),
+                      ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -2753,53 +3016,138 @@ class _MessageAttachmentChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (!attachment.isPhoto) {
-      return _fallbackChip(context);
+      return _documentChip(context, ref);
     }
     final path = thumbnailPath;
     if (path != null && File(path).existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.file(
-          File(path),
-          width: 120,
-          height: 120,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _remotePhotoOrChip(context, ref),
+      return _tappablePhoto(
+        context,
+        ref,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.file(
+            File(path),
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _remotePhotoOrChip(context, ref),
+          ),
         ),
+        localPath: path,
       );
     }
     return _remotePhotoOrChip(context, ref);
   }
 
+  Widget _tappablePhoto(
+    BuildContext context,
+    WidgetRef ref, {
+    required Widget child,
+    String? localPath,
+    String? networkUri,
+    Map<String, String>? headers,
+  }) {
+    return Semantics(
+      button: true,
+      label: 'Preview ${attachment.name}',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => unawaited(
+            showChatImagePreview(
+              context: context,
+              localPath: localPath,
+              remoteUrl: networkUri,
+              headers: headers,
+              semanticLabel: attachment.name,
+            ),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   Widget _remotePhotoOrChip(BuildContext context, WidgetRef ref) {
     final url = remoteUrl;
     if (url == null) {
-      return _fallbackChip(context);
+      return _expiredPhotoChip(context);
     }
     final headersValue = ref.watch(projectAssetHeadersProvider);
     final config = ref.watch(appConfigProvider);
     final uri = config.apiBaseUrl.resolve(url).toString();
     return headersValue.when(
-      data: (headers) => ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: Image.network(
-          uri,
-          headers: headers,
-          width: 120,
-          height: 120,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _fallbackChip(context),
+      data: (headers) => _tappablePhoto(
+        context,
+        ref,
+        localPath: thumbnailPath,
+        networkUri: uri,
+        headers: headers,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: Image.network(
+            uri,
+            headers: headers,
+            width: 120,
+            height: 120,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _expiredPhotoChip(context),
+          ),
         ),
       ),
       loading: () => const SizedBox.square(
         dimension: 120,
         child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
       ),
-      error: (_, _) => _fallbackChip(context),
+      error: (_, _) => _expiredPhotoChip(context),
     );
   }
 
-  Widget _fallbackChip(BuildContext context) {
+  Widget _documentChip(BuildContext context, WidgetRef ref) {
+    final canOpen = (thumbnailPath != null && File(thumbnailPath!).existsSync()) ||
+        remoteUrl != null;
+    return Semantics(
+      button: canOpen,
+      label: canOpen ? 'Open ${attachment.name}' : attachment.name,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: canOpen
+              ? () => unawaited(
+                  openChatAttachment(
+                    context: context,
+                    ref: ref,
+                    name: attachment.name,
+                    localPath: thumbnailPath,
+                    remoteUrl: remoteUrl,
+                  ),
+                )
+              : null,
+          child: _chipBody(
+            context,
+            icon: Icons.description_outlined,
+            subtitle: canOpen ? 'Tap to open' : null,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _expiredPhotoChip(BuildContext context) {
+    return _chipBody(
+      context,
+      icon: Icons.photo_outlined,
+      subtitle: 'Preview expired',
+    );
+  }
+
+  Widget _chipBody(
+    BuildContext context, {
+    required IconData icon,
+    String? subtitle,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
@@ -2809,23 +3157,32 @@ class _MessageAttachmentChip extends ConsumerWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            attachment.isPhoto
-                ? Icons.photo_outlined
-                : Icons.description_outlined,
-            size: 16,
-            color: foreground,
-          ),
+          Icon(icon, size: 16, color: foreground),
           const SizedBox(width: 6),
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 160),
-            child: Text(
-              attachment.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.labelMedium?.copyWith(color: foreground),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  attachment.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: foreground),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: foreground.withValues(alpha: 0.75),
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -2842,6 +3199,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.onSwitchBranch,
     this.onEdit,
     this.onOpenReplanCopy,
+    this.onOpenPaywall,
   });
 
   final MobileProjectChatMessage message;
@@ -2851,6 +3209,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   onSwitchBranch;
   final void Function(MobileProjectChatMessage message)? onEdit;
   final ValueChanged<String>? onOpenReplanCopy;
+  final void Function(MobileProjectChatMessage message)? onOpenPaywall;
 
   @override
   Widget build(BuildContext context) {
@@ -2860,6 +3219,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
     final contentCard = message.isAssistant ? message.contentCard : null;
     final branch = message.branch;
+    final timestamp = _formatChatTimestamp(message.createdAt);
     final replanCopyTargetProjectId = message.isAssistant
         ? message.replanCopyTargetProjectId
         : null;
@@ -2898,6 +3258,15 @@ class _ProjectChatMessageBubble extends StatelessWidget {
                 context,
               ).textTheme.bodyMedium?.copyWith(color: foreground),
             ),
+            if (timestamp != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                timestamp,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: foreground.withValues(alpha: 0.7),
+                ),
+              ),
+            ],
             if (branch != null && onSwitchBranch != null) ...[
               const SizedBox(height: 8),
               _ProjectBranchNavigator(
@@ -2906,6 +3275,14 @@ class _ProjectChatMessageBubble extends StatelessWidget {
                 switching: switchingBranch,
                 onPrevious: () => onSwitchBranch!(message, 'previous'),
                 onNext: () => onSwitchBranch!(message, 'next'),
+              ),
+            ],
+            if (onOpenPaywall != null) ...[
+              const SizedBox(height: 10),
+              FilledButton.icon(
+                onPressed: () => onOpenPaywall!(message),
+                icon: const Icon(Icons.add_card_outlined),
+                label: const Text('Add credits'),
               ),
             ],
             if (showReplanCopyLink) ...[
@@ -2990,15 +3367,24 @@ class _ProjectBranchNavigator extends StatelessWidget {
 }
 
 /// Read-only book content (outline, chapter, or page) shown in the chat.
-class _ContentCardBubble extends StatelessWidget {
+class _ContentCardBubble extends StatefulWidget {
   const _ContentCardBubble({required this.card});
 
   final MobileChatContentCard card;
 
   @override
+  State<_ContentCardBubble> createState() => _ContentCardBubbleState();
+}
+
+class _ContentCardBubbleState extends State<_ContentCardBubble> {
+  static const _previewLimit = 1200;
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final card = widget.card;
     final icon = switch (card.type) {
       'page' => Icons.description_outlined,
       'chapter' => Icons.bookmark_outline,
@@ -3040,11 +3426,20 @@ class _ContentCardBubble extends StatelessWidget {
             if (section.body.trim().isNotEmpty) ...[
               const SizedBox(height: 2),
               Text(
-                section.body.length > 1200
-                    ? '${section.body.substring(0, 1200)}…'
+                !_expanded && section.body.length > _previewLimit
+                    ? '${section.body.substring(0, _previewLimit)}…'
                     : section.body,
                 style: theme.textTheme.bodyMedium,
               ),
+              if (section.body.length > _previewLimit)
+                TextButton(
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  ),
+                  child: Text(_expanded ? 'Show less' : 'Read more'),
+                ),
             ],
           ],
         ],
@@ -3054,9 +3449,10 @@ class _ContentCardBubble extends StatelessWidget {
 }
 
 class _OutputOperationBubble extends StatelessWidget {
-  const _OutputOperationBubble({required this.operation});
+  const _OutputOperationBubble({required this.operation, this.onRetry});
 
   final MobileBookEditOperation operation;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -3082,34 +3478,52 @@ class _OutputOperationBubble extends StatelessWidget {
             bottomRight: Radius.circular(16),
           ),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (isFailed)
-              Icon(
-                Icons.error_outline,
-                size: 18,
-                color: colors.onErrorContainer,
-                semanticLabel: operation.currentAction,
-              )
-            else
-              SizedBox.square(
-                dimension: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: colors.primary,
-                  semanticsLabel: operation.currentAction,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isFailed)
+                  Icon(
+                    Icons.error_outline,
+                    size: 18,
+                    color: colors.onErrorContainer,
+                    semanticLabel: operation.currentAction,
+                  )
+                else
+                  SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colors.primary,
+                      semanticsLabel: operation.currentAction,
+                    ),
+                  ),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: isFailed ? colors.onErrorContainer : null,
+                    ),
+                  ),
                 ),
-              ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: isFailed ? colors.onErrorContainer : null,
-                ),
-              ),
+              ],
             ),
+            if (isFailed && onRetry != null) ...[
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Try again'),
+                style: TextButton.styleFrom(
+                  foregroundColor: colors.onErrorContainer,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -3334,10 +3748,13 @@ class _PendingAttachmentChip extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final theme = Theme.of(context).textTheme;
+    final failedDetail = attachment.error?.trim();
     final statusLabel = attachment.isUploading
         ? 'Reading…'
         : attachment.isFailed
-        ? 'Failed — tap to retry'
+        ? (failedDetail == null || failedDetail.isEmpty
+              ? 'Failed — tap to retry'
+              : failedDetail)
         : attachment.attachment?.pages != null
         ? '${attachment.attachment!.pages} pages read'
         : 'Ready to send';
@@ -3345,7 +3762,11 @@ class _PendingAttachmentChip extends ConsumerWidget {
       label: 'Attachment ${attachment.name}, $statusLabel',
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
-        onTap: attachment.isFailed ? onRetry : null,
+        onTap: attachment.isFailed
+            ? onRetry
+            : attachment.isReady
+            ? () => unawaited(_previewOrOpen(context, ref))
+            : null,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
@@ -3397,6 +3818,30 @@ class _PendingAttachmentChip extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _previewOrOpen(BuildContext context, WidgetRef ref) async {
+    final localPath = attachment.localPath;
+    final remoteUrl = attachment.attachment?.url;
+    if (attachment.isPhoto) {
+      final resolved = resolveChatAssetUri(ref: ref, remoteUrl: remoteUrl);
+      await showChatImagePreview(
+        context: context,
+        localPath: localPath,
+        remoteUrl: resolved?.uri,
+        headers: resolved?.headers,
+        semanticLabel: attachment.name,
+      );
+      return;
+    }
+    await openChatAttachment(
+      context: context,
+      ref: ref,
+      name: attachment.name,
+      localPath: localPath,
+      remoteUrl: remoteUrl,
+      mimeType: attachment.mimeType,
     );
   }
 

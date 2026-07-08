@@ -393,23 +393,69 @@ class MobileCreationDraft {
   }
 }
 
+/// Local-only delivery state for optimistic creation chat messages.
+enum CreationMessageSendStatus { sending, sent, failed }
+
 class MobileCreationMessage {
   const MobileCreationMessage({
     required this.role,
     required this.content,
     this.attachments = const [],
+    this.createdAt,
+    this.sendStatus = CreationMessageSendStatus.sent,
+    this.sendError,
+    this.localId,
+    this.includedSourceNotes = false,
   });
 
   final String role;
   final String content;
   final List<MobileCreationMessageAttachment> attachments;
 
+  /// Present for server messages; optimistic local messages may set this too.
+  final DateTime? createdAt;
+
+  /// Delivery state for optimistic user messages (not persisted by the API).
+  final CreationMessageSendStatus sendStatus;
+  final String? sendError;
+
+  /// Stable id for optimistic messages so retry/dismiss can target them.
+  final String? localId;
+
+  /// True when this optimistic/user turn included pasted source notes.
+  final bool includedSourceNotes;
+
   bool get isUser => role == 'user';
 
   bool get hasAttachments => attachments.isNotEmpty;
 
+  bool get isFailedSend => sendStatus == CreationMessageSendStatus.failed;
+
+  MobileCreationMessage copyWith({
+    CreationMessageSendStatus? sendStatus,
+    Object? sendError = _messageSentinel,
+    DateTime? createdAt,
+    bool? includedSourceNotes,
+  }) {
+    return MobileCreationMessage(
+      role: role,
+      content: content,
+      attachments: attachments,
+      createdAt: createdAt ?? this.createdAt,
+      sendStatus: sendStatus ?? this.sendStatus,
+      sendError: sendError == _messageSentinel
+          ? this.sendError
+          : sendError as String?,
+      localId: localId,
+      includedSourceNotes: includedSourceNotes ?? this.includedSourceNotes,
+    );
+  }
+
+  static const _messageSentinel = Object();
+
   factory MobileCreationMessage.fromJson(Map<String, dynamic> json) {
     final attachments = json['attachments'] as List<dynamic>? ?? const [];
+    final createdAtRaw = json['createdAt'];
     return MobileCreationMessage(
       role: json['role'] as String,
       content: json['content'] as String,
@@ -420,6 +466,7 @@ class MobileCreationMessage {
             ),
           )
           .toList(),
+      createdAt: createdAtRaw is String ? DateTime.tryParse(createdAtRaw) : null,
     );
   }
 
@@ -431,6 +478,7 @@ class MobileCreationMessage {
         'attachments': attachments
             .map((attachment) => attachment.toJson())
             .toList(),
+      if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
     };
   }
 }

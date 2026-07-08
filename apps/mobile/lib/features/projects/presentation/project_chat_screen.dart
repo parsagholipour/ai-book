@@ -334,15 +334,11 @@ class _EmptyProjectChat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Text(
-        'No messages yet. Ask “What should I improve?” or “Rewrite page 3 to sound warmer.”',
-        textAlign: TextAlign.center,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
+    return const AppEmptyState(
+      title: 'No messages yet',
+      message:
+          'Ask “What should I improve?” or “Rewrite page 3 to sound warmer.”',
+      icon: Icons.chat_bubble_outline,
     );
   }
 }

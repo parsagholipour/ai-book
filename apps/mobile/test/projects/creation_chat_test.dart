@@ -1212,12 +1212,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Failed — tap to retry'), findsOneWidget);
+    expect(find.text('Something went wrong. Try again.'), findsOneWidget);
     // Sending is not possible with only a failed attachment.
     expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded)).onPressed, isNull);
 
     // The scripted upload error was consumed, so the retry succeeds.
-    await tester.tap(find.text('Failed — tap to retry'));
+    await tester.tap(find.text('Something went wrong. Try again.'));
     await tester.pumpAndSettle();
 
     expect(find.text('Ready to send'), findsOneWidget);
@@ -1227,6 +1227,52 @@ void main() {
 
     expect(find.text('draft.pdf'), findsNothing);
     expect(creation.deletedAttachmentIds, ['att-1']);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('failed sends keep the message with retry and dismiss', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository()
+      ..sendError = Exception('offline');
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'Hello book');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hello book'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Dismiss'), findsOneWidget);
+
+    creation.sendError = null;
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(_reply), findsOneWidget);
+    expect(find.text('Retry'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('server warnings render above the transcript', (tester) async {
+    final creation = _ScriptedCreationRepository()
+      ..replyWarnings = const ['Keep the tone gentle for young readers.'];
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'A bedtime story');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Keep the tone gentle for young readers.'),
+      findsOneWidget,
+    );
 
     await tester.teardownScreen();
   });
@@ -1341,6 +1387,7 @@ Map<String, dynamic> _turnJson({
   Map<String, dynamic>? question,
   int? targetPages,
   bool buildRequested = false,
+  List<String> warnings = const [],
 }) {
   return {
     'assistantMessage': assistantMessage,
@@ -1365,7 +1412,7 @@ Map<String, dynamic> _turnJson({
     },
     'titleSuggestions': <dynamic>[],
     'shapePreview': ['Intro'],
-    'warnings': <dynamic>[],
+    'warnings': warnings,
     'buildRequested': buildRequested,
   };
 }
@@ -1442,6 +1489,8 @@ class _ScriptedCreationRepository implements CreationRepository {
   final uploadedAttachments = <String, MobileCreationAttachment>{};
   final deletedAttachmentIds = <String>[];
   Object? uploadError;
+  Object? sendError;
+  List<String> replyWarnings = const [];
   int uploadCount = 0;
   final resumedDraftIds = <String>[];
   final resumeAssistantMessages = <String, String>{};
@@ -1567,6 +1616,10 @@ class _ScriptedCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
   }) async {
+    final error = sendError;
+    if (error != null) {
+      throw error;
+    }
     sentMessages.add(message);
     sentAttachmentIds.add(attachmentIds ?? const <String>[]);
     return MobileCreationConversationResponse.fromJson({
@@ -1606,6 +1659,7 @@ class _ScriptedCreationRepository implements CreationRepository {
               }
             : null,
         buildRequested: replyWithBuildRequest,
+        warnings: replyWarnings,
       ),
     });
   }
