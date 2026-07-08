@@ -135,6 +135,7 @@ class CreationChatState {
     this.pendingBuildRequest = false,
     this.pendingAttachments = const <PendingCreationAttachment>[],
     this.attachmentThumbnails = const <String, String>{},
+    this.attachmentUrls = const <String, String>{},
   });
 
   final bool initializing;
@@ -171,6 +172,10 @@ class CreationChatState {
 
   /// Local photo paths by server attachment id, for transcript thumbnails.
   final Map<String, String> attachmentThumbnails;
+
+  /// Server file paths by attachment id, so photos still render after an app
+  /// restart or on another device (files are stored server-side for 6 months).
+  final Map<String, String> attachmentUrls;
 
   bool get hasSession => draftId != null;
 
@@ -222,6 +227,7 @@ class CreationChatState {
     bool? pendingBuildRequest,
     List<PendingCreationAttachment>? pendingAttachments,
     Map<String, String>? attachmentThumbnails,
+    Map<String, String>? attachmentUrls,
   }) {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
@@ -259,6 +265,7 @@ class CreationChatState {
       pendingBuildRequest: pendingBuildRequest ?? this.pendingBuildRequest,
       pendingAttachments: pendingAttachments ?? this.pendingAttachments,
       attachmentThumbnails: attachmentThumbnails ?? this.attachmentThumbnails,
+      attachmentUrls: attachmentUrls ?? this.attachmentUrls,
     );
   }
 
@@ -398,6 +405,12 @@ class CreationChatController extends Notifier<CreationChatState> {
         if (pending.isPhoto && pending.localPath != null)
           pending.attachment!.id: pending.localPath!,
     };
+    final urls = {
+      ...state.attachmentUrls,
+      for (final pending in readyAttachments)
+        if (pending.attachment!.url != null)
+          pending.attachment!.id: pending.attachment!.url!,
+    };
     state = state.copyWith(
       messages: optimistic,
       assistantTyping: true,
@@ -405,6 +418,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       question: null,
       initError: null,
       attachmentThumbnails: thumbnails,
+      attachmentUrls: urls,
       pendingAttachments: state.pendingAttachments
           .where((pending) => !readyAttachments.contains(pending))
           .toList(),
@@ -987,8 +1001,16 @@ class CreationChatController extends Notifier<CreationChatState> {
     final pendingAttachments = session == null
         ? state.pendingAttachments
         : _reconcilePendingAttachments(session);
+    final attachmentUrls = session == null
+        ? state.attachmentUrls
+        : {
+            ...state.attachmentUrls,
+            for (final attachment in session.attachments)
+              if (attachment.url != null) attachment.id: attachment.url!,
+          };
     state = state.copyWith(
       pendingAttachments: pendingAttachments,
+      attachmentUrls: attachmentUrls,
       initializing: initializing ?? state.initializing,
       assistantTyping: assistantTyping ?? state.assistantTyping,
       draftId: session?.draftId ?? state.draftId,

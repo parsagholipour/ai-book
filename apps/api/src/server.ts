@@ -8,6 +8,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
+import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
 import { mobileProjectRoutes } from "./mobileProjects.js";
@@ -35,6 +36,25 @@ const app = Fastify({
 await mkdir(config.BOOK_STORAGE_DIR, { recursive: true });
 await mkdir(config.IMAGE_STORAGE_DIR, { recursive: true });
 await mkdir(config.VOICE_STORAGE_DIR, { recursive: true });
+await mkdir(config.ATTACHMENT_STORAGE_DIR, { recursive: true });
+
+// Uploaded user files are kept for 6 months; generated books and plans are kept forever.
+const sweepAttachments = async () => {
+  try {
+    const swept = await sweepExpiredCreationAttachments(
+      config.ATTACHMENT_STORAGE_DIR,
+      config.ATTACHMENT_RETENTION_DAYS
+    );
+    if (swept.deletedFiles > 0) {
+      app.log.info(swept, "Expired chat attachments removed");
+    }
+  } catch (error) {
+    app.log.warn({ err: error }, "Attachment retention sweep failed");
+  }
+};
+await sweepAttachments();
+const attachmentSweepTimer = setInterval(() => void sweepAttachments(), 24 * 60 * 60 * 1000);
+attachmentSweepTimer.unref();
 
 await app.register(cors, { origin: true, credentials: true });
 await registerAuth(app, config);
@@ -69,6 +89,7 @@ if (webDistDir) {
 }
 
 const shutdown = async () => {
+  clearInterval(attachmentSweepTimer);
   await app.close();
   await closeQueue();
   await prisma.$disconnect();

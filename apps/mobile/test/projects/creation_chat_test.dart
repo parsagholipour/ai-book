@@ -1144,7 +1144,15 @@ void main() {
     tester,
   ) async {
     final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    // The transcript photo falls back to the server copy, which needs asset
+    // headers; the scripted projects repository keeps that request offline.
+    await tester.pumpWidget(
+      _app(
+        creation: creation,
+        projects: _PlanProjectsRepository(),
+        startFresh: true,
+      ),
+    );
     await tester.pumpAndSettle();
 
     final controller = ProviderScope.containerOf(
@@ -1174,6 +1182,16 @@ void main() {
 
     expect(creation.sentMessages.last, isEmpty);
     expect(creation.sentAttachmentIds.last, ['att-1']);
+
+    // The server copy's URL is kept so the photo can render after an app
+    // restart or on another device, where the local file path is gone.
+    final state = ProviderScope.containerOf(
+      tester.element(find.byType(CreationChatScreen)),
+    ).read(creationChatControllerProvider);
+    expect(
+      state.attachmentUrls['att-1'],
+      '/api/mobile/creation-sessions/draft-1/attachments/att-1/file',
+    );
 
     await tester.teardownScreen();
   });
@@ -1695,6 +1713,8 @@ class _ScriptedCreationRepository implements CreationRepository {
       name: filename,
       sizeBytes: bytes.length,
       summary: 'Summary of $filename',
+      url:
+          '/api/mobile/creation-sessions/$draftId/attachments/att-$uploadCount/file',
     );
     uploadedAttachments[attachment.id] = attachment;
     return attachment;

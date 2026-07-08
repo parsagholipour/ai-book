@@ -71,6 +71,9 @@ const envSchema = z.object({
   BOOK_STORAGE_DIR: z.string().default("./storage/books"),
   IMAGE_STORAGE_DIR: z.string().default("./storage/images"),
   VOICE_STORAGE_DIR: z.string().default("./storage/voice"),
+  ATTACHMENT_STORAGE_DIR: z.string().default("./storage/attachments"),
+  /** How long uploaded user files are kept before deletion. Generated books and plans are kept forever. */
+  ATTACHMENT_RETENTION_DAYS: z.coerce.number().int().min(1).default(180),
   MAX_PARALLEL_PAGE_JOBS: z.coerce.number().int().min(1).max(32).default(4),
   MAX_PARALLEL_IMAGE_JOBS: z.coerce.number().int().min(1).max(8).default(2),
   MOCK_AI: z
@@ -105,7 +108,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...parsed,
     BOOK_STORAGE_DIR: resolveFromWorkspace(parsed.BOOK_STORAGE_DIR),
     IMAGE_STORAGE_DIR: resolveFromWorkspace(parsed.IMAGE_STORAGE_DIR),
-    VOICE_STORAGE_DIR: resolveFromWorkspace(parsed.VOICE_STORAGE_DIR)
+    VOICE_STORAGE_DIR: resolveFromWorkspace(parsed.VOICE_STORAGE_DIR),
+    ATTACHMENT_STORAGE_DIR: resolveFromWorkspace(parsed.ATTACHMENT_STORAGE_DIR)
   };
 }
 

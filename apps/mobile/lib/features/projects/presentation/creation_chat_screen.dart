@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'chat_history_drawer.dart';
 
+import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
@@ -2555,6 +2556,7 @@ class _Transcript extends StatelessWidget {
         return _MessageBubble(
           message: state.messages[index],
           attachmentThumbnails: state.attachmentThumbnails,
+          attachmentUrls: state.attachmentUrls,
         );
       },
     );
@@ -2660,10 +2662,12 @@ class _MessageBubble extends StatelessWidget {
   const _MessageBubble({
     required this.message,
     this.attachmentThumbnails = const <String, String>{},
+    this.attachmentUrls = const <String, String>{},
   });
 
   final MobileCreationMessage message;
   final Map<String, String> attachmentThumbnails;
+  final Map<String, String> attachmentUrls;
 
   @override
   Widget build(BuildContext context) {
@@ -2708,6 +2712,7 @@ class _MessageBubble extends StatelessWidget {
                       _MessageAttachmentChip(
                         attachment: attachment,
                         thumbnailPath: attachmentThumbnails[attachment.id],
+                        remoteUrl: attachmentUrls[attachment.id],
                         foreground: foreground,
                       ),
                   ],
@@ -2729,21 +2734,29 @@ class _MessageBubble extends StatelessWidget {
   }
 }
 
-class _MessageAttachmentChip extends StatelessWidget {
+class _MessageAttachmentChip extends ConsumerWidget {
   const _MessageAttachmentChip({
     required this.attachment,
     required this.foreground,
     this.thumbnailPath,
+    this.remoteUrl,
   });
 
   final MobileCreationMessageAttachment attachment;
   final Color foreground;
   final String? thumbnailPath;
 
+  /// Server copy of the file, used when no local thumbnail exists (app
+  /// restart or another device).
+  final String? remoteUrl;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!attachment.isPhoto) {
+      return _fallbackChip(context);
+    }
     final path = thumbnailPath;
-    if (attachment.isPhoto && path != null) {
+    if (path != null && File(path).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Image.file(
@@ -2751,11 +2764,39 @@ class _MessageAttachmentChip extends StatelessWidget {
           width: 120,
           height: 120,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => _fallbackChip(context),
+          errorBuilder: (_, _, _) => _remotePhotoOrChip(context, ref),
         ),
       );
     }
-    return _fallbackChip(context);
+    return _remotePhotoOrChip(context, ref);
+  }
+
+  Widget _remotePhotoOrChip(BuildContext context, WidgetRef ref) {
+    final url = remoteUrl;
+    if (url == null) {
+      return _fallbackChip(context);
+    }
+    final headersValue = ref.watch(projectAssetHeadersProvider);
+    final config = ref.watch(appConfigProvider);
+    final uri = config.apiBaseUrl.resolve(url).toString();
+    return headersValue.when(
+      data: (headers) => ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.network(
+          uri,
+          headers: headers,
+          width: 120,
+          height: 120,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _fallbackChip(context),
+        ),
+      ),
+      loading: () => const SizedBox.square(
+        dimension: 120,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+      ),
+      error: (_, _) => _fallbackChip(context),
+    );
   }
 
   Widget _fallbackChip(BuildContext context) {
@@ -3278,7 +3319,7 @@ class _PendingAttachmentsRow extends StatelessWidget {
   }
 }
 
-class _PendingAttachmentChip extends StatelessWidget {
+class _PendingAttachmentChip extends ConsumerWidget {
   const _PendingAttachmentChip({
     required this.attachment,
     required this.onRetry,
@@ -3290,7 +3331,7 @@ class _PendingAttachmentChip extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final theme = Theme.of(context).textTheme;
     final statusLabel = attachment.isUploading
@@ -3316,7 +3357,7 @@ class _PendingAttachmentChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _attachmentLeading(colors),
+              _attachmentLeading(colors, ref),
               const SizedBox(width: 8),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 140),
@@ -3359,7 +3400,7 @@ class _PendingAttachmentChip extends StatelessWidget {
     );
   }
 
-  Widget _attachmentLeading(ColorScheme colors) {
+  Widget _attachmentLeading(ColorScheme colors, WidgetRef ref) {
     if (attachment.isUploading) {
       return const SizedBox.square(
         dimension: 20,
@@ -3370,7 +3411,7 @@ class _PendingAttachmentChip extends StatelessWidget {
       return Icon(Icons.refresh, size: 20, color: colors.onErrorContainer);
     }
     final localPath = attachment.localPath;
-    if (attachment.isPhoto && localPath != null) {
+    if (attachment.isPhoto && localPath != null && File(localPath).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
         child: Image.file(
@@ -3382,6 +3423,25 @@ class _PendingAttachmentChip extends StatelessWidget {
               const Icon(Icons.photo_outlined, size: 20),
         ),
       );
+    }
+    final remoteUrl = attachment.attachment?.url;
+    if (attachment.isPhoto && remoteUrl != null) {
+      final headers = ref.watch(projectAssetHeadersProvider).value;
+      final config = ref.watch(appConfigProvider);
+      if (headers != null) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Image.network(
+            config.apiBaseUrl.resolve(remoteUrl).toString(),
+            headers: headers,
+            width: 32,
+            height: 32,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                const Icon(Icons.photo_outlined, size: 20),
+          ),
+        );
+      }
     }
     return Icon(
       attachment.isPhoto ? Icons.photo_outlined : Icons.description_outlined,

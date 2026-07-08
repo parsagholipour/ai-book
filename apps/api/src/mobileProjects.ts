@@ -44,6 +44,12 @@ import {
   type CreditLedgerEntryRecord
 } from "@book-maker/db/billing";
 import { z } from "zod";
+import {
+  deleteCreationAttachmentDraftDir,
+  deleteCreationAttachmentFile,
+  readCreationAttachmentFile,
+  saveCreationAttachmentFile
+} from "./attachmentStorage.js";
 import { buildProjectStatus, type PipelineStep } from "./projectStatus.js";
 import type { AuthFailure } from "./mobileAuth.js";
 import {
@@ -235,11 +241,14 @@ export type MobileCreationAttachmentDto = {
   id: string;
   kind: "document" | "photo";
   name: string;
+  mimeType: string;
   sizeBytes: number;
   summary: string;
   pages: number | null;
   truncated: boolean;
   createdAt: string;
+  /** API path serving the stored original file (kept 6 months, then removed). */
+  url: string;
 };
 
 export type MobileCreationAttachmentResponseDto = {
@@ -1506,17 +1515,31 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         );
       }
 
+      // Keep the original bytes server-side so the file follows the account
+      // across devices; the retention sweep removes them after 6 months.
+      try {
+        await saveCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachment.id, data);
+      } catch (error) {
+        request.log.error({ err: error, draftId: id }, "Creation attachment file store failed");
+        return sendMobileError(reply, 422, "ATTACHMENT_FAILED", "That file could not be saved. Try again.");
+      }
+
       const updatedPayload = mobileCreationDraftPayloadSchema.parse({
         ...parsedPayload.data,
         attachments: [...existing, attachment]
       });
-      await prisma.mobileCreationDraft.update({
-        where: { id },
-        data: { payload: jsonInputValue(updatedPayload) }
-      });
+      try {
+        await prisma.mobileCreationDraft.update({
+          where: { id },
+          data: { payload: jsonInputValue(updatedPayload) }
+        });
+      } catch (error) {
+        await deleteCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachment.id);
+        throw error;
+      }
       return reply
         .code(201)
-        .send({ attachment: serializeCreationAttachment(attachment) } satisfies MobileCreationAttachmentResponseDto);
+        .send({ attachment: serializeCreationAttachment(attachment, id) } satisfies MobileCreationAttachmentResponseDto);
     }
   );
 
@@ -1562,7 +1585,42 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         where: { id },
         data: { payload: jsonInputValue(updatedPayload) }
       });
+      await deleteCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachmentId);
       return { ok: true };
+    }
+  );
+
+  fastify.get(
+    "/api/mobile/creation-sessions/:id/attachments/:attachmentId/file",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id, attachmentId } = attachmentParamsSchema.parse(request.params);
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id },
+        select: { payload: true }
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "SESSION_NOT_FOUND", "This book chat was not found.");
+      }
+      const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      const attachment = parsedPayload.success
+        ? (parsedPayload.data.attachments ?? []).find((entry) => entry.id === attachmentId)
+        : undefined;
+      if (!attachment) {
+        return sendMobileError(reply, 404, "ATTACHMENT_NOT_FOUND", "That attachment was not found.");
+      }
+      const file = await readCreationAttachmentFile(appConfig.ATTACHMENT_STORAGE_DIR, id, attachmentId);
+      if (!file) {
+        // Uploaded before server-side storage existed, or past the 6-month retention window.
+        return sendMobileError(reply, 404, "ATTACHMENT_FILE_EXPIRED", "This file is no longer stored.");
+      }
+      reply.header("Cache-Control", "private, max-age=300");
+      reply.type(attachment.mimeType);
+      return file;
     }
   );
 
@@ -1621,6 +1679,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 404, "NOT_FOUND", "Chat session not found.");
       }
       await prisma.mobileCreationDraft.delete({ where: { id } });
+      await deleteCreationAttachmentDraftDir(appConfig.ATTACHMENT_STORAGE_DIR, id);
       return { ok: true };
     }
   );
@@ -3169,22 +3228,27 @@ function serializeCreationSession(
     activeProjectId: activeProjectIdForDraft(draft, outputs),
     outputs,
     attachments: payload.success
-      ? (payload.data.attachments ?? []).map((attachment) => serializeCreationAttachment(attachment))
+      ? (payload.data.attachments ?? []).map((attachment) => serializeCreationAttachment(attachment, draft.id))
       : [],
     updatedAt: draft.updatedAt.toISOString()
   };
 }
 
-function serializeCreationAttachment(attachment: CreationAttachment): MobileCreationAttachmentDto {
+function serializeCreationAttachment(
+  attachment: CreationAttachment,
+  draftId: string
+): MobileCreationAttachmentDto {
   return {
     id: attachment.id,
     kind: attachment.kind,
     name: attachment.name,
+    mimeType: attachment.mimeType,
     sizeBytes: attachment.sizeBytes,
     summary: attachment.summary,
     pages: attachment.pages ?? null,
     truncated: attachment.truncated,
-    createdAt: attachment.createdAt
+    createdAt: attachment.createdAt,
+    url: `/api/mobile/creation-sessions/${draftId}/attachments/${attachment.id}/file`
   };
 }
 

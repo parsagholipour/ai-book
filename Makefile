@@ -43,7 +43,7 @@ mobile-devices:
 	cd $(MOBILE_DIR) && flutter devices
 
 # Optional: make mobile-run DEVICE=emulator-5554
-# Physical device: make mobile-run FLUTTER_API_BASE_URL=http://192.168.x.x:4001
+# Physical device: make mobile-run FLUTTER_API_BASE_URL=http://192.168.1.143:4001
 mobile-run:
 	cd $(MOBILE_DIR) && flutter run$(if $(DEVICE), -d $(DEVICE),) $(FLUTTER_DART_DEFINES)
 

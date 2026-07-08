@@ -28,6 +28,13 @@ export function isSourceForwardBookCategory(category: string | undefined): categ
   return Boolean(category && SOURCE_FORWARD_BOOK_CATEGORY_SET.has(category));
 }
 
+const NARRATIVE_BOOK_CATEGORIES = ["STORY"] as const;
+const NARRATIVE_BOOK_CATEGORY_SET = new Set<string>(NARRATIVE_BOOK_CATEGORIES);
+
+export function isNarrativeBookCategory(category: string | undefined): category is BookCategory {
+  return Boolean(category && NARRATIVE_BOOK_CATEGORY_SET.has(category));
+}
+
 const DIAGRAM_FRIENDLY_BOOK_CATEGORIES = ["SCIENCE", "EDUCATION", "HEALTH"] as const;
 const DIAGRAM_FRIENDLY_BOOK_CATEGORY_SET = new Set<string>(DIAGRAM_FRIENDLY_BOOK_CATEGORIES);
 

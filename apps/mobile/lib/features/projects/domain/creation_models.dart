@@ -472,6 +472,7 @@ class MobileCreationAttachment {
     this.summary = '',
     this.pages,
     this.truncated = false,
+    this.url,
   });
 
   final String id;
@@ -481,6 +482,10 @@ class MobileCreationAttachment {
   final String summary;
   final int? pages;
   final bool truncated;
+
+  /// API path serving the stored original file; null for uploads made before
+  /// server-side storage existed or after the retention window.
+  final String? url;
 
   bool get isPhoto => kind == 'photo';
 
@@ -493,6 +498,7 @@ class MobileCreationAttachment {
       summary: json['summary'] as String? ?? '',
       pages: json['pages'] as int?,
       truncated: json['truncated'] as bool? ?? false,
+      url: json['url'] as String?,
     );
   }
 }

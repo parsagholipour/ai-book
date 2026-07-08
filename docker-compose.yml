@@ -54,6 +54,7 @@ services:
       API_PORT: 4001
       BOOK_STORAGE_DIR: /app/storage/books
       IMAGE_STORAGE_DIR: /app/storage/images
+      ATTACHMENT_STORAGE_DIR: /app/storage/attachments
       DEV_WATCH_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
       DEV_PNPM_FILTER: "@book-maker/api..."
@@ -102,6 +103,7 @@ services:
       REDIS_URL: redis://redis:6379
       BOOK_STORAGE_DIR: /app/storage/books
       IMAGE_STORAGE_DIR: /app/storage/images
+      ATTACHMENT_STORAGE_DIR: /app/storage/attachments
       DEV_WATCH_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
       DEV_PNPM_FILTER: "@book-maker/worker..."

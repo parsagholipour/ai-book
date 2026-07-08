@@ -1,5 +1,5 @@
 import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
-import { isSourceForwardBookCategory } from "../categories.js";
+import { isNarrativeBookCategory, isSourceForwardBookCategory } from "../categories.js";
 import { isEnglishLanguage, languageLabel } from "../prompting/language.js";
 
 export type MarkdownPage = {
@@ -564,23 +564,20 @@ function shouldRenderSources(input: CompileMarkdownInput, pages: MarkdownPage[])
     return true;
   }
 
-  if (hasExplicitResearchIntent(input.plan)) {
-    return true;
+  if (isNarrativeBookCategory(input.category)) {
+    return false;
   }
 
   const decisionText = sourceDecisionText(input, pages);
-  if (hasFactualBackMatterSignals(decisionText)) {
-    return true;
+  if (hasNarrativeStorySignals(decisionText)) {
+    return false;
   }
 
-  return false;
+  return hasPlannedResearchQueries(input.plan) || hasFactualBackMatterSignals(decisionText);
 }
 
-function hasExplicitResearchIntent(plan: BookPlan): boolean {
-  return (
-    plan.researchQueries.some((query) => query.trim().length > 0) ||
-    plan.researchNotes.some((source) => Boolean(source.url?.trim()))
-  );
+function hasPlannedResearchQueries(plan: BookPlan): boolean {
+  return plan.researchQueries.some((query) => query.trim().length > 0);
 }
 
 function sourceDecisionText(input: CompileMarkdownInput, pages: MarkdownPage[]): string {
@@ -613,6 +610,10 @@ function hasFactualBackMatterSignals(text: string): boolean {
   return FACTUAL_BACK_MATTER_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+function hasNarrativeStorySignals(text: string): boolean {
+  return NARRATIVE_STORY_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 const PROMPT_LEAK_PATTERNS = [
   /global visual style/i,
   /continuity rules:/i,
@@ -625,6 +626,14 @@ const PROMPT_LEAK_PATTERNS = [
   /research this for/i,
   /book generation/i,
   /generation plan/i
+];
+
+const NARRATIVE_STORY_PATTERNS = [
+  /\b(?:fiction|fictional|novel|novella|storybook)\b/i,
+  /\b(?:short|bedtime|adventure)\s+stor(?:y|ies)\b/i,
+  /\b(?:fable|fairy\s?tale|folk\s?tale|tall tale|parable)\b/i,
+  /\bonce upon a time\b/i,
+  /\b(?:lullab(?:y|ies)|nursery rhymes?)\b/i
 ];
 
 const FACTUAL_BACK_MATTER_PATTERNS = [

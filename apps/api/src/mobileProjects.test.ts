@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -3628,8 +3628,20 @@ async function buildOperatorApp(): Promise<FastifyInstance> {
 }
 
 describe("creation chat attachments API", () => {
+  let tempAttachmentStorageDir: string | null = null;
+
   beforeEach(() => {
     vi.resetAllMocks();
+    tempAttachmentStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-attachments-"));
+    process.env = { ...originalEnv, ATTACHMENT_STORAGE_DIR: tempAttachmentStorageDir };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    if (tempAttachmentStorageDir) {
+      rmSync(tempAttachmentStorageDir, { recursive: true, force: true });
+      tempAttachmentStorageDir = null;
+    }
   });
 
   const readyAttachment = {
@@ -3684,6 +3696,43 @@ describe("creation chat attachments API", () => {
     };
     expect(updateCall.data.payload.attachments).toHaveLength(1);
     expect(updateCall.data.payload.attachments[0]).toMatchObject({ id: "att_ready1", content: "Anchor high and offer three tiers." });
+    // Original bytes are kept server-side so the file follows the account across devices.
+    const storedPath = join(tempAttachmentStorageDir!, "session-draft", "att_ready1");
+    expect(readFileSync(storedPath, "utf8")).toBe("Anchor high and offer three tiers.");
+    expect(response.json().attachment.url).toBe(
+      "/api/mobile/creation-sessions/session-draft/attachments/att_ready1/file"
+    );
+    await app.close();
+  });
+
+  it("serves the stored original file and 404s once it is gone", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = { ...sessionPayload, attachments: [readyAttachment] };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    const fileDir = join(tempAttachmentStorageDir!, "session-draft");
+    mkdirSync(fileDir, { recursive: true });
+    writeFileSync(join(fileDir, "att_ready1"), "original bytes");
+    const app = await buildMobileApp();
+
+    const served = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions/session-draft/attachments/att_ready1/file",
+      headers: bearer("token-a")
+    });
+    expect(served.statusCode).toBe(200);
+    expect(served.headers["content-type"]).toContain("text/plain");
+    expect(served.body).toBe("original bytes");
+
+    rmSync(join(fileDir, "att_ready1"));
+    const expired = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions/session-draft/attachments/att_ready1/file",
+      headers: bearer("token-a")
+    });
+    expect(expired.statusCode).toBe(404);
+    expect(expired.json()).toMatchObject({ error: { code: "ATTACHMENT_FILE_EXPIRED" } });
     await app.close();
   });
 
@@ -3777,6 +3826,10 @@ describe("creation chat attachments API", () => {
     mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
       creationDraftRecord({ id: "session-draft", ...data })
     );
+    const fileDir = join(tempAttachmentStorageDir!, "session-draft");
+    mkdirSync(fileDir, { recursive: true });
+    writeFileSync(join(fileDir, "att_unsent"), "unsent bytes");
+    writeFileSync(join(fileDir, "att_ready1"), "sent bytes");
     const app = await buildMobileApp();
 
     const removeUnsent = await app.inject({
@@ -3791,8 +3844,10 @@ describe("creation chat attachments API", () => {
     });
 
     expect(removeUnsent.statusCode).toBe(200);
+    expect(existsSync(join(fileDir, "att_unsent"))).toBe(false);
     expect(removeSent.statusCode).toBe(409);
     expect(removeSent.json()).toMatchObject({ error: { code: "ATTACHMENT_IN_USE" } });
+    expect(existsSync(join(fileDir, "att_ready1"))).toBe(true);
     await app.close();
   });
 });

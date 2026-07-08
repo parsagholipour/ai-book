@@ -486,6 +486,99 @@ describe("compileBookMarkdown", () => {
     expect(markdown).not.toContain("https://example.com/tortoise-hare");
   });
 
+  it("omits source citations for a custom-category bedtime story even when background research ran", () => {
+    const plan = {
+      ...makeFallbackPlan({
+        prompt: "Write a 5 page book for children sleep",
+        category: "CUSTOM",
+        targetPages: 1,
+        complexity: 3,
+        temperature: 0.9,
+        language: "en",
+        mediaSettings: {
+          fullIllustrations: true,
+          illustrationCadence: "every-page",
+          includeCover: true,
+          coverTemplate: "auto",
+          finalReview: true,
+          toneProfile: "neutral" as const
+        }
+      }),
+      premise:
+        "A gentle bedtime story where a child visits a magical vegetable garden at dusk, and each vegetable shares a calming sleep ritual, helping the child wind down for the night.",
+      researchNotes: [
+        {
+          query: "children sleep routines",
+          title: "sleepfoundation.org",
+          url: "https://example.com/sleep-hygiene",
+          summary: "Background research used to ground the writing, not reader-facing back matter."
+        }
+      ]
+    };
+
+    const markdown = compileBookMarkdown({
+      plan,
+      category: "CUSTOM",
+      pages: [{ index: 1, title: "First", markdown: "The eggplant let out a long, slow yawn." }],
+      researchSources: [
+        {
+          title: "sleepfoundation.org",
+          url: "https://example.com/sleep-hygiene",
+          summary: "Background research used to ground the writing, not reader-facing back matter."
+        }
+      ]
+    });
+
+    expect(markdown).not.toContain("## Sources");
+    expect(markdown).not.toContain("https://example.com/sleep-hygiene");
+  });
+
+  it("omits source citations for story-category books even when the plan carries research", () => {
+    const plan = {
+      ...makeFallbackPlan({
+        prompt: "A historical drama set in a lighthouse during a real storm.",
+        category: "STORY",
+        targetPages: 1,
+        complexity: 5,
+        temperature: 0.85,
+        language: "en",
+        mediaSettings: {
+          fullIllustrations: false,
+          illustrationCadence: "template-driven",
+          includeCover: true,
+          coverTemplate: "fiction",
+          finalReview: true,
+          toneProfile: "neutral" as const
+        }
+      }),
+      researchQueries: ["historical lighthouse storms"],
+      researchNotes: [
+        {
+          query: "historical lighthouse storms",
+          title: "Storm archive",
+          url: "https://example.com/storms",
+          summary: "Grounding research for the fiction, not a bibliography."
+        }
+      ]
+    };
+
+    const markdown = compileBookMarkdown({
+      plan,
+      category: "STORY",
+      pages: [{ index: 1, title: "First", markdown: "The lamp burned steady against the gale." }],
+      researchSources: [
+        {
+          title: "Storm archive",
+          url: "https://example.com/storms",
+          summary: "Grounding research for the fiction, not a bibliography."
+        }
+      ]
+    });
+
+    expect(markdown).not.toContain("## Sources");
+    expect(markdown).not.toContain("https://example.com/storms");
+  });
+
   it("rejects compiled export artifacts", () => {
     const badMarkdown = [
       "---",
