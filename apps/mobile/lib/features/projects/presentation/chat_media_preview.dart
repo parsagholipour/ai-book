@@ -179,15 +179,22 @@ class _ChatImagePreviewPage extends StatelessWidget {
   Widget _remoteOrError() {
     final url = remoteUrl;
     if (url == null) {
-      return const Icon(Icons.broken_image_outlined, color: Colors.white70, size: 48);
+      return const Icon(
+        Icons.broken_image_outlined,
+        color: Colors.white70,
+        size: 48,
+      );
     }
     return Image.network(
       url,
       headers: headers,
       fit: BoxFit.contain,
       semanticLabel: semanticLabel,
-      errorBuilder: (_, _, _) =>
-          const Icon(Icons.broken_image_outlined, color: Colors.white70, size: 48),
+      errorBuilder: (_, _, _) => const Icon(
+        Icons.broken_image_outlined,
+        color: Colors.white70,
+        size: 48,
+      ),
     );
   }
 }

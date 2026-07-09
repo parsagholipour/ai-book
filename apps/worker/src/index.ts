@@ -2351,6 +2351,9 @@ function characterSlug(value: string): string {
 async function compileExport(job: Job) {
   const { projectId, planId } = job.data as { projectId: string; planId: string };
   const generationJobId = job.data.generationJobId as string | undefined;
+  // Set for recompiles after user-driven edits (manual Edit Mode, undo):
+  // the QA repair pass must not rewrite text the user chose deliberately.
+  const skipFinalReview = job.data.skipFinalReview === true;
   const [planVersion, project] = await Promise.all([
     prisma.planVersion.findUnique({ where: { id: planId } }),
     prisma.project.findUnique({
@@ -2378,8 +2381,9 @@ async function compileExport(job: Job) {
   // Parallel-wave drafting relies on the final review as its continuity
   // reconciliation pass, so it runs even when the user disabled final review.
   const runFinalReview =
-    input.mediaSettings.finalReview ||
-    (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1);
+    !skipFinalReview &&
+    (input.mediaSettings.finalReview ||
+      (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1));
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
     let finalQa = await strategy.runFinalBookQa({

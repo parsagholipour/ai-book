@@ -28,9 +28,10 @@ const mockPrisma = vi.hoisted(() => ({
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
-  page: { findMany: vi.fn() },
+  page: { findMany: vi.fn(), update: vi.fn() },
+  pageEditSnapshot: { create: vi.fn() },
   planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
-  projectChatMessage: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
+  projectChatMessage: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: { create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
   generationJob: { count: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
@@ -105,6 +106,8 @@ let tempVoiceStorageDir: string | null = null;
 let mockProjectChatMessages: any[] = [];
 let mockPlanVersions: any[] = [];
 let mockBookEditOperations: any[] = [];
+let mockPages: any[] = [];
+let mockPageEditSnapshots: any[] = [];
 
 describe("mobile project routes", () => {
   beforeEach(() => {
@@ -234,6 +237,43 @@ describe("mobile project routes", () => {
           : a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id)
       );
       return typeof take === "number" ? sorted.slice(0, take) : sorted;
+    });
+    mockPrisma.projectChatMessage.update.mockImplementation(async ({ where, data }: { where: { id: string }; data: Record<string, any> }) => {
+      const message = mockProjectChatMessages.find((candidate) => candidate.id === where.id);
+      if (!message) {
+        throw new Error(`Chat message not found: ${where.id}`);
+      }
+      Object.assign(message, data);
+      return message;
+    });
+    mockPages = [];
+    mockPageEditSnapshots = [];
+    mockPrisma.page.findMany.mockImplementation(async ({ where }: { where: Record<string, any> }) => {
+      return mockPages
+        .filter(
+          (page) =>
+            (where.projectId === undefined || page.projectId === where.projectId) &&
+            (where.id?.in === undefined || where.id.in.includes(page.id)) &&
+            (where.index?.in === undefined || where.index.in.includes(page.index))
+        )
+        .map((page) => ({ ...page }));
+    });
+    mockPrisma.page.update.mockImplementation(async ({ where, data }: { where: { id: string }; data: Record<string, any> }) => {
+      const page = mockPages.find((candidate) => candidate.id === where.id);
+      if (!page) {
+        throw new Error(`Page not found: ${where.id}`);
+      }
+      const { revision, ...rest } = data;
+      Object.assign(page, rest);
+      if (revision?.increment) {
+        page.revision += revision.increment;
+      }
+      return { ...page };
+    });
+    mockPrisma.pageEditSnapshot.create.mockImplementation(async ({ data }: { data: Record<string, any> }) => {
+      const record = { id: `snapshot-${mockPageEditSnapshots.length + 1}`, ...data };
+      mockPageEditSnapshots.push(record);
+      return record;
     });
     mockPrisma.projectChatMessage.updateMany.mockImplementation(async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
       let count = 0;
@@ -1129,6 +1169,201 @@ describe("mobile project routes", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json().error.code).toBe("SESSION_NOT_FOUND");
+    await app.close();
+  });
+
+  it("branches the creation chat when editing a previous user message", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // Legacy flat transcript without ids: the server must mint stable ids
+    // ("legacy-<index>") that the client can reference in editMessageId.
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { role: "assistant", content: "Hi! Tell me about your book." },
+            { role: "user", content: "Bedtime story for 5 year olds" },
+            { role: "assistant", content: "Lovely! Any favourite animals?" }
+          ]
+        }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Space adventure for teens", editMessageId: "legacy-1" }
+    });
+    const body = response.json();
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: { messages: Array<Record<string, unknown>> } };
+    };
+
+    expect(response.statusCode).toBe(200);
+    // The visible thread follows the new branch: greeting, edited message, fresh reply.
+    expect(body.session.messages.map((message: { role: string }) => message.role)).toEqual([
+      "assistant",
+      "user",
+      "assistant"
+    ]);
+    const editedSlot = body.session.messages[1];
+    expect(editedSlot.content).toBe("Space adventure for teens");
+    expect(editedSlot.branch).toMatchObject({ index: 2, total: 2, canGoPrevious: true, canGoNext: false });
+    // The abandoned branch stays stored: original user turn is deactivated, not deleted.
+    const stored = updateCall.data.payload.messages;
+    const original = stored.find((message) => message.id === "legacy-1");
+    expect(original).toMatchObject({ content: "Bedtime story for 5 year olds", isActiveChild: false });
+    expect(stored.filter((message) => message.role === "user")).toHaveLength(2);
+    expect(JSON.stringify(body.session)).not.toContain("isActiveChild");
+    await app.close();
+  });
+
+  it("rejects edits that target an unknown or non-user message", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const draft = creationDraftRecord({
+      id: "session-draft",
+      payload: {
+        payloadVersion: 3,
+        messages: [
+          { role: "assistant", content: "Hi!" },
+          { role: "user", content: "Bedtime story" }
+        ]
+      }
+    });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(draft);
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Edited", editMessageId: "missing" }
+    });
+    const assistant = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Edited", editMessageId: "legacy-0" }
+    });
+
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json().error.code).toBe("MESSAGE_NOT_FOUND");
+    expect(assistant.statusCode).toBe(404);
+    expect(assistant.json().error.code).toBe("MESSAGE_NOT_FOUND");
+    await app.close();
+  });
+
+  it("switches between creation chat sibling branches", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // A stored tree with a fork under the greeting: the edited branch is active.
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { id: "m0", parentId: null, isActiveChild: true, role: "assistant", content: "Hi!" },
+            { id: "m1", parentId: "m0", isActiveChild: false, role: "user", content: "Bedtime story" },
+            { id: "m2", parentId: "m1", isActiveChild: true, role: "assistant", content: "Reply about bedtime" },
+            { id: "m3", parentId: "m0", isActiveChild: true, role: "user", content: "Space adventure" },
+            { id: "m4", parentId: "m3", isActiveChild: true, role: "assistant", content: "Reply about space" }
+          ]
+        }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/branches",
+      headers: bearer("token-a"),
+      payload: { messageId: "m3", direction: "previous" }
+    });
+    const body = response.json();
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: { messages: Array<Record<string, unknown>>; rawIdea: string } };
+    };
+
+    expect(response.statusCode).toBe(200);
+    expect(body.session.messages.map((message: { id: string }) => message.id)).toEqual(["m0", "m1", "m2"]);
+    expect(body.session.messages[1].branch).toMatchObject({
+      index: 1,
+      total: 2,
+      canGoPrevious: false,
+      canGoNext: true
+    });
+    // No fresh assistant text is generated for a switch.
+    expect(body.turn.assistantMessage).toBe("");
+    // The draft state now reflects the re-activated branch.
+    expect(updateCall.data.payload.rawIdea).toContain("Bedtime story");
+    const storedById = new Map(updateCall.data.payload.messages.map((message) => [message.id, message]));
+    expect(storedById.get("m1")).toMatchObject({ isActiveChild: true });
+    expect(storedById.get("m3")).toMatchObject({ isActiveChild: false });
+    await app.close();
+  });
+
+  it("returns 404 when switching to an unknown creation chat branch", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          messages: [{ role: "assistant", content: "Hi!" }]
+        }
+      })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/branches",
+      headers: bearer("token-a"),
+      payload: { messageId: "missing", direction: "previous" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("MESSAGE_NOT_FOUND");
+    await app.close();
+  });
+
+  it("exposes stable ids and parent links for legacy transcripts", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { role: "assistant", content: "Hi!" },
+            { role: "user", content: "Bedtime story" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions/session-draft",
+      headers: bearer("token-a")
+    });
+    const messages = response.json().session.messages;
+
+    expect(response.statusCode).toBe(200);
+    expect(messages).toEqual([
+      expect.objectContaining({ id: "legacy-0", parentId: null, branch: null }),
+      expect.objectContaining({ id: "legacy-1", parentId: "legacy-0", branch: null })
+    ]);
     await app.close();
   });
 
@@ -3312,6 +3547,278 @@ describe("mobile project routes", () => {
     );
     await app.close();
   });
+
+  it("returns full page markdown for the owner's editable book", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        pages: editablePages().map(({ projectId, summary, ...page }) => page)
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/book",
+      headers: bearer("token-a")
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.book.projectId).toBe("project-1");
+    expect(body.book.pages).toEqual([
+      expect.objectContaining({
+        id: "page-1",
+        index: 1,
+        markdown: "Rabbit runs ahead at the start of the race.",
+        revision: 1
+      }),
+      expect.objectContaining({ id: "page-2", index: 2, revision: 1 })
+    ]);
+    await app.close();
+  });
+
+  it("refuses editable book content before generation completes", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "GENERATING", pages: [] })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/book",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("BOOK_NOT_READY");
+    await app.close();
+  });
+
+  it("saves a manual edit, snapshots pages, refreshes exports, and posts a saved-export message", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    mockPages = editablePages();
+    writeProjectFile(tempBookStorageDir, "project-1", "book.pdf", "%PDF-stale");
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-compile", type: "COMPILE_EXPORT" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/manual-edits",
+      headers: bearer("token-a"),
+      payload: {
+        pages: [
+          {
+            id: "page-1",
+            title: "Rabbit Starts Fast",
+            markdown: "Rabbit sprints ahead while Turtle takes one steady step.",
+            baseRevision: 1
+          }
+        ]
+      }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "manual_edit",
+      status: "applied",
+      creditsCharged: 0,
+      affectedPageIndexes: [1]
+    });
+    expect(body.savedExportMessage.role).toBe("assistant");
+    expect(body.savedExportMessage.metadata.manualEdit).toMatchObject({
+      pageIndexes: [1],
+      editCount: 1
+    });
+    expect(mockPages.find((page) => page.id === "page-1")).toMatchObject({
+      markdown: "Rabbit sprints ahead while Turtle takes one steady step.",
+      revision: 2
+    });
+    expect(mockPageEditSnapshots).toEqual([
+      expect.objectContaining({
+        pageId: "page-1",
+        markdownBefore: "Rabbit runs ahead at the start of the race.",
+        markdownAfter: "Rabbit sprints ahead while Turtle takes one steady step.",
+        revisionBefore: 1,
+        revisionAfter: 2
+      })
+    ]);
+    expect(existsSync(join(tempBookStorageDir!, "project-1", "book.pdf"))).toBe(false);
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith({
+      projectId: "project-1",
+      type: "COMPILE_EXPORT",
+      payload: { planId: "plan-1", skipFinalReview: true }
+    });
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "EDITING" }
+    });
+    expect(mockPrisma.project.update).not.toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "COMPLETE" }
+    });
+    await app.close();
+  });
+
+  it("restores COMPLETE when the manual edit recompile cannot be queued", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    mockPages = editablePages();
+    mockPrisma.project.update.mockResolvedValue(projectRecord({ id: "project-1" }));
+    vi.mocked(enqueueGenerationJob).mockRejectedValueOnce(new Error("queue offline"));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/manual-edits",
+      headers: bearer("token-a"),
+      payload: {
+        pages: [
+          { id: "page-1", title: "Rabbit Starts Fast", markdown: "New words entirely.", baseRevision: 1 }
+        ]
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "EDITING" }
+    });
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "COMPLETE" }
+    });
+    await app.close();
+  });
+
+  it("updates the saved export message in place when the user edits it again", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    mockPages = editablePages();
+    mockProjectChatMessages.push({
+      id: "chat-saved-export",
+      projectId: "project-1",
+      parentId: null,
+      role: "ASSISTANT",
+      content: "You edited page 1 yourself in Edit Mode. The exports are refreshing with your changes.",
+      operationId: "operation-old",
+      metadata: {
+        charged: false,
+        manualEdit: { operationId: "operation-old", pageIndexes: [1], editCount: 1 }
+      },
+      isActiveChild: true,
+      createdAt: new Date("2026-06-15T11:00:00.000Z")
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/manual-edits",
+      headers: bearer("token-a"),
+      payload: {
+        savedExportMessageId: "chat-saved-export",
+        pages: [
+          { id: "page-2", title: "Rabbit Learns", markdown: "Rabbit cheers as Turtle crosses the line.", baseRevision: 1 }
+        ]
+      }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.savedExportMessage.id).toBe("chat-saved-export");
+    expect(body.savedExportMessage.metadata.manualEdit).toMatchObject({
+      pageIndexes: [1, 2],
+      editCount: 2
+    });
+    const savedExportMessages = mockProjectChatMessages.filter((message) => message.metadata?.manualEdit);
+    expect(savedExportMessages).toHaveLength(1);
+    await app.close();
+  });
+
+  it("rejects manual edits when the book changed since the editor loaded", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    mockPages = editablePages().map((page) => ({ ...page, revision: 3 }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/manual-edits",
+      headers: bearer("token-a"),
+      payload: {
+        pages: [{ id: "page-1", title: "Rabbit Starts Fast", markdown: "New words.", baseRevision: 1 }]
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("EDIT_CONFLICT");
+    expect(mockPrisma.page.update).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("blocks manual edits while other project work is running", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    mockPrisma.generationJob.count.mockResolvedValueOnce(1);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/manual-edits",
+      headers: bearer("token-a"),
+      payload: {
+        pages: [{ id: "page-1", title: "Rabbit Starts Fast", markdown: "New words.", baseRevision: 1 }]
+      }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("PROJECT_BUSY");
+    await app.close();
+  });
+
+  it("rejects manual edit saves that change nothing", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    mockPages = editablePages();
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/manual-edits",
+      headers: bearer("token-a"),
+      payload: {
+        pages: [
+          {
+            id: "page-1",
+            title: "Rabbit Starts Fast",
+            markdown: "Rabbit runs ahead at the start of the race.",
+            baseRevision: 1
+          }
+        ]
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("NO_CHANGES");
+    await app.close();
+  });
 });
 
 function mockAccessTokens(tokensByRawToken: Record<string, string>) {
@@ -3505,6 +4012,14 @@ function generatedPages() {
       status: "COMPLETED"
     }
   ];
+}
+
+function editablePages() {
+  return generatedPages().map((page) => ({
+    ...page,
+    projectId: "project-1",
+    revision: 1
+  }));
 }
 
 function creationPayload(
@@ -3848,6 +4363,35 @@ describe("creation chat attachments API", () => {
     expect(removeSent.statusCode).toBe(409);
     expect(removeSent.json()).toMatchObject({ error: { code: "ATTACHMENT_IN_USE" } });
     expect(existsSync(join(fileDir, "att_ready1"))).toBe(true);
+    await app.close();
+  });
+
+  it("protects attachments referenced only by an inactive chat branch", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const sentRef = { id: "att_ready1", kind: "document", name: "notes.txt" };
+    // The message carrying the attachment sits on an abandoned branch.
+    const payloadWithFork = {
+      ...sessionPayload,
+      messages: [
+        { id: "m0", parentId: null, isActiveChild: true, role: "assistant", content: "Hi!" },
+        { id: "m1", parentId: "m0", isActiveChild: false, role: "user", content: "", attachments: [sentRef] },
+        { id: "m2", parentId: "m0", isActiveChild: true, role: "user", content: "No file after all" }
+      ],
+      attachments: [readyAttachment]
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(
+      creationDraftRecord({ id: "session-draft", payload: payloadWithFork })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/mobile/creation-sessions/session-draft/attachments/att_ready1",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: { code: "ATTACHMENT_IN_USE" } });
     await app.close();
   });
 });

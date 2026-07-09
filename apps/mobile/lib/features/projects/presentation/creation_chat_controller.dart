@@ -136,6 +136,7 @@ class CreationChatState {
     this.pendingAttachments = const <PendingCreationAttachment>[],
     this.attachmentThumbnails = const <String, String>{},
     this.attachmentUrls = const <String, String>{},
+    this.switchingBranchMessageId,
   });
 
   final bool initializing;
@@ -177,7 +178,12 @@ class CreationChatState {
   /// restart or on another device (files are stored server-side for 6 months).
   final Map<String, String> attachmentUrls;
 
+  /// Message whose branch arrows triggered an in-flight switch, if any.
+  final String? switchingBranchMessageId;
+
   bool get hasSession => draftId != null;
+
+  bool get switchingBranch => switchingBranchMessageId != null;
 
   bool get hasReadyAttachments =>
       pendingAttachments.any((attachment) => attachment.isReady);
@@ -228,6 +234,7 @@ class CreationChatState {
     List<PendingCreationAttachment>? pendingAttachments,
     Map<String, String>? attachmentThumbnails,
     Map<String, String>? attachmentUrls,
+    Object? switchingBranchMessageId = _sentinel,
   }) {
     return CreationChatState(
       initializing: initializing ?? this.initializing,
@@ -266,6 +273,9 @@ class CreationChatState {
       pendingAttachments: pendingAttachments ?? this.pendingAttachments,
       attachmentThumbnails: attachmentThumbnails ?? this.attachmentThumbnails,
       attachmentUrls: attachmentUrls ?? this.attachmentUrls,
+      switchingBranchMessageId: switchingBranchMessageId == _sentinel
+          ? this.switchingBranchMessageId
+          : switchingBranchMessageId as String?,
     );
   }
 
@@ -364,15 +374,22 @@ class CreationChatController extends Notifier<CreationChatState> {
     return init(fresh: fresh, draftId: draftId, force: true);
   }
 
-  Future<void> sendMessage(String text) async {
+  Future<void> sendMessage(String text, {String? editMessageId}) async {
     final trimmed = text.trim();
     final draftId = state.draftId;
     final readyAttachments = state.pendingAttachments
-        .where((attachment) => attachment.isReady && attachment.attachment != null)
+        .where(
+          (attachment) => attachment.isReady && attachment.attachment != null,
+        )
         .toList();
     if ((trimmed.isEmpty && readyAttachments.isEmpty) ||
         state.isBusy ||
+        state.switchingBranch ||
         state.hasUploadingAttachments) {
+      return;
+    }
+    // Editing needs a persisted session and a persisted message to fork from.
+    if (editMessageId != null && draftId == null) {
       return;
     }
     final presets = _presetsForRequest();
@@ -386,24 +403,33 @@ class CreationChatController extends Notifier<CreationChatState> {
         .toList();
     final requestId = ++_messageRequestId;
     final localId = 'local_msg_${_nextOptimisticMessageId++}';
+    final optimisticMessage = MobileCreationMessage(
+      role: 'user',
+      content: trimmed,
+      localId: localId,
+      createdAt: DateTime.now(),
+      sendStatus: CreationMessageSendStatus.sending,
+      includedSourceNotes: includedSourceNotes,
+      attachments: [
+        for (final pending in readyAttachments)
+          MobileCreationMessageAttachment(
+            id: pending.attachment!.id,
+            kind: pending.kind,
+            name: pending.name,
+          ),
+      ],
+    );
+    // An edit forks a new branch: everything from the edited message down is
+    // replaced by the new text until the server responds with the new thread.
+    final editIndex = editMessageId == null
+        ? -1
+        : state.messages.indexWhere((message) => message.id == editMessageId);
     final optimistic = [
-      ...state.messages,
-      MobileCreationMessage(
-        role: 'user',
-        content: trimmed,
-        localId: localId,
-        createdAt: DateTime.now(),
-        sendStatus: CreationMessageSendStatus.sending,
-        includedSourceNotes: includedSourceNotes,
-        attachments: [
-          for (final pending in readyAttachments)
-            MobileCreationMessageAttachment(
-              id: pending.attachment!.id,
-              kind: pending.kind,
-              name: pending.name,
-            ),
-        ],
-      ),
+      if (editIndex >= 0)
+        ...state.messages.sublist(0, editIndex)
+      else
+        ...state.messages,
+      optimisticMessage,
     ];
     final thumbnails = {
       ...state.attachmentThumbnails,
@@ -417,6 +443,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         if (pending.attachment!.url != null)
           pending.attachment!.id: pending.attachment!.url!,
     };
+    final wasComposingNewOutput = state.composingNewOutput;
     state = state.copyWith(
       messages: optimistic,
       assistantTyping: true,
@@ -428,6 +455,10 @@ class CreationChatController extends Notifier<CreationChatState> {
       pendingAttachments: state.pendingAttachments
           .where((pending) => !readyAttachments.contains(pending))
           .toList(),
+      // Forking the brainstorm abandons the thread any built output came
+      // from, so the chat drops back to the pre-build stage; earlier outputs
+      // stay reachable through the output switcher.
+      composingNewOutput: editMessageId != null ? true : null,
     );
     try {
       final response = draftId == null
@@ -444,6 +475,7 @@ class CreationChatController extends Notifier<CreationChatState> {
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              editMessageId: editMessageId,
             );
       if (requestId != _messageRequestId || state.draftId != draftId) return;
       _cache.write(response);
@@ -458,6 +490,8 @@ class CreationChatController extends Notifier<CreationChatState> {
       state = state.copyWith(
         assistantTyping: false,
         initError: message,
+        // The fork did not happen, so restore the pre-edit stage.
+        composingNewOutput: wasComposingNewOutput,
         messages: [
           for (final entry in state.messages)
             if (entry.localId == localId)
@@ -470,6 +504,49 @@ class CreationChatController extends Notifier<CreationChatState> {
         ],
       );
       rethrow;
+    }
+  }
+
+  /// Moves the visible thread to the previous/next sibling branch of a
+  /// message that was edited before ([direction] is 'previous' or 'next').
+  Future<void> switchBranch({
+    required String messageId,
+    required String direction,
+  }) async {
+    final draftId = state.draftId;
+    if (draftId == null || state.isBusy || state.switchingBranch) {
+      return;
+    }
+    final requestId = ++_messageRequestId;
+    // Failed optimistic sends live only in local state; carry them across the
+    // server refresh so retry/dismiss keep working.
+    final failedLocals = state.messages
+        .where((message) => message.isFailedSend)
+        .toList();
+    state = state.copyWith(switchingBranchMessageId: messageId);
+    try {
+      final response = await _repository.switchConversationBranch(
+        draftId: draftId,
+        messageId: messageId,
+        direction: direction,
+      );
+      if (requestId != _messageRequestId || state.draftId != draftId) return;
+      _cache.write(response);
+      _applyConversation(response, assistantTyping: false);
+      if (failedLocals.isNotEmpty) {
+        state = state.copyWith(
+          messages: [...state.messages, ...failedLocals],
+        );
+      }
+      ref.invalidate(chatSessionsProvider);
+    } catch (error) {
+      if (requestId == _messageRequestId) {
+        state = state.copyWith(initError: userFacingError(error));
+      }
+    } finally {
+      if (state.switchingBranchMessageId == messageId) {
+        state = state.copyWith(switchingBranchMessageId: null);
+      }
     }
   }
 
@@ -597,8 +674,10 @@ class CreationChatController extends Notifier<CreationChatState> {
     }
     _updatePendingAttachment(
       localId,
-      (entry) =>
-          entry.copyWith(status: PendingAttachmentStatus.uploading, error: null),
+      (entry) => entry.copyWith(
+        status: PendingAttachmentStatus.uploading,
+        error: null,
+      ),
     );
     await _uploadPendingAttachment(localId);
   }
@@ -630,9 +709,7 @@ class CreationChatController extends Notifier<CreationChatState> {
   /// Uploads run one at a time; parallel uploads would race the server-side
   /// draft update and could drop a file.
   Future<void> _uploadPendingAttachment(String localId) {
-    final run = _uploadChain.then(
-      (_) => _runPendingAttachmentUpload(localId),
-    );
+    final run = _uploadChain.then((_) => _runPendingAttachmentUpload(localId));
     _uploadChain = run.catchError((_) {});
     return run;
   }

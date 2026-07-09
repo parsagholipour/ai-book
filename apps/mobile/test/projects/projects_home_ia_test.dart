@@ -367,6 +367,20 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileEditableBook> getEditableBook(String projectId) {
+    throw UnimplementedError('Edit Mode is not used in this test.');
+  }
+
+  @override
+  Future<MobileManualBookEditResult> saveManualBookEdit({
+    required String projectId,
+    required List<MobileManualBookPageEdit> pages,
+    String? savedExportMessageId,
+  }) {
+    throw UnimplementedError('Edit Mode is not used in this test.');
+  }
+
+  @override
   Future<ProjectDeletionReceipt> deleteProject(String id) async {
     return ProjectDeletionReceipt(
       deletedProjectId: id,
@@ -458,10 +472,10 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<void> shareExport({
+  Future<ExportOpenOutcome> openExport({
     required String projectId,
     required MobileExportAvailability export,
-  }) async {}
+  }) async => ExportOpenOutcome.opened;
 }
 
 class FakeBillingRepository implements BillingRepository {

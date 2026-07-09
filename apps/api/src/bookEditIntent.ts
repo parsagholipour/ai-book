@@ -141,6 +141,7 @@ export async function classifyProjectChatMessage(options: {
             "Use scope all_pages for whole book, all pages, every page, everywhere, globally, throughout, or across the book.",
             "Use scope matching_pages for exact replacements when matching pages should be found from the existing text.",
             "Use affectedPageIndexes only when the target page is explicit or strongly inferable.",
+            "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
             "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."
           ].join(" ")
         },

@@ -25,6 +25,7 @@ void main() {
     expect(find.text('Welcome back'), findsOneWidget);
     expect(find.text('Sign in'), findsOneWidget);
 
+    await tester.ensureVisible(find.text('Create account'));
     await tester.tap(find.text('Create account'));
     await tester.pumpAndSettle();
 
@@ -249,6 +250,16 @@ class FakeCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? editMessageId,
+  }) async {
+    return fakeGreetingConversation(withSession: true);
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> switchConversationBranch({
+    required String draftId,
+    required String messageId,
+    required String direction,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }
@@ -402,6 +413,20 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileEditableBook> getEditableBook(String projectId) {
+    throw UnimplementedError('Edit Mode is not used in this test.');
+  }
+
+  @override
+  Future<MobileManualBookEditResult> saveManualBookEdit({
+    required String projectId,
+    required List<MobileManualBookPageEdit> pages,
+    String? savedExportMessageId,
+  }) {
+    throw UnimplementedError('Edit Mode is not used in this test.');
+  }
+
+  @override
   Future<ProjectDeletionReceipt> deleteProject(String id) async {
     return ProjectDeletionReceipt(
       deletedProjectId: id,
@@ -494,10 +519,10 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<void> shareExport({
+  Future<ExportOpenOutcome> openExport({
     required String projectId,
     required MobileExportAvailability export,
-  }) async {}
+  }) async => ExportOpenOutcome.opened;
 }
 
 ModerationReportReceipt fakeReportReceipt({

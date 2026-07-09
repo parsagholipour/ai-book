@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/material.dart';
 
-// Easier-open drawer.
+// Easier-open drawer: swipe from the start edge, snaps open at ~18% width
+// (Material needs 50%) and on a light fling.
 //
 // Keeps ONE GestureDetector for the whole lifetime so mid-drag rebuilds cannot
 // cancel the recognizer. Drawer content is only mounted while opening/open
@@ -13,6 +14,11 @@ const double _kWidth = 304.0;
 const double _kOpenThreshold = 0.18;
 const double _kMinFlingVelocity = 180.0;
 const Duration _kBaseSettleDuration = Duration(milliseconds: 246);
+// While closed, only drags starting in this start-edge strip open the drawer.
+// A full-width detector would win the gesture arena over every horizontal
+// scrollable on the page (quick-reply chips, attachment rows). Material uses
+// 20px; slightly wider keeps the "easy open" feel.
+const double _kEdgeDragWidth = 24.0;
 
 class EasyDrawerController extends StatefulWidget {
   const EasyDrawerController({
@@ -45,12 +51,10 @@ class EasyDrawerControllerState extends State<EasyDrawerController>
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      duration: _kBaseSettleDuration,
-      vsync: this,
-    )
-      ..addListener(() => setState(() {}))
-      ..addStatusListener(_animationStatusChanged);
+    _controller =
+        AnimationController(duration: _kBaseSettleDuration, vsync: this)
+          ..addListener(() => setState(() {}))
+          ..addStatusListener(_animationStatusChanged);
   }
 
   @override
@@ -178,51 +182,63 @@ class EasyDrawerControllerState extends State<EasyDrawerController>
         defaultTargetPlatform == TargetPlatform.android;
 
     // Detector is ALWAYS the same element. Only the overlay children toggle.
-    return GestureDetector(
-      onHorizontalDragDown: _handleDragDown,
-      onHorizontalDragUpdate: _move,
-      onHorizontalDragEnd: _settle,
-      onHorizontalDragCancel: _handleDragCancel,
-      behavior: HitTestBehavior.translucent,
-      excludeFromSemantics: true,
-      dragStartBehavior: widget.dragStartBehavior,
-      child: SizedBox.expand(
-        child: ListTileTheme.merge(
-          style: ListTileStyle.drawer,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (showing)
-                BlockSemantics(
-                  child: ExcludeSemantics(
-                    excluding: platformHasBackButton,
-                    child: GestureDetector(
-                      onTap: widget.drawerBarrierDismissible ? close : null,
-                      child: Semantics(
-                        label: MaterialLocalizations.of(
-                          context,
-                        ).modalBarrierDismissLabel,
-                        child: ColoredBox(color: effectiveScrim),
+    // While dismissed it shrinks to an edge strip so horizontal gestures on
+    // the rest of the screen reach their own scrollables; resizing a mounted
+    // element mid-drag does not cancel an in-flight recognizer.
+    final dragAreaWidth = showing
+        ? double.infinity
+        : _kEdgeDragWidth + MediaQuery.paddingOf(context).left;
+
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: GestureDetector(
+        onHorizontalDragDown: _handleDragDown,
+        onHorizontalDragUpdate: _move,
+        onHorizontalDragEnd: _settle,
+        onHorizontalDragCancel: _handleDragCancel,
+        behavior: HitTestBehavior.translucent,
+        excludeFromSemantics: true,
+        dragStartBehavior: widget.dragStartBehavior,
+        child: SizedBox(
+          width: dragAreaWidth,
+          height: double.infinity,
+          child: ListTileTheme.merge(
+            style: ListTileStyle.drawer,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (showing)
+                  BlockSemantics(
+                    child: ExcludeSemantics(
+                      excluding: platformHasBackButton,
+                      child: GestureDetector(
+                        onTap: widget.drawerBarrierDismissible ? close : null,
+                        child: Semantics(
+                          label: MaterialLocalizations.of(
+                            context,
+                          ).modalBarrierDismissLabel,
+                          child: ColoredBox(color: effectiveScrim),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              if (showing)
-                Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: Align(
-                    alignment: AlignmentDirectional.centerEnd,
-                    widthFactor: _controller.value.clamp(0.0, 1.0),
-                    child: RepaintBoundary(
-                      child: FocusScope(
-                        key: _drawerKey,
-                        node: _focusScopeNode,
-                        child: widget.child,
+                if (showing)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      widthFactor: _controller.value.clamp(0.0, 1.0),
+                      child: RepaintBoundary(
+                        child: FocusScope(
+                          key: _drawerKey,
+                          node: _focusScopeNode,
+                          child: widget.child,
+                        ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

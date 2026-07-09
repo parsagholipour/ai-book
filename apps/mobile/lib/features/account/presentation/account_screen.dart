@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
@@ -248,24 +249,28 @@ class AccountPrivacyControls extends StatelessWidget {
                   icon: Icons.support_agent_outlined,
                   title: 'Support',
                   value: config.supportEmail,
+                  uri: Uri(scheme: 'mailto', path: config.supportEmail),
                 ),
                 const Divider(height: 24),
                 _SettingsRow(
                   icon: Icons.privacy_tip_outlined,
                   title: 'Privacy policy',
                   value: config.privacyPolicyUrl.toString(),
+                  uri: config.privacyPolicyUrl,
                 ),
                 const Divider(height: 24),
                 _SettingsRow(
                   icon: Icons.description_outlined,
                   title: 'Terms',
                   value: config.termsOfServiceUrl.toString(),
+                  uri: config.termsOfServiceUrl,
                 ),
                 const Divider(height: 24),
                 _SettingsRow(
                   icon: Icons.manage_accounts_outlined,
                   title: 'Account deletion page',
                   value: config.accountDeletionUrl.toString(),
+                  uri: config.accountDeletionUrl,
                 ),
               ],
             ),
@@ -398,16 +403,18 @@ class _SettingsRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.value,
+    this.uri,
   });
 
   final IconData icon;
   final String title;
   final String value;
+  final Uri? uri;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Row(
+    final row = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, color: colors.primary),
@@ -418,7 +425,7 @@ class _SettingsRow extends StatelessWidget {
             children: [
               Text(title, style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: 3),
-              SelectableText(
+              Text(
                 value,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
@@ -427,7 +434,41 @@ class _SettingsRow extends StatelessWidget {
             ],
           ),
         ),
+        if (uri != null) ...[
+          const SizedBox(width: 8),
+          Icon(Icons.open_in_new, size: 18, color: colors.onSurfaceVariant),
+        ],
       ],
     );
+
+    if (uri == null) {
+      return row;
+    }
+
+    return Semantics(
+      button: true,
+      label: '$title. Opens $value',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _open(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: row,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _open(BuildContext context) async {
+    final target = uri!;
+    final opened = await launchUrl(
+      target,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open $value.')));
+    }
   }
 }

@@ -12,6 +12,7 @@ import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
@@ -35,6 +36,39 @@ void main() {
 
     final buildFinder = find.widgetWithText(FilledButton, 'Build the plan');
     expect(tester.widget<FilledButton>(buildFinder).onPressed, isNull);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('quick reply chips scroll; only an edge swipe opens the drawer', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository()
+      ..greetingQuickReplies = const [
+        'Bedtime story for 5 year olds',
+        'Lead magnet about pricing',
+        'Workbook for new coaches',
+        'Short story about a garden mystery',
+      ];
+    await tester.pumpWidget(_app(creation: creation));
+    await tester.pumpAndSettle();
+
+    // A horizontal drag on the chip row scrolls the chips instead of being
+    // captured by the drawer's full-screen gesture layer.
+    final firstChip = find.widgetWithText(
+      ActionChip,
+      'Bedtime story for 5 year olds',
+    );
+    final chipLeftBefore = tester.getTopLeft(firstChip).dx;
+    await tester.drag(firstChip, const Offset(-250, 0));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(firstChip).dx, lessThan(chipLeftBefore));
+    expect(find.byType(ChatHistoryDrawer), findsNothing);
+
+    // A swipe from the screen's start edge still opens the chat history.
+    await tester.dragFrom(const Offset(4, 300), const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(find.byType(ChatHistoryDrawer), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -92,6 +126,100 @@ void main() {
 
     expect(copiedText, _greeting);
     expect(find.text('Message copied'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('editing a sent message forks a branch with arrows', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+
+    // Long-press the sent user bubble and pick Edit. (The session title also
+    // echoes the message, so scope the lookup to the transcript list.)
+    await tester.longPress(_bubbleText('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+
+    // The composer switches into edit mode with the original text loaded.
+    expect(find.text('Editing message'), findsOneWidget);
+    final composer = tester.widget<TextField>(find.byType(TextField).first);
+    expect(composer.controller?.text, 'A kids book');
+
+    await tester.enterText(find.byType(TextField).first, 'A space adventure');
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    // The edit was sent as a fork of the original message.
+    expect(creation.editRequests, ['user-current']);
+    expect(creation.sentMessages.last, 'A space adventure');
+    expect(find.text('Editing message'), findsNothing);
+    expect(_bubbleText('A space adventure'), findsOneWidget);
+    expect(_bubbleText('A kids book'), findsNothing);
+    expect(find.text('2/2'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('branch arrows switch back to the previous thread', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.longPress(_bubbleText('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'A space adventure');
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Previous branch'));
+    await tester.pumpAndSettle();
+
+    expect(creation.branchSwitches, hasLength(1));
+    expect(creation.branchSwitches.single.messageId, 'user-current');
+    expect(creation.branchSwitches.single.direction, 'previous');
+    // The original thread is visible again with its branch position.
+    expect(_bubbleText('A kids book'), findsOneWidget);
+    expect(_bubbleText('A space adventure'), findsNothing);
+    expect(find.text('1/2'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('cancelling an edit restores the normal composer', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository();
+    await tester.pumpWidget(_app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.longPress(_bubbleText('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+    expect(find.text('Editing message'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Cancel edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Editing message'), findsNothing);
+    final composer = tester.widget<TextField>(find.byType(TextField).first);
+    expect(composer.controller?.text, isEmpty);
+    expect(creation.editRequests, isEmpty);
 
     await tester.teardownScreen();
   });
@@ -765,7 +893,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(projects.sharedFormats, ['pdf']);
+    expect(projects.openedFormats, ['pdf']);
 
     await tester.teardownScreen();
   });
@@ -867,6 +995,67 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets(
+    'editing a brainstorm message after build forks a creation branch',
+    (tester) async {
+      final creation = _ScriptedCreationRepository(
+        sessions: [
+          _chatSession(
+            draftId: 'draft-done',
+            title: 'Completed book',
+            status: 'COMPLETED',
+            createdProjectId: 'project-1',
+          ),
+        ],
+      );
+      creation.resumeMessages['draft-done'] = [
+        {'id': 'c0', 'role': 'assistant', 'content': 'Book transcript'},
+        {'id': 'c1', 'role': 'user', 'content': 'Original brainstorm idea'},
+      ];
+      final projects = _PlanProjectsRepository(
+        project: _plannedProject(status: 'complete', plan: _approvedPlan()),
+      );
+
+      await tester.pumpWidget(
+        _app(creation: creation, projects: projects, draftId: 'draft-done'),
+      );
+      await tester.pumpAndSettle();
+
+      // The built plan renders below the brainstorm before the edit.
+      expect(find.text(_planTitle), findsOneWidget);
+
+      await tester.longPress(_bubbleText('Original brainstorm idea'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Edit'));
+      await tester.pumpAndSettle();
+
+      // The output-stage composer is reused for the brainstorm edit.
+      expect(find.text('Editing message'), findsOneWidget);
+      final composer = tester.widget<TextField>(find.byType(TextField).first);
+      expect(composer.controller?.text, 'Original brainstorm idea');
+
+      await tester.enterText(
+        find.byType(TextField).first,
+        'A better brainstorm',
+      );
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+
+      // The submit went to the creation edit API (a fork), not project chat.
+      expect(creation.editRequests, ['c1']);
+      expect(projects.chatMessages, isEmpty);
+      expect(find.text('Editing message'), findsNothing);
+      expect(_bubbleText('A better brainstorm'), findsOneWidget);
+      expect(find.text('2/2'), findsOneWidget);
+      // The old branch's plan left the view and the chat is back in the
+      // pre-build stage, ready to build a new output from the fork.
+      expect(find.text(_planTitle), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'Build the plan'), findsOneWidget);
+
+      await tester.teardownScreen();
+    },
+  );
 
   testWidgets(
     'a chat build request starts the build without tapping the button',
@@ -1310,6 +1499,10 @@ extension on WidgetTester {
   }
 }
 
+/// Text inside the transcript list (excludes app bar title and footer chips).
+Finder _bubbleText(String text) =>
+    find.descendant(of: find.byType(ListView), matching: find.text(text));
+
 Widget _app({
   required _ScriptedCreationRepository creation,
   ProjectsRepository? projects,
@@ -1485,14 +1678,18 @@ class _ScriptedCreationRepository implements CreationRepository {
   final sentMessages = <String>[];
   final sentAttachmentIds = <List<String>>[];
   final startedMessages = <String>[];
+  final editRequests = <String>[];
+  final branchSwitches = <({String messageId, String direction})>[];
   final uploadedAttachments = <String, MobileCreationAttachment>{};
   final deletedAttachmentIds = <String>[];
   Object? uploadError;
   Object? sendError;
   List<String> replyWarnings = const [];
+  List<String> greetingQuickReplies = const ['A kids book', 'A workbook'];
   int uploadCount = 0;
   final resumedDraftIds = <String>[];
   final resumeAssistantMessages = <String, String>{};
+  final resumeMessages = <String, List<Map<String, dynamic>>>{};
   final resumeSyncedOutputs = <String, List<MobileCreationOutput>>{};
   MobileCreationPresets? buildPresets;
   String? buildDraftId;
@@ -1516,7 +1713,7 @@ class _ScriptedCreationRepository implements CreationRepository {
       'turn': _turnJson(
         assistantMessage: _greeting,
         canBuild: false,
-        quickReplies: const ['A kids book', 'A workbook'],
+        quickReplies: greetingQuickReplies,
       ),
     });
   }
@@ -1540,9 +1737,11 @@ class _ScriptedCreationRepository implements CreationRepository {
         'draftId': draftId,
         'title': session?.title ?? 'Title for $draftId',
         'status': session?.status ?? 'ACTIVE',
-        'messages': [
-          {'role': 'assistant', 'content': assistantMessage},
-        ],
+        'messages':
+            resumeMessages[draftId] ??
+            [
+              {'role': 'assistant', 'content': assistantMessage},
+            ],
         'createdProjectId': session?.createdProjectId,
         'activeProjectId': session?.activeProjectId,
         'outputs': [
@@ -1601,7 +1800,7 @@ class _ScriptedCreationRepository implements CreationRepository {
       'turn': _turnJson(
         assistantMessage: _greeting,
         canBuild: false,
-        quickReplies: const ['A kids book', 'A workbook'],
+        quickReplies: greetingQuickReplies,
       ),
     });
   }
@@ -1614,10 +1813,16 @@ class _ScriptedCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? editMessageId,
   }) async {
     final error = sendError;
     if (error != null) {
       throw error;
+    }
+    if (editMessageId != null) {
+      // An edit forks a branch: remember the replaced text for switch-back.
+      editRequests.add(editMessageId);
+      _originalUserContent ??= sentMessages.isEmpty ? null : sentMessages.last;
     }
     sentMessages.add(message);
     sentAttachmentIds.add(attachmentIds ?? const <String>[]);
@@ -1627,10 +1832,18 @@ class _ScriptedCreationRepository implements CreationRepository {
         'title': message,
         'status': 'ACTIVE',
         'messages': [
-          {'role': 'assistant', 'content': _greeting},
+          {'id': 'assistant-greeting', 'role': 'assistant', 'content': _greeting},
           {
+            'id': 'user-current',
             'role': 'user',
             'content': message,
+            if (editMessageId != null)
+              'branch': {
+                'index': 2,
+                'total': 2,
+                'canGoPrevious': true,
+                'canGoNext': false,
+              },
             if (attachmentIds != null && attachmentIds.isNotEmpty)
               'attachments': [
                 for (final id in attachmentIds)
@@ -1641,7 +1854,7 @@ class _ScriptedCreationRepository implements CreationRepository {
                   },
               ],
           },
-          {'role': 'assistant', 'content': _reply},
+          {'id': 'assistant-reply', 'role': 'assistant', 'content': _reply},
         ],
         'createdProjectId': null,
         'updatedAt': '2026-06-15T00:00:00.000Z',
@@ -1659,6 +1872,51 @@ class _ScriptedCreationRepository implements CreationRepository {
             : null,
         buildRequested: replyWithBuildRequest,
         warnings: replyWarnings,
+      ),
+    });
+  }
+
+  /// Text of the user turn that was replaced by the most recent edit.
+  String? _originalUserContent;
+
+  @override
+  Future<MobileCreationConversationResponse> switchConversationBranch({
+    required String draftId,
+    required String messageId,
+    required String direction,
+  }) async {
+    branchSwitches.add((messageId: messageId, direction: direction));
+    final showOriginal = direction == 'previous';
+    final content = showOriginal
+        ? (_originalUserContent ?? 'Original message')
+        : (sentMessages.isEmpty ? 'Edited message' : sentMessages.last);
+    return MobileCreationConversationResponse.fromJson({
+      'session': {
+        'draftId': 'draft-1',
+        'title': content,
+        'status': 'ACTIVE',
+        'messages': [
+          {'id': 'assistant-greeting', 'role': 'assistant', 'content': _greeting},
+          {
+            'id': 'user-current',
+            'role': 'user',
+            'content': content,
+            'branch': {
+              'index': showOriginal ? 1 : 2,
+              'total': 2,
+              'canGoPrevious': !showOriginal,
+              'canGoNext': showOriginal,
+            },
+          },
+          {'id': 'assistant-reply', 'role': 'assistant', 'content': _reply},
+        ],
+        'createdProjectId': null,
+        'updatedAt': '2026-06-15T00:00:00.000Z',
+      },
+      'turn': _turnJson(
+        assistantMessage: '',
+        canBuild: true,
+        quickReplies: const [],
       ),
     });
   }
@@ -1799,7 +2057,7 @@ class _PlanProjectsRepository implements ProjectsRepository {
   final planSnapshots = <MobilePlan>[];
   final chatOperations = <MobileBookEditOperation>[];
   final downloadedFormats = <String>[];
-  final sharedFormats = <String>[];
+  final openedFormats = <String>[];
 
   @override
   Future<MobileProjectDetail> getProject(String id) async {
@@ -2042,11 +2300,12 @@ class _PlanProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<void> shareExport({
+  Future<ExportOpenOutcome> openExport({
     required String projectId,
     required MobileExportAvailability export,
   }) async {
-    sharedFormats.add(export.format);
+    openedFormats.add(export.format);
+    return ExportOpenOutcome.opened;
   }
 
   @override

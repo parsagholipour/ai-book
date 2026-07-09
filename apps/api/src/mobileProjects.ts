@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
@@ -115,6 +115,15 @@ import {
   type MobileCreationTurnRequest
 } from "./mobileCreation.js";
 import {
+  appendCreationMessage,
+  foldCreationTranscriptTree,
+  forkCreationSiblingMessage,
+  linearizeCreationMessages,
+  normalizeCreationMessageIds,
+  switchCreationBranch,
+  type CreationChatBranchDto
+} from "./creationChatTree.js";
+import {
   bookEditScopeFromMessage,
   classifyProjectChatMessage,
   isBookEditScopeOnlyMessage,
@@ -224,11 +233,25 @@ export type MobileCreationDraftResponseDto = {
   draft: MobileCreationDraftDto | null;
 };
 
+/**
+ * Wire shape of one creation chat message: the stored message plus branch
+ * position when siblings exist. The internal isActiveChild flag never leaves
+ * the server.
+ */
+export type MobileCreationMessageDto = {
+  id: string;
+  parentId: string | null;
+  role: "user" | "assistant";
+  content: string;
+  attachments?: MobileCreationMessage["attachments"];
+  branch: CreationChatBranchDto | null;
+};
+
 export type MobileCreationSessionDto = {
   draftId: string;
   title: string;
   status: string;
-  messages: MobileCreationMessage[];
+  messages: MobileCreationMessageDto[];
   createdProjectId: string | null;
   activeProjectId: string | null;
   outputs: MobileCreationOutputDto[];
@@ -372,7 +395,7 @@ export type MobileProjectChatBranchDto = {
 export type MobileBookEditOperationDto = {
   id: string;
   projectId: string;
-  kind: "plan_revision" | "local_patch" | "page_rewrite" | "chapter_regenerate" | "book_replan";
+  kind: "plan_revision" | "local_patch" | "page_rewrite" | "chapter_regenerate" | "book_replan" | "manual_edit";
   status: "queued" | "active" | "applied" | "failed" | "canceled";
   affectedPageIndexes: number[];
   creditsCharged: number;
@@ -392,6 +415,25 @@ export type MobileProjectChatResponseDto = {
 export type MobileProjectChatMessageResponseDto = MobileProjectChatResponseDto & {
   reply: MobileProjectChatMessageDto;
   operation: MobileBookEditOperationDto | null;
+};
+
+export type MobileEditableBookPageDto = {
+  id: string;
+  index: number;
+  title: string;
+  markdown: string;
+  revision: number;
+};
+
+export type MobileEditableBookDto = {
+  projectId: string;
+  title: string;
+  pages: MobileEditableBookPageDto[];
+};
+
+export type MobileManualBookEditResponseDto = MobileProjectChatResponseDto & {
+  savedExportMessage: MobileProjectChatMessageDto;
+  operation: MobileBookEditOperationDto;
 };
 
 export type MobileProjectRecoveryDto = {
@@ -645,6 +687,25 @@ const mobileProjectChatBranchBodySchema = z
   })
   .strict();
 
+const mobileManualBookEditBodySchema = z
+  .object({
+    pages: z
+      .array(
+        z
+          .object({
+            id: z.string().trim().min(1).max(128),
+            title: z.string().trim().min(1).max(300),
+            markdown: z.string().min(1).max(60000),
+            baseRevision: z.number().int().min(1)
+          })
+          .strict()
+      )
+      .min(1)
+      .max(200),
+    savedExportMessageId: z.string().trim().min(1).max(128).optional()
+  })
+  .strict();
+
 const mobileCreationMessageBodySchema = z
   .object({
     // Empty text is allowed when the message carries attachments.
@@ -652,7 +713,9 @@ const mobileCreationMessageBodySchema = z
     attachmentIds: z.array(z.string().trim().min(1).max(64)).max(6).optional(),
     presets: mobileCreationPresetsSchema.optional(),
     sourceNotes: z.string().trim().max(12000).optional(),
-    optionalDetails: mobileCreationOptionalDetailsSchema.optional()
+    optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
+    // When set, the message replaces a prior user message as a new branch.
+    editMessageId: z.string().trim().min(1).max(64).optional()
   })
   .strict()
   .refine((body) => body.message.length > 0 || (body.attachmentIds?.length ?? 0) > 0, {
@@ -864,6 +927,31 @@ const mobileProjectChatBranchOpenApiBody = {
     direction: { type: "string", enum: ["previous", "next"] }
   },
   required: ["messageId", "direction"]
+} as const;
+
+const mobileManualBookEditOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    pages: {
+      type: "array",
+      minItems: 1,
+      maxItems: 200,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string", minLength: 1, maxLength: 128 },
+          title: { type: "string", minLength: 1, maxLength: 300 },
+          markdown: { type: "string", minLength: 1, maxLength: 60000 },
+          baseRevision: { type: "integer", minimum: 1 }
+        },
+        required: ["id", "title", "markdown", "baseRevision"]
+      }
+    },
+    savedExportMessageId: { type: "string", minLength: 1, maxLength: 128 }
+  },
+  required: ["pages"]
 } as const;
 
 export type MobileProjectRoutesOptions = {
@@ -1192,7 +1280,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         const parsed = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
         if (!parsed.success) return [];
         const payload = parsed.data;
-        const messages = payload.messages ?? [];
+        const messages = payload.messages && payload.messages.length > 0 ? conversationMessagesFromPayload(payload) : [];
         const title = _chatTitleForPayload(payload);
         const lastMsg = messages.length > 0 ? messages[messages.length - 1] : undefined;
         const preview = lastMsg ? lastMsg.content.trim().slice(0, 100) : "";
@@ -1243,7 +1331,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           })
         : greetingCreationTurn();
       return {
-        session: serializeCreationSession(draft, messages),
+        session: serializeCreationSession(draft, creationTreeFromPayload(parsed.data)),
         turn
       } satisfies MobileCreationConversationResponseDto;
     }
@@ -1278,7 +1366,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           })
         : greetingCreationTurn();
       return {
-        session: serializeCreationSession(draft, messages),
+        session: serializeCreationSession(draft, creationTreeFromPayload(parsed.data)),
         turn
       } satisfies MobileCreationConversationResponseDto;
     }
@@ -1305,7 +1393,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       ];
       const firstMessage = parsedBody.data.message;
       let turn = greeting;
-      let messages = greetingMessages;
+      let messages = normalizeCreationMessageIds(greetingMessages);
       let payload: MobileCreationDraftPayload;
       if (firstMessage) {
         const nextMessages: MobileCreationMessage[] = [
@@ -1322,10 +1410,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           enrich: creationEnrichment,
           timeoutMs: options.creationTurnTimeoutMs
         });
-        messages = [
-          ...nextMessages,
-          { role: "assistant" as const, content: turn.assistantMessage }
-        ].slice(-60);
+        messages = normalizeCreationMessageIds(
+          [...nextMessages, { role: "assistant" as const, content: turn.assistantMessage }].slice(-60)
+        );
         payload = mobileCreationDraftPayloadSchema.parse({
           payloadVersion: 3,
           rawIdea: userTextFromMessages(messages),
@@ -1396,20 +1483,25 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         name: attachment!.name
       }));
 
-      const priorMessages = conversationMessagesFromPayload(parsedPayload.data);
-      const incoming = foldCreationTranscript(
-        [
-          ...priorMessages,
-          {
-            role: "user" as const,
-            content: parsedBody.data.message,
-            ...(attachmentRefs.length > 0 ? { attachments: attachmentRefs } : {})
-          }
-        ],
-        parsedPayload.data.conversationSummary
-      );
+      const priorTree = creationTreeFromPayload(parsedPayload.data);
+      const userMessage = {
+        role: "user" as const,
+        content: parsedBody.data.message,
+        ...(attachmentRefs.length > 0 ? { attachments: attachmentRefs } : {})
+      };
+      let treeWithUser: MobileCreationMessage[];
+      if (parsedBody.data.editMessageId) {
+        const edited = priorTree.find((message) => message.id === parsedBody.data.editMessageId);
+        if (!edited || edited.role !== "user") {
+          return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That message was not found in this chat.");
+        }
+        treeWithUser = forkCreationSiblingMessage(priorTree, parsedBody.data.editMessageId, userMessage)!.messages;
+      } else {
+        treeWithUser = appendCreationMessage(priorTree, userMessage).messages;
+      }
+      const incoming = foldCreationTranscriptTree(treeWithUser, parsedPayload.data.conversationSummary);
       const turnRequest: MobileCreationTurnRequest = {
-        messages: incoming.messages,
+        messages: linearizeCreationMessages(incoming.messages).active,
         brief: parsedPayload.data.recipe,
         presets: parsedBody.data.presets ?? persistedPresetsForTurn(parsedPayload.data),
         sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
@@ -1422,14 +1514,14 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         enrich: creationEnrichment,
         timeoutMs: options.creationTurnTimeoutMs
       });
-      const persisted = foldCreationTranscript(
-        [...incoming.messages, { role: "assistant" as const, content: turn.assistantMessage }],
+      const persisted = foldCreationTranscriptTree(
+        appendCreationMessage(incoming.messages, { role: "assistant" as const, content: turn.assistantMessage }).messages,
         incoming.conversationSummary
       );
       const language = turn.language ?? parsedPayload.data.language;
       const updatedPayload = mobileCreationDraftPayloadSchema.parse({
         payloadVersion: 3,
-        rawIdea: userTextFromMessages(persisted.messages),
+        rawIdea: userTextFromMessages(linearizeCreationMessages(persisted.messages).active),
         optionalDetails: turnRequest.optionalDetails ?? { mustInclude: "", tone: "" },
         sourceNotes: turnRequest.sourceNotes ?? "",
         detectedLane: turn.brief.lane,
@@ -1447,6 +1539,73 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       return {
         session: serializeCreationSession({ ...updated, outputs: draft.outputs }, persisted.messages),
         turn
+      } satisfies MobileCreationConversationResponseDto;
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/creation-sessions/:id/branches",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileProjectChatBranchOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "creation-branch-switch")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsedBody = mobileProjectChatBranchBodySchema.safeParse(request.body);
+      if (!parsedBody.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose a chat branch.");
+      }
+      const draft = await prisma.mobileCreationDraft.findFirst({
+        where: { id, userId: auth.user.id },
+        include: mobileCreationDraftOutputsInclude()
+      });
+      if (!draft) {
+        return sendMobileError(reply, 404, "SESSION_NOT_FOUND", "This book chat was not found.");
+      }
+      const parsedPayload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
+      if (!parsedPayload.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "This book chat needs to be restarted.");
+      }
+      const switched = switchCreationBranch(
+        creationTreeFromPayload(parsedPayload.data),
+        parsedBody.data.messageId,
+        parsedBody.data.direction
+      );
+      if (!switched) {
+        return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That chat branch was not found.");
+      }
+      // Re-derive the advisor state from the newly active branch so an
+      // immediate Build reflects it. Deterministic only — no model call, and
+      // the returned turn carries no fresh assistant message to display.
+      const activeMessages = linearizeCreationMessages(switched).active;
+      const turn = await runCreationTurn(turnRequestFromPayload(parsedPayload.data, activeMessages));
+      const updatedPayload = mobileCreationDraftPayloadSchema.parse({
+        ...parsedPayload.data,
+        payloadVersion: 3,
+        rawIdea: userTextFromMessages(activeMessages),
+        detectedLane: turn.brief.lane,
+        recipe: turn.brief,
+        selectedPresets: turn.presets,
+        messages: switched
+      });
+      const updated = await prisma.mobileCreationDraft.update({
+        where: { id },
+        data: { payload: jsonInputValue(updatedPayload) }
+      });
+      return {
+        session: serializeCreationSession({ ...updated, outputs: draft.outputs }, switched),
+        turn: { ...turn, assistantMessage: "" }
       } satisfies MobileCreationConversationResponseDto;
     }
   );
@@ -1915,7 +2074,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
               role: "user",
               content: JSON.stringify(
                 {
-                  chat: payload.messages?.slice(-20) ?? [],
+                  chat: conversationMessagesFromPayload(payload)
+                    .slice(-20)
+                    .map((message) => ({ role: message.role, content: message.content })),
                   rawIdea: payload.rawIdea,
                   sourceNotesPreview: payload.sourceNotes.slice(0, 600),
                   detectedLane: advisor.detectedLane,
@@ -2249,6 +2410,141 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That chat branch was not found.");
       }
       return loadProjectChatResponse(id);
+    }
+  );
+
+  fastify.get(
+    "/api/mobile/projects/:id/book",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const project = await prisma.project.findFirst({
+        where: { id, userId: auth.user.id },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          pages: {
+            orderBy: { index: "asc" },
+            select: { id: true, index: true, title: true, markdown: true, revision: true }
+          }
+        }
+      });
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+      // EDITING covers the export recompile after a save; the book text
+      // itself is still fully readable and editable then.
+      if (!["COMPLETE", "EDITING"].includes(project.status) || project.pages.length === 0) {
+        return sendMobileError(reply, 409, "BOOK_NOT_READY", "This book is not ready to edit yet.");
+      }
+      return {
+        book: {
+          projectId: project.id,
+          title: project.title,
+          pages: project.pages
+        } satisfies MobileEditableBookDto
+      };
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/projects/:id/manual-edits",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileManualBookEditOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "manual-edit")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileManualBookEditBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the edited pages.");
+      }
+
+      const project = await prisma.project.findFirst({
+        where: { id, userId: auth.user.id },
+        select: { id: true, status: true, currentPlanId: true }
+      });
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+      if (!["COMPLETE", "EDITING"].includes(project.status)) {
+        return sendMobileError(reply, 409, "BOOK_NOT_READY", "Manual edits are available after the book is generated.");
+      }
+      if (await hasOpenProjectWork(id)) {
+        return sendMobileError(
+          reply,
+          409,
+          "PROJECT_BUSY",
+          "This book is still being worked on. Save your edit once the current job finishes."
+        );
+      }
+
+      const savedExportMessageId = parsed.data.savedExportMessageId ?? null;
+      const savedExportMessage = savedExportMessageId
+        ? await prisma.projectChatMessage.findFirst({
+            where: { id: savedExportMessageId, projectId: id, role: "ASSISTANT" }
+          })
+        : null;
+      if (savedExportMessageId && (!savedExportMessage || !manualEditInfoFromMessage(savedExportMessage))) {
+        return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That saved edit was not found.");
+      }
+
+      const pageIds = parsed.data.pages.map((page) => page.id);
+      if (new Set(pageIds).size !== pageIds.length) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Each page can only be edited once per save.");
+      }
+      const pages = await prisma.page.findMany({ where: { projectId: id, id: { in: pageIds } } });
+      if (pages.length !== pageIds.length) {
+        return sendMobileError(reply, 404, "PAGE_NOT_FOUND", "Some edited pages no longer exist. Reload the book.");
+      }
+      const pagesById = new Map(pages.map((page) => [page.id, page]));
+      const hasConflict = parsed.data.pages.some((edit) => pagesById.get(edit.id)!.revision !== edit.baseRevision);
+      if (hasConflict) {
+        return sendMobileError(
+          reply,
+          409,
+          "EDIT_CONFLICT",
+          "This book changed since you opened Edit Mode. Reload it and try again."
+        );
+      }
+      const changedEdits = parsed.data.pages.filter((edit) => {
+        const page = pagesById.get(edit.id)!;
+        return page.title !== edit.title || page.markdown !== edit.markdown;
+      });
+      if (changedEdits.length === 0) {
+        return sendMobileError(reply, 400, "NO_CHANGES", "There are no changes to save.");
+      }
+
+      const result = await applyManualBookEdit({
+        projectId: id,
+        currentPlanId: project.currentPlanId,
+        edits: changedEdits,
+        pagesById,
+        savedExportMessage,
+        bookStorageDir: appConfig.BOOK_STORAGE_DIR
+      });
+
+      return {
+        ...(await loadProjectChatResponse(id)),
+        savedExportMessage: serializeProjectChatMessage(result.message),
+        operation: serializeBookEditOperation(result.operation)
+      } satisfies MobileManualBookEditResponseDto;
     }
   );
 
@@ -3105,7 +3401,9 @@ function _chatTitleForPayload(payload: MobileCreationDraftPayload): string {
   if (payload.optionalDetails?.title?.trim()) return payload.optionalDetails.title.trim();
   if (payload.recipe?.title?.trim()) return payload.recipe.title.trim();
   if (payload.brief?.topic?.trim()) return payload.brief.topic.trim();
-  const firstUser = payload.messages?.find((m) => m.role === "user");
+  const firstUser = payload.messages?.length
+    ? conversationMessagesFromPayload(payload).find((m) => m.role === "user")
+    : undefined;
   if (firstUser?.content?.trim()) return firstUser.content.trim().slice(0, 60);
   return "New book";
 }
@@ -3206,6 +3504,18 @@ function serializeCreationDraft(draft: {
   };
 }
 
+function serializeCreationMessages(tree: MobileCreationMessage[]): MobileCreationMessageDto[] {
+  const { active, branches } = linearizeCreationMessages(tree);
+  return active.map((message) => ({
+    id: message.id ?? "",
+    parentId: message.parentId ?? null,
+    role: message.role,
+    content: message.content,
+    ...(message.attachments && message.attachments.length > 0 ? { attachments: message.attachments } : {}),
+    branch: branches.get(message.id ?? "") ?? null
+  }));
+}
+
 function serializeCreationSession(
   draft: {
     id: string;
@@ -3215,6 +3525,7 @@ function serializeCreationSession(
     updatedAt: Date;
     outputs?: MobileCreationOutputRecord[];
   },
+  // The full message tree; only the active branch is exposed to clients.
   messages: MobileCreationMessage[]
 ): MobileCreationSessionDto {
   const payload = mobileCreationDraftPayloadSchema.safeParse(draft.payload);
@@ -3223,7 +3534,7 @@ function serializeCreationSession(
     draftId: draft.id,
     title: payload.success ? _chatTitleForPayload(payload.data) : "New book",
     status: draft.status,
-    messages,
+    messages: serializeCreationMessages(messages),
     createdProjectId: draft.createdProjectId,
     activeProjectId: activeProjectIdForDraft(draft, outputs),
     outputs,
@@ -4094,7 +4405,187 @@ function contentCardForTarget(
   };
 }
 
-const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE"] as const;
+const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE", "MANUAL_EDIT"] as const;
+
+type ManualBookPageEdit = { id: string; title: string; markdown: string };
+
+type ManualBookPageRecord = {
+  id: string;
+  index: number;
+  title: string;
+  markdown: string;
+  summary: string;
+  revision: number;
+};
+
+/** Reads the saved-export marker this feature stores on assistant messages. */
+function manualEditInfoFromMessage(message: MobileProjectChatMessageRecord): Record<string, unknown> | null {
+  const manualEdit = jsonRecord(message.metadata).manualEdit;
+  return manualEdit && typeof manualEdit === "object" && !Array.isArray(manualEdit)
+    ? (manualEdit as Record<string, unknown>)
+    : null;
+}
+
+/** Removes compiled export files so downloads show "preparing" until the re-compile lands. */
+async function invalidateCompiledProjectExports(bookStorageDir: string, projectId: string): Promise<void> {
+  const projectDir = join(bookStorageDir, projectId);
+  await Promise.all(
+    ["book.md", "README.md", "book.pdf", "book.epub"].map((filename) =>
+      rm(join(projectDir, filename), { force: true }).catch(() => undefined)
+    )
+  );
+}
+
+/**
+ * Applies a user's Edit Mode changes: snapshots and updates the pages, records
+ * a free APPLIED operation, and creates the saved-export chat message — or
+ * updates the existing one in place when the user re-edited a saved export.
+ */
+async function applyManualBookEdit(options: {
+  projectId: string;
+  currentPlanId: string | null;
+  edits: ManualBookPageEdit[];
+  pagesById: Map<string, ManualBookPageRecord>;
+  savedExportMessage: MobileProjectChatMessageRecord | null;
+  bookStorageDir: string;
+}): Promise<{ message: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord }> {
+  const { projectId, edits, pagesById, savedExportMessage } = options;
+  const affectedPageIndexes = edits.map((edit) => pagesById.get(edit.id)!.index).sort((a, b) => a - b);
+  const parentId = savedExportMessage
+    ? null
+    : activeProjectChatLeafId(await loadActiveProjectChatMessages(projectId));
+
+  const { message, operation } = await prisma.$transaction(async (tx) => {
+    const operation = await tx.bookEditOperation.create({
+      data: {
+        projectId,
+        kind: "MANUAL_EDIT",
+        status: "APPLIED",
+        request: "Manual edit in Edit Mode",
+        classifier: jsonInputValue({ source: "manual_edit_mode" }),
+        affectedPageIndexes,
+        creditsCharged: 0,
+        appliedAt: new Date()
+      }
+    });
+
+    for (const edit of edits) {
+      const before = pagesById.get(edit.id)!;
+      const saved = await tx.page.update({
+        where: { id: edit.id },
+        data: {
+          title: edit.title,
+          markdown: edit.markdown,
+          status: "COMPLETED",
+          revision: { increment: 1 }
+        }
+      });
+      await tx.pageEditSnapshot.create({
+        data: {
+          projectId,
+          pageId: edit.id,
+          operationId: operation.id,
+          pageIndex: before.index,
+          titleBefore: before.title,
+          markdownBefore: before.markdown,
+          summaryBefore: before.summary,
+          revisionBefore: before.revision,
+          titleAfter: saved.title,
+          markdownAfter: saved.markdown,
+          summaryAfter: saved.summary,
+          revisionAfter: saved.revision
+        }
+      });
+    }
+
+    let message: MobileProjectChatMessageRecord;
+    if (savedExportMessage) {
+      const previousInfo = manualEditInfoFromMessage(savedExportMessage) ?? {};
+      const previousIndexes = Array.isArray(previousInfo.pageIndexes)
+        ? previousInfo.pageIndexes.filter((value): value is number => typeof value === "number")
+        : [];
+      const mergedIndexes = [...new Set([...previousIndexes, ...affectedPageIndexes])].sort((a, b) => a - b);
+      const previousEditCount = typeof previousInfo.editCount === "number" ? previousInfo.editCount : 1;
+      message = await tx.projectChatMessage.update({
+        where: { id: savedExportMessage.id },
+        data: {
+          content: manualEditMessageContent(mergedIndexes),
+          operationId: operation.id,
+          metadata: jsonInputValue({
+            ...jsonRecord(savedExportMessage.metadata),
+            manualEdit: {
+              operationId: operation.id,
+              pageIndexes: mergedIndexes,
+              editCount: previousEditCount + 1,
+              savedAt: new Date().toISOString()
+            }
+          })
+        }
+      });
+    } else {
+      message = await tx.projectChatMessage.create({
+        data: {
+          projectId,
+          parentId,
+          role: "ASSISTANT",
+          content: manualEditMessageContent(affectedPageIndexes),
+          operationId: operation.id,
+          metadata: jsonInputValue({
+            charged: false,
+            manualEdit: {
+              operationId: operation.id,
+              pageIndexes: affectedPageIndexes,
+              editCount: 1,
+              savedAt: new Date().toISOString()
+            }
+          })
+        }
+      });
+    }
+    await tx.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { assistantMessageId: message.id }
+    });
+    return { message, operation };
+  });
+
+  await invalidateCompiledProjectExports(options.bookStorageDir, projectId);
+  if (options.currentPlanId) {
+    await queueUserEditExportRecompile(projectId, options.currentPlanId);
+  }
+
+  return { message, operation };
+}
+
+/**
+ * Queues the export recompile for a user-driven edit (manual edit or undo).
+ * The project goes to EDITING while the compile runs so the mobile status
+ * stream stays live and flips the export buttons once the files are rebuilt;
+ * the compile job restores COMPLETE when it finishes. skipFinalReview keeps
+ * the compile QA pass from rewriting text the user chose deliberately.
+ */
+async function queueUserEditExportRecompile(projectId: string, planId: string): Promise<void> {
+  await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
+  try {
+    await enqueueGenerationJob({
+      projectId,
+      type: "COMPILE_EXPORT",
+      payload: { planId, skipFinalReview: true }
+    });
+  } catch {
+    // Without a queued compile nothing will restore COMPLETE, so put the
+    // project back instead of stranding it in EDITING.
+    await prisma.project
+      .update({ where: { id: projectId }, data: { status: "COMPLETE" } })
+      .catch(() => undefined);
+  }
+}
+
+function manualEditMessageContent(pageIndexes: number[]): string {
+  const pageText =
+    pageIndexes.length === 1 ? `page ${pageIndexes[0]}` : `pages ${pageIndexes.join(", ")}`;
+  return `You edited ${pageText} yourself in Edit Mode. The exports are refreshing with your changes.`;
+}
 
 /**
  * Restores the before-snapshots of the most recent applied text edit, then
@@ -4155,11 +4646,7 @@ async function undoLastBookEdit(
   restoredPageIndexes.sort((a, b) => a - b);
 
   if (project.currentPlanId) {
-    await enqueueGenerationJob({
-      projectId: project.id,
-      type: "COMPILE_EXPORT",
-      payload: { planId: project.currentPlanId }
-    }).catch(() => undefined);
+    await queueUserEditExportRecompile(project.id, project.currentPlanId);
   }
 
   const pageText =
@@ -4467,16 +4954,25 @@ function currentActionForEditOperation(operation: MobileBookEditOperationRecord)
   if (operation.kind === "PLAN_REVISION") {
     return "Revising the plan.";
   }
+  if (operation.kind === "MANUAL_EDIT") {
+    return "Saving your manual edits.";
+  }
   return "Applying text edits.";
 }
 
-function conversationMessagesFromPayload(payload: MobileCreationDraftPayload): MobileCreationMessage[] {
+/** The full message tree for a draft, with legacy messages normalized. */
+function creationTreeFromPayload(payload: MobileCreationDraftPayload): MobileCreationMessage[] {
   if (payload.messages && payload.messages.length > 0) {
-    return payload.messages;
+    return normalizeCreationMessageIds(payload.messages);
   }
   // Migrate an in-progress wizard draft (V2) into the chat by seeding the idea as the first message.
   const idea = payload.rawIdea.trim();
-  return idea ? [{ role: "user" as const, content: idea.slice(0, 4000) }] : [];
+  return idea ? normalizeCreationMessageIds([{ role: "user" as const, content: idea.slice(0, 4000) }]) : [];
+}
+
+/** The active-branch thread — what turns consume and clients display. */
+function conversationMessagesFromPayload(payload: MobileCreationDraftPayload): MobileCreationMessage[] {
+  return linearizeCreationMessages(creationTreeFromPayload(payload)).active;
 }
 
 function turnRequestFromPayload(
@@ -4493,31 +4989,6 @@ function turnRequestFromPayload(
     language: payload.language,
     conversationSummary: payload.conversationSummary
   };
-}
-
-const CREATION_TRANSCRIPT_CAP = 60;
-const CREATION_SUMMARY_MAX = 2400;
-
-/**
- * Folds messages that fall past the transcript cap into a compact rolling
- * summary instead of silently dropping them, so long chats keep their context.
- */
-function foldCreationTranscript(
-  messages: MobileCreationMessage[],
-  existingSummary: string | undefined
-): { messages: MobileCreationMessage[]; conversationSummary: string | undefined } {
-  if (messages.length <= CREATION_TRANSCRIPT_CAP) {
-    return { messages, conversationSummary: existingSummary };
-  }
-  const dropped = messages.slice(0, messages.length - CREATION_TRANSCRIPT_CAP);
-  const kept = messages.slice(-CREATION_TRANSCRIPT_CAP);
-  const droppedLines = dropped
-    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content.replace(/\s+/g, " ").slice(0, 160)}`)
-    .join("\n");
-  const combined = [existingSummary?.trim(), droppedLines].filter(Boolean).join("\n");
-  // Keep the newest folded content when the summary itself overflows.
-  const conversationSummary = combined.length > CREATION_SUMMARY_MAX ? combined.slice(-CREATION_SUMMARY_MAX) : combined;
-  return { messages: kept, conversationSummary: conversationSummary || undefined };
 }
 
 function persistedPresetsForTurn(payload: MobileCreationDraftPayload): MobileCreationDraftPayload["selectedPresets"] {

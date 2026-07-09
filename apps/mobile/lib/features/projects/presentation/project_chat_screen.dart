@@ -8,8 +8,10 @@ import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'branch_navigator.dart';
 import 'message_actions_menu.dart';
 import 'project_route_error.dart';
+import 'saved_export_card.dart';
 
 class ProjectChatScreen extends ConsumerStatefulWidget {
   const ProjectChatScreen({required this.projectId, super.key});
@@ -67,6 +69,8 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                 onRefresh: () async => _refresh(),
                 child: ListView(
                   controller: _scrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   children: [
                     _ChatIntroCard(project: projectValue.asData?.value),
@@ -404,6 +408,7 @@ class _ProjectMessageBubble extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final isUser = message.isUser;
     final branch = message.branch;
+    final manualEdit = message.isAssistant ? message.manualEdit : null;
     final background = editing
         ? colors.surfaceContainerHighest
         : isUser
@@ -414,9 +419,7 @@ class _ProjectMessageBubble extends StatelessWidget {
         : isUser
         ? colors.onPrimary
         : colors.onSurface;
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
+    final bubble = GestureDetector(
         onLongPressStart: (details) {
           showMessageActionsMenu(
             context: context,
@@ -477,7 +480,7 @@ class _ProjectMessageBubble extends StatelessWidget {
                     ),
                   if (branch != null) ...[
                     const SizedBox(height: 8),
-                    _BranchNavigator(
+                    BranchNavigator(
                       branch: branch,
                       foreground: foreground,
                       switching: switchingBranch,
@@ -506,7 +509,16 @@ class _ProjectMessageBubble extends StatelessWidget {
             ),
           ),
         ),
-      ),
+      );
+    return Align(
+      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: manualEdit == null
+          ? bubble
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [bubble, SavedExportCard(message: message)],
+            ),
     );
   }
 }
@@ -561,55 +573,6 @@ class _InlineMessageEditor extends StatelessWidget {
               label: const Text('Save & Submit'),
             ),
           ],
-        ),
-      ],
-    );
-  }
-}
-
-class _BranchNavigator extends StatelessWidget {
-  const _BranchNavigator({
-    required this.branch,
-    required this.foreground,
-    required this.switching,
-    required this.onPrevious,
-    required this.onNext,
-  });
-
-  final MobileProjectChatBranch branch;
-  final Color foreground;
-  final bool switching;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = foreground.withValues(alpha: 0.85);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          tooltip: 'Previous branch',
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-          padding: EdgeInsets.zero,
-          onPressed: switching || !branch.canGoPrevious ? null : onPrevious,
-          icon: Icon(Icons.chevron_left, color: color, size: 20),
-        ),
-        Text(
-          '${branch.index}/${branch.total}',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: color,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        IconButton(
-          tooltip: 'Next branch',
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-          padding: EdgeInsets.zero,
-          onPressed: switching || !branch.canGoNext ? null : onNext,
-          icon: Icon(Icons.chevron_right, color: color, size: 20),
         ),
       ],
     );

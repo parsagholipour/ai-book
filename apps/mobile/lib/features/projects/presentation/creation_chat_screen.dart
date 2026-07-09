@@ -21,12 +21,14 @@ import '../data/creation_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
+import 'branch_navigator.dart';
 import 'chat_media_preview.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
 import 'message_actions_menu.dart';
 import 'plan_approval.dart';
 import 'project_export_actions.dart';
+import 'saved_export_card.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({super.key, this.startFresh = false, this.draftId});
@@ -56,6 +58,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   bool _projectChatSending = false;
   bool _projectChatBranchSwitching = false;
   String? _editingProjectMessageId;
+  String? _editingCreationMessageId;
   final Set<String> _requestedReplanCopyOutputSyncs = <String>{};
 
   // Plan question tracking
@@ -121,6 +124,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _projectChatSending = false;
     _projectChatBranchSwitching = false;
     _editingProjectMessageId = null;
+    _editingCreationMessageId = null;
     _requestedReplanCopyOutputSyncs.clear();
   }
 
@@ -317,6 +321,21 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                             onDismissFailedMessage: (localId) => ref
                                 .read(creationChatControllerProvider.notifier)
                                 .dismissFailedMessage(localId),
+                            onEditCreationMessage: _startCreationMessageEdit,
+                            onSwitchCreationBranch: (message, direction) {
+                              final messageId = message.id;
+                              if (messageId == null) return;
+                              unawaited(
+                                ref
+                                    .read(
+                                      creationChatControllerProvider.notifier,
+                                    )
+                                    .switchBranch(
+                                      messageId: messageId,
+                                      direction: direction,
+                                    ),
+                              );
+                            },
                             onRetryFailedOperation: (operation) => unawaited(
                               _retryFailedOperation(
                                 project: planValue?.asData?.value,
@@ -329,6 +348,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                       if (_editingProjectMessageId != null)
                         _EditingMessageBanner(
                           onCancel: _cancelProjectMessageEdit,
+                        )
+                      else if (_editingCreationMessageId != null)
+                        _EditingMessageBanner(
+                          onCancel: _cancelCreationMessageEdit,
                         ),
                       if (isInOutputStage)
                         _buildOutputFooter(planValue!, activeProjectId)
@@ -548,10 +571,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
             controller: _composerController,
             enabled: !_projectChatSending,
             projectStatus: project.status,
-            onSend: (message) => _sendProjectMessage(
-              projectId: activeProjectId,
-              message: message,
-            ),
+            onSend: (message) =>
+                _sendOutputMessage(activeProjectId, message.trim()),
           );
         }
         final hasMoreQuestions =
@@ -578,6 +599,14 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
     _stickToBottom = position.maxScrollExtent - position.pixels <= 80;
+  }
+
+  /// Re-engages follow-the-conversation scrolling. Submitting the composer is
+  /// an explicit signal to watch the reply, even after scrolling up (which is
+  /// how every message edit starts).
+  void _resumeStickToBottom() {
+    _stickToBottom = true;
+    _scheduleStickyScroll(delay: const Duration(milliseconds: 16));
   }
 
   bool _onTranscriptScrollNotification(Notification notification) {
@@ -610,8 +639,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       _stickScrollTimer = null;
       if (!mounted || !_stickToBottom || !_scrollController.hasClients) return;
       final target = _scrollController.position.maxScrollExtent;
-      final distance =
-          (target - _scrollController.position.pixels).abs();
+      final distance = (target - _scrollController.position.pixels).abs();
       if (distance <= 1) return;
       // Short glide for small growth (export expand); longer for new messages.
       final durationMs = distance < 120 ? 180 : 260;
@@ -629,17 +657,68 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     final activeProjectId = _activeProjectId(state);
     if (activeProjectId != null) {
       if (trimmed.isEmpty) return;
-      await _sendProjectMessage(projectId: activeProjectId, message: trimmed);
+      await _sendOutputMessage(activeProjectId, trimmed);
       return;
     }
     // Attachment-only sends are allowed, like handing a file to a person.
     if (trimmed.isEmpty && !state.hasReadyAttachments) return;
+    final editingCreationMessageId = _editingCreationMessageId;
+    if (editingCreationMessageId != null) {
+      await _sendCreationEdit(trimmed, editingCreationMessageId);
+      return;
+    }
     _composerController.clear();
+    _resumeStickToBottom();
     try {
       await ref
           .read(creationChatControllerProvider.notifier)
           .sendMessage(trimmed);
     } catch (_) {}
+  }
+
+  /// Routes an output-stage composer submit: an in-progress brainstorm edit
+  /// goes to the creation chat (forking a branch there); everything else is
+  /// a normal project chat message.
+  Future<void> _sendOutputMessage(String projectId, String message) async {
+    final editingCreationMessageId = _editingCreationMessageId;
+    if (editingCreationMessageId != null) {
+      await _sendCreationEdit(message, editingCreationMessageId);
+      return;
+    }
+    await _sendProjectMessage(projectId: projectId, message: message);
+  }
+
+  Future<void> _sendCreationEdit(String message, String editMessageId) async {
+    setState(() => _editingCreationMessageId = null);
+    _composerController.clear();
+    _resumeStickToBottom();
+    try {
+      await ref
+          .read(creationChatControllerProvider.notifier)
+          .sendMessage(message, editMessageId: editMessageId);
+    } catch (_) {}
+  }
+
+  void _startCreationMessageEdit(MobileCreationMessage message) {
+    final state = ref.read(creationChatControllerProvider);
+    if (message.id == null || state.isBusy || state.switchingBranch) return;
+    setState(() {
+      // Only one edit at a time: starting a brainstorm edit replaces any
+      // in-progress project chat edit, and vice versa.
+      _editingProjectMessageId = null;
+      _editingCreationMessageId = message.id;
+      _composerController.text = message.content;
+      _composerController.selection = TextSelection.collapsed(
+        offset: _composerController.text.length,
+      );
+    });
+  }
+
+  void _cancelCreationMessageEdit() {
+    setState(() {
+      _editingCreationMessageId = null;
+      _composerController.clear();
+    });
   }
 
   Future<void> _openAttachMenu(CreationChatState state) async {
@@ -818,6 +897,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       _composerController.clear();
     }
     setState(() => _projectChatSending = true);
+    _resumeStickToBottom();
     try {
       final repository = ref.read(projectsRepositoryProvider);
       final result = editingMessageId != null
@@ -861,6 +941,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   void _startProjectMessageEdit(MobileProjectChatMessage message) {
     if (_projectChatSending) return;
     setState(() {
+      _editingCreationMessageId = null;
       _editingProjectMessageId = message.id;
       _composerController.text = message.content;
       _composerController.selection = TextSelection.collapsed(
@@ -1279,7 +1360,7 @@ class _GenerationProgressBubbleState
       return;
     }
     setState(() => _busyAction = projectExportDownloadAction(export));
-    await shareProjectExport(
+    await openProjectExport(
       context: context,
       ref: ref,
       projectId: widget.projectId,
@@ -1427,6 +1508,8 @@ class _GenerationProgressBubbleState
                       busyAction: _busyAction,
                       onDownload: _downloadExport,
                     ),
+                  if (status.isComplete)
+                    _EditBookButton(projectId: widget.projectId),
                   _ViewProgressButton(projectId: widget.projectId),
                 ],
               ),
@@ -1507,6 +1590,22 @@ class _ViewProgressButton extends StatelessWidget {
       onPressed: () => context.push('/projects/$projectId/handoff'),
       icon: const Icon(Icons.menu_book_outlined),
       label: const Text('View progress'),
+    );
+  }
+}
+
+/// Opens manual Edit Mode so the user can change the book text themselves.
+class _EditBookButton extends StatelessWidget {
+  const _EditBookButton({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: () => context.push('/projects/$projectId/edit'),
+      icon: const Icon(Icons.edit_note_outlined),
+      label: const Text('Edit book'),
     );
   }
 }
@@ -2636,6 +2735,8 @@ class _Transcript extends StatelessWidget {
     this.onRetryFailedMessage,
     this.onDismissFailedMessage,
     this.onRetryFailedOperation,
+    this.onEditCreationMessage,
+    this.onSwitchCreationBranch,
   });
 
   final CreationChatState state;
@@ -2653,7 +2754,11 @@ class _Transcript extends StatelessWidget {
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
   final ValueChanged<String>? onRetryFailedMessage;
   final ValueChanged<String>? onDismissFailedMessage;
-  final void Function(MobileBookEditOperation operation)? onRetryFailedOperation;
+  final void Function(MobileBookEditOperation operation)?
+  onRetryFailedOperation;
+  final void Function(MobileCreationMessage message)? onEditCreationMessage;
+  final void Function(MobileCreationMessage message, String direction)?
+  onSwitchCreationBranch;
 
   @override
   Widget build(BuildContext context) {
@@ -2741,6 +2846,9 @@ class _Transcript extends StatelessWidget {
           attachmentUrls: state.attachmentUrls,
           onRetryFailed: onRetryFailedMessage,
           onDismissFailed: onDismissFailedMessage,
+          onEdit: onEditCreationMessage,
+          onSwitchBranch: onSwitchCreationBranch,
+          switchingBranch: state.switchingBranch || state.isBusy,
         );
       },
     );
@@ -2935,6 +3043,9 @@ class _MessageBubble extends StatelessWidget {
     this.attachmentUrls = const <String, String>{},
     this.onRetryFailed,
     this.onDismissFailed,
+    this.onEdit,
+    this.onSwitchBranch,
+    this.switchingBranch = false,
   });
 
   final MobileCreationMessage message;
@@ -2942,6 +3053,10 @@ class _MessageBubble extends StatelessWidget {
   final Map<String, String> attachmentUrls;
   final ValueChanged<String>? onRetryFailed;
   final ValueChanged<String>? onDismissFailed;
+  final void Function(MobileCreationMessage message)? onEdit;
+  final void Function(MobileCreationMessage message, String direction)?
+  onSwitchBranch;
+  final bool switchingBranch;
 
   @override
   Widget build(BuildContext context) {
@@ -2961,6 +3076,9 @@ class _MessageBubble extends StatelessWidget {
     final hasText = message.content.trim().isNotEmpty;
     final timestamp = _formatChatTimestamp(message.createdAt);
     final localId = message.localId;
+    final branch = message.branch;
+    final canEdit =
+        isUser && !failed && message.id != null && onEdit != null;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
@@ -2968,6 +3086,7 @@ class _MessageBubble extends StatelessWidget {
           context: context,
           position: details.globalPosition,
           message: message.content,
+          onEdit: canEdit ? () => onEdit!(message) : null,
         ),
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 5),
@@ -3028,6 +3147,16 @@ class _MessageBubble extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: foreground.withValues(alpha: 0.7),
                   ),
+                ),
+              ],
+              if (branch != null && onSwitchBranch != null) ...[
+                const SizedBox(height: 8),
+                BranchNavigator(
+                  branch: branch,
+                  foreground: foreground,
+                  switching: switchingBranch,
+                  onPrevious: () => onSwitchBranch!(message, 'previous'),
+                  onNext: () => onSwitchBranch!(message, 'next'),
                 ),
               ],
               if (failed && localId != null) ...[
@@ -3180,7 +3309,8 @@ class _MessageAttachmentChip extends ConsumerWidget {
   }
 
   Widget _documentChip(BuildContext context, WidgetRef ref) {
-    final canOpen = (thumbnailPath != null && File(thumbnailPath!).existsSync()) ||
+    final canOpen =
+        (thumbnailPath != null && File(thumbnailPath!).existsSync()) ||
         remoteUrl != null;
     return Semantics(
       button: canOpen,
@@ -3344,7 +3474,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
             ],
             if (branch != null && onSwitchBranch != null) ...[
               const SizedBox(height: 8),
-              _ProjectBranchNavigator(
+              BranchNavigator(
                 branch: branch,
                 foreground: foreground,
                 switching: switchingBranch,
@@ -3372,7 +3502,8 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         ),
       ),
     );
-    if (contentCard == null) {
+    final manualEdit = message.isAssistant ? message.manualEdit : null;
+    if (contentCard == null && manualEdit == null) {
       return Align(
         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
         child: bubble,
@@ -3385,58 +3516,10 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           bubble,
-          _ContentCardBubble(card: contentCard),
+          if (contentCard != null) _ContentCardBubble(card: contentCard),
+          if (manualEdit != null) SavedExportCard(message: message),
         ],
       ),
-    );
-  }
-}
-
-class _ProjectBranchNavigator extends StatelessWidget {
-  const _ProjectBranchNavigator({
-    required this.branch,
-    required this.foreground,
-    required this.switching,
-    required this.onPrevious,
-    required this.onNext,
-  });
-
-  final MobileProjectChatBranch branch;
-  final Color foreground;
-  final bool switching;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = foreground.withValues(alpha: 0.85);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          tooltip: 'Previous branch',
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-          padding: EdgeInsets.zero,
-          onPressed: switching || !branch.canGoPrevious ? null : onPrevious,
-          icon: Icon(Icons.chevron_left, color: color, size: 20),
-        ),
-        Text(
-          '${branch.index}/${branch.total}',
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: color,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        IconButton(
-          tooltip: 'Next branch',
-          visualDensity: VisualDensity.compact,
-          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
-          padding: EdgeInsets.zero,
-          onPressed: switching || !branch.canGoNext ? null : onNext,
-          icon: Icon(Icons.chevron_right, color: color, size: 20),
-        ),
-      ],
     );
   }
 }
@@ -3931,7 +4014,9 @@ class _PendingAttachmentChip extends ConsumerWidget {
       return Icon(Icons.refresh, size: 20, color: colors.onErrorContainer);
     }
     final localPath = attachment.localPath;
-    if (attachment.isPhoto && localPath != null && File(localPath).existsSync()) {
+    if (attachment.isPhoto &&
+        localPath != null &&
+        File(localPath).existsSync()) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(6),
         child: Image.file(
@@ -3939,8 +4024,7 @@ class _PendingAttachmentChip extends ConsumerWidget {
           width: 32,
           height: 32,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) =>
-              const Icon(Icons.photo_outlined, size: 20),
+          errorBuilder: (_, _, _) => const Icon(Icons.photo_outlined, size: 20),
         ),
       );
     }
@@ -4014,7 +4098,7 @@ class _QuestionPanel extends StatelessWidget {
   }
 }
 
-class _ChipRow extends StatelessWidget {
+class _ChipRow extends StatefulWidget {
   const _ChipRow({
     required this.options,
     required this.enabled,
@@ -4028,21 +4112,81 @@ class _ChipRow extends StatelessWidget {
   final ValueChanged<String> onSelect;
 
   @override
+  State<_ChipRow> createState() => _ChipRowState();
+}
+
+class _ChipRowState extends State<_ChipRow> {
+  final _scrollController = ScrollController();
+  bool _moreBefore = false;
+  bool _moreAfter = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_updateEdges);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateEdges());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _updateEdges() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final moreBefore = position.extentBefore > 1;
+    final moreAfter = position.extentAfter > 1;
+    if (moreBefore == _moreBefore && moreAfter == _moreAfter) return;
+    setState(() {
+      _moreBefore = moreBefore;
+      _moreAfter = moreAfter;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return SizedBox(
       height: 40,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: options.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final option = options[index];
-          return ActionChip(
-            avatar: Icon(icon, size: 18),
-            label: Text(option),
-            onPressed: enabled ? () => onSelect(option) : null,
-          );
-        },
+      child: ShaderMask(
+        shaderCallback: (bounds) => LinearGradient(
+          begin: AlignmentDirectional.centerStart,
+          end: AlignmentDirectional.centerEnd,
+          colors: [
+            _moreBefore ? Colors.transparent : Colors.white,
+            Colors.white,
+            Colors.white,
+            _moreAfter ? Colors.transparent : Colors.white,
+          ],
+          stops: const [0.0, 0.07, 0.93, 1.0],
+        ).createShader(bounds, textDirection: Directionality.of(context)),
+        blendMode: BlendMode.dstIn,
+        child: NotificationListener<ScrollMetricsNotification>(
+          // Fades depend on content extent, which is only known after layout.
+          onNotification: (_) {
+            _updateEdges();
+            return false;
+          },
+          child: ListView.separated(
+            controller: _scrollController,
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            itemCount: widget.options.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final option = widget.options[index];
+              return ActionChip(
+                avatar: Icon(widget.icon, size: 18, color: colors.primary),
+                label: Text(option),
+                onPressed: widget.enabled
+                    ? () => widget.onSelect(option)
+                    : null,
+              );
+            },
+          ),
+        ),
       ),
     );
   }

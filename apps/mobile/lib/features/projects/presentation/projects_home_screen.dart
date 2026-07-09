@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
@@ -208,23 +209,45 @@ class _FirstProjectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final onGradient = colors.onPrimary;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.primaryContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.22)),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            colors.primary,
+            Color.lerp(colors.primary, colors.tertiary, 0.55)!,
+          ],
+        ),
+        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        boxShadow: [
+          BoxShadow(
+            color: colors.primary.withValues(alpha: 0.3),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.auto_awesome_outlined, color: colors.onPrimaryContainer),
-            const SizedBox(height: 12),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: onGradient.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(Icons.auto_awesome_outlined, color: onGradient),
+            ),
+            const SizedBox(height: 14),
             Text(
               'Turn one idea into a book plan.',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: colors.onPrimaryContainer,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: onGradient,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -232,12 +255,16 @@ class _FirstProjectCard extends StatelessWidget {
             Text(
               'Describe your idea in a quick chat. The studio asks a few simple questions, builds a plan, and you review it before writing starts.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: colors.onPrimaryContainer,
+                color: onGradient.withValues(alpha: 0.9),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: onStartBook,
+              style: FilledButton.styleFrom(
+                backgroundColor: onGradient,
+                foregroundColor: colors.primary,
+              ),
               icon: const Icon(Icons.add),
               label: const Text('Start your first book'),
             ),
@@ -258,11 +285,12 @@ class _SecondaryStartBookAction extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        border: Border.all(color: colors.outlineVariant),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
         child: Wrap(
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
@@ -437,11 +465,20 @@ class ProjectCard extends StatelessWidget {
     final progress = (project.progressPercent / 100).clamp(0.0, 1.0);
 
     return Card(
+      shape: featured
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(TomezaRadii.card),
+              side: BorderSide(
+                color: colors.primary.withValues(alpha: 0.4),
+                width: 1.4,
+              ),
+            )
+          : null,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(TomezaRadii.card),
         onTap: () => context.push(action.pathFor(project)),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -449,13 +486,13 @@ class ProjectCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       color: featured
                           ? colors.primaryContainer
                           : colors.secondaryContainer,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                     child: Icon(
                       action.icon,

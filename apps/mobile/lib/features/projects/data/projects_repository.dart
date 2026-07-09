@@ -2,11 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_client.dart';
 import '../domain/project_models.dart';
+
+enum ExportOpenOutcome { opened, sharedFallback }
 
 abstract interface class ProjectsRepository {
   Future<List<MobileProjectSummary>> listProjects();
@@ -47,6 +50,14 @@ abstract interface class ProjectsRepository {
     required String direction,
   });
 
+  Future<MobileEditableBook> getEditableBook(String projectId);
+
+  Future<MobileManualBookEditResult> saveManualBookEdit({
+    required String projectId,
+    required List<MobileManualBookPageEdit> pages,
+    String? savedExportMessageId,
+  });
+
   Future<MobileProjectRecovery> resumeProject(String id);
 
   Future<ProjectDeletionReceipt> deleteProject(String id);
@@ -69,7 +80,7 @@ abstract interface class ProjectsRepository {
     required MobileExportAvailability export,
   });
 
-  Future<void> shareExport({
+  Future<ExportOpenOutcome> openExport({
     required String projectId,
     required MobileExportAvailability export,
   });
@@ -219,6 +230,31 @@ class MobileProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileEditableBook> getEditableBook(String projectId) async {
+    final response = await apiClient.getJson('/api/mobile/projects/$projectId/book');
+    final data = response.data as Map<String, dynamic>;
+    return MobileEditableBook.fromJson(data['book'] as Map<String, dynamic>);
+  }
+
+  @override
+  Future<MobileManualBookEditResult> saveManualBookEdit({
+    required String projectId,
+    required List<MobileManualBookPageEdit> pages,
+    String? savedExportMessageId,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/manual-edits',
+      data: {
+        'pages': pages.map((page) => page.toJson()).toList(),
+        'savedExportMessageId': ?savedExportMessageId,
+      },
+    );
+    return MobileManualBookEditResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
   Future<MobileProjectRecovery> resumeProject(String id) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$id/resume',
@@ -296,11 +332,19 @@ class MobileProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<void> shareExport({
+  Future<ExportOpenOutcome> openExport({
     required String projectId,
     required MobileExportAvailability export,
   }) async {
     final file = await downloadExport(projectId: projectId, export: export);
+    final result = await OpenFilex.open(
+      file.path,
+      type: export.contentType,
+      uti: export.format == 'pdf' ? 'com.adobe.pdf' : 'org.idpf.epub-container',
+    );
+    if (result.type == ResultType.done) {
+      return ExportOpenOutcome.opened;
+    }
     await SharePlus.instance.share(
       ShareParams(
         title: file.filename,
@@ -309,6 +353,7 @@ class MobileProjectsRepository implements ProjectsRepository {
         fileNameOverrides: [file.filename],
       ),
     );
+    return ExportOpenOutcome.sharedFallback;
   }
 
   @override

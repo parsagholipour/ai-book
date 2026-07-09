@@ -255,6 +255,16 @@ class _FakeCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? editMessageId,
+  }) async {
+    return fakeCreationConversation(withSession: true);
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> switchConversationBranch({
+    required String draftId,
+    required String messageId,
+    required String direction,
   }) async {
     return fakeCreationConversation(withSession: true);
   }

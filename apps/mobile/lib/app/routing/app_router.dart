@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/account/presentation/account_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/projects/presentation/book_edit_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/generation_progress_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
@@ -100,6 +101,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) =>
             ProjectChatScreen(projectId: state.pathParameters['id']!),
       ),
+      GoRoute(
+        path: '/projects/:id/edit',
+        builder: (context, state) => BookEditScreen(
+          projectId: state.pathParameters['id']!,
+          savedExportMessageId:
+              state.uri.queryParameters['savedExportMessageId'],
+        ),
+      ),
     ],
     errorBuilder: (context, state) => Scaffold(
       body: AppErrorState(
@@ -138,13 +147,27 @@ class SplashScreen extends ConsumerWidget {
       );
     }
 
-    return const Scaffold(
+    return Scaffold(
       body: Center(
-        child: SizedBox.square(
-          dimension: 32,
-          child: CircularProgressIndicator(
-            semanticsLabel: 'Restoring your session',
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Tomeza',
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const SizedBox.square(
+              dimension: 28,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.5,
+                semanticsLabel: 'Restoring your session',
+              ),
+            ),
+          ],
         ),
       ),
     );

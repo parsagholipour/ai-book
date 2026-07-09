@@ -41,6 +41,13 @@ abstract interface class CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? editMessageId,
+  });
+
+  Future<MobileCreationConversationResponse> switchConversationBranch({
+    required String draftId,
+    required String messageId,
+    required String direction,
   });
 
   Future<MobileCreationAttachment> uploadAttachment({
@@ -204,6 +211,7 @@ class MobileCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? editMessageId,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/creation-sessions/$draftId/messages',
@@ -214,7 +222,23 @@ class MobileCreationRepository implements CreationRepository {
         'presets': ?presets?.toJson(),
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),
+        'editMessageId': ?editMessageId,
       },
+    );
+    return MobileCreationConversationResponse.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileCreationConversationResponse> switchConversationBranch({
+    required String draftId,
+    required String messageId,
+    required String direction,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/creation-sessions/$draftId/branches',
+      data: <String, dynamic>{'messageId': messageId, 'direction': direction},
     );
     return MobileCreationConversationResponse.fromJson(
       response.data as Map<String, dynamic>,

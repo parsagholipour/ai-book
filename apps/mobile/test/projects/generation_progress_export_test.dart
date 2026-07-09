@@ -82,7 +82,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Ready to save or share.'), findsOneWidget);
+    expect(find.text('Ready to open or share.'), findsOneWidget);
 
     await tester.tap(find.text('Unlock PDF'));
     await tester.pump();

@@ -33,6 +33,11 @@ class ApiClient {
   final Dio dio;
   final AuthTokenStore tokenStore;
 
+  /// Coalesces concurrent refresh attempts. The backend rotates the refresh
+  /// token on every call, so parallel refreshes desync the stored pair from
+  /// the server and brick the session.
+  Future<MobileSessionTokens>? _refreshInFlight;
+
   Future<Response<dynamic>> getJson(String path, {bool requiresAuth = true}) {
     return _request('GET', path, requiresAuth: requiresAuth);
   }
@@ -150,7 +155,19 @@ class ApiClient {
     }
   }
 
-  Future<MobileSessionTokens> refreshTokens() async {
+  Future<MobileSessionTokens> refreshTokens() {
+    final inFlight = _refreshInFlight;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final refresh = _refreshTokens().whenComplete(() {
+      _refreshInFlight = null;
+    });
+    _refreshInFlight = refresh;
+    return refresh;
+  }
+
+  Future<MobileSessionTokens> _refreshTokens() async {
     final current = await tokenStore.read();
     if (current == null || current.isRefreshExpired) {
       await tokenStore.clear();

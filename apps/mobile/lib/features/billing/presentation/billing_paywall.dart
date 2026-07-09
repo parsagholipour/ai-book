@@ -51,17 +51,6 @@ class BillingPaywall extends ConsumerWidget {
             controller: scrollController,
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: colors.outlineVariant,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
               Row(
                 children: [
                   Icon(
@@ -174,7 +163,7 @@ class _BalanceStrip extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),

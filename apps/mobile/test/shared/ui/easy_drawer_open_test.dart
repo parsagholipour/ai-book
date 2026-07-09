@@ -28,7 +28,7 @@ Widget _app(GlobalKey<EasyDrawerControllerState> drawerKey) {
 }
 
 void main() {
-  testWidgets('drag follows finger from mid-screen and snaps open easily', (
+  testWidgets('drag follows finger from the start edge and snaps open easily', (
     tester,
   ) async {
     final drawerKey = GlobalKey<EasyDrawerControllerState>();
@@ -36,7 +36,7 @@ void main() {
 
     final gesture = await tester.createGesture();
     await gesture.addPointer();
-    await gesture.down(const Offset(120, 400));
+    await gesture.down(const Offset(12, 400));
     await tester.pump();
     expect(find.text('History'), findsNothing);
 
@@ -69,13 +69,13 @@ void main() {
     );
   });
 
-  testWidgets('tiny drag snaps closed', (tester) async {
+  testWidgets('tiny edge drag snaps closed', (tester) async {
     final drawerKey = GlobalKey<EasyDrawerControllerState>();
     await tester.pumpWidget(_app(drawerKey));
 
     final gesture = await tester.createGesture();
     await gesture.addPointer();
-    await gesture.down(const Offset(120, 400));
+    await gesture.down(const Offset(12, 400));
     await tester.pump();
     await gesture.moveBy(const Offset(20, 0));
     await tester.pump();
@@ -117,12 +117,25 @@ void main() {
     expect(scrollController.offset, greaterThan(200));
   });
 
-  testWidgets('light fling opens', (tester) async {
+  testWidgets('light fling from the edge opens', (tester) async {
     final drawerKey = GlobalKey<EasyDrawerControllerState>();
     await tester.pumpWidget(_app(drawerKey));
-    await tester.flingFrom(const Offset(140, 400), const Offset(80, 0), 250);
+    await tester.flingFrom(const Offset(10, 400), const Offset(80, 0), 250);
     await tester.pumpAndSettle();
     expect(find.text('History'), findsOneWidget);
+  });
+
+  testWidgets('mid-screen horizontal drag leaves the drawer closed', (
+    tester,
+  ) async {
+    // Horizontal gestures away from the edge belong to on-screen content
+    // (chip rows, carousels), not the drawer.
+    final drawerKey = GlobalKey<EasyDrawerControllerState>();
+    await tester.pumpWidget(_app(drawerKey));
+    await tester.dragFrom(const Offset(300, 400), const Offset(200, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('History'), findsNothing);
+    expect(drawerKey.currentState!.isDrawerOpen, isFalse);
   });
 
   testWidgets('menu button opens', (tester) async {

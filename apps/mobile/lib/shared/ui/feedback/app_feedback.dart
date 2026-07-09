@@ -67,9 +67,17 @@ class AppErrorState extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ExcludeSemantics(
-                  child: Icon(icon, color: colors.error, size: 32),
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: colors.errorContainer.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(icon, color: colors.error, size: 28),
+                  ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
                 Semantics(
                   header: true,
                   child: Text(
@@ -135,9 +143,17 @@ class AppEmptyState extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ExcludeSemantics(
-                  child: Icon(icon, size: 36, color: colors.primary),
+                  child: Container(
+                    width: 56,
+                    height: 56,
+                    decoration: BoxDecoration(
+                      color: colors.primaryContainer.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Icon(icon, size: 28, color: colors.primary),
+                  ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 14),
                 Semantics(
                   header: true,
                   child: Text(

@@ -1,0 +1,1 @@
+ALTER TYPE "BookEditOperationKind" ADD VALUE 'MANUAL_EDIT';

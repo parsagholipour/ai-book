@@ -28,7 +28,7 @@ String projectExportStateText(
     return 'Preparing this file after generation finishes.';
   }
   if (export.unlocked) {
-    return 'Ready to save or share.';
+    return 'Ready to open or share.';
   }
   if (availableCredits != null && availableCredits < export.creditsRequired) {
     return 'Ready after export unlock. You need ${export.creditsRequired} credits and have $availableCredits.';
@@ -64,7 +64,7 @@ MobileExportAvailability? primaryUnlockedAvailableExport(
   return null;
 }
 
-Future<bool> shareProjectExport({
+Future<bool> openProjectExport({
   required BuildContext context,
   required WidgetRef ref,
   required String projectId,
@@ -74,11 +74,18 @@ Future<bool> shareProjectExport({
 }) async {
   final messenger = ScaffoldMessenger.of(context);
   try {
-    await ref
+    final outcome = await ref
         .read(projectsRepositoryProvider)
-        .shareExport(projectId: projectId, export: export);
+        .openExport(projectId: projectId, export: export);
     if (!isMounted()) {
       return true;
+    }
+    if (outcome == ExportOpenOutcome.sharedFallback) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('No app can open this file, so sharing was opened instead.'),
+        ),
+      );
     }
     ref.invalidate(billingProvider);
     onRefresh?.call();

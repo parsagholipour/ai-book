@@ -497,6 +497,35 @@ class MobileProjectChatMessage {
     final trimmed = targetProjectId.trim();
     return trimmed.isEmpty ? null : trimmed;
   }
+
+  /// Saved-export marker attached when the user saved a manual Edit Mode
+  /// change. Messages carrying it render as a saved export card.
+  MobileManualEditInfo? get manualEdit {
+    final raw = metadata['manualEdit'];
+    if (raw is! Map) return null;
+    return MobileManualEditInfo.fromJson(raw.cast<String, dynamic>());
+  }
+}
+
+class MobileManualEditInfo {
+  const MobileManualEditInfo({
+    required this.operationId,
+    required this.pageIndexes,
+    required this.editCount,
+  });
+
+  final String? operationId;
+  final List<int> pageIndexes;
+  final int editCount;
+
+  factory MobileManualEditInfo.fromJson(Map<String, dynamic> json) {
+    final pageIndexes = json['pageIndexes'] as List<dynamic>? ?? const [];
+    return MobileManualEditInfo(
+      operationId: json['operationId'] as String?,
+      pageIndexes: pageIndexes.whereType<int>().toList(growable: false),
+      editCount: json['editCount'] as int? ?? 1,
+    );
+  }
 }
 
 class MobileProjectChatBranch {
@@ -679,6 +708,109 @@ class MobileProjectChatSendResult extends MobileProjectChat {
           : MobileBookEditOperation.fromJson(
               json['operation'] as Map<String, dynamic>,
             ),
+    );
+  }
+}
+
+class MobileEditableBook {
+  const MobileEditableBook({
+    required this.projectId,
+    required this.title,
+    required this.pages,
+  });
+
+  final String projectId;
+  final String title;
+  final List<MobileEditableBookPage> pages;
+
+  factory MobileEditableBook.fromJson(Map<String, dynamic> json) {
+    final pages = json['pages'] as List<dynamic>? ?? const [];
+    return MobileEditableBook(
+      projectId: json['projectId'] as String,
+      title: json['title'] as String,
+      pages: pages
+          .map(
+            (page) =>
+                MobileEditableBookPage.fromJson(page as Map<String, dynamic>),
+          )
+          .toList(),
+    );
+  }
+}
+
+class MobileEditableBookPage {
+  const MobileEditableBookPage({
+    required this.id,
+    required this.index,
+    required this.title,
+    required this.markdown,
+    required this.revision,
+  });
+
+  final String id;
+  final int index;
+  final String title;
+  final String markdown;
+  final int revision;
+
+  factory MobileEditableBookPage.fromJson(Map<String, dynamic> json) {
+    return MobileEditableBookPage(
+      id: json['id'] as String,
+      index: json['index'] as int,
+      title: json['title'] as String,
+      markdown: json['markdown'] as String,
+      revision: json['revision'] as int,
+    );
+  }
+}
+
+class MobileManualBookPageEdit {
+  const MobileManualBookPageEdit({
+    required this.id,
+    required this.title,
+    required this.markdown,
+    required this.baseRevision,
+  });
+
+  final String id;
+  final String title;
+  final String markdown;
+  final int baseRevision;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'markdown': markdown,
+      'baseRevision': baseRevision,
+    };
+  }
+}
+
+class MobileManualBookEditResult extends MobileProjectChat {
+  const MobileManualBookEditResult({
+    required super.messages,
+    required super.operations,
+    super.plans,
+    required this.savedExportMessage,
+    required this.operation,
+  });
+
+  final MobileProjectChatMessage savedExportMessage;
+  final MobileBookEditOperation operation;
+
+  factory MobileManualBookEditResult.fromJson(Map<String, dynamic> json) {
+    final chat = MobileProjectChat.fromJson(json);
+    return MobileManualBookEditResult(
+      messages: chat.messages,
+      plans: chat.plans,
+      operations: chat.operations,
+      savedExportMessage: MobileProjectChatMessage.fromJson(
+        json['savedExportMessage'] as Map<String, dynamic>,
+      ),
+      operation: MobileBookEditOperation.fromJson(
+        json['operation'] as Map<String, dynamic>,
+      ),
     );
   }
 }

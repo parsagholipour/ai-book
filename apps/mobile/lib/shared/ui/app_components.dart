@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_theme.dart';
+
 enum AppNoticeTone { neutral, info, success, warning, error }
 
 class AppScreenLayout extends StatelessWidget {
@@ -145,8 +147,17 @@ class AppChoiceTile extends StatelessWidget {
       child: ExcludeSemantics(
         child: Card(
           color: selected ? colors.primaryContainer : null,
+          shape: selected
+              ? RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(TomezaRadii.card),
+                  side: BorderSide(
+                    color: colors.primary.withValues(alpha: 0.45),
+                    width: 1.4,
+                  ),
+                )
+              : null,
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(TomezaRadii.card),
             onTap: onTap,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 72),
@@ -237,10 +248,11 @@ class AppStatusBadge extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: pair.background,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(TomezaRadii.chip),
+            border: Border.all(color: pair.foreground.withValues(alpha: 0.14)),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -293,10 +305,11 @@ class AppMetricChip extends StatelessWidget {
             maxWidth: maxWidth.clamp(160, 320).toDouble(),
           ),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: colors.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(8),
+              color: colors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(TomezaRadii.chip),
+              border: Border.all(color: colors.outlineVariant),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -349,7 +362,7 @@ class AppInlineNotice extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: pair.background,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(TomezaRadii.control),
           border: Border.all(color: pair.foreground.withValues(alpha: 0.18)),
         ),
         child: Padding(

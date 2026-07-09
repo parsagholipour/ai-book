@@ -789,7 +789,7 @@ class _ChapterTile extends StatelessWidget {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: colors.secondaryContainer,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
             '${chapter.index}',

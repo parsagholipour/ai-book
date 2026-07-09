@@ -80,7 +80,7 @@ class _GenerationProgressScreenState
           busyAction: _busyAction,
           onRefresh: () async => _refresh(),
           onResume: status.retryAvailable ? _resumeGeneration : null,
-          onDownload: _exportAndShare,
+          onDownload: _exportAndOpen,
           onOpenPaywall: _openExportPaywall,
           onReportProject: _reportProject,
           onReportImage: _reportImage,
@@ -130,9 +130,9 @@ class _GenerationProgressScreenState
     }
   }
 
-  Future<void> _exportAndShare(MobileExportAvailability export) async {
+  Future<void> _exportAndOpen(MobileExportAvailability export) async {
     setState(() => _busyAction = projectExportDownloadAction(export));
-    await shareProjectExport(
+    await openProjectExport(
       context: context,
       ref: ref,
       projectId: widget.projectId,
@@ -279,6 +279,7 @@ class ProjectGenerationView extends StatelessWidget {
             busyAction: busyAction,
             onDownload: onDownload,
             onOpenPaywall: onOpenPaywall,
+            editBookProjectId: status.isComplete ? status.projectId : null,
           ),
         ],
       ),
@@ -613,7 +614,7 @@ class _AuthenticatedProjectImage extends ConsumerWidget {
     return AspectRatio(
       aspectRatio: image.role == 'cover' ? 3 / 4 : 16 / 9,
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(14),
         child: headersValue.when(
           data: (headers) => Image.network(
             uri,
@@ -820,6 +821,7 @@ class ProjectExportPanel extends StatelessWidget {
     required this.onOpenPaywall,
     this.billing,
     this.busyAction,
+    this.editBookProjectId,
     super.key,
   });
 
@@ -828,6 +830,9 @@ class ProjectExportPanel extends StatelessWidget {
   final String? busyAction;
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
+
+  /// When set, shows the manual Edit Mode entry for this completed book.
+  final String? editBookProjectId;
 
   @override
   Widget build(BuildContext context) {
@@ -868,6 +873,29 @@ class ProjectExportPanel extends StatelessWidget {
               onDownload: onDownload,
               onOpenPaywall: onOpenPaywall,
             ),
+            if (editBookProjectId != null) ...[
+              const Divider(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Want to change something yourself? Open Edit Mode and '
+                      'rewrite any page before you export.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: () =>
+                        context.push('/projects/$editBookProjectId/edit'),
+                    icon: const Icon(Icons.edit_note_outlined),
+                    label: const Text('Edit book'),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -932,8 +960,7 @@ class _ExportFormatTile extends StatelessWidget {
         const SizedBox(height: 10),
         FilledButton.icon(
           onPressed: export.available && !isDownloading
-              ? () =>
-                    needsCredits ? onOpenPaywall(export) : onDownload(export)
+              ? () => needsCredits ? onOpenPaywall(export) : onDownload(export)
               : null,
           icon: isDownloading
               ? const SizedBox.square(

@@ -18,6 +18,7 @@ const mockPrisma = vi.hoisted(() => ({
   mobileSession: {
     create: vi.fn(),
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn()
   }
@@ -86,10 +87,10 @@ describe("mobile auth service", () => {
   });
 
   it("rotates refresh sessions and rejects revoked refresh tokens", async () => {
-    mockPrisma.mobileSession.findUnique.mockResolvedValueOnce(sessionWithUser());
-    mockPrisma.mobileSession.update.mockResolvedValueOnce({});
+    mockPrisma.mobileSession.findFirst.mockResolvedValueOnce(sessionWithUser());
+    mockPrisma.mobileSession.updateMany.mockResolvedValueOnce({ count: 1 });
 
-    const refreshed = await refreshMobileSession("refresh-token", {}, { now: NOW });
+    const refreshed = await refreshMobileSession(RAW_REFRESH_TOKEN, {}, { now: NOW });
 
     expect(refreshed).toMatchObject({
       ok: true,
@@ -98,21 +99,87 @@ describe("mobile auth service", () => {
     if (!refreshed.ok) {
       throw new Error("Expected refresh to succeed");
     }
-    expect(refreshed.session.refreshToken).not.toBe("refresh-token");
-    expect(mockPrisma.mobileSession.update).toHaveBeenCalledWith({
-      where: { id: "session-1" },
+    expect(refreshed.session.refreshToken).not.toBe(RAW_REFRESH_TOKEN);
+    expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledWith({
+      where: { id: "session-1", refreshTokenHash: hashToken(RAW_REFRESH_TOKEN) },
       data: expect.objectContaining({
         accessTokenHash: hashToken(refreshed.session.accessToken),
         refreshTokenHash: hashToken(refreshed.session.refreshToken),
+        previousRefreshTokenHash: hashToken(RAW_REFRESH_TOKEN),
+        refreshTokenRotatedAt: NOW,
         lastUsedAt: NOW
       })
     });
 
-    mockPrisma.mobileSession.findUnique.mockResolvedValueOnce(sessionWithUser({ revokedAt: NOW }));
-    await expect(refreshMobileSession("revoked-refresh", {}, { now: NOW })).resolves.toMatchObject({
+    mockPrisma.mobileSession.findFirst.mockResolvedValueOnce(sessionWithUser({ revokedAt: NOW }));
+    await expect(refreshMobileSession("revoked-refresh-token-value", {}, { now: NOW })).resolves.toMatchObject({
       ok: false,
       code: "SESSION_REVOKED"
     });
+  });
+
+  it("accepts the previous refresh token within the rotation grace window", async () => {
+    const rotatedAt = new Date(NOW.getTime() - 10_000);
+    mockPrisma.mobileSession.findFirst.mockResolvedValueOnce(
+      sessionWithUser({
+        refreshTokenHash: hashToken("rotated-refresh-token-value"),
+        previousRefreshTokenHash: hashToken(RAW_REFRESH_TOKEN),
+        refreshTokenRotatedAt: rotatedAt
+      })
+    );
+    mockPrisma.mobileSession.updateMany.mockResolvedValueOnce({ count: 1 });
+
+    const refreshed = await refreshMobileSession(RAW_REFRESH_TOKEN, {}, { now: NOW });
+
+    expect(refreshed).toMatchObject({ ok: true, user: { id: "user-1" } });
+    expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledWith({
+      where: { id: "session-1", refreshTokenHash: hashToken("rotated-refresh-token-value") },
+      data: expect.objectContaining({
+        previousRefreshTokenHash: hashToken("rotated-refresh-token-value"),
+        refreshTokenRotatedAt: NOW
+      })
+    });
+  });
+
+  it("rejects the previous refresh token after the grace window ends", async () => {
+    const rotatedAt = new Date(NOW.getTime() - 31_000);
+    mockPrisma.mobileSession.findFirst.mockResolvedValueOnce(
+      sessionWithUser({
+        refreshTokenHash: hashToken("rotated-refresh-token-value"),
+        previousRefreshTokenHash: hashToken(RAW_REFRESH_TOKEN),
+        refreshTokenRotatedAt: rotatedAt
+      })
+    );
+
+    await expect(refreshMobileSession(RAW_REFRESH_TOKEN, {}, { now: NOW })).resolves.toMatchObject({
+      ok: false,
+      code: "INVALID_SESSION"
+    });
+    expect(mockPrisma.mobileSession.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("retries against fresh state when a concurrent refresh rotates first", async () => {
+    // First read sees the presented token as current, but the conditional
+    // update loses the race (count 0). The re-read sees the concurrent
+    // winner's rotation and succeeds through the grace window.
+    mockPrisma.mobileSession.findFirst
+      .mockResolvedValueOnce(sessionWithUser())
+      .mockResolvedValueOnce(
+        sessionWithUser({
+          refreshTokenHash: hashToken("winner-refresh-token-value"),
+          previousRefreshTokenHash: hashToken(RAW_REFRESH_TOKEN),
+          refreshTokenRotatedAt: NOW
+        })
+      );
+    mockPrisma.mobileSession.updateMany
+      .mockResolvedValueOnce({ count: 0 })
+      .mockResolvedValueOnce({ count: 1 });
+
+    const refreshed = await refreshMobileSession(RAW_REFRESH_TOKEN, {}, { now: NOW });
+
+    expect(refreshed).toMatchObject({ ok: true, user: { id: "user-1" } });
+    expect(mockPrisma.mobileSession.findFirst).toHaveBeenCalledTimes(2);
+    expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -194,8 +261,8 @@ describe("mobile auth routes", () => {
   });
 
   it("refreshes a session by rotating access and refresh tokens", async () => {
-    mockPrisma.mobileSession.findUnique.mockResolvedValue(sessionWithUser());
-    mockPrisma.mobileSession.update.mockResolvedValue({});
+    mockPrisma.mobileSession.findFirst.mockResolvedValue(sessionWithUser());
+    mockPrisma.mobileSession.updateMany.mockResolvedValue({ count: 1 });
     const app = await buildApp();
 
     const response = await app.inject({
@@ -209,7 +276,7 @@ describe("mobile auth routes", () => {
     expect(body.session.accessToken).toMatch(/^bma_at_/);
     expect(body.session.refreshToken).toMatch(/^bma_rt_/);
     expect(body.session.refreshToken).not.toBe(RAW_REFRESH_TOKEN);
-    expect(mockPrisma.mobileSession.update).toHaveBeenCalledOnce();
+    expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledOnce();
     await app.close();
   });
 
@@ -226,7 +293,13 @@ describe("mobile auth routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
     expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledWith({
-      where: { refreshTokenHash: hashToken(RAW_REFRESH_TOKEN), revokedAt: null },
+      where: {
+        OR: [
+          { refreshTokenHash: hashToken(RAW_REFRESH_TOKEN) },
+          { previousRefreshTokenHash: hashToken(RAW_REFRESH_TOKEN) }
+        ],
+        revokedAt: null
+      },
       data: { revokedAt: expect.any(Date) }
     });
     await app.close();
@@ -266,7 +339,7 @@ describe("mobile auth routes", () => {
       headers: { authorization: "Bearer expired-token" }
     });
 
-    mockPrisma.mobileSession.findUnique.mockResolvedValueOnce(sessionWithUser({ revokedAt: NOW }));
+    mockPrisma.mobileSession.findFirst.mockResolvedValueOnce(sessionWithUser({ revokedAt: NOW }));
     const refresh = await app.inject({
       method: "POST",
       url: "/api/mobile/auth/refresh",
@@ -367,6 +440,10 @@ function sessionWithUser(overrides: Record<string, unknown> = {}) {
   return {
     id: "session-1",
     userId: "user-1",
+    accessTokenHash: hashToken("access-token"),
+    refreshTokenHash: hashToken(RAW_REFRESH_TOKEN),
+    previousRefreshTokenHash: null,
+    refreshTokenRotatedAt: null,
     accessTokenExpiresAt: FUTURE,
     refreshTokenExpiresAt: FUTURE,
     revokedAt: null,

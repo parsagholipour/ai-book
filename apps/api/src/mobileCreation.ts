@@ -136,7 +136,13 @@ export const mobileCreationMessageSchema = z
     role: mobileCreationMessageRoleSchema,
     // Attachment-only messages carry empty text, so emptiness is checked below.
     content: z.string().trim().max(4000),
-    attachments: z.array(mobileCreationMessageAttachmentSchema).max(6).optional()
+    attachments: z.array(mobileCreationMessageAttachmentSchema).max(6).optional(),
+    // Branching fields (optional so legacy flat transcripts keep parsing).
+    // Ids are server-generated; siblings under one parent are alternative
+    // branches and isActiveChild marks the selected one.
+    id: z.string().trim().min(1).max(64).optional(),
+    parentId: z.string().trim().min(1).max(64).nullable().optional(),
+    isActiveChild: z.boolean().optional()
   })
   .strict()
   .refine((message) => message.content.length > 0 || (message.attachments?.length ?? 0) > 0, {
@@ -160,8 +166,9 @@ export const mobileCreationDraftPayloadSchema = z
     language: z.string().trim().min(2).max(40).optional(),
     // Compact summary of chat turns that were dropped past the transcript cap.
     conversationSummary: z.string().trim().max(2400).optional(),
-    // Chat transcript for the conversational Book Studio (version 3 payloads).
-    messages: z.array(mobileCreationMessageSchema).max(80).optional(),
+    // Chat transcript tree for the conversational Book Studio (version 3
+    // payloads). Holds all branches; the active path is capped separately.
+    messages: z.array(mobileCreationMessageSchema).max(240).optional(),
     // Files uploaded into the chat, already digested into text at upload time.
     attachments: z.array(creationAttachmentSchema).max(CREATION_ATTACHMENT_MAX_COUNT).optional(),
     // Legacy V2 payloads are accepted so active drafts made before V3 can resume.
@@ -494,7 +501,7 @@ export async function enrichCreationTurnWithAi(
         content:
           "You are the interviewer for an AI book maker app: a warm, concise assistant who turns one person's rough idea into a clear book brief through a short chat. You lead the conversation; a deterministic engine only provides a fallback suggestion. " +
           "Interview style: look at what is still genuinely missing from the brief (audience, promise or conflict, tone, character, ending, exercises, next step - whichever fit this kind of book) and ask about the single most valuable gap. Ask AT MOST ONE focused question per turn with 2-4 short tappable options plus a custom answer. Never re-ask something the user already answered or skipped, and stop asking once the brief is solid - then set question to null and encourage them to build the plan. " +
-          "Language: always reply in the language the user writes in. Set the language field to the BCP-47 code of the language the book should be written in whenever it is clear (for example fa, es, de). " +
+          "Language: the conversation language and the book language are independent. Always reply in the language the user's own chat messages are written in, switching only when the user themselves starts writing in another language - if they chat in English while asking for a Portuguese book, keep replying in English. Set the language field to the BCP-47 code of the language the BOOK should be written in whenever it is clear (for example fa, es, de); bookLanguage in the input is that book language, never the language to reply in. " +
           "Settings from chat: if the user asks for a different book type, page count, visuals on/off, tone, title, or language, apply it - update presets/brief accordingly and confirm the change in one short sentence. If you are unsure the user really wants to switch book type, ask a confirmation question like 'Switch this to a children's story?' with Yes/No options instead of switching silently. " +
           "Uploaded files: the user can attach documents and photos; each arrives already read, with a summary and extracted text under 'attachments' (messages reference them by name). Treat documents as the user's source material or instructions - stay faithful to their facts and wording, follow instructions they contain, and fold what they cover into the brief. Treat photos as inspiration, references, or notes to transcribe. When a file arrives with the latest message, acknowledge in one natural sentence what you understood from it, then continue the interview using what it already answers instead of re-asking. Answer questions about the files from their extracted content. Never say you cannot open or see files. " +
           "Build requests: if the user says the brief is good and asks to build/start/go ahead, set buildRequested to true, set question to null, and reply with one short confirmation sentence. " +
@@ -514,7 +521,7 @@ export async function enrichCreationTurnWithAi(
             currentBrief: base.brief,
             currentPresets: base.presets,
             detectedLane: base.detectedLane,
-            currentLanguage: request.language ?? base.language ?? null,
+            bookLanguage: request.language ?? base.language ?? null,
             deterministicSuggestion: {
               assistantMessage: base.assistantMessage,
               question: base.question,

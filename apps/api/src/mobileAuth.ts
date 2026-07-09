@@ -8,6 +8,7 @@ const ACCESS_TOKEN_PREFIX = "bma_at";
 const REFRESH_TOKEN_PREFIX = "bma_rt";
 const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const REFRESH_TOKEN_GRACE_MS = 30 * 1000;
 const TOKEN_BYTE_LENGTH = 32;
 const SCRYPT_N = 16_384;
 const SCRYPT_R = 8;
@@ -353,43 +354,79 @@ export async function refreshMobileSession(
   options: { now?: Date } = {}
 ): Promise<RefreshedSession> {
   const now = options.now ?? new Date();
-  const session = await prisma.mobileSession.findUnique({
-    where: { refreshTokenHash: hashToken(refreshToken) },
-    include: { user: true }
-  });
-  if (!session) {
-    return authFailure(401, "INVALID_SESSION", "Sign in again to continue.");
-  }
+  const presentedHash = hashToken(refreshToken);
 
-  const failure = sessionAuthFailure(session, "refresh", now);
-  if (failure) {
-    return failure;
-  }
-
-  const nextSession = issueSessionTokens(now);
-  await prisma.mobileSession.update({
-    where: { id: session.id },
-    data: {
-      accessTokenHash: hashToken(nextSession.accessToken),
-      refreshTokenHash: hashToken(nextSession.refreshToken),
-      accessTokenExpiresAt: nextSession.accessTokenExpiresAt,
-      refreshTokenExpiresAt: nextSession.refreshTokenExpiresAt,
-      lastUsedAt: now,
-      ...(context.userAgent ? { userAgent: context.userAgent } : {}),
-      ...(context.ipHash ? { ipHash: context.ipHash } : {})
+  // Rotation invalidates the presented token, so a retry after a lost response
+  // or a racing second refresh from the same device would otherwise kill the
+  // session. The previous token stays accepted for a short grace window, and
+  // the conditional update below keeps concurrent rotations from silently
+  // overwriting each other.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const session = await prisma.mobileSession.findFirst({
+      where: {
+        OR: [{ refreshTokenHash: presentedHash }, { previousRefreshTokenHash: presentedHash }]
+      },
+      include: { user: true }
+    });
+    if (!session) {
+      return authFailure(401, "INVALID_SESSION", "Sign in again to continue.");
     }
-  });
 
-  return {
-    ok: true,
-    user: toAuthUser(session.user),
-    session: nextSession
-  };
+    const failure = sessionAuthFailure(session, "refresh", now);
+    if (failure) {
+      return failure;
+    }
+
+    if (session.refreshTokenHash !== presentedHash) {
+      const rotatedAt = session.refreshTokenRotatedAt;
+      const withinGrace =
+        rotatedAt != null && now.getTime() - rotatedAt.getTime() <= REFRESH_TOKEN_GRACE_MS;
+      if (!withinGrace) {
+        return authFailure(401, "INVALID_SESSION", "Sign in again to continue.");
+      }
+    }
+
+    const nextSession = issueSessionTokens(now);
+    const rotated = await prisma.mobileSession.updateMany({
+      where: {
+        id: session.id,
+        refreshTokenHash: session.refreshTokenHash
+      },
+      data: {
+        accessTokenHash: hashToken(nextSession.accessToken),
+        refreshTokenHash: hashToken(nextSession.refreshToken),
+        previousRefreshTokenHash: session.refreshTokenHash,
+        refreshTokenRotatedAt: now,
+        accessTokenExpiresAt: nextSession.accessTokenExpiresAt,
+        refreshTokenExpiresAt: nextSession.refreshTokenExpiresAt,
+        lastUsedAt: now,
+        ...(context.userAgent ? { userAgent: context.userAgent } : {}),
+        ...(context.ipHash ? { ipHash: context.ipHash } : {})
+      }
+    });
+    if (rotated.count === 0) {
+      // A concurrent refresh rotated first; re-read and go through the grace
+      // window check against the fresh session state.
+      continue;
+    }
+
+    return {
+      ok: true,
+      user: toAuthUser(session.user),
+      session: nextSession
+    };
+  }
+
+  return authFailure(401, "INVALID_SESSION", "Sign in again to continue.");
 }
 
 export async function revokeMobileSessionByRefreshToken(refreshToken: string, options: { now?: Date } = {}): Promise<void> {
+  const presentedHash = hashToken(refreshToken);
   await prisma.mobileSession.updateMany({
-    where: { refreshTokenHash: hashToken(refreshToken), revokedAt: null },
+    where: {
+      OR: [{ refreshTokenHash: presentedHash }, { previousRefreshTokenHash: presentedHash }],
+      revokedAt: null
+    },
     data: { revokedAt: options.now ?? new Date() }
   });
 }

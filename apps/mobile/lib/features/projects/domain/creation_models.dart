@@ -406,11 +406,23 @@ class MobileCreationMessage {
     this.sendError,
     this.localId,
     this.includedSourceNotes = false,
+    this.id,
+    this.parentId,
+    this.branch,
   });
 
   final String role;
   final String content;
   final List<MobileCreationMessageAttachment> attachments;
+
+  /// Server id; null for optimistic messages that were not persisted yet.
+  final String? id;
+
+  /// Id of the preceding message in the conversation tree.
+  final String? parentId;
+
+  /// Position among sibling branches; null when this message has no siblings.
+  final MobileProjectChatBranch? branch;
 
   /// Present for server messages; optimistic local messages may set this too.
   final DateTime? createdAt;
@@ -448,6 +460,9 @@ class MobileCreationMessage {
           : sendError as String?,
       localId: localId,
       includedSourceNotes: includedSourceNotes ?? this.includedSourceNotes,
+      id: id,
+      parentId: parentId,
+      branch: branch,
     );
   }
 
@@ -456,6 +471,7 @@ class MobileCreationMessage {
   factory MobileCreationMessage.fromJson(Map<String, dynamic> json) {
     final attachments = json['attachments'] as List<dynamic>? ?? const [];
     final createdAtRaw = json['createdAt'];
+    final branch = json['branch'];
     return MobileCreationMessage(
       role: json['role'] as String,
       content: json['content'] as String,
@@ -466,7 +482,14 @@ class MobileCreationMessage {
             ),
           )
           .toList(),
-      createdAt: createdAtRaw is String ? DateTime.tryParse(createdAtRaw) : null,
+      createdAt: createdAtRaw is String
+          ? DateTime.tryParse(createdAtRaw)
+          : null,
+      id: json['id'] as String?,
+      parentId: json['parentId'] as String?,
+      branch: branch is Map<String, dynamic>
+          ? MobileProjectChatBranch.fromJson(branch)
+          : null,
     );
   }
 
@@ -479,6 +502,8 @@ class MobileCreationMessage {
             .map((attachment) => attachment.toJson())
             .toList(),
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+      if (id != null) 'id': id,
+      if (parentId != null) 'parentId': parentId,
     };
   }
 }
@@ -811,7 +836,8 @@ class MobileCreationBuildPreflight {
 
   factory MobileCreationBuildPreflight.fromJson(Map<String, dynamic> json) {
     final detected = json['detectedPageCount'];
-    final recommendations = json['recommendations'] as List<dynamic>? ?? const [];
+    final recommendations =
+        json['recommendations'] as List<dynamic>? ?? const [];
     return MobileCreationBuildPreflight(
       requiresPageCount: json['requiresPageCount'] as bool? ?? false,
       detectedPageCount: detected == null
