@@ -197,7 +197,15 @@ describe("voice providers", () => {
     expect(params.config.liveConnectConstraints.config.systemInstruction).toContain("same ongoing voice call");
     expect(params.config.liveConnectConstraints.config.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe("Sulafat");
     expect(params.config.liveConnectConstraints.config.sessionResumption.handle).toBe("resume-handle");
+    expect(params.config.liveConnectConstraints.config.realtimeInputConfig).toEqual({
+      automaticActivityDetection: {
+        disabled: false,
+        startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+        prefixPaddingMs: 300
+      }
+    });
     expect(params.config.lockAdditionalFields).toContain("systemInstruction");
+    expect(params.config.lockAdditionalFields).toContain("realtimeInputConfig");
   });
 
   it("creates Gemini Live sessions with manual input control for group characters", async () => {

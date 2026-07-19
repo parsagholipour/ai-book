@@ -345,7 +345,7 @@ export class GeminiLiveVoiceProvider implements VoiceChatProvider {
           "speechConfig",
           "inputAudioTranscription",
           "outputAudioTranscription",
-          ...(request.manualTurnControl ? ["realtimeInputConfig"] : []),
+          "realtimeInputConfig",
           "sessionResumption",
           "contextWindowCompression"
         ]
@@ -420,13 +420,24 @@ function openAIRealtimeAudioConfig(request: CreateRealtimeSessionRequest, voiceI
 }
 
 function geminiRealtimeInputConfig(request: CreateRealtimeSessionRequest): Record<string, unknown> {
-  if (!request.manualTurnControl) {
-    return {};
+  if (request.manualTurnControl && request.sessionMode === "group_character") {
+    return {
+      realtimeInputConfig: {
+        automaticActivityDetection: {
+          disabled: true
+        }
+      }
+    };
   }
+  // Speaker echo that leaks past browser echo cancellation can trip Gemini's
+  // voice activity detection and cut character audio off mid-turn, so barge-in
+  // requires a clear, sustained speech onset.
   return {
     realtimeInputConfig: {
       automaticActivityDetection: {
-        disabled: request.sessionMode === "group_character"
+        disabled: false,
+        startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
+        prefixPaddingMs: 300
       }
     }
   };

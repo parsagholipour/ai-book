@@ -57,6 +57,40 @@ type GeminiLiveSdkSession = {
   close(): void;
 };
 
+export type GeminiPlaybackOutput = {
+  node: AudioNode;
+  close(): void;
+};
+
+// Audio rendered straight to an AudioContext destination is not part of the
+// browser's echo-cancellation reference signal, so the mic re-captures the
+// character's voice and Gemini's VAD interrupts its own reply. Routing
+// playback through a MediaStream-backed <audio> element keeps it inside the
+// echo canceller's reference path.
+export function createGeminiPlaybackOutput(context: AudioContext): GeminiPlaybackOutput {
+  if (typeof context.createMediaStreamDestination !== "function") {
+    return { node: context.destination, close: () => undefined };
+  }
+  const destination = context.createMediaStreamDestination();
+  const element = document.createElement("audio");
+  element.autoplay = true;
+  element.setAttribute("playsinline", "true");
+  element.srcObject = destination.stream;
+  void element.play().catch(() => undefined);
+  return {
+    node: destination,
+    close: () => {
+      element.pause();
+      element.srcObject = null;
+      try {
+        destination.disconnect();
+      } catch {
+        /* destination may already be disconnected */
+      }
+    }
+  };
+}
+
 let voiceRtcConfigCache: { config: VoiceRtcConfig; expiresAtMs: number } | null = null;
 
 export function createBrowserVoiceCallClient(
@@ -517,6 +551,7 @@ export class GeminiLiveVoiceCallClient implements BrowserVoiceCallClient {
   private inputProcessor: ScriptProcessorNode | null = null;
   private inputSilence: GainNode | null = null;
   private outputContext: AudioContext | null = null;
+  private playbackOutput: GeminiPlaybackOutput | null = null;
   private playbackSources: AudioBufferSourceNode[] = [];
   private nextPlaybackTime = 0;
   private closed = false;
@@ -561,6 +596,7 @@ export class GeminiLiveVoiceCallClient implements BrowserVoiceCallClient {
     this.closeGeminiSession();
     this.closeInputPipeline();
     this.clearPlaybackQueue();
+    this.closePlaybackOutput();
     for (const track of this.localStream?.getTracks() ?? []) {
       track.stop();
     }
@@ -830,7 +866,7 @@ export class GeminiLiveVoiceCallClient implements BrowserVoiceCallClient {
     buffer.copyToChannel(channel, 0);
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(context.destination);
+    source.connect(this.playbackOutput?.node ?? context.destination);
     source.onended = () => {
       this.playbackSources = this.playbackSources.filter((candidate) => candidate !== source);
     };
@@ -884,6 +920,7 @@ export class GeminiLiveVoiceCallClient implements BrowserVoiceCallClient {
     this.closeGeminiSession();
     this.closeInputPipeline();
     this.clearPlaybackQueue();
+    this.closePlaybackOutput();
     for (const track of this.localStream?.getTracks() ?? []) {
       track.stop();
     }
@@ -954,11 +991,18 @@ export class GeminiLiveVoiceCallClient implements BrowserVoiceCallClient {
     if (!this.outputContext || this.outputContext.state === "closed") {
       this.outputContext = new (audioContextConstructor())({ sampleRate: GEMINI_OUTPUT_SAMPLE_RATE });
       this.nextPlaybackTime = this.outputContext.currentTime;
+      this.playbackOutput?.close();
+      this.playbackOutput = createGeminiPlaybackOutput(this.outputContext);
     }
     if (this.outputContext.state === "suspended") {
       await this.outputContext.resume();
     }
     return this.outputContext;
+  }
+
+  private closePlaybackOutput(): void {
+    this.playbackOutput?.close();
+    this.playbackOutput = null;
   }
 
   private closeGeminiSession(): void {

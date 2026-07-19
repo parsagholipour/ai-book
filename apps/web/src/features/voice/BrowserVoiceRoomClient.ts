@@ -17,7 +17,13 @@ import {
   type VoiceConnectionDiagnostics
 } from "../../voiceCallDiagnostics.js";
 import { asError } from "../shared/formatters.js";
-import { decodePcm16Base64, encodePcm16Base64, isRetryableGeminiDisconnectReason } from "./BrowserVoiceCallClient.js";
+import {
+  createGeminiPlaybackOutput,
+  decodePcm16Base64,
+  encodePcm16Base64,
+  isRetryableGeminiDisconnectReason,
+  type GeminiPlaybackOutput
+} from "./BrowserVoiceCallClient.js";
 import type { ActiveVoiceCallStatus } from "./types.js";
 
 const VOICE_ROOM_ICE_GATHERING_TIMEOUT_MS = 3000;
@@ -782,6 +788,7 @@ class GeminiLiveVoiceRoomClient implements BrowserVoiceRoomClient {
   private inputProcessor: ScriptProcessorNode | null = null;
   private inputSilence: GainNode | null = null;
   private outputContext: AudioContext | null = null;
+  private playbackOutput: GeminiPlaybackOutput | null = null;
   private playbackSources: AudioBufferSourceNode[] = [];
   private nextPlaybackTime = 0;
   private pendingPlaybackChunks = 0;
@@ -947,6 +954,7 @@ class GeminiLiveVoiceRoomClient implements BrowserVoiceRoomClient {
     this.closeInputPipeline();
     this.clearListenerTranscriptTimer();
     this.clearPlaybackQueue();
+    this.closePlaybackOutput();
     for (const track of this.localStream?.getTracks() ?? []) {
       track.stop();
     }
@@ -1223,7 +1231,7 @@ class GeminiLiveVoiceRoomClient implements BrowserVoiceRoomClient {
     buffer.copyToChannel(channel, 0);
     const source = context.createBufferSource();
     source.buffer = buffer;
-    source.connect(context.destination);
+    source.connect(this.playbackOutput?.node ?? context.destination);
     source.onended = () => {
       this.playbackSources = this.playbackSources.filter((candidate) => candidate !== source);
       if (this.playbackGeneration === playbackGeneration) {
@@ -1298,6 +1306,7 @@ class GeminiLiveVoiceRoomClient implements BrowserVoiceRoomClient {
     this.closeInputPipeline();
     this.clearListenerTranscriptTimer();
     this.clearPlaybackQueue();
+    this.closePlaybackOutput();
     for (const track of this.localStream?.getTracks() ?? []) {
       track.stop();
     }
@@ -1458,11 +1467,18 @@ class GeminiLiveVoiceRoomClient implements BrowserVoiceRoomClient {
     if (!this.outputContext || this.outputContext.state === "closed") {
       this.outputContext = new (audioContextConstructor())({ sampleRate: GEMINI_OUTPUT_SAMPLE_RATE });
       this.nextPlaybackTime = this.outputContext.currentTime;
+      this.playbackOutput?.close();
+      this.playbackOutput = createGeminiPlaybackOutput(this.outputContext);
     }
     if (this.outputContext.state === "suspended") {
       await this.outputContext.resume();
     }
     return this.outputContext;
+  }
+
+  private closePlaybackOutput(): void {
+    this.playbackOutput?.close();
+    this.playbackOutput = null;
   }
 
   private closeInputPipeline(): void {
