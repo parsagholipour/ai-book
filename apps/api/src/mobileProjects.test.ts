@@ -1020,6 +1020,7 @@ describe("mobile project routes", () => {
       "user",
       "assistant"
     ]);
+    expect(typeof createCall.data.payload.lastMessageAt).toBe("string");
     await app.close();
   });
 
@@ -1130,6 +1131,59 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("orders creation sessions by last conversation activity, not row updatedAt", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findMany.mockResolvedValueOnce([
+      // Built/exported chat: the row was touched after the newer chat was
+      // created, but its last message is older.
+      creationDraftRecord({
+        id: "draft-built",
+        updatedAt: new Date("2026-06-15T14:00:00.000Z"),
+        payload: {
+          payloadVersion: 3,
+          lastMessageAt: "2026-06-15T10:00:00.000Z",
+          messages: [{ role: "user", content: "Livro em portugues" }]
+        }
+      }),
+      creationDraftRecord({
+        id: "draft-new",
+        updatedAt: new Date("2026-06-15T12:00:00.000Z"),
+        payload: {
+          payloadVersion: 3,
+          lastMessageAt: "2026-06-15T12:00:00.000Z",
+          messages: [{ role: "user", content: "Outro livro" }]
+        }
+      }),
+      // Drafts from before lastMessageAt existed fall back to updatedAt.
+      creationDraftRecord({
+        id: "draft-legacy",
+        updatedAt: new Date("2026-06-15T11:00:00.000Z"),
+        payload: {
+          payloadVersion: 3,
+          messages: [{ role: "user", content: "Old idea" }]
+        }
+      })
+    ]);
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions",
+      headers: bearer("token-a")
+    });
+    const sessions = response.json().sessions;
+
+    expect(response.statusCode).toBe(200);
+    expect(sessions.map((session: { draftId: string }) => session.draftId)).toEqual([
+      "draft-new",
+      "draft-legacy",
+      "draft-built"
+    ]);
+    expect(sessions[0].lastMessageAt).toBe("2026-06-15T12:00:00.000Z");
+    expect(sessions[1].lastMessageAt).toBe("2026-06-15T11:00:00.000Z");
+    await app.close();
+  });
+
   it("appends a conversation message and persists the updated transcript", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
@@ -1164,6 +1218,7 @@ describe("mobile project routes", () => {
     ]);
     expect(updateCall.data.payload.payloadVersion).toBe(3);
     expect(updateCall.data.payload.messages.at(-1).role).toBe("assistant");
+    expect(typeof updateCall.data.payload.lastMessageAt).toBe("string");
     expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
     await app.close();
   });

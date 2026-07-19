@@ -106,10 +106,14 @@ class MobileCreationRepository implements CreationRepository {
     final response = await apiClient.getJson('/api/mobile/creation-sessions');
     final data = response.data as Map<String, dynamic>;
     final list = data['sessions'] as List<dynamic>;
-    return list
+    final sessions = list
         .cast<Map<String, dynamic>>()
         .map(MobileChatSession.fromJson)
-        .toList(growable: false);
+        .toList();
+    // Most recent conversation first, even against older servers that order
+    // by row updatedAt (which builds and copies bump without a new message).
+    sessions.sort((a, b) => b.lastMessageAt.compareTo(a.lastMessageAt));
+    return sessions;
   }
 
   @override

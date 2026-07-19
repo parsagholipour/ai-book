@@ -9,6 +9,7 @@ import '../../billing/presentation/billing_paywall.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'creation_chat_controller.dart';
+import 'pending_chat_sessions.dart';
 
 class ChatHistoryDrawer extends ConsumerWidget {
   const ChatHistoryDrawer({super.key, this.activeDraftId});
@@ -18,6 +19,15 @@ class ChatHistoryDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sessions = ref.watch(chatSessionsProvider);
+    // Chats whose first send is still in flight (or just resolved but not yet
+    // in the fetched list) so a brand-new chat is never invisible.
+    final fetchedIds =
+        sessions.value?.map((session) => session.draftId).toSet() ??
+        const <String>{};
+    final pending = [
+      for (final entry in ref.watch(pendingChatSessionsProvider))
+        if (entry.draftId == null || !fetchedIds.contains(entry.draftId)) entry,
+    ];
     final billing = ref.watch(billingProvider);
     final colors = Theme.of(context).colorScheme;
     final drawerBackground =
@@ -45,7 +55,7 @@ class ChatHistoryDrawer extends ConsumerWidget {
               child: ClipRect(
                 key: const ValueKey('chat-history-scroll-clip'),
                 child: sessions.when(
-                  data: (items) => items.isEmpty
+                  data: (items) => items.isEmpty && pending.isEmpty
                       ? const AppEmptyState(
                           title: 'No chats yet',
                           message: 'Start a new book to begin a conversation.',
@@ -54,6 +64,7 @@ class ChatHistoryDrawer extends ConsumerWidget {
                       : _ChatList(
                           sessions: items,
                           activeDraftId: activeDraftId,
+                          pending: pending,
                         ),
                   loading: () =>
                       const Center(child: CircularProgressIndicator()),
@@ -144,7 +155,8 @@ List<_GroupData> _groupByDate(List<MobileChatSession> sorted) {
   final olderItems = <MobileChatSession>[];
 
   for (final s in sorted) {
-    final date = DateTime(s.updatedAt.year, s.updatedAt.month, s.updatedAt.day);
+    final at = s.lastMessageAt.toLocal();
+    final date = DateTime(at.year, at.month, at.day);
     if (!date.isBefore(today)) {
       todayItems.add(s);
     } else if (!date.isBefore(yesterday)) {
@@ -167,14 +179,19 @@ List<_GroupData> _groupByDate(List<MobileChatSession> sorted) {
 }
 
 class _ChatList extends StatelessWidget {
-  const _ChatList({required this.sessions, required this.activeDraftId});
+  const _ChatList({
+    required this.sessions,
+    required this.activeDraftId,
+    this.pending = const [],
+  });
 
   final List<MobileChatSession> sessions;
   final String? activeDraftId;
+  final List<PendingChatSession> pending;
 
   @override
   Widget build(BuildContext context) {
-    if (sessions.isEmpty) {
+    if (sessions.isEmpty && pending.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(16),
         child: Text(
@@ -187,12 +204,16 @@ class _ChatList extends StatelessWidget {
     }
 
     final groups = _groupByDate(sessions);
+    final pendingOffset = pending.isEmpty ? 0 : 1;
 
     return ListView.builder(
       padding: EdgeInsets.zero,
-      itemCount: groups.length,
+      itemCount: groups.length + pendingOffset,
       itemBuilder: (context, index) {
-        final group = groups[index];
+        if (pendingOffset == 1 && index == 0) {
+          return _PendingChatGroup(entries: pending);
+        }
+        final group = groups[index - pendingOffset];
         return _ChatGroup(
           label: group.label,
           sessions: group.sessions,
@@ -200,6 +221,92 @@ class _ChatList extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _PendingChatGroup extends StatelessWidget {
+  const _PendingChatGroup({required this.entries});
+
+  final List<PendingChatSession> entries;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Text(
+            'In progress',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ),
+        for (final entry in entries) _PendingChatTile(entry: entry),
+      ],
+    );
+  }
+}
+
+class _PendingChatTile extends StatelessWidget {
+  const _PendingChatTile({required this.entry});
+
+  final PendingChatSession entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return ListTile(
+      dense: true,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      leading: Icon(
+        Icons.chat_bubble_outline,
+        size: 20,
+        color: colors.onSurfaceVariant,
+      ),
+      title: Text(
+        entry.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
+      subtitle: Text(
+        'Creating…',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
+      ),
+      trailing: entry.draftId == null
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : null,
+      onTap: () => _open(context),
+    );
+  }
+
+  void _open(BuildContext context) {
+    final draftId = entry.draftId;
+    if (draftId == null) {
+      // The session does not exist server-side until the first turn finishes,
+      // so there is nothing to navigate to yet.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Still creating this chat — it will be ready in a moment.'),
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pop();
+    context.go('/books/chat/$draftId');
   }
 }
 

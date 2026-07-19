@@ -5,6 +5,7 @@ import '../../../shared/api/api_error.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'creation_labels.dart';
+import 'pending_chat_sessions.dart';
 
 const _defaultPresets = MobileCreationPresets(
   bookType: 'lead_magnet',
@@ -469,6 +470,22 @@ class CreationChatController extends Notifier<CreationChatState> {
       // stay reachable through the output switcher.
       composingNewOutput: editMessageId != null ? true : null,
     );
+    final pendingSessions = ref.read(pendingChatSessionsProvider.notifier);
+    final isNewChat = draftId == null;
+    if (isNewChat) {
+      pendingSessions.add(
+        PendingChatSession(
+          localKey: localId,
+          title: trimmed.isEmpty ? 'New book' : trimmed,
+          startedAt: DateTime.now(),
+        ),
+      );
+    }
+    final cache = _cache;
+    // The server creates a brand-new chat only when this request completes;
+    // keep this notifier alive so the completion is persisted even if the
+    // user navigates away mid-send.
+    final keepAliveLink = ref.keepAlive();
     try {
       final response = draftId == null
           ? await _repository.startConversation(
@@ -489,15 +506,28 @@ class CreationChatController extends Notifier<CreationChatState> {
               requestId: serverRequestId,
               expectedRevision: state.sessionRevision,
             );
-      if (requestId != _messageRequestId || state.draftId != draftId) return;
-      _cache.write(response);
-      _applyConversation(
-        response,
-        assistantTyping: false,
-        allowBuildRequest: true,
-      );
+      cache.write(response);
+      final createdDraftId = response.session?.draftId;
+      if (isNewChat && createdDraftId != null) {
+        pendingSessions.resolve(localId, createdDraftId);
+      }
+      if (requestId == _messageRequestId && state.draftId == draftId) {
+        _applyConversation(
+          response,
+          assistantTyping: false,
+          allowBuildRequest: true,
+        );
+      }
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
+      if (isNewChat) {
+        pendingSessions.remove(localId);
+      }
+      // The user switched chats mid-send: this chat's state is gone, so
+      // don't smear the failure onto whichever chat is showing now.
+      if (requestId != _messageRequestId || state.draftId != draftId) {
+        rethrow;
+      }
       final message = userFacingError(error);
       if (_isSessionConflict(error) && draftId != null) {
         final failedMessage = optimisticMessage.copyWith(
@@ -532,6 +562,8 @@ class CreationChatController extends Notifier<CreationChatState> {
         ],
       );
       rethrow;
+    } finally {
+      keepAliveLink.close();
     }
   }
 
@@ -552,6 +584,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         .where((message) => message.isFailedSend)
         .toList();
     state = state.copyWith(switchingBranchMessageId: messageId);
+    final keepAliveLink = ref.keepAlive();
     try {
       final response = await _repository.switchConversationBranch(
         draftId: draftId,
@@ -559,13 +592,13 @@ class CreationChatController extends Notifier<CreationChatState> {
         direction: direction,
         expectedRevision: state.sessionRevision,
       );
-      if (requestId != _messageRequestId || state.draftId != draftId) return;
       _cache.write(response);
+      ref.invalidate(chatSessionsProvider);
+      if (requestId != _messageRequestId || state.draftId != draftId) return;
       _applyConversation(response, assistantTyping: false);
       if (failedLocals.isNotEmpty) {
         state = state.copyWith(messages: [...state.messages, ...failedLocals]);
       }
-      ref.invalidate(chatSessionsProvider);
     } catch (error) {
       if (_isSessionConflict(error)) {
         await _refreshAfterSessionConflict(
@@ -580,6 +613,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       if (state.switchingBranchMessageId == messageId) {
         state = state.copyWith(switchingBranchMessageId: null);
       }
+      keepAliveLink.close();
     }
   }
 
@@ -622,6 +656,19 @@ class CreationChatController extends Notifier<CreationChatState> {
       assistantTyping: true,
       initError: null,
     );
+    final pendingSessions = ref.read(pendingChatSessionsProvider.notifier);
+    final isNewChat = draftId == null;
+    if (isNewChat) {
+      pendingSessions.add(
+        PendingChatSession(
+          localKey: localId,
+          title: failed.content.trim().isEmpty ? 'New book' : failed.content,
+          startedAt: DateTime.now(),
+        ),
+      );
+    }
+    final cache = _cache;
+    final keepAliveLink = ref.keepAlive();
     try {
       final response = draftId == null
           ? await _repository.startConversation(
@@ -641,15 +688,26 @@ class CreationChatController extends Notifier<CreationChatState> {
               requestId: serverRequestId,
               expectedRevision: state.sessionRevision,
             );
-      if (requestId != _messageRequestId || state.draftId != draftId) return;
-      _cache.write(response);
-      _applyConversation(
-        response,
-        assistantTyping: false,
-        allowBuildRequest: true,
-      );
+      cache.write(response);
+      final createdDraftId = response.session?.draftId;
+      if (isNewChat && createdDraftId != null) {
+        pendingSessions.resolve(localId, createdDraftId);
+      }
+      if (requestId == _messageRequestId && state.draftId == draftId) {
+        _applyConversation(
+          response,
+          assistantTyping: false,
+          allowBuildRequest: true,
+        );
+      }
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
+      if (isNewChat) {
+        pendingSessions.remove(localId);
+      }
+      if (requestId != _messageRequestId || state.draftId != draftId) {
+        rethrow;
+      }
       final message = userFacingError(error);
       if (_isSessionConflict(error) && draftId != null) {
         final failedRetry = failed.copyWith(
@@ -679,6 +737,8 @@ class CreationChatController extends Notifier<CreationChatState> {
         ],
       );
       rethrow;
+    } finally {
+      keepAliveLink.close();
     }
   }
 
@@ -813,22 +873,28 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (existing != null) {
       return existing;
     }
-    final response = await _repository.startConversation(
-      requestId: _newServerRequestId('session'),
-    );
-    _cache.write(response);
-    if (state.draftId == null) {
-      _applyConversation(response, initializing: false);
-      ref.invalidate(chatSessionsProvider);
-    }
-    final draftId = response.session?.draftId ?? state.draftId;
-    if (draftId == null) {
-      throw const ApiException(
-        code: 'SESSION_NOT_READY',
-        message: 'Could not start the chat. Try again.',
+    final cache = _cache;
+    final keepAliveLink = ref.keepAlive();
+    try {
+      final response = await _repository.startConversation(
+        requestId: _newServerRequestId('session'),
       );
+      cache.write(response);
+      if (state.draftId == null) {
+        _applyConversation(response, initializing: false);
+      }
+      ref.invalidate(chatSessionsProvider);
+      final draftId = response.session?.draftId ?? state.draftId;
+      if (draftId == null) {
+        throw const ApiException(
+          code: 'SESSION_NOT_READY',
+          message: 'Could not start the chat. Try again.',
+        );
+      }
+      return draftId;
+    } finally {
+      keepAliveLink.close();
     }
-    return draftId;
   }
 
   PendingCreationAttachment? _pendingById(String localId) {

@@ -15,6 +15,7 @@ import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
+import 'package:tomeza/features/projects/presentation/pending_chat_sessions.dart';
 import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
 
 const _greeting = 'Tell me about the book you want to make.';
@@ -1544,6 +1545,184 @@ void main() {
 
     await tester.teardownScreen();
   });
+
+  testWidgets('a new chat started mid-send survives switching chats', (
+    tester,
+  ) async {
+    final sendGate = Completer<void>();
+    final creation = _ScriptedCreationRepository()..sendGate = sendGate.future;
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'My new book idea');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+
+    // Switch to another chat while the first send is still running.
+    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+    await tester.pumpAndSettle();
+    expect(find.text('Selected chat draft-b'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(CreationChatScreen)),
+      listen: false,
+    );
+    final callsBefore = creation.listSessionsCalls;
+
+    sendGate.complete();
+    await tester.pumpAndSettle();
+
+    // The created chat is cached and the drawer list refetched, so it is
+    // reachable again without reopening the app.
+    expect(
+      container.read(creationConversationCacheProvider).readById('draft-1'),
+      isNotNull,
+    );
+    expect(creation.listSessionsCalls, greaterThan(callsBefore));
+    // The chat the user switched to is untouched by the stale response.
+    expect(find.text('Selected chat draft-b'), findsOneWidget);
+    expect(find.text(_reply), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('drawer shows an in-progress tile for a chat being created', (
+    tester,
+  ) async {
+    final sendGate = Completer<void>();
+    final creation = _ScriptedCreationRepository(
+      sessions: <MobileChatSession>[],
+    )..sendGate = sendGate.future;
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'My new book idea');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+
+    // Timed pumps: the pending tile's indeterminate spinner animates forever,
+    // so pumpAndSettle would never settle while the send is in flight.
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final drawerTile = find.descendant(
+      of: find.byType(ChatHistoryDrawer),
+      matching: find.text('My new book idea'),
+    );
+    expect(find.text('In progress'), findsOneWidget);
+    expect(drawerTile, findsOneWidget);
+    expect(find.text('Creating…'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ChatHistoryDrawer),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+
+    // Tapping while still creating explains instead of navigating.
+    await tester.tap(drawerTile);
+    await tester.pump();
+    expect(
+      find.text('Still creating this chat — it will be ready in a moment.'),
+      findsOneWidget,
+    );
+    expect(find.byType(ChatHistoryDrawer), findsOneWidget);
+
+    // Once the send finishes and the refreshed list contains the chat, the
+    // real tile takes over.
+    creation.sessions.add(
+      _chatSession(draftId: 'draft-1', title: 'My new book idea'),
+    );
+    sendGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('In progress'), findsNothing);
+    expect(find.text('Creating…'), findsNothing);
+    expect(drawerTile, findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('a failed send after switching chats does not touch the open '
+      'chat', (tester) async {
+    final sendGate = Completer<void>();
+    final creation = _ScriptedCreationRepository()..sendGate = sendGate.future;
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'My new book idea');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+
+    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+    await tester.pumpAndSettle();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(CreationChatScreen)),
+      listen: false,
+    );
+
+    sendGate.completeError(Exception('offline'));
+    await tester.pumpAndSettle();
+
+    final state = container.read(creationChatControllerProvider);
+    expect(state.initError, isNull);
+    expect(state.messages.any((message) => message.isFailedSend), isFalse);
+    expect(container.read(pendingChatSessionsProvider), isEmpty);
+    expect(find.text('Selected chat draft-b'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('a new chat finishing after leaving the screen is still saved', (
+    tester,
+  ) async {
+    final sendGate = Completer<void>();
+    final creation = _ScriptedCreationRepository()..sendGate = sendGate.future;
+
+    Widget shell(Widget home) => ProviderScope(
+      overrides: [
+        creationRepositoryProvider.overrideWithValue(creation),
+        billingRepositoryProvider.overrideWithValue(_FakeBillingRepository()),
+      ],
+      child: MaterialApp(theme: buildTomezaLightTheme(), home: home),
+    );
+
+    await tester.pumpWidget(shell(const CreationChatScreen(startFresh: true)));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).first, 'My new book idea');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+
+    // Leave the chat area entirely; the controller has no listeners left.
+    await tester.pumpWidget(shell(const Scaffold(body: Text('Account'))));
+    await tester.pump();
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Account')),
+      listen: false,
+    );
+
+    sendGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(creationConversationCacheProvider).readById('draft-1'),
+      isNotNull,
+    );
+    final pending = container.read(pendingChatSessionsProvider);
+    expect(pending, hasLength(1));
+    expect(pending.single.draftId, 'draft-1');
+
+    await tester.teardownScreen();
+  });
 }
 
 extension on WidgetTester {
@@ -1729,6 +1908,11 @@ class _ScriptedCreationRepository implements CreationRepository {
     ),
   ];
   Future<void>? resumeByIdGate;
+
+  /// When set, message sends (including the one starting a new chat) wait on
+  /// this before responding; completing it with an error fails the send.
+  Future<void>? sendGate;
+  int listSessionsCalls = 0;
   final List<MobileChatSession> sessions;
   final sentMessages = <String>[];
   final sentAttachmentIds = <List<String>>[];
@@ -1751,7 +1935,10 @@ class _ScriptedCreationRepository implements CreationRepository {
   int buildCount = 0;
 
   @override
-  Future<List<MobileChatSession>> listSessions() async => sessions;
+  Future<List<MobileChatSession>> listSessions() async {
+    listSessionsCalls++;
+    return List.of(sessions);
+  }
 
   @override
   Future<void> renameSession({
@@ -1874,6 +2061,7 @@ class _ScriptedCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
   }) async {
+    await sendGate;
     final error = sendError;
     if (error != null) {
       throw error;

@@ -916,10 +916,11 @@ class MobileChatSession {
     required this.status,
     required this.createdAt,
     required this.updatedAt,
+    DateTime? lastMessageAt,
     this.outputs = const [],
     this.createdProjectId,
     this.activeProjectId,
-  });
+  }) : lastMessageAt = lastMessageAt ?? updatedAt;
 
   final String draftId;
   final String title;
@@ -931,6 +932,10 @@ class MobileChatSession {
   final List<MobileCreationOutput> outputs;
   final DateTime createdAt;
   final DateTime updatedAt;
+
+  /// Time of the last conversation turn; unlike [updatedAt] it is not bumped
+  /// by builds or other background updates, so lists order by it.
+  final DateTime lastMessageAt;
 
   bool get isActive => status == 'ACTIVE';
 
@@ -954,6 +959,9 @@ class MobileChatSession {
           .toList(),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      lastMessageAt: json['lastMessageAt'] is String
+          ? DateTime.parse(json['lastMessageAt'] as String)
+          : null,
     );
   }
 }

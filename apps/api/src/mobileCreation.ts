@@ -168,6 +168,9 @@ export const mobileCreationDraftPayloadSchema = z
     language: z.string().trim().min(2).max(40).optional(),
     // Compact summary of chat turns that were dropped past the transcript cap.
     conversationSummary: z.string().trim().max(2400).optional(),
+    // Server-set time of the last conversation turn. The sessions list sorts
+    // by this, so builds/copies touching the row don't reorder the drawer.
+    lastMessageAt: z.iso.datetime().optional(),
     // Chat transcript tree for the conversational Book Studio (version 3
     // payloads). Holds all branches; the active path is capped separately.
     messages: z.array(mobileCreationMessageSchema).max(240).optional(),

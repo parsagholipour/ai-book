@@ -1340,9 +1340,15 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           activeProjectId: activeProjectIdForDraft(draft, outputs),
           outputs,
           createdAt: draft.createdAt.toISOString(),
-          updatedAt: draft.updatedAt.toISOString()
+          updatedAt: draft.updatedAt.toISOString(),
+          // Drafts from before lastMessageAt existed fall back to updatedAt.
+          lastMessageAt: payload.lastMessageAt ?? draft.updatedAt.toISOString()
         }];
       });
+      // Order by conversation activity: builds, copies, and other background
+      // updates bump the row's updatedAt without any new message and would
+      // otherwise push stale chats above newer ones.
+      sessions.sort((a, b) => (a.lastMessageAt < b.lastMessageAt ? 1 : a.lastMessageAt > b.lastMessageAt ? -1 : 0));
       return { sessions };
     }
   );
@@ -1478,6 +1484,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       } else {
         payload = mobileCreationDraftPayloadSchema.parse({ payloadVersion: 3, messages });
       }
+      payload = { ...payload, lastMessageAt: new Date().toISOString() };
       const draft = await prisma.mobileCreationDraft.create({
         data: {
           ...(parsedBody.data.requestId ? { requestId: parsedBody.data.requestId } : {}),
@@ -1599,6 +1606,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         ...(attachmentPool.length > 0 ? { attachments: attachmentPool } : {}),
         ...(language ? { language } : {}),
         ...(persisted.conversationSummary ? { conversationSummary: persisted.conversationSummary } : {}),
+        lastMessageAt: new Date().toISOString(),
         messages: persisted.messages
       });
       const updated = await updateCreationDraftCas({

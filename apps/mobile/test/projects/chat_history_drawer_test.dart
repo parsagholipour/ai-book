@@ -76,6 +76,51 @@ void main() {
     expect(find.text('New book'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('sessions group by last message time, not row update time', (
+    tester,
+  ) async {
+    final now = DateTime.now();
+    final session = MobileChatSession(
+      draftId: 'draft-0',
+      title: 'Old Portuguese book',
+      preview: 'Latest message',
+      messageCount: 2,
+      status: 'ACTIVE',
+      createdAt: now.subtract(const Duration(days: 30)),
+      // The row was touched today (e.g. by a build), but the conversation
+      // itself is a month old.
+      updatedAt: now,
+      lastMessageAt: now.subtract(const Duration(days: 30)),
+    );
+
+    await tester.pumpWidget(_app(sessions: [session], activeDraftId: 'other'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Older'), findsOneWidget);
+    expect(find.text('Today'), findsNothing);
+  });
+
+  test('fromJson falls back to updatedAt when lastMessageAt is missing', () {
+    final json = <String, dynamic>{
+      'draftId': 'draft-0',
+      'title': 'Legacy chat',
+      'preview': '',
+      'messageCount': 1,
+      'status': 'ACTIVE',
+      'createdAt': '2026-06-01T00:00:00.000Z',
+      'updatedAt': '2026-06-15T00:00:00.000Z',
+    };
+
+    final legacy = MobileChatSession.fromJson(json);
+    expect(legacy.lastMessageAt, DateTime.parse('2026-06-15T00:00:00.000Z'));
+
+    final current = MobileChatSession.fromJson({
+      ...json,
+      'lastMessageAt': '2026-06-10T00:00:00.000Z',
+    });
+    expect(current.lastMessageAt, DateTime.parse('2026-06-10T00:00:00.000Z'));
+  });
 }
 
 Widget _app({
