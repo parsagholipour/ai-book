@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
+import type { TextModelAdapter } from "@book-maker/core";
 import {
   attachmentContextForTurn,
+  briefForMobilePayload,
   composeMobileProjectPrompt,
   detectMessageLanguage,
   deterministicAdvisor,
   deterministicCreationTurn,
+  enrichCreationTurnWithAi,
   greetingCreationTurn,
   isBuildRequestMessage,
   metaAnswerForMessage,
@@ -246,6 +249,83 @@ describe("runCreationTurn", () => {
     expect(turn.assistantMessage).toContain("cozy bedtime");
     expect(turn.quickReplies).toContain("Add a friendly moon");
     expect(turn.detectedLane).toBe("children_story");
+  });
+
+  it("reports enrichment failures through onEnrichError", async () => {
+    const failure = new Error("model unavailable");
+    let reported: unknown;
+    const turn = await runCreationTurn(autoRequest, {
+      enrich: async () => {
+        throw failure;
+      },
+      onEnrichError: (error) => {
+        reported = error;
+      }
+    });
+
+    expect(reported).toBe(failure);
+    expect(turn.assistantMessage.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the AI reply when the model returns bookLanguage, nulls, or unknown keys", async () => {
+    // Real model output observed in production: a good tailored reply was
+    // discarded (falling back to the canned interviewer) because the patch
+    // used the input field name bookLanguage and carried explicit nulls.
+    const fakeModel: TextModelAdapter = {
+      async generateJson(options) {
+        const raw = {
+          assistantMessage: "A romance about Parsa and Natalia - lovely. Who is this story for?",
+          question: {
+            prompt: "Who should read Parsa and Natalia's story?",
+            options: ["Romance readers", "Just the two of us"],
+            allowCustom: true
+          },
+          bookLanguage: "fa",
+          extraneous: "ignored",
+          brief: null,
+          buildRequested: false
+        };
+        return {
+          data: options.schema.parse(raw),
+          text: JSON.stringify(raw),
+          model: "fake",
+          provider: "fake"
+        };
+      },
+      generateText: () => Promise.reject(new Error("not used")),
+      // eslint-disable-next-line require-yield
+      streamText: async function* () {
+        throw new Error("not used");
+      }
+    };
+
+    const patch = await enrichCreationTurnWithAi(fakeModel, autoRequest, deterministicCreationTurn(autoRequest));
+
+    expect(patch.assistantMessage).toContain("Parsa and Natalia");
+    expect(patch.question?.prompt).toBe("Who should read Parsa and Natalia's story?");
+    expect(patch.language).toBe("fa");
+    expect(patch.brief).toBeUndefined();
+  });
+});
+
+describe("briefForMobilePayload", () => {
+  it("builds a brief from a chat whose combined user text exceeds the topic cap", () => {
+    // Regression: rawIdea joins every user message; a long interview made
+    // the strict 280-char topic parse throw and the build endpoint 500.
+    const longIdea = `Write a 4 page romantic story about Parsa and Natalia. ${"They meet in a quiet library on a rainy afternoon and slowly fall in love over shared books and long conversations. ".repeat(3)}`.trim();
+    const payload = mobileCreationDraftPayloadSchema.parse({
+      payloadVersion: 3,
+      rawIdea: longIdea,
+      messages: [{ role: "user", content: longIdea }]
+    });
+
+    const brief = briefForMobilePayload(payload);
+
+    expect(longIdea.length).toBeGreaterThan(280);
+    expect(brief.topic).toBeDefined();
+    expect(brief.topic!.length).toBeLessThanOrEqual(280);
+    expect(brief.topic).toMatch(/^Write a 4 page romantic story about Parsa and Natalia/);
+    expect(brief.topic).not.toMatch(/\s$/);
   });
 });
 

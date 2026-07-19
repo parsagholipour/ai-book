@@ -32,6 +32,7 @@ abstract interface class CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? requestId,
   });
 
   Future<MobileCreationConversationResponse> sendConversationMessage({
@@ -42,12 +43,15 @@ abstract interface class CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? requestId,
+    int? expectedRevision,
   });
 
   Future<MobileCreationConversationResponse> switchConversationBranch({
     required String draftId,
     required String messageId,
     required String direction,
+    int? expectedRevision,
   });
 
   Future<MobileCreationAttachment> uploadAttachment({
@@ -56,11 +60,13 @@ abstract interface class CreationRepository {
     required String filename,
     String? mimeType,
     void Function(int sent, int total)? onProgress,
+    int? expectedRevision,
   });
 
-  Future<void> deleteAttachment({
+  Future<int?> deleteAttachment({
     required String draftId,
     required String attachmentId,
+    int? expectedRevision,
   });
 
   Future<MobileCreationFinalizeResponse> buildConversation({
@@ -69,6 +75,8 @@ abstract interface class CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
+    String? requestId,
+    int? expectedRevision,
   });
 
   Future<MobileCreationBuildPreflight> preflightBuildConversation({
@@ -79,7 +87,11 @@ abstract interface class CreationRepository {
     String? language,
   });
 
-  Future<void> renameSession({required String draftId, required String title});
+  Future<void> renameSession({
+    required String draftId,
+    required String title,
+    int? expectedRevision,
+  });
 
   Future<void> deleteSession(String draftId);
 }
@@ -142,6 +154,7 @@ class MobileCreationRepository implements CreationRepository {
     final response = await apiClient.postJson(
       '/api/mobile/book-advisor',
       data: payload.toJson(),
+      receiveTimeout: llmReceiveTimeout,
     );
     final data = response.data as Map<String, dynamic>;
     return MobileBookAdvisorResponse.fromJson(
@@ -188,6 +201,7 @@ class MobileCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? requestId,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/creation-sessions',
@@ -196,7 +210,9 @@ class MobileCreationRepository implements CreationRepository {
         'presets': ?presets?.toJson(),
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),
+        'requestId': ?requestId,
       },
+      receiveTimeout: llmReceiveTimeout,
     );
     return MobileCreationConversationResponse.fromJson(
       response.data as Map<String, dynamic>,
@@ -212,6 +228,8 @@ class MobileCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? requestId,
+    int? expectedRevision,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/creation-sessions/$draftId/messages',
@@ -223,7 +241,10 @@ class MobileCreationRepository implements CreationRepository {
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),
         'editMessageId': ?editMessageId,
+        'requestId': ?requestId,
+        'expectedRevision': ?expectedRevision,
       },
+      receiveTimeout: llmReceiveTimeout,
     );
     return MobileCreationConversationResponse.fromJson(
       response.data as Map<String, dynamic>,
@@ -235,10 +256,15 @@ class MobileCreationRepository implements CreationRepository {
     required String draftId,
     required String messageId,
     required String direction,
+    int? expectedRevision,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/creation-sessions/$draftId/branches',
-      data: <String, dynamic>{'messageId': messageId, 'direction': direction},
+      data: <String, dynamic>{
+        'messageId': messageId,
+        'direction': direction,
+        'expectedRevision': ?expectedRevision,
+      },
     );
     return MobileCreationConversationResponse.fromJson(
       response.data as Map<String, dynamic>,
@@ -252,6 +278,7 @@ class MobileCreationRepository implements CreationRepository {
     required String filename,
     String? mimeType,
     void Function(int sent, int total)? onProgress,
+    int? expectedRevision,
   }) async {
     final response = await apiClient.postBytes(
       '/api/mobile/creation-sessions/$draftId/attachments',
@@ -259,23 +286,28 @@ class MobileCreationRepository implements CreationRepository {
       queryParameters: {
         'filename': filename,
         if (mimeType != null && mimeType.isNotEmpty) 'mimeType': mimeType,
+        'expectedRevision': ?expectedRevision?.toString(),
       },
       onSendProgress: onProgress,
     );
     final data = response.data as Map<String, dynamic>;
-    return MobileCreationAttachment.fromJson(
-      data['attachment'] as Map<String, dynamic>,
-    );
+    return MobileCreationAttachment.fromJson({
+      ...(data['attachment'] as Map<String, dynamic>),
+      'sessionRevision': data['revision'],
+    });
   }
 
   @override
-  Future<void> deleteAttachment({
+  Future<int?> deleteAttachment({
     required String draftId,
     required String attachmentId,
+    int? expectedRevision,
   }) async {
-    await apiClient.deleteJson(
-      '/api/mobile/creation-sessions/$draftId/attachments/$attachmentId',
+    final response = await apiClient.deleteJson(
+      '/api/mobile/creation-sessions/$draftId/attachments/$attachmentId${expectedRevision == null ? '' : '?expectedRevision=$expectedRevision'}',
     );
+    final data = response.data;
+    return data is Map<String, dynamic> ? data['revision'] as int? : null;
   }
 
   @override
@@ -285,6 +317,8 @@ class MobileCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
+    String? requestId,
+    int? expectedRevision,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/creation-sessions/$draftId/build',
@@ -293,7 +327,10 @@ class MobileCreationRepository implements CreationRepository {
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),
         'language': ?language,
+        'requestId': ?requestId,
+        'expectedRevision': ?expectedRevision,
       },
+      receiveTimeout: llmReceiveTimeout,
     );
     return MobileCreationFinalizeResponse.fromJson(
       response.data as Map<String, dynamic>,
@@ -316,6 +353,7 @@ class MobileCreationRepository implements CreationRepository {
         'optionalDetails': ?optionalDetails?.toJson(),
         'language': ?language,
       },
+      receiveTimeout: llmReceiveTimeout,
     );
     return MobileCreationBuildPreflight.fromJson(
       response.data as Map<String, dynamic>,
@@ -326,10 +364,14 @@ class MobileCreationRepository implements CreationRepository {
   Future<void> renameSession({
     required String draftId,
     required String title,
+    int? expectedRevision,
   }) async {
     await apiClient.patchJson(
       '/api/mobile/creation-sessions/$draftId/title',
-      data: <String, dynamic>{'title': title},
+      data: <String, dynamic>{
+        'title': title,
+        'expectedRevision': ?expectedRevision,
+      },
     );
   }
 
@@ -373,6 +415,7 @@ class CreationConversationCache {
       turn: current.turn,
       session: MobileCreationSession(
         draftId: session.draftId,
+        revision: session.revision,
         title: title,
         status: session.status,
         messages: session.messages,

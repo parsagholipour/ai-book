@@ -27,6 +27,11 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   );
 });
 
+/// Receive timeout for endpoints whose response waits on a full LLM turn
+/// (creation chat, project chat, build preflight). The global 20s default
+/// would misreport a slow-but-healthy model reply as a network error.
+const llmReceiveTimeout = Duration(seconds: 120);
+
 class ApiClient {
   ApiClient({required this.dio, required this.tokenStore});
 
@@ -63,8 +68,15 @@ class ApiClient {
     String path, {
     Object? data,
     bool requiresAuth = true,
+    Duration? receiveTimeout,
   }) {
-    return _request('POST', path, data: data, requiresAuth: requiresAuth);
+    return _request(
+      'POST',
+      path,
+      data: data,
+      requiresAuth: requiresAuth,
+      receiveTimeout: receiveTimeout,
+    );
   }
 
   Future<Response<dynamic>> patchJson(
@@ -205,10 +217,12 @@ class ApiClient {
     Object? data,
     bool requiresAuth = true,
     bool retryOnAuthFailure = true,
+    Duration? receiveTimeout,
   }) async {
     final options = Options(
       method: method,
       contentType: data == null ? null : Headers.jsonContentType,
+      receiveTimeout: receiveTimeout,
     );
     if (requiresAuth) {
       final accessToken = await _validAccessToken();
@@ -228,6 +242,7 @@ class ApiClient {
           options: Options(
             method: method,
             contentType: data == null ? null : Headers.jsonContentType,
+            receiveTimeout: receiveTimeout,
             headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
           ),
         );

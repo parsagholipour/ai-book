@@ -22,6 +22,16 @@ class ProjectChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ProjectChatScreen> createState() => _ProjectChatScreenState();
 }
 
+/// A just-sent user message shown optimistically until the refreshed
+/// transcript (or a failure) replaces it.
+class _PendingEcho {
+  const _PendingEcho({required this.text, this.failed = false, this.error});
+
+  final String text;
+  final bool failed;
+  final String? error;
+}
+
 class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   final _controller = TextEditingController();
   final _editController = TextEditingController();
@@ -29,7 +39,17 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   bool _sending = false;
   bool _editing = false;
   bool _switchingBranch = false;
+  bool _loadingEarlier = false;
   String? _editingMessageId;
+  String? _pendingSendRequestId;
+  String? _pendingSendMessage;
+  String? _pendingEditRequestId;
+  String? _pendingEditMessage;
+  String? _historyNextCursor;
+  bool? _historyHasMore;
+  int _requestSequence = 0;
+  _PendingEcho? _pendingEcho;
+  final List<MobileProjectChatMessage> _olderMessages = [];
 
   @override
   void dispose() {
@@ -75,6 +95,25 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                   children: [
                     _ChatIntroCard(project: projectValue.asData?.value),
                     const SizedBox(height: 12),
+                    if (_canLoadEarlier(chat)) ...[
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: _loadingEarlier
+                              ? null
+                              : () => _loadEarlier(chat),
+                          icon: _loadingEarlier
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.history),
+                          label: const Text('Load earlier messages'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
                     for (final operation
                         in chat.operations
                             .where((operation) => operation.isRunning)
@@ -83,10 +122,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                         padding: const EdgeInsets.only(bottom: 8),
                         child: _OperationBubble(operation: operation),
                       ),
-                    if (chat.messages.isEmpty)
+                    if (_visibleMessages(chat).isEmpty && _pendingEcho == null)
                       const _EmptyProjectChat()
                     else
-                      for (final message in chat.messages) ...[
+                      for (final message in _visibleMessages(chat)) ...[
                         _ProjectMessageBubble(
                           message: message,
                           editController: _editController,
@@ -113,6 +152,14 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                         ),
                         const SizedBox(height: 10),
                       ],
+                    if (_pendingEcho != null) ...[
+                      _PendingEchoBubble(
+                        echo: _pendingEcho!,
+                        onRetry: _retryPendingEcho,
+                        onDismiss: _dismissPendingEcho,
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                   ],
                 ),
               ),
@@ -136,6 +183,13 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   }
 
   void _refresh() {
+    if (mounted) {
+      setState(() {
+        _olderMessages.clear();
+        _historyNextCursor = null;
+        _historyHasMore = null;
+      });
+    }
     ref.invalidate(projectChatProvider(widget.projectId));
     ref.invalidate(projectDetailProvider(widget.projectId));
     ref.invalidate(projectStatusProvider(widget.projectId));
@@ -151,22 +205,73 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   Future<void> _send() async {
     final message = _controller.text.trim();
     if (message.isEmpty || _sending) return;
-    setState(() => _sending = true);
+    _controller.clear();
+    await _sendMessage(message);
+  }
+
+  Future<void> _retryPendingEcho() async {
+    final echo = _pendingEcho;
+    if (echo == null || _sending) return;
+    await _sendMessage(echo.text);
+  }
+
+  void _dismissPendingEcho() {
+    final echo = _pendingEcho;
+    if (echo == null || _sending) return;
+    setState(() {
+      _pendingEcho = null;
+      _pendingSendRequestId = null;
+      _pendingSendMessage = null;
+      // Hand the text back to the composer, but never clobber something the
+      // user typed while the send was in flight.
+      if (_controller.text.trim().isEmpty) {
+        _controller.text = echo.text;
+        _controller.selection = TextSelection.collapsed(
+          offset: _controller.text.length,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendMessage(String message) async {
+    // Retrying the same text reuses the request ID, so the server replays
+    // the original turn instead of duplicating it.
+    if (_pendingSendMessage != message) {
+      _pendingSendRequestId = _newRequestId('chat');
+      _pendingSendMessage = message;
+    }
+    final requestId = _pendingSendRequestId!;
+    setState(() {
+      _sending = true;
+      _pendingEcho = _PendingEcho(text: message);
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     try {
-      _controller.clear();
       final result = await ref
           .read(projectsRepositoryProvider)
           .sendProjectChatMessage(
             projectId: widget.projectId,
             message: message,
+            requestId: requestId,
           );
+      _pendingSendRequestId = null;
+      _pendingSendMessage = null;
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectDetailProvider(widget.projectId));
       ref.invalidate(projectStatusProvider(widget.projectId));
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);
+      // Keep the optimistic bubble until the refreshed transcript (which
+      // contains the real message) is on screen, so the message never blinks
+      // out of the list.
+      try {
+        await ref.read(projectChatProvider(widget.projectId).future);
+      } catch (_) {}
       if (!mounted) return;
-      setState(() => _sending = false);
+      setState(() {
+        _sending = false;
+        _pendingEcho = null;
+      });
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       if (result.operation != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -175,17 +280,22 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       }
     } catch (error) {
       if (!mounted) return;
-      setState(() => _sending = false);
-      _controller.text = message;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      setState(() {
+        _sending = false;
+        _pendingEcho = _PendingEcho(
+          text: message,
+          failed: true,
+          error: userFacingError(error),
+        );
+      });
     }
   }
 
   void _startEdit(MobileProjectChatMessage message) {
     if (_sending || _editing) return;
     setState(() {
+      _pendingEditRequestId = null;
+      _pendingEditMessage = null;
       _editingMessageId = message.id;
       _editController.text = message.content;
       _editController.selection = TextSelection.collapsed(
@@ -197,6 +307,8 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   void _cancelEdit() {
     setState(() {
       _editingMessageId = null;
+      _pendingEditRequestId = null;
+      _pendingEditMessage = null;
       _editController.clear();
     });
   }
@@ -206,6 +318,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     final message = _editController.text.trim();
     if (messageId == null || message.isEmpty || _editing) return;
     setState(() => _editing = true);
+    if (_pendingEditMessage != message) {
+      _pendingEditRequestId = _newRequestId('edit');
+      _pendingEditMessage = message;
+    }
+    final requestId = _pendingEditRequestId!;
     try {
       final result = await ref
           .read(projectsRepositoryProvider)
@@ -213,7 +330,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
             projectId: widget.projectId,
             messageId: messageId,
             message: message,
+            requestId: requestId,
           );
+      _pendingEditRequestId = null;
+      _pendingEditMessage = null;
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectDetailProvider(widget.projectId));
       ref.invalidate(projectStatusProvider(widget.projectId));
@@ -286,6 +406,53 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
     );
+  }
+
+  String _newRequestId(String prefix) {
+    _requestSequence += 1;
+    return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$_requestSequence';
+  }
+
+  bool _canLoadEarlier(MobileProjectChat chat) =>
+      _historyHasMore ?? chat.hasMore;
+
+  List<MobileProjectChatMessage> _visibleMessages(MobileProjectChat chat) {
+    final byId = <String, MobileProjectChatMessage>{};
+    for (final message in [..._olderMessages, ...chat.messages]) {
+      byId[message.id] = message;
+    }
+    final messages = byId.values.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return messages;
+  }
+
+  Future<void> _loadEarlier(MobileProjectChat chat) async {
+    if (_loadingEarlier || !_canLoadEarlier(chat)) return;
+    final cursor = _historyNextCursor ?? chat.nextCursor;
+    if (cursor == null) return;
+    setState(() => _loadingEarlier = true);
+    try {
+      final page = await ref
+          .read(projectsRepositoryProvider)
+          .getProjectChat(widget.projectId, beforeMessageId: cursor);
+      if (!mounted) return;
+      setState(() {
+        final known = _olderMessages.map((message) => message.id).toSet();
+        _olderMessages.insertAll(
+          0,
+          page.messages.where((message) => known.add(message.id)),
+        );
+        _historyNextCursor = page.nextCursor;
+        _historyHasMore = page.hasMore;
+        _loadingEarlier = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _loadingEarlier = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
   }
 }
 
@@ -376,6 +543,96 @@ class _OperationBubble extends StatelessWidget {
   }
 }
 
+/// The optimistic bubble for a message that is still in flight or has failed.
+class _PendingEchoBubble extends StatelessWidget {
+  const _PendingEchoBubble({
+    required this.echo,
+    required this.onRetry,
+    required this.onDismiss,
+  });
+
+  final _PendingEcho echo;
+  final VoidCallback onRetry;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final background = echo.failed ? colors.errorContainer : colors.primary;
+    final foreground = echo.failed ? colors.onErrorContainer : colors.onPrimary;
+    return Align(
+      alignment: Alignment.centerRight,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        echo.text,
+                        style: TextStyle(color: foreground),
+                      ),
+                    ),
+                    if (!echo.failed) ...[
+                      const SizedBox(width: 8),
+                      SizedBox.square(
+                        dimension: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: foreground,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (echo.failed) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    echo.error ?? 'The message could not be sent.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: foreground,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 4,
+                    children: [
+                      TextButton(
+                        onPressed: onDismiss,
+                        child: Text(
+                          'Dismiss',
+                          style: TextStyle(color: foreground),
+                        ),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: onRetry,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ProjectMessageBubble extends StatelessWidget {
   const _ProjectMessageBubble({
     required this.message,
@@ -420,96 +677,96 @@ class _ProjectMessageBubble extends StatelessWidget {
         ? colors.onPrimary
         : colors.onSurface;
     final bubble = GestureDetector(
-        onLongPressStart: (details) {
-          showMessageActionsMenu(
-            context: context,
-            position: details.globalPosition,
-            message: message.content,
-            onEdit: isUser ? onStartEdit : null,
-          );
-        },
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: background,
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (editing)
-                    _InlineMessageEditor(
-                      controller: editController,
-                      submitting: submittingEdit,
-                      onCancel: onCancelEdit,
-                      onSubmit: onSubmitEdit,
-                    )
-                  else
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            message.content,
-                            style: TextStyle(color: foreground),
+      onLongPressStart: (details) {
+        showMessageActionsMenu(
+          context: context,
+          position: details.globalPosition,
+          message: message.content,
+          onEdit: isUser ? onStartEdit : null,
+        );
+      },
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (editing)
+                  _InlineMessageEditor(
+                    controller: editController,
+                    submitting: submittingEdit,
+                    onCancel: onCancelEdit,
+                    onSubmit: onSubmitEdit,
+                  )
+                else
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          message.content,
+                          style: TextStyle(color: foreground),
+                        ),
+                      ),
+                      if (isUser && onStartEdit != null) ...[
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'Edit message',
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 32,
+                            minHeight: 32,
+                          ),
+                          padding: EdgeInsets.zero,
+                          onPressed: onStartEdit,
+                          icon: Icon(
+                            Icons.edit_outlined,
+                            size: 18,
+                            color: foreground,
                           ),
                         ),
-                        if (isUser && onStartEdit != null) ...[
-                          const SizedBox(width: 4),
-                          IconButton(
-                            tooltip: 'Edit message',
-                            visualDensity: VisualDensity.compact,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                            padding: EdgeInsets.zero,
-                            onPressed: onStartEdit,
-                            icon: Icon(
-                              Icons.edit_outlined,
-                              size: 18,
-                              color: foreground,
-                            ),
-                          ),
-                        ],
                       ],
-                    ),
-                  if (branch != null) ...[
-                    const SizedBox(height: 8),
-                    BranchNavigator(
-                      branch: branch,
-                      foreground: foreground,
-                      switching: switchingBranch,
-                      onPrevious: () => onSwitchBranch('previous'),
-                      onNext: () => onSwitchBranch('next'),
-                    ),
-                  ],
-                  if (onOpenPaywall != null) ...[
-                    const SizedBox(height: 10),
-                    FilledButton.icon(
-                      onPressed: onOpenPaywall,
-                      icon: const Icon(Icons.add_card_outlined),
-                      label: const Text('Add credits'),
-                    ),
-                  ],
-                  if (onOpenReplanCopy != null) ...[
-                    const SizedBox(height: 10),
-                    ActionChip(
-                      avatar: const Icon(Icons.open_in_new_outlined, size: 18),
-                      label: const Text('Open the new book'),
-                      onPressed: onOpenReplanCopy,
-                    ),
-                  ],
+                    ],
+                  ),
+                if (branch != null) ...[
+                  const SizedBox(height: 8),
+                  BranchNavigator(
+                    branch: branch,
+                    foreground: foreground,
+                    switching: switchingBranch,
+                    onPrevious: () => onSwitchBranch('previous'),
+                    onNext: () => onSwitchBranch('next'),
+                  ),
                 ],
-              ),
+                if (onOpenPaywall != null) ...[
+                  const SizedBox(height: 10),
+                  FilledButton.icon(
+                    onPressed: onOpenPaywall,
+                    icon: const Icon(Icons.add_card_outlined),
+                    label: const Text('Add credits'),
+                  ),
+                ],
+                if (onOpenReplanCopy != null) ...[
+                  const SizedBox(height: 10),
+                  ActionChip(
+                    avatar: const Icon(Icons.open_in_new_outlined, size: 18),
+                    label: const Text('Open the new book'),
+                    onPressed: onOpenReplanCopy,
+                  ),
+                ],
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: manualEdit == null
@@ -517,7 +774,10 @@ class _ProjectMessageBubble extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
-              children: [bubble, SavedExportCard(message: message)],
+              children: [
+                bubble,
+                SavedExportCard(message: message),
+              ],
             ),
     );
   }

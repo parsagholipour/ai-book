@@ -93,6 +93,45 @@ void main() {
     expect(paywalledFormats, isEmpty);
   });
 
+  testWidgets(
+    'blocked quality issues hide exports and identify affected pages',
+    (tester) async {
+      const quality = MobileProjectQuality(
+        state: 'blocked',
+        score: 64,
+        affectedPageIndexes: [3],
+        issues: [
+          MobileProjectQualityIssue(
+            code: 'PLACEHOLDER_TEXT',
+            severity: 'error',
+            source: 'deterministic',
+            message: 'Page 3 contains placeholder text.',
+            guidance: 'Replace the placeholder in Edit Mode.',
+            affectedPageIndexes: [3],
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ProjectGenerationView(
+              status: fakeStatus(quality: quality),
+              onRefresh: () async {},
+              onDownload: (_) async {},
+              onOpenPaywall: (_) async {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Export blocked by quality checks'), findsOneWidget);
+      expect(find.text('Page 3 contains placeholder text.'), findsOneWidget);
+      expect(find.textContaining('Pages 3 · Open Edit Mode'), findsOneWidget);
+      expect(find.text('Exports'), findsNothing);
+    },
+  );
+
   testWidgets('export panel opens paywall when credits are short', (
     tester,
   ) async {
@@ -151,6 +190,7 @@ MobileProjectStatus fakeStatus({
   String? failureMessage,
   bool retryAvailable = false,
   MobileExportSet? exports,
+  MobileProjectQuality quality = const MobileProjectQuality.pending(),
 }) {
   return MobileProjectStatus(
     projectId: 'project-1',
@@ -185,6 +225,7 @@ MobileProjectStatus fakeStatus({
     pageProgress: const MobilePageProgress(completed: 3, target: 10),
     imageCount: 1,
     exports: exports ?? fakeExports(),
+    quality: quality,
     updatedAt: DateTime.utc(2026, 6, 15),
   );
 }

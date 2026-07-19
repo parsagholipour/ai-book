@@ -18,11 +18,13 @@ class BookEditScreen extends ConsumerStatefulWidget {
   const BookEditScreen({
     required this.projectId,
     this.savedExportMessageId,
+    this.initialPageIndex,
     super.key,
   });
 
   final String projectId;
   final String? savedExportMessageId;
+  final int? initialPageIndex;
 
   @override
   ConsumerState<BookEditScreen> createState() => _BookEditScreenState();
@@ -33,6 +35,8 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
   Object? _loadError;
   bool _loading = true;
   bool _saving = false;
+  String? _pendingSaveRequestId;
+  String? _pendingSaveFingerprint;
   String? _selectedPageId;
   final Map<String, TextEditingController> _titleControllers = {};
   final Map<String, TextEditingController> _markdownControllers = {};
@@ -82,10 +86,19 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
         _titleControllers[page.id] = titleController;
         _markdownControllers[page.id] = markdownController;
       }
+      MobileEditableBookPage? requestedPage;
+      for (final page in book.pages) {
+        if (page.index == widget.initialPageIndex) {
+          requestedPage = page;
+          break;
+        }
+      }
       setState(() {
         _book = book;
         _loading = false;
-        _selectedPageId = book.pages.isEmpty ? null : book.pages.first.id;
+        _selectedPageId =
+            requestedPage?.id ??
+            (book.pages.isEmpty ? null : book.pages.first.id);
       });
     } catch (error) {
       if (!mounted) return;
@@ -126,7 +139,9 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
             baseRevision: page.revision,
           ),
     ];
-    if (edits.any((edit) => edit.title.isEmpty || edit.markdown.trim().isEmpty)) {
+    if (edits.any(
+      (edit) => edit.title.isEmpty || edit.markdown.trim().isEmpty,
+    )) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Every edited page needs a title and some text.'),
@@ -135,6 +150,18 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
       return;
     }
     setState(() => _saving = true);
+    final fingerprint = edits
+        .map(
+          (edit) =>
+              '${edit.id}:${edit.baseRevision}:${edit.title}:${edit.markdown}',
+        )
+        .join('\u0000');
+    if (_pendingSaveFingerprint != fingerprint) {
+      _pendingSaveRequestId =
+          'manual-edit-${DateTime.now().microsecondsSinceEpoch}';
+      _pendingSaveFingerprint = fingerprint;
+    }
+    final requestId = _pendingSaveRequestId!;
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ref
@@ -143,7 +170,10 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
             projectId: widget.projectId,
             pages: edits,
             savedExportMessageId: widget.savedExportMessageId,
+            requestId: requestId,
           );
+      _pendingSaveRequestId = null;
+      _pendingSaveFingerprint = null;
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectDetailProvider(widget.projectId));
       ref.invalidate(projectStatusProvider(widget.projectId));
@@ -160,6 +190,8 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
       if (!mounted) return;
       setState(() => _saving = false);
       if (error is ApiException && error.code == 'EDIT_CONFLICT') {
+        _pendingSaveRequestId = null;
+        _pendingSaveFingerprint = null;
         await _showConflictDialog();
         return;
       }

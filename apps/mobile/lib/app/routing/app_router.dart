@@ -107,6 +107,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           projectId: state.pathParameters['id']!,
           savedExportMessageId:
               state.uri.queryParameters['savedExportMessageId'],
+          initialPageIndex: int.tryParse(
+            state.uri.queryParameters['pageIndex'] ?? '',
+          ),
         ),
       ),
     ],

@@ -42,7 +42,7 @@ import {
   type VoiceConversationSpeaker,
   type VoiceChatProviderId
 } from "@book-maker/core";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { ensureSeedTemplates, Prisma, prisma } from "@book-maker/db";
@@ -512,6 +512,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const job = await enqueueGenerationJob({
       projectId: id,
       type: "PLAN_BOOK",
+      dedupeKey: `plan-book:${id}:${stablePayloadHash(input ? jsonPayload(input) : {})}`,
       payload: input ? { inputSnapshot: jsonPayload(input) } : {}
     });
     return reply.code(202).send(job);
@@ -528,6 +529,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     if (!plan) {
       return reply.code(404).send({ error: "Plan not found" });
     }
+
     if (plan.status === "APPROVED") {
       return reply.code(400).send({ error: "Approved plans cannot be revised. Create a new plan version first." });
     }
@@ -535,6 +537,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const job = await enqueueGenerationJob({
       projectId: plan.projectId,
       type: "REVISE_PLAN",
+      dedupeKey: `revise-plan:${plan.projectId}:${id}:${stablePayloadHash(body.message)}`,
       payload: { planId: id, message: body.message }
     });
     return reply.code(202).send(job);
@@ -549,6 +552,12 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const plan = await prisma.planVersion.findFirst({ where: ownedPlanWhere(id, actor), include: { project: true } });
     if (!plan) {
       return reply.code(404).send({ error: "Plan not found" });
+    }
+
+    const approvalDedupeKey = `generate-book:${plan.projectId}:${id}`;
+    const existingApprovalJob = await prisma.generationJob.findUnique({ where: { dedupeKey: approvalDedupeKey } });
+    if (existingApprovalJob) {
+      return reply.code(202).send(existingApprovalJob);
     }
 
     const resolvedStrategy = resolveBookGenerationStrategy(planInputForStrategy(plan.inputSnapshot, plan.project));
@@ -571,6 +580,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const job = await enqueueGenerationJob({
       projectId: plan.projectId,
       type: "GENERATE_BOOK",
+      dedupeKey: approvalDedupeKey,
       payload: { planId: id }
     });
     return reply.code(202).send({
@@ -694,7 +704,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const [project, page] = await Promise.all([
       prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true, currentPlanId: true } }),
-      prisma.page.findUnique({ where: { id: pageId }, select: { id: true, projectId: true, index: true, status: true } })
+      prisma.page.findUnique({ where: { id: pageId }, select: { id: true, projectId: true, index: true, status: true, revision: true } })
     ]);
     if (!project || !page || page.projectId !== id) {
       return reply.code(404).send({ error: "Page not found" });
@@ -721,6 +731,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const job = await enqueueGenerationJob({
       projectId: id,
       type: "GENERATE_PAGE",
+      dedupeKey: `generate-page:${pageId}:${project.currentPlanId}:retry-${page.revision + 1}`,
       payload: { pageId, planId: project.currentPlanId }
     });
     return reply.code(202).send(job);
@@ -870,6 +881,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         await enqueueGenerationJob({
           projectId: id,
           type: "BUILD_CHARACTER_PERSONA",
+          dedupeKey: `build-character:${id}:${character.id}`,
           payload: { voiceCharacterId: character.id }
         });
       }
@@ -1376,10 +1388,13 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const { disposition = "attachment" } = pdfExportQuerySchema.parse(request.query);
     const project = await prisma.project.findFirst({
       where: ownedProjectWhere(id, actor),
-      select: { title: true, currentPlanId: true, mediaSettings: true }
+      select: { title: true, status: true, currentPlanId: true, mediaSettings: true }
     });
     if (!project) {
       return reply.code(404).send({ error: "Book not found" });
+    }
+    if (project.status === "REVIEW_REQUIRED") {
+      return reply.code(409).send({ error: "Fix the flagged manuscript issues before exporting." });
     }
 
     return sendProjectPdfExport({ request, reply, appConfig, projectId: id, project, disposition });
@@ -1407,10 +1422,13 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const project = await prisma.project.findFirst({
       where: ownedProjectWhere(id, actor),
-      select: { title: true, language: true, currentPlanId: true }
+      select: { title: true, language: true, status: true, currentPlanId: true }
     });
     if (!project) {
       return reply.code(404).send({ error: "Book not found" });
+    }
+    if (project.status === "REVIEW_REQUIRED") {
+      return reply.code(409).send({ error: "Fix the flagged manuscript issues before exporting." });
     }
 
     return sendProjectEpubExport({ request, reply, appConfig, projectId: id, project });
@@ -2068,6 +2086,11 @@ function isVoiceConfigurationError(message: string): boolean {
 function cleanOptionalText(value: string | undefined): string | undefined {
   const trimmed = value?.replace(/\s+/g, " ").trim();
   return trimmed || undefined;
+}
+
+function stablePayloadHash(value: unknown): string {
+  const serialized = typeof value === "string" ? value : JSON.stringify(value);
+  return createHash("sha256").update(serialized).digest("hex").slice(0, 24);
 }
 
 function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {

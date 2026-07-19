@@ -363,6 +363,8 @@ class MobileCreationDraft {
     required this.payload,
     required this.createdAt,
     required this.updatedAt,
+    this.requestId,
+    this.revision = 1,
     this.advisorSnapshot,
     this.createdProjectId,
   });
@@ -372,6 +374,8 @@ class MobileCreationDraft {
   final MobileCreationDraftPayload payload;
   final MobileBookAdvisorResponse? advisorSnapshot;
   final String? createdProjectId;
+  final String? requestId;
+  final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -387,6 +391,8 @@ class MobileCreationDraft {
           ? null
           : MobileBookAdvisorResponse.fromJson(advisor as Map<String, dynamic>),
       createdProjectId: json['createdProjectId'] as String?,
+      requestId: json['requestId'] as String?,
+      revision: json['revision'] as int? ?? 1,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
@@ -409,6 +415,7 @@ class MobileCreationMessage {
     this.id,
     this.parentId,
     this.branch,
+    this.requestId,
   });
 
   final String role;
@@ -423,6 +430,9 @@ class MobileCreationMessage {
 
   /// Position among sibling branches; null when this message has no siblings.
   final MobileProjectChatBranch? branch;
+
+  /// Client-generated idempotency key retained for failed-send retries.
+  final String? requestId;
 
   /// Present for server messages; optimistic local messages may set this too.
   final DateTime? createdAt;
@@ -463,6 +473,7 @@ class MobileCreationMessage {
       id: id,
       parentId: parentId,
       branch: branch,
+      requestId: requestId,
     );
   }
 
@@ -487,6 +498,7 @@ class MobileCreationMessage {
           : null,
       id: json['id'] as String?,
       parentId: json['parentId'] as String?,
+      requestId: json['requestId'] as String?,
       branch: branch is Map<String, dynamic>
           ? MobileProjectChatBranch.fromJson(branch)
           : null,
@@ -504,6 +516,7 @@ class MobileCreationMessage {
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       if (id != null) 'id': id,
       if (parentId != null) 'parentId': parentId,
+      if (requestId != null) 'requestId': requestId,
     };
   }
 }
@@ -546,6 +559,7 @@ class MobileCreationAttachment {
     this.pages,
     this.truncated = false,
     this.url,
+    this.sessionRevision,
   });
 
   final String id;
@@ -559,6 +573,7 @@ class MobileCreationAttachment {
   /// API path serving the stored original file; null for uploads made before
   /// server-side storage existed or after the retention window.
   final String? url;
+  final int? sessionRevision;
 
   bool get isPhoto => kind == 'photo';
 
@@ -572,6 +587,7 @@ class MobileCreationAttachment {
       pages: json['pages'] as int?,
       truncated: json['truncated'] as bool? ?? false,
       url: json['url'] as String?,
+      sessionRevision: json['sessionRevision'] as int?,
     );
   }
 }
@@ -681,6 +697,7 @@ class MobileCreationSession {
     required this.status,
     required this.messages,
     required this.updatedAt,
+    this.revision = 1,
     this.outputs = const [],
     this.attachments = const [],
     this.createdProjectId,
@@ -688,6 +705,7 @@ class MobileCreationSession {
   });
 
   final String draftId;
+  final int revision;
   final String title;
   final String status;
   final List<MobileCreationMessage> messages;
@@ -705,6 +723,7 @@ class MobileCreationSession {
     final attachments = json['attachments'] as List<dynamic>? ?? const [];
     return MobileCreationSession(
       draftId: json['draftId'] as String,
+      revision: json['revision'] as int? ?? 1,
       title: json['title'] as String? ?? 'New book',
       status: json['status'] as String,
       messages: messages
@@ -744,11 +763,13 @@ class MobileCreationOutput {
     required this.sequence,
     required this.createdAt,
     required this.updatedAt,
+    this.requestId,
   });
 
   final String id;
   final String draftId;
   final String projectId;
+  final String? requestId;
   final String title;
   final int sequence;
   final DateTime createdAt;
@@ -759,6 +780,7 @@ class MobileCreationOutput {
       id: json['id'] as String,
       draftId: json['draftId'] as String,
       projectId: json['projectId'] as String,
+      requestId: json['requestId'] as String?,
       title: json['title'] as String? ?? 'Book output',
       sequence: json['sequence'] as int? ?? 1,
       createdAt: DateTime.parse(json['createdAt'] as String),
@@ -859,11 +881,13 @@ class MobileCreationFinalizeResponse {
     required this.project,
     this.output,
     this.operation,
+    this.sessionRevision,
   });
 
   final MobileProjectDetail project;
   final MobileCreationOutput? output;
   final MobilePlanOperation? operation;
+  final int? sessionRevision;
 
   factory MobileCreationFinalizeResponse.fromJson(Map<String, dynamic> json) {
     final operation = json['operation'];
@@ -878,6 +902,7 @@ class MobileCreationFinalizeResponse {
       operation: operation == null
           ? null
           : MobilePlanOperation.fromJson(operation as Map<String, dynamic>),
+      sessionRevision: json['sessionRevision'] as int?,
     );
   }
 }

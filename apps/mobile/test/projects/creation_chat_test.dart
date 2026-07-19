@@ -270,6 +270,20 @@ void main() {
       await tester.enterText(find.widgetWithText(TextField, 'Pages'), '14');
       await tester.pumpAndSettle();
 
+      // A live package-cost estimate appears for the entered page count,
+      // matching the plan-approval estimator exactly.
+      final expected14 = estimateProjectCredits(
+        bookType: 'lead_magnet',
+        qualityPreset: 'balanced',
+        imagesEnabled: true,
+        targetPages: 14,
+        creditCosts: const {},
+      );
+      expect(
+        find.textContaining('≈ $expected14 credits for 14 pages'),
+        findsOneWidget,
+      );
+
       final doneButton = find.widgetWithText(FilledButton, 'Done');
       await tester.ensureVisible(doneButton);
       await tester.tap(doneButton);
@@ -306,6 +320,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('How many pages?'), findsOneWidget);
+
+    // Every suggestion shows its description and estimated package cost,
+    // computed with the same estimator as the plan-approval dialog.
+    int expectedCredits(int pages) => estimateProjectCredits(
+      bookType: 'lead_magnet',
+      qualityPreset: 'balanced',
+      imagesEnabled: true,
+      targetPages: pages,
+      creditCosts: const {},
+    );
+    expect(find.text('≈ ${expectedCredits(8)} credits'), findsOneWidget);
+    expect(find.text('≈ ${expectedCredits(12)} credits'), findsOneWidget);
+    expect(find.text('Recommended for a compact book.'), findsOneWidget);
+    expect(find.text('More room for detail.'), findsOneWidget);
+
+    // The custom field shows a live estimate for whatever the user types.
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Custom pages'),
+      '30',
+    );
+    await tester.pump();
+    expect(
+      find.textContaining('≈ ${expectedCredits(30)} credits for 30 pages'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('8 pages'));
     await tester.pump();
@@ -1051,7 +1090,10 @@ void main() {
       // The old branch's plan left the view and the chat is back in the
       // pre-build stage, ready to build a new output from the fork.
       expect(find.text(_planTitle), findsNothing);
-      expect(find.widgetWithText(FilledButton, 'Build the plan'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, 'Build the plan'),
+        findsOneWidget,
+      );
 
       await tester.teardownScreen();
     },
@@ -1349,7 +1391,11 @@ void main() {
 
     // Nothing attached and no text: send stays disabled.
     expect(
-      tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded)).onPressed,
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.send_rounded),
+          )
+          .onPressed,
       isNull,
     );
 
@@ -1362,7 +1408,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded)).onPressed,
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.send_rounded),
+          )
+          .onPressed,
       isNotNull,
     );
     await tester.tap(find.byTooltip('Send'));
@@ -1402,7 +1452,14 @@ void main() {
 
     expect(find.text('Something went wrong. Try again.'), findsOneWidget);
     // Sending is not possible with only a failed attachment.
-    expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send_rounded)).onPressed, isNull);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.send_rounded),
+          )
+          .onPressed,
+      isNull,
+    );
 
     // The scripted upload error was consumed, so the retry succeeds.
     await tester.tap(find.text('Something went wrong. Try again.'));
@@ -1472,9 +1529,7 @@ void main() {
     await tester.pumpWidget(_app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
-    await tester.tap(
-      find.byTooltip('Attach a photo, document, or notes'),
-    );
+    await tester.tap(find.byTooltip('Attach a photo, document, or notes'));
     await tester.pumpAndSettle();
 
     expect(find.text('Photo library'), findsOneWidget);
@@ -1702,6 +1757,7 @@ class _ScriptedCreationRepository implements CreationRepository {
   Future<void> renameSession({
     required String draftId,
     required String title,
+    int? expectedRevision,
   }) async {}
 
   @override
@@ -1781,6 +1837,7 @@ class _ScriptedCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? requestId,
   }) async {
     if (message != null) {
       startedMessages.add(message);
@@ -1814,6 +1871,8 @@ class _ScriptedCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? requestId,
+    int? expectedRevision,
   }) async {
     final error = sendError;
     if (error != null) {
@@ -1832,7 +1891,11 @@ class _ScriptedCreationRepository implements CreationRepository {
         'title': message,
         'status': 'ACTIVE',
         'messages': [
-          {'id': 'assistant-greeting', 'role': 'assistant', 'content': _greeting},
+          {
+            'id': 'assistant-greeting',
+            'role': 'assistant',
+            'content': _greeting,
+          },
           {
             'id': 'user-current',
             'role': 'user',
@@ -1884,6 +1947,7 @@ class _ScriptedCreationRepository implements CreationRepository {
     required String draftId,
     required String messageId,
     required String direction,
+    int? expectedRevision,
   }) async {
     branchSwitches.add((messageId: messageId, direction: direction));
     final showOriginal = direction == 'previous';
@@ -1896,7 +1960,11 @@ class _ScriptedCreationRepository implements CreationRepository {
         'title': content,
         'status': 'ACTIVE',
         'messages': [
-          {'id': 'assistant-greeting', 'role': 'assistant', 'content': _greeting},
+          {
+            'id': 'assistant-greeting',
+            'role': 'assistant',
+            'content': _greeting,
+          },
           {
             'id': 'user-current',
             'role': 'user',
@@ -1928,6 +1996,8 @@ class _ScriptedCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
+    String? requestId,
+    int? expectedRevision,
   }) async {
     buildDraftId = draftId;
     buildPresets = presets;
@@ -2011,6 +2081,7 @@ class _ScriptedCreationRepository implements CreationRepository {
     required String filename,
     String? mimeType,
     void Function(int sent, int total)? onProgress,
+    int? expectedRevision,
   }) async {
     final error = uploadError;
     if (error != null) {
@@ -2032,11 +2103,13 @@ class _ScriptedCreationRepository implements CreationRepository {
   }
 
   @override
-  Future<void> deleteAttachment({
+  Future<int?> deleteAttachment({
     required String draftId,
     required String attachmentId,
+    int? expectedRevision,
   }) async {
     deletedAttachmentIds.add(attachmentId);
+    return expectedRevision;
   }
 }
 
@@ -2079,7 +2152,10 @@ class _PlanProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobilePlanOperation> approvePlan(String planId) async {
+  Future<MobilePlanOperation> approvePlan(
+    String planId, {
+    String? requestId,
+  }) async {
     final plan = project.plan;
     MobilePlan? approvedPlan;
     if (plan != null) {
@@ -2116,6 +2192,7 @@ class _PlanProjectsRepository implements ProjectsRepository {
   Future<MobilePlanOperation> revisePlan({
     required String planId,
     required String message,
+    String? requestId,
   }) async {
     revisionMessages.add(message);
     project = _plannedProject(
@@ -2137,7 +2214,11 @@ class _PlanProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobileProjectChat> getProjectChat(String id) async {
+  Future<MobileProjectChat> getProjectChat(
+    String id, {
+    String? beforeMessageId,
+    int limit = 150,
+  }) async {
     return MobileProjectChat(
       messages: List.unmodifiable(chatMessages),
       plans: List.unmodifiable(planSnapshots),
@@ -2212,6 +2293,7 @@ class _PlanProjectsRepository implements ProjectsRepository {
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
     required String projectId,
     required String message,
+    String? requestId,
   }) async {
     revisionMessages.add(message);
     final isPlanQuestion =
@@ -2270,6 +2352,7 @@ class _PlanProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String messageId,
     required String message,
+    String? requestId,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }

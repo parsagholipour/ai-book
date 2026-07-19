@@ -15,7 +15,7 @@ import {
 } from "@book-maker/db/billing";
 import { hashToken } from "./mobileAuth.js";
 import { buildProjectStatus } from "./projectStatus.js";
-import { enqueueGenerationJob, isBullJobActive, requeueGenerationJob } from "./queue.js";
+import { dispatchGenerationJob, enqueueGenerationJob, isBullJobActive, requeueGenerationJob } from "./queue.js";
 
 type QueuedGenerationJobRecord = Awaited<ReturnType<typeof enqueueGenerationJob>>;
 
@@ -23,17 +23,18 @@ const mockPrisma = vi.hoisted(() => ({
   $transaction: vi.fn(),
   user: { upsert: vi.fn() },
   mobileSession: { findUnique: vi.fn() },
-  mobileCreationDraft: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  mobileCreationDraft: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   mobileCreationOutput: { create: vi.fn(), findFirst: vi.fn() },
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },
-  project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   page: { findMany: vi.fn(), update: vi.fn() },
   pageEditSnapshot: { create: vi.fn() },
   planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
-  projectChatMessage: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-  bookEditOperation: { create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
-  generationJob: { count: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+  bookEditOperation: { create: vi.fn(), update: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+  generationJob: { count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  creditLedgerEntry: { update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
   imageAsset: { findFirst: vi.fn(), findMany: vi.fn() },
   voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
@@ -71,15 +72,28 @@ const mockBilling = vi.hoisted(() => {
   };
 });
 
+const MockPrismaKnownRequestError = vi.hoisted(
+  () =>
+    class MockPrismaKnownRequestError extends Error {
+      readonly code: string;
+
+      constructor(message: string, options: { code: string }) {
+        super(message);
+        this.code = options.code;
+      }
+    }
+);
+
 vi.mock("@book-maker/db", () => ({
   ensureSeedTemplates: vi.fn(),
-  Prisma: { JsonNull: null },
+  Prisma: { JsonNull: null, PrismaClientKnownRequestError: MockPrismaKnownRequestError },
   prisma: mockPrisma
 }));
 
 vi.mock("@book-maker/db/billing", () => mockBilling);
 
 vi.mock("./queue.js", () => ({
+  dispatchGenerationJob: vi.fn(),
   enqueueGenerationJob: vi.fn(),
   isBullJobActive: vi.fn(),
   requeueGenerationJob: vi.fn(),
@@ -89,6 +103,12 @@ vi.mock("./queue.js", () => ({
 
 vi.mock("./projectStatus.js", () => ({
   buildProjectStatus: vi.fn(),
+  normalizeProjectQuality: vi.fn(() => ({
+    state: "pending",
+    score: null,
+    issues: [],
+    affectedPageIndexes: []
+  })),
   normalizeTokenUsage: vi.fn(() => ({
     promptTokens: 0,
     outputTokens: 0,
@@ -193,10 +213,17 @@ describe("mobile project routes", () => {
       entitlementType: null
     });
     vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord());
+    vi.mocked(dispatchGenerationJob).mockResolvedValue(jobRecord());
     vi.mocked(isBullJobActive).mockResolvedValue(false);
     vi.mocked(requeueGenerationJob).mockResolvedValue(jobRecord({ id: "job-resumed", status: "QUEUED" }));
     vi.mocked(buildProjectStatus).mockResolvedValue(statusRecord());
     mockPrisma.generationJob.count.mockResolvedValue(0);
+    mockPrisma.generationJob.findUnique.mockResolvedValue(null);
+    mockPrisma.mobileCreationDraft.findUnique.mockResolvedValue({ revision: 3 });
+    mockPrisma.mobileCreationDraft.update.mockResolvedValue(creationDraftRecord({ revision: 2 }));
+    mockPrisma.creditLedgerEntry.update.mockResolvedValue({});
+    mockPrisma.project.update.mockResolvedValue({ contentRevision: 1 });
+    mockPrisma.project.delete.mockResolvedValue({});
     mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
       projectRecord({
         id: "project-copy",
@@ -215,6 +242,7 @@ describe("mobile project routes", () => {
       const record = {
         id: `chat-${mockProjectChatMessages.length + 1}`,
         projectId: data.projectId,
+        requestId: data.requestId ?? null,
         parentId: data.parentId ?? null,
         role: data.role,
         content: data.content,
@@ -229,6 +257,16 @@ describe("mobile project routes", () => {
     mockPrisma.projectChatMessage.findFirst.mockImplementation(async ({ where }: { where: Record<string, any> }) => {
       return mockProjectChatMessages.find((message) => matchesProjectChatWhere(message, where)) ?? null;
     });
+    mockPrisma.projectChatMessage.findUnique.mockImplementation(
+      async ({ where }: { where: { projectId_requestId?: { projectId: string; requestId: string } } }) => {
+        const key = where.projectId_requestId;
+        return key
+          ? mockProjectChatMessages.find(
+              (message) => message.projectId === key.projectId && message.requestId === key.requestId
+            ) ?? null
+          : null;
+      }
+    );
     mockPrisma.projectChatMessage.findMany.mockImplementation(async ({ where, orderBy, take }: { where: Record<string, any>; orderBy?: { createdAt: "asc" | "desc" }; take?: number }) => {
       const rows = mockProjectChatMessages.filter((message) => matchesProjectChatWhere(message, where));
       const sorted = [...rows].sort((a, b) =>
@@ -249,12 +287,21 @@ describe("mobile project routes", () => {
     mockPages = [];
     mockPageEditSnapshots = [];
     mockPrisma.page.findMany.mockImplementation(async ({ where }: { where: Record<string, any> }) => {
+      const matchesContainsClause = (page: Record<string, any>, clause: Record<string, any>) =>
+        Object.entries(clause).every(([field, condition]) =>
+          typeof (condition as { contains?: string })?.contains === "string"
+            ? String(page[field] ?? "")
+                .toLowerCase()
+                .includes((condition as { contains: string }).contains.toLowerCase())
+            : true
+        );
       return mockPages
         .filter(
           (page) =>
             (where.projectId === undefined || page.projectId === where.projectId) &&
             (where.id?.in === undefined || where.id.in.includes(page.id)) &&
-            (where.index?.in === undefined || where.index.in.includes(page.index))
+            (where.index?.in === undefined || where.index.in.includes(page.index)) &&
+            (where.OR === undefined || where.OR.some((clause: Record<string, any>) => matchesContainsClause(page, clause)))
         )
         .map((page) => ({ ...page }));
     });
@@ -336,10 +383,18 @@ describe("mobile project routes", () => {
       );
       return typeof take === "number" ? sorted.slice(0, take) : sorted;
     });
+    mockPrisma.bookEditOperation.findFirst.mockImplementation(async ({ where }: { where: Record<string, any> }) =>
+      mockBookEditOperations.find(
+        (operation) =>
+          (where.projectId === undefined || operation.projectId === where.projectId) &&
+          (where.userMessageId === undefined || operation.userMessageId === where.userMessageId)
+      ) ?? null
+    );
     mockPrisma.mobileCreationOutput.create.mockImplementation(async ({ data, include }: { data: Record<string, any>; include?: unknown }) => ({
       id: `output-${data.projectId}`,
       draftId: data.draftId,
       projectId: data.projectId,
+      requestId: data.requestId ?? null,
       title: data.title,
       sequence: data.sequence,
       createdAt: new Date("2026-06-15T12:00:00.000Z"),
@@ -1642,6 +1697,7 @@ describe("mobile project routes", () => {
         "progressPercent",
         "prompt",
         "promptPreview",
+        "quality",
         "qualityPreset",
         "status",
         "statusLabel",
@@ -1841,6 +1897,21 @@ describe("mobile project routes", () => {
             { key: "images", label: "Images", status: "pending", detail: "1 images" },
             { key: "export", label: "Export", status: "pending" }
           ]
+        },
+        quality: {
+          state: "review_recommended",
+          score: 88,
+          issues: [
+            {
+              code: "CHAPTER_TRANSITION",
+              severity: "warning",
+              source: "model",
+              message: "The handoff is abrupt.",
+              guidance: "Review pages 3 and 4.",
+              affectedPageIndexes: [3, 4]
+            }
+          ],
+          affectedPageIndexes: [3, 4]
         }
       })
     );
@@ -1864,9 +1935,14 @@ describe("mobile project routes", () => {
       pageProgress: { completed: 3, target: 10 },
       imageCount: 1
     });
+    expect(body.status.quality).toMatchObject({
+      state: "review_recommended",
+      score: 88,
+      affectedPageIndexes: [3, 4]
+    });
     expect(body.status.failureMessage).toContain("while writing a page");
     expect(body.status.failureMessage).not.toContain("GENERATE_PAGE");
-    expect(JSON.stringify(body.status)).not.toMatch(/jobs|queue|tokens|cost|provider|model/);
+    expect(JSON.stringify(body.status)).not.toMatch(/jobs|queue|tokens|cost|provider/);
     await app.close();
   });
 
@@ -2172,7 +2248,7 @@ describe("mobile project routes", () => {
     });
     expect(vi.mocked(enqueueGenerationJob).mock.calls.map((call) => call[0])).toEqual([
       expect.objectContaining({ projectId: "project-1", type: "PLAN_BOOK" }),
-      {
+      expect.objectContaining({
         projectId: "project-1",
         type: "REVISE_PLAN",
         payload: {
@@ -2180,7 +2256,7 @@ describe("mobile project routes", () => {
           message: "Make the examples warmer and more practical.",
           billingLedgerEntryId: "ledger-PLAN_REVISION"
         }
-      },
+      }),
       expect.objectContaining({
         projectId: "project-1",
         type: "GENERATE_BOOK",
@@ -2331,10 +2407,101 @@ describe("mobile project routes", () => {
     expect(body.operation).toBeNull();
     expect(body.messages).toEqual([
       expect.objectContaining({ role: "user", content: "What is this plan about?" }),
-      expect.objectContaining({ role: "assistant", content: expect.stringContaining("current plan") })
+      expect.objectContaining({ role: "assistant", content: expect.stringContaining("Rabbit and Turtle") })
     ]);
     expect(body.reply.content).not.toMatch(/book text edits are available after/i);
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("returns the newest chat window and paginates earlier active messages chronologically", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    for (let index = 1; index <= 6; index += 1) {
+      mockProjectChatMessages.push({
+        id: `chat-${index}`,
+        projectId: "project-1",
+        parentId: index === 1 ? null : `chat-${index - 1}`,
+        role: index % 2 === 0 ? "ASSISTANT" : "USER",
+        content: `Message ${index}`,
+        operationId: null,
+        metadata: index === 6 ? { intent: { kind: "answer", reasoning: "private" }, provider: "hidden" } : {},
+        isActiveChild: true,
+        createdAt: new Date(`2026-06-15T12:0${index}:00.000Z`)
+      });
+    }
+    const app = await buildMobileApp();
+
+    const newest = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat?limit=2",
+      headers: bearer("token-a")
+    });
+    expect(newest.statusCode).toBe(200);
+    expect(newest.json()).toMatchObject({
+      hasMore: true,
+      nextCursor: "chat-5",
+      messages: [{ id: "chat-5" }, { id: "chat-6" }]
+    });
+    expect(JSON.stringify(newest.json().messages)).not.toMatch(/reasoning|provider|hidden|private/);
+
+    const earlier = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat?limit=2&beforeMessageId=chat-5",
+      headers: bearer("token-a")
+    });
+    expect(earlier.json()).toMatchObject({
+      hasMore: true,
+      nextCursor: "chat-3",
+      messages: [{ id: "chat-3" }, { id: "chat-4" }]
+    });
+    await app.close();
+  });
+
+  it("replays a project-chat request ID without duplicating the turn", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "PLAN_READY", currentPlan: approvedPlanRecord() })
+    );
+    mockProjectChatMessages.push(
+      {
+        id: "chat-user-existing",
+        projectId: "project-1",
+        requestId: "request-123",
+        parentId: null,
+        role: "USER",
+        content: "What changed?",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T12:00:00.000Z")
+      },
+      {
+        id: "chat-assistant-existing",
+        projectId: "project-1",
+        requestId: null,
+        parentId: "chat-user-existing",
+        role: "ASSISTANT",
+        content: "The title changed.",
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T12:01:00.000Z")
+      }
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "What changed?", requestId: "request-123" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().reply).toMatchObject({ id: "chat-assistant-existing", content: "The title changed." });
+    expect(mockPrisma.projectChatMessage.create).not.toHaveBeenCalled();
+    expect(mockProjectChatMessages).toHaveLength(2);
     await app.close();
   });
 
@@ -2589,7 +2756,7 @@ describe("mobile project routes", () => {
     expect(response.statusCode).toBe(200);
     expect(body.operation).toBeNull();
     expect(body.reply.content).not.toMatch(/book text edits are available after/i);
-    expect(body.reply.content).toContain("current plan");
+    expect(body.reply.content).toContain("Rabbit and Turtle");
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
     await app.close();
   });
@@ -2661,6 +2828,48 @@ describe("mobile project routes", () => {
       })
     );
     expect(body.reply.content).toContain("the whole book");
+    await app.close();
+  });
+
+  it("finds quoted edit targets with a database text search instead of loaded page bodies", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const pages = generatedPages();
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages
+      })
+    );
+    // The quoted phrase lives only in page 2's markdown, which chat no longer
+    // loads up front — the match must come from the contains query.
+    mockPages = pages.map((page) => ({ ...page, projectId: "project-1", revision: 1 }));
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-edit", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: 'Replace "learns to be kind" with "learns to be patient".' }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({
+      kind: "local_patch",
+      affectedPageIndexes: [2]
+    });
+    expect(mockPrisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          projectId: "project-1",
+          OR: expect.arrayContaining([{ markdown: { contains: "learns to be kind", mode: "insensitive" } }])
+        })
+      })
+    );
     await app.close();
   });
 
@@ -3030,6 +3239,45 @@ describe("mobile project routes", () => {
       blockedByActiveJob: true,
       pendingEdit: { request: "Make the whole book warmer.", clarification: "busy" }
     });
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("returns the busy reply without charging when a concurrent edit wins the open-operation slot", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    // The one-open-edit-per-project partial unique index (migration 000026)
+    // rejects the second concurrent create even though hasOpenProjectWork saw
+    // no open work when this request started.
+    mockPrisma.bookEditOperation.create.mockRejectedValueOnce(
+      new MockPrismaKnownRequestError("Unique constraint failed", { code: "P2002" })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the whole book warmer and simpler." }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toContain("saved that request");
+    expect(body.reply.metadata).toMatchObject({
+      blockedByActiveJob: true,
+      pendingEdit: { request: "Make the whole book warmer and simpler.", clarification: "busy" }
+    });
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
     await app.close();
   });
@@ -3651,15 +3899,15 @@ describe("mobile project routes", () => {
       })
     ]);
     expect(existsSync(join(tempBookStorageDir!, "project-1", "book.pdf"))).toBe(false);
-    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith({
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(expect.objectContaining({
       projectId: "project-1",
       type: "COMPILE_EXPORT",
-      payload: { planId: "plan-1", skipFinalReview: true }
-    });
-    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      payload: expect.objectContaining({ planId: "plan-1", skipFinalReview: true })
+    }));
+    expect(mockPrisma.project.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "project-1" },
-      data: { status: "EDITING" }
-    });
+      data: expect.objectContaining({ status: "EDITING" })
+    }));
     expect(mockPrisma.project.update).not.toHaveBeenCalledWith({
       where: { id: "project-1" },
       data: { status: "COMPLETE" }
@@ -3689,10 +3937,10 @@ describe("mobile project routes", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+    expect(mockPrisma.project.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "project-1" },
-      data: { status: "EDITING" }
-    });
+      data: expect.objectContaining({ status: "EDITING" })
+    }));
     expect(mockPrisma.project.update).toHaveBeenCalledWith({
       where: { id: "project-1" },
       data: { status: "COMPLETE" }
@@ -3985,6 +4233,12 @@ function matchesProjectChatWhere(message: Record<string, any>, where: Record<str
   if (where.role !== undefined && message.role !== where.role) {
     return false;
   }
+  if (where.requestId !== undefined && message.requestId !== where.requestId) {
+    return false;
+  }
+  if (where.isActiveChild !== undefined && message.isActiveChild !== where.isActiveChild) {
+    return false;
+  }
   if (Object.prototype.hasOwnProperty.call(where, "parentId") && (message.parentId ?? null) !== where.parentId) {
     return false;
   }
@@ -4093,6 +4347,12 @@ function statusRecord(overrides: Record<string, any> = {}) {
       status: "DRAFT",
       updatedAt: new Date("2026-06-15T12:00:00.000Z"),
       jobs: []
+    },
+    quality: {
+      state: "pending" as const,
+      score: null,
+      issues: [],
+      affectedPageIndexes: []
     },
     progress: {
       pages: { complete: 0, target: 12 },

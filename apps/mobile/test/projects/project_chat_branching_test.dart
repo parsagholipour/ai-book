@@ -59,6 +59,24 @@ void main() {
     expect(find.text('Make the dragon nicer'), findsNothing);
     expect(find.text('2/2'), findsOneWidget);
   });
+
+  testWidgets(
+    'loads earlier project chat messages from the pagination cursor',
+    (tester) async {
+      final repository = _BranchingProjectsRepository(paginated: true);
+      await tester.pumpWidget(_app(repository));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Hi! What should we edit?'), findsNothing);
+      expect(find.text('Load earlier messages'), findsOneWidget);
+
+      await tester.tap(find.text('Load earlier messages'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Hi! What should we edit?'), findsOneWidget);
+      expect(find.text('Load earlier messages'), findsNothing);
+    },
+  );
 }
 
 Widget _app(_BranchingProjectsRepository repository) {
@@ -86,7 +104,7 @@ class _Node {
 /// Fake repository that models a real message tree the way the server does:
 /// edits fork a sibling branch and switching flips the active sibling.
 class _BranchingProjectsRepository implements ProjectsRepository {
-  _BranchingProjectsRepository() {
+  _BranchingProjectsRepository({this.paginated = false}) {
     _nodes.addAll([
       _Node(
         id: 'a1',
@@ -110,6 +128,7 @@ class _BranchingProjectsRepository implements ProjectsRepository {
   }
 
   final _nodes = <_Node>[];
+  final bool paginated;
   final editedMessageIds = <String>[];
   int _nextId = 0;
 
@@ -181,12 +200,32 @@ class _BranchingProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobileProjectChat> getProjectChat(String id) async => _chat();
+  Future<MobileProjectChat> getProjectChat(
+    String id, {
+    String? beforeMessageId,
+    int limit = 150,
+  }) async {
+    final chat = _chat();
+    if (!paginated) return chat;
+    if (beforeMessageId == null) {
+      return MobileProjectChat(
+        messages: chat.messages.skip(1).toList(),
+        operations: chat.operations,
+        hasMore: true,
+        nextCursor: chat.messages[1].id,
+      );
+    }
+    return MobileProjectChat(
+      messages: [chat.messages.first],
+      operations: chat.operations,
+    );
+  }
 
   @override
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
     required String projectId,
     required String message,
+    String? requestId,
   }) async {
     return _appendTurn(parentId: _chat().messages.last.id, message: message);
   }
@@ -196,6 +235,7 @@ class _BranchingProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String messageId,
     required String message,
+    String? requestId,
   }) async {
     editedMessageIds.add(messageId);
     final edited = _nodes.firstWhere((node) => node.id == messageId);
@@ -211,8 +251,7 @@ class _BranchingProjectsRepository implements ProjectsRepository {
     final current = _nodes.firstWhere((node) => node.id == messageId);
     final siblings = _children(current.parentId);
     final index = siblings.indexOf(current);
-    final target =
-        siblings[direction == 'previous' ? index - 1 : index + 1];
+    final target = siblings[direction == 'previous' ? index - 1 : index + 1];
     for (final sibling in siblings) {
       sibling.isActiveChild = sibling.id == target.id;
     }

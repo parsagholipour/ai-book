@@ -59,6 +59,20 @@ export type JobImageFallbackDetails = {
   occurredAt?: string | undefined;
 };
 
+export type ProjectQualityStatus = {
+  state: "pending" | "passed" | "review_recommended" | "blocked";
+  score: number | null;
+  issues: Array<{
+    code: string;
+    severity: "error" | "warning";
+    source: "deterministic" | "model";
+    message: string;
+    guidance: string;
+    affectedPageIndexes: number[];
+  }>;
+  affectedPageIndexes: number[];
+};
+
 const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
@@ -163,9 +177,13 @@ export async function buildProjectStatus(projectId: string) {
       ...(typeof pageIndex === "number" ? { pageIndex } : {})
     };
   });
+  const latestQuality = normalizeProjectQuality(
+    project.jobs.find((job) => job.type === "COMPILE_EXPORT" && job.qualityReport !== null)?.qualityReport
+  );
 
   return {
     project: { ...project, jobs: jobsWithSteps },
+    quality: latestQuality,
     progress: {
       pages: pageProgress,
       images: visibleImageCount,
@@ -181,6 +199,45 @@ export async function buildProjectStatus(projectId: string) {
         blockedPages: pages.filter((page) => page.status === "FAILED_QA").length
       }
     }
+  };
+}
+
+export function normalizeProjectQuality(value: unknown): ProjectQualityStatus {
+  const record = jsonPayloadToRecord(value);
+  const state = ["passed", "review_recommended", "blocked"].includes(String(record.state))
+    ? (record.state as ProjectQualityStatus["state"])
+    : "pending";
+  const rawIssues = Array.isArray(record.issues) ? record.issues : [];
+  const issues = rawIssues.flatMap((entry) => {
+    const issue = jsonPayloadToRecord(entry);
+    if (typeof issue.code !== "string" || typeof issue.message !== "string") return [];
+    const severity: ProjectQualityStatus["issues"][number]["severity"] =
+      issue.severity === "error" ? "error" : "warning";
+    const source: ProjectQualityStatus["issues"][number]["source"] =
+      issue.source === "deterministic" ? "deterministic" : "model";
+    const affectedPageIndexes = Array.isArray(issue.affectedPageIndexes)
+      ? issue.affectedPageIndexes.filter((index): index is number => Number.isInteger(index) && Number(index) > 0)
+      : [];
+    return [{
+      code: issue.code,
+      severity,
+      source,
+      message: issue.message,
+      guidance: typeof issue.guidance === "string" ? issue.guidance : "Review the affected pages.",
+      affectedPageIndexes
+    }];
+  });
+  const affectedPageIndexes = [
+    ...new Set(
+      (Array.isArray(record.affectedPageIndexes) ? record.affectedPageIndexes : issues.flatMap((issue) => issue.affectedPageIndexes))
+        .filter((index): index is number => Number.isInteger(index) && Number(index) > 0)
+    )
+  ].sort((left, right) => left - right);
+  return {
+    state,
+    score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : null,
+    issues,
+    affectedPageIndexes
   };
 }
 
@@ -481,13 +538,13 @@ export function buildPipelineSteps(input: {
   const exportActive = jobs.some(
     (job) => job.type === "COMPILE_EXPORT" && (job.status === "QUEUED" || job.status === "ACTIVE")
   );
-  const exportDone = projectStatus === "COMPLETE" || hasCompileJob;
+  const exportDone = projectStatus === "COMPLETE" || projectStatus === "REVIEW_REQUIRED" || hasCompileJob;
   const imagesActive =
     openImageJobs > 0 || (pagesDone && projectStatus === "GENERATING" && !exportDone && !exportActive);
   const imagesDone =
-    exportDone || (pagesDone && openImageJobs === 0 && (imageCount > 0 || projectStatus === "COMPLETE"));
+    exportDone || (pagesDone && openImageJobs === 0 && (imageCount > 0 || ["COMPLETE", "REVIEW_REQUIRED"].includes(projectStatus)));
 
-  const planDone = ["PLAN_READY", "GENERATING", "EDITING", "COMPLETE"].includes(projectStatus);
+  const planDone = ["PLAN_READY", "GENERATING", "EDITING", "COMPLETE", "REVIEW_REQUIRED"].includes(projectStatus);
 
   const planDetail = planActive ? "Planning in progress" : planDone ? "Plan ready" : undefined;
   const exportDetail = exportDone ? "Markdown & PDF ready" : exportActive ? "Compiling export" : editActive ? "Waiting for edits" : undefined;

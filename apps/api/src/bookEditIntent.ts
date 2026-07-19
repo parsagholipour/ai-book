@@ -1,9 +1,15 @@
 import {
   generateJsonWithRetry,
   normalizeProjectLanguage,
+  withRecoverableNetworkRetry,
+  type GenerateJsonWithRetryOptions,
   type TextModelAdapter
 } from "@book-maker/core";
 import { z } from "zod";
+import { withTimeout } from "./withTimeout.js";
+
+/** Per-attempt budget for the classifier model call; the heuristic fallback covers overruns. */
+const CLASSIFIER_CALL_BUDGET_MS = 10_000;
 
 export type BookEditIntentKind =
   | "answer"
@@ -90,12 +96,71 @@ const classifierSchema = z
   })
   .strict();
 
+export const CLASSIFIER_PAGE_SAMPLE_CAP = 120;
+
+export type ClassifierPageSample = {
+  pages: BookEditPageContext[];
+  truncated: boolean;
+};
+
+/**
+ * Bounds the page list serialized into the classifier prompt. Books over the
+ * cap keep the pages the message refers to (±1 neighbor), the opening and
+ * closing of the book, and an even stride across the middle, so a 600-page
+ * book no longer ships every page summary while "edit page 412" still works.
+ * Server-side page validation (affectedPagesForIntent) always uses the full
+ * page set, so sampling here cannot make an edit target invalid pages.
+ */
+export function classifierPageSample(
+  pages: BookEditPageContext[],
+  message: string,
+  cap = CLASSIFIER_PAGE_SAMPLE_CAP
+): ClassifierPageSample {
+  if (pages.length <= cap) {
+    return { pages, truncated: false };
+  }
+  const orderedIndexes = [...pages].sort((a, b) => a.index - b.index).map((page) => page.index);
+  const byIndex = new Map(pages.map((page) => [page.index, page]));
+  const chosen = new Set<number>();
+  // Pages the message names (plus one neighbor each side) win first; a huge
+  // explicit range is clamped so the structural picks below always fit within
+  // the cap (60 + 40 + 20 = cap).
+  const mentioned = new Set<number>();
+  for (const index of pageIndexesFromMessage(message, pages)) {
+    for (const neighbor of [index - 1, index, index + 1]) {
+      if (byIndex.has(neighbor)) {
+        mentioned.add(neighbor);
+      }
+    }
+  }
+  for (const index of [...mentioned].slice(0, 60)) {
+    chosen.add(index);
+  }
+  for (const index of orderedIndexes.slice(0, 40)) {
+    chosen.add(index);
+  }
+  for (const index of orderedIndexes.slice(-20)) {
+    chosen.add(index);
+  }
+  const remaining = orderedIndexes.filter((index) => !chosen.has(index));
+  const slots = Math.max(0, cap - chosen.size);
+  for (let slot = 0; slot < slots && remaining.length > 0; slot += 1) {
+    const pick = remaining[Math.min(remaining.length - 1, Math.floor((slot * remaining.length) / slots))]!;
+    chosen.add(pick);
+  }
+  return {
+    pages: orderedIndexes.filter((index) => chosen.has(index)).map((index) => byIndex.get(index)!),
+    truncated: true
+  };
+}
+
 export async function classifyProjectChatMessage(options: {
   message: string;
   stage: BookEditProjectStage;
   pages: BookEditPageContext[];
   chapters?: BookEditChapterContext[] | undefined;
   planSummary?: string | undefined;
+  recentMessages?: Array<{ role: "user" | "assistant"; content: string }> | undefined;
   textModel?: TextModelAdapter | undefined;
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
@@ -116,7 +181,9 @@ export async function classifyProjectChatMessage(options: {
   }
 
   try {
-    const result = await generateJsonWithRetry(options.textModel, {
+    const textModel = options.textModel;
+    const pageSample = classifierPageSample(options.pages, message);
+    const classifierRequest: GenerateJsonWithRetryOptions<z.infer<typeof classifierSchema>> = {
       schema: classifierSchema,
       temperature: 0,
       maxTokens: 900,
@@ -127,6 +194,8 @@ export async function classifyProjectChatMessage(options: {
           content: [
             "Classify a user's chat message for an AI book-making app.",
             "Return answer for general questions that should not edit the book.",
+            "Messages that express dislike, discomfort, or a preference about existing content (for example: I don't like X, X should be Y, this feels too Z, too much X) are edit requests, never answer.",
+            "Route such content-preference changes on a finished book to page_rewrite and set affectedPageIndexes to the pages whose titles or summaries involve that content; use book_replan instead when the preference changes the premise, characters, audience, ending, or structure.",
             "Return clarify when the user wants an edit but the target/scope is still unclear.",
             "Return show_content when the user wants to read or see the outline, plan, table of contents, a chapter, or a page without changing it.",
             "Return undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
@@ -141,7 +210,9 @@ export async function classifyProjectChatMessage(options: {
             "Use scope all_pages for whole book, all pages, every page, everywhere, globally, throughout, or across the book.",
             "Use scope matching_pages for exact replacements when matching pages should be found from the existing text.",
             "Use affectedPageIndexes only when the target page is explicit or strongly inferable.",
+            "For edit intents, write assistantMessage as a short confirmation of the specific change that will be made.",
             "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
+            "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
             "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."
           ].join(" ")
         },
@@ -150,6 +221,10 @@ export async function classifyProjectChatMessage(options: {
           content: JSON.stringify({
             projectStage: options.stage,
             userMessage: message,
+            recentConversation: (options.recentMessages ?? []).slice(-12).map((turn) => ({
+              role: turn.role,
+              content: turn.content.slice(0, 800)
+            })),
             planSummary: options.planSummary ?? null,
             heuristicIntent: heuristic,
             heuristicInstruction: "Use heuristicIntent only as a hint. Prefer the user's actual meaning and projectStage.",
@@ -158,16 +233,27 @@ export async function classifyProjectChatMessage(options: {
               title: chapter.title,
               pageIndexes: chapter.pageIndexes
             })),
-            pages: options.pages.map((page) => ({
+            pages: pageSample.pages.map((page) => ({
               index: page.index,
               title: page.title,
-              summary: page.summary,
-              previewText: page.previewText.slice(0, 500)
-            }))
+              summary: page.summary.slice(0, 240)
+            })),
+            pageContext: {
+              totalPages: options.pages.length,
+              includedPageCount: pageSample.pages.length,
+              truncated: pageSample.truncated
+            }
           })
         }
       ]
-    });
+    };
+    // Transient network failures get one quick retry; an exhausted time budget
+    // does not (TimeBudgetExceededError never matches the network matcher), so
+    // the worst case stays bounded before the heuristic fallback below.
+    const result = await withRecoverableNetworkRetry(
+      () => withTimeout(generateJsonWithRetry(textModel, classifierRequest), CLASSIFIER_CALL_BUDGET_MS, "Edit-intent classifier"),
+      { attempts: 2, delayMs: 500 }
+    );
     return normalizeIntentForStage(withDeterministicContentTarget(result.data, message), options.stage);
   } catch {
     return normalizeIntentForStage(heuristic, options.stage);
@@ -180,6 +266,82 @@ function withDeterministicContentTarget(intent: BookEditIntent, message: string)
     return intent;
   }
   return { ...intent, contentTarget: showContentTargetFromMessage(message) ?? { type: "outline" } };
+}
+
+export type BookEditDislikePreference = {
+  /** What the user objects to, when the message names it. */
+  subject: string | null;
+};
+
+/**
+ * Detects dissatisfaction or preference statements about existing content
+ * ("I don't like X", "X should be Y", "too much Z"). These carry edit intent
+ * even without an imperative edit verb, so they must never route to answer.
+ */
+export function dislikePreferenceFromMessage(message: string): BookEditDislikePreference | null {
+  const text = message.trim();
+  if (/\?\s*$/.test(text) || /^(?:what|why|how|where|when|who|which|can you explain|tell me)\b/i.test(text)) {
+    return null;
+  }
+  const subjectPatterns = [
+    /\bi\s+(?:really\s+|just\s+)?(?:do\s+not|don'?t|didn'?t|did\s+not)\s+(?:like|love|enjoy|want)\s+(.{2,120}?)(?=[.,;:!\n]|$)/i,
+    /\bi\s+(?:really\s+)?(?:hate|dislike)\s+(.{2,120}?)(?=[.,;:!\n]|$)/i,
+    /\bi(?:'m|\s+am)\s+not\s+(?:a\s+fan\s+of|happy\s+with|comfortable\s+with|okay\s+with|ok\s+with)\s+(.{2,120}?)(?=[.,;:!\n]|$)/i,
+    /\b(?:there(?:'s|\s+is)\s+)?(?:way\s+|far\s+)?too\s+(?:much|many)\s+(.{2,80}?)(?=[.,;:!\n]|$)/i
+  ];
+  for (const pattern of subjectPatterns) {
+    const match = text.match(pattern);
+    const subject = match?.[1]
+      ?.trim()
+      .replace(/^(?:a|an|the)\s+/i, "")
+      .replace(/\s+/g, " ");
+    if (subject) {
+      return { subject };
+    }
+  }
+  const directive =
+    /\b(?:this|that|it|they|she|he)\s+(?:really\s+)?should(?:n'?t|\s+not)?\s+(?:be|feel|stay|remain|happen|sound|read|have|include)\b/i.test(
+      text
+    ) ||
+    (/\bshould\s+(?:be|feel|stay|remain|happen)\b/i.test(text) && !/\bshould\s+(?:i|we|you)\b/i.test(text)) ||
+    /\bi\s+(?:would\s+)?prefer\b/i.test(text) ||
+    /\bi'?d\s+rather\b/i.test(text);
+  return directive ? { subject: null } : null;
+}
+
+const dislikeSubjectStopTerms = new Set([
+  "the", "and", "that", "this", "these", "those", "with", "without", "from", "into", "onto", "over", "under",
+  "part", "parts", "scene", "scenes", "chapter", "chapters", "page", "pages", "book", "story", "bit", "bits",
+  "thing", "things", "stuff", "whole", "entire", "very", "really", "much", "many", "more", "less", "some", "all",
+  "being", "having", "just", "then", "than", "when", "where", "how", "his", "her", "its", "their"
+]);
+
+/** Pages whose title, summary, or preview mention a significant word of the disliked subject. */
+export function pageIndexesMatchingSubject(subject: string, pages: BookEditPageContext[]): number[] {
+  const terms = [
+    ...new Set(
+      (subject.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).filter((term) => !dislikeSubjectStopTerms.has(term))
+    )
+  ];
+  if (terms.length === 0) {
+    return [];
+  }
+  return pages
+    .filter((page) => {
+      const haystack = `${page.title} ${page.summary} ${page.previewText}`.toLowerCase();
+      return terms.some(
+        (term) => haystack.includes(term) || (term.endsWith("s") && haystack.includes(term.slice(0, -1)))
+      );
+    })
+    .map((page) => page.index)
+    .sort((a, b) => a - b);
+}
+
+/** Dislike subjects that change the book's identity and need a replan rather than a page rewrite. */
+function isIdentityChangeSubject(subject: string): boolean {
+  return /\b(?:main\s+characters?|protagonists?|hero(?:es)?|species|titles?|premise|audience|endings?|structure|outline|covers?|visual\s+identity|illustration\s+style)\b/i.test(
+    subject
+  );
 }
 
 export function classifyWithHeuristics(
@@ -202,6 +364,8 @@ export function classifyWithHeuristics(
     /\b(change|edit|rewrite|revise|fix|replace|rename|swap|switch|remove|delete|add|insert|update|make|turn|shorten|expand|polish|regenerate|move|reorder|restructure|redo|rework)\b/i.test(
       message
     ) || languageVersionRequest;
+  const dislike = dislikePreferenceFromMessage(message);
+  const hasChangeIntent = hasEditVerb || dislike !== null;
   const asksQuestion = /\?$|^(what|why|how|can you explain|tell me|summari[sz]e|where|when)\b/i.test(message.trim());
   const scopeOnly = isBookEditScopeOnlyMessage(message);
   const contentTarget = showContentTargetFromMessage(message);
@@ -301,7 +465,7 @@ export function classifyWithHeuristics(
     };
   }
 
-  if (isPlanStage && (hasEditVerb || softPlanChange)) {
+  if (isPlanStage && (hasChangeIntent || softPlanChange)) {
     return {
       kind: "plan_revision",
       confidence: 0.88,
@@ -333,21 +497,21 @@ export function classifyWithHeuristics(
 
   if (stage !== "complete") {
     return {
-      kind: asksQuestion || !hasEditVerb ? "answer" : "clarify",
-      confidence: asksQuestion || !hasEditVerb ? 0.82 : 0.7,
+      kind: asksQuestion || !hasChangeIntent ? "answer" : "clarify",
+      confidence: asksQuestion || !hasChangeIntent ? 0.82 : 0.7,
       reasoning: "The project is not ready for generated-book edits.",
       affectedPageIndexes: [],
       assistantMessage:
-        asksQuestion || !hasEditVerb
+        asksQuestion || !hasChangeIntent
           ? "I can answer questions about this project, but book text edits are available after the book is generated."
           : "I can help with that after the current book work is finished.",
       scope: explicitScope,
       impact: structural ? "structural_replan" : rewrite ? "style_rewrite" : "small_text",
-      clarification: hasEditVerb ? "scope" : "none"
+      clarification: hasChangeIntent ? "scope" : "none"
     };
   }
 
-  if (!hasEditVerb && asksQuestion) {
+  if (!hasChangeIntent && asksQuestion) {
     return {
       kind: "answer",
       confidence: 0.86,
@@ -360,7 +524,7 @@ export function classifyWithHeuristics(
     };
   }
 
-  if (!hasEditVerb) {
+  if (!hasChangeIntent) {
     return {
       kind: "answer",
       confidence: 0.74,
@@ -446,6 +610,58 @@ export function classifyWithHeuristics(
       scope: explicitScope,
       impact: "style_rewrite",
       clarification: canRewrite ? "none" : "scope"
+    };
+  }
+
+  if (dislike) {
+    if (dislike.subject && isIdentityChangeSubject(dislike.subject)) {
+      return {
+        kind: "book_replan",
+        confidence: 0.85,
+        reasoning: "The user dislikes an identity-level part of the book, which needs a replan.",
+        affectedPageIndexes: [],
+        assistantMessage: "I’ll rebuild the plan and regenerate the book around that change.",
+        scope: broadScope ? "all_pages" : explicitScope,
+        impact: "structural_replan",
+        clarification: "none"
+      };
+    }
+    if (broadScope) {
+      return {
+        kind: "page_rewrite",
+        confidence: 0.84,
+        reasoning: "The user wants existing content changed across the whole book.",
+        affectedPageIndexes: [],
+        assistantMessage: "I’ll rewrite the book with that direction while keeping the same structure.",
+        scope: "all_pages",
+        impact: "style_rewrite",
+        clarification: "none"
+      };
+    }
+    const matchedPages = dislike.subject ? pageIndexesMatchingSubject(dislike.subject, pages) : [];
+    const affectedPageIndexes = explicitPages.length > 0 ? explicitPages : matchedPages;
+    if (affectedPageIndexes.length > 0) {
+      return {
+        kind: "page_rewrite",
+        confidence: 0.84,
+        reasoning: "The user expressed a preference change about existing content.",
+        affectedPageIndexes,
+        assistantMessage: `I’ll revise page ${formatPageList(affectedPageIndexes)} with that direction.`,
+        scope: explicitPages.length > 0 ? "explicit_pages" : "matching_pages",
+        impact: "style_rewrite",
+        clarification: "none"
+      };
+    }
+    return {
+      kind: "clarify",
+      confidence: 0.8,
+      reasoning: "The user wants existing content changed but no target pages could be inferred.",
+      affectedPageIndexes: [],
+      assistantMessage:
+        "I can change that. Should I revise the scenes where it appears, specific pages, or the whole book?",
+      scope: "none",
+      impact: "style_rewrite",
+      clarification: "scope"
     };
   }
 
@@ -569,6 +785,11 @@ function escapeRegExp(value: string): string {
  */
 export function showContentTargetFromMessage(message: string): ShowContentTarget | null {
   const text = message.trim();
+  // "Why …" asks for an explanation, never a content read, even when it
+  // contains a read-verb homograph like "display".
+  if (/^why\b/i.test(text)) {
+    return null;
+  }
   const readVerb = /\b(?:show|read|see|view|display|open|give)\s+(?:me\s+)?/i;
   const wantsRead =
     readVerb.test(text) ||

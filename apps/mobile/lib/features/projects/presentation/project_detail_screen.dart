@@ -79,7 +79,12 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             action: 'revise',
             future: () => ref
                 .read(projectsRepositoryProvider)
-                .revisePlan(planId: project.plan!.id, message: message),
+                .revisePlan(
+                  planId: project.plan!.id,
+                  message: message,
+                  requestId:
+                      'revision-${DateTime.now().microsecondsSinceEpoch}',
+                ),
             clearRevisionText: true,
           ),
           onApprovePlan: project.plan == null

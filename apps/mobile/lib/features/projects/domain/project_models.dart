@@ -127,6 +127,7 @@ class MobileProjectDetail extends MobileProjectSummary {
     super.authorName,
     this.plan,
     this.coverImage,
+    this.quality = const MobileProjectQuality.pending(),
   });
 
   final String prompt;
@@ -134,6 +135,7 @@ class MobileProjectDetail extends MobileProjectSummary {
   final MobilePlan? plan;
   final List<MobileProjectPage> pages;
   final MobileProjectImage? coverImage;
+  final MobileProjectQuality quality;
 
   factory MobileProjectDetail.fromJson(Map<String, dynamic> json) {
     final pages = json['pages'] as List<dynamic>;
@@ -176,6 +178,9 @@ class MobileProjectDetail extends MobileProjectSummary {
           : MobileProjectImage.fromJson(
               json['coverImage'] as Map<String, dynamic>,
             ),
+      quality: MobileProjectQuality.fromJson(
+        (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
+      ),
     );
   }
 }
@@ -650,11 +655,15 @@ class MobileProjectChat {
     required this.messages,
     required this.operations,
     this.plans = const [],
+    this.hasMore = false,
+    this.nextCursor,
   });
 
   final List<MobileProjectChatMessage> messages;
   final List<MobilePlan> plans;
   final List<MobileBookEditOperation> operations;
+  final bool hasMore;
+  final String? nextCursor;
 
   factory MobileProjectChat.fromJson(Map<String, dynamic> json) {
     final messages = json['messages'] as List<dynamic>? ?? const [];
@@ -678,6 +687,8 @@ class MobileProjectChat {
             ),
           )
           .toList(),
+      hasMore: json['hasMore'] as bool? ?? false,
+      nextCursor: json['nextCursor'] as String?,
     );
   }
 }
@@ -687,6 +698,8 @@ class MobileProjectChatSendResult extends MobileProjectChat {
     required super.messages,
     required super.operations,
     super.plans,
+    super.hasMore,
+    super.nextCursor,
     required this.reply,
     this.operation,
   });
@@ -700,6 +713,8 @@ class MobileProjectChatSendResult extends MobileProjectChat {
       messages: chat.messages,
       plans: chat.plans,
       operations: chat.operations,
+      hasMore: chat.hasMore,
+      nextCursor: chat.nextCursor,
       reply: MobileProjectChatMessage.fromJson(
         json['reply'] as Map<String, dynamic>,
       ),
@@ -792,6 +807,8 @@ class MobileManualBookEditResult extends MobileProjectChat {
     required super.messages,
     required super.operations,
     super.plans,
+    super.hasMore,
+    super.nextCursor,
     required this.savedExportMessage,
     required this.operation,
   });
@@ -805,6 +822,8 @@ class MobileManualBookEditResult extends MobileProjectChat {
       messages: chat.messages,
       plans: chat.plans,
       operations: chat.operations,
+      hasMore: chat.hasMore,
+      nextCursor: chat.nextCursor,
       savedExportMessage: MobileProjectChatMessage.fromJson(
         json['savedExportMessage'] as Map<String, dynamic>,
       ),
@@ -827,6 +846,7 @@ class MobileProjectStatus {
     required this.pageProgress,
     required this.imageCount,
     required this.exports,
+    this.quality = const MobileProjectQuality.pending(),
     required this.updatedAt,
     this.failureMessage,
   });
@@ -842,7 +862,13 @@ class MobileProjectStatus {
   final MobilePageProgress pageProgress;
   final int imageCount;
   final MobileExportSet exports;
+  final MobileProjectQuality quality;
   final DateTime updatedAt;
+
+  /// Whether the server is still actively working on the book; drives status
+  /// streaming and detail-polling cadence.
+  bool get isLive =>
+      status == 'planning' || status == 'generating' || status == 'editing';
 
   factory MobileProjectStatus.fromJson(Map<String, dynamic> json) {
     final steps = json['steps'] as List<dynamic>;
@@ -867,13 +893,97 @@ class MobileProjectStatus {
       exports: MobileExportSet.fromJson(
         json['exports'] as Map<String, dynamic>,
       ),
+      quality: MobileProjectQuality.fromJson(
+        (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
+      ),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
 
   bool get isComplete => status == 'complete';
 
+  bool get requiresReview => status == 'review_required' || quality.isBlocked;
+
   bool get hasFailure => failureMessage != null && failureMessage!.isNotEmpty;
+}
+
+class MobileProjectQuality {
+  const MobileProjectQuality({
+    required this.state,
+    required this.issues,
+    required this.affectedPageIndexes,
+    this.score,
+  });
+
+  const MobileProjectQuality.pending()
+    : state = 'pending',
+      score = null,
+      issues = const [],
+      affectedPageIndexes = const [];
+
+  final String state;
+  final int? score;
+  final List<MobileProjectQualityIssue> issues;
+  final List<int> affectedPageIndexes;
+
+  factory MobileProjectQuality.fromJson(Map<String, dynamic> json) {
+    final rawIssues = json['issues'] as List<dynamic>? ?? const [];
+    final rawIndexes =
+        json['affectedPageIndexes'] as List<dynamic>? ?? const [];
+    return MobileProjectQuality(
+      state: json['state'] as String? ?? 'pending',
+      score: (json['score'] as num?)?.round(),
+      issues: rawIssues
+          .whereType<Map>()
+          .map(
+            (issue) => MobileProjectQualityIssue.fromJson(
+              issue.cast<String, dynamic>(),
+            ),
+          )
+          .toList(),
+      affectedPageIndexes: rawIndexes
+          .whereType<num>()
+          .map((index) => index.toInt())
+          .toList(),
+    );
+  }
+
+  bool get isBlocked => state == 'blocked';
+  bool get recommendsReview => state == 'review_recommended';
+  bool get passed => state == 'passed';
+}
+
+class MobileProjectQualityIssue {
+  const MobileProjectQualityIssue({
+    required this.code,
+    required this.severity,
+    required this.source,
+    required this.message,
+    required this.guidance,
+    required this.affectedPageIndexes,
+  });
+
+  final String code;
+  final String severity;
+  final String source;
+  final String message;
+  final String guidance;
+  final List<int> affectedPageIndexes;
+
+  factory MobileProjectQualityIssue.fromJson(Map<String, dynamic> json) {
+    final indexes = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
+    return MobileProjectQualityIssue(
+      code: json['code'] as String? ?? 'QUALITY_ISSUE',
+      severity: json['severity'] as String? ?? 'warning',
+      source: json['source'] as String? ?? 'model',
+      message: json['message'] as String? ?? 'Review this part of the book.',
+      guidance: json['guidance'] as String? ?? 'Review the affected pages.',
+      affectedPageIndexes: indexes
+          .whereType<num>()
+          .map((index) => index.toInt())
+          .toList(),
+    );
+  }
 }
 
 class MobileProjectStatusStep {

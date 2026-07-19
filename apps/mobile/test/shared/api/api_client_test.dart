@@ -46,6 +46,33 @@ void main() {
     expect(adapter.lastOptions?.contentType, Headers.jsonContentType);
   });
 
+  test('postJson forwards the per-request receive timeout for LLM endpoints '
+      'and leaves other requests on the global default', () async {
+    final adapter = RecordingHttpClientAdapter();
+    final apiClient = ApiClient(
+      dio: Dio(
+        BaseOptions(
+          baseUrl: 'http://localhost:4001',
+          receiveTimeout: const Duration(seconds: 20),
+        ),
+      )..httpClientAdapter = adapter,
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    await apiClient.postJson(
+      '/api/mobile/projects/project-1/chat/messages',
+      data: const {'message': 'Make chapter two warmer.'},
+      receiveTimeout: llmReceiveTimeout,
+    );
+    expect(adapter.lastOptions?.receiveTimeout, llmReceiveTimeout);
+
+    await apiClient.getJson('/api/mobile/projects/project-1');
+    expect(
+      adapter.lastOptions?.receiveTimeout,
+      const Duration(seconds: 20),
+    );
+  });
+
   test('refreshTokens sends JSON content type', () async {
     final refreshedTokens = validTokens();
     final adapter = RecordingHttpClientAdapter(

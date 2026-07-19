@@ -111,6 +111,7 @@ class CreationChatState {
     this.initializing = true,
     this.draftId,
     this.sessionTitle,
+    this.sessionRevision = 1,
     this.messages = const <MobileCreationMessage>[],
     this.assistantTyping = false,
     this.building = false,
@@ -142,6 +143,7 @@ class CreationChatState {
   final bool initializing;
   final String? draftId;
   final String? sessionTitle;
+  final int sessionRevision;
   final List<MobileCreationMessage> messages;
   final bool assistantTyping;
   final bool building;
@@ -209,6 +211,7 @@ class CreationChatState {
     bool? initializing,
     String? draftId,
     Object? sessionTitle = _sentinel,
+    int? sessionRevision,
     List<MobileCreationMessage>? messages,
     bool? assistantTyping,
     bool? building,
@@ -242,6 +245,7 @@ class CreationChatState {
       sessionTitle: sessionTitle == _sentinel
           ? this.sessionTitle
           : sessionTitle as String?,
+      sessionRevision: sessionRevision ?? this.sessionRevision,
       messages: messages ?? this.messages,
       assistantTyping: assistantTyping ?? this.assistantTyping,
       building: building ?? this.building,
@@ -286,6 +290,9 @@ class CreationChatController extends Notifier<CreationChatState> {
   int _initRequestId = 0;
   int _messageRequestId = 0;
   int _nextOptimisticMessageId = 0;
+  int _nextServerRequestId = 0;
+  String? _pendingBuildServerRequestId;
+  String? _pendingBuildFingerprint;
   Future<void>? _syncOutputsRequest;
 
   @override
@@ -403,10 +410,12 @@ class CreationChatController extends Notifier<CreationChatState> {
         .toList();
     final requestId = ++_messageRequestId;
     final localId = 'local_msg_${_nextOptimisticMessageId++}';
+    final serverRequestId = _newServerRequestId('message');
     final optimisticMessage = MobileCreationMessage(
       role: 'user',
       content: trimmed,
       localId: localId,
+      requestId: serverRequestId,
       createdAt: DateTime.now(),
       sendStatus: CreationMessageSendStatus.sending,
       includedSourceNotes: includedSourceNotes,
@@ -467,6 +476,7 @@ class CreationChatController extends Notifier<CreationChatState> {
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              requestId: serverRequestId,
             )
           : await _repository.sendConversationMessage(
               draftId: draftId,
@@ -476,6 +486,8 @@ class CreationChatController extends Notifier<CreationChatState> {
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
               editMessageId: editMessageId,
+              requestId: serverRequestId,
+              expectedRevision: state.sessionRevision,
             );
       if (requestId != _messageRequestId || state.draftId != draftId) return;
       _cache.write(response);
@@ -487,6 +499,22 @@ class CreationChatController extends Notifier<CreationChatState> {
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
       final message = userFacingError(error);
+      if (_isSessionConflict(error) && draftId != null) {
+        final failedMessage = optimisticMessage.copyWith(
+          sendStatus: CreationMessageSendStatus.failed,
+          sendError: message,
+        );
+        if (await _refreshAfterSessionConflict(
+          draftId,
+          failedMessages: [failedMessage],
+        )) {
+          state = state.copyWith(
+            assistantTyping: false,
+            composingNewOutput: wasComposingNewOutput,
+          );
+          return;
+        }
+      }
       state = state.copyWith(
         assistantTyping: false,
         initError: message,
@@ -529,17 +557,22 @@ class CreationChatController extends Notifier<CreationChatState> {
         draftId: draftId,
         messageId: messageId,
         direction: direction,
+        expectedRevision: state.sessionRevision,
       );
       if (requestId != _messageRequestId || state.draftId != draftId) return;
       _cache.write(response);
       _applyConversation(response, assistantTyping: false);
       if (failedLocals.isNotEmpty) {
-        state = state.copyWith(
-          messages: [...state.messages, ...failedLocals],
-        );
+        state = state.copyWith(messages: [...state.messages, ...failedLocals]);
       }
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
+      if (_isSessionConflict(error)) {
+        await _refreshAfterSessionConflict(
+          draftId,
+          failedMessages: failedLocals,
+        );
+      }
       if (requestId == _messageRequestId) {
         state = state.copyWith(initError: userFacingError(error));
       }
@@ -574,6 +607,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       for (final attachment in failed.attachments) attachment.id,
     ];
     final requestId = ++_messageRequestId;
+    final serverRequestId = failed.requestId ?? _newServerRequestId('message');
     state = state.copyWith(
       messages: [
         for (final entry in state.messages)
@@ -595,6 +629,7 @@ class CreationChatController extends Notifier<CreationChatState> {
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              requestId: serverRequestId,
             )
           : await _repository.sendConversationMessage(
               draftId: draftId,
@@ -603,6 +638,8 @@ class CreationChatController extends Notifier<CreationChatState> {
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              requestId: serverRequestId,
+              expectedRevision: state.sessionRevision,
             );
       if (requestId != _messageRequestId || state.draftId != draftId) return;
       _cache.write(response);
@@ -614,6 +651,19 @@ class CreationChatController extends Notifier<CreationChatState> {
       ref.invalidate(chatSessionsProvider);
     } catch (error) {
       final message = userFacingError(error);
+      if (_isSessionConflict(error) && draftId != null) {
+        final failedRetry = failed.copyWith(
+          sendStatus: CreationMessageSendStatus.failed,
+          sendError: message,
+        );
+        if (await _refreshAfterSessionConflict(
+          draftId,
+          failedMessages: [failedRetry],
+        )) {
+          state = state.copyWith(assistantTyping: false);
+          return;
+        }
+      }
       state = state.copyWith(
         assistantTyping: false,
         initError: message,
@@ -696,10 +746,14 @@ class CreationChatController extends Notifier<CreationChatState> {
     final attachmentId = pending.attachment?.id;
     if (draftId != null && attachmentId != null) {
       try {
-        await _repository.deleteAttachment(
+        final revision = await _repository.deleteAttachment(
           draftId: draftId,
           attachmentId: attachmentId,
+          expectedRevision: state.sessionRevision,
         );
+        if (revision != null) {
+          state = state.copyWith(sessionRevision: revision);
+        }
       } catch (_) {
         // The file simply stays in the session pool; harmless.
       }
@@ -728,7 +782,11 @@ class CreationChatController extends Notifier<CreationChatState> {
         bytes: pending.bytes ?? const <int>[],
         filename: pending.name,
         mimeType: pending.mimeType,
+        expectedRevision: state.sessionRevision,
       );
+      if (attachment.sessionRevision != null) {
+        state = state.copyWith(sessionRevision: attachment.sessionRevision);
+      }
       _updatePendingAttachment(
         localId,
         (entry) => entry.copyWith(
@@ -755,7 +813,9 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (existing != null) {
       return existing;
     }
-    final response = await _repository.startConversation();
+    final response = await _repository.startConversation(
+      requestId: _newServerRequestId('session'),
+    );
     _cache.write(response);
     if (state.draftId == null) {
       _applyConversation(response, initializing: false);
@@ -803,27 +863,48 @@ class CreationChatController extends Notifier<CreationChatState> {
       );
     }
     state = state.copyWith(building: true);
+    final presets = _presetsForRequest();
+    final sourceNotes = state.hasSourceNotes ? state.sourceNotes.trim() : null;
+    final optionalDetails = state.optionalDetails.hasContent
+        ? state.optionalDetails
+        : null;
+    final language = state.language == 'en' ? null : state.language;
+    final fingerprint =
+        '$draftId|${presets?.toJson()}|$sourceNotes|${optionalDetails?.toJson()}|$language';
+    if (_pendingBuildFingerprint != fingerprint) {
+      _pendingBuildServerRequestId = _newServerRequestId('build');
+      _pendingBuildFingerprint = fingerprint;
+    }
+    final buildRequestId = _pendingBuildServerRequestId!;
     try {
       final response = await _repository.buildConversation(
         draftId: draftId,
-        presets: _presetsForRequest(),
-        sourceNotes: state.hasSourceNotes ? state.sourceNotes.trim() : null,
-        optionalDetails: state.optionalDetails.hasContent
-            ? state.optionalDetails
-            : null,
-        language: state.language == 'en' ? null : state.language,
+        presets: presets,
+        sourceNotes: sourceNotes,
+        optionalDetails: optionalDetails,
+        language: language,
+        requestId: buildRequestId,
+        expectedRevision: state.sessionRevision,
       );
+      _pendingBuildServerRequestId = null;
+      _pendingBuildFingerprint = null;
       state = state.copyWith(
         building: false,
         createdProjectId: response.project.id,
         activeProjectId: response.project.id,
         composingNewOutput: false,
         outputs: _mergeOutput(response.output),
+        sessionRevision: response.sessionRevision ?? state.sessionRevision,
       );
       _cacheCreatedProject(response.project.id, response.output);
       ref.invalidate(chatSessionsProvider);
       return response;
     } catch (error) {
+      if (_isSessionConflict(error)) {
+        _pendingBuildServerRequestId = null;
+        _pendingBuildFingerprint = null;
+        await _refreshAfterSessionConflict(draftId);
+      }
       state = state.copyWith(building: false);
       rethrow;
     }
@@ -1036,6 +1117,38 @@ class CreationChatController extends Notifier<CreationChatState> {
     );
   }
 
+  String _newServerRequestId(String prefix) {
+    final sequence = _nextServerRequestId++;
+    return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$sequence';
+  }
+
+  bool _isSessionConflict(Object error) {
+    return error is ApiException && error.code == 'SESSION_CONFLICT';
+  }
+
+  Future<bool> _refreshAfterSessionConflict(
+    String draftId, {
+    List<MobileCreationMessage> failedMessages = const [],
+  }) async {
+    try {
+      final latest = await _repository.resumeConversationById(draftId);
+      if (state.draftId != draftId) {
+        return false;
+      }
+      _cache.write(latest);
+      _applyConversation(latest, assistantTyping: false);
+      state = state.copyWith(
+        messages: [...state.messages, ...failedMessages],
+        initError:
+            'This chat changed on another device. I reloaded the latest version; your unsent message is still available to retry.',
+      );
+      ref.invalidate(chatSessionsProvider);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   bool _canApplyInitResponse({
     required int requestId,
     required int messageRequestId,
@@ -1075,7 +1188,10 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (state.draftId != draftId) {
       return;
     }
-    state = state.copyWith(outputs: mergedOutputs);
+    state = state.copyWith(
+      outputs: mergedOutputs,
+      sessionRevision: session.revision,
+    );
   }
 
   List<MobileCreationOutput> _mergeOutputsInto(
@@ -1110,6 +1226,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         turn: current?.turn ?? response.turn,
         session: MobileCreationSession(
           draftId: session.draftId,
+          revision: session.revision,
           title: session.title,
           status: session.status,
           messages: session.messages,
@@ -1140,6 +1257,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         turn: current.turn,
         session: MobileCreationSession(
           draftId: session.draftId,
+          revision: session.revision,
           title: session.title,
           status: session.status,
           messages: session.messages,
@@ -1199,6 +1317,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       initializing: initializing ?? state.initializing,
       assistantTyping: assistantTyping ?? state.assistantTyping,
       draftId: session?.draftId ?? state.draftId,
+      sessionRevision: session?.revision,
       sessionTitle: session?.title,
       messages: messages,
       createdProjectId: session?.createdProjectId,

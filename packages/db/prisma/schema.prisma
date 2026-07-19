@@ -29,6 +29,7 @@ enum ProjectStatus {
   PLAN_READY
   GENERATING
   EDITING
+  REVIEW_REQUIRED
   COMPLETE
   FAILED
 }
@@ -43,6 +44,7 @@ enum JobStatus {
   QUEUED
   ACTIVE
   COMPLETED
+  CANCELED
   FAILED
 }
 
@@ -442,6 +444,7 @@ model Project {
   language      String           @default("en")
   mediaSettings Json
   status        ProjectStatus    @default(DRAFT)
+  contentRevision Int            @default(0)
   templateId    String?
   currentPlanId String?          @unique
   createdAt     DateTime         @default(now())
@@ -478,9 +481,12 @@ model Project {
 
 model MobileCreationDraft {
   id               String   @id @default(cuid())
+  requestId        String?  @unique
   userId           String
   payload          Json
   advisorSnapshot  Json?
+  lastTurn         Json?
+  revision         Int      @default(1)
   createdProjectId String?
   status           String   @default("ACTIVE")
   createdAt        DateTime @default(now())
@@ -497,6 +503,7 @@ model MobileCreationOutput {
   id        String   @id @default(cuid())
   draftId   String
   projectId String
+  requestId String?
   title     String
   sequence  Int
   createdAt DateTime @default(now())
@@ -507,6 +514,7 @@ model MobileCreationOutput {
 
   @@unique([draftId, projectId])
   @@unique([draftId, sequence])
+  @@unique([draftId, requestId])
   @@index([draftId, sequence])
   @@index([projectId])
 }
@@ -573,6 +581,7 @@ model Page {
 model ProjectChatMessage {
   id            String                 @id @default(cuid())
   projectId     String
+  requestId     String?
   parentId      String?
   role          ProjectChatMessageRole
   content       String
@@ -587,14 +596,20 @@ model ProjectChatMessage {
   operation BookEditOperation? @relation("ProjectChatOperationMessages", fields: [operationId], references: [id], onDelete: SetNull)
 
   @@index([projectId, createdAt])
+  @@unique([projectId, requestId])
   @@index([projectId, parentId])
   @@index([parentId])
   @@index([operationId])
 }
 
+/// Migration 000026 adds a raw partial unique index
+/// ("BookEditOperation_one_open_per_project" on projectId WHERE status IN
+/// ('QUEUED','ACTIVE')) that Prisma's DSL cannot express. It guarantees at most
+/// one open edit per project; `prisma migrate diff` will not know about it.
 model BookEditOperation {
   id                  String                  @id @default(cuid())
   projectId           String
+  requestId           String?
   userMessageId       String?
   assistantMessageId  String?
   generationJobId     String?
@@ -617,6 +632,7 @@ model BookEditOperation {
   operationMessages ProjectChatMessage[] @relation("ProjectChatOperationMessages")
 
   @@index([projectId, createdAt])
+  @@unique([projectId, requestId])
   @@index([generationJobId])
   @@index([ledgerEntryId])
 }
@@ -795,10 +811,16 @@ model GenerationJob {
   projectId  String
   type       JobType
   status     JobStatus @default(QUEUED)
+  dedupeKey  String?   @unique
   progress   Int       @default(0)
   message    String?
   error      String?
   bullJobId  String?
+  dispatchAttempts Int @default(0)
+  nextDispatchAt DateTime?
+  dispatchedAt DateTime?
+  contentRevision Int?
+  qualityReport Json?
   payload    Json
   steps      Json?
   startedAt  DateTime?
@@ -810,6 +832,9 @@ model GenerationJob {
   providerLogs ProviderCallLog[]
   creditLedger CreditLedgerEntry[]
   editOperations BookEditOperation[]
+
+  @@index([projectId, type, status])
+  @@index([status, nextDispatchAt])
 }
 
 model ProviderCallLog {

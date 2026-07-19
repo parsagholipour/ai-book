@@ -23,25 +23,32 @@ abstract interface class ProjectsRepository {
   Future<MobilePlanOperation> revisePlan({
     required String planId,
     required String message,
+    String? requestId,
   });
 
-  Future<MobilePlanOperation> approvePlan(String planId);
+  Future<MobilePlanOperation> approvePlan(String planId, {String? requestId});
 
   Future<MobileProjectStatus> getProjectStatus(String id);
 
   Stream<MobileProjectStatus> watchProjectStatus(String id);
 
-  Future<MobileProjectChat> getProjectChat(String id);
+  Future<MobileProjectChat> getProjectChat(
+    String id, {
+    String? beforeMessageId,
+    int limit = 150,
+  });
 
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
     required String projectId,
     required String message,
+    String? requestId,
   });
 
   Future<MobileProjectChatSendResult> editProjectChatMessage({
     required String projectId,
     required String messageId,
     required String message,
+    String? requestId,
   });
 
   Future<MobileProjectChat> switchProjectChatBranch({
@@ -56,6 +63,7 @@ abstract interface class ProjectsRepository {
     required String projectId,
     required List<MobileManualBookPageEdit> pages,
     String? savedExportMessageId,
+    String? requestId,
   });
 
   Future<MobileProjectRecovery> resumeProject(String id);
@@ -142,18 +150,23 @@ class MobileProjectsRepository implements ProjectsRepository {
   Future<MobilePlanOperation> revisePlan({
     required String planId,
     required String message,
+    String? requestId,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/plans/$planId/revise',
-      data: {'message': message},
+      data: {'message': message, 'requestId': ?requestId},
     );
     return MobilePlanOperation.fromJson(response.data as Map<String, dynamic>);
   }
 
   @override
-  Future<MobilePlanOperation> approvePlan(String planId) async {
+  Future<MobilePlanOperation> approvePlan(
+    String planId, {
+    String? requestId,
+  }) async {
     final response = await apiClient.postJson(
       '/api/mobile/plans/$planId/approve',
+      data: {'requestId': ?requestId},
     );
     return MobilePlanOperation.fromJson(response.data as Map<String, dynamic>);
   }
@@ -182,8 +195,20 @@ class MobileProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobileProjectChat> getProjectChat(String id) async {
-    final response = await apiClient.getJson('/api/mobile/projects/$id/chat');
+  Future<MobileProjectChat> getProjectChat(
+    String id, {
+    String? beforeMessageId,
+    int limit = 150,
+  }) async {
+    final query = <String, String>{
+      'limit': '$limit',
+      'beforeMessageId': ?beforeMessageId,
+    };
+    final path = Uri(
+      path: '/api/mobile/projects/$id/chat',
+      queryParameters: query,
+    ).toString();
+    final response = await apiClient.getJson(path);
     return MobileProjectChat.fromJson(response.data as Map<String, dynamic>);
   }
 
@@ -191,10 +216,12 @@ class MobileProjectsRepository implements ProjectsRepository {
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
     required String projectId,
     required String message,
+    String? requestId,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/chat/messages',
-      data: {'message': message},
+      data: {'message': message, 'requestId': ?requestId},
+      receiveTimeout: llmReceiveTimeout,
     );
     return MobileProjectChatSendResult.fromJson(
       response.data as Map<String, dynamic>,
@@ -206,10 +233,16 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String messageId,
     required String message,
+    String? requestId,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/chat/messages',
-      data: {'message': message, 'editMessageId': messageId},
+      data: {
+        'message': message,
+        'editMessageId': messageId,
+        'requestId': ?requestId,
+      },
+      receiveTimeout: llmReceiveTimeout,
     );
     return MobileProjectChatSendResult.fromJson(
       response.data as Map<String, dynamic>,
@@ -231,7 +264,9 @@ class MobileProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileEditableBook> getEditableBook(String projectId) async {
-    final response = await apiClient.getJson('/api/mobile/projects/$projectId/book');
+    final response = await apiClient.getJson(
+      '/api/mobile/projects/$projectId/book',
+    );
     final data = response.data as Map<String, dynamic>;
     return MobileEditableBook.fromJson(data['book'] as Map<String, dynamic>);
   }
@@ -241,12 +276,14 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String projectId,
     required List<MobileManualBookPageEdit> pages,
     String? savedExportMessageId,
+    String? requestId,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/manual-edits',
       data: {
         'pages': pages.map((page) => page.toJson()).toList(),
         'savedExportMessageId': ?savedExportMessageId,
+        'requestId': ?requestId,
       },
     );
     return MobileManualBookEditResult.fromJson(
@@ -417,7 +454,7 @@ Stream<MobileProjectStatus> _watchProjectStatus(
     await for (final status in repository.watchProjectStatus(id)) {
       emittedStatus = true;
       yield status;
-      if (!_isLiveProjectStatus(status)) {
+      if (!status.isLive) {
         return;
       }
     }
@@ -432,15 +469,9 @@ Stream<MobileProjectStatus> _watchProjectStatus(
   while (true) {
     final status = await repository.getProjectStatus(id);
     yield status;
-    if (!_isLiveProjectStatus(status)) {
+    if (!status.isLive) {
       return;
     }
     await Future<void>.delayed(const Duration(seconds: 3));
   }
-}
-
-bool _isLiveProjectStatus(MobileProjectStatus status) {
-  return status.status == 'planning' ||
-      status.status == 'generating' ||
-      status.status == 'editing';
 }

@@ -17,11 +17,18 @@ export const bookQueue = new Queue(BOOK_QUEUE_NAME, {
 });
 
 const GENERATE_PAGE_RECOVERY_ATTEMPTS = 4;
+// generate-book jobs resume from settled pages on retry (see the worker's
+// directGenerationResume.ts), so one automatic retry recovers a network blip
+// without regenerating finished work. Keep in sync with the worker's
+// jobRetryPolicy.ts.
+const GENERATE_BOOK_RECOVERY_ATTEMPTS = 2;
 const GENERATE_PAGE_RECOVERY_BACKOFF_MS = 15_000;
+const DISPATCH_BACKOFF_BASE_MS = 5_000;
+const DISPATCH_BACKOFF_MAX_MS = 5 * 60_000;
 const STOPPED_JOB_MESSAGE = "Stopped";
 const STOPPED_JOB_ERROR = "Stopped by user";
 
-const jobNames = {
+export const jobNames = {
   PLAN_BOOK: "plan-book",
   REVISE_PLAN: "revise-plan",
   GENERATE_BOOK: "generate-book",
@@ -48,36 +55,124 @@ export async function enqueueGenerationJob(options: {
   projectId: string;
   type: GenerationJobType;
   payload: Record<string, unknown>;
+  dedupeKey?: string | undefined;
+  contentRevision?: number | undefined;
+  transaction?: Prisma.TransactionClient | undefined;
+  dispatch?: boolean | undefined;
 }) {
-  const generationJob = await prisma.generationJob.create({
-    data: {
-      projectId: options.projectId,
-      type: options.type,
-      payload: options.payload as Prisma.InputJsonValue,
-      status: "QUEUED",
-      progress: 0,
-      message: "Queued"
+  const db = options.transaction ?? prisma;
+  if (options.dedupeKey) {
+    const existing = await db.generationJob.findUnique({ where: { dedupeKey: options.dedupeKey } });
+    if (existing) {
+      if (options.dispatch !== false && existing.status === "QUEUED" && !existing.bullJobId) {
+        return (await dispatchGenerationJob(existing.id)) ?? existing;
+      }
+      return existing;
     }
-  });
+  }
+  let generationJob;
+  try {
+    generationJob = await db.generationJob.create({
+      data: {
+        projectId: options.projectId,
+        type: options.type,
+        payload: options.payload as Prisma.InputJsonValue,
+        ...(options.dedupeKey ? { dedupeKey: options.dedupeKey } : {}),
+        ...(options.contentRevision !== undefined ? { contentRevision: options.contentRevision } : {}),
+        status: "QUEUED",
+        progress: 0,
+        message: "Queued"
+      }
+    });
+  } catch (error) {
+    if (!(options.dedupeKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+      throw error;
+    }
+    generationJob = await db.generationJob.findUnique({ where: { dedupeKey: options.dedupeKey } });
+    if (!generationJob) {
+      throw error;
+    }
+  }
+  if (options.dispatch === false) {
+    return generationJob;
+  }
+  return (await dispatchGenerationJob(generationJob.id)) ?? generationJob;
+}
 
-  const bullJob = await bookQueue.add(
-    jobNames[options.type],
-    {
-      ...options.payload,
-      projectId: options.projectId,
-      generationJobId: generationJob.id
+/**
+ * Publishes a durable database job to BullMQ. A Redis outage deliberately
+ * leaves the row QUEUED so reconciliation can publish it later; callers can
+ * safely return the durable job instead of rolling domain state back.
+ */
+export async function dispatchGenerationJob(generationJobId: string) {
+  const generationJob = await prisma.generationJob.findUnique({ where: { id: generationJobId } });
+  if (!generationJob || generationJob.status !== "QUEUED") {
+    return generationJob;
+  }
+  if (generationJob.bullJobId) {
+    return generationJob;
+  }
+  const payload = jsonPayloadToRecord(generationJob.payload);
+  try {
+    const bullJob = await bookQueue.add(
+      jobNames[generationJob.type as GenerationJobType],
+      {
+        ...payload,
+        projectId: generationJob.projectId,
+        generationJobId: generationJob.id
+      },
+      { ...jobOptionsForType(generationJob.type as GenerationJobType), jobId: generationJob.id }
+    );
+    return prisma.generationJob.update({
+      where: { id: generationJob.id },
+      data: {
+        bullJobId: bullJob.id ?? generationJob.id,
+        dispatchedAt: new Date(),
+        nextDispatchAt: null,
+        message: "Queued"
+      }
+    });
+  } catch {
+    const attempts = generationJob.dispatchAttempts + 1;
+    return prisma.generationJob.update({
+      where: { id: generationJob.id },
+      data: {
+        dispatchAttempts: attempts,
+        nextDispatchAt: new Date(Date.now() + dispatchBackoffMs(attempts)),
+        message: "Waiting for the generation queue"
+      }
+    });
+  }
+}
+
+export async function reconcileUndispatchedGenerationJobs(limit = 50): Promise<number> {
+  const jobs = await prisma.generationJob.findMany({
+    where: {
+      status: "QUEUED",
+      bullJobId: null,
+      OR: [{ nextDispatchAt: null }, { nextDispatchAt: { lte: new Date() } }]
     },
-    jobOptionsForType(options.type)
-  );
-
-  return prisma.generationJob.update({
-    where: { id: generationJob.id },
-    data: { bullJobId: bullJob.id ?? null }
+    orderBy: { createdAt: "asc" },
+    take: limit,
+    select: { id: true }
   });
+  await Promise.all(jobs.map((job) => dispatchGenerationJob(job.id)));
+  return jobs.length;
 }
 
 export async function requeueGenerationJob(job: RequeueableGenerationJob) {
   const payload = jsonPayloadToRecord(job.payload);
+
+  const existingBullId = await prisma.generationJob.findUnique({
+    where: { id: job.id },
+    select: { bullJobId: true }
+  });
+  if (existingBullId?.bullJobId) {
+    const existingBullJob = await bookQueue.getJob(existingBullId.bullJobId);
+    if (existingBullJob && (await existingBullJob.getState()) !== "active") {
+      await existingBullJob.remove().catch(() => undefined);
+    }
+  }
 
   await prisma.generationJob.update({
     where: { id: job.id },
@@ -88,25 +183,16 @@ export async function requeueGenerationJob(job: RequeueableGenerationJob) {
       error: null,
       startedAt: null,
       finishedAt: null,
+      bullJobId: null,
+      dispatchedAt: null,
+      nextDispatchAt: null,
       steps: Prisma.JsonNull,
       payload: payload as Prisma.InputJsonValue
     }
   });
 
-  const bullJob = await bookQueue.add(
-    jobNames[job.type],
-    {
-      ...payload,
-      projectId: job.projectId,
-      generationJobId: job.id
-    },
-    jobOptionsForType(job.type)
-  );
-
-  return prisma.generationJob.update({
-    where: { id: job.id },
-    data: { bullJobId: bullJob.id ?? null }
-  });
+  const durableJob = await prisma.generationJob.findUniqueOrThrow({ where: { id: job.id } });
+  return (await dispatchGenerationJob(job.id)) ?? durableJob;
 }
 
 export async function stopProjectGenerationJobs(projectId: string) {
@@ -187,14 +273,24 @@ function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
 }
 
 function jobOptionsForType(type: GenerationJobType): JobsOptions | undefined {
-  if (type !== "GENERATE_PAGE") {
+  const attempts =
+    type === "GENERATE_PAGE"
+      ? GENERATE_PAGE_RECOVERY_ATTEMPTS
+      : type === "GENERATE_BOOK"
+        ? GENERATE_BOOK_RECOVERY_ATTEMPTS
+        : undefined;
+  if (attempts === undefined) {
     return undefined;
   }
   return {
-    attempts: GENERATE_PAGE_RECOVERY_ATTEMPTS,
+    attempts,
     backoff: {
       type: "exponential",
       delay: GENERATE_PAGE_RECOVERY_BACKOFF_MS
     }
   };
+}
+
+function dispatchBackoffMs(attempt: number): number {
+  return Math.min(DISPATCH_BACKOFF_MAX_MS, DISPATCH_BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1));
 }

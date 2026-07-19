@@ -125,17 +125,56 @@ void main() {
     expect(find.text('History'), findsOneWidget);
   });
 
-  testWidgets('mid-screen horizontal drag leaves the drawer closed', (
-    tester,
-  ) async {
-    // Horizontal gestures away from the edge belong to on-screen content
-    // (chip rows, carousels), not the drawer.
+  testWidgets('mid-screen horizontal drag opens the drawer', (tester) async {
     final drawerKey = GlobalKey<EasyDrawerControllerState>();
     await tester.pumpWidget(_app(drawerKey));
     await tester.dragFrom(const Offset(300, 400), const Offset(200, 0));
     await tester.pumpAndSettle();
-    expect(find.text('History'), findsNothing);
+    expect(find.text('History'), findsOneWidget);
+    expect(drawerKey.currentState!.isDrawerOpen, isTrue);
+  });
+
+  testWidgets('horizontal scrollables mid-screen win over the drawer', (
+    tester,
+  ) async {
+    // Horizontal gestures over chip rows / carousels belong to that content;
+    // the drawer defers by requiring extra slop away from the start edge.
+    final drawerKey = GlobalKey<EasyDrawerControllerState>();
+    final scrollController = ScrollController(initialScrollOffset: 200);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          fit: StackFit.expand,
+          children: [
+            Scaffold(
+              body: Center(
+                child: SizedBox(
+                  height: 48,
+                  child: ListView(
+                    controller: scrollController,
+                    scrollDirection: Axis.horizontal,
+                    children: List.generate(
+                      40,
+                      (i) => SizedBox(width: 80, child: Text('Chip $i')),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            EasyDrawerController(
+              key: drawerKey,
+              child: const Drawer(child: Text('History')),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.dragFrom(const Offset(300, 300), const Offset(150, 0));
+    await tester.pumpAndSettle();
     expect(drawerKey.currentState!.isDrawerOpen, isFalse);
+    expect(find.text('History'), findsNothing);
+    expect(scrollController.offset, lessThan(200));
   });
 
   testWidgets('menu button opens', (tester) async {

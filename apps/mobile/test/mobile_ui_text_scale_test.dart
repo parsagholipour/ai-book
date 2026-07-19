@@ -192,6 +192,7 @@ class _FakeCreationRepository implements CreationRepository {
   Future<void> renameSession({
     required String draftId,
     required String title,
+    int? expectedRevision,
   }) async {}
 
   @override
@@ -243,6 +244,7 @@ class _FakeCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? requestId,
   }) async {
     return fakeCreationConversation(withSession: true);
   }
@@ -256,6 +258,8 @@ class _FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? requestId,
+    int? expectedRevision,
   }) async {
     return fakeCreationConversation(withSession: true);
   }
@@ -265,6 +269,7 @@ class _FakeCreationRepository implements CreationRepository {
     required String draftId,
     required String messageId,
     required String direction,
+    int? expectedRevision,
   }) async {
     return fakeCreationConversation(withSession: true);
   }
@@ -280,7 +285,6 @@ class _FakeCreationRepository implements CreationRepository {
     throw UnimplementedError('Preflight is not used in this test.');
   }
 
-
   @override
   Future<MobileCreationAttachment> uploadAttachment({
     required String draftId,
@@ -288,6 +292,7 @@ class _FakeCreationRepository implements CreationRepository {
     required String filename,
     String? mimeType,
     void Function(int sent, int total)? onProgress,
+    int? expectedRevision,
   }) async {
     return MobileCreationAttachment(
       id: 'att-fake',
@@ -298,10 +303,11 @@ class _FakeCreationRepository implements CreationRepository {
   }
 
   @override
-  Future<void> deleteAttachment({
+  Future<int?> deleteAttachment({
     required String draftId,
     required String attachmentId,
-  }) async {}
+    int? expectedRevision,
+  }) async => expectedRevision;
 
   @override
   Future<MobileCreationFinalizeResponse> buildConversation({
@@ -310,6 +316,8 @@ class _FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
+    String? requestId,
+    int? expectedRevision,
   }) {
     throw UnimplementedError('Build is not used in this test.');
   }

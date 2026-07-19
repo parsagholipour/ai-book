@@ -76,7 +76,10 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   try {
     final operation = await ref
         .read(projectsRepositoryProvider)
-        .approvePlan(plan.id);
+        .approvePlan(
+          plan.id,
+          requestId: 'approve-${DateTime.now().microsecondsSinceEpoch}',
+        );
     ref.invalidate(projectsProvider);
     ref.invalidate(billingProvider);
     ref.invalidate(projectDetailProvider(project.id));

@@ -187,6 +187,7 @@ class FakeCreationRepository implements CreationRepository {
   Future<void> renameSession({
     required String draftId,
     required String title,
+    int? expectedRevision,
   }) async {}
 
   @override
@@ -238,6 +239,7 @@ class FakeCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    String? requestId,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }
@@ -251,6 +253,8 @@ class FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? requestId,
+    int? expectedRevision,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }
@@ -260,10 +264,10 @@ class FakeCreationRepository implements CreationRepository {
     required String draftId,
     required String messageId,
     required String direction,
+    int? expectedRevision,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }
-
 
   @override
   Future<MobileCreationAttachment> uploadAttachment({
@@ -272,6 +276,7 @@ class FakeCreationRepository implements CreationRepository {
     required String filename,
     String? mimeType,
     void Function(int sent, int total)? onProgress,
+    int? expectedRevision,
   }) async {
     return MobileCreationAttachment(
       id: 'att-fake',
@@ -282,10 +287,11 @@ class FakeCreationRepository implements CreationRepository {
   }
 
   @override
-  Future<void> deleteAttachment({
+  Future<int?> deleteAttachment({
     required String draftId,
     required String attachmentId,
-  }) async {}
+    int? expectedRevision,
+  }) async => expectedRevision;
 
   @override
   Future<MobileCreationFinalizeResponse> buildConversation({
@@ -294,6 +300,8 @@ class FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
+    String? requestId,
+    int? expectedRevision,
   }) {
     throw UnimplementedError('Conversation is not used in this test.');
   }
@@ -370,7 +378,11 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobileProjectChat> getProjectChat(String id) async {
+  Future<MobileProjectChat> getProjectChat(
+    String id, {
+    String? beforeMessageId,
+    int limit = 150,
+  }) async {
     return const MobileProjectChat(messages: [], operations: []);
   }
 
@@ -378,6 +390,7 @@ class FakeProjectsRepository implements ProjectsRepository {
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
     required String projectId,
     required String message,
+    String? requestId,
   }) async {
     final reply = MobileProjectChatMessage(
       id: 'reply',
@@ -399,6 +412,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String messageId,
     required String message,
+    String? requestId,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }
@@ -422,6 +436,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String projectId,
     required List<MobileManualBookPageEdit> pages,
     String? savedExportMessageId,
+    String? requestId,
   }) {
     throw UnimplementedError('Edit Mode is not used in this test.');
   }
@@ -470,6 +485,7 @@ class FakeProjectsRepository implements ProjectsRepository {
   Future<MobilePlanOperation> revisePlan({
     required String planId,
     required String message,
+    String? requestId,
   }) async {
     return fakePlanOperation(
       projectId: projectDetail?.id ?? 'project-1',
@@ -479,7 +495,10 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobilePlanOperation> approvePlan(String planId) async {
+  Future<MobilePlanOperation> approvePlan(
+    String planId, {
+    String? requestId,
+  }) async {
     return fakePlanOperation(
       projectId: projectDetail?.id ?? 'project-1',
       planId: planId,

@@ -34,17 +34,38 @@ class _GenerationProgressScreenState
     extends ConsumerState<GenerationProgressScreen> {
   Timer? _pollTimer;
   String? _busyAction;
+  ProviderSubscription<AsyncValue<MobileProjectStatus>>? _statusSubscription;
 
   @override
   void initState() {
     super.initState();
-    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    // Page previews are only worth re-fetching while the book is actively
+    // being worked on; the timer follows the live status and stops once the
+    // project settles (and restarts if a resume brings it back to life).
+    _statusSubscription = ref.listenManual(
+      projectStatusProvider(widget.projectId),
+      (previous, next) => _syncDetailPolling(next),
+      fireImmediately: true,
+    );
+  }
+
+  void _syncDetailPolling(AsyncValue<MobileProjectStatus> statusValue) {
+    final live = statusValue.asData?.value.isLive ?? false;
+    if (live) {
+      _pollTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
+        _refreshDetails();
+      });
+    } else if (_pollTimer != null) {
+      _pollTimer?.cancel();
+      _pollTimer = null;
+      // One last refresh so the previews reflect the finished book.
       _refreshDetails();
-    });
+    }
   }
 
   @override
   void dispose() {
+    _statusSubscription?.close();
     _pollTimer?.cancel();
     super.dispose();
   }
@@ -265,6 +286,17 @@ class ProjectGenerationView extends StatelessWidget {
             onResume: onResume,
           ),
           const SizedBox(height: 12),
+          if (status.quality.isBlocked || status.quality.recommendsReview) ...[
+            _QualityGateCard(
+              quality: status.quality,
+              onOpenPage: (pageIndex) => context.push(
+                '/projects/${status.projectId}/edit?pageIndex=$pageIndex',
+              ),
+              onRequestRegeneration: () =>
+                  context.push('/projects/${status.projectId}/chat'),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (project != null) ...[
             GeneratedBookPreview(
               project: project!,
@@ -273,15 +305,125 @@ class ProjectGenerationView extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
-          ProjectExportPanel(
-            exports: status.exports,
-            billing: billing,
-            busyAction: busyAction,
-            onDownload: onDownload,
-            onOpenPaywall: onOpenPaywall,
-            editBookProjectId: status.isComplete ? status.projectId : null,
-          ),
+          if (!status.quality.isBlocked)
+            ProjectExportPanel(
+              exports: status.exports,
+              billing: billing,
+              busyAction: busyAction,
+              onDownload: onDownload,
+              onOpenPaywall: onOpenPaywall,
+              editBookProjectId: status.isComplete ? status.projectId : null,
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _QualityGateCard extends StatelessWidget {
+  const _QualityGateCard({
+    required this.quality,
+    required this.onOpenPage,
+    required this.onRequestRegeneration,
+  });
+
+  final MobileProjectQuality quality;
+  final void Function(int pageIndex) onOpenPage;
+  final VoidCallback onRequestRegeneration;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final blocked = quality.isBlocked;
+    return Card(
+      color: blocked ? colors.errorContainer : colors.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  blocked ? Icons.gpp_bad_outlined : Icons.rate_review_outlined,
+                  color: blocked
+                      ? colors.onErrorContainer
+                      : colors.onTertiaryContainer,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    blocked
+                        ? 'Export blocked by quality checks'
+                        : 'Review recommended',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              blocked
+                  ? 'Fix the deterministic integrity issues below, then save to rerun the checks.'
+                  : 'The book is exportable, but these prose concerns may be worth reviewing.',
+            ),
+            const SizedBox(height: 12),
+            for (final issue in quality.issues.take(8))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: issue.affectedPageIndexes.isEmpty
+                      ? null
+                      : () => onOpenPage(issue.affectedPageIndexes.first),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          issue.message,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(issue.guidance),
+                        if (issue.affectedPageIndexes.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Pages ${issue.affectedPageIndexes.join(', ')} · Open Edit Mode',
+                            style: TextStyle(
+                              color: colors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (quality.affectedPageIndexes.isNotEmpty)
+                  FilledButton.tonalIcon(
+                    onPressed: () =>
+                        onOpenPage(quality.affectedPageIndexes.first),
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Open Edit Mode'),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: onRequestRegeneration,
+                  icon: const Icon(Icons.auto_fix_high_outlined),
+                  label: const Text('Request regeneration'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

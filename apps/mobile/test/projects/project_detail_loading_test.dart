@@ -82,7 +82,10 @@ class SlowPlanRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobilePlanOperation> approvePlan(String planId) async {
+  Future<MobilePlanOperation> approvePlan(
+    String planId, {
+    String? requestId,
+  }) async {
     return planOperation(status: 'generation_queued', planId: planId);
   }
 
@@ -92,7 +95,11 @@ class SlowPlanRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobileProjectChat> getProjectChat(String id) async {
+  Future<MobileProjectChat> getProjectChat(
+    String id, {
+    String? beforeMessageId,
+    int limit = 150,
+  }) async {
     return const MobileProjectChat(messages: [], operations: []);
   }
 
@@ -100,6 +107,7 @@ class SlowPlanRepository implements ProjectsRepository {
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
     required String projectId,
     required String message,
+    String? requestId,
   }) async {
     final reply = MobileProjectChatMessage(
       id: 'reply',
@@ -121,6 +129,7 @@ class SlowPlanRepository implements ProjectsRepository {
     required String projectId,
     required String messageId,
     required String message,
+    String? requestId,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }
@@ -144,6 +153,7 @@ class SlowPlanRepository implements ProjectsRepository {
     required String projectId,
     required List<MobileManualBookPageEdit> pages,
     String? savedExportMessageId,
+    String? requestId,
   }) {
     throw UnimplementedError('Edit Mode is not used in this test.');
   }
@@ -206,6 +216,7 @@ class SlowPlanRepository implements ProjectsRepository {
   Future<MobilePlanOperation> revisePlan({
     required String planId,
     required String message,
+    String? requestId,
   }) async {
     return planOperation(status: 'revision_queued', planId: planId);
   }

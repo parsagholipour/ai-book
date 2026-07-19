@@ -1034,10 +1034,27 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   Future<_PageCountSelection?> _showPageCountSheet(
     MobileCreationBuildPreflight preflight,
   ) {
+    // Mirrors the plan-approval estimate (estimateApprovalCredits) so the
+    // number a user picks a page count by is the number they are later asked
+    // to approve. An unloaded billing map falls back to the canonical costs.
+    final presets = ref.read(creationChatControllerProvider).presets;
+    final creditCosts =
+        ref.read(billingProvider).asData?.value.creditCosts ??
+        const <String, dynamic>{};
+    int estimateCredits(int pages) => estimateProjectCredits(
+      bookType: presets.bookType,
+      qualityPreset: presets.qualityPreset,
+      imagesEnabled: presets.imagesEnabled,
+      targetPages: pages,
+      creditCosts: creditCosts,
+    );
     return showModalBottomSheet<_PageCountSelection>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => _PageCountPromptSheet(preflight: preflight),
+      builder: (context) => _PageCountPromptSheet(
+        preflight: preflight,
+        estimateCredits: estimateCredits,
+      ),
     );
   }
 
@@ -1283,7 +1300,11 @@ bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
   if (project == null) return false;
   if (project.plan?.isApproved ?? false) return true;
   return switch (project.status) {
-    'generating' || 'editing' || 'complete' || 'failed' => true,
+    'generating' ||
+    'editing' ||
+    'complete' ||
+    'review_required' ||
+    'failed' => true,
     _ => false,
   };
 }
@@ -1297,6 +1318,7 @@ Object? _generationScrollKey(AsyncValue<MobileProjectStatus>? statusValue) {
       status.status,
       status.isComplete,
       status.hasFailure,
+      status.quality.state,
       // Export actions change the bubble height when they appear.
       primaryUnlockedAvailableExport(status.exports)?.format,
     ),
@@ -1414,10 +1436,13 @@ class _GenerationProgressBubbleState
         final progress = status.progressPercent.clamp(0, 100).toInt();
         final failureMessage = status.failureMessage?.trim();
         final isFailed = status.status == 'failed' || status.hasFailure;
-        final downloadExport = status.isComplete
+        final reviewRequired = status.requiresReview;
+        final downloadExport = status.isComplete && !reviewRequired
             ? primaryUnlockedAvailableExport(status.exports)
             : null;
-        final title = status.isComplete
+        final title = reviewRequired
+            ? 'Review required before export'
+            : status.isComplete
             ? 'Ready to export'
             : isFailed
             ? 'Needs attention'
@@ -1425,6 +1450,8 @@ class _GenerationProgressBubbleState
         final detail =
             isFailed && failureMessage != null && failureMessage.isNotEmpty
             ? failureMessage
+            : reviewRequired && status.quality.issues.isNotEmpty
+            ? status.quality.issues.first.message
             : status.currentAction;
         return _GenerationProgressShell(
           child: Column(
@@ -1434,12 +1461,14 @@ class _GenerationProgressBubbleState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
-                    isFailed
+                    isFailed || reviewRequired
                         ? Icons.error_outline
                         : status.isComplete
                         ? Icons.check_circle_outline
                         : Icons.auto_awesome_outlined,
-                    color: isFailed ? colors.error : colors.primary,
+                    color: isFailed || reviewRequired
+                        ? colors.error
+                        : colors.primary,
                     size: 20,
                   ),
                   const SizedBox(width: 10),
@@ -1510,6 +1539,17 @@ class _GenerationProgressBubbleState
                     ),
                   if (status.isComplete)
                     _EditBookButton(projectId: widget.projectId),
+                  if (reviewRequired &&
+                      status.quality.affectedPageIndexes.isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: () => context.push(
+                        '/projects/${widget.projectId}/edit?pageIndex=${status.quality.affectedPageIndexes.first}',
+                      ),
+                      icon: const Icon(Icons.edit_note_outlined),
+                      label: Text(
+                        'Fix page ${status.quality.affectedPageIndexes.first}',
+                      ),
+                    ),
                   _ViewProgressButton(projectId: widget.projectId),
                 ],
               ),
@@ -3077,8 +3117,7 @@ class _MessageBubble extends StatelessWidget {
     final timestamp = _formatChatTimestamp(message.createdAt);
     final localId = message.localId;
     final branch = message.branch;
-    final canEdit =
-        isUser && !failed && message.id != null && onEdit != null;
+    final canEdit = isUser && !failed && message.id != null && onEdit != null;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
@@ -4318,9 +4357,13 @@ class _PageCountSelection {
 // ---------------------------------------------------------------------------
 
 class _PageCountPromptSheet extends StatefulWidget {
-  const _PageCountPromptSheet({required this.preflight});
+  const _PageCountPromptSheet({
+    required this.preflight,
+    required this.estimateCredits,
+  });
 
   final MobileCreationBuildPreflight preflight;
+  final int Function(int targetPages) estimateCredits;
 
   @override
   State<_PageCountPromptSheet> createState() => _PageCountPromptSheetState();
@@ -4369,31 +4412,51 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
               ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final recommendation in recommendations)
-                  ActionChip(
-                    label: Text(recommendation.label),
-                    avatar: const Icon(Icons.auto_awesome_outlined, size: 18),
-                    onPressed: () => Navigator.of(context).pop(
-                      _PageCountSelection(
-                        targetPages: recommendation.targetPages,
-                        source: 'recommended',
-                      ),
+            for (final recommendation in recommendations) ...[
+              Card(
+                margin: EdgeInsets.zero,
+                child: ListTile(
+                  leading: const Icon(Icons.auto_awesome_outlined),
+                  title: Text(recommendation.label),
+                  subtitle: recommendation.description.isEmpty
+                      ? null
+                      : Text(recommendation.description),
+                  trailing: Text(
+                    '≈ ${widget.estimateCredits(recommendation.targetPages)} credits',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: colors.primary,
                     ),
                   ),
-              ],
-            ),
-            if (recommendations.isNotEmpty) const SizedBox(height: 16),
+                  onTap: () => Navigator.of(context).pop(
+                    _PageCountSelection(
+                      targetPages: recommendation.targetPages,
+                      source: 'recommended',
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (recommendations.isNotEmpty) ...[
+              Text(
+                'Estimated full package cost, charged when you approve the plan.',
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+            ],
             TextField(
               controller: _customController,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Custom pages',
-                helperText: 'Enter a number from 1 to 600.',
+                helperText: _customPages == null
+                    ? 'Enter a number from 1 to 600.'
+                    : '≈ ${widget.estimateCredits(_customPages!)} credits '
+                          'for $_customPages pages.',
               ),
               onChanged: (_) => setState(() {}),
               onSubmitted: (_) {
@@ -4516,6 +4579,11 @@ class _AdvancedSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(creationChatControllerProvider);
     final presets = state.presets;
+    // Watched (not read) so the page-cost estimate reacts to Finish/Visuals
+    // changes made in this same sheet.
+    final creditCosts =
+        ref.watch(billingProvider).asData?.value.creditCosts ??
+        const <String, dynamic>{};
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return Padding(
@@ -4555,6 +4623,13 @@ class _AdvancedSheet extends ConsumerWidget {
               presets: presets,
               onAuto: controller.setPageCountAuto,
               onCustom: controller.setCustomTargetPages,
+              estimateCredits: (pages) => estimateProjectCredits(
+                bookType: presets.bookType,
+                qualityPreset: presets.qualityPreset,
+                imagesEnabled: presets.imagesEnabled,
+                targetPages: pages,
+                creditCosts: creditCosts,
+              ),
             ),
             const SizedBox(height: 14),
             _AdvancedGroup(
@@ -4689,6 +4764,7 @@ class _PageCountControl extends StatefulWidget {
     required this.presets,
     required this.onAuto,
     required this.onCustom,
+    this.estimateCredits,
   });
 
   final String title;
@@ -4696,6 +4772,7 @@ class _PageCountControl extends StatefulWidget {
   final MobileCreationPresets presets;
   final VoidCallback onAuto;
   final void Function(int targetPages, {String source}) onCustom;
+  final int Function(int targetPages)? estimateCredits;
 
   @override
   State<_PageCountControl> createState() => _PageCountControlState();
@@ -4742,6 +4819,18 @@ class _PageCountControlState extends State<_PageCountControl> {
       return;
     }
     widget.onCustom(pages);
+  }
+
+  /// Estimated package cost for the currently entered custom page count, in
+  /// the same terms as the plan-approval dialog.
+  String? _customEstimateHelper() {
+    final estimateCredits = widget.estimateCredits;
+    final pages = int.tryParse(_controller.text.trim());
+    if (estimateCredits == null || pages == null || pages < 1 || pages > 600) {
+      return null;
+    }
+    return '≈ ${estimateCredits(pages)} credits for $pages pages, '
+        'charged when you approve the plan.';
   }
 
   @override
@@ -4794,7 +4883,8 @@ class _PageCountControlState extends State<_PageCountControl> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: InputDecoration(
               labelText: 'Pages',
-              helperText: 'Enter a number from 1 to 600.',
+              helperText: _customEstimateHelper() ??
+                  'Enter a number from 1 to 600.',
               errorText:
                   _controller.text.isNotEmpty &&
                       (int.tryParse(_controller.text) == null ||

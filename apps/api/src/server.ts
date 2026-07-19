@@ -13,7 +13,7 @@ import { registerAuth } from "./auth.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
 import { mobileProjectRoutes } from "./mobileProjects.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
-import { closeQueue } from "./queue.js";
+import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
 import { projectRoutes } from "./routes/projects.js";
 
 const config = loadConfig();
@@ -56,6 +56,17 @@ await sweepAttachments();
 const attachmentSweepTimer = setInterval(() => void sweepAttachments(), 24 * 60 * 60 * 1000);
 attachmentSweepTimer.unref();
 
+const reconcileQueue = async () => {
+  try {
+    await reconcileUndispatchedGenerationJobs();
+  } catch (error) {
+    app.log.warn({ err: error }, "Generation queue reconciliation failed");
+  }
+};
+await reconcileQueue();
+const queueReconcileTimer = setInterval(() => void reconcileQueue(), 5_000);
+queueReconcileTimer.unref();
+
 await app.register(cors, { origin: true, credentials: true });
 await registerAuth(app, config);
 await app.register(swagger, {
@@ -90,6 +101,7 @@ if (webDistDir) {
 
 const shutdown = async () => {
   clearInterval(attachmentSweepTimer);
+  clearInterval(queueReconcileTimer);
   await app.close();
   await closeQueue();
   await prisma.$disconnect();

@@ -324,7 +324,11 @@ class FakeProjectsRepository implements ProjectsRepository {
   Future<Map<String, String>> assetHeaders() async => const {};
 
   @override
-  Future<MobileProjectChat> getProjectChat(String id) async {
+  Future<MobileProjectChat> getProjectChat(
+    String id, {
+    String? beforeMessageId,
+    int limit = 150,
+  }) async {
     return const MobileProjectChat(messages: [], operations: []);
   }
 
@@ -332,6 +336,7 @@ class FakeProjectsRepository implements ProjectsRepository {
   Future<MobileProjectChatSendResult> sendProjectChatMessage({
     required String projectId,
     required String message,
+    String? requestId,
   }) async {
     final reply = MobileProjectChatMessage(
       id: 'reply',
@@ -353,6 +358,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String messageId,
     required String message,
+    String? requestId,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }
@@ -376,6 +382,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String projectId,
     required List<MobileManualBookPageEdit> pages,
     String? savedExportMessageId,
+    String? requestId,
   }) {
     throw UnimplementedError('Edit Mode is not used in this test.');
   }
@@ -428,7 +435,10 @@ class FakeProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobilePlanOperation> approvePlan(String planId) async {
+  Future<MobilePlanOperation> approvePlan(
+    String planId, {
+    String? requestId,
+  }) async {
     return fakeOperation(status: 'generation_queued', planId: planId);
   }
 
@@ -436,6 +446,7 @@ class FakeProjectsRepository implements ProjectsRepository {
   Future<MobilePlanOperation> revisePlan({
     required String planId,
     required String message,
+    String? requestId,
   }) async {
     return fakeOperation(status: 'revision_queued', planId: planId);
   }

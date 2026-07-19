@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GenerateJsonOptions, JsonResult, TextModelAdapter } from "@book-maker/core";
 import {
+  CLASSIFIER_PAGE_SAMPLE_CAP,
+  classifierPageSample,
   classifyProjectChatMessage,
   classifyWithHeuristics,
   isBookEditScopeOnlyMessage,
   messageWithScope,
-  type BookEditIntent
+  type BookEditIntent,
+  type BookEditPageContext
 } from "./bookEditIntent.js";
 
 const pages = [
@@ -69,6 +72,77 @@ describe("book edit intent heuristics", () => {
     }
   });
 
+  it("routes completed-book dislike preferences to a rewrite of thematically matching pages", () => {
+    const scenePages: BookEditPageContext[] = [
+      {
+        id: "page-1",
+        index: 1,
+        title: "Morning",
+        summary: "A quiet private morning at home.",
+        previewText: "The day begins slowly."
+      },
+      {
+        id: "page-2",
+        index: 2,
+        title: "The Gathering",
+        summary: "A public gathering where the pair is on display.",
+        previewText: "Guests watch from the hall."
+      },
+      {
+        id: "page-3",
+        index: 3,
+        title: "The Feast",
+        summary: "A feast with a public display at the table.",
+        previewText: "The hall is crowded."
+      }
+    ];
+
+    const intent = classifyWithHeuristics(
+      "I don't like the public display. This should be private between them.",
+      "complete",
+      scenePages
+    );
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.affectedPageIndexes).toEqual([2, 3]);
+    expect(intent.impact).toBe("style_rewrite");
+    expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
+  });
+
+  it("offers concrete options when a dislike preference matches no pages", () => {
+    const intent = classifyWithHeuristics("I don't like the dragon battles.", "complete", pages);
+
+    expect(intent.kind).toBe("clarify");
+    expect(intent.clarification).toBe("scope");
+    expect(intent.assistantMessage).toMatch(/whole book/i);
+  });
+
+  it("routes plan-stage dislike preferences to plan revision", () => {
+    const intent = classifyWithHeuristics("I don't like the villain being so scary.", "plan_ready", pages);
+
+    expect(intent.kind).toBe("plan_revision");
+    expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
+  });
+
+  it("routes identity-level dislike preferences on a finished book to replan", () => {
+    const intent = classifyWithHeuristics("I don't like the main character.", "complete", pages);
+
+    expect(intent.kind).toBe("book_replan");
+    expect(intent.impact).toBe("structural_replan");
+  });
+
+  it("treats bare should-be directives as edit requests, not answers", () => {
+    const intent = classifyWithHeuristics("This should be private between them.", "complete", pages);
+
+    expect(intent.kind).not.toBe("answer");
+  });
+
+  it("keeps dislike-flavored questions as answers", () => {
+    const intent = classifyWithHeuristics("Why is there a public display in chapter 2?", "complete", pages);
+
+    expect(intent.kind).toBe("answer");
+  });
+
   it("uses the AI router even when heuristics are high-confidence", async () => {
     const modelIntent: BookEditIntent = {
       kind: "plan_revision",
@@ -111,6 +185,51 @@ describe("book edit intent heuristics", () => {
 
     expect(model.generateJson).toHaveBeenCalled();
     expect(intent.kind).toBe("plan_revision");
+  });
+
+  it("retries the AI router once on a transient network failure", async () => {
+    const modelIntent: BookEditIntent = {
+      kind: "plan_revision",
+      confidence: 0.95,
+      reasoning: "Recovered after the connection reset.",
+      affectedPageIndexes: [],
+      assistantMessage: "I’ll revise the plan.",
+      scope: "none",
+      impact: "structural_replan",
+      clarification: "none"
+    };
+    const model = fakeFlakyTextModel(modelIntent);
+
+    const intent = await classifyProjectChatMessage({
+      message: "Make the examples warmer and more practical.",
+      stage: "plan_ready",
+      pages,
+      textModel: model
+    });
+
+    expect(model.generateJson).toHaveBeenCalledTimes(2);
+    expect(intent.reasoning).toBe("Recovered after the connection reset.");
+  });
+
+  it("falls back to heuristics without retrying when the AI router exceeds its time budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const model = fakeHangingTextModel();
+
+      const pending = classifyProjectChatMessage({
+        message: "I don't want images or covers",
+        stage: "plan_ready",
+        pages,
+        textModel: model
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      const intent = await pending;
+
+      expect(model.generateJson).toHaveBeenCalledTimes(1);
+      expect(intent.kind).toBe("plan_revision");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("routes exact generated text replacements to local patch", () => {
@@ -231,6 +350,56 @@ describe("book edit intent heuristics", () => {
     expect(intent.impact).toBe("structural_replan");
   });
 
+  it("passes small books to the classifier prompt without sampling", () => {
+    const sample = classifierPageSample(pages, "Fix the typo on page 2.");
+
+    expect(sample.truncated).toBe(false);
+    expect(sample.pages).toEqual(pages);
+  });
+
+  it("samples large books under the cap while keeping explicitly mentioned pages", () => {
+    const bigBook = manyPages(600);
+
+    const sample = classifierPageSample(bigBook, "Fix a typo on page 412.");
+
+    expect(sample.truncated).toBe(true);
+    expect(sample.pages.length).toBeLessThanOrEqual(CLASSIFIER_PAGE_SAMPLE_CAP);
+    const indexes = sample.pages.map((page) => page.index);
+    expect(indexes).toContain(412);
+    expect(indexes).toContain(411);
+    expect(indexes).toContain(413);
+    expect(indexes).toContain(1);
+    expect(indexes).toContain(600);
+    expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
+  });
+
+  it("tells the AI router when the page list was sampled", async () => {
+    const modelIntent: BookEditIntent = {
+      kind: "page_rewrite",
+      confidence: 0.9,
+      reasoning: "Targeted page edit.",
+      affectedPageIndexes: [412],
+      assistantMessage: "I’ll rewrite page 412.",
+      scope: "explicit_pages",
+      impact: "style_rewrite",
+      clarification: "none"
+    };
+    const model = fakeTextModel(modelIntent);
+
+    await classifyProjectChatMessage({
+      message: "Rewrite page 412 in a warmer tone.",
+      stage: "complete",
+      pages: manyPages(600),
+      textModel: model
+    });
+
+    const call = vi.mocked(model.generateJson).mock.calls[0]![0];
+    const prompt = JSON.parse(call.messages.at(-1)!.content);
+    expect(prompt.pageContext).toMatchObject({ totalPages: 600, truncated: true });
+    expect(prompt.pages.length).toBeLessThanOrEqual(CLASSIFIER_PAGE_SAMPLE_CAP);
+    expect(prompt.pages.map((page: { index: number }) => page.index)).toContain(412);
+  });
+
   it("recognizes a scope-only follow-up that can resolve a pending edit", () => {
     expect(isBookEditScopeOnlyMessage("whole book")).toBe(true);
     expect(isBookEditScopeOnlyMessage("I said whole book")).toBe(true);
@@ -245,6 +414,16 @@ describe("book edit intent heuristics", () => {
     expect(resolved.scope).toBe("matching_pages");
   });
 });
+
+function manyPages(count: number): BookEditPageContext[] {
+  return Array.from({ length: count }, (_, offset) => ({
+    id: `page-${offset + 1}`,
+    index: offset + 1,
+    title: `Section ${offset + 1}`,
+    summary: `Summary of section ${offset + 1}.`,
+    previewText: `Preview of section ${offset + 1}.`
+  }));
+}
 
 function fakeTextModel(intent: BookEditIntent): TextModelAdapter {
   const generateJson = vi.fn(async (options: GenerateJsonOptions<unknown>): Promise<JsonResult<unknown>> => {
@@ -272,6 +451,41 @@ function fakeFailingTextModel(): TextModelAdapter {
   return {
     generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
     generateJson: generateJson as TextModelAdapter["generateJson"],
+    async *streamText() {
+      yield "";
+    }
+  };
+}
+
+function fakeFlakyTextModel(intent: BookEditIntent): TextModelAdapter {
+  const generateJson = vi.fn(async (options: GenerateJsonOptions<unknown>): Promise<JsonResult<unknown>> => {
+    if (generateJson.mock.calls.length === 1) {
+      const error = new Error("socket hang up") as Error & { code: string };
+      error.code = "ECONNRESET";
+      throw error;
+    }
+    const data = options.schema.parse(intent);
+    return {
+      data,
+      text: JSON.stringify(data),
+      model: "test-router",
+      provider: "test"
+    };
+  });
+  return {
+    generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
+    generateJson: generateJson as TextModelAdapter["generateJson"],
+    async *streamText() {
+      yield "";
+    }
+  };
+}
+
+function fakeHangingTextModel(): TextModelAdapter {
+  const generateJson = vi.fn(() => new Promise<never>(() => undefined));
+  return {
+    generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
+    generateJson: generateJson as unknown as TextModelAdapter["generateJson"],
     async *streamText() {
       yield "";
     }
