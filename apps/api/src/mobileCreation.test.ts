@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { TextModelAdapter } from "@book-maker/core";
 import {
+  adviseMobileBook,
   attachmentContextForTurn,
   briefForMobilePayload,
   composeMobileProjectPrompt,
   detectMessageLanguage,
   deterministicAdvisor,
+  explicitTargetPagesForMobilePayload,
   deterministicCreationTurn,
   enrichCreationTurnWithAi,
   greetingCreationTurn,
@@ -496,5 +498,54 @@ describe("creation chat attachments", () => {
         messages: [{ role: "user", content: "" }]
       })
     ).toThrow();
+  });
+});
+
+describe("creation chat branch isolation", () => {
+  // Mirrors an edited first message: the original (m1/m2) is an abandoned
+  // sibling branch; the corrected thread is m3 onward.
+  const branched = mobileCreationDraftPayloadSchema.parse({
+    payloadVersion: 3,
+    rawIdea: "A romance about a Persian man and a Brazilian woman fighting for a halal marriage",
+    messages: [
+      { id: "m0", parentId: null, isActiveChild: true, role: "assistant", content: "Hi! Tell me about the book you want to make." },
+      {
+        id: "m1",
+        parentId: "m0",
+        isActiveChild: false,
+        role: "user",
+        content: "A romance about a Persian man and an Iranian woman. Make it 200 pages.\nTitle: Wrong Turn"
+      },
+      { id: "m2", parentId: "m1", isActiveChild: true, role: "assistant", content: "Lovely idea! A Persian man and an Iranian woman. Who should read it?" },
+      { id: "m3", parentId: "m0", isActiveChild: true, role: "user", content: "A romance about a Persian man and a Brazilian woman" },
+      { id: "m4", parentId: "m3", isActiveChild: true, role: "assistant", content: "Lovely idea! A Persian man and a Brazilian woman. Who should read it?" },
+      { id: "m5", parentId: "m4", isActiveChild: true, role: "user", content: "Young adults" }
+    ]
+  });
+
+  it("keeps edited-away branches out of the project prompt", () => {
+    const prompt = composeMobileProjectPrompt(branched, deterministicAdvisor(branched));
+
+    expect(prompt).toContain("Brazilian woman");
+    expect(prompt).not.toContain("Iranian woman");
+  });
+
+  it("ignores titles and page counts that only exist in edited-away branches", () => {
+    expect(titleForMobilePayload(branched, deterministicAdvisor(branched))).toBeUndefined();
+    expect(explicitTargetPagesForMobilePayload(branched)).toBeUndefined();
+  });
+
+  it("sends only the active thread to the AI advisor enrichment", async () => {
+    let enrichedMessages: string | undefined;
+    await adviseMobileBook(branched, {
+      enrich: async (payload) => {
+        enrichedMessages = JSON.stringify(payload.messages ?? []);
+        return {};
+      }
+    });
+
+    expect(enrichedMessages).toBeDefined();
+    expect(enrichedMessages).toContain("Brazilian woman");
+    expect(enrichedMessages).not.toContain("Iranian woman");
   });
 });

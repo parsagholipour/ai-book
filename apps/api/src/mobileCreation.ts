@@ -7,6 +7,7 @@ import {
   type TextModelAdapter
 } from "@book-maker/core";
 import { z } from "zod";
+import { linearizeCreationMessages } from "./creationChatTree.js";
 
 const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
 export const mobileBookTypeChoiceSchema = z.enum([
@@ -227,7 +228,7 @@ export async function adviseMobileBook(
   payload: MobileCreationDraftPayload,
   options: AdvisorOptions = {}
 ): Promise<MobileBookAdvisorResponse> {
-  const parsed = mobileCreationDraftPayloadSchema.parse(payload);
+  const parsed = activeThreadPayload(mobileCreationDraftPayloadSchema.parse(payload));
   const base = deterministicAdvisor(parsed);
   if (!options.enrich || !payloadHasEnoughSubstance(parsed)) {
     return base;
@@ -1478,11 +1479,26 @@ function cleanExplicitTitle(value: string | undefined): string | undefined {
   return cleaned && cleaned.length >= 2 ? cleaned.slice(0, 160) : undefined;
 }
 
-function normalizePayload(payload: MobileCreationDraftPayload): MobileCreationDraftPayload {
-  if (payload.rawIdea.trim() || !payload.brief) {
+/**
+ * Stored payload messages hold the full branch tree (editing a message forks
+ * a sibling). Anything that reads the payload as a conversation — prompt
+ * composition, advisors, title and page-count detection — must only see the
+ * selected thread, or abandoned branches leak into the generated book.
+ */
+function activeThreadPayload(payload: MobileCreationDraftPayload): MobileCreationDraftPayload {
+  if (!payload.messages || payload.messages.length === 0) {
     return payload;
   }
-  const brief = payload.brief;
+  const active = linearizeCreationMessages(payload.messages).active;
+  return active.length === payload.messages.length ? payload : { ...payload, messages: active };
+}
+
+function normalizePayload(payload: MobileCreationDraftPayload): MobileCreationDraftPayload {
+  const resolved = activeThreadPayload(payload);
+  if (resolved.rawIdea.trim() || !resolved.brief) {
+    return resolved;
+  }
+  const brief = resolved.brief;
   const lane = laneForLegacyIntent(brief.intent);
   return mobileCreationDraftPayloadSchema.parse({
     payloadVersion: 2,
@@ -1505,7 +1521,7 @@ function normalizePayload(payload: MobileCreationDraftPayload): MobileCreationDr
       nextStep: brief.distributionUse,
       mustInclude: brief.mustInclude
     },
-    selectedPresets: payload.selectedPresets,
+    selectedPresets: resolved.selectedPresets,
     brief
   });
 }
