@@ -410,6 +410,9 @@ async function planBook(job: Job) {
 async function revisePlan(job: Job) {
   const { projectId, planId, message } = job.data as { projectId: string; planId: string; message: string };
   const generationJobId = job.data.generationJobId as string | undefined;
+  const respondedQuestionPrompts = Array.isArray(job.data.respondedQuestionPrompts)
+    ? (job.data.respondedQuestionPrompts as unknown[]).filter((prompt): prompt is string => typeof prompt === "string")
+    : undefined;
   const planVersion = await prisma.planVersion.findUnique({ where: { id: planId }, include: { project: true } });
   if (!planVersion) {
     throw new Error("Plan not found");
@@ -427,7 +430,8 @@ async function revisePlan(job: Job) {
     targetPages: input.targetPages,
     temperature: input.temperature,
     language: input.language,
-    toneProfile: input.mediaSettings.toneProfile
+    toneProfile: input.mediaSettings.toneProfile,
+    respondedQuestionPrompts
   });
   const version = await nextPlanVersion(projectId);
   const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];

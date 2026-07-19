@@ -11,7 +11,11 @@ export function usePlanQuestions(args: {
   questions: unknown;
   latestPlanRevisionStatus?: string | undefined;
   hasActivePlanRevision: boolean;
-  revisePlanWithMessage: (message: string, onSuccess?: () => void) => Promise<void>;
+  revisePlanWithMessage: (
+    message: string,
+    onSuccess?: () => void,
+    respondedQuestionPrompts?: string[]
+  ) => Promise<void>;
 }) {
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [questionResponses, setQuestionResponses] = useState<Record<string, QuestionResponse>>({});
@@ -93,12 +97,16 @@ export function usePlanQuestions(args: {
 
   async function submitQuestionResponses() {
     if (planQuestions.length === 0) return;
-    const responseCount = planQuestions.filter((question) => questionResponses[question.id]).length;
-    if (responseCount === 0 || submittedQuestionResponses || args.hasActivePlanRevision) return;
+    const respondedQuestions = planQuestions.filter((question) => questionResponses[question.id]);
+    if (respondedQuestions.length === 0 || submittedQuestionResponses || args.hasActivePlanRevision) return;
 
-    await args.revisePlanWithMessage(questionResponseMessage, () => {
-      setSubmittedQuestionResponseMessage(questionResponseMessage);
-    });
+    await args.revisePlanWithMessage(
+      questionResponseMessage,
+      () => {
+        setSubmittedQuestionResponseMessage(questionResponseMessage);
+      },
+      respondedQuestions.map((question) => question.prompt)
+    );
   }
 
   return {

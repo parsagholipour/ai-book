@@ -30,6 +30,7 @@ export type RevisePlanOptions = {
   temperature?: number;
   language?: string;
   toneProfile?: ToneProfile;
+  respondedQuestionPrompts?: string[] | undefined;
 };
 
 export type ExpandChapterResearchOptions = {
@@ -127,7 +128,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
           role: "system",
           content:
             [
-              `Revise this book generation plan. Return a JSON object with revised plan fields at the JSON root, not nested under plan, data, or result. You may omit unchanged fields because the server preserves them from the current plan. Do not re-emit unchanged researchNotes; existing research notes are preserved server-side. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference.`,
+              `Revise this book generation plan. Return a JSON object with revised plan fields at the JSON root, not nested under plan, data, or result. You may omit unchanged fields because the server preserves them from the current plan. Do not re-emit unchanged researchNotes; existing research notes are preserved server-side. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference: decide those details yourself and remove them from questions. Never re-ask a question the user already answered or skipped, even reworded.`,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               ...targetLanguageGenerationGuidance(options.language),
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
@@ -140,6 +141,9 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
             {
               currentPlan: compactPlanForRevisionPrompt(options.currentPlan),
               userMessage: options.userMessage,
+              respondedQuestionPrompts: options.respondedQuestionPrompts?.length
+                ? options.respondedQuestionPrompts
+                : undefined,
               toneProfile,
               language: targetLanguagePayload(options.language),
               readingGuidance: options.input ? kidsReadingGuidancePayload(options.input) : undefined,
@@ -157,6 +161,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
     return normalizePlanPageTargets(
       {
         ...revised,
+        questions: removeRespondedQuestions(revised.questions, options.respondedQuestionPrompts),
         researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
       },
       targetPages
@@ -164,6 +169,21 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
   } catch (error) {
     throw new Error(`AI plan revision failed. No revised plan was created. ${formatErrorMessage(error)}`);
   }
+}
+
+function removeRespondedQuestions(
+  questions: BookPlan["questions"],
+  respondedPrompts: string[] | undefined
+): BookPlan["questions"] {
+  const respondedKeys = new Set((respondedPrompts ?? []).map(questionPromptKey).filter(Boolean));
+  if (respondedKeys.size === 0) {
+    return questions;
+  }
+  return questions.filter((question) => !respondedKeys.has(questionPromptKey(question.prompt)));
+}
+
+function questionPromptKey(prompt: string): string {
+  return prompt.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 function compactPlanForRevisionPrompt(plan: BookPlan): Omit<BookPlan, "researchNotes"> & {

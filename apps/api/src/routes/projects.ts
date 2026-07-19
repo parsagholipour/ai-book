@@ -67,7 +67,10 @@ const assetParamsSchema = z.object({
 const planMessageParamsSchema = z.object({ id: z.string().min(1) });
 const voiceCharacterParamsSchema = z.object({ id: z.string().min(1), characterId: z.string().min(1) });
 const voiceCharacterIdParamsSchema = z.object({ characterId: z.string().min(1) });
-const planMessageBodySchema = z.object({ message: z.string().min(1).max(10000) });
+const planMessageBodySchema = z.object({
+  message: z.string().min(1).max(10000),
+  respondedQuestionPrompts: z.array(z.string().min(1).max(1000)).max(40).optional()
+});
 const voiceProfilePatchSchema = voiceProfileSchema.partial();
 const voiceProviderIdSchema = z.enum(["openai_realtime", "gemini_live"]);
 const voiceCallReconnectContextSchema = z.string().trim().max(2000).optional();
@@ -538,7 +541,13 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       projectId: plan.projectId,
       type: "REVISE_PLAN",
       dedupeKey: `revise-plan:${plan.projectId}:${id}:${stablePayloadHash(body.message)}`,
-      payload: { planId: id, message: body.message }
+      payload: {
+        planId: id,
+        message: body.message,
+        ...(body.respondedQuestionPrompts?.length
+          ? { respondedQuestionPrompts: body.respondedQuestionPrompts }
+          : {})
+      }
     });
     return reply.code(202).send(job);
   });

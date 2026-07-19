@@ -64,6 +64,46 @@ describe("revisePlanningPackage", () => {
     expect(JSON.stringify(userPayload)).not.toContain("https://example.com/very-long-source");
     expect(JSON.stringify(userPayload)).not.toContain("A".repeat(300));
   });
+
+  it("never re-asks answered or skipped questions, even when the model omits questions", async () => {
+    const input = testInput();
+    const currentPlan: BookPlan = {
+      ...makeFallbackPlan(input),
+      questions: [
+        { prompt: "What tone should the story have?", options: ["Playful", "Calm"], allowCustom: true },
+        { prompt: "Should the turtle have a name?", options: ["Yes", "No"], allowCustom: true },
+        { prompt: "How long should chapters be?", options: ["Short", "Long"], allowCustom: true }
+      ]
+    };
+    const textModel: TextModelAdapter = {
+      async generateJson<T>(_options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        return {
+          data: { title: "Revised Rabbit Race" } as T,
+          text: "{\"title\":\"Revised Rabbit Race\"}",
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      }
+    };
+
+    const revised = await revisePlanningPackage({
+      currentPlan,
+      userMessage:
+        "Planning question responses:\n1. What tone should the story have?\nAnswer: Playful\nSkipped questions with no preference:\n- Should the turtle have a name?",
+      textModel,
+      input,
+      targetPages: input.targetPages,
+      respondedQuestionPrompts: ["What tone should the story have?", "Should the turtle have a name?"]
+    });
+
+    expect(revised.questions.map((question) => question.prompt)).toEqual(["How long should chapters be?"]);
+  });
 });
 
 function testInput(): CreateProjectInput {

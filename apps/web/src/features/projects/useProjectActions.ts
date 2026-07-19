@@ -53,14 +53,17 @@ export function useProjectActions(args: {
     });
   }
 
-  async function revisePlanWithMessage(message: string, onSuccess?: () => void) {
+  async function revisePlanWithMessage(message: string, onSuccess?: () => void, respondedQuestionPrompts?: string[]) {
     const planId = args.selectedDetails?.currentPlan?.id;
     const projectId = args.selectedDetails?.id;
     const trimmedMessage = message.trim();
     if (!planId || !projectId || !trimmedMessage) return;
     await args.runBusyAction(planRevisionActionKey(planId), async () => {
       try {
-        await apiPost(`/api/plans/${planId}/messages`, { message: trimmedMessage });
+        await apiPost(`/api/plans/${planId}/messages`, {
+          message: trimmedMessage,
+          ...(respondedQuestionPrompts?.length ? { respondedQuestionPrompts } : {})
+        });
         onSuccess?.();
         await args.refreshProject(projectId);
       } catch (revisionError) {
