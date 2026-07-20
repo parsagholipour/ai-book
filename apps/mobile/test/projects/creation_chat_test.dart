@@ -1338,6 +1338,54 @@ void main() {
     },
   );
 
+  testWidgets(
+    'typing with a question active keeps the composer above the keyboard '
+    'and collapses the options',
+    (tester) async {
+      final creation = _ScriptedCreationRepository(replyWithQuestion: true);
+      await tester.pumpWidget(_app(creation: creation, startFresh: true));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byType(TextField).last,
+        'A practical guide for new managers',
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+      expect(find.text('Who is this book for?'), findsOneWidget);
+
+      // Focus the composer and simulate the keyboard taking the bottom half
+      // of the screen. Any footer overflow would fail the test here.
+      await tester.showKeyboard(find.byType(TextField).last);
+      tester.view.viewInsets = FakeViewPadding(
+        bottom: tester.view.physicalSize.height / 2,
+      );
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+
+      // The prompt stays readable, the option chips collapse, and the
+      // composer sits above the keyboard instead of being pushed off screen.
+      expect(find.text('Who is this book for?'), findsOneWidget);
+      expect(find.byType(ActionChip), findsNothing);
+      // Collapsing must not rebuild the composer's element: that would drop
+      // focus and dismiss the keyboard the user just opened.
+      final editable = tester.widget<EditableText>(
+        find.byType(EditableText).last,
+      );
+      expect(editable.focusNode.hasFocus, isTrue);
+      final keyboardTop =
+          (tester.view.physicalSize.height - tester.view.viewInsets.bottom) /
+          tester.view.devicePixelRatio;
+      expect(
+        tester.getRect(find.byType(TextField).last).bottom,
+        lessThanOrEqualTo(keyboardTop),
+      );
+
+      await tester.teardownScreen();
+    },
+  );
+
   testWidgets('attaching a document shows a ready chip and sends it with the '
       'message', (tester) async {
     final creation = _ScriptedCreationRepository();

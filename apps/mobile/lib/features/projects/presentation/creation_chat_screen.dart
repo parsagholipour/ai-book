@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
@@ -203,6 +204,16 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     );
     _maybeScrollToBottom(scrollTrigger);
 
+    // Read the keyboard insets here, above the Scaffold: the Scaffold strips
+    // them from the body's MediaQuery, and this read is also what rebuilds
+    // the footers as the keyboard opens and closes.
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final keyboardOpen = keyboardInset > 0;
+    final footerMaxHeight = math.max(
+      (MediaQuery.sizeOf(context).height - keyboardInset) * 0.5,
+      96.0,
+    );
+
     // Material DrawerController fork: same finger-following drag, but snaps
     // open at ~20% width instead of 50%. Must be a full-screen Stack sibling
     // (not Positioned) so mid-drag gesture identity matches Material.
@@ -354,26 +365,37 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                           onCancel: _cancelCreationMessageEdit,
                         ),
                       if (isInOutputStage)
-                        _buildOutputFooter(planValue!, activeProjectId)
+                        _FooterLimiter(
+                          maxHeight: footerMaxHeight,
+                          child: _buildOutputFooter(
+                            planValue!,
+                            activeProjectId,
+                            keyboardOpen: keyboardOpen,
+                          ),
+                        )
                       else
-                        _ConversationFooter(
-                          state: state,
-                          composerController: _composerController,
-                          onSend: _send,
-                          onQuickReply: _send,
-                          onAnswerOption: _send,
-                          onAttach: () => _openAttachMenu(state),
-                          onRetryAttachment: (localId) => unawaited(
-                            ref
-                                .read(creationChatControllerProvider.notifier)
-                                .retryAttachment(localId),
+                        _FooterLimiter(
+                          maxHeight: footerMaxHeight,
+                          child: _ConversationFooter(
+                            state: state,
+                            keyboardOpen: keyboardOpen,
+                            composerController: _composerController,
+                            onSend: _send,
+                            onQuickReply: _send,
+                            onAnswerOption: _send,
+                            onAttach: () => _openAttachMenu(state),
+                            onRetryAttachment: (localId) => unawaited(
+                              ref
+                                  .read(creationChatControllerProvider.notifier)
+                                  .retryAttachment(localId),
+                            ),
+                            onRemoveAttachment: (localId) => unawaited(
+                              ref
+                                  .read(creationChatControllerProvider.notifier)
+                                  .removeAttachment(localId),
+                            ),
+                            onBuild: _build,
                           ),
-                          onRemoveAttachment: (localId) => unawaited(
-                            ref
-                                .read(creationChatControllerProvider.notifier)
-                                .removeAttachment(localId),
-                          ),
-                          onBuild: _build,
                         ),
                     ],
                   ),
@@ -537,8 +559,9 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 
   Widget _buildOutputFooter(
     AsyncValue<MobileProjectDetail> planValue,
-    String activeProjectId,
-  ) {
+    String activeProjectId, {
+    required bool keyboardOpen,
+  }) {
     return planValue.when(
       loading: () => _PlanBuildingFooter(
         message: _planBusyAction == 'revise'
@@ -582,6 +605,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
           plan: plan,
           questionIndex: _planQuestionIndex,
           hasMoreQuestions: hasMoreQuestions,
+          keyboardOpen: keyboardOpen,
           isBusy: _planBusyAction != null || _projectChatSending,
           busyAction: _planBusyAction,
           revisionController: _revisionController,
@@ -2178,11 +2202,12 @@ class _PlanBuildingFooter extends StatelessWidget {
   }
 }
 
-class _PlanFooter extends StatelessWidget {
+class _PlanFooter extends StatefulWidget {
   const _PlanFooter({
     required this.plan,
     required this.questionIndex,
     required this.hasMoreQuestions,
+    required this.keyboardOpen,
     required this.isBusy,
     required this.busyAction,
     required this.revisionController,
@@ -2195,6 +2220,7 @@ class _PlanFooter extends StatelessWidget {
   final MobilePlan plan;
   final int questionIndex;
   final bool hasMoreQuestions;
+  final bool keyboardOpen;
   final bool isBusy;
   final String? busyAction;
   final TextEditingController revisionController;
@@ -2204,8 +2230,37 @@ class _PlanFooter extends StatelessWidget {
   final VoidCallback onApprove;
 
   @override
+  State<_PlanFooter> createState() => _PlanFooterState();
+}
+
+class _PlanFooterState extends State<_PlanFooter> {
+  final _revisionFocus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _revisionFocus.addListener(_onFocusChanged);
+  }
+
+  @override
+  void dispose() {
+    _revisionFocus.removeListener(_onFocusChanged);
+    _revisionFocus.dispose();
+    super.dispose();
+  }
+
+  void _onFocusChanged() => setState(() {});
+
+  @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final plan = widget.plan;
+    final busyAction = widget.busyAction;
+    // While typing a revision, collapse the question panel to its prompt and
+    // drop the Approve button so the composer stays visible above the
+    // keyboard instead of overflowing off screen.
+    final keyboardOpen = widget.keyboardOpen;
+    final typingRevision = _revisionFocus.hasFocus && keyboardOpen;
 
     // Show a clear loading state while the plan is being revised.
     if (busyAction == 'revise') {
@@ -2252,29 +2307,40 @@ class _PlanFooter extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (hasMoreQuestions) ...[
+              // Collapsing must not change the child slots before the
+              // composer: replacing or removing widgets there rebuilds the
+              // composer's element, which drops focus and closes the
+              // keyboard the user just opened.
+              if (widget.hasMoreQuestions) ...[
                 _PlanQuestionPanel(
-                  key: ValueKey(questionIndex),
+                  key: ValueKey(widget.questionIndex),
                   plan: plan,
-                  questionIndex: questionIndex,
-                  isBusy: isBusy,
-                  onSelect: onSelectOption,
-                  onSkip: onSkip,
+                  questionIndex: widget.questionIndex,
+                  collapsed: typingRevision,
+                  keyboardOpen: keyboardOpen,
+                  isBusy: widget.isBusy,
+                  onSelect: widget.onSelectOption,
+                  onSkip: widget.onSkip,
                 ),
                 const SizedBox(height: 10),
                 Divider(height: 1, color: colors.outlineVariant),
                 const SizedBox(height: 10),
               ],
               _RevisionComposer(
-                controller: revisionController,
-                enabled: !isBusy,
-                onSend: onRevise,
+                controller: widget.revisionController,
+                focusNode: _revisionFocus,
+                enabled: !widget.isBusy,
+                onSend: widget.onRevise,
               ),
-              const SizedBox(height: 8),
-              _ApproveButton(
-                approving: busyAction == 'approve',
-                onApprove: (!isBusy && busyAction == null) ? onApprove : null,
-              ),
+              if (!keyboardOpen) ...[
+                const SizedBox(height: 8),
+                _ApproveButton(
+                  approving: busyAction == 'approve',
+                  onApprove: (!widget.isBusy && busyAction == null)
+                      ? widget.onApprove
+                      : null,
+                ),
+              ],
             ],
           ),
         ),
@@ -2287,6 +2353,8 @@ class _PlanQuestionPanel extends StatefulWidget {
   const _PlanQuestionPanel({
     required this.plan,
     required this.questionIndex,
+    required this.collapsed,
+    required this.keyboardOpen,
     required this.isBusy,
     required this.onSelect,
     required this.onSkip,
@@ -2295,6 +2363,11 @@ class _PlanQuestionPanel extends StatefulWidget {
 
   final MobilePlan plan;
   final int questionIndex;
+
+  /// While typing a revision below, only the prompt shows so the composer
+  /// stays visible above the keyboard.
+  final bool collapsed;
+  final bool keyboardOpen;
   final bool isBusy;
   final ValueChanged<String> onSelect;
   final VoidCallback onSkip;
@@ -2323,6 +2396,11 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
     final question = widget.plan.questions[widget.questionIndex];
     final total = widget.plan.questions.length;
     final colors = Theme.of(context).colorScheme;
+    final collapsed = widget.collapsed;
+    // While typing a custom answer, hide the option chips (via Visibility so
+    // the field's slot doesn't shift and drop focus) to keep it visible
+    // above the keyboard.
+    final typingCustom = _showCustomField && widget.keyboardOpen && !collapsed;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2336,36 +2414,45 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
         const SizedBox(height: 4),
         Text(
           question.prompt,
+          maxLines: (collapsed || typingCustom) ? 2 : null,
+          overflow: (collapsed || typingCustom) ? TextOverflow.ellipsis : null,
           style: Theme.of(
             context,
           ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final option in question.options)
-              ActionChip(
-                label: Text(option),
-                onPressed: widget.isBusy ? null : () => widget.onSelect(option),
-              ),
-            if (question.allowCustom && !_showCustomField)
-              ActionChip(
-                avatar: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('Custom…'),
-                onPressed: widget.isBusy
-                    ? null
-                    : () => setState(() => _showCustomField = true),
-              ),
-            ActionChip(
-              avatar: const Icon(Icons.skip_next_outlined, size: 18),
-              label: const Text('Skip'),
-              onPressed: widget.isBusy ? null : widget.onSkip,
+        if (!collapsed) ...[
+          const SizedBox(height: 8),
+          Visibility(
+            visible: !typingCustom,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in question.options)
+                  ActionChip(
+                    label: Text(option),
+                    onPressed: widget.isBusy
+                        ? null
+                        : () => widget.onSelect(option),
+                  ),
+                if (question.allowCustom && !_showCustomField)
+                  ActionChip(
+                    avatar: const Icon(Icons.edit_outlined, size: 16),
+                    label: const Text('Custom…'),
+                    onPressed: widget.isBusy
+                        ? null
+                        : () => setState(() => _showCustomField = true),
+                  ),
+                ActionChip(
+                  avatar: const Icon(Icons.skip_next_outlined, size: 18),
+                  label: const Text('Skip'),
+                  onPressed: widget.isBusy ? null : widget.onSkip,
+                ),
+              ],
             ),
-          ],
-        ),
-        if (_showCustomField) ...[
+          ),
+        ],
+        if (!collapsed && _showCustomField) ...[
           const SizedBox(height: 10),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -2420,11 +2507,13 @@ class _RevisionComposer extends StatelessWidget {
     required this.controller,
     required this.enabled,
     required this.onSend,
+    this.focusNode,
   });
 
   final TextEditingController controller;
   final bool enabled;
   final ValueChanged<String> onSend;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -2435,6 +2524,7 @@ class _RevisionComposer extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
+            focusNode: focusNode,
             enabled: enabled,
             minLines: 1,
             maxLines: 4,
@@ -3810,9 +3900,29 @@ class _TypingBubbleState extends State<_TypingBubble> {
   }
 }
 
+/// Hard cap on footer height so the body Column can never overflow when the
+/// keyboard shrinks the screen. Sits in an unbounded Column slot, so the cap
+/// is computed by the screen from what the keyboard leaves visible.
+/// `reverse: true` keeps the composer (bottom edge) visible when clamped.
+class _FooterLimiter extends StatelessWidget {
+  const _FooterLimiter({required this.maxHeight, required this.child});
+
+  final double maxHeight;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: SingleChildScrollView(reverse: true, child: child),
+    );
+  }
+}
+
 class _ConversationFooter extends StatelessWidget {
   const _ConversationFooter({
     required this.state,
+    required this.keyboardOpen,
     required this.composerController,
     required this.onSend,
     required this.onQuickReply,
@@ -3824,6 +3934,7 @@ class _ConversationFooter extends StatelessWidget {
   });
 
   final CreationChatState state;
+  final bool keyboardOpen;
   final TextEditingController composerController;
   final ValueChanged<String> onSend;
   final ValueChanged<String> onQuickReply;
@@ -3850,18 +3961,26 @@ class _ConversationFooter extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Collapsing must not change the child slots before the
+              // composer: replacing or removing widgets there rebuilds the
+              // composer's element, which drops focus and closes the
+              // keyboard the user just opened.
               if (question != null)
                 _QuestionPanel(
                   question: question,
+                  collapsed: keyboardOpen,
                   enabled: !disabled,
                   onSelect: onAnswerOption,
                 )
               else if (state.quickReplies.isNotEmpty)
-                _ChipRow(
-                  options: state.quickReplies,
-                  enabled: !disabled,
-                  icon: Icons.bolt_outlined,
-                  onSelect: onQuickReply,
+                Visibility(
+                  visible: !keyboardOpen,
+                  child: _ChipRow(
+                    options: state.quickReplies,
+                    enabled: !disabled,
+                    icon: Icons.bolt_outlined,
+                    onSelect: onQuickReply,
+                  ),
                 ),
               if (question != null || state.quickReplies.isNotEmpty)
                 const SizedBox(height: 8),
@@ -3884,12 +4003,14 @@ class _ConversationFooter extends StatelessWidget {
                 onAttach: onAttach,
                 onSend: onSend,
               ),
-              const SizedBox(height: 8),
-              _BuildButton(
-                canBuild: state.canBuild,
-                building: state.building,
-                onBuild: onBuild,
-              ),
+              if (!keyboardOpen) ...[
+                const SizedBox(height: 8),
+                _BuildButton(
+                  canBuild: state.canBuild,
+                  building: state.building,
+                  onBuild: onBuild,
+                ),
+              ],
             ],
           ),
         ),
@@ -4096,11 +4217,16 @@ class _PendingAttachmentChip extends ConsumerWidget {
 class _QuestionPanel extends StatelessWidget {
   const _QuestionPanel({
     required this.question,
+    required this.collapsed,
     required this.enabled,
     required this.onSelect,
   });
 
   final MobileCreationQuestion question;
+
+  /// While typing, only the prompt shows so the composer stays visible above
+  /// the keyboard.
+  final bool collapsed;
   final bool enabled;
   final ValueChanged<String> onSelect;
 
@@ -4111,27 +4237,33 @@ class _QuestionPanel extends StatelessWidget {
       children: [
         Text(
           question.prompt,
+          maxLines: collapsed ? 2 : null,
+          overflow: collapsed ? TextOverflow.ellipsis : null,
           style: Theme.of(
             context,
           ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final option in question.options)
+        if (!collapsed) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final option in question.options)
+                ActionChip(
+                  label: Text(option),
+                  onPressed: enabled ? () => onSelect(option) : null,
+                ),
               ActionChip(
-                label: Text(option),
-                onPressed: enabled ? () => onSelect(option) : null,
+                avatar: const Icon(Icons.skip_next_outlined, size: 18),
+                label: const Text('Skip'),
+                onPressed: enabled
+                    ? () => onSelect('Skip this for now.')
+                    : null,
               ),
-            ActionChip(
-              avatar: const Icon(Icons.skip_next_outlined, size: 18),
-              label: const Text('Skip'),
-              onPressed: enabled ? () => onSelect('Skip this for now.') : null,
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -4883,8 +5015,8 @@ class _PageCountControlState extends State<_PageCountControl> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: InputDecoration(
               labelText: 'Pages',
-              helperText: _customEstimateHelper() ??
-                  'Enter a number from 1 to 600.',
+              helperText:
+                  _customEstimateHelper() ?? 'Enter a number from 1 to 600.',
               errorText:
                   _controller.text.isNotEmpty &&
                       (int.tryParse(_controller.text) == null ||
