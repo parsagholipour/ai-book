@@ -81,11 +81,17 @@ import {
   type WholeBookPageDraft,
   withRecoverableNetworkRetry
 } from "@book-maker/core";
-import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
+import {
+  Prisma,
+  planRevisionRetryDelayMs,
+  prisma,
+  retrieveSimilarEmbeddings
+} from "@book-maker/db";
 import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 import { z } from "zod";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
 import { directGenerationResumeState, type DirectResumeState } from "./directGenerationResume.js";
+import { planRevisionConsistencyWarning } from "./planRevisionSafety.js";
 import {
   retryJobOptions,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
@@ -410,12 +416,54 @@ async function planBook(job: Job) {
 async function revisePlan(job: Job) {
   const { projectId, planId, message } = job.data as { projectId: string; planId: string; message: string };
   const generationJobId = job.data.generationJobId as string | undefined;
+  const operationId = editOperationIdFromJob(job);
   const respondedQuestionPrompts = Array.isArray(job.data.respondedQuestionPrompts)
     ? (job.data.respondedQuestionPrompts as unknown[]).filter((prompt): prompt is string => typeof prompt === "string")
     : undefined;
   const planVersion = await prisma.planVersion.findUnique({ where: { id: planId }, include: { project: true } });
   if (!planVersion) {
     throw new Error("Plan not found");
+  }
+  if (planVersion.project.currentPlanId !== planId) {
+    console.warn("Plan revision consistency warning", {
+      event: "plan_revision.consistency_warning",
+      warning: "stale_plan",
+      projectId,
+      planId,
+      currentPlanId: planVersion.project.currentPlanId,
+      operationId,
+      generationJobId
+    });
+    throw new Error("Plan revision targets a superseded plan");
+  }
+  if (operationId) {
+    const operation = await prisma.bookEditOperation.findUnique({
+      where: { id: operationId },
+      select: { generationJobId: true, ledgerEntryId: true, status: true }
+    });
+    const billingLedgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : null;
+    const warning = planRevisionConsistencyWarning({
+      durableGenerationJobId: generationJobId,
+      linkedGenerationJobId: operation?.generationJobId,
+      linkedLedgerEntryId: operation?.ledgerEntryId,
+      payloadLedgerEntryId: billingLedgerEntryId
+    });
+    if (warning) {
+      console.warn("Plan revision consistency warning", {
+        event: "plan_revision.consistency_warning",
+        warning,
+        projectId,
+        planId,
+        operationId,
+        generationJobId,
+        linkedGenerationJobId: operation?.generationJobId
+      });
+      throw new Error(
+        warning === "operation_job_mismatch"
+          ? "Plan revision operation no longer owns this job"
+          : "Plan revision billing linkage is inconsistent"
+      );
+    }
   }
   const input = inputWithMessageMediaPreferences(inputForPlanVersion(planVersion.project, planVersion.inputSnapshot), message);
   const strategy = strategyForInput(input);
@@ -4012,8 +4060,17 @@ async function dispatchWorkerGenerationJob(generationJobId: string) {
         message: "Queued"
       }
     });
-  } catch {
+  } catch (error) {
     const attempts = generationJob.dispatchAttempts + 1;
+    console.warn("Generation dispatch deferred", {
+      event: "generation.consistency_warning",
+      warning: "queue_dispatch_failed",
+      generationJobId: generationJob.id,
+      projectId: generationJob.projectId,
+      type: generationJob.type,
+      dispatchAttempt: attempts,
+      error: errorMessage(error)
+    });
     return prisma.generationJob.update({
       where: { id: generationJob.id },
       data: {
@@ -5730,8 +5787,41 @@ async function markFailed(job: Job, error: unknown) {
       }
     });
   }
+  const recoverablePlanRevision = job.name === "revise-plan" && isRecoverableNetworkError(error) && Boolean(editOperationId);
   if (editOperationId) {
-    await failEditOperation(editOperationId, errorMessage(error));
+    if (recoverablePlanRevision) {
+      const operation = await prisma.bookEditOperation.findUnique({
+        where: { id: editOperationId },
+        select: { automaticRetryCount: true, automaticRetryLimit: true }
+      });
+      const nextRetryNumber = (operation?.automaticRetryCount ?? 0) + 1;
+      const retryAvailable = Boolean(operation && nextRetryNumber <= operation.automaticRetryLimit);
+      if (retryAvailable) {
+        await prisma.bookEditOperation
+          .update({
+            where: { id: editOperationId },
+            data: {
+              status: "FAILED",
+              error: errorMessage(error),
+              nextRetryAt: new Date(Date.now() + planRevisionRetryDelayMs(nextRetryNumber)),
+              lastRetryReason: errorMessage(error)
+            }
+          })
+          .catch(() => undefined);
+      } else {
+        await failEditOperation(editOperationId, errorMessage(error));
+      }
+      console.warn("Plan revision durable retry decision", {
+        event: "plan_revision.retry_scheduled",
+        operationId: editOperationId,
+        projectId,
+        generationJobId,
+        retryNumber: nextRetryNumber,
+        retryAvailable
+      });
+    } else {
+      await failEditOperation(editOperationId, errorMessage(error));
+    }
     if (projectId && job.name === "revise-plan") {
       if (await restoreProjectAfterFailedPlanRevision(prisma, projectId)) {
         return;

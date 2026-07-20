@@ -620,6 +620,12 @@ model BookEditOperation {
   classifier          Json
   affectedPageIndexes Int[]
   creditsCharged      Int                     @default(0)
+  automaticRetryCount Int                     @default(0)
+  automaticRetryLimit Int                     @default(2)
+  nextRetryAt         DateTime?
+  lastRetryAt         DateTime?
+  lastRetryReason     String?
+  retryRequestId      String?
   error               String?
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
@@ -633,6 +639,8 @@ model BookEditOperation {
 
   @@index([projectId, createdAt])
   @@unique([projectId, requestId])
+  @@unique([retryRequestId])
+  @@index([status, nextRetryAt])
   @@index([generationJobId])
   @@index([ledgerEntryId])
 }

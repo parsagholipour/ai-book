@@ -32,7 +32,7 @@ const mockPrisma = vi.hoisted(() => ({
   pageEditSnapshot: { create: vi.fn() },
   planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-  bookEditOperation: { create: vi.fn(), update: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+  bookEditOperation: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   generationJob: { count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   creditLedgerEntry: { update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
@@ -86,6 +86,10 @@ const MockPrismaKnownRequestError = vi.hoisted(
 
 vi.mock("@book-maker/db", () => ({
   ensureSeedTemplates: vi.fn(),
+  PLAN_REVISION_AUTOMATIC_RETRY_LIMIT: 2,
+  canClaimPlanRevisionRetry: vi.fn(() => ({ eligible: true, staleActive: false, reason: null })),
+  planRevisionRetryDelayMs: vi.fn(() => 30_000),
+  retryRequestKey: vi.fn((id: string, attempt: number) => `plan-revision-retry:${id}:${attempt}`),
   Prisma: { JsonNull: null, PrismaClientKnownRequestError: MockPrismaKnownRequestError },
   prisma: mockPrisma
 }));
@@ -344,6 +348,7 @@ describe("mobile project routes", () => {
       const record = {
         id: `operation-${mockBookEditOperations.length + 1}`,
         projectId: data.projectId,
+        requestId: data.requestId ?? null,
         userMessageId: data.userMessageId ?? null,
         assistantMessageId: null,
         generationJobId: data.generationJobId ?? null,
@@ -354,6 +359,12 @@ describe("mobile project routes", () => {
         classifier: data.classifier,
         affectedPageIndexes: data.affectedPageIndexes ?? [],
         creditsCharged: data.creditsCharged ?? 0,
+        automaticRetryCount: data.automaticRetryCount ?? 0,
+        automaticRetryLimit: data.automaticRetryLimit ?? 2,
+        nextRetryAt: data.nextRetryAt ?? null,
+        lastRetryAt: data.lastRetryAt ?? null,
+        lastRetryReason: data.lastRetryReason ?? null,
+        retryRequestId: data.retryRequestId ?? null,
         error: null,
         generationJob: null,
         createdAt: new Date(`2026-06-15T13:${String(mockBookEditOperations.length).padStart(2, "0")}:00.000Z`),
@@ -382,6 +393,17 @@ describe("mobile project routes", () => {
           : b.createdAt.getTime() - a.createdAt.getTime()
       );
       return typeof take === "number" ? sorted.slice(0, take) : sorted;
+    });
+    mockPrisma.bookEditOperation.findUnique.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      mockBookEditOperations.find((operation) => operation.id === where.id) ?? null
+    );
+    mockPrisma.bookEditOperation.updateMany.mockImplementation(async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
+      const record = mockBookEditOperations.find((operation) => operation.id === where.id);
+      if (!record || (where.status !== undefined && record.status !== where.status)) return { count: 0 };
+      const { automaticRetryCount, ...rest } = data;
+      Object.assign(record, rest);
+      if (automaticRetryCount?.increment) record.automaticRetryCount += automaticRetryCount.increment;
+      return { count: 1 };
     });
     mockPrisma.bookEditOperation.findFirst.mockImplementation(async ({ where }: { where: Record<string, any> }) =>
       mockBookEditOperations.find(
@@ -2474,11 +2496,12 @@ describe("mobile project routes", () => {
       expect.objectContaining({
         projectId: "project-1",
         type: "REVISE_PLAN",
-        payload: {
+        payload: expect.objectContaining({
           planId: "plan-1",
           message: "Make the examples warmer and more practical.",
-          billingLedgerEntryId: "ledger-PLAN_REVISION"
-        }
+          billingLedgerEntryId: "ledger-PLAN_REVISION",
+          editOperationId: "operation-1"
+        })
       }),
       expect.objectContaining({
         projectId: "project-1",
@@ -3318,6 +3341,55 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("retries one failed plan revision idempotently without charging again", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const failed = failedPlanRevisionOperationRecord({
+      automaticRetryCount: 0,
+      automaticRetryLimit: 2,
+      nextRetryAt: null,
+      retryRequestId: null,
+      ledgerEntry: { id: "ledger-PLAN_REVISION", status: "SETTLED", entryType: "SPEND" },
+      generationJob: {
+        id: "job-failed-revision",
+        status: "FAILED",
+        payload: {
+          planId: "plan-1",
+          message: "Make it brighter.",
+          editOperationId: "operation-failed-revision",
+          billingLedgerEntryId: "ledger-PLAN_REVISION"
+        },
+        startedAt: new Date("2026-06-15T13:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T13:01:00.000Z")
+      }
+    });
+    mockBookEditOperations.push(failed);
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-retry-1", type: "REVISE_PLAN" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/book-edit-operations/operation-failed-revision/retry",
+      headers: bearer("token-a"),
+      payload: { requestId: "retry-request-0001" }
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json().operation).toMatchObject({ id: "operation-failed-revision", status: "queued" });
+    expect(enqueueGenerationJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "REVISE_PLAN",
+        dedupeKey: "plan-revision-retry:operation-failed-revision:1",
+        payload: expect.objectContaining({
+          billingLedgerEntryId: "ledger-PLAN_REVISION",
+          retryOfGenerationJobId: "job-failed-revision",
+          retryNumber: 1
+        })
+      })
+    );
+    expect(reserveCredits).not.toHaveBeenCalled();
+    await app.close();
+  });
   it("serializes failed plan revision operations with error details", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));

@@ -132,8 +132,17 @@ export async function dispatchGenerationJob(generationJobId: string) {
         message: "Queued"
       }
     });
-  } catch {
+  } catch (error) {
     const attempts = generationJob.dispatchAttempts + 1;
+    console.warn("Generation dispatch deferred", {
+      event: "generation.consistency_warning",
+      warning: "queue_dispatch_failed",
+      generationJobId: generationJob.id,
+      projectId: generationJob.projectId,
+      type: generationJob.type,
+      dispatchAttempt: attempts,
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
     return prisma.generationJob.update({
       where: { id: generationJob.id },
       data: {

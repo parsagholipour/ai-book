@@ -11,7 +11,7 @@ import { prisma } from "@book-maker/db";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
-import { mobileProjectRoutes } from "./mobileProjects.js";
+import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
 import { projectRoutes } from "./routes/projects.js";
@@ -58,9 +58,18 @@ attachmentSweepTimer.unref();
 
 const reconcileQueue = async () => {
   try {
-    await reconcileUndispatchedGenerationJobs();
+    const [dispatched, retried] = await Promise.all([
+      reconcileUndispatchedGenerationJobs(),
+      reconcileRetryablePlanRevisionOperations({ log: app.log })
+    ]);
+    if (dispatched > 0 || retried > 0) {
+      app.log.info(
+        { event: "generation.consistency_reconciled", dispatched, planRevisionRetries: retried },
+        "Generation consistency reconciliation completed"
+      );
+    }
   } catch (error) {
-    app.log.warn({ err: error }, "Generation queue reconciliation failed");
+    app.log.warn({ err: error, event: "generation.consistency_warning" }, "Generation queue reconciliation failed");
   }
 };
 await reconcileQueue();

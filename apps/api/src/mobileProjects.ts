@@ -29,7 +29,15 @@ import {
   type TextModelAdapter,
   type ToneProfile
 } from "@book-maker/core";
-import { ensureSeedTemplates, Prisma, prisma } from "@book-maker/db";
+import {
+  PLAN_REVISION_AUTOMATIC_RETRY_LIMIT,
+  Prisma,
+  canClaimPlanRevisionRetry,
+  ensureSeedTemplates,
+  planRevisionRetryDelayMs,
+  prisma,
+  retryRequestKey
+} from "@book-maker/db";
 import {
   InsufficientCreditsError,
   commitReservedCredits,
@@ -167,6 +175,7 @@ const creationMutationQuerySchema = z.object({
   expectedRevision: z.coerce.number().int().positive().optional()
 });
 const requestIdSchema = z.string().trim().min(8).max(64);
+const operationRetryBodySchema = z.object({ requestId: requestIdSchema }).strict();
 const mobileAssetFilenameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/);
 const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
@@ -631,12 +640,23 @@ type MobileProjectChatMessageRecord = {
 type MobileBookEditOperationRecord = {
   id: string;
   projectId: string;
+  requestId?: string | null;
   userMessageId?: string | null;
   assistantMessageId?: string | null;
+  generationJobId?: string | null;
+  ledgerEntryId?: string | null;
   kind: string;
   status: string;
+  request?: string;
+  classifier?: unknown;
   affectedPageIndexes: number[];
   creditsCharged: number;
+  automaticRetryCount?: number;
+  automaticRetryLimit?: number;
+  nextRetryAt?: Date | null;
+  lastRetryAt?: Date | null;
+  lastRetryReason?: string | null;
+  retryRequestId?: string | null;
   error?: string | null;
   generationJob?: { id: string; status: string } | null;
   createdAt: Date;
@@ -3019,15 +3039,17 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       }
 
       try {
-        const { job } = await queueChargedPlanRevision({
+        const { operation, job } = await queueDirectPlanRevision({
           userId: auth.user.id,
           projectId: plan.projectId,
           planId: id,
           message: parsed.data.message,
-          idempotencyKey: parsed.data.requestId
-            ? `mobile:plan:${id}:revision:${parsed.data.requestId}`
-            : `mobile:plan:${id}:revision:${hashString(parsed.data.message)}`
+          requestId: parsed.data.requestId ?? hashString(parsed.data.message)
         });
+        request.log.info(
+          { event: "plan_revision.queued", projectId: plan.projectId, operationId: operation.id, generationJobId: job.id, source: "direct" },
+          "Plan revision queued"
+        );
         return reply.code(202).send(planOperation("revision_queued", plan.projectId, id, job, "Revising your book plan."));
       } catch (error) {
         if (error instanceof InsufficientCreditsError) {
@@ -3035,6 +3057,34 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         }
         throw error;
       }
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/book-edit-operations/:id/retry",
+    { schema: { tags: ["mobile"] } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) return;
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = operationRetryBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide an idempotency request ID.");
+      }
+      const result = await retryPlanRevisionOperation({
+        userId: auth.user.id,
+        operationId: id,
+        requestId: parsed.data.requestId,
+        automatic: false,
+        log: request.log
+      });
+      if (result.kind === "not_found") {
+        return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "Plan revision operation not found.");
+      }
+      if (result.kind === "conflict") {
+        return sendMobileError(reply, 409, "RETRY_NOT_AVAILABLE", result.reason);
+      }
+      return reply.code(202).send({ operation: serializeBookEditOperation(result.operation) });
     }
   );
 
@@ -4918,6 +4968,212 @@ async function queueChatBookEdit(options: {
       const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
       return { reply, operation: null };
     }
+    throw error;
+  }
+}
+
+async function retryPlanRevisionOperation(options: {
+  userId: string;
+  operationId: string;
+  requestId: string;
+  automatic: boolean;
+  log?: { info(bindings: object, message: string): void; warn(bindings: object, message: string): void };
+}): Promise<
+  | { kind: "queued"; operation: MobileBookEditOperationRecord }
+  | { kind: "not_found" }
+  | { kind: "conflict"; reason: string }
+> {
+  const operation = await prisma.bookEditOperation.findFirst({
+    where: { id: options.operationId, project: { userId: options.userId }, kind: "PLAN_REVISION" },
+    include: {
+      generationJob: { select: { id: true, status: true, payload: true, startedAt: true, updatedAt: true } },
+      ledgerEntry: { select: { id: true, status: true, entryType: true } }
+    }
+  });
+  if (!operation) return { kind: "not_found" };
+  if (operation.retryRequestId === options.requestId && operation.generationJob) {
+    return { kind: "queued", operation: operation as MobileBookEditOperationRecord };
+  }
+  const eligibility = canClaimPlanRevisionRetry(operation);
+  if (!eligibility.eligible && options.automatic) {
+    return { kind: "conflict", reason: eligibility.reason ?? "Retry is not available." };
+  }
+  if (!options.automatic && !["FAILED", "CANCELED"].includes(operation.status)) {
+    return { kind: "conflict", reason: "Only failed plan revision operations can be retried." };
+  }
+  if (operation.automaticRetryCount >= operation.automaticRetryLimit) {
+    return { kind: "conflict", reason: "This plan revision has exhausted its retry budget." };
+  }
+  if (!operation.ledgerEntryId || !operation.ledgerEntry) {
+    options.log?.warn(
+      { event: "plan_revision.consistency_warning", operationId: operation.id, projectId: operation.projectId, warning: "missing_ledger" },
+      "Plan revision retry rejected because billing linkage is missing"
+    );
+    return { kind: "conflict", reason: "Billing state for this revision is incomplete. Credits were not charged again." };
+  }
+  const payload = jsonRecord(operation.generationJob?.payload);
+  const planId = typeof payload.planId === "string" ? payload.planId : null;
+  if (!planId) {
+    return { kind: "conflict", reason: "The original revision target is unavailable." };
+  }
+  const project = await prisma.project.findFirst({
+    where: { id: operation.projectId, userId: options.userId },
+    select: { currentPlanId: true }
+  });
+  if (!project || project.currentPlanId !== planId) {
+    options.log?.warn(
+      { event: "plan_revision.consistency_warning", operationId: operation.id, projectId: operation.projectId, warning: "stale_plan", planId, currentPlanId: project?.currentPlanId },
+      "Plan revision retry rejected because its plan is stale"
+    );
+    return { kind: "conflict", reason: "A newer plan exists, so this revision can no longer be retried." };
+  }
+
+  const retryNumber = operation.automaticRetryCount + 1;
+  const retryKey = retryRequestKey(operation.id, retryNumber);
+  const now = new Date();
+  const claimed = await prisma.bookEditOperation.updateMany({
+    where: {
+      id: operation.id,
+      automaticRetryCount: operation.automaticRetryCount,
+      status: operation.status,
+      OR: [{ retryRequestId: null }, { retryRequestId: options.requestId }]
+    },
+    data: {
+      status: "QUEUED",
+      automaticRetryCount: { increment: 1 },
+      lastRetryAt: now,
+      lastRetryReason: operation.error ?? "stale active plan revision",
+      retryRequestId: options.requestId,
+      nextRetryAt: new Date(now.getTime() + planRevisionRetryDelayMs(retryNumber)),
+      error: null
+    }
+  });
+  if (claimed.count !== 1) {
+    const concurrent = await prisma.bookEditOperation.findUnique({
+      where: { id: operation.id },
+      include: { generationJob: { select: { id: true, status: true } } }
+    });
+    if (concurrent?.retryRequestId === options.requestId) {
+      return { kind: "queued", operation: concurrent as MobileBookEditOperationRecord };
+    }
+    return { kind: "conflict", reason: "This retry was already claimed by another request." };
+  }
+
+  const newJob = await enqueueGenerationJob({
+    projectId: operation.projectId,
+    type: "REVISE_PLAN",
+    dedupeKey: retryKey,
+    payload: {
+      ...payload,
+      editOperationId: operation.id,
+      billingLedgerEntryId: operation.ledgerEntryId,
+      retryOfGenerationJobId: operation.generationJobId,
+      retryNumber
+    }
+  });
+  const updated = await prisma.bookEditOperation.update({
+    where: { id: operation.id },
+    data: { generationJobId: newJob.id },
+    include: { generationJob: { select: { id: true, status: true } } }
+  });
+  await prisma.project.update({ where: { id: operation.projectId }, data: { status: "PLANNING" } });
+  options.log?.info(
+    { event: "plan_revision.retry_queued", operationId: operation.id, projectId: operation.projectId, generationJobId: newJob.id, retryNumber, automatic: options.automatic, staleActive: eligibility.staleActive },
+    "Plan revision retry queued"
+  );
+  return { kind: "queued", operation: updated };
+}
+
+export async function reconcileRetryablePlanRevisionOperations(options: {
+  limit?: number;
+  now?: Date;
+  log?: { info(bindings: object, message: string): void; warn(bindings: object, message: string): void };
+} = {}): Promise<number> {
+  const now = options.now ?? new Date();
+  const operations = await prisma.bookEditOperation.findMany({
+    where: {
+      kind: "PLAN_REVISION",
+      automaticRetryCount: { lt: PLAN_REVISION_AUTOMATIC_RETRY_LIMIT },
+      OR: [
+        { status: "FAILED", nextRetryAt: { lte: now } },
+        { status: "FAILED", nextRetryAt: null },
+        { status: "ACTIVE", updatedAt: { lte: new Date(now.getTime() - 15 * 60_000) } }
+      ]
+    },
+    orderBy: { updatedAt: "asc" },
+    take: options.limit ?? 20,
+    select: { id: true, project: { select: { userId: true } }, automaticRetryCount: true }
+  });
+  let queued = 0;
+  for (const operation of operations) {
+    const result = await retryPlanRevisionOperation({
+      userId: operation.project.userId,
+      operationId: operation.id,
+      requestId: retryRequestKey(operation.id, operation.automaticRetryCount + 1),
+      automatic: true,
+      ...(options.log ? { log: options.log } : {})
+    });
+    if (result.kind === "queued") queued += 1;
+  }
+  return queued;
+}
+
+async function queueDirectPlanRevision(options: {
+  userId: string;
+  projectId: string;
+  planId: string;
+  message: string;
+  requestId: string;
+}): Promise<{
+  operation: MobileBookEditOperationRecord;
+  job: Awaited<ReturnType<typeof enqueueGenerationJob>>;
+}> {
+  const existing = await prisma.bookEditOperation.findFirst({
+    where: { projectId: options.projectId, requestId: options.requestId },
+    include: { generationJob: { select: { id: true, status: true } } }
+  });
+  if (existing?.generationJob) {
+    const job = await prisma.generationJob.findUniqueOrThrow({ where: { id: existing.generationJob.id } });
+    return { operation: existing as MobileBookEditOperationRecord, job };
+  }
+  const operation = await createOpenBookEditOperation({
+    projectId: options.projectId,
+    requestId: options.requestId,
+    kind: "PLAN_REVISION",
+    status: "QUEUED",
+    request: options.message,
+    classifier: jsonInputValue({ kind: "plan_revision", source: "direct" }),
+    affectedPageIndexes: [],
+    creditsCharged: 0,
+    automaticRetryLimit: PLAN_REVISION_AUTOMATIC_RETRY_LIMIT
+  });
+  if (!operation) {
+    throw new Error("Another book edit operation is already in progress.");
+  }
+  try {
+    const { job, ledgerEntry } = await queueChargedPlanRevision({
+      userId: options.userId,
+      projectId: options.projectId,
+      planId: options.planId,
+      message: options.message,
+      operationId: operation.id,
+      idempotencyKey: `mobile:plan:${options.planId}:revision:${options.requestId}`
+    });
+    const updated = await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: {
+        generationJobId: job.id,
+        ledgerEntryId: ledgerEntry?.id ?? null,
+        creditsCharged: creditCostForOperation("PLAN_REVISION")
+      },
+      include: { generationJob: { select: { id: true, status: true } } }
+    });
+    return { operation: updated, job };
+  } catch (error) {
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { status: "FAILED", error: errorMessage(error) }
+    });
     throw error;
   }
 }

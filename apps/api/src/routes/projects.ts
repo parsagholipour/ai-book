@@ -537,18 +537,40 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.code(400).send({ error: "Approved plans cannot be revised. Create a new plan version first." });
     }
 
+    const directRevisionRequestId = stablePayloadHash({ planId: id, message: body.message, responded: body.respondedQuestionPrompts ?? [] });
+    const existingOperation = await prisma.bookEditOperation.findUnique({
+      where: { projectId_requestId: { projectId: plan.projectId, requestId: directRevisionRequestId } },
+      include: { generationJob: true }
+    });
+    if (existingOperation?.generationJob) {
+      return reply.code(202).send(existingOperation.generationJob);
+    }
+    const operation = await prisma.bookEditOperation.create({
+      data: {
+        projectId: plan.projectId,
+        requestId: directRevisionRequestId,
+        kind: "PLAN_REVISION",
+        status: "QUEUED",
+        request: body.message,
+        classifier: { kind: "plan_revision", source: "web" },
+        affectedPageIndexes: [],
+        creditsCharged: 0
+      }
+    });
     const job = await enqueueGenerationJob({
       projectId: plan.projectId,
       type: "REVISE_PLAN",
-      dedupeKey: `revise-plan:${plan.projectId}:${id}:${stablePayloadHash(body.message)}`,
+      dedupeKey: `revise-plan:${plan.projectId}:${id}:${directRevisionRequestId}`,
       payload: {
         planId: id,
         message: body.message,
+        editOperationId: operation.id,
         ...(body.respondedQuestionPrompts?.length
           ? { respondedQuestionPrompts: body.respondedQuestionPrompts }
           : {})
       }
     });
+    await prisma.bookEditOperation.update({ where: { id: operation.id }, data: { generationJobId: job.id } });
     return reply.code(202).send(job);
   });
 
