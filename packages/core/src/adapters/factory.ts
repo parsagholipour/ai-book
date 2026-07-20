@@ -303,7 +303,7 @@ function createTierTextAdapter(
       selection: fallbackSelection,
       adapter: () => createTextModelAdapter(config, fallbackSelection)
     },
-    shouldFallback: (error) => !isStopOrAbortError(error)
+    shouldFallback: isTextProviderFallbackError
   });
 }
 
@@ -317,6 +317,25 @@ function sameTextSelection(a: TextModelSelection, b: TextModelSelection): boolea
   );
 }
 
+export function isTextProviderFallbackError(error: unknown): boolean {
+  if (isStopOrAbortError(error)) {
+    return false;
+  }
+
+  const descriptors = fallbackErrorDescriptors(error);
+  return descriptors.some(({ status, code, message }) => {
+    if (status !== undefined && (status === 408 || status === 409 || status === 429 || status >= 500)) {
+      return true;
+    }
+    if (code && /^(?:ECONN|EHOST|ENET|ETIMEDOUT|EAI_AGAIN|UND_ERR_)/i.test(code)) {
+      return true;
+    }
+    return /(?:rate.?limit|quota|capacity|overload|temporar(?:y|ily)|unavailable|timeout|timed out|fetch failed|network|connection reset|socket)/i.test(
+      message
+    );
+  });
+}
+
 function isStopOrAbortError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -324,6 +343,31 @@ function isStopOrAbortError(error: unknown): boolean {
   const name = error.name.toLowerCase();
   const message = error.message.toLowerCase();
   return name.includes("abort") || name.includes("stoprequested") || message.includes("stop requested") || message.includes("aborted");
+}
+
+function fallbackErrorDescriptors(value: unknown, seen = new WeakSet<object>(), depth = 0): Array<{
+  status?: number;
+  code?: string;
+  message: string;
+}> {
+  if (!value || typeof value !== "object" || depth > 5 || seen.has(value)) {
+    return [];
+  }
+  seen.add(value);
+  const record = value as Record<string, unknown>;
+  const rawStatus = record.status ?? record.statusCode;
+  const status = typeof rawStatus === "number" ? rawStatus : typeof rawStatus === "string" ? Number(rawStatus) : undefined;
+  const descriptor: { status?: number; code?: string; message: string } = {
+    ...(typeof status === "number" && Number.isFinite(status) ? { status } : {}),
+    ...(typeof record.code === "string" ? { code: record.code } : {}),
+    message: [record.name, record.message, record.type].filter((part): part is string => typeof part === "string").join(" ")
+  };
+  return [
+    descriptor,
+    ...fallbackErrorDescriptors(record.cause, seen, depth + 1),
+    ...fallbackErrorDescriptors(record.error, seen, depth + 1),
+    ...fallbackErrorDescriptors(record.response, seen, depth + 1)
+  ];
 }
 
 function createTextModelAdapter(config: AppConfig, selection: TextModelSelection): TextModelAdapter {

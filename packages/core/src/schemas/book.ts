@@ -383,9 +383,16 @@ function mergePlanRecords(
 
   const merged = { ...fallback };
   for (const [key, value] of Object.entries(candidate)) {
-    if (value !== undefined && value !== null) {
-      merged[key] = value;
+    if (value === undefined || value === null) {
+      continue;
     }
+    const fallbackValue = merged[key];
+    // Plan revisions are patches. Objects may be emitted field-by-field, while
+    // arrays are intentional atomic replacements (chapter order and question
+    // deletion would otherwise be ambiguous).
+    merged[key] = isRecord(fallbackValue) && isRecord(value)
+      ? mergePlanRecords(fallbackValue, value)
+      : value;
   }
   return merged;
 }

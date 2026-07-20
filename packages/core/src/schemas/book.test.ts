@@ -396,6 +396,61 @@ describe("createProjectSchema", () => {
     ]);
   });
 
+  it("preserves illustrationPlan.globalStyle when a direct revision patch omits it", () => {
+    const fallback = bookPlanSchema.parse(minimalPlan("template-driven"));
+    const plan = bookPlanSchemaWithFallback(fallback).parse({
+      illustrationPlan: {
+        cadence: "every-page",
+        pageRules: ["Illustrate every concrete action."]
+      }
+    });
+
+    expect(plan.illustrationPlan.globalStyle).toBe(fallback.illustrationPlan.globalStyle);
+    expect(plan.illustrationPlan.cadence).toBe("every-page");
+    expect(plan.illustrationPlan.pageRules).toEqual(["Illustrate every concrete action."]);
+  });
+
+  it("deep-merges partial nested plan patches while treating arrays as replacements", () => {
+    const fallback = bookPlanSchema.parse({
+      ...minimalPlan("template-driven"),
+      illustrationPlan: {
+        cadence: "template-driven",
+        globalStyle: "Detailed editorial watercolor",
+        coverPrompt: "A shaded city street",
+        characterReferencePrompts: ["A city arborist reference sheet"],
+        pageRules: ["Keep labels readable"]
+      }
+    });
+
+    const plan = bookPlanSchemaWithFallback(fallback).parse({
+      illustrationPlan: {
+        globalStyle: "Bold civic collage",
+        pageRules: []
+      }
+    });
+
+    expect(plan.illustrationPlan).toEqual({
+      cadence: "template-driven",
+      globalStyle: "Bold civic collage",
+      coverPrompt: "A shaded city street",
+      characterReferencePrompts: ["A city arborist reference sheet"],
+      pageRules: []
+    });
+    expect(plan.chapters).toEqual(fallback.chapters);
+  });
+
+  it("ignores nullish patch fields rather than erasing valid plan values", () => {
+    const fallback = bookPlanSchema.parse(minimalPlan("template-driven"));
+    const plan = bookPlanSchemaWithFallback(fallback).parse({
+      title: null,
+      illustrationPlan: { cadence: null, globalStyle: "Ink diagrams" }
+    });
+
+    expect(plan.title).toBe(fallback.title);
+    expect(plan.illustrationPlan.cadence).toBe(fallback.illustrationPlan.cadence);
+    expect(plan.illustrationPlan.globalStyle).toBe("Ink diagrams");
+  });
+
   it("repairs planner characters that omit role", () => {
     const plan = bookPlanSchema.parse({
       ...minimalPlan("template-driven"),

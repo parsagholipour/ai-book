@@ -1,6 +1,11 @@
+import { z, type ZodType } from "zod";
+import { AdapterJsonValidationError } from "../adapters/json.js";
 import type { ChatMessage, GenerateJsonOptions, JsonResult, TextModelAdapter } from "../adapters/types.js";
 
-export type GenerateJsonWithRetryOptions<T> = GenerateJsonOptions<T>;
+export type GenerateJsonWithRetryOptions<T> = GenerateJsonOptions<T> & {
+  /** Additional model calls after a repairable parse/schema failure. Bounded to two. */
+  repairAttempts?: number | undefined;
+};
 
 const STRICT_JSON_RETRY_RULES = [
   "Return one complete syntactically valid JSON object only.",
@@ -8,36 +13,90 @@ const STRICT_JSON_RETRY_RULES = [
   "Do not include Markdown fences or prose outside JSON."
 ];
 
+const SCHEMA_REPAIR_RULES = [
+  "Your previous JSON did not match the required schema.",
+  "Return a corrected complete JSON object only; preserve valid content while fixing every listed validation issue.",
+  "Do not explain the correction or include Markdown fences."
+];
+
 export async function generateJsonWithRetry<T>(
   textModel: TextModelAdapter,
   options: GenerateJsonWithRetryOptions<T>
 ): Promise<JsonResult<T>> {
-  try {
-    return await textModel.generateJson(options);
-  } catch (error) {
-    if (!isRecoverableJsonSyntaxError(error)) {
-      throw error;
+  const { repairAttempts: requestedRepairAttempts, ...generateOptions } = options;
+  const repairAttempts = Math.max(0, Math.min(2, Math.floor(requestedRepairAttempts ?? 1)));
+  let nextOptions: GenerateJsonOptions<T> = generateOptions;
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await textModel.generateJson(nextOptions);
+    } catch (error) {
+      if (attempt >= repairAttempts || !isRepairableJsonError(error)) {
+        throw error;
+      }
+      nextOptions = repairOptions(generateOptions, error);
     }
-    return textModel.generateJson({
-      ...options,
-      messages: withStrictJsonRetryRules(options.messages),
-      temperature: Math.min(options.temperature ?? 0.7, 0.35)
-    });
   }
 }
 
-function withStrictJsonRetryRules(messages: ChatMessage[]): ChatMessage[] {
+function repairOptions<T>(options: GenerateJsonOptions<T>, error: unknown): GenerateJsonOptions<T> {
+  if (isSchemaValidationError(error)) {
+    return {
+      ...options,
+      messages: withSchemaRepairRules(options.messages, options.schema, error),
+      temperature: Math.min(options.temperature ?? 0.7, 0.2)
+    };
+  }
+  return {
+    ...options,
+    messages: prependSystemRules(options.messages, STRICT_JSON_RETRY_RULES),
+    temperature: Math.min(options.temperature ?? 0.7, 0.35)
+  };
+}
+
+function withSchemaRepairRules<T>(messages: ChatMessage[], schema: ZodType<T>, error: unknown): ChatMessage[] {
+  return prependSystemRules(messages, [
+    ...SCHEMA_REPAIR_RULES,
+    `Validation issues: ${validationDetails(error)}`,
+    `Required JSON schema: ${JSON.stringify(schemaToJson(schema))}`
+  ]);
+}
+
+function prependSystemRules(messages: ChatMessage[], rules: string[]): ChatMessage[] {
   const next = messages.map((message) => ({ ...message }));
   const systemIndex = next.findIndex((message) => message.role === "system");
   if (systemIndex >= 0) {
     next[systemIndex] = {
       role: "system",
-      content: [...STRICT_JSON_RETRY_RULES, next[systemIndex]!.content].join(" ")
+      content: [...rules, next[systemIndex]!.content].join(" ")
     };
   } else {
-    next.unshift({ role: "system", content: STRICT_JSON_RETRY_RULES.join(" ") });
+    next.unshift({ role: "system", content: rules.join(" ") });
   }
   return next;
+}
+
+function isRepairableJsonError(error: unknown): boolean {
+  return isRecoverableJsonSyntaxError(error) || isSchemaValidationError(error);
+}
+
+function isSchemaValidationError(error: unknown): boolean {
+  return error instanceof AdapterJsonValidationError || (error instanceof Error && /JsonValidationError$/.test(error.name));
+}
+
+function validationDetails(error: unknown): string {
+  if (error instanceof AdapterJsonValidationError) {
+    return error.context.validationMessage.slice(0, 4000);
+  }
+  return error instanceof Error ? error.message.slice(0, 4000) : "Unknown validation error.";
+}
+
+function schemaToJson<T>(schema: ZodType<T>): unknown {
+  try {
+    return z.toJSONSchema(schema as never, { unrepresentable: "any" });
+  } catch {
+    return { description: "Conform to the requested response schema." };
+  }
 }
 
 function isRecoverableJsonSyntaxError(error: unknown): boolean {

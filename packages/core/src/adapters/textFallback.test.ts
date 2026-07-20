@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FallbackTextModelAdapter, type TextFallbackEvent } from "./textFallback.js";
+import { FallbackTextModelAdapter, TextGenerationFallbackError, type TextFallbackEvent } from "./textFallback.js";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "./types.js";
 
 function stubAdapter(name: string, options?: { fail?: boolean }): TextModelAdapter {
@@ -64,15 +64,24 @@ describe("FallbackTextModelAdapter", () => {
 
     expect(result.provider).toBe("deepseek-fallback");
     expect(result.model).toBe("deepseek-fallback");
-    expect(events).toEqual([
+    expect(events.map((event) => event.event)).toEqual(["fallback.start", "fallback.success"]);
+    expect(events[0]).toEqual(
       expect.objectContaining({
         event: "fallback.start",
         operation: "generateJson",
         purpose: "generate-page",
+        attempt: 1,
+        maxAttempts: 1,
         primary: expect.objectContaining({ provider: "gemini", model: "gemini-primary" }),
         fallback: { provider: "deepseek", model: "deepseek-fallback" }
       })
-    ]);
+    );
+    expect(events[1]).toEqual(
+      expect.objectContaining({
+        event: "fallback.success",
+        result: { provider: "deepseek-fallback", model: "deepseek-fallback" }
+      })
+    );
   });
 
   it("does not fall back when shouldFallback rejects the error", async () => {
@@ -84,10 +93,21 @@ describe("FallbackTextModelAdapter", () => {
     await expect(adapter.generateText({ messages: [] })).rejects.toThrow("gemini-primary failed");
   });
 
-  it("throws the fallback error when both models fail", async () => {
-    const adapter = fallbackAdapter({ primaryFails: true, fallbackFails: true });
+  it("throws a structured combined error and emits terminal lifecycle state when both models fail", async () => {
+    const events: TextFallbackEvent[] = [];
+    const adapter = fallbackAdapter({
+      primaryFails: true,
+      fallbackFails: true,
+      onEvent: (event) => events.push(event)
+    });
 
-    await expect(adapter.generateText({ messages: [] })).rejects.toThrow("deepseek-fallback failed");
+    await expect(adapter.generateText({ messages: [] })).rejects.toMatchObject({
+      name: "TextGenerationFallbackError",
+      operation: "generateText",
+      primary: expect.objectContaining({ error: expect.objectContaining({ message: "gemini-primary failed" }) }),
+      fallback: expect.objectContaining({ error: expect.objectContaining({ message: "deepseek-fallback failed" }) })
+    } satisfies Partial<TextGenerationFallbackError>);
+    expect(events.map((event) => event.event)).toEqual(["fallback.start", "fallback.error"]);
   });
 
   it("builds the fallback adapter lazily and reuses it", async () => {

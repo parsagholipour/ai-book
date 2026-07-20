@@ -11,6 +11,7 @@ import {
   createLanguageDetectionTextModel,
   createProviders,
   imageModelOptions,
+  isTextProviderFallbackError,
   resolveImageModelSelection,
   resolveTextModelSelection,
   resolveTextModelSelections,
@@ -239,6 +240,15 @@ describe("text model provider selection", () => {
     const providers = createProviders(testConfig({ MOCK_AI: "true" }), tierProjectInput("premium"));
 
     expect(providers.text).toBeInstanceOf(FakeTextModelAdapter);
+  });
+
+  it("bounds tier fallback policy to transient provider failures", () => {
+    expect(isTextProviderFallbackError(Object.assign(new Error("quota exhausted"), { status: 429 }))).toBe(true);
+    expect(isTextProviderFallbackError({ message: "request failed", cause: { code: "ECONNRESET" } })).toBe(true);
+    expect(isTextProviderFallbackError(Object.assign(new Error("upstream unavailable"), { status: 503 }))).toBe(true);
+    expect(isTextProviderFallbackError(new Error("Gemini JSON validation failed for plan-book"))).toBe(false);
+    expect(isTextProviderFallbackError(Object.assign(new Error("bad request"), { status: 400 }))).toBe(false);
+    expect(isTextProviderFallbackError(Object.assign(new Error("aborted"), { status: 503 }))).toBe(false);
   });
 
   it("uses selected image model and exposes configured image options", () => {
