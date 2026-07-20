@@ -1218,6 +1218,11 @@ describe("mobile project routes", () => {
     ]);
     expect(updateCall.data.payload.payloadVersion).toBe(3);
     expect(updateCall.data.payload.messages.at(-1).role).toBe("assistant");
+    expect(updateCall.data.payload.messages.at(-1).turnUi).toEqual({
+      question: body.turn.question,
+      quickReplies: body.turn.quickReplies
+    });
+    expect(JSON.stringify(body.session)).not.toContain("turnUi");
     expect(typeof updateCall.data.payload.lastMessageAt).toBe("string");
     expect(JSON.stringify(body)).not.toMatch(/provider|model|temperature|credits|billing/);
     await app.close();
@@ -1418,6 +1423,63 @@ describe("mobile project routes", () => {
     const storedById = new Map(updateCall.data.payload.messages.map((message) => [message.id, message]));
     expect(storedById.get("m1")).toMatchObject({ isActiveChild: true });
     expect(storedById.get("m3")).toMatchObject({ isActiveChild: false });
+    await app.close();
+  });
+
+  it("restores the localized question when switching creation chat branches", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          language: "pt",
+          messages: [
+            { id: "m0", parentId: null, isActiveChild: true, role: "assistant", content: "Olá!" },
+            { id: "m1", parentId: "m0", isActiveChild: false, role: "user", content: "Uma história de romance" },
+            {
+              id: "m2",
+              parentId: "m1",
+              isActiveChild: true,
+              role: "assistant",
+              content: "Para quem você imagina essa história?",
+              turnUi: {
+                question: {
+                  prompt: "Para quem é este livro?",
+                  options: ["Jovens adultos", "Leitores de romance", "Público geral"],
+                  allowCustom: true
+                },
+                quickReplies: []
+              }
+            },
+            { id: "m3", parentId: "m0", isActiveChild: true, role: "user", content: "Uma história de suspense" },
+            { id: "m4", parentId: "m3", isActiveChild: true, role: "assistant", content: "Que tipo de suspense?" }
+          ]
+        }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload, lastTurn: data.lastTurn })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/branches",
+      headers: bearer("token-a"),
+      payload: { messageId: "m3", direction: "previous" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.turn.assistantMessage).toBe("");
+    expect(body.turn.language).toBe("pt");
+    expect(body.turn.question).toEqual({
+      prompt: "Para quem é este livro?",
+      options: ["Jovens adultos", "Leitores de romance", "Público geral"],
+      allowCustom: true
+    });
+    expect(body.turn.quickReplies).toEqual([]);
     await app.close();
   });
 

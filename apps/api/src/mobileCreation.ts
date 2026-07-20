@@ -123,6 +123,26 @@ export const mobileBookRecipeSchema = z
 
 export const mobileCreationMessageRoleSchema = z.enum(["user", "assistant"]);
 
+const creationTurnQuestionSchema = z
+  .object({
+    prompt: z.string().trim().min(1).max(280),
+    options: z.array(z.string().trim().min(1).max(80)).max(4).default([]),
+    allowCustom: z.boolean().default(true)
+  })
+  .strict();
+
+/**
+ * The localized controls that accompanied an assistant message. Keeping this
+ * small snapshot on the message lets branch navigation restore the exact
+ * question without another model call or an English deterministic fallback.
+ */
+const mobileCreationMessageTurnUiSchema = z
+  .object({
+    quickReplies: z.array(z.string().trim().min(1).max(80)).max(4).default([]),
+    question: creationTurnQuestionSchema.nullable().default(null)
+  })
+  .strict();
+
 /** Lightweight reference from a chat message to an uploaded attachment. */
 export const mobileCreationMessageAttachmentSchema = z
   .object({
@@ -144,7 +164,10 @@ export const mobileCreationMessageSchema = z
     id: z.string().trim().min(1).max(64).optional(),
     requestId: z.string().trim().min(8).max(64).optional(),
     parentId: z.string().trim().min(1).max(64).nullable().optional(),
-    isActiveChild: z.boolean().optional()
+    isActiveChild: z.boolean().optional(),
+    // Server-only UI state for restoring a branch. It is deliberately not
+    // included in the serialized message DTO sent to the mobile client.
+    turnUi: mobileCreationMessageTurnUiSchema.optional()
   })
   .strict()
   .refine((message) => message.content.length > 0 || (message.attachments?.length ?? 0) > 0, {
@@ -325,17 +348,10 @@ export async function enrichAdvisorWithAi(
   return cleanAdvisorPatch(result.data);
 }
 
-const creationTurnQuestionSchema = z
-  .object({
-    prompt: z.string().trim().min(1).max(280),
-    options: z.array(z.string().trim().min(1).max(80)).max(4).default([]),
-    allowCustom: z.boolean().default(true)
-  })
-  .strict();
-
 export const mobileCreationTurnSchema = z
   .object({
-    assistantMessage: z.string().trim().min(1).max(900),
+    // Branch navigation intentionally returns no new chat bubble.
+    assistantMessage: z.string().trim().max(900),
     brief: mobileBookRecipeSchema,
     presets: mobileCreationPresetsSchema,
     detectedLane: mobileCreationLaneSchema,

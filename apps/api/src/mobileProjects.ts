@@ -1444,7 +1444,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       }
       const greeting = greetingCreationTurn();
       const greetingMessages: MobileCreationMessage[] = [
-        { role: "assistant" as const, content: greeting.assistantMessage }
+        creationAssistantMessage(greeting)
       ];
       const firstMessage = parsedBody.data.message;
       let turn = greeting;
@@ -1468,7 +1468,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
             request.log.warn({ err: error }, "creation turn enrichment failed; using deterministic fallback")
         });
         messages = normalizeCreationMessageIds(
-          [...nextMessages, { role: "assistant" as const, content: turn.assistantMessage }].slice(-60)
+          [...nextMessages, creationAssistantMessage(turn)].slice(-60)
         );
         payload = mobileCreationDraftPayloadSchema.parse({
           payloadVersion: 3,
@@ -1591,7 +1591,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           request.log.warn({ err: error }, "creation turn enrichment failed; using deterministic fallback")
       });
       const persisted = foldCreationTranscriptTree(
-        appendCreationMessage(incoming.messages, { role: "assistant" as const, content: turn.assistantMessage }).messages,
+        appendCreationMessage(incoming.messages, creationAssistantMessage(turn)).messages,
         incoming.conversationSummary
       );
       const language = turn.language ?? parsedPayload.data.language;
@@ -1671,10 +1671,11 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That chat branch was not found.");
       }
       // Re-derive the advisor state from the newly active branch so an
-      // immediate Build reflects it. Deterministic only — no model call, and
-      // the returned turn carries no fresh assistant message to display.
+      // immediate Build reflects it. The question controls are restored from
+      // the assistant message that originally produced them, avoiding both a
+      // new model call and the English deterministic fallback.
       const activeMessages = linearizeCreationMessages(switched).active;
-      const turn = await runCreationTurn(turnRequestFromPayload(parsedPayload.data, activeMessages));
+      const turn = creationBranchTurn(parsedPayload.data, activeMessages);
       const updatedPayload = mobileCreationDraftPayloadSchema.parse({
         ...parsedPayload.data,
         payloadVersion: 3,
@@ -1684,18 +1685,17 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         selectedPresets: turn.presets,
         messages: switched
       });
-      const persistedTurn = { ...turn, assistantMessage: "" };
       const updated = await updateCreationDraftCas({
         draft,
         expectedRevision: parsedBody.data.expectedRevision,
-        data: { payload: jsonInputValue(updatedPayload), lastTurn: jsonInputValue(persistedTurn) }
+        data: { payload: jsonInputValue(updatedPayload), lastTurn: jsonInputValue(turn) }
       });
       if (!updated) {
         return sendCreationSessionConflict(reply, auth.user.id, id);
       }
       return {
         session: serializeCreationSession({ ...updated, outputs: draft.outputs }, switched),
-        turn: persistedTurn
+        turn
       } satisfies MobileCreationConversationResponseDto;
     }
   );
@@ -3857,12 +3857,53 @@ function creationTurnForStoredDraft(
   messages = conversationMessagesFromPayload(payload)
 ): MobileCreationTurn {
   const persisted = mobileCreationTurnSchema.safeParse(draft.lastTurn);
-  if (persisted.success) {
+  if (persisted.success && persisted.data.assistantMessage.trim()) {
     return persisted.data;
+  }
+  if (persisted.success && messages.some((message) => message.role === "user")) {
+    return creationBranchTurn(payload, messages);
   }
   return messages.some((message) => message.role === "user")
     ? runCreationTurnSync(turnRequestFromPayload(payload, messages))
     : greetingCreationTurn();
+}
+
+function creationAssistantMessage(turn: MobileCreationTurn): MobileCreationMessage {
+  return {
+    role: "assistant",
+    content: turn.assistantMessage,
+    turnUi: {
+      question: turn.question,
+      quickReplies: turn.quickReplies
+    }
+  };
+}
+
+/**
+ * Branch switches are read-like navigation and should stay instant. Restore
+ * the localized question/options captured with that branch's last assistant
+ * message; legacy branches without a snapshot show no controls rather than a
+ * misleading English fallback.
+ */
+function creationBranchTurn(
+  payload: MobileCreationDraftPayload,
+  messages: MobileCreationMessage[]
+): MobileCreationTurn {
+  const derived = runCreationTurnSync(turnRequestFromPayload(payload, messages));
+  const turnUi = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.turnUi)?.turnUi;
+  const question = turnUi?.question ?? null;
+  return {
+    ...derived,
+    assistantMessage: "",
+    question,
+    quickReplies: turnUi?.quickReplies ?? [],
+    readiness: {
+      ...derived.readiness,
+      missing: question ? [question.prompt.replace(/[.!?]+$/g, "")] : []
+    }
+  };
 }
 
 function runCreationTurnSync(request: MobileCreationTurnRequest): MobileCreationTurn {
