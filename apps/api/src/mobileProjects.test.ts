@@ -2063,6 +2063,112 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("exposes real planning milestones without queue internals", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "ACTIVE",
+              progress: 55,
+              error: null,
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "active" },
+                { key: "save", label: "Save plan", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/12 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Shaping the chapters and flow");
+    expect(status.planningProgress).toEqual({
+      percent: 55,
+      steps: [
+        { key: "understand", label: "Understanding your idea", status: "done" },
+        { key: "shape", label: "Shaping the chapters and flow", status: "active" },
+        { key: "finalize", label: "Finalizing your plan", status: "pending" }
+      ]
+    });
+    expect(JSON.stringify(status)).not.toMatch(/job-plan|PLAN_BOOK|queue|Research|Create plan|Save plan/);
+    await app.close();
+  });
+
+  it("uses revision copy and a safe queued planning fallback", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          jobs: [
+            {
+              id: "job-revision",
+              type: "REVISE_PLAN",
+              status: "QUEUED",
+              progress: 0,
+              error: null,
+              steps: []
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/12 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Improving your plan");
+    expect(status.planningProgress).toEqual({
+      percent: 0,
+      steps: [
+        { key: "understand", label: "Understanding your changes", status: "done" },
+        { key: "shape", label: "Improving your plan", status: "active" },
+        { key: "finalize", label: "Saving your revision", status: "pending" }
+      ]
+    });
+    expect(JSON.stringify(status)).not.toMatch(/job-revision|REVISE_PLAN|queue/);
+    await app.close();
+  });
+
   it("exposes mobile credit balance and active entitlements without provider internals", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     vi.mocked(getCreditBalance).mockResolvedValue({

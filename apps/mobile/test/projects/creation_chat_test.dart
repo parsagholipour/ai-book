@@ -829,6 +829,140 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('planning shows trustworthy live progress in chat', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] =
+        'Original completed chat transcript';
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(
+        status: 'planning',
+        currentAction: 'Creating your book plan.',
+        withoutPlan: true,
+      ),
+      status: _projectStatus(
+        status: 'planning',
+        statusLabel: 'Creating your book plan',
+        progressPercent: 10,
+        currentAction: 'Shaping the chapters and flow',
+        completedPages: 0,
+        imageCount: 0,
+        planningProgress: const MobilePlanningProgress(
+          percent: 55,
+          steps: [
+            MobileProjectStatusStep(
+              key: 'understand',
+              label: 'Understanding your idea',
+              status: 'done',
+            ),
+            MobileProjectStatusStep(
+              key: 'shape',
+              label: 'Shaping the chapters and flow',
+              status: 'active',
+            ),
+            MobileProjectStatusStep(
+              key: 'finalize',
+              label: 'Finalizing your plan',
+              status: 'pending',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerApp(
+        creation: creation,
+        projects: projects,
+        initialLocation: '/books/chat/draft-done',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+
+    expect(find.text('Creating your book plan'), findsOneWidget);
+    expect(find.text('55%'), findsOneWidget);
+    expect(find.text('Understanding your idea'), findsOneWidget);
+    expect(find.text('Shaping the chapters and flow'), findsWidgets);
+    expect(find.text('Finalizing your plan'), findsOneWidget);
+    expect(
+      find.text('You can leave this chat — we’ll keep working.'),
+      findsOneWidget,
+    );
+    final semantics = tester.ensureSemantics();
+    expect(
+      tester.getSemantics(find.byType(LinearProgressIndicator)),
+      matchesSemantics(
+        label: 'Book plan progress',
+        value: '55 percent complete',
+      ),
+    );
+    semantics.dispose();
+    expect(
+      find.bySemanticsLabel('Shaping the chapters and flow. In progress.'),
+      findsOneWidget,
+    );
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('planning without live fields keeps useful milestone feedback', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(
+        status: 'planning',
+        currentAction: 'Creating your book plan.',
+        withoutPlan: true,
+      ),
+      status: _projectStatus(
+        status: 'planning',
+        currentAction: 'Creating your book plan.',
+        completedPages: 0,
+        imageCount: 0,
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerApp(
+        creation: creation,
+        projects: projects,
+        initialLocation: '/books/chat/draft-done',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Creating your book plan'), findsOneWidget);
+    expect(find.text('Understanding your idea'), findsWidgets);
+    expect(find.text('Shaping the chapters and flow'), findsOneWidget);
+    expect(find.text('Finalizing your plan'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
   testWidgets('approved generating plan shows compact progress in chat', (
     tester,
   ) async {
@@ -2648,6 +2782,7 @@ MobileProjectDetail _plannedProject({
   String status = 'plan_ready',
   String currentAction = 'Ready for review.',
   MobilePlan? plan,
+  bool withoutPlan = false,
 }) {
   return MobileProjectDetail(
     id: id,
@@ -2664,13 +2799,13 @@ MobileProjectDetail _plannedProject({
     targetPages: 28,
     pageCount: 0,
     imageCount: 0,
-    hasPlan: true,
+    hasPlan: !withoutPlan,
     exports: _exports,
     createdAt: DateTime.utc(2026, 6, 15),
     updatedAt: DateTime.utc(2026, 6, 15),
     prompt: 'Create a workbook for teachers launching a course.',
     language: 'en',
-    plan: plan ?? _plan(projectId: id),
+    plan: withoutPlan ? null : (plan ?? _plan(projectId: id)),
     pages: const [],
   );
 }
@@ -2700,6 +2835,7 @@ MobileProjectStatus _projectStatus({
   int completedPages = 3,
   int targetPages = 28,
   int imageCount = 1,
+  MobilePlanningProgress? planningProgress,
   MobileExportSet exports = _exports,
 }) {
   final complete = status == 'complete';
@@ -2710,6 +2846,7 @@ MobileProjectStatus _projectStatus({
     statusLabel: statusLabel ?? _statusLabelForProjectStatus(status),
     progressPercent: progressPercent,
     currentAction: currentAction,
+    planningProgress: planningProgress,
     failureMessage: failureMessage,
     retryAvailable: retryAvailable,
     steps: [

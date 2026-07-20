@@ -841,6 +841,7 @@ class MobileProjectStatus {
     required this.statusLabel,
     required this.progressPercent,
     required this.currentAction,
+    this.planningProgress,
     required this.retryAvailable,
     required this.steps,
     required this.pageProgress,
@@ -856,6 +857,7 @@ class MobileProjectStatus {
   final String statusLabel;
   final int progressPercent;
   final String currentAction;
+  final MobilePlanningProgress? planningProgress;
   final String? failureMessage;
   final bool retryAvailable;
   final List<MobileProjectStatusStep> steps;
@@ -878,6 +880,11 @@ class MobileProjectStatus {
       statusLabel: json['statusLabel'] as String,
       progressPercent: json['progressPercent'] as int,
       currentAction: json['currentAction'] as String,
+      planningProgress: json['planningProgress'] is Map
+          ? MobilePlanningProgress.fromJson(
+              (json['planningProgress'] as Map).cast<String, dynamic>(),
+            )
+          : null,
       failureMessage: json['failureMessage'] as String?,
       retryAvailable: json['retryAvailable'] as bool,
       steps: steps
@@ -905,6 +912,27 @@ class MobileProjectStatus {
   bool get requiresReview => status == 'review_required' || quality.isBlocked;
 
   bool get hasFailure => failureMessage != null && failureMessage!.isNotEmpty;
+}
+
+class MobilePlanningProgress {
+  const MobilePlanningProgress({required this.percent, required this.steps});
+
+  final int percent;
+  final List<MobileProjectStatusStep> steps;
+
+  factory MobilePlanningProgress.fromJson(Map<String, dynamic> json) {
+    final rawSteps = json['steps'] as List<dynamic>? ?? const [];
+    return MobilePlanningProgress(
+      percent: ((json['percent'] as num?)?.round() ?? 0).clamp(0, 100),
+      steps: rawSteps
+          .whereType<Map>()
+          .map(
+            (step) =>
+                MobileProjectStatusStep.fromJson(step.cast<String, dynamic>()),
+          )
+          .toList(),
+    );
+  }
 }
 
 class MobileProjectQuality {

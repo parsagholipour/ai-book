@@ -370,6 +370,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                           child: _buildOutputFooter(
                             planValue!,
                             activeProjectId,
+                            planningStatusValue: generationStatusValue,
                             keyboardOpen: keyboardOpen,
                           ),
                         )
@@ -560,16 +561,16 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   Widget _buildOutputFooter(
     AsyncValue<MobileProjectDetail> planValue,
     String activeProjectId, {
+    AsyncValue<MobileProjectStatus>? planningStatusValue,
     required bool keyboardOpen,
   }) {
     return planValue.when(
       loading: () => _PlanBuildingFooter(
         message: _planBusyAction == 'revise'
             ? 'Revising your book plan…'
-            : 'Building your book plan…',
-        semanticsLabel: _planBusyAction == 'revise'
-            ? 'Revising plan'
-            : 'Building plan',
+            : 'Creating your book plan…',
+        isRevision: _planBusyAction == 'revise',
+        statusValue: planningStatusValue,
       ),
       error: (error, _) => _PlanErrorFooter(
         message: userFacingError(error),
@@ -578,7 +579,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       data: (project) {
         final plan = project.plan;
         if (plan == null) {
-          return _PlanBuildingFooter(message: _planProgressLabel(project));
+          return _PlanBuildingFooter(
+            message: _planProgressLabel(project),
+            statusValue: planningStatusValue,
+          );
         }
         _syncPlanQuestionState(plan);
         if (project.status == 'planning' || _planBusyAction == 'revise') {
@@ -586,7 +590,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
             message: _planBusyAction == 'revise'
                 ? 'Revising your book plan…'
                 : _planProgressLabel(project),
-            semanticsLabel: 'Revising plan',
+            isRevision: true,
+            statusValue: planningStatusValue,
           );
         }
         if (plan.isApproved) {
@@ -1324,6 +1329,7 @@ bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
   if (project == null) return false;
   if (project.plan?.isApproved ?? false) return true;
   return switch (project.status) {
+    'planning' ||
     'generating' ||
     'editing' ||
     'complete' ||
@@ -2159,39 +2165,166 @@ class _ProjectChatFooter extends StatelessWidget {
 
 class _PlanBuildingFooter extends StatelessWidget {
   const _PlanBuildingFooter({
-    this.message = 'Building your book plan…',
-    this.semanticsLabel = 'Building plan',
+    this.message = 'Creating your book plan…',
+    this.isRevision = false,
+    this.statusValue,
   });
 
   final String message;
-  final String semanticsLabel;
+  final bool isRevision;
+  final AsyncValue<MobileProjectStatus>? statusValue;
 
   @override
   Widget build(BuildContext context) {
+    final planningProgress = statusValue?.asData?.value.planningProgress;
+    final progress = planningProgress?.percent;
+    final steps = planningProgress?.steps ?? _fallbackPlanningSteps(isRevision);
+    final activeStep = steps.where((step) => step.isActive).firstOrNull;
+    final title = isRevision
+        ? 'Revising your book plan'
+        : 'Creating your book plan';
+    final detail = activeStep?.label ?? message.replaceAll('…', '');
     final colors = Theme.of(context).colorScheme;
+
     return Material(
       color: colors.surface,
       elevation: 8,
       child: SafeArea(
         top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              SizedBox.square(
-                dimension: 16,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: colors.primary,
-                  semanticsLabel: semanticsLabel,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.auto_awesome_outlined,
+                    color: colors.primary,
+                    size: 21,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          detail,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (progress != null) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      '$progress%',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colors.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 12),
+              Semantics(
+                label: 'Book plan progress',
+                value: progress == null
+                    ? 'Working'
+                    : '$progress percent complete',
+                child: ExcludeSemantics(
+                  child: LinearProgressIndicator(
+                    value: progress == null ? null : progress / 100,
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Text(
-                message,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
+              const SizedBox(height: 12),
+              for (final step in steps) _PlanningStepRow(step: step),
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.notifications_none_outlined,
+                    size: 16,
+                    color: colors.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      'You can leave this chat — we’ll keep working.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanningStepRow extends StatelessWidget {
+  const _PlanningStepRow({required this.step});
+
+  final MobileProjectStatusStep step;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final stateLabel = step.isDone
+        ? 'Done'
+        : step.isFailed
+        ? 'Needs attention'
+        : step.isActive
+        ? 'In progress'
+        : 'Waiting';
+    final icon = step.isDone
+        ? Icons.check_circle
+        : step.isFailed
+        ? Icons.error
+        : step.isActive
+        ? Icons.radio_button_checked
+        : Icons.radio_button_unchecked;
+    final color = step.isDone || step.isActive
+        ? colors.primary
+        : step.isFailed
+        ? colors.error
+        : colors.outline;
+
+    return Semantics(
+      container: true,
+      label: '${step.label}. $stateLabel.',
+      child: ExcludeSemantics(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  step.label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: step.isActive
+                        ? colors.onSurface
+                        : colors.onSurfaceVariant,
+                    fontWeight: step.isActive ? FontWeight.w700 : null,
+                  ),
                 ),
               ),
             ],
@@ -2201,6 +2334,26 @@ class _PlanBuildingFooter extends StatelessWidget {
     );
   }
 }
+
+List<MobileProjectStatusStep> _fallbackPlanningSteps(bool isRevision) => [
+  MobileProjectStatusStep(
+    key: 'understand',
+    label: isRevision
+        ? 'Understanding your changes'
+        : 'Understanding your idea',
+    status: 'active',
+  ),
+  MobileProjectStatusStep(
+    key: 'shape',
+    label: isRevision ? 'Improving your plan' : 'Shaping the chapters and flow',
+    status: 'pending',
+  ),
+  MobileProjectStatusStep(
+    key: 'finalize',
+    label: isRevision ? 'Saving your revision' : 'Finalizing your plan',
+    status: 'pending',
+  ),
+];
 
 class _PlanFooter extends StatefulWidget {
   const _PlanFooter({

@@ -484,6 +484,14 @@ export type MobileProjectStatusDto = {
   statusLabel: string;
   progressPercent: number;
   currentAction: string;
+  planningProgress: {
+    percent: number;
+    steps: Array<{
+      key: "understand" | "shape" | "finalize";
+      label: string;
+      status: "pending" | "active" | "done" | "failed";
+    }>;
+  } | null;
   failureMessage: string | null;
   retryAvailable: boolean;
   steps: Array<{
@@ -6044,13 +6052,16 @@ function serializeProjectStatus(status: ProjectStatusResult, exports: MobileExpo
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
   const failedJob = project.jobs.find((job) => job.status === "FAILED");
   const progressPercent = statusProgressPercent(status);
+  const planningProgress = serializePlanningProgress(status);
 
   return {
     projectId: project.id,
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
-    currentAction: currentActionFromSteps(project.status, steps, progressPercent),
+    currentAction: planningProgress?.steps.find((step) => step.status === "active")?.label ??
+      currentActionFromSteps(project.status, steps, progressPercent),
+    planningProgress,
     failureMessage: failedJob ? failureMessageForJob(failedJob.type as GenerationJobType, failedJob.error) : null,
     retryAvailable: status.progress.resumableFailedJobs > 0,
     steps,
@@ -6062,6 +6073,48 @@ function serializeProjectStatus(status: ProjectStatusResult, exports: MobileExpo
     quality: status.quality,
     exports,
     updatedAt: project.updatedAt.toISOString()
+  };
+}
+
+function serializePlanningProgress(status: ProjectStatusResult): MobileProjectStatusDto["planningProgress"] {
+  if (status.project.status !== "PLANNING") {
+    return null;
+  }
+  const job = status.project.jobs.find(
+    (candidate) =>
+      (candidate.type === "PLAN_BOOK" || candidate.type === "REVISE_PLAN") &&
+      (candidate.status === "QUEUED" || candidate.status === "ACTIVE")
+  );
+  if (!job) {
+    return null;
+  }
+
+  const isRevision = job.type === "REVISE_PLAN";
+  const storedSteps = new Map(job.steps.map((step) => [step.key, step.status]));
+  const storedStatus = (key: string) => storedSteps.get(key) ?? "pending";
+  const steps: NonNullable<MobileProjectStatusDto["planningProgress"]>["steps"] = isRevision
+    ? [
+        { key: "understand", label: "Understanding your changes", status: "done" },
+        {
+          key: "shape",
+          label: "Improving your plan",
+          status: storedSteps.size ? storedStatus("revise") : "active"
+        },
+        { key: "finalize", label: "Saving your revision", status: storedStatus("save") }
+      ]
+    : [
+        {
+          key: "understand",
+          label: "Understanding your idea",
+          status: storedSteps.size ? storedStatus("research") : "active"
+        },
+        { key: "shape", label: "Shaping the chapters and flow", status: storedStatus("plan") },
+        { key: "finalize", label: "Finalizing your plan", status: storedStatus("save") }
+      ];
+
+  return {
+    percent: Math.max(0, Math.min(100, job.progress)),
+    steps
   };
 }
 
