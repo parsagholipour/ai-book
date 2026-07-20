@@ -460,7 +460,7 @@ class _ProgressOverviewCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              status.currentAction,
+              status.effectiveAction,
               style: Theme.of(
                 context,
               ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
@@ -512,12 +512,26 @@ class _ProgressOverviewCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             for (final step in status.steps) _ProgressStepTile(step: step),
-            if (status.hasFailure) ...[
+            if (status.isAutomaticRetryPending) ...[
+              const SizedBox(height: 12),
+              AppInlineNotice(
+                icon: Icons.autorenew_outlined,
+                title: 'Retry scheduled',
+                message: status.retryMessage?.trim().isNotEmpty == true
+                    ? status.retryMessage!
+                    : 'Writing will continue automatically. You can leave this screen.',
+                tone: AppNoticeTone.info,
+              ),
+            ] else if (status.hasFailure || status.status == 'failed') ...[
               const SizedBox(height: 12),
               AppInlineNotice(
                 icon: Icons.error_outline,
-                title: 'Writing stopped',
-                message: status.failureMessage!,
+                title: status.retryAvailable
+                    ? 'Writing needs a retry'
+                    : 'Writing needs attention',
+                message: status.failureMessage?.trim().isNotEmpty == true
+                    ? status.failureMessage!
+                    : status.effectiveAction,
                 tone: AppNoticeTone.error,
               ),
               if (onResume != null) ...[

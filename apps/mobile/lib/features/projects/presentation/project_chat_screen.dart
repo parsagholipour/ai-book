@@ -47,6 +47,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   String? _pendingEditMessage;
   String? _historyNextCursor;
   bool? _historyHasMore;
+  String? _retryingOperationId;
   int _requestSequence = 0;
   _PendingEcho? _pendingEcho;
   final List<MobileProjectChatMessage> _olderMessages = [];
@@ -116,11 +117,25 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                     ],
                     for (final operation
                         in chat.operations
-                            .where((operation) => operation.isRunning)
+                            .where(
+                              (operation) =>
+                                  operation.isRunning || operation.isFailed,
+                            )
                             .take(3))
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8),
-                        child: _OperationBubble(operation: operation),
+                        child: _OperationBubble(
+                          operation: operation,
+                          retrying: _retryingOperationId == operation.id,
+                          onRetry: operation.isFailed
+                              ? () => _retryOperation(operation)
+                              : null,
+                          onViewPlan: operation.isPlanRevision
+                              ? () => context.push(
+                                  '/projects/${widget.projectId}',
+                                )
+                              : null,
+                        ),
                       ),
                     if (_visibleMessages(chat).isEmpty && _pendingEcho == null)
                       const _EmptyProjectChat()
@@ -386,6 +401,53 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     }
   }
 
+  Future<void> _retryOperation(MobileBookEditOperation operation) async {
+    if (operation.isAutomaticRetryPending || _retryingOperationId != null) {
+      return;
+    }
+    if (!operation.retryAvailable) {
+      final submittedText = operation.submittedText?.trim();
+      if (submittedText != null && submittedText.isNotEmpty) {
+        setState(() {
+          _controller.text = submittedText;
+          _controller.selection = TextSelection.collapsed(
+            offset: submittedText.length,
+          );
+        });
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            submittedText == null || submittedText.isEmpty
+                ? 'Edit your request below, then send it again.'
+                : 'The original request is ready to edit and send again.',
+          ),
+        ),
+      );
+      return;
+    }
+    setState(() => _retryingOperationId = operation.id);
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .retryOperation(
+            projectId: widget.projectId,
+            operationId: operation.id,
+            requestId:
+                operation.requestId ?? _newRequestId('retry-${operation.id}'),
+          );
+      if (!mounted) return;
+      setState(() => _retryingOperationId = null);
+      _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _retryingOperationId = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
   Future<void> _openPaywall(MobileProjectDetail? project) async {
     await showBillingPaywall(
       context,
@@ -515,27 +577,86 @@ class _EmptyProjectChat extends StatelessWidget {
 }
 
 class _OperationBubble extends StatelessWidget {
-  const _OperationBubble({required this.operation});
+  const _OperationBubble({
+    required this.operation,
+    required this.retrying,
+    this.onRetry,
+    this.onViewPlan,
+  });
 
   final MobileBookEditOperation operation;
+  final bool retrying;
+  final VoidCallback? onRetry;
+  final VoidCallback? onViewPlan;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final waitingForRetry = operation.isAutomaticRetryPending;
+    final failed = operation.isFailed && !waitingForRetry;
     return Card(
-      color: colors.secondaryContainer,
+      color: failed ? colors.errorContainer : colors.secondaryContainer,
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+            Row(
+              children: [
+                if (failed)
+                  Icon(Icons.error_outline, color: colors.onErrorContainer)
+                else
+                  const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    failed && operation.isPlanRevision
+                        ? 'Plan revision failed. Your current plan is unchanged.'
+                        : operation.displayAction,
+                  ),
+                ),
+                if (operation.creditsCharged > 0)
+                  Text('${operation.creditsCharged} credits'),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(child: Text(operation.currentAction)),
-            if (operation.creditsCharged > 0)
-              Text('${operation.creditsCharged} credits'),
+            if (failed) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (onRetry != null)
+                    FilledButton.tonalIcon(
+                      onPressed: retrying ? null : onRetry,
+                      icon: retrying
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              operation.retryAvailable
+                                  ? Icons.refresh
+                                  : Icons.edit_outlined,
+                            ),
+                      label: Text(
+                        operation.retryAvailable
+                            ? operation.isPlanRevision
+                                  ? 'Retry revision'
+                                  : 'Retry update'
+                            : 'Edit request',
+                      ),
+                    ),
+                  if (onViewPlan != null)
+                    TextButton.icon(
+                      onPressed: onViewPlan,
+                      icon: const Icon(Icons.article_outlined),
+                      label: const Text('View current plan'),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -601,9 +722,9 @@ class _PendingEchoBubble extends StatelessWidget {
                   const SizedBox(height: 6),
                   Text(
                     echo.error ?? 'The message could not be sent.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: foreground,
-                    ),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: foreground),
                   ),
                   const SizedBox(height: 4),
                   Wrap(

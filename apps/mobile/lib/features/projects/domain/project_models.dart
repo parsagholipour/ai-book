@@ -606,6 +606,12 @@ class MobileBookEditOperation {
     this.error,
     this.job,
     this.appliedAt,
+    this.retryAvailable = false,
+    this.nextRetryAt,
+    this.retryState,
+    this.retryMessage,
+    this.submittedText,
+    this.requestId,
   });
 
   final String id;
@@ -620,16 +626,37 @@ class MobileBookEditOperation {
   final DateTime createdAt;
   final DateTime? appliedAt;
 
+  /// Retry metadata is optional so responses from older servers still parse.
+  final bool retryAvailable;
+  final DateTime? nextRetryAt;
+  final String? retryState;
+  final String? retryMessage;
+
+  /// Original user input and idempotency key, when returned by newer servers.
+  final String? submittedText;
+  final String? requestId;
+
   factory MobileBookEditOperation.fromJson(Map<String, dynamic> json) {
     final affected = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
+    final retry = (json['retry'] as Map?)?.cast<String, dynamic>();
+    final nextRetryAt = json['nextRetryAt'] ?? retry?['nextRetryAt'];
+    final submittedText =
+        json['submittedText'] ??
+        json['requestMessage'] ??
+        json['message'] ??
+        (json['request'] is Map ? (json['request'] as Map)['message'] : null);
     return MobileBookEditOperation(
-      id: json['id'] as String,
+      id: (json['id'] ?? json['operationId']) as String,
       projectId: json['projectId'] as String,
       kind: json['kind'] as String,
       status: json['status'] as String,
       affectedPageIndexes: affected.map((value) => value as int).toList(),
-      creditsCharged: json['creditsCharged'] as int,
-      currentAction: json['currentAction'] as String,
+      creditsCharged: json['creditsCharged'] as int? ?? 0,
+      currentAction:
+          json['currentAction'] as String? ??
+          json['retryMessage'] as String? ??
+          retry?['message'] as String? ??
+          '',
       error: json['error'] as String?,
       job: json['job'] == null
           ? null
@@ -638,16 +665,45 @@ class MobileBookEditOperation {
       appliedAt: json['appliedAt'] == null
           ? null
           : DateTime.parse(json['appliedAt'] as String),
+      retryAvailable:
+          json['retryAvailable'] as bool? ??
+          retry?['available'] as bool? ??
+          false,
+      nextRetryAt: nextRetryAt is String
+          ? DateTime.tryParse(nextRetryAt)
+          : null,
+      retryState: json['retryState'] as String? ?? retry?['state'] as String?,
+      retryMessage:
+          json['retryMessage'] as String? ?? retry?['message'] as String?,
+      submittedText: submittedText is String ? submittedText : null,
+      requestId: json['requestId'] as String?,
     );
   }
 
-  bool get isRunning => status == 'queued' || status == 'active';
+  bool get isRunning =>
+      status == 'queued' || status == 'active' || isAutomaticRetryPending;
 
   bool get isApplied => status == 'applied';
 
   bool get isFailed => status == 'failed';
 
   bool get isPlanRevision => kind == 'plan_revision';
+
+  bool get isAutomaticRetryPending =>
+      nextRetryAt != null &&
+      (retryState == 'pending' ||
+          retryState == 'scheduled' ||
+          retryState == 'waiting');
+
+  String get displayAction {
+    final retryCopy = retryMessage?.trim();
+    if (retryCopy != null && retryCopy.isNotEmpty) return retryCopy;
+    final action = currentAction.trim();
+    if (action.isNotEmpty) return action;
+    return isAutomaticRetryPending
+        ? 'Retrying this update automatically.'
+        : 'This update needs attention.';
+  }
 }
 
 class MobileProjectChat {
@@ -850,6 +906,10 @@ class MobileProjectStatus {
     this.quality = const MobileProjectQuality.pending(),
     required this.updatedAt,
     this.failureMessage,
+    this.operationId,
+    this.nextRetryAt,
+    this.retryState,
+    this.retryMessage,
   });
 
   final String projectId;
@@ -860,6 +920,10 @@ class MobileProjectStatus {
   final MobilePlanningProgress? planningProgress;
   final String? failureMessage;
   final bool retryAvailable;
+  final String? operationId;
+  final DateTime? nextRetryAt;
+  final String? retryState;
+  final String? retryMessage;
   final List<MobileProjectStatusStep> steps;
   final MobilePageProgress pageProgress;
   final int imageCount;
@@ -868,12 +932,30 @@ class MobileProjectStatus {
   final DateTime updatedAt;
 
   /// Whether the server is still actively working on the book; drives status
-  /// streaming and detail-polling cadence.
+  /// streaming and detail-polling cadence. A scheduled automatic retry remains
+  /// live even when the operation temporarily reports a failed status.
   bool get isLive =>
-      status == 'planning' || status == 'generating' || status == 'editing';
+      status == 'planning' ||
+      status == 'generating' ||
+      status == 'editing' ||
+      isAutomaticRetryPending;
+
+  bool get isAutomaticRetryPending =>
+      nextRetryAt != null &&
+      (retryState == 'pending' ||
+          retryState == 'scheduled' ||
+          retryState == 'waiting');
+
+  String get effectiveAction {
+    final retryCopy = retryMessage?.trim();
+    if (retryCopy != null && retryCopy.isNotEmpty) return retryCopy;
+    return currentAction;
+  }
 
   factory MobileProjectStatus.fromJson(Map<String, dynamic> json) {
-    final steps = json['steps'] as List<dynamic>;
+    final steps = json['steps'] as List<dynamic>? ?? const [];
+    final retry = (json['retry'] as Map?)?.cast<String, dynamic>();
+    final nextRetryAt = json['nextRetryAt'] ?? retry?['nextRetryAt'];
     return MobileProjectStatus(
       projectId: json['projectId'] as String,
       status: json['status'] as String,
@@ -886,7 +968,17 @@ class MobileProjectStatus {
             )
           : null,
       failureMessage: json['failureMessage'] as String?,
-      retryAvailable: json['retryAvailable'] as bool,
+      retryAvailable:
+          json['retryAvailable'] as bool? ??
+          retry?['available'] as bool? ??
+          false,
+      operationId: json['operationId'] as String?,
+      nextRetryAt: nextRetryAt is String
+          ? DateTime.tryParse(nextRetryAt)
+          : null,
+      retryState: json['retryState'] as String? ?? retry?['state'] as String?,
+      retryMessage:
+          json['retryMessage'] as String? ?? retry?['message'] as String?,
       steps: steps
           .map(
             (step) =>

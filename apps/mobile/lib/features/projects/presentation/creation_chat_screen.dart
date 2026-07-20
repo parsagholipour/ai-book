@@ -60,6 +60,9 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   bool _projectChatBranchSwitching = false;
   String? _editingProjectMessageId;
   String? _editingCreationMessageId;
+  String? _pendingProjectRequestId;
+  String? _pendingProjectRequestText;
+  String? _pendingProjectEditMessageId;
   final Set<String> _requestedReplanCopyOutputSyncs = <String>{};
 
   // Plan question tracking
@@ -432,23 +435,59 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     required MobileProjectDetail? project,
     required MobileBookEditOperation operation,
   }) async {
-    if (project == null || !operation.isPlanRevision) {
+    if (operation.isAutomaticRetryPending) {
       _refreshOutput(operation.projectId);
       return;
     }
-    final message = _revisionController.text.trim();
-    if (message.isNotEmpty) {
-      await _revise(project, message);
+    if (!operation.retryAvailable) {
+      final submittedText = operation.submittedText?.trim();
+      if (submittedText != null && submittedText.isNotEmpty) {
+        _revisionController.text = submittedText;
+        _revisionController.selection = TextSelection.collapsed(
+          offset: submittedText.length,
+        );
+      }
+      _refreshOutput(operation.projectId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            submittedText == null || submittedText.isEmpty
+                ? 'Edit the request below, then send it again.'
+                : 'The original request is ready to edit and send again.',
+          ),
+        ),
+      );
       return;
     }
-    // Fall back to refreshing so the user can re-enter a revision.
-    _refreshOutput(project.id);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Enter a revision below, then send it again.'),
-      ),
-    );
+    setState(() => _planBusyAction = 'retry-${operation.id}');
+    try {
+      final retried = await ref
+          .read(projectsRepositoryProvider)
+          .retryOperation(
+            projectId: operation.projectId,
+            operationId: operation.id,
+            requestId:
+                operation.requestId ??
+                'retry-${operation.id}-${DateTime.now().microsecondsSinceEpoch}',
+          );
+      if (!mounted) return;
+      setState(() {
+        _planBusyAction = 'revise';
+        _pendingRevisionOperationId = retried.id;
+        if (project?.plan != null) {
+          _pendingRevisionPlanKey = _planKey(project!.plan!);
+        }
+      });
+      _startPlanPoll();
+      _refreshOutput(operation.projectId);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _planBusyAction = null);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
   }
 
   String? _activeProjectId(CreationChatState state) {
@@ -921,6 +960,16 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     final trimmed = message.trim();
     if (trimmed.isEmpty || _projectChatSending) return null;
     final editingMessageId = _editingProjectMessageId;
+    final samePendingRequest =
+        _pendingProjectRequestText == trimmed &&
+        _pendingProjectEditMessageId == editingMessageId;
+    if (!samePendingRequest) {
+      _pendingProjectRequestText = trimmed;
+      _pendingProjectEditMessageId = editingMessageId;
+      _pendingProjectRequestId =
+          'project-chat-${DateTime.now().microsecondsSinceEpoch}';
+    }
+    final requestId = _pendingProjectRequestId!;
     final shouldRestoreComposer = _composerController.text.trim() == trimmed;
     if (shouldRestoreComposer) {
       _composerController.clear();
@@ -934,11 +983,16 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
               projectId: projectId,
               messageId: editingMessageId,
               message: trimmed,
+              requestId: requestId,
             )
           : await repository.sendProjectChatMessage(
               projectId: projectId,
               message: trimmed,
+              requestId: requestId,
             );
+      _pendingProjectRequestId = null;
+      _pendingProjectRequestText = null;
+      _pendingProjectEditMessageId = null;
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);
@@ -950,15 +1004,20 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       if (result.operation != null) {
         _startPlanPoll();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.operation!.currentAction)),
+          SnackBar(content: Text(result.operation!.displayAction)),
         );
       }
       return result;
     } catch (error) {
       if (!mounted) return null;
       setState(() => _projectChatSending = false);
-      if (shouldRestoreComposer) {
+      // Always preserve the submitted text. Do not overwrite anything the user
+      // typed while the network request was in flight.
+      if (_composerController.text.trim().isEmpty) {
         _composerController.text = trimmed;
+        _composerController.selection = TextSelection.collapsed(
+          offset: trimmed.length,
+        );
       }
       ScaffoldMessenger.of(
         context,
@@ -1295,7 +1354,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 String _planKey(MobilePlan plan) => '${plan.id}:${plan.version}';
 
 bool _showsOperationInTranscript(MobileBookEditOperation operation) =>
-    operation.isRunning || (operation.isPlanRevision && operation.isFailed);
+    operation.isRunning || operation.isFailed;
 
 String _planSnapshotLabel(MobilePlan plan) {
   if (plan.isSuperseded) return 'Previous plan';
@@ -3897,10 +3956,13 @@ class _OutputOperationBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final isFailed = operation.isFailed;
-    final label = isFailed && operation.isPlanRevision
-        ? 'Plan revision failed. Your previous plan is still available.'
-        : operation.currentAction;
+    final waitingForRetry = operation.isAutomaticRetryPending;
+    final isFailed = operation.isFailed && !waitingForRetry;
+    final label = waitingForRetry
+        ? operation.displayAction
+        : isFailed && operation.isPlanRevision
+        ? 'Plan revision failed. Your current plan is unchanged.'
+        : operation.displayAction;
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -3952,16 +4014,45 @@ class _OutputOperationBubble extends StatelessWidget {
                 ),
               ],
             ),
-            if (isFailed && onRetry != null) ...[
+            if (isFailed) ...[
               const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Try again'),
-                style: TextButton.styleFrom(
-                  foregroundColor: colors.onErrorContainer,
-                  visualDensity: VisualDensity.compact,
-                ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  if (onRetry != null)
+                    TextButton.icon(
+                      onPressed: onRetry,
+                      icon: Icon(
+                        operation.retryAvailable
+                            ? Icons.refresh
+                            : Icons.edit_outlined,
+                        size: 18,
+                      ),
+                      label: Text(
+                        operation.retryAvailable
+                            ? operation.isPlanRevision
+                                  ? 'Retry revision'
+                                  : 'Retry update'
+                            : 'Edit request',
+                      ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: colors.onErrorContainer,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  if (operation.isPlanRevision)
+                    TextButton.icon(
+                      onPressed: () =>
+                          context.push('/projects/${operation.projectId}'),
+                      icon: const Icon(Icons.article_outlined, size: 18),
+                      label: const Text('View current plan'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: colors.onErrorContainer,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                ],
               ),
             ],
           ],

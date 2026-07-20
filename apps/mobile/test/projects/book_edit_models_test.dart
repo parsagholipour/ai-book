@@ -61,6 +61,35 @@ void main() {
     expect(message.manualEdit!.operationId, 'operation-1');
   });
 
+  test('parses retry metadata while remaining backward compatible', () {
+    final operation = MobileBookEditOperation.fromJson({
+      'operationId': 'operation-2',
+      'projectId': 'project-1',
+      'kind': 'plan_revision',
+      'status': 'failed',
+      'affectedPageIndexes': const <int>[],
+      'currentAction': 'Revision paused.',
+      'createdAt': '2026-06-15T12:00:00.000Z',
+      'requestId': 'revision-stable-1',
+      'submittedText': 'Make chapter two more practical.',
+      'retryAvailable': true,
+      'retry': {
+        'state': 'scheduled',
+        'message': 'Retrying the revision automatically.',
+        'nextRetryAt': '2026-06-15T12:05:00.000Z',
+      },
+    });
+
+    expect(operation.id, 'operation-2');
+    expect(operation.creditsCharged, 0);
+    expect(operation.requestId, 'revision-stable-1');
+    expect(operation.submittedText, 'Make chapter two more practical.');
+    expect(operation.retryAvailable, isTrue);
+    expect(operation.isAutomaticRetryPending, isTrue);
+    expect(operation.isRunning, isTrue);
+    expect(operation.displayAction, 'Retrying the revision automatically.');
+  });
+
   test('leaves manualEdit null on ordinary assistant messages', () {
     final message = MobileProjectChatMessage.fromJson({
       'id': 'chat-2',

@@ -29,6 +29,8 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   Timer? _refreshTimer;
   String? _busyAction;
   MobilePlanOperation? _lastOperation;
+  String? _revisionRequestId;
+  String? _revisionRequestText;
 
   @override
   void dispose() {
@@ -41,6 +43,14 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
   Widget build(BuildContext context) {
     final projectValue = ref.watch(projectDetailProvider(widget.projectId));
     final billingValue = ref.watch(billingProvider);
+    final chatValue = ref.watch(projectChatProvider(widget.projectId));
+    MobileBookEditOperation? failedRevision;
+    for (final operation in chatValue.asData?.value.operations ?? const []) {
+      if (operation.isPlanRevision && operation.isFailed) {
+        failedRevision = operation;
+        break;
+      }
+    }
     projectValue.whenData(_stopPollingWhenProjectSettled);
 
     return Scaffold(
@@ -67,6 +77,13 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           revisionController: _revisionController,
           busyAction: _busyAction,
           lastOperation: _lastOperation,
+          failedRevision: failedRevision,
+          onRetryRevision: failedRevision == null
+              ? null
+              : () => _retryRevision(failedRevision!),
+          onEditFailedRequest: failedRevision?.submittedText == null
+              ? null
+              : () => _restoreFailedRevision(failedRevision!),
           onRefresh: () async =>
               ref.invalidate(projectDetailProvider(widget.projectId)),
           onDeleteProject: () => _confirmAndDelete(project),
@@ -75,18 +92,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
             future: () =>
                 ref.read(projectsRepositoryProvider).generatePlan(project.id),
           ),
-          onRevisePlan: (message) => _runPlanAction(
-            action: 'revise',
-            future: () => ref
-                .read(projectsRepositoryProvider)
-                .revisePlan(
-                  planId: project.plan!.id,
-                  message: message,
-                  requestId:
-                      'revision-${DateTime.now().microsecondsSinceEpoch}',
-                ),
-            clearRevisionText: true,
-          ),
+          onRevisePlan: (message) => _revisePlan(project, message),
           onApprovePlan: project.plan == null
               ? null
               : () => _confirmAndApprove(project),
@@ -103,10 +109,84 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     );
   }
 
+  void _restoreFailedRevision(MobileBookEditOperation operation) {
+    final text = operation.submittedText?.trim();
+    if (text == null || text.isEmpty) return;
+    setState(() {
+      _revisionController.text = text;
+      _revisionController.selection = TextSelection.collapsed(
+        offset: text.length,
+      );
+    });
+  }
+
+  Future<void> _retryRevision(MobileBookEditOperation operation) async {
+    if (operation.isAutomaticRetryPending) {
+      _startRefreshPoll();
+      return;
+    }
+    if (!operation.retryAvailable) {
+      _restoreFailedRevision(operation);
+      return;
+    }
+    await _runPlanAction(
+      action: 'retry-revision',
+      future: () => ref
+          .read(projectsRepositoryProvider)
+          .retryOperation(
+            projectId: operation.projectId,
+            operationId: operation.id,
+            requestId:
+                operation.requestId ??
+                'retry-${operation.id}-${DateTime.now().microsecondsSinceEpoch}',
+          )
+          .then(
+            (operation) => MobilePlanOperation(
+              projectId: operation.projectId,
+              planId: null,
+              status: operation.status,
+              currentAction: operation.displayAction,
+              job:
+                  operation.job ??
+                  MobileQueuedJob(
+                    id: operation.id,
+                    status: operation.status,
+                    currentAction: operation.displayAction,
+                  ),
+            ),
+          ),
+    );
+    ref.invalidate(projectChatProvider(widget.projectId));
+  }
+
+  Future<void> _revisePlan(MobileProjectDetail project, String message) async {
+    final trimmed = message.trim();
+    if (_revisionRequestText != trimmed) {
+      _revisionRequestText = trimmed;
+      _revisionRequestId = 'revision-${DateTime.now().microsecondsSinceEpoch}';
+    }
+    await _runPlanAction(
+      action: 'revise',
+      future: () => ref
+          .read(projectsRepositoryProvider)
+          .revisePlan(
+            planId: project.plan!.id,
+            message: trimmed,
+            requestId: _revisionRequestId,
+          ),
+      clearRevisionText: true,
+      onSuccess: () {
+        _revisionRequestText = null;
+        _revisionRequestId = null;
+      },
+    );
+  }
+
   Future<void> _runPlanAction({
     required String action,
     required Future<MobilePlanOperation> Function() future,
     bool clearRevisionText = false,
+    VoidCallback? onSuccess,
   }) async {
     setState(() => _busyAction = action);
     try {
@@ -121,6 +201,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           _revisionController.clear();
         }
       });
+      onSuccess?.call();
       _startRefreshPoll();
       ref.invalidate(projectsProvider);
       ref.invalidate(projectDetailProvider(widget.projectId));
@@ -227,6 +308,9 @@ class _ProjectDetailBody extends StatelessWidget {
     required this.onDeleteProject,
     required this.busyAction,
     required this.lastOperation,
+    required this.failedRevision,
+    this.onRetryRevision,
+    this.onEditFailedRequest,
     this.billing,
     this.onApprovePlan,
   });
@@ -241,6 +325,9 @@ class _ProjectDetailBody extends StatelessWidget {
   final Future<void> Function()? onApprovePlan;
   final String? busyAction;
   final MobilePlanOperation? lastOperation;
+  final MobileBookEditOperation? failedRevision;
+  final Future<void> Function()? onRetryRevision;
+  final VoidCallback? onEditFailedRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +343,15 @@ class _ProjectDetailBody extends StatelessWidget {
             onDeleteProject: onDeleteProject,
           ),
           const SizedBox(height: 16),
+          if (failedRevision != null) ...[
+            _FailedRevisionBanner(
+              operation: failedRevision!,
+              busy: busyAction == 'retry-revision',
+              onRetry: onRetryRevision,
+              onEditRequest: onEditFailedRequest,
+            ),
+            const SizedBox(height: 16),
+          ],
           if (lastOperation != null) ...[
             _OperationBanner(operation: lastOperation!),
             const SizedBox(height: 16),
@@ -884,6 +980,76 @@ class _RevisionRequestCard extends StatelessWidget {
             label: const Text('Send revision'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _FailedRevisionBanner extends StatelessWidget {
+  const _FailedRevisionBanner({
+    required this.operation,
+    required this.busy,
+    this.onRetry,
+    this.onEditRequest,
+  });
+
+  final MobileBookEditOperation operation;
+  final bool busy;
+  final Future<void> Function()? onRetry;
+  final VoidCallback? onEditRequest;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Theme.of(context).colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Plan revision failed',
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            const Text('Your current plan is unchanged.'),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (operation.retryAvailable && onRetry != null)
+                  FilledButton.tonalIcon(
+                    onPressed: busy ? null : () => onRetry!(),
+                    icon: busy
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh),
+                    label: const Text('Retry revision'),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Your current plan is shown below.'),
+                    ),
+                  ),
+                  icon: const Icon(Icons.article_outlined),
+                  label: const Text('View current plan'),
+                ),
+                if (onEditRequest != null)
+                  TextButton.icon(
+                    onPressed: onEditRequest,
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Edit request'),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

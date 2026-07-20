@@ -222,6 +222,15 @@ class SlowPlanRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileBookEditOperation> retryOperation({
+    required String projectId,
+    required String operationId,
+    String? requestId,
+  }) {
+    throw UnimplementedError();
+  }
+
+  @override
   Future<MobileProjectRecovery> resumeProject(String id) async {
     return MobileProjectRecovery(
       projectId: id,

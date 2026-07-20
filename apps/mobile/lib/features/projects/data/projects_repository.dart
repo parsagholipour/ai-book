@@ -68,6 +68,12 @@ abstract interface class ProjectsRepository {
 
   Future<MobileProjectRecovery> resumeProject(String id);
 
+  Future<MobileBookEditOperation> retryOperation({
+    required String projectId,
+    required String operationId,
+    String? requestId,
+  });
+
   Future<ProjectDeletionReceipt> deleteProject(String id);
 
   Future<ModerationReportReceipt> reportProject({
@@ -298,6 +304,23 @@ class MobileProjectsRepository implements ProjectsRepository {
     );
     return MobileProjectRecovery.fromJson(
       response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileBookEditOperation> retryOperation({
+    required String projectId,
+    required String operationId,
+    String? requestId,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/operations/$operationId/retry',
+      data: {'requestId': ?requestId},
+    );
+    final data = response.data as Map<String, dynamic>;
+    final operation = data['operation'];
+    return MobileBookEditOperation.fromJson(
+      operation is Map<String, dynamic> ? operation : data,
     );
   }
 

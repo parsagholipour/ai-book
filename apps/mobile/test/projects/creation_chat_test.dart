@@ -457,9 +457,7 @@ void main() {
       await tester.pump();
 
       expect(
-        find.text(
-          'Plan revision failed. Your previous plan is still available.',
-        ),
+        find.text('Plan revision failed. Your current plan is unchanged.'),
         findsOneWidget,
       );
       expect(find.textContaining('Revising your book plan'), findsNothing);

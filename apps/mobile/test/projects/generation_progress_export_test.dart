@@ -48,6 +48,44 @@ void main() {
     expect(retried, isTrue);
   });
 
+  testWidgets('scheduled automatic retry remains progress, not failure', (
+    tester,
+  ) async {
+    var resumed = false;
+    final status = fakeStatus(
+      progressPercent: 38,
+      currentAction: 'Writing paused.',
+      failureMessage: 'A page timed out.',
+      retryAvailable: true,
+      nextRetryAt: DateTime.utc(2026, 6, 15, 12, 5),
+      retryState: 'scheduled',
+      retryMessage: 'Retrying the page automatically.',
+    );
+
+    expect(status.isLive, isTrue);
+    expect(status.isAutomaticRetryPending, isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProjectGenerationView(
+            status: status,
+            onRefresh: () async {},
+            onResume: () async => resumed = true,
+            onDownload: (_) async {},
+            onOpenPaywall: (_) async {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Retry scheduled'), findsOneWidget);
+    expect(find.text('Retrying the page automatically.'), findsWidgets);
+    expect(find.text('Writing stopped'), findsNothing);
+    expect(find.text('Retry generation'), findsNothing);
+    expect(resumed, isFalse);
+  });
+
   testWidgets('export panel shows locked and unlocked states', (tester) async {
     final downloadedFormats = <String>[];
     final paywalledFormats = <String>[];
@@ -191,6 +229,9 @@ MobileProjectStatus fakeStatus({
   bool retryAvailable = false,
   MobileExportSet? exports,
   MobileProjectQuality quality = const MobileProjectQuality.pending(),
+  DateTime? nextRetryAt,
+  String? retryState,
+  String? retryMessage,
 }) {
   return MobileProjectStatus(
     projectId: 'project-1',
@@ -202,6 +243,9 @@ MobileProjectStatus fakeStatus({
     currentAction: currentAction,
     failureMessage: failureMessage,
     retryAvailable: retryAvailable,
+    nextRetryAt: nextRetryAt,
+    retryState: retryState,
+    retryMessage: retryMessage,
     steps: const [
       MobileProjectStatusStep(key: 'plan', label: 'Plan', status: 'done'),
       MobileProjectStatusStep(
