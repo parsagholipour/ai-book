@@ -439,14 +439,16 @@ async function revisePlan(job: Job) {
   if (operationId) {
     const operation = await prisma.bookEditOperation.findUnique({
       where: { id: operationId },
-      select: { generationJobId: true, ledgerEntryId: true, status: true }
+      select: { generationJobId: true, ledgerEntryId: true, status: true, classifier: true }
     });
     const billingLedgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : null;
+    const operationClassifier = jsonPayloadToRecord(operation?.classifier);
     const warning = planRevisionConsistencyWarning({
       durableGenerationJobId: generationJobId,
       linkedGenerationJobId: operation?.generationJobId,
       linkedLedgerEntryId: operation?.ledgerEntryId,
-      payloadLedgerEntryId: billingLedgerEntryId
+      payloadLedgerEntryId: billingLedgerEntryId,
+      billingRequired: operationClassifier.source !== "web"
     });
     if (warning) {
       console.warn("Plan revision consistency warning", {

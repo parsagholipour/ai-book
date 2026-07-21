@@ -45,7 +45,7 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
-import { ensureSeedTemplates, Prisma, prisma } from "@book-maker/db";
+import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
 import { deleteProjectStorage } from "../projectStorage.js";
@@ -554,7 +554,8 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         request: body.message,
         classifier: { kind: "plan_revision", source: "web" },
         affectedPageIndexes: [],
-        creditsCharged: 0
+        creditsCharged: 0,
+        automaticRetryLimit: PLAN_REVISION_AUTOMATIC_RETRY_LIMIT
       }
     });
     const job = await enqueueGenerationJob({

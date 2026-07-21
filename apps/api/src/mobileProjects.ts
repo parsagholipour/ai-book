@@ -436,6 +436,12 @@ export type MobileBookEditOperationDto = {
   currentAction: string;
   error: string | null;
   job: MobileQueuedJobDto | null;
+  retryAvailable: boolean;
+  nextRetryAt: string | null;
+  retryState: "scheduled" | "available" | "exhausted" | null;
+  retryMessage: string | null;
+  submittedText: string | null;
+  requestId: string | null;
   createdAt: string;
   appliedAt: string | null;
 };
@@ -3060,32 +3066,43 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
     }
   );
 
+  const retryOperationHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+    const auth = await requireMobileAuth(request, reply);
+    if (!auth) return;
+    const params = z.object({ id: z.string().min(1), projectId: z.string().min(1).optional() }).parse(request.params);
+    const parsed = operationRetryBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide an idempotency request ID.");
+    }
+    const result = await retryPlanRevisionOperation({
+      userId: auth.user.id,
+      ...(params.projectId ? { projectId: params.projectId } : {}),
+      operationId: params.id,
+      requestId: parsed.data.requestId,
+      automatic: false,
+      log: request.log
+    });
+    if (result.kind === "not_found") {
+      return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "Plan revision operation not found.");
+    }
+    if (result.kind === "conflict") {
+      return sendMobileError(reply, 409, "RETRY_NOT_AVAILABLE", result.reason);
+    }
+    return reply.code(202).send({ operation: serializeBookEditOperation(result.operation) });
+  };
+
+  fastify.post(
+    "/api/mobile/projects/:projectId/operations/:id/retry",
+    { schema: { tags: ["mobile"] } },
+    retryOperationHandler
+  );
+
+  // Backward-compatible alias for clients released before retries were scoped
+  // by project in the public mobile API.
   fastify.post(
     "/api/mobile/book-edit-operations/:id/retry",
     { schema: { tags: ["mobile"] } },
-    async (request, reply) => {
-      const auth = await requireMobileAuth(request, reply);
-      if (!auth) return;
-      const { id } = idParamsSchema.parse(request.params);
-      const parsed = operationRetryBodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide an idempotency request ID.");
-      }
-      const result = await retryPlanRevisionOperation({
-        userId: auth.user.id,
-        operationId: id,
-        requestId: parsed.data.requestId,
-        automatic: false,
-        log: request.log
-      });
-      if (result.kind === "not_found") {
-        return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "Plan revision operation not found.");
-      }
-      if (result.kind === "conflict") {
-        return sendMobileError(reply, 409, "RETRY_NOT_AVAILABLE", result.reason);
-      }
-      return reply.code(202).send({ operation: serializeBookEditOperation(result.operation) });
-    }
+    retryOperationHandler
   );
 
   fastify.post(
@@ -4974,6 +4991,7 @@ async function queueChatBookEdit(options: {
 
 async function retryPlanRevisionOperation(options: {
   userId: string;
+  projectId?: string;
   operationId: string;
   requestId: string;
   automatic: boolean;
@@ -4984,7 +5002,12 @@ async function retryPlanRevisionOperation(options: {
   | { kind: "conflict"; reason: string }
 > {
   const operation = await prisma.bookEditOperation.findFirst({
-    where: { id: options.operationId, project: { userId: options.userId }, kind: "PLAN_REVISION" },
+    where: {
+      id: options.operationId,
+      ...(options.projectId ? { projectId: options.projectId } : {}),
+      project: { userId: options.userId },
+      kind: "PLAN_REVISION"
+    },
     include: {
       generationJob: { select: { id: true, status: true, payload: true, startedAt: true, updatedAt: true } },
       ledgerEntry: { select: { id: true, status: true, entryType: true } }
@@ -5004,10 +5027,12 @@ async function retryPlanRevisionOperation(options: {
   if (operation.automaticRetryCount >= operation.automaticRetryLimit) {
     return { kind: "conflict", reason: "This plan revision has exhausted its retry budget." };
   }
-  if (!operation.ledgerEntryId || !operation.ledgerEntry) {
+  const classifier = jsonRecord(operation.classifier);
+  const isUnbilledWebRevision = classifier.source === "web";
+  if ((!operation.ledgerEntryId || !operation.ledgerEntry) && !isUnbilledWebRevision) {
     options.log?.warn(
       { event: "plan_revision.consistency_warning", operationId: operation.id, projectId: operation.projectId, warning: "missing_ledger" },
-      "Plan revision retry rejected because billing linkage is missing"
+      "Paid mobile plan revision retry rejected because billing linkage is missing"
     );
     return { kind: "conflict", reason: "Billing state for this revision is incomplete. Credits were not charged again." };
   }
@@ -5028,6 +5053,19 @@ async function retryPlanRevisionOperation(options: {
     return { kind: "conflict", reason: "A newer plan exists, so this revision can no longer be retried." };
   }
 
+  const priorRetryState = {
+    status: operation.status,
+    automaticRetryCount: operation.automaticRetryCount,
+    lastRetryAt: operation.lastRetryAt,
+    lastRetryReason: operation.lastRetryReason,
+    retryRequestId: operation.retryRequestId,
+    nextRetryAt: operation.nextRetryAt,
+    error: operation.error,
+    generationJobId: operation.generationJobId
+  };
+  // Recovery is intentionally free: the original failed paid attempt has
+  // already been refunded by the worker. The retry key plus atomic claim below
+  // grants exactly one recovery job without reserving or spending credits.
   const retryNumber = operation.automaticRetryCount + 1;
   const retryKey = retryRequestKey(operation.id, retryNumber);
   const now = new Date();
@@ -5059,24 +5097,41 @@ async function retryPlanRevisionOperation(options: {
     return { kind: "conflict", reason: "This retry was already claimed by another request." };
   }
 
-  const newJob = await enqueueGenerationJob({
-    projectId: operation.projectId,
-    type: "REVISE_PLAN",
-    dedupeKey: retryKey,
-    payload: {
-      ...payload,
-      editOperationId: operation.id,
-      billingLedgerEntryId: operation.ledgerEntryId,
-      retryOfGenerationJobId: operation.generationJobId,
-      retryNumber
-    }
-  });
-  const updated = await prisma.bookEditOperation.update({
-    where: { id: operation.id },
-    data: { generationJobId: newJob.id },
-    include: { generationJob: { select: { id: true, status: true } } }
-  });
-  await prisma.project.update({ where: { id: operation.projectId }, data: { status: "PLANNING" } });
+  let newJob: Awaited<ReturnType<typeof enqueueGenerationJob>>;
+  let updated: MobileBookEditOperationRecord;
+  try {
+    // Create the durable outbox job without publishing it yet, then link it to
+    // the claimed operation. Redis failures after linkage only defer dispatch;
+    // queue reconciliation can safely publish the already-linked job later.
+    newJob = await enqueueGenerationJob({
+      projectId: operation.projectId,
+      type: "REVISE_PLAN",
+      dedupeKey: retryKey,
+      dispatch: false,
+      payload: {
+        ...payload,
+        editOperationId: operation.id,
+        ...(operation.ledgerEntryId ? { billingLedgerEntryId: operation.ledgerEntryId } : {}),
+        retryOfGenerationJobId: operation.generationJobId,
+        retryNumber
+      }
+    });
+    updated = await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { generationJobId: newJob.id },
+      include: { generationJob: { select: { id: true, status: true } } }
+    });
+    await prisma.project.update({ where: { id: operation.projectId }, data: { status: "PLANNING" } });
+  } catch (error) {
+    // A failed durable-job creation/link must not consume the one recovery
+    // claim. Restore the prior failed operation so the same request can retry.
+    await prisma.bookEditOperation.updateMany({
+      where: { id: operation.id, retryRequestId: options.requestId },
+      data: priorRetryState
+    });
+    throw error;
+  }
+  await dispatchGenerationJob(newJob.id);
   options.log?.info(
     { event: "plan_revision.retry_queued", operationId: operation.id, projectId: operation.projectId, generationJobId: newJob.id, retryNumber, automatic: options.automatic, staleActive: eligibility.staleActive },
     "Plan revision retry queued"
@@ -5701,6 +5756,25 @@ function sanitizePublicChatMetadata(value: MobileJsonValue): MobileJsonValue {
 }
 
 function serializeBookEditOperation(operation: MobileBookEditOperationRecord): MobileBookEditOperationDto {
+  const retryLimit = operation.automaticRetryLimit ?? 0;
+  const retryCount = operation.automaticRetryCount ?? 0;
+  const retryBudgetAvailable = retryCount < retryLimit;
+  const retryScheduled = operation.status === "FAILED" && retryBudgetAvailable && Boolean(operation.nextRetryAt);
+  const retryAvailable = operation.kind === "PLAN_REVISION" && operation.status === "FAILED" && retryBudgetAvailable;
+  const retryState = retryScheduled
+    ? "scheduled"
+    : retryAvailable
+      ? "available"
+      : operation.kind === "PLAN_REVISION" && operation.status === "FAILED"
+        ? "exhausted"
+        : null;
+  const retryMessage = retryScheduled
+    ? "Retrying this plan revision automatically."
+    : retryAvailable
+      ? "This plan revision can be retried at no additional charge."
+      : retryState === "exhausted"
+        ? "This plan revision could not be recovered automatically."
+        : null;
   return {
     id: operation.id,
     projectId: operation.projectId,
@@ -5717,6 +5791,12 @@ function serializeBookEditOperation(operation: MobileBookEditOperationRecord): M
           currentAction: currentActionForEditOperation(operation)
         }
       : null,
+    retryAvailable,
+    nextRetryAt: operation.nextRetryAt?.toISOString() ?? null,
+    retryState,
+    retryMessage,
+    submittedText: typeof operation.request === "string" ? operation.request : null,
+    requestId: operation.requestId ?? null,
     createdAt: operation.createdAt.toISOString(),
     appliedAt: operation.appliedAt?.toISOString() ?? null
   };

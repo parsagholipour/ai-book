@@ -125,6 +125,8 @@ function collectErrorDescriptors(
     ...collectErrorDescriptors(record.cause, seen, depth + 1),
     ...collectErrorDescriptors(record.error, seen, depth + 1),
     ...collectErrorDescriptors(record.response, seen, depth + 1),
+    ...collectErrorDescriptors(record.primary, seen, depth + 1),
+    ...collectErrorDescriptors(record.fallback, seen, depth + 1),
     ...collectErrorArray(record.errors, seen, depth + 1)
   ];
 
