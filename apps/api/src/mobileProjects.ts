@@ -3155,21 +3155,6 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           }
         });
 
-        await prisma.$transaction([
-          prisma.planVersion.updateMany({
-            where: { projectId: plan.projectId, id: { not: id } },
-            data: { status: "SUPERSEDED" }
-          }),
-          prisma.planVersion.update({
-            where: { id },
-            data: { status: "APPROVED", approvedAt: new Date() }
-          }),
-          prisma.project.update({
-            where: { id: plan.projectId },
-            data: { currentPlanId: id, status: "GENERATING" }
-          })
-        ]);
-
         spend = reservation ? await commitReservedCredits(reservation.id) : null;
         if (spend) {
           await grantProjectEntitlement({
@@ -3186,16 +3171,40 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
           });
         }
 
-        const job = await enqueueGenerationJob({
-          projectId: plan.projectId,
-          type: "GENERATE_BOOK",
-          dedupeKey: approvalDedupeKey,
-          payload: {
-            planId: id,
-            ...(spend ? { billingLedgerEntryId: spend.id } : {})
+        const transactionResult = await prisma.$transaction(async (tx) => {
+          const job = await enqueueGenerationJob({
+            projectId: plan.projectId,
+            type: "GENERATE_BOOK",
+            dedupeKey: approvalDedupeKey,
+            transaction: tx,
+            dispatch: false,
+            payload: {
+              planId: id,
+              ...(spend ? { billingLedgerEntryId: spend.id } : {})
+            }
+          });
+          await tx.planVersion.updateMany({
+            where: { projectId: plan.projectId, id: { not: id } },
+            data: { status: "SUPERSEDED" }
+          });
+          await tx.planVersion.update({
+            where: { id },
+            data: { status: "APPROVED", approvedAt: new Date() }
+          });
+          await tx.project.update({
+            where: { id: plan.projectId },
+            data: { currentPlanId: id, status: "GENERATING" }
+          });
+          if (spend) {
+            await tx.creditLedgerEntry.update({
+              where: { id: spend.id },
+              data: { projectId: plan.projectId, generationJobId: job.id }
+            });
           }
+          return { job };
         });
-        return reply.code(202).send(planOperation("generation_queued", plan.projectId, id, job, "Starting full book generation."));
+        await dispatchGenerationJob(transactionResult.job.id);
+        return reply.code(202).send(planOperation("generation_queued", plan.projectId, id, transactionResult.job, "Starting full book generation."));
       } catch (error) {
         const entryToRefund = spend ?? reservation;
         if (entryToRefund) {
@@ -3740,24 +3749,30 @@ async function queueInitialMobilePlan(
         data: { projectId }
       });
     }
-    await prisma.project.update({ where: { id: projectId }, data: { status: "PLANNING" } });
     committedPlanCharge = planReservation ? await commitReservedCredits(planReservation.id) : null;
-    const job = await enqueueGenerationJob({
-      projectId,
-      type: "PLAN_BOOK",
-      dedupeKey: `plan-book:${projectId}`,
-      payload: {
-        inputSnapshot,
-        ...(committedPlanCharge ? { billingLedgerEntryId: committedPlanCharge.id } : {})
-      }
-    });
-    if (committedPlanCharge) {
-      await prisma.creditLedgerEntry.update({
-        where: { id: committedPlanCharge.id },
-        data: { generationJobId: job.id, projectId }
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const job = await enqueueGenerationJob({
+        projectId,
+        type: "PLAN_BOOK",
+        dedupeKey: `plan-book:${projectId}`,
+        transaction: tx,
+        dispatch: false,
+        payload: {
+          inputSnapshot,
+          ...(committedPlanCharge ? { billingLedgerEntryId: committedPlanCharge.id } : {})
+        }
       });
-    }
-    return planOperation("planning_queued", projectId, null, job, "Creating your book plan.");
+      await tx.project.update({ where: { id: projectId }, data: { status: "PLANNING" } });
+      if (committedPlanCharge) {
+        await tx.creditLedgerEntry.update({
+          where: { id: committedPlanCharge.id },
+          data: { generationJobId: job.id, projectId }
+        });
+      }
+      return { job };
+    });
+    await dispatchGenerationJob(transactionResult.job.id);
+    return planOperation("planning_queued", projectId, null, transactionResult.job, "Creating your book plan.");
   } catch (error) {
     const entryToRefund = committedPlanCharge ?? planReservation;
     if (entryToRefund) {
@@ -5064,79 +5079,86 @@ async function retryPlanRevisionOperation(options: {
     generationJobId: operation.generationJobId
   };
   // Recovery is intentionally free: the original failed paid attempt has
-  // already been refunded by the worker. The retry key plus atomic claim below
-  // grants exactly one recovery job without reserving or spending credits.
+  // already been refunded by the worker. The retry key plus one database
+  // transaction grants exactly one recovery job without reserving credits.
+  // retryRequestId is the last command that succeeded; accepting that value in
+  // the CAS is what permits the next numbered retry while preserving replay
+  // idempotency for the current command.
   const retryNumber = operation.automaticRetryCount + 1;
   const retryKey = retryRequestKey(operation.id, retryNumber);
   const now = new Date();
-  const claimed = await prisma.bookEditOperation.updateMany({
-    where: {
-      id: operation.id,
-      automaticRetryCount: operation.automaticRetryCount,
-      status: operation.status,
-      OR: [{ retryRequestId: null }, { retryRequestId: options.requestId }]
-    },
-    data: {
-      status: "QUEUED",
-      automaticRetryCount: { increment: 1 },
-      lastRetryAt: now,
-      lastRetryReason: operation.error ?? "stale active plan revision",
-      retryRequestId: options.requestId,
-      nextRetryAt: new Date(now.getTime() + planRevisionRetryDelayMs(retryNumber)),
-      error: null
-    }
-  });
-  if (claimed.count !== 1) {
+  let transactionResult:
+    | { claimed: true; newJob: Awaited<ReturnType<typeof enqueueGenerationJob>>; updated: MobileBookEditOperationRecord }
+    | { claimed: false };
+  try {
+    transactionResult = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.bookEditOperation.updateMany({
+        where: {
+          id: operation.id,
+          automaticRetryCount: operation.automaticRetryCount,
+          status: operation.status,
+          retryRequestId: operation.retryRequestId
+        },
+        data: {
+          status: "QUEUED",
+          automaticRetryCount: { increment: 1 },
+          lastRetryAt: now,
+          lastRetryReason: operation.error ?? "failed plan revision",
+          retryRequestId: options.requestId,
+          nextRetryAt: new Date(now.getTime() + planRevisionRetryDelayMs(retryNumber)),
+          error: null
+        }
+      });
+      if (claimed.count !== 1) return { claimed: false as const };
+
+      const newJob = await enqueueGenerationJob({
+        projectId: operation.projectId,
+        type: "REVISE_PLAN",
+        dedupeKey: retryKey,
+        dispatch: false,
+        transaction: tx,
+        payload: {
+          ...payload,
+          editOperationId: operation.id,
+          ...(operation.ledgerEntryId ? { billingLedgerEntryId: operation.ledgerEntryId } : {}),
+          retryOfGenerationJobId: operation.generationJobId,
+          retryNumber
+        }
+      });
+      const updated = (await tx.bookEditOperation.update({
+        where: { id: operation.id },
+        data: { generationJobId: newJob.id },
+        include: { generationJob: { select: { id: true, status: true } } }
+      })) as MobileBookEditOperationRecord;
+      await tx.project.update({ where: { id: operation.projectId }, data: { status: "PLANNING" } });
+      return { claimed: true as const, newJob, updated };
+    });
+  } catch (error) {
+    // Real Prisma transactions roll all four writes back. This best-effort
+    // restore also protects lightweight transaction doubles and databases that
+    // abort after the callback has partially run.
+    await prisma.bookEditOperation.updateMany({
+      where: { id: operation.id, retryRequestId: options.requestId },
+      data: priorRetryState
+    }).catch(() => ({ count: 0 }));
+    throw error;
+  }
+  if (!transactionResult.claimed) {
     const concurrent = await prisma.bookEditOperation.findUnique({
       where: { id: operation.id },
       include: { generationJob: { select: { id: true, status: true } } }
     });
-    if (concurrent?.retryRequestId === options.requestId) {
+    if (concurrent?.retryRequestId === options.requestId && concurrent.generationJob) {
       return { kind: "queued", operation: concurrent as MobileBookEditOperationRecord };
     }
     return { kind: "conflict", reason: "This retry was already claimed by another request." };
   }
-
-  let newJob: Awaited<ReturnType<typeof enqueueGenerationJob>>;
-  let updated: MobileBookEditOperationRecord;
-  try {
-    // Create the durable outbox job without publishing it yet, then link it to
-    // the claimed operation. Redis failures after linkage only defer dispatch;
-    // queue reconciliation can safely publish the already-linked job later.
-    newJob = await enqueueGenerationJob({
-      projectId: operation.projectId,
-      type: "REVISE_PLAN",
-      dedupeKey: retryKey,
-      dispatch: false,
-      payload: {
-        ...payload,
-        editOperationId: operation.id,
-        ...(operation.ledgerEntryId ? { billingLedgerEntryId: operation.ledgerEntryId } : {}),
-        retryOfGenerationJobId: operation.generationJobId,
-        retryNumber
-      }
-    });
-    updated = await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: { generationJobId: newJob.id },
-      include: { generationJob: { select: { id: true, status: true } } }
-    });
-    await prisma.project.update({ where: { id: operation.projectId }, data: { status: "PLANNING" } });
-  } catch (error) {
-    // A failed durable-job creation/link must not consume the one recovery
-    // claim. Restore the prior failed operation so the same request can retry.
-    await prisma.bookEditOperation.updateMany({
-      where: { id: operation.id, retryRequestId: options.requestId },
-      data: priorRetryState
-    });
-    throw error;
-  }
-  await dispatchGenerationJob(newJob.id);
+  await dispatchGenerationJob(transactionResult.newJob.id);
   options.log?.info(
-    { event: "plan_revision.retry_queued", operationId: operation.id, projectId: operation.projectId, generationJobId: newJob.id, retryNumber, automatic: options.automatic, staleActive: eligibility.staleActive },
+    { event: "plan_revision.retry_queued", operationId: operation.id, projectId: operation.projectId, generationJobId: transactionResult.newJob.id, retryNumber, automatic: options.automatic, staleActive: false },
     "Plan revision retry queued"
   );
-  return { kind: "queued", operation: updated };
+  return { kind: "queued", operation: transactionResult.updated };
 }
 
 export async function reconcileRetryablePlanRevisionOperations(options: {
@@ -5151,8 +5173,7 @@ export async function reconcileRetryablePlanRevisionOperations(options: {
       automaticRetryCount: { lt: PLAN_REVISION_AUTOMATIC_RETRY_LIMIT },
       OR: [
         { status: "FAILED", nextRetryAt: { lte: now } },
-        { status: "FAILED", nextRetryAt: null },
-        { status: "ACTIVE", updatedAt: { lte: new Date(now.getTime() - 15 * 60_000) } }
+        { status: "FAILED", nextRetryAt: null }
       ]
     },
     orderBy: { updatedAt: "asc" },
@@ -5258,19 +5279,41 @@ async function queueChargedPlanRevision(options: {
       }
     });
     spend = reservation ? await commitReservedCredits(reservation.id) : null;
-    await prisma.project.update({ where: { id: options.projectId }, data: { status: "PLANNING" } });
-    const job = await enqueueGenerationJob({
-      projectId: options.projectId,
-      type: "REVISE_PLAN",
-      dedupeKey: `revise-plan:${options.projectId}:${options.planId}:${hashString(options.idempotencyKey)}`,
-      payload: {
-        planId: options.planId,
-        message: options.message,
-        ...(spend ? { billingLedgerEntryId: spend.id } : {}),
-        ...(options.operationId ? { editOperationId: options.operationId } : {})
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const job = await enqueueGenerationJob({
+        projectId: options.projectId,
+        type: "REVISE_PLAN",
+        dedupeKey: `revise-plan:${options.projectId}:${options.planId}:${hashString(options.idempotencyKey)}`,
+        transaction: tx,
+        dispatch: false,
+        payload: {
+          planId: options.planId,
+          message: options.message,
+          ...(spend ? { billingLedgerEntryId: spend.id } : {}),
+          ...(options.operationId ? { editOperationId: options.operationId } : {})
+        }
+      });
+      if (spend) {
+        await tx.creditLedgerEntry.update({
+          where: { id: spend.id },
+          data: { projectId: options.projectId, generationJobId: job.id }
+        });
       }
+      if (options.operationId) {
+        await tx.bookEditOperation.update({
+          where: { id: options.operationId },
+          data: {
+            generationJobId: job.id,
+            ledgerEntryId: spend?.id ?? null,
+            creditsCharged: amountCredits
+          }
+        });
+      }
+      await tx.project.update({ where: { id: options.projectId }, data: { status: "PLANNING" } });
+      return { job };
     });
-    return { job, ledgerEntry: spend };
+    await dispatchGenerationJob(transactionResult.job.id);
+    return { job: transactionResult.job, ledgerEntry: spend };
   } catch (error) {
     const entryToRefund = spend ?? reservation;
     if (entryToRefund) {

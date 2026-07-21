@@ -50,6 +50,7 @@ import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
 import { deleteProjectStorage } from "../projectStorage.js";
 import {
+  dispatchGenerationJob,
   enqueueGenerationJob,
   isBullJobActive,
   requeueGenerationJob,
@@ -505,20 +506,26 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         })
       : null;
 
-    await prisma.project.update({
-      where: { id },
-      data: {
-        ...(input ? projectUpdateDataFromInput(input, template?.id ?? null) : {}),
-        status: "PLANNING"
-      }
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      await tx.project.update({
+        where: { id },
+        data: {
+          ...(input ? projectUpdateDataFromInput(input, template?.id ?? null) : {}),
+          status: "PLANNING"
+        }
+      });
+      const job = await enqueueGenerationJob({
+        projectId: id,
+        type: "PLAN_BOOK",
+        dedupeKey: `plan-book:${id}:${stablePayloadHash(input ? jsonPayload(input) : {})}`,
+        payload: input ? { inputSnapshot: jsonPayload(input) } : {},
+        transaction: tx,
+        dispatch: false
+      });
+      return { job };
     });
-    const job = await enqueueGenerationJob({
-      projectId: id,
-      type: "PLAN_BOOK",
-      dedupeKey: `plan-book:${id}:${stablePayloadHash(input ? jsonPayload(input) : {})}`,
-      payload: input ? { inputSnapshot: jsonPayload(input) } : {}
-    });
-    return reply.code(202).send(job);
+    await dispatchGenerationJob(transactionResult.job.id);
+    return reply.code(202).send(transactionResult.job);
   });
 
   fastify.post("/api/plans/:id/messages", async (request, reply) => {
@@ -545,34 +552,41 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     if (existingOperation?.generationJob) {
       return reply.code(202).send(existingOperation.generationJob);
     }
-    const operation = await prisma.bookEditOperation.create({
-      data: {
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      const operation = await tx.bookEditOperation.create({
+        data: {
+          projectId: plan.projectId,
+          requestId: directRevisionRequestId,
+          kind: "PLAN_REVISION",
+          status: "QUEUED",
+          request: body.message,
+          classifier: { kind: "plan_revision", source: "web" },
+          affectedPageIndexes: [],
+          creditsCharged: 0,
+          automaticRetryLimit: PLAN_REVISION_AUTOMATIC_RETRY_LIMIT
+        }
+      });
+      const job = await enqueueGenerationJob({
         projectId: plan.projectId,
-        requestId: directRevisionRequestId,
-        kind: "PLAN_REVISION",
-        status: "QUEUED",
-        request: body.message,
-        classifier: { kind: "plan_revision", source: "web" },
-        affectedPageIndexes: [],
-        creditsCharged: 0,
-        automaticRetryLimit: PLAN_REVISION_AUTOMATIC_RETRY_LIMIT
-      }
+        type: "REVISE_PLAN",
+        dedupeKey: `revise-plan:${plan.projectId}:${id}:${directRevisionRequestId}`,
+        dispatch: false,
+        transaction: tx,
+        payload: {
+          planId: id,
+          message: body.message,
+          editOperationId: operation.id,
+          ...(body.respondedQuestionPrompts?.length
+            ? { respondedQuestionPrompts: body.respondedQuestionPrompts }
+            : {})
+        }
+      });
+      await tx.bookEditOperation.update({ where: { id: operation.id }, data: { generationJobId: job.id } });
+      await tx.project.update({ where: { id: plan.projectId }, data: { status: "PLANNING" } });
+      return { job };
     });
-    const job = await enqueueGenerationJob({
-      projectId: plan.projectId,
-      type: "REVISE_PLAN",
-      dedupeKey: `revise-plan:${plan.projectId}:${id}:${directRevisionRequestId}`,
-      payload: {
-        planId: id,
-        message: body.message,
-        editOperationId: operation.id,
-        ...(body.respondedQuestionPrompts?.length
-          ? { respondedQuestionPrompts: body.respondedQuestionPrompts }
-          : {})
-      }
-    });
-    await prisma.bookEditOperation.update({ where: { id: operation.id }, data: { generationJobId: job.id } });
-    return reply.code(202).send(job);
+    await dispatchGenerationJob(transactionResult.job.id);
+    return reply.code(202).send(transactionResult.job);
   });
 
   fastify.post("/api/plans/:id/approve", async (request, reply) => {
@@ -594,29 +608,32 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
     const resolvedStrategy = resolveBookGenerationStrategy(planInputForStrategy(plan.inputSnapshot, plan.project));
 
-    await prisma.$transaction([
-      prisma.planVersion.updateMany({
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      await tx.planVersion.updateMany({
         where: { projectId: plan.projectId, id: { not: id } },
         data: { status: "SUPERSEDED" }
-      }),
-      prisma.planVersion.update({
+      });
+      await tx.planVersion.update({
         where: { id },
         data: { status: "APPROVED", approvedAt: new Date() }
-      }),
-      prisma.project.update({
+      });
+      await tx.project.update({
         where: { id: plan.projectId },
         data: { currentPlanId: id, status: "GENERATING" }
-      })
-    ]);
-
-    const job = await enqueueGenerationJob({
-      projectId: plan.projectId,
-      type: "GENERATE_BOOK",
-      dedupeKey: approvalDedupeKey,
-      payload: { planId: id }
+      });
+      const job = await enqueueGenerationJob({
+        projectId: plan.projectId,
+        type: "GENERATE_BOOK",
+        dedupeKey: approvalDedupeKey,
+        payload: { planId: id },
+        transaction: tx,
+        dispatch: false
+      });
+      return { job };
     });
+    await dispatchGenerationJob(transactionResult.job.id);
     return reply.code(202).send({
-      ...job,
+      ...transactionResult.job,
       strategy: {
         id: resolvedStrategy.strategy.id,
         requestedId: resolvedStrategy.requestedId,

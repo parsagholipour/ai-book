@@ -24,14 +24,14 @@ function state(overrides: Record<string, unknown> = {}) {
 }
 
 describe("durable plan revision retry policy", () => {
-  it("allows failed and stale-active revisions only", () => {
+  it("allows failed revisions but never takes over active work", () => {
     expect(canClaimPlanRevisionRetry(state(), now)).toMatchObject({ eligible: true, staleActive: false });
     expect(
       canClaimPlanRevisionRetry(
         state({ status: "ACTIVE", generationJob: { status: "ACTIVE", startedAt: new Date("2026-07-21T11:00:00Z"), updatedAt: new Date("2026-07-21T11:01:00Z") } }),
         now
       )
-    ).toMatchObject({ eligible: true, staleActive: true });
+    ).toMatchObject({ eligible: false, staleActive: false, reason: "operation is not failed" });
     expect(canClaimPlanRevisionRetry(state({ status: "ACTIVE", generationJob: { status: "ACTIVE", startedAt: now, updatedAt: now } }), now).eligible).toBe(false);
   });
 
