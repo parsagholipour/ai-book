@@ -27,6 +27,7 @@ import 'chat_media_preview.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
 import 'message_actions_menu.dart';
+import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'project_export_actions.dart';
@@ -3452,7 +3453,7 @@ class _MessageBubble extends StatelessWidget {
     final canEdit = isUser && !failed && message.id != null && onEdit != null;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
+      child: MessageHoldFeedback(
         onLongPressStart: (details) => showMessageActionsMenu(
           context: context,
           position: details.globalPosition,
@@ -3803,7 +3804,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         replanCopyTargetProjectId != null &&
         replanCopyTargetProjectId != activeProjectId &&
         onOpenReplanCopy != null;
-    final bubble = GestureDetector(
+    final bubble = MessageHoldFeedback(
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
         position: details.globalPosition,

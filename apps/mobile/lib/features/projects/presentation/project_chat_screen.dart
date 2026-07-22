@@ -10,6 +10,7 @@ import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
 import 'message_actions_menu.dart';
+import 'message_hold_feedback.dart';
 import 'plan_revision_retry.dart';
 import 'project_route_error.dart';
 import 'saved_export_card.dart';
@@ -797,15 +798,13 @@ class _ProjectMessageBubble extends StatelessWidget {
         : isUser
         ? colors.onPrimary
         : colors.onSurface;
-    final bubble = GestureDetector(
-      onLongPressStart: (details) {
-        showMessageActionsMenu(
-          context: context,
-          position: details.globalPosition,
-          message: message.content,
-          onEdit: isUser ? onStartEdit : null,
-        );
-      },
+    final bubble = MessageHoldFeedback(
+      onLongPressStart: (details) => showMessageActionsMenu(
+        context: context,
+        position: details.globalPosition,
+        message: message.content,
+        onEdit: isUser ? onStartEdit : null,
+      ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: DecoratedBox(
