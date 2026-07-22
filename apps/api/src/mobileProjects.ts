@@ -6544,9 +6544,53 @@ function serializePlanningProgress(status: ProjectStatusResult): MobileProjectSt
       ];
 
   return {
-    percent: Math.max(0, Math.min(100, job.progress)),
+    percent: planningProgressPercent(job, status.project.targetPages, isRevision),
     steps
   };
+}
+
+function planningProgressPercent(
+  job: ProjectStatusResult["project"]["jobs"][number],
+  targetPages: number,
+  isRevision: boolean
+): number {
+  if (job.status === "COMPLETED") {
+    return 100;
+  }
+
+  const storedPercent = clampPlanningPercent(job.progress, 99);
+  const outputTokens = Number.isFinite(job.tokens?.outputTokens) ? Math.max(0, job.tokens?.outputTokens ?? 0) : 0;
+  if (outputTokens === 0) {
+    return storedPercent;
+  }
+
+  const activeStep = job.steps.find((step) => step.status === "active")?.key;
+  const shapeStep = isRevision ? "revise" : "plan";
+  if (activeStep !== shapeStep && activeStep !== "save") {
+    return storedPercent;
+  }
+
+  const expectedTokens = expectedPlanningOutputTokens(targetPages, isRevision);
+  const outputRatio = Math.min(1, 1 - Math.exp((-1.6 * outputTokens) / expectedTokens));
+  const shapeStart = isRevision ? 35 : 45;
+  const shapeEnd = isRevision ? 89 : 79;
+  const tokenPercent = activeStep === "save"
+    ? shapeEnd + 1 + Math.round((98 - (shapeEnd + 1)) * outputRatio)
+    : shapeStart + Math.round((shapeEnd - shapeStart) * outputRatio);
+
+  return Math.max(storedPercent, Math.min(99, tokenPercent));
+}
+
+function expectedPlanningOutputTokens(targetPages: number, isRevision: boolean): number {
+  const pages = Number.isFinite(targetPages) ? Math.max(1, Math.floor(targetPages)) : 12;
+  const estimatedChapters = Math.max(1, Math.ceil(pages / 12));
+  return isRevision
+    ? Math.max(650, Math.min(4_000, 500 + estimatedChapters * 140))
+    : Math.max(1_400, Math.min(6_500, 1_000 + estimatedChapters * 360));
+}
+
+function clampPlanningPercent(value: number, maximum: number): number {
+  return Math.max(0, Math.min(maximum, Math.round(Number.isFinite(value) ? value : 0)));
 }
 
 function mobileStepFromPipeline(step: PipelineStep): MobileProjectStatusDto["steps"][number] {

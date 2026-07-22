@@ -2146,6 +2146,161 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("uses live generated output to advance planning within milestone guardrails", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    const planningStatus = (outputTokens: number) =>
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          targetPages: 24,
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "ACTIVE",
+              progress: 45,
+              error: null,
+              tokens: { outputTokens },
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "active" },
+                { key: "save", label: "Save plan", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/24 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      });
+    vi.mocked(buildProjectStatus)
+      .mockResolvedValueOnce(planningStatus(200))
+      .mockResolvedValueOnce(planningStatus(1_200))
+      .mockResolvedValueOnce(planningStatus(100_000));
+    const app = await buildMobileApp();
+
+    const percentages: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/mobile/projects/project-1/status",
+        headers: bearer("token-a")
+      });
+      expect(response.statusCode).toBe(200);
+      percentages.push(response.json().status.planningProgress.percent);
+      expect(JSON.stringify(response.json().status)).not.toMatch(/tokens|provider|model|cost|queue/i);
+    }
+
+    expect(percentages[0]).toBeGreaterThan(45);
+    expect(percentages[1]).toBeGreaterThan(percentages[0]!);
+    expect(percentages[2]).toBeGreaterThanOrEqual(percentages[1]!);
+    expect(percentages[2]).toBeLessThan(100);
+    await app.close();
+  });
+
+  it("preserves milestone progress when no live output tokens are available", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          targetPages: 24,
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "ACTIVE",
+              progress: 45,
+              error: null,
+              tokens: { outputTokens: 0 },
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "active" },
+                { key: "save", label: "Save plan", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/24 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().status.planningProgress.percent).toBe(45);
+    await app.close();
+  });
+
+  it("uses a smaller adaptive output target for live plan revisions", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          targetPages: 24,
+          jobs: [
+            {
+              id: "job-revision",
+              type: "REVISE_PLAN",
+              status: "ACTIVE",
+              progress: 35,
+              error: null,
+              tokens: { outputTokens: 450 },
+              steps: [
+                { key: "revise", label: "Revise plan", status: "active" },
+                { key: "save", label: "Save revision", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/24 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Improving your plan");
+    expect(status.planningProgress.percent).toBeGreaterThan(35);
+    expect(status.planningProgress.percent).toBeLessThan(90);
+    expect(JSON.stringify(status)).not.toMatch(/tokens|provider|model|cost|queue/i);
+    await app.close();
+  });
+
   it("keeps completed planning milestones for the plan-ready handoff", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
