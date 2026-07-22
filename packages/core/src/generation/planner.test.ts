@@ -2,7 +2,78 @@ import { describe, expect, it } from "vitest";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
-import { revisePlanningPackage } from "./planner.js";
+import { createPlanningPackage, revisePlanningPackage } from "./planner.js";
+
+describe("createPlanningPackage", () => {
+  it("reports real planning phases around research and generation", async () => {
+    const events: string[] = [];
+    const input = testInput({
+      prompt: "Write a current scientific guide to rabbit and turtle movement"
+    });
+    const fallback = makeFallbackPlan(input);
+    const textModel: TextModelAdapter = {
+      async generateJson<T>(_options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        events.push("generate");
+        return {
+          data: fallback as T,
+          text: JSON.stringify(fallback),
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      }
+    };
+
+    await createPlanningPackage({
+      input,
+      textModel,
+      research: {
+        async search(query) {
+          events.push(`research:${query.query}`);
+          return { query: query.query, summary: "", sources: [] };
+        }
+      },
+      onPhase: (phase) => {
+        events.push(`phase:${phase}`);
+      }
+    });
+
+    expect(events[0]).toBe("phase:understand");
+    expect(events.filter((event) => event.startsWith("research:")).length).toBeGreaterThan(0);
+    const lastResearchIndex = events.reduce(
+      (lastIndex, event, index) => event.startsWith("research:") ? index : lastIndex,
+      -1
+    );
+    expect(events.indexOf("phase:shape")).toBeGreaterThan(lastResearchIndex);
+    expect(events.indexOf("phase:shape")).toBeLessThan(events.indexOf("generate"));
+    expect(events.at(-1)).toBe("phase:finalize");
+  });
+
+  it("reports shaping and finalization for fallback plans", async () => {
+    const phases: string[] = [];
+
+    await createPlanningPackage({
+      input: testInput(),
+      textModel: unusedTextModel(),
+      research: {
+        async search(query) {
+          return { query: query.query, summary: "", sources: [] };
+        }
+      },
+      forceFallback: true,
+      onPhase: (phase) => {
+        phases.push(phase);
+      }
+    });
+
+    expect(phases).toEqual(["understand", "shape", "finalize"]);
+  });
+});
 
 describe("revisePlanningPackage", () => {
   it("uses a compact prompt and preserves existing research notes when omitted by the model", async () => {
@@ -106,7 +177,7 @@ describe("revisePlanningPackage", () => {
   });
 });
 
-function testInput(): CreateProjectInput {
+function testInput(overrides: Partial<CreateProjectInput> = {}): CreateProjectInput {
   return {
     prompt: "Make a 4 page book of rabbit and turtle race",
     category: "STORY",
@@ -121,6 +192,21 @@ function testInput(): CreateProjectInput {
       coverTemplate: "auto",
       finalReview: true,
       toneProfile: "neutral"
+    },
+    ...overrides
+  };
+}
+
+function unusedTextModel(): TextModelAdapter {
+  return {
+    async generateJson<T>(_options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+      throw new Error("Not used");
+    },
+    async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+      throw new Error("Not used");
+    },
+    async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+      throw new Error("Not used");
     }
   };
 }

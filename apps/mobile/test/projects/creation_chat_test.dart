@@ -887,11 +887,11 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Creating your book plan'), findsOneWidget);
     expect(find.text('55%'), findsOneWidget);
-    expect(find.text('Understanding your idea'), findsOneWidget);
+    expect(find.text('Understanding your idea'), findsWidgets);
     expect(find.text('Shaping the chapters and flow'), findsWidgets);
     expect(find.text('Finalizing your plan'), findsOneWidget);
     expect(
@@ -910,6 +910,91 @@ void main() {
     expect(
       find.bySemanticsLabel('Shaping the chapters and flow. In progress.'),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.bySemanticsLabel(
+          'Shaping the chapters and flow. In progress.',
+        ),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('completed planning progress hands off without regressing', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(
+        status: 'planning',
+        currentAction: 'Finalizing your plan',
+        withoutPlan: true,
+      ),
+      status: _projectStatus(
+        status: 'plan_ready',
+        statusLabel: 'Review your book plan',
+        progressPercent: 20,
+        currentAction: 'Ready for review.',
+        completedPages: 0,
+        imageCount: 0,
+        planningProgress: const MobilePlanningProgress(
+          percent: 100,
+          steps: [
+            MobileProjectStatusStep(
+              key: 'understand',
+              label: 'Understanding your idea',
+              status: 'done',
+            ),
+            MobileProjectStatusStep(
+              key: 'shape',
+              label: 'Shaping the chapters and flow',
+              status: 'done',
+            ),
+            MobileProjectStatusStep(
+              key: 'finalize',
+              label: 'Finalizing your plan',
+              status: 'done',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(
+      _routerApp(
+        creation: creation,
+        projects: projects,
+        initialLocation: '/books/chat/draft-done',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Your book plan is ready'), findsOneWidget);
+    expect(find.text('Opening it for review…'), findsOneWidget);
+    expect(find.text('100%'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Finalizing your plan. Done.'),
+      findsOneWidget,
+    );
+    expect(
+      find.bySemanticsLabel('Understanding your idea. In progress.'),
+      findsNothing,
     );
 
     await tester.teardownScreen();

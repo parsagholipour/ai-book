@@ -376,11 +376,14 @@ export const mobileCreationTurnSchema = z
 
 const creationTurnAiPatchObjectSchema = z
   .object({
-    assistantMessage: z.string().trim().max(900).optional(),
+    // These two fields are a coherence pair. Requiring an explicit question
+    // state keeps a localized assistant reply from silently inheriting the
+    // deterministic English question card when the model omits `question`.
+    assistantMessage: z.string().trim().max(900),
     brief: mobileBookRecipeSchema.optional(),
     presets: mobileCreationPresetsSchema.optional(),
     quickReplies: z.array(z.string()).max(4).optional(),
-    question: creationTurnQuestionSchema.nullable().optional(),
+    question: creationTurnQuestionSchema.nullable(),
     titleSuggestions: z.array(z.string()).max(5).optional(),
     shapePreview: z.array(z.string()).min(1).max(8).optional(),
     warnings: z.array(z.string()).max(5).optional(),
@@ -560,7 +563,7 @@ export async function enrichCreationTurnWithAi(
           CREATION_ASSISTANT_FACTS +
           " Off-topic messages: respond kindly in one short sentence, do not lecture, and gently bring the chat back to the book. " +
           "Support every kind of book. If currentPresets.bookTypeChoice is auto, keep the book type unresolved and ask neutral book-shaping questions instead of declaring a genre. Keep refining the structured brief from the whole conversation, including conversationSummary if present. " +
-          "Always include assistantMessage: 1-3 short sentences with no jargon that acknowledge what the user just said and lead into your question when you ask one. Never mention AI models, providers, or internal systems. Never state specific credit prices."
+          "Always include both top-level fields assistantMessage and question. assistantMessage must be 1-3 short sentences with no jargon that acknowledge what the user just said and lead into your question when you ask one. If you ask a question, question must contain that same question and 2-4 options in the same language as assistantMessage. If you do not ask a question, set question to null. Never mention AI models, providers, or internal systems. Never state specific credit prices."
       },
       {
         role: "user",
@@ -1227,7 +1230,7 @@ function deterministicQuickReplies(
   return ["Build the plan", "Make it longer", "Add more detail"];
 }
 
-function cleanCreationTurnPatch(patch: z.infer<typeof creationTurnAiPatchSchema>): Partial<MobileCreationTurn> {
+function cleanCreationTurnPatch(patch: Partial<z.infer<typeof creationTurnAiPatchSchema>>): Partial<MobileCreationTurn> {
   const cleaned: Partial<MobileCreationTurn> = {};
   if (patch.assistantMessage?.trim()) {
     cleaned.assistantMessage = patch.assistantMessage.trim();
@@ -1282,7 +1285,30 @@ function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<MobileC
       })
     : base.presets;
   const buildRequested = patch.buildRequested ?? base.buildRequested;
-  const readiness = buildRequested ? { ...base.readiness, canBuild: true } : base.readiness;
+  // A model-authored message must bring its own question state. Otherwise a
+  // translated or tailored reply can be paired with an unrelated deterministic
+  // card (for example a Portuguese sentence plus "Who is this book for?").
+  const patchedMessageKeepsBaseQuestion =
+    patch.assistantMessage !== undefined &&
+    base.question !== null &&
+    patch.assistantMessage.includes(base.question.prompt);
+  const question =
+    patch.question !== undefined
+      ? patch.question
+      : patch.assistantMessage === undefined || patchedMessageKeepsBaseQuestion
+        ? base.question
+        : null;
+  const quickReplies =
+    patch.quickReplies !== undefined
+      ? patch.quickReplies
+      : patch.question !== undefined || (patch.assistantMessage !== undefined && !patchedMessageKeepsBaseQuestion)
+        ? []
+        : base.quickReplies;
+  const readiness = {
+    ...base.readiness,
+    ...(buildRequested ? { canBuild: true } : {}),
+    missing: question ? [stripTrailingPunctuation(question.prompt)] : []
+  };
   // The base message embeds the base question's wording; if the patch swaps
   // the question without its own message, echo the new prompt instead of
   // pairing the old sentence with a different question card.
@@ -1293,8 +1319,8 @@ function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<MobileC
     brief,
     presets: patchedPresets,
     detectedLane,
-    quickReplies: patch.quickReplies ?? base.quickReplies,
-    question: patch.question !== undefined ? patch.question : base.question,
+    quickReplies,
+    question,
     readiness,
     titleSuggestions: patch.titleSuggestions ?? base.titleSuggestions,
     shapePreview: patch.shapePreview && patch.shapePreview.length > 0 ? patch.shapePreview : base.shapePreview,

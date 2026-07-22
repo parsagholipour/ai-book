@@ -253,6 +253,49 @@ describe("runCreationTurn", () => {
     expect(turn.detectedLane).toBe("children_story");
   });
 
+  it("does not attach an English fallback card to a localized AI reply", async () => {
+    const turn = await runCreationTurn(
+      {
+        messages: [
+          {
+            role: "user",
+            content:
+              "Cria para mim uma história de romance entre um homem persa e uma brasileira que querem se casar."
+          }
+        ],
+        language: "pt"
+      },
+      {
+        enrich: async () => ({
+          assistantMessage:
+            "Que linda ideia! Para começar, para quem você imagina essa história?"
+        })
+      }
+    );
+
+    expect(turn.assistantMessage).toContain("para quem você imagina");
+    expect(turn.question).toBeNull();
+    expect(turn.quickReplies).toEqual([]);
+    expect(turn.readiness.missing).toEqual([]);
+  });
+
+  it("keeps a localized AI question and its readiness label together", async () => {
+    const turn = await runCreationTurn(autoRequest, {
+      enrich: async () => ({
+        assistantMessage: "Ótima ideia. Para quem é este livro?",
+        question: {
+          prompt: "Para quem é este livro?",
+          options: ["Jovens adultos", "Leitores de romance", "Público geral"],
+          allowCustom: true
+        }
+      })
+    });
+
+    expect(turn.question?.prompt).toBe("Para quem é este livro?");
+    expect(turn.quickReplies).toEqual([]);
+    expect(turn.readiness.missing).toEqual(["Para quem é este livro"]);
+  });
+
   it("reports enrichment failures through onEnrichError", async () => {
     const failure = new Error("model unavailable");
     let reported: unknown;
@@ -275,6 +318,11 @@ describe("runCreationTurn", () => {
     // used the input field name bookLanguage and carried explicit nulls.
     const fakeModel: TextModelAdapter = {
       async generateJson(options) {
+        expect(
+          options.schema.safeParse({
+            assistantMessage: "Uma resposta sem estado de pergunta."
+          }).success
+        ).toBe(false);
         const raw = {
           assistantMessage: "A romance about Parsa and Natalia - lovely. Who is this story for?",
           question: {

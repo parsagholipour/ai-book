@@ -28,6 +28,7 @@ import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
 import 'message_actions_menu.dart';
 import 'plan_approval.dart';
+import 'plan_revision_retry.dart';
 import 'project_export_actions.dart';
 import 'saved_export_card.dart';
 
@@ -467,9 +468,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
           .retryOperation(
             projectId: operation.projectId,
             operationId: operation.id,
-            requestId:
-                operation.requestId ??
-                'retry-${operation.id}-${DateTime.now().microsecondsSinceEpoch}',
+            requestId: createPlanRevisionRetryRequestId(operation.id),
           );
       if (!mounted) return;
       setState(() {
@@ -2239,10 +2238,17 @@ class _PlanBuildingFooter extends StatelessWidget {
     final progress = planningProgress?.percent;
     final steps = planningProgress?.steps ?? _fallbackPlanningSteps(isRevision);
     final activeStep = steps.where((step) => step.isActive).firstOrNull;
-    final title = isRevision
+    final allStepsDone = steps.isNotEmpty && steps.every((step) => step.isDone);
+    final title = allStepsDone
+        ? isRevision
+              ? 'Your revised plan is ready'
+              : 'Your book plan is ready'
+        : isRevision
         ? 'Revising your book plan'
         : 'Creating your book plan';
-    final detail = activeStep?.label ?? message.replaceAll('…', '');
+    final detail = allStepsDone
+        ? 'Opening it for review…'
+        : activeStep?.label ?? message.replaceAll('…', '');
     final colors = Theme.of(context).colorScheme;
 
     return Material(
@@ -2269,16 +2275,24 @@ class _PlanBuildingFooter extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          title,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w800),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: Text(
+                            title,
+                            key: ValueKey(title),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(fontWeight: FontWeight.w800),
+                          ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
-                          detail,
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: colors.onSurfaceVariant),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          child: Text(
+                            detail,
+                            key: ValueKey(detail),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(color: colors.onSurfaceVariant),
+                          ),
                         ),
                       ],
                     ),
@@ -2296,14 +2310,19 @@ class _PlanBuildingFooter extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-              Semantics(
-                label: 'Book plan progress',
-                value: progress == null
-                    ? 'Working'
-                    : '$progress percent complete',
-                child: ExcludeSemantics(
-                  child: LinearProgressIndicator(
-                    value: progress == null ? null : progress / 100,
+              TweenAnimationBuilder<double>(
+                tween: Tween(end: progress == null ? 0 : progress / 100),
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeOutCubic,
+                builder: (context, animatedProgress, _) => Semantics(
+                  label: 'Book plan progress',
+                  value: progress == null
+                      ? 'Working'
+                      : '$progress percent complete',
+                  child: ExcludeSemantics(
+                    child: LinearProgressIndicator(
+                      value: progress == null ? null : animatedProgress,
+                    ),
                   ),
                 ),
               ),
@@ -2356,8 +2375,6 @@ class _PlanningStepRow extends StatelessWidget {
         ? Icons.check_circle
         : step.isFailed
         ? Icons.error
-        : step.isActive
-        ? Icons.radio_button_checked
         : Icons.radio_button_unchecked;
     final color = step.isDone || step.isActive
         ? colors.primary
@@ -2373,7 +2390,12 @@ class _PlanningStepRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Row(
             children: [
-              Icon(icon, size: 18, color: color),
+              SizedBox.square(
+                dimension: 18,
+                child: step.isActive
+                    ? CircularProgressIndicator(strokeWidth: 2.2, color: color)
+                    : Icon(icon, size: 18, color: color),
+              ),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(

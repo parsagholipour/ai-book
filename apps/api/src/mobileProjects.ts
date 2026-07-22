@@ -5042,6 +5042,12 @@ async function retryPlanRevisionOperation(options: {
   if (operation.automaticRetryCount >= operation.automaticRetryLimit) {
     return { kind: "conflict", reason: "This plan revision has exhausted its retry budget." };
   }
+  if (await hasCompetingOpenBookEditOperation(operation.projectId, operation.id)) {
+    return {
+      kind: "conflict",
+      reason: "Another book update is already in progress. Retry this revision when it finishes."
+    };
+  }
   const classifier = jsonRecord(operation.classifier);
   const isUnbilledWebRevision = classifier.source === "web";
   if ((!operation.ledgerEntryId || !operation.ledgerEntry) && !isUnbilledWebRevision) {
@@ -5141,6 +5147,18 @@ async function retryPlanRevisionOperation(options: {
       where: { id: operation.id, retryRequestId: options.requestId },
       data: priorRetryState
     }).catch(() => ({ count: 0 }));
+    // The partial one-open-operation index can still win a race after the
+    // preflight check. Treat that contention as a normal retry conflict while
+    // preserving unexpected uniqueness failures for investigation.
+    if (
+      isPrismaUniqueConflict(error) &&
+      (await hasCompetingOpenBookEditOperation(operation.projectId, operation.id).catch(() => false))
+    ) {
+      return {
+        kind: "conflict",
+        reason: "Another book update is already in progress. Retry this revision when it finishes."
+      };
+    }
     throw error;
   }
   if (!transactionResult.claimed) {
@@ -5182,16 +5200,40 @@ export async function reconcileRetryablePlanRevisionOperations(options: {
   });
   let queued = 0;
   for (const operation of operations) {
-    const result = await retryPlanRevisionOperation({
-      userId: operation.project.userId,
-      operationId: operation.id,
-      requestId: retryRequestKey(operation.id, operation.automaticRetryCount + 1),
-      automatic: true,
-      ...(options.log ? { log: options.log } : {})
-    });
-    if (result.kind === "queued") queued += 1;
+    try {
+      const result = await retryPlanRevisionOperation({
+        userId: operation.project.userId,
+        operationId: operation.id,
+        requestId: retryRequestKey(operation.id, operation.automaticRetryCount + 1),
+        automatic: true,
+        ...(options.log ? { log: options.log } : {})
+      });
+      if (result.kind === "queued") queued += 1;
+    } catch (error) {
+      options.log?.warn(
+        {
+          event: "plan_revision.consistency_warning",
+          warning: "retry_reconciliation_failed",
+          operationId: operation.id,
+          error: errorMessage(error)
+        },
+        "Plan revision retry reconciliation skipped one operation"
+      );
+    }
   }
   return queued;
+}
+
+async function hasCompetingOpenBookEditOperation(projectId: string, operationId: string): Promise<boolean> {
+  const competing = await prisma.bookEditOperation.findFirst({
+    where: {
+      projectId,
+      id: { not: operationId },
+      status: { in: ["QUEUED", "ACTIVE"] }
+    },
+    select: { id: true }
+  });
+  return Boolean(competing);
 }
 
 async function queueDirectPlanRevision(options: {
@@ -6456,21 +6498,31 @@ function serializeProjectStatus(status: ProjectStatusResult, exports: MobileExpo
 }
 
 function serializePlanningProgress(status: ProjectStatusResult): MobileProjectStatusDto["planningProgress"] {
-  if (status.project.status !== "PLANNING") {
+  if (status.project.status !== "PLANNING" && status.project.status !== "PLAN_READY") {
     return null;
   }
-  const job = status.project.jobs.find(
-    (candidate) =>
-      (candidate.type === "PLAN_BOOK" || candidate.type === "REVISE_PLAN") &&
-      (candidate.status === "QUEUED" || candidate.status === "ACTIVE")
-  );
+  const job =
+    status.project.jobs.find(
+      (candidate) =>
+        (candidate.type === "PLAN_BOOK" || candidate.type === "REVISE_PLAN") &&
+        (candidate.status === "QUEUED" || candidate.status === "ACTIVE")
+    ) ??
+    (status.project.status === "PLAN_READY"
+      ? status.project.jobs.find(
+          (candidate) =>
+            (candidate.type === "PLAN_BOOK" || candidate.type === "REVISE_PLAN") &&
+            candidate.status === "COMPLETED"
+        )
+      : undefined);
   if (!job) {
     return null;
   }
 
   const isRevision = job.type === "REVISE_PLAN";
+  const isCompleted = job.status === "COMPLETED";
   const storedSteps = new Map(job.steps.map((step) => [step.key, step.status]));
-  const storedStatus = (key: string) => storedSteps.get(key) ?? "pending";
+  const storedStatus = (key: string) =>
+    isCompleted ? "done" as const : storedSteps.get(key) ?? "pending";
   const steps: NonNullable<MobileProjectStatusDto["planningProgress"]>["steps"] = isRevision
     ? [
         { key: "understand", label: "Understanding your changes", status: "done" },

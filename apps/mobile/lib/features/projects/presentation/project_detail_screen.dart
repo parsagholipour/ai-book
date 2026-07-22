@@ -12,6 +12,7 @@ import '../../billing/domain/billing_models.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'plan_approval.dart';
+import 'plan_revision_retry.dart';
 import 'project_route_error.dart';
 
 class ProjectDetailScreen extends ConsumerStatefulWidget {
@@ -136,9 +137,7 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
           .retryOperation(
             projectId: operation.projectId,
             operationId: operation.id,
-            requestId:
-                operation.requestId ??
-                'retry-${operation.id}-${DateTime.now().microsecondsSinceEpoch}',
+            requestId: createPlanRevisionRetryRequestId(operation.id),
           )
           .then(
             (operation) => MobilePlanOperation(

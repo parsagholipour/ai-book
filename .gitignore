@@ -33,3 +33,5 @@ yarn-error.log*
 .pnpm-store
 .codex-delegations/
 docs/english-regeneration-chat-router-incident.md
+.claude/**
+.claude

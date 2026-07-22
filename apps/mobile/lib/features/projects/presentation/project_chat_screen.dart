@@ -10,6 +10,7 @@ import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
 import 'message_actions_menu.dart';
+import 'plan_revision_retry.dart';
 import 'project_route_error.dart';
 import 'saved_export_card.dart';
 
@@ -433,8 +434,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
           .retryOperation(
             projectId: widget.projectId,
             operationId: operation.id,
-            requestId:
-                operation.requestId ?? _newRequestId('retry-${operation.id}'),
+            requestId: createPlanRevisionRetryRequestId(operation.id),
           );
       if (!mounted) return;
       setState(() => _retryingOperationId = null);

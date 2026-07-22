@@ -232,6 +232,7 @@ const worker = new Worker(
       providerConfig: providerConfigSnapshot()
     });
     await markActive(job);
+    let completion: JobCompletion | undefined;
     try {
       const staleReason = await staleGenerationJobReason(job);
       if (staleReason) {
@@ -241,7 +242,7 @@ const worker = new Worker(
       }
       switch (job.name) {
         case "plan-book":
-          await planBook(job);
+          completion = await planBook(job);
           break;
         case "revise-plan":
           await revisePlan(job);
@@ -274,6 +275,7 @@ const worker = new Worker(
           throw new Error(`Unknown worker job: ${job.name}`);
       }
       await markCompleted(job);
+      await completion?.afterJobCompleted?.();
       await runLogger.append("job.completed", {});
       await maybeCompileAfterCompletedJob(job);
     } catch (error) {
@@ -334,23 +336,38 @@ worker.on("failed", (job, error) => {
 process.on("SIGINT", () => void shutdown());
 process.on("SIGTERM", () => void shutdown());
 
-async function planBook(job: Job) {
+type JobCompletion = {
+  afterJobCompleted?: () => Promise<void>;
+};
+
+async function planBook(job: Job): Promise<JobCompletion> {
   const { projectId, inputSnapshot } = job.data as { projectId: string; inputSnapshot?: unknown };
   const generationJobId = job.data.generationJobId as string | undefined;
   const project = await getProjectOrThrow(projectId);
   const input = inputFromSnapshot(inputSnapshot) ?? inputFromProject(project);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
-  await advanceJobStep(generationJobId, "research", 20);
   const plan = await strategy.createPlan({
     // Planning sees pasted notes and uploaded-file digests; the stored
     // snapshot below stays clean so page generation input is unchanged.
     input: inputWithMobileSourceMaterial(input),
     textModel: providers.text,
     research: providers.research,
-    forceFallback: config.MOCK_AI
+    forceFallback: config.MOCK_AI,
+    onPhase: async (phase) => {
+      switch (phase) {
+        case "understand":
+          await advanceJobStep(generationJobId, "research", 20, "Understanding your idea");
+          break;
+        case "shape":
+          await advanceJobStep(generationJobId, "plan", 45, "Shaping the chapters and flow");
+          break;
+        case "finalize":
+          await advanceJobStep(generationJobId, "save", 80, "Finalizing your plan");
+          break;
+      }
+    }
   });
-  await advanceJobStep(generationJobId, "plan", 55);
   const version = await nextPlanVersion(projectId);
 
   await prisma.$transaction(async (tx) => {
@@ -366,7 +383,7 @@ async function planBook(job: Job) {
 
     await tx.project.update({
       where: { id: projectId },
-      data: { status: "PLAN_READY", currentPlanId: planVersion.id, title: plan.title }
+      data: { currentPlanId: planVersion.id, title: plan.title }
     });
 
     await tx.character.deleteMany({ where: { projectId } });
@@ -410,7 +427,14 @@ async function planBook(job: Job) {
     }
   });
   await embedResearchSourcesForProject(projectId, providers.embedding);
-  await advanceJobStep(generationJobId, "save", 90);
+  return {
+    afterJobCompleted: async () => {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { status: "PLAN_READY" }
+      });
+    }
+  };
 }
 
 async function revisePlan(job: Job) {

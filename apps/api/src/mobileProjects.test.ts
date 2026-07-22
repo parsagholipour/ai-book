@@ -410,7 +410,12 @@ describe("mobile project routes", () => {
       mockBookEditOperations.find(
         (operation) =>
           (where.projectId === undefined || operation.projectId === where.projectId) &&
-          (where.userMessageId === undefined || operation.userMessageId === where.userMessageId)
+          (typeof where.id !== "string" || operation.id === where.id) &&
+          (where.id?.not === undefined || operation.id !== where.id.not) &&
+          (where.userMessageId === undefined || operation.userMessageId === where.userMessageId) &&
+          (where.kind === undefined || operation.kind === where.kind) &&
+          (typeof where.status !== "string" || operation.status === where.status) &&
+          (where.status?.in === undefined || where.status.in.includes(operation.status))
       ) ?? null
     );
     mockPrisma.mobileCreationOutput.create.mockImplementation(async ({ data, include }: { data: Record<string, any>; include?: unknown }) => ({
@@ -2141,6 +2146,60 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("keeps completed planning milestones for the plan-ready handoff", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLAN_READY",
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "COMPLETED",
+              progress: 100,
+              error: null,
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "done" },
+                { key: "save", label: "Save plan", status: "done" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done", detail: "Plan ready" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/12 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Ready for review.");
+    expect(status.planningProgress).toEqual({
+      percent: 100,
+      steps: [
+        { key: "understand", label: "Understanding your idea", status: "done" },
+        { key: "shape", label: "Shaping the chapters and flow", status: "done" },
+        { key: "finalize", label: "Finalizing your plan", status: "done" }
+      ]
+    });
+    await app.close();
+  });
+
   it("uses revision copy and a safe queued planning fallback", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
@@ -3392,6 +3451,156 @@ describe("mobile project routes", () => {
     expect(dispatchGenerationJob).toHaveBeenCalledWith("job-retry-1");
     expect(reserveCredits).not.toHaveBeenCalled();
     await app.close();
+  });
+
+  it("queues a second recovery when the first recovery fails and the command ID changes", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const failed = failedPlanRevisionOperationRecord();
+    mockBookEditOperations.push(failed);
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
+    vi.mocked(enqueueGenerationJob)
+      .mockResolvedValueOnce(jobRecord({ id: "job-retry-1", type: "REVISE_PLAN" }))
+      .mockResolvedValueOnce(jobRecord({ id: "job-retry-2", type: "REVISE_PLAN" }));
+    const app = await buildMobileApp();
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
+      headers: bearer("token-a"),
+      payload: { requestId: "retry-command-1" }
+    });
+    expect(first.statusCode).toBe(202);
+
+    Object.assign(failed, {
+      status: "FAILED",
+      generationJobId: "job-retry-1",
+      generationJob: {
+        id: "job-retry-1",
+        status: "FAILED",
+        payload: {
+          planId: "plan-1",
+          message: "Make it brighter.",
+          editOperationId: failed.id,
+          billingLedgerEntryId: failed.ledgerEntryId
+        },
+        startedAt: new Date("2026-06-15T13:02:00.000Z"),
+        updatedAt: new Date("2026-06-15T13:03:00.000Z")
+      },
+      error: "The first recovery also failed."
+    });
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
+      headers: bearer("token-a"),
+      payload: { requestId: "retry-command-2" }
+    });
+
+    expect(second.statusCode).toBe(202);
+    expect(second.json().operation).toMatchObject({ status: "queued" });
+    expect(enqueueGenerationJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        dedupeKey: "plan-revision-retry:operation-failed-revision:2",
+        payload: expect.objectContaining({ retryNumber: 2, retryOfGenerationJobId: "job-retry-1" })
+      })
+    );
+    expect(dispatchGenerationJob).toHaveBeenLastCalledWith("job-retry-2");
+    await app.close();
+  });
+
+  it("returns a retry conflict while another edit operation is open", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const failed = failedPlanRevisionOperationRecord();
+    const competing = failedPlanRevisionOperationRecord({
+      id: "operation-active-edit",
+      generationJobId: "job-active-edit",
+      status: "QUEUED",
+      kind: "LOCAL_PATCH",
+      requestId: null
+    });
+    mockBookEditOperations.push(failed, competing);
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
+      headers: bearer("token-a"),
+      payload: { requestId: "retry-while-busy" }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({ code: "RETRY_NOT_AVAILABLE" });
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("converts a partial-unique retry race into a conflict instead of a server error", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const failed = failedPlanRevisionOperationRecord();
+    const competing = failedPlanRevisionOperationRecord({
+      id: "operation-race-winner",
+      generationJobId: "job-race-winner",
+      status: "ACTIVE",
+      kind: "LOCAL_PATCH",
+      requestId: null
+    });
+    mockBookEditOperations.push(failed, competing);
+    let openOperationChecks = 0;
+    mockPrisma.bookEditOperation.findFirst.mockImplementation(async ({ where }: { where: Record<string, any> }) => {
+      if (typeof where.id === "string") return where.id === failed.id ? failed : null;
+      if (where.status?.in) {
+        openOperationChecks += 1;
+        return openOperationChecks === 1 ? null : competing;
+      }
+      return null;
+    });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
+    mockPrisma.$transaction.mockRejectedValueOnce(
+      new MockPrismaKnownRequestError("open operation conflict", { code: "P2002" })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
+      headers: bearer("token-a"),
+      payload: { requestId: "retry-race" }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({ code: "RETRY_NOT_AVAILABLE" });
+    expect(openOperationChecks).toBe(2);
+    await app.close();
+  });
+
+  it("continues automatic retry reconciliation after one operation throws", async () => {
+    const first = failedPlanRevisionOperationRecord({ id: "operation-retry-error", projectId: "project-error" });
+    const second = failedPlanRevisionOperationRecord({ id: "operation-retry-ok", projectId: "project-ok" });
+    mockBookEditOperations.push(first, second);
+    mockPrisma.bookEditOperation.findMany.mockResolvedValueOnce([
+      { id: first.id, automaticRetryCount: 0, project: { userId: "user-a" } },
+      { id: second.id, automaticRetryCount: 0, project: { userId: "user-a" } }
+    ]);
+    mockPrisma.project.findFirst.mockResolvedValue({ currentPlanId: "plan-1" });
+    mockPrisma.$transaction.mockRejectedValueOnce(new Error("temporary database failure"));
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-reconciled", projectId: "project-ok", type: "REVISE_PLAN" })
+    );
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const { reconcileRetryablePlanRevisionOperations } = await import("./mobileProjects.js");
+
+    const queued = await reconcileRetryablePlanRevisionOperations({ log });
+
+    expect(queued).toBe(1);
+    expect(dispatchGenerationJob).toHaveBeenCalledWith("job-reconciled");
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        warning: "retry_reconciliation_failed",
+        operationId: "operation-retry-error"
+      }),
+      "Plan revision retry reconciliation skipped one operation"
+    );
   });
 
   it("keeps the legacy operation retry alias available", async () => {

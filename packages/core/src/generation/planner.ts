@@ -14,11 +14,14 @@ import {
 } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 
+export type CreatePlanPhase = "understand" | "shape" | "finalize";
+
 export type CreatePlanOptions = {
   input: CreateProjectInput;
   textModel: TextModelAdapter;
   research: ResearchAdapter;
   forceFallback?: boolean;
+  onPhase?: (phase: CreatePlanPhase) => void | Promise<void>;
 };
 
 export type RevisePlanOptions = {
@@ -41,12 +44,15 @@ export type ExpandChapterResearchOptions = {
 };
 
 export async function createPlanningPackage(options: CreatePlanOptions): Promise<BookPlan> {
+  await options.onPhase?.("understand");
   const template = getTemplateForInput(options.input);
   const fallback = makeFallbackPlan(options.input);
   const researchNotes = await researchForPlan(options.input, template, fallback.researchQueries, options.research);
   const toneProfile = toneProfileFromMediaSettings(options.input.mediaSettings);
 
+  await options.onPhase?.("shape");
   if (options.forceFallback) {
+    await options.onPhase?.("finalize");
     return normalizePlanPageTargets({ ...fallback, researchNotes }, options.input.targetPages);
   }
 
@@ -102,6 +108,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     throw new Error(`AI planner failed. No fallback plan was created. ${formatErrorMessage(error)}`);
   }
 
+  await options.onPhase?.("finalize");
   try {
     const plan = planningSchema.parse({
       ...result.data,
