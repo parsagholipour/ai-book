@@ -42,9 +42,9 @@ describe("generateJsonWithRetry", () => {
   });
 
   it("keeps syntax repair behavior and bounds repair calls", async () => {
-    let calls = 0;
-    const adapter = stub(async () => {
-      calls += 1;
+    const requests: GenerateJsonOptions<unknown>[] = [];
+    const adapter = stub(async (options) => {
+      requests.push(options as GenerateJsonOptions<unknown>);
       throw new AdapterJsonParseError("Test", "Unterminated string", 10, "{", "{");
     });
 
@@ -52,10 +52,12 @@ describe("generateJsonWithRetry", () => {
       generateJsonWithRetry(adapter, {
         schema,
         repairAttempts: 2,
+        maxTokens: 16_000,
         messages: [{ role: "system", content: "Original instructions" }]
       })
     ).rejects.toThrow("invalid JSON");
-    expect(calls).toBe(3);
+    expect(requests).toHaveLength(3);
+    expect(requests.every((request) => request.maxTokens === 16_000)).toBe(true);
   });
 
   it("does not retry provider or arbitrary application failures", async () => {

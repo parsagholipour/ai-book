@@ -547,6 +547,32 @@ describe("page quality review", () => {
     expect(draft.pages[0]?.imagePrompt).toMatch(/illustration/i);
   });
 
+  it("treats the whole-book output limit as a generous runaway fuse", async () => {
+    const shortInput = { ...input, targetPages: 5 };
+    const shortCapture = capturingJsonModel({ pages: wholeBookTestPages(shortInput.targetPages) });
+
+    await generateWholeBookDraft({
+      input: shortInput,
+      plan: makeFallbackPlan(shortInput),
+      researchNotes: [],
+      textModel: shortCapture.model
+    });
+
+    expect(shortCapture.maxTokens).toBe(16_000);
+
+    const largeInput = { ...input, targetPages: 40 };
+    const largeCapture = capturingJsonModel({ pages: wholeBookTestPages(largeInput.targetPages) });
+
+    await generateWholeBookDraft({
+      input: largeInput,
+      plan: makeFallbackPlan(largeInput),
+      researchNotes: [],
+      textModel: largeCapture.model
+    });
+
+    expect(largeCapture.maxTokens).toBe(64_000);
+  });
+
   it("accepts and compacts short whole-book drafts within the 50 percent tolerance", async () => {
     const targetPages = 18;
     const draft = await generateWholeBookDraft({
@@ -1949,6 +1975,16 @@ function jsonModel(rawData: unknown): TextModelAdapter {
   };
 }
 
+function wholeBookTestPages(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    index: index + 1,
+    title: `Turn ${index + 1}`,
+    markdown: index === count - 1 ? goodFinalMarkdown() : goodMarkdown(),
+    summary: `Page ${index + 1} advances the story.`,
+    continuityNotes: []
+  }));
+}
+
 function malformedJsonModel(): TextModelAdapter {
   return {
     async generateText() {
@@ -1973,12 +2009,15 @@ function capturingJsonModel(rawData: unknown): {
   model: TextModelAdapter;
   payload?: Record<string, any>;
   systemPrompt?: string;
+  maxTokens: number | undefined;
 } {
   const capture: {
     model: TextModelAdapter;
     payload?: Record<string, any>;
     systemPrompt?: string;
+    maxTokens: number | undefined;
   } = {
+    maxTokens: undefined,
     model: {
       async generateText() {
         return {
@@ -1990,6 +2029,7 @@ function capturingJsonModel(rawData: unknown): {
       async generateJson(options) {
         capture.systemPrompt = options.messages[0]?.content ?? "";
         capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, any>;
+        capture.maxTokens = options.maxTokens;
         return {
           data: options.schema.parse(rawData),
           text: JSON.stringify(rawData),
