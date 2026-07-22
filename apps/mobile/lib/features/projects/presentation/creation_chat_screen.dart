@@ -2393,7 +2393,15 @@ class _PlanningStepRow extends StatelessWidget {
               SizedBox.square(
                 dimension: 18,
                 child: step.isActive
-                    ? CircularProgressIndicator(strokeWidth: 2.2, color: color)
+                    ? Center(
+                        child: SizedBox.square(
+                          dimension: 15,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: color,
+                          ),
+                        ),
+                      )
                     : Icon(icon, size: 18, color: color),
               ),
               const SizedBox(width: 9),
