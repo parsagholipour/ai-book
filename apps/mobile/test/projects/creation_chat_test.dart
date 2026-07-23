@@ -425,6 +425,86 @@ void main() {
     },
   );
 
+  testWidgets('plan questions scroll separately from revision controls', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository();
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(plan: _longQuestionPlan()),
+    );
+    await tester.pumpWidget(_app(creation: creation, projects: projects));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final questionScroll = find.byKey(const ValueKey('plan-question-scroll'));
+    final questionScrollable = find.descendant(
+      of: questionScroll,
+      matching: find.byType(Scrollable),
+    );
+    final revisionComposer = find.widgetWithText(
+      TextField,
+      'Ask about or request a change to the plan…',
+    );
+    final approveButton = find.widgetWithText(
+      FilledButton,
+      'Approve and start writing',
+    );
+
+    expect(find.text('Question 1 of 1'), findsOneWidget);
+    expect(questionScrollable, findsOneWidget);
+    expect(
+      tester
+          .state<ScrollableState>(questionScrollable)
+          .position
+          .maxScrollExtent,
+      greaterThan(0),
+    );
+    expect(find.text('Scroll for more'), findsOneWidget);
+    final scrollbar = tester.widget<Scrollbar>(
+      find.descendant(of: questionScroll, matching: find.byType(Scrollbar)),
+    );
+    expect(scrollbar.controller, isNotNull);
+    expect(
+      find.descendant(of: questionScroll, matching: revisionComposer),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: questionScroll, matching: approveButton),
+      findsNothing,
+    );
+
+    await tester.drag(questionScroll, const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    expect(find.text('Scroll for more'), findsNothing);
+
+    await tester.showKeyboard(revisionComposer);
+    tester.view.viewInsets = FakeViewPadding(
+      bottom: tester.view.physicalSize.height / 2,
+    );
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+
+    final keyboardTop =
+        (tester.view.physicalSize.height - tester.view.viewInsets.bottom) /
+        tester.view.devicePixelRatio;
+    expect(approveButton, findsOneWidget);
+    expect(
+      tester.getRect(revisionComposer).bottom,
+      lessThanOrEqualTo(keyboardTop),
+    );
+    expect(
+      tester.getRect(approveButton).bottom,
+      lessThanOrEqualTo(keyboardTop),
+    );
+
+    await tester.teardownScreen();
+  });
   testWidgets(
     'failed plan revision clears spinner and keeps old plan visible',
     (tester) async {
@@ -1572,6 +1652,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Who is this book for?'), findsOneWidget);
 
+      final contextScroll = find.byKey(
+        const ValueKey('conversation-context-scroll'),
+      );
+      final contextScrollable = find.descendant(
+        of: contextScroll,
+        matching: find.byType(Scrollable),
+      );
+      final composer = find.byType(TextField).last;
+      final buildButton = find.widgetWithText(FilledButton, 'Build the plan');
+      expect(contextScrollable, findsOneWidget);
+      expect(
+        find.descendant(of: contextScroll, matching: composer),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: contextScroll, matching: buildButton),
+        findsNothing,
+      );
+
       // Focus the composer and simulate the keyboard taking the bottom half
       // of the screen. Any footer overflow would fail the test here.
       await tester.showKeyboard(find.byType(TextField).last);
@@ -1585,6 +1684,7 @@ void main() {
       // composer sits above the keyboard instead of being pushed off screen.
       expect(find.text('Who is this book for?'), findsOneWidget);
       expect(find.byType(ActionChip), findsNothing);
+      expect(buildButton, findsOneWidget);
       // Collapsing must not rebuild the composer's element: that would drop
       // focus and dismiss the keyboard the user just opened.
       final editable = tester.widget<EditableText>(
@@ -1594,6 +1694,10 @@ void main() {
       final keyboardTop =
           (tester.view.physicalSize.height - tester.view.viewInsets.bottom) /
           tester.view.devicePixelRatio;
+      expect(
+        tester.getRect(buildButton).bottom,
+        lessThanOrEqualTo(keyboardTop),
+      );
       expect(
         tester.getRect(find.byType(TextField).last).bottom,
         lessThanOrEqualTo(keyboardTop),
@@ -3036,6 +3140,26 @@ MobilePlan _copyPlan(
 
 MobilePlan _approvedPlan() {
   return _plan(status: 'approved');
+}
+
+MobilePlan _longQuestionPlan() {
+  return _plan(
+    questions: const [
+      MobilePlanQuestion(
+        prompt:
+            'Which audience should the examples, exercises, explanations, and practical recommendations serve most directly?',
+        options: [
+          'Busy solo teachers launching their first live course',
+          'New coaches building a detailed recorded program',
+          'Small training teams adapting material for several audiences',
+          'Independent experts creating a premium hybrid workshop',
+          'Consultants turning an existing service into group learning',
+          'Community leaders preparing an accessible beginner curriculum',
+        ],
+        allowCustom: true,
+      ),
+    ],
+  );
 }
 
 MobilePlan _questionPlan() {

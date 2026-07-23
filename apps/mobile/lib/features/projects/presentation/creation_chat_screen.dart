@@ -2550,40 +2550,44 @@ class _PlanFooterState extends State<_PlanFooter> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Collapsing must not change the child slots before the
-              // composer: replacing or removing widgets there rebuilds the
-              // composer's element, which drops focus and closes the
-              // keyboard the user just opened.
-              if (widget.hasMoreQuestions) ...[
-                _PlanQuestionPanel(
-                  key: ValueKey(widget.questionIndex),
-                  plan: plan,
-                  questionIndex: widget.questionIndex,
-                  collapsed: typingRevision,
-                  keyboardOpen: keyboardOpen,
-                  isBusy: widget.isBusy,
-                  onSelect: widget.onSelectOption,
-                  onSkip: widget.onSkip,
+              if (widget.hasMoreQuestions)
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: _ScrollableFooterContext(
+                    key: const ValueKey('plan-question-scroll'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _PlanQuestionPanel(
+                          key: ValueKey(widget.questionIndex),
+                          plan: plan,
+                          questionIndex: widget.questionIndex,
+                          collapsed: typingRevision,
+                          keyboardOpen: keyboardOpen,
+                          isBusy: widget.isBusy,
+                          onSelect: widget.onSelectOption,
+                          onSkip: widget.onSkip,
+                        ),
+                        const SizedBox(height: 10),
+                        Divider(height: 1, color: colors.outlineVariant),
+                        const SizedBox(height: 10),
+                      ],
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 10),
-                Divider(height: 1, color: colors.outlineVariant),
-                const SizedBox(height: 10),
-              ],
               _RevisionComposer(
                 controller: widget.revisionController,
                 focusNode: _revisionFocus,
                 enabled: !widget.isBusy,
                 onSend: widget.onRevise,
               ),
-              if (!keyboardOpen) ...[
-                const SizedBox(height: 8),
-                _ApproveButton(
-                  approving: busyAction == 'approve',
-                  onApprove: (!widget.isBusy && busyAction == null)
-                      ? widget.onApprove
-                      : null,
-                ),
-              ],
+              const SizedBox(height: 8),
+              _ApproveButton(
+                approving: busyAction == 'approve',
+                onApprove: (!widget.isBusy && busyAction == null)
+                    ? widget.onApprove
+                    : null,
+              ),
             ],
           ),
         ),
@@ -4175,10 +4179,135 @@ class _TypingBubbleState extends State<_TypingBubble> {
   }
 }
 
-/// Hard cap on footer height so the body Column can never overflow when the
-/// keyboard shrinks the screen. Sits in an unbounded Column slot, so the cap
-/// is computed by the screen from what the keyboard leaves visible.
-/// `reverse: true` keeps the composer (bottom edge) visible when clamped.
+class _ScrollableFooterContext extends StatefulWidget {
+  const _ScrollableFooterContext({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<_ScrollableFooterContext> createState() =>
+      _ScrollableFooterContextState();
+}
+
+class _ScrollableFooterContextState extends State<_ScrollableFooterContext> {
+  final _controller = ScrollController();
+  bool _canScroll = false;
+  bool _hasMoreBelow = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_updateScrollAffordance);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _updateScrollAffordance(),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScrollableFooterContext oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _updateScrollAffordance(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_updateScrollAffordance);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _updateScrollAffordance() {
+    if (!mounted || !_controller.hasClients) return;
+    final position = _controller.position;
+    final canScroll = position.maxScrollExtent > 1;
+    final hasMoreBelow = canScroll && position.extentAfter > 8;
+    if (_canScroll == canScroll && _hasMoreBelow == hasMoreBelow) return;
+    setState(() {
+      _canScroll = canScroll;
+      _hasMoreBelow = hasMoreBelow;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Stack(
+      children: [
+        ScrollbarTheme(
+          data: ScrollbarThemeData(
+            thumbVisibility: const WidgetStatePropertyAll(true),
+            trackVisibility: const WidgetStatePropertyAll(true),
+            thickness: const WidgetStatePropertyAll(6),
+            radius: const Radius.circular(999),
+            thumbColor: WidgetStatePropertyAll(colors.primary),
+            trackColor: WidgetStatePropertyAll(colors.primaryContainer),
+            trackBorderColor: WidgetStatePropertyAll(colors.outlineVariant),
+          ),
+          child: Scrollbar(
+            controller: _controller,
+            child: SingleChildScrollView(
+              controller: _controller,
+              padding: EdgeInsetsDirectional.only(end: _canScroll ? 12 : 0),
+              child: widget.child,
+            ),
+          ),
+        ),
+        if (_hasMoreBelow)
+          PositionedDirectional(
+            start: 0,
+            end: 12,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 42,
+                alignment: Alignment.bottomCenter,
+                padding: const EdgeInsets.only(bottom: 3),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      colors.surface.withValues(alpha: 0),
+                      colors.surface,
+                    ],
+                  ),
+                ),
+                child: Semantics(
+                  label: 'More options below. Scroll for more.',
+                  child: ExcludeSemantics(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 18,
+                          color: colors.primary,
+                        ),
+                        const SizedBox(width: 2),
+                        Text(
+                          'Scroll for more',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: colors.primary,
+                                fontWeight: FontWeight.w800,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Hard cap on footer height so the transcript always keeps usable space.
+/// Interactive footers split their scrollable context from pinned controls.
 class _FooterLimiter extends StatelessWidget {
   const _FooterLimiter({required this.maxHeight, required this.child});
 
@@ -4189,7 +4318,7 @@ class _FooterLimiter extends StatelessWidget {
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
-      child: SingleChildScrollView(reverse: true, child: child),
+      child: child,
     );
   }
 }
@@ -4236,37 +4365,49 @@ class _ConversationFooter extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Collapsing must not change the child slots before the
-              // composer: replacing or removing widgets there rebuilds the
-              // composer's element, which drops focus and closes the
-              // keyboard the user just opened.
-              if (question != null)
-                _QuestionPanel(
-                  question: question,
-                  collapsed: keyboardOpen,
-                  enabled: !disabled,
-                  onSelect: onAnswerOption,
-                )
-              else if (state.quickReplies.isNotEmpty)
-                Visibility(
-                  visible: !keyboardOpen,
-                  child: _ChipRow(
-                    options: state.quickReplies,
-                    enabled: !disabled,
-                    icon: Icons.bolt_outlined,
-                    onSelect: onQuickReply,
+              if (question != null ||
+                  state.quickReplies.isNotEmpty ||
+                  state.pendingAttachments.isNotEmpty)
+                Flexible(
+                  fit: FlexFit.loose,
+                  child: _ScrollableFooterContext(
+                    key: const ValueKey('conversation-context-scroll'),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Visibility keeps the composer's element stable while
+                        // the keyboard opens and closes.
+                        if (question != null)
+                          _QuestionPanel(
+                            question: question,
+                            collapsed: keyboardOpen,
+                            enabled: !disabled,
+                            onSelect: onAnswerOption,
+                          )
+                        else if (state.quickReplies.isNotEmpty)
+                          Visibility(
+                            visible: !keyboardOpen,
+                            child: _ChipRow(
+                              options: state.quickReplies,
+                              enabled: !disabled,
+                              icon: Icons.bolt_outlined,
+                              onSelect: onQuickReply,
+                            ),
+                          ),
+                        if (question != null || state.quickReplies.isNotEmpty)
+                          const SizedBox(height: 8),
+                        if (state.pendingAttachments.isNotEmpty) ...[
+                          _PendingAttachmentsRow(
+                            attachments: state.pendingAttachments,
+                            onRetry: onRetryAttachment,
+                            onRemove: onRemoveAttachment,
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-              if (question != null || state.quickReplies.isNotEmpty)
-                const SizedBox(height: 8),
-              if (state.pendingAttachments.isNotEmpty) ...[
-                _PendingAttachmentsRow(
-                  attachments: state.pendingAttachments,
-                  onRetry: onRetryAttachment,
-                  onRemove: onRemoveAttachment,
-                ),
-                const SizedBox(height: 8),
-              ],
               _Composer(
                 controller: composerController,
                 enabled: !disabled,
@@ -4278,14 +4419,12 @@ class _ConversationFooter extends StatelessWidget {
                 onAttach: onAttach,
                 onSend: onSend,
               ),
-              if (!keyboardOpen) ...[
-                const SizedBox(height: 8),
-                _BuildButton(
-                  canBuild: state.canBuild,
-                  building: state.building,
-                  onBuild: onBuild,
-                ),
-              ],
+              const SizedBox(height: 8),
+              _BuildButton(
+                canBuild: state.canBuild,
+                building: state.building,
+                onBuild: onBuild,
+              ),
             ],
           ),
         ),
