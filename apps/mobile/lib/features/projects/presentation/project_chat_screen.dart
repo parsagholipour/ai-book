@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,7 @@ import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
+import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
 import 'plan_revision_retry.dart';
@@ -150,6 +153,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                           submittingEdit:
                               _editing && _editingMessageId == message.id,
                           switchingBranch: _switchingBranch,
+                          showProposalActions:
+                              _isActiveEditProposal(chat, message),
+                          sending: _sending || _editing,
                           onStartEdit: message.isUser
                               ? () => _startEdit(message)
                               : null,
@@ -166,6 +172,8 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                               : () => context.push(
                                   '/projects/${_replanCopyTargetProjectId(message)}/chat',
                                 ),
+                          onApplyProposal: () => unawaited(_sendMessage('apply it')),
+                          onCancelProposal: () => unawaited(_sendMessage('cancel')),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -217,6 +225,23 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     final targetProjectId = message.replanCopyTargetProjectId;
     if (targetProjectId == widget.projectId) return null;
     return targetProjectId;
+  }
+
+  /// Only the newest priced proposal shows Apply/Cancel, so older cards stay
+  /// read-only history after the user continues chatting.
+  bool _isActiveEditProposal(
+    MobileProjectChat chat,
+    MobileProjectChatMessage message,
+  ) {
+    if (message.editProposal == null) return false;
+    final messages = _visibleMessages(chat);
+    for (var index = messages.length - 1; index >= 0; index -= 1) {
+      final candidate = messages[index];
+      if (candidate.editProposal != null) {
+        return candidate.id == message.id;
+      }
+    }
+    return false;
   }
 
   Future<void> _send() async {
@@ -529,9 +554,9 @@ class _ChatIntroCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final status = project?.status;
     final hint = status == 'plan_ready'
-        ? 'Ask questions or request plan changes. Plan edits use credits and apply automatically.'
+        ? 'Ask questions or request plan changes. Plan edits use credits.'
         : status == 'complete'
-        ? 'Ask questions or request edits to the latest generated book. Real edits use credits and apply automatically.'
+        ? 'Ask questions or request edits to the latest generated book. Real edits show a credit price and need your confirmation before they run.'
         : 'You can ask questions now. Editing unlocks after planning or generation reaches the right stage.';
     return Card(
       child: Padding(
@@ -763,11 +788,15 @@ class _ProjectMessageBubble extends StatelessWidget {
     required this.submittingEdit,
     required this.switchingBranch,
     required this.onSwitchBranch,
+    required this.showProposalActions,
+    required this.sending,
     this.onStartEdit,
     this.onCancelEdit,
     this.onSubmitEdit,
     this.onOpenPaywall,
     this.onOpenReplanCopy,
+    this.onApplyProposal,
+    this.onCancelProposal,
   });
 
   final MobileProjectChatMessage message;
@@ -775,12 +804,16 @@ class _ProjectMessageBubble extends StatelessWidget {
   final bool editing;
   final bool submittingEdit;
   final bool switchingBranch;
+  final bool showProposalActions;
+  final bool sending;
   final ValueChanged<String> onSwitchBranch;
   final VoidCallback? onStartEdit;
   final VoidCallback? onCancelEdit;
   final VoidCallback? onSubmitEdit;
   final VoidCallback? onOpenPaywall;
   final VoidCallback? onOpenReplanCopy;
+  final VoidCallback? onApplyProposal;
+  final VoidCallback? onCancelProposal;
 
   @override
   Widget build(BuildContext context) {
@@ -788,6 +821,8 @@ class _ProjectMessageBubble extends StatelessWidget {
     final isUser = message.isUser;
     final branch = message.branch;
     final manualEdit = message.isAssistant ? message.manualEdit : null;
+    final contentCard = message.isAssistant ? message.contentCard : null;
+    final editProposal = message.isAssistant ? message.editProposal : null;
     final background = editing
         ? colors.surfaceContainerHighest
         : isUser
@@ -887,18 +922,72 @@ class _ProjectMessageBubble extends StatelessWidget {
         ),
       ),
     );
+    final extras = <Widget>[
+      if (contentCard != null)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: _StandaloneContentCard(card: contentCard),
+        ),
+      if (editProposal != null)
+        EditProposalCard(
+          proposal: editProposal,
+          enabled: !sending,
+          onApply: showProposalActions ? onApplyProposal : null,
+          onCancel: showProposalActions ? onCancelProposal : null,
+        ),
+      if (manualEdit != null) SavedExportCard(message: message),
+    ];
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: manualEdit == null
+      child: extras.isEmpty
           ? bubble
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
-              children: [
-                bubble,
-                SavedExportCard(message: message),
-              ],
+              children: [bubble, ...extras],
             ),
+    );
+  }
+}
+
+class _StandaloneContentCard extends StatelessWidget {
+  const _StandaloneContentCard({required this.card});
+
+  final MobileChatContentCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      constraints: BoxConstraints(
+        maxWidth: MediaQuery.sizeOf(context).width * 0.86,
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            card.title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          ),
+          for (final section in card.sections.take(4)) ...[
+            const SizedBox(height: 8),
+            if (section.label.trim().isNotEmpty)
+              Text(
+                section.label,
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            Text(section.body),
+          ],
+        ],
+      ),
     );
   }
 }

@@ -1,8 +1,16 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import { unsupportedGenerateWithTools } from "./fake.js";
 import { MECHANICAL_TEXT_PURPOSES } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
-import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "./types.js";
+import type {
+  GenerateJsonOptions,
+  GenerateTextOptions,
+  JsonResult,
+  TextModelAdapter,
+  TextResult,
+  ToolCallsResult
+} from "./types.js";
 
 class RecordingTextAdapter implements TextModelAdapter {
   purposes: Array<string | undefined> = [];
@@ -22,6 +30,10 @@ class RecordingTextAdapter implements TextModelAdapter {
   async *streamText(options: GenerateTextOptions): AsyncGenerator<string> {
     this.purposes.push(options.purpose);
     yield this.name;
+  }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
   }
 }
 

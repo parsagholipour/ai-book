@@ -494,6 +494,17 @@ class MobileProjectChatMessage {
     return MobileChatContentCard.fromJson(raw.cast<String, dynamic>());
   }
 
+  /// Priced book-edit proposal waiting for explicit Apply / Cancel.
+  MobileEditProposal? get editProposal {
+    final pending = metadata['pendingEdit'];
+    if (pending is Map && pending['clarification'] != 'confirm') {
+      return null;
+    }
+    final raw = metadata['editProposal'];
+    if (raw is! Map) return null;
+    return MobileEditProposal.fromJson(raw.cast<String, dynamic>());
+  }
+
   String? get replanCopyTargetProjectId {
     final raw = metadata['replanCopy'];
     if (raw is! Map) return null;
@@ -583,6 +594,56 @@ class MobileChatContentCard {
           )
           .toList(growable: false),
     );
+  }
+}
+
+/// A charged book edit the server priced but has not started yet.
+class MobileEditProposal {
+  const MobileEditProposal({
+    required this.kind,
+    required this.scope,
+    required this.affectedPageIndexes,
+    required this.credits,
+    required this.summary,
+    this.affectedChapterIndex,
+    this.targetLanguage,
+  });
+
+  final String kind;
+  final String scope;
+  final List<int> affectedPageIndexes;
+  final int credits;
+  final String summary;
+  final int? affectedChapterIndex;
+  final String? targetLanguage;
+
+  factory MobileEditProposal.fromJson(Map<String, dynamic> json) {
+    final pages = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
+    return MobileEditProposal(
+      kind: json['kind'] as String? ?? 'local_patch',
+      scope: json['scope'] as String? ?? 'none',
+      affectedPageIndexes: pages.whereType<int>().toList(growable: false),
+      credits: json['credits'] as int? ?? 0,
+      summary: (json['summary'] as String?)?.trim().isNotEmpty == true
+          ? json['summary'] as String
+          : 'Apply this edit',
+      affectedChapterIndex: json['affectedChapterIndex'] as int?,
+      targetLanguage: json['targetLanguage'] as String?,
+    );
+  }
+
+  String get pageLabel {
+    if (scope == 'all_pages') return 'Whole book';
+    if (affectedChapterIndex != null) {
+      return 'Chapter $affectedChapterIndex';
+    }
+    if (affectedPageIndexes.length == 1) {
+      return 'Page ${affectedPageIndexes.first}';
+    }
+    if (affectedPageIndexes.isNotEmpty) {
+      return 'Pages ${affectedPageIndexes.join(', ')}';
+    }
+    return 'Matching pages';
   }
 }
 

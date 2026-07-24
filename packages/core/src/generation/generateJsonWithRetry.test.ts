@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import { AdapterJsonParseError, AdapterJsonValidationError } from "../adapters/json.js";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "../adapters/types.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
@@ -80,7 +81,8 @@ function stub(generateJson: TextModelAdapter["generateJson"]): TextModelAdapter 
     },
     async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
       throw new Error("unused");
-    }
+    },
+    generateWithTools: unsupportedGenerateWithTools
   };
 }
 

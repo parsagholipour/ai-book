@@ -4,14 +4,17 @@ import OpenAI from "openai";
 import type {
   GenerateJsonOptions,
   GenerateTextOptions,
+  GenerateWithToolsOptions,
   ImageAdapter,
   ImageRequest,
   ImageResult,
   JsonResult,
   TextModelAdapter,
   TextResult,
+  ToolCallsResult,
   Usage
 } from "./types.js";
+import { generateWithToolsViaOpenAi } from "./openaiToolCalling.js";
 import {
   AdapterJsonParseError as AlibabaJsonParseError,
   AdapterJsonValidationError as AlibabaJsonValidationError,
@@ -74,6 +77,16 @@ export class AlibabaTextAdapter implements TextModelAdapter {
       provider: "alibaba",
       ...(usage ? { usage } : {})
     };
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    return generateWithToolsViaOpenAi({
+      client: this.client,
+      model: this.model,
+      provider: "alibaba",
+      options,
+      usageFromResponse: usageFromOpenAiCompatible
+    });
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {

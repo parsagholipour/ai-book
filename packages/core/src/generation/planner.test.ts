@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
@@ -26,7 +27,8 @@ describe("createPlanningPackage", () => {
       },
       async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
         throw new Error("Not used");
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     await createPlanningPackage({
@@ -109,7 +111,8 @@ describe("revisePlanningPackage", () => {
       },
       async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
         throw new Error("Not used");
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     const revised = await revisePlanningPackage({
@@ -160,7 +163,8 @@ describe("revisePlanningPackage", () => {
       },
       async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
         throw new Error("Not used");
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     const revised = await revisePlanningPackage({
@@ -207,6 +211,7 @@ function unusedTextModel(): TextModelAdapter {
     },
     async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
       throw new Error("Not used");
-    }
+    },
+    generateWithTools: unsupportedGenerateWithTools
   };
 }

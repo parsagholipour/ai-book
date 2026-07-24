@@ -2,9 +2,11 @@ import OpenAI from "openai";
 import type {
   GenerateJsonOptions,
   GenerateTextOptions,
+  GenerateWithToolsOptions,
   JsonResult,
   TextModelAdapter,
   TextResult,
+  ToolCallsResult,
   Usage
 } from "./types.js";
 import {
@@ -12,6 +14,7 @@ import {
   parseSchemaWithContext,
   throwWithProviderUsage
 } from "./json.js";
+import { generateWithToolsViaOpenAi, toOpenAiChatMessages } from "./openaiToolCalling.js";
 
 const PROVIDER_LABEL = "OpenAICompatible";
 const PROVIDER_ID = "openai-compatible";
@@ -54,7 +57,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
 
     const response = await this.client.chat.completions.create({
       model: this.model,
-      messages: options.messages,
+      messages: toOpenAiChatMessages(options.messages),
       temperature: options.temperature ?? null,
       ...maxTokensParam(options.maxTokens)
     });
@@ -69,6 +72,16 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
     };
   }
 
+  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    return generateWithToolsViaOpenAi({
+      client: this.client,
+      model: this.model,
+      provider: PROVIDER_ID,
+      options,
+      usageFromResponse: usageFromOpenAiCompatible
+    });
+  }
+
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
     if (options.onOutputTextChunk) {
       return this.generateJsonStreaming(options);
@@ -76,14 +89,14 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
 
     const response = await this.client.chat.completions.create({
       model: this.model,
-      messages: [
+      messages: toOpenAiChatMessages([
         {
           role: "system",
           content:
             "Return only valid JSON. Do not wrap the JSON in Markdown. Do not include commentary outside the JSON object."
         },
         ...options.messages
-      ],
+      ]),
       temperature: options.temperature ?? null,
       ...maxTokensParam(options.maxTokens),
       response_format: { type: "json_object" }
@@ -187,7 +200,7 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
   async *streamText(options: GenerateTextOptions): AsyncGenerator<string> {
     const stream = await this.client.chat.completions.create({
       model: this.model,
-      messages: options.messages,
+      messages: toOpenAiChatMessages(options.messages),
       temperature: options.temperature ?? null,
       ...maxTokensParam(options.maxTokens),
       stream: true

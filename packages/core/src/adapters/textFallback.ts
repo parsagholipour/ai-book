@@ -1,13 +1,21 @@
 import { serializeFallbackError } from "./imageFallback.js";
 import type { TextModelSelection } from "../schemas/book.js";
-import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "./types.js";
+import type {
+  GenerateJsonOptions,
+  GenerateTextOptions,
+  GenerateWithToolsOptions,
+  JsonResult,
+  TextModelAdapter,
+  TextResult,
+  ToolCallsResult
+} from "./types.js";
 
 export type TextFallbackProvider = {
   provider: string;
   model: string;
 };
 
-export type TextFallbackOperation = "generateText" | "generateJson" | "streamText";
+export type TextFallbackOperation = "generateText" | "generateJson" | "streamText" | "generateWithTools";
 
 type TextFallbackEventBase = {
   operation: TextFallbackOperation;
@@ -72,6 +80,16 @@ export class FallbackTextModelAdapter implements TextModelAdapter {
       return await this.options.primary.adapter.generateJson(options);
     } catch (error) {
       return this.runFallback("generateJson", options.purpose, error, (adapter) => adapter.generateJson(options));
+    }
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    try {
+      return await this.options.primary.adapter.generateWithTools(options);
+    } catch (error) {
+      return this.runFallback("generateWithTools", options.purpose, error, (adapter) =>
+        adapter.generateWithTools(options)
+      );
     }
   }
 

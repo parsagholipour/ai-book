@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeTextModelAdapter } from "../adapters/fake.js";
+import { FakeTextModelAdapter, unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
@@ -223,7 +223,8 @@ describe("voice character helpers", () => {
       },
       async *streamText() {
         yield "stream";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     await extractVoiceCharacterCandidates({
@@ -304,7 +305,8 @@ describe("voice character helpers", () => {
       },
       async *streamText() {
         yield "stream";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
     const longPage = Array.from({ length: 7_000 }, (_, index) => `token${index}`).join(" ");
 

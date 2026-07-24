@@ -436,8 +436,14 @@ describe("mobile project routes", () => {
     process.env = {
       ...originalEnv,
       WEB_PASSWORD: "",
+      // All model provider keys are cleared so chat routing deterministically
+      // uses the heuristic fallback instead of live LLM calls from .env keys.
       OPENAI_API_KEY: "",
       GEMINI_API_KEY: "",
+      DEEPSEEK_API_KEY: "",
+      DEEPINFRA_API_KEY: "",
+      ALIBABA_API_KEY: "",
+      LOCAL_TEXT_API_KEY: "",
       CLOUDFLARE_API_TOKEN: "",
       CLOUDFLARE_TURN_TOKEN: "",
       BOOK_STORAGE_DIR: tempBookStorageDir,
@@ -3469,7 +3475,7 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
-  it("queues a completed-book whole-book style edit across all generated pages", async () => {
+  it("proposes a completed-book whole-book style edit and queues it after confirmation", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const pages = generatedPages();
     mockPrisma.project.findFirst.mockResolvedValue(
@@ -3484,15 +3490,37 @@ describe("mobile project routes", () => {
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-edit", type: "APPLY_BOOK_EDIT" }));
     const app = await buildMobileApp();
 
-    const response = await app.inject({
+    const proposal = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
       headers: bearer("token-a"),
       payload: { message: "Make the whole book warmer and simpler." }
     });
-    const body = response.json();
+    const proposalBody = proposal.json();
 
-    expect(response.statusCode).toBe(200);
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.operation).toBeNull();
+    expect(proposalBody.reply.content).toContain("whole book");
+    expect(proposalBody.reply.content).toContain("apply it");
+    expect(proposalBody.reply.metadata).toMatchObject({
+      charged: false,
+      pendingEdit: { clarification: "confirm" },
+      editProposal: {
+        kind: "page_rewrite",
+        affectedPageIndexes: [1, 2]
+      }
+    });
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    const body = confirm.json();
+
+    expect(confirm.statusCode).toBe(200);
     expect(body.operation).toMatchObject({
       kind: "page_rewrite",
       affectedPageIndexes: [1, 2]
@@ -3507,7 +3535,45 @@ describe("mobile project routes", () => {
         })
       })
     );
-    expect(body.reply.content).toContain("the whole book");
+    await app.close();
+  });
+
+  it("cancels a priced edit proposal without charging", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the whole book warmer and simpler." }
+    });
+    expect(proposal.statusCode).toBe(200);
+    expect(proposal.json().reply.metadata.editProposal.kind).toBe("page_rewrite");
+
+    const cancel = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "cancel" }
+    });
+    const body = cancel.json();
+
+    expect(cancel.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.content).toContain("dropped that request");
+    expect(body.reply.metadata).toMatchObject({ pendingEditCancelled: true, charged: false });
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -3526,7 +3592,6 @@ describe("mobile project routes", () => {
     // The quoted phrase lives only in page 2's markdown, which chat no longer
     // loads up front — the match must come from the contains query.
     mockPages = pages.map((page) => ({ ...page, projectId: "project-1", revision: 1 }));
-    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-edit", type: "APPLY_BOOK_EDIT" }));
     const app = await buildMobileApp();
 
     const response = await app.inject({
@@ -3538,9 +3603,12 @@ describe("mobile project routes", () => {
     const body = response.json();
 
     expect(response.statusCode).toBe(200);
-    expect(body.operation).toMatchObject({
-      kind: "local_patch",
-      affectedPageIndexes: [2]
+    expect(body.operation).toBeNull();
+    expect(body.reply.metadata).toMatchObject({
+      editProposal: {
+        kind: "local_patch",
+        affectedPageIndexes: [2]
+      }
     });
     expect(mockPrisma.page.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -3553,7 +3621,7 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
-  it("queues a completed-book structural character change as a book replan", async () => {
+  it("proposes a completed-book structural character change as a book replan", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({
@@ -3594,15 +3662,32 @@ describe("mobile project routes", () => {
     );
     const app = await buildMobileApp();
 
-    const response = await app.inject({
+    const proposal = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
       headers: bearer("token-a"),
       payload: { message: "Change the character of rabbit with a fly." }
     });
-    const body = response.json();
+    const proposalBody = proposal.json();
 
-    expect(response.statusCode).toBe(200);
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.operation).toBeNull();
+    expect(proposalBody.reply.metadata).toMatchObject({
+      editProposal: { kind: "book_replan" },
+      pendingEdit: { clarification: "confirm" }
+    });
+    expect(proposalBody.reply.content).toContain("new copy");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    const body = confirm.json();
+
+    expect(confirm.statusCode).toBe(200);
     expect(body.operation).toMatchObject({
       kind: "book_replan",
       affectedPageIndexes: []
@@ -3657,7 +3742,7 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
-  it("queues a completed-book English language version as a new copy", async () => {
+  it("proposes a completed-book English language version as a new copy", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({
@@ -3675,15 +3760,35 @@ describe("mobile project routes", () => {
     );
     const app = await buildMobileApp();
 
-    const response = await app.inject({
+    const proposal = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
       headers: bearer("token-a"),
       payload: { message: "Now generate the English version" }
     });
-    const body = response.json();
+    const proposalBody = proposal.json();
 
-    expect(response.statusCode).toBe(200);
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.operation).toBeNull();
+    expect(proposalBody.reply.metadata).toMatchObject({
+      editProposal: {
+        kind: "book_replan",
+        targetLanguage: "en"
+      },
+      pendingEdit: { clarification: "confirm" }
+    });
+    expect(proposalBody.reply.content).toContain("English");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "yes" }
+    });
+    const body = confirm.json();
+
+    expect(confirm.statusCode).toBe(200);
     expect(body.operation).toMatchObject({
       kind: "book_replan",
       affectedPageIndexes: []
@@ -4245,19 +4350,29 @@ describe("mobile project routes", () => {
         pages: generatedPages()
       })
     );
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the whole book warmer and simpler." }
+    });
+    expect(proposal.statusCode).toBe(200);
+    expect(proposal.json().operation).toBeNull();
+
     // The one-open-edit-per-project partial unique index (migration 000026)
     // rejects the second concurrent create even though hasOpenProjectWork saw
-    // no open work when this request started.
+    // no open work when this confirmation started.
     mockPrisma.bookEditOperation.create.mockRejectedValueOnce(
       new MockPrismaKnownRequestError("Unique constraint failed", { code: "P2002" })
     );
-    const app = await buildMobileApp();
 
     const response = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
       headers: bearer("token-a"),
-      payload: { message: "Make the whole book warmer and simpler." }
+      payload: { message: "apply it" }
     });
     const body = response.json();
 
@@ -4309,15 +4424,35 @@ describe("mobile project routes", () => {
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-follow-up", type: "APPLY_BOOK_EDIT" }));
     const app = await buildMobileApp();
 
-    const response = await app.inject({
+    const proposal = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
       headers: bearer("token-a"),
       payload: { message: "whole book" }
     });
-    const body = response.json();
+    const proposalBody = proposal.json();
 
-    expect(response.statusCode).toBe(200);
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.operation).toBeNull();
+    expect(proposalBody.reply.metadata).toMatchObject({
+      editProposal: {
+        kind: "local_patch",
+        affectedPageIndexes: [1, 2]
+      },
+      pendingEdit: { clarification: "confirm" }
+    });
+    expect(proposalBody.reply.content).not.toContain("I can help with questions");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    const body = confirm.json();
+
+    expect(confirm.statusCode).toBe(200);
     expect(body.operation).toMatchObject({
       kind: "local_patch",
       affectedPageIndexes: [1, 2]
@@ -4332,7 +4467,6 @@ describe("mobile project routes", () => {
         })
       })
     );
-    expect(body.reply.content).not.toContain("I can help with questions");
     await app.close();
   });
 
@@ -4398,15 +4532,35 @@ describe("mobile project routes", () => {
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-legacy-follow-up", type: "APPLY_BOOK_EDIT" }));
     const app = await buildMobileApp();
 
-    const response = await app.inject({
+    const proposal = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
       headers: bearer("token-a"),
       payload: { message: "I said whole book" }
     });
-    const body = response.json();
+    const proposalBody = proposal.json();
 
-    expect(response.statusCode).toBe(200);
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.operation).toBeNull();
+    expect(proposalBody.reply.metadata).toMatchObject({
+      editProposal: {
+        kind: "local_patch",
+        affectedPageIndexes: [1, 2]
+      },
+      pendingEdit: { clarification: "confirm" }
+    });
+    expect(proposalBody.reply.content).not.toContain("I can help with questions");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    const body = confirm.json();
+
+    expect(confirm.statusCode).toBe(200);
     expect(body.operation).toMatchObject({
       kind: "local_patch",
       affectedPageIndexes: [1, 2]
@@ -4421,7 +4575,6 @@ describe("mobile project routes", () => {
         })
       })
     );
-    expect(body.reply.content).not.toContain("I can help with questions");
     await app.close();
   });
 
@@ -4487,15 +4640,38 @@ describe("mobile project routes", () => {
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-legacy-ok", type: "APPLY_BOOK_EDIT" }));
     const app = await buildMobileApp();
 
-    const response = await app.inject({
+    const proposal = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
       headers: bearer("token-a"),
       payload: { message: "ok" }
     });
-    const body = response.json();
+    const proposalBody = proposal.json();
 
-    expect(response.statusCode).toBe(200);
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.operation).toBeNull();
+    expect(proposalBody.reply.metadata).toMatchObject({
+      editProposal: {
+        kind: "local_patch",
+        affectedPageIndexes: [1, 2]
+      },
+      pendingEdit: { clarification: "confirm" }
+    });
+    expect(proposalBody.messages.at(-2).metadata.resolvedPendingEdit).toMatchObject({
+      request: "Replace rabbit with fly",
+      scope: "all_pages",
+      scopeMessage: "ok"
+    });
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    const body = confirm.json();
+
+    expect(confirm.statusCode).toBe(200);
     expect(body.operation).toMatchObject({
       kind: "local_patch",
       affectedPageIndexes: [1, 2]
@@ -4510,11 +4686,6 @@ describe("mobile project routes", () => {
         })
       })
     );
-    expect(body.messages.at(-2).metadata.resolvedPendingEdit).toMatchObject({
-      request: "Replace rabbit with fly",
-      scope: "all_pages",
-      scopeMessage: "ok"
-    });
     await app.close();
   });
 

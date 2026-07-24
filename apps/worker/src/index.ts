@@ -57,6 +57,7 @@ import {
   type GenerateJsonOptions,
   type GeneratedImageBytes,
   type GenerateTextOptions,
+  type GenerateWithToolsOptions,
   type ImageAdapter,
   type ImageAdapterCapabilities,
   type ImageFallbackEvent,
@@ -4888,6 +4889,71 @@ class LoggingTextModelAdapter implements TextModelAdapter {
         generationJobId: this.generationJobId,
         purpose: options.purpose ?? "text.generateJson",
         operation: "text.generateJson",
+        callId,
+        durationMs: durationBetweenTimestamps(requestAt, errorAt),
+        error,
+        liveUsageId: liveUsage?.id,
+        fallbackPromptTokens: liveUsage?.promptTokens
+      });
+      if (!providerUsageFromError(error)) {
+        await markLiveTextUsageFailed(liveUsage?.id, {
+          durationMs: durationBetweenTimestamps(requestAt, errorAt),
+          error
+        });
+      }
+      await assertJobNotStopped(this.generationJobId);
+      throw error;
+    }
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions) {
+    const callId = randomUUID();
+    const requestAt = await this.logger.append("text.generateWithTools.request", {
+      callId,
+      request: { ...logTextRequest(options), tools: options.tools.map((tool) => tool.name) }
+    });
+    const textModel = this.textModelForPurpose(options.purpose);
+    const liveUsage = await beginLiveTextUsage({
+      projectId: options.projectId ?? this.projectId,
+      generationJobId: this.generationJobId,
+      provider: textModel.provider,
+      model: textModel.model,
+      purpose: options.purpose ?? "text.generateWithTools",
+      operation: "text.generateWithTools",
+      callId,
+      startedAt: requestAt,
+      options
+    });
+    try {
+      await assertJobNotStopped(this.generationJobId);
+      const result = await withRecoverableNetworkRetry(
+        () => this.delegate.generateWithTools(options),
+        providerRetryOptions(this.logger, this.generationJobId, "text.generateWithTools", options.purpose)
+      );
+      const responseAt = await this.logger.append("text.generateWithTools.response", { callId, result });
+      await recordProviderUsage({
+        projectId: options.projectId ?? this.projectId,
+        generationJobId: this.generationJobId,
+        provider: result.provider,
+        model: result.model,
+        purpose: options.purpose ?? "text.generateWithTools",
+        operation: "text.generateWithTools",
+        callId,
+        durationMs: durationBetweenTimestamps(requestAt, responseAt),
+        usage: result.usage,
+        liveUsageId: liveUsage?.id,
+        fallbackPromptTokens: liveUsage?.promptTokens,
+        fallbackOutputTokens: estimateTokenCountFromText(result.text)
+      });
+      await assertJobNotStopped(this.generationJobId);
+      return result;
+    } catch (error) {
+      const errorAt = await this.logger.append("text.generateWithTools.error", { callId, error: serializeError(error) });
+      await recordProviderUsageFromError({
+        projectId: options.projectId ?? this.projectId,
+        generationJobId: this.generationJobId,
+        purpose: options.purpose ?? "text.generateWithTools",
+        operation: "text.generateWithTools",
         callId,
         durationMs: durationBetweenTimestamps(requestAt, errorAt),
         error,

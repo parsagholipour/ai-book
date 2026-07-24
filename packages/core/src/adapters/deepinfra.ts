@@ -2,11 +2,14 @@ import OpenAI from "openai";
 import type {
   GenerateJsonOptions,
   GenerateTextOptions,
+  GenerateWithToolsOptions,
   JsonResult,
   TextModelAdapter,
   TextResult,
+  ToolCallsResult,
   Usage
 } from "./types.js";
+import { generateWithToolsViaOpenAi } from "./openaiToolCalling.js";
 import {
   parseJsonObject,
   parseSchemaWithContext,
@@ -72,6 +75,17 @@ export class DeepInfraAdapter implements TextModelAdapter {
       provider: PROVIDER_ID,
       ...(usage ? { usage } : {})
     };
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    return generateWithToolsViaOpenAi({
+      client: this.client,
+      model: this.model,
+      provider: PROVIDER_ID,
+      options,
+      extraParams: deepInfraReasoningConfig(this.thinkingEnabled, this.thinkingEffort),
+      usageFromResponse: usageFromDeepInfra
+    });
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {

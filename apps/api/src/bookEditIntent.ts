@@ -1,9 +1,9 @@
 import {
-  generateJsonWithRetry,
   normalizeProjectLanguage,
+  runToolLoop,
   withRecoverableNetworkRetry,
-  type GenerateJsonWithRetryOptions,
-  type TextModelAdapter
+  type TextModelAdapter,
+  type ToolLoopTool
 } from "@book-maker/core";
 import { z } from "zod";
 import { withTimeout } from "./withTimeout.js";
@@ -25,7 +25,7 @@ export type BookEditIntentKind =
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
 export type BookEditScope = "none" | "explicit_pages" | "matching_pages" | "all_pages";
 export type BookEditImpact = "small_text" | "style_rewrite" | "structural_replan";
-export type BookEditClarification = "none" | "scope";
+export type BookEditClarification = "none" | "scope" | "busy" | "confirm";
 
 export type BookEditPageContext = {
   id: string;
@@ -71,30 +71,43 @@ export type BookEditIntent = {
 
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
 
-const classifierSchema = z
-  .object({
-    kind: z.enum([
-      "answer",
-      "clarify",
-      "plan_revision",
-      "local_patch",
-      "page_rewrite",
-      "chapter_regenerate",
-      "undo_last_edit",
-      "show_content",
-      "book_replan"
-    ]),
-    confidence: z.number().min(0).max(1),
-    reasoning: z.string().trim().min(1).max(600),
-    affectedPageIndexes: z.array(z.number().int().positive()).max(100).default([]),
-    assistantMessage: z.string().trim().min(1).max(1200),
-    scope: z.enum(["none", "explicit_pages", "matching_pages", "all_pages"]).default("none"),
-    impact: z.enum(["small_text", "style_rewrite", "structural_replan"]).default("small_text"),
-    clarification: z.enum(["none", "scope"]).default("none"),
-    affectedChapterIndex: z.number().int().positive().nullable().default(null),
-    targetLanguage: z.string().trim().min(2).max(40).nullable().default(null)
-  })
-  .strict();
+/**
+ * Actions the router may pick, scoped to the project stage so the model never
+ * sees (or picks) actions that cannot run right now. normalizeIntentForStage
+ * remains the server-side guard in case a fallback path produces an
+ * out-of-stage kind.
+ */
+const routeKindsByStage: Record<Exclude<BookEditProjectStage, "other">, [BookEditIntentKind, ...BookEditIntentKind[]]> = {
+  plan_ready: ["answer", "clarify", "plan_revision", "show_content"],
+  approved_plan: ["answer", "clarify", "plan_revision", "show_content"],
+  complete: [
+    "answer",
+    "clarify",
+    "local_patch",
+    "page_rewrite",
+    "chapter_regenerate",
+    "undo_last_edit",
+    "show_content",
+    "book_replan"
+  ]
+};
+
+function routeMessageSchema(kinds: [BookEditIntentKind, ...BookEditIntentKind[]]) {
+  return z
+    .object({
+      kind: z.enum(kinds),
+      confidence: z.number().min(0).max(1),
+      reasoning: z.string().trim().min(1).max(600),
+      affectedPageIndexes: z.array(z.number().int().positive()).max(100).default([]),
+      assistantMessage: z.string().trim().min(1).max(1200),
+      scope: z.enum(["none", "explicit_pages", "matching_pages", "all_pages"]).default("none"),
+      impact: z.enum(["small_text", "style_rewrite", "structural_replan"]).default("small_text"),
+      clarification: z.enum(["none", "scope"]).default("none"),
+      affectedChapterIndex: z.number().int().positive().nullable().default(null),
+      targetLanguage: z.string().trim().min(2).max(40).nullable().default(null)
+    })
+    .strict();
+}
 
 export const CLASSIFIER_PAGE_SAMPLE_CAP = 120;
 
@@ -162,6 +175,8 @@ export async function classifyProjectChatMessage(options: {
   planSummary?: string | undefined;
   recentMessages?: Array<{ role: "user" | "assistant"; content: string }> | undefined;
   textModel?: TextModelAdapter | undefined;
+  /** Fetches one page's full prose for the router's read_page tool. */
+  loadPageBody?: ((index: number) => Promise<string | null>) | undefined;
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
   const chapters = options.chapters ?? [];
@@ -176,88 +191,182 @@ export async function classifyProjectChatMessage(options: {
   ) {
     return normalizeIntentForStage(heuristic, options.stage);
   }
-  if (!options.textModel || options.stage === "other") {
+  const textModel = options.textModel;
+  if (!textModel || options.stage === "other") {
     return normalizeIntentForStage(heuristic, options.stage);
   }
+  const stage = options.stage;
 
   try {
-    const textModel = options.textModel;
-    const pageSample = classifierPageSample(options.pages, message);
-    const classifierRequest: GenerateJsonWithRetryOptions<z.infer<typeof classifierSchema>> = {
-      schema: classifierSchema,
-      temperature: 0,
-      maxTokens: 900,
-      purpose: "project_chat.edit_router",
-      messages: [
-        {
-          role: "system",
-          content: [
-            "Classify a user's chat message for an AI book-making app.",
-            "Return answer for general questions that should not edit the book.",
-            "Messages that express dislike, discomfort, or a preference about existing content (for example: I don't like X, X should be Y, this feels too Z, too much X) are edit requests, never answer.",
-            "Route such content-preference changes on a finished book to page_rewrite and set affectedPageIndexes to the pages whose titles or summaries involve that content; use book_replan instead when the preference changes the premise, characters, audience, ending, or structure.",
-            "Return clarify when the user wants an edit but the target/scope is still unclear.",
-            "Return show_content when the user wants to read or see the outline, plan, table of contents, a chapter, or a page without changing it.",
-            "Return undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
-            "Return plan_revision when the project is in plan review or has an approved plan that can be revised before writing.",
-            "For plan-stage projects, route planning preferences as plan_revision, including media choices such as no images, no covers, without covers, skip visuals, disable illustrations, or turn off images.",
-            "For plan-stage projects, also route structure requests like move the ending earlier, reorder chapters, or restructure the outline as plan_revision.",
-            "Return local_patch for exact replacements, renames, typos, grammar, and small wording edits.",
-            "Return page_rewrite for same-structure page or whole-book style/content rewrites.",
-            "Return chapter_regenerate when the user asks to rewrite, regenerate, or redo one specific chapter, and set affectedChapterIndex to that chapter number.",
-            "Return book_replan for main character, species, title, premise, audience, ending, chapter-structure, length, visual identity, or structure changes on a finished book.",
-            "Return book_replan with targetLanguage when the user asks for a generated, rewritten, translated, or new language version/copy of a finished book.",
-            "Use scope all_pages for whole book, all pages, every page, everywhere, globally, throughout, or across the book.",
-            "Use scope matching_pages for exact replacements when matching pages should be found from the existing text.",
-            "Use affectedPageIndexes only when the target page is explicit or strongly inferable.",
-            "For edit intents, write assistantMessage as a short confirmation of the specific change that will be made.",
-            "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
-            "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
-            "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."
-          ].join(" ")
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            projectStage: options.stage,
-            userMessage: message,
-            recentConversation: (options.recentMessages ?? []).slice(-12).map((turn) => ({
-              role: turn.role,
-              content: turn.content.slice(0, 800)
-            })),
-            planSummary: options.planSummary ?? null,
-            heuristicIntent: heuristic,
-            heuristicInstruction: "Use heuristicIntent only as a hint. Prefer the user's actual meaning and projectStage.",
-            chapters: chapters.map((chapter) => ({
-              index: chapter.index,
-              title: chapter.title,
-              pageIndexes: chapter.pageIndexes
-            })),
-            pages: pageSample.pages.map((page) => ({
-              index: page.index,
-              title: page.title,
-              summary: page.summary.slice(0, 240)
-            })),
-            pageContext: {
-              totalPages: options.pages.length,
-              includedPageCount: pageSample.pages.length,
-              truncated: pageSample.truncated
-            }
-          })
-        }
-      ]
-    };
-    // Transient network failures get one quick retry; an exhausted time budget
-    // does not (TimeBudgetExceededError never matches the network matcher), so
-    // the worst case stays bounded before the heuristic fallback below.
-    const result = await withRecoverableNetworkRetry(
-      () => withTimeout(generateJsonWithRetry(textModel, classifierRequest), CLASSIFIER_CALL_BUDGET_MS, "Edit-intent classifier"),
-      { attempts: 2, delayMs: 500 }
-    );
-    return normalizeIntentForStage(withDeterministicContentTarget(result.data, message), options.stage);
+    const routed = await routeWithToolAgent({
+      message,
+      stage,
+      pages: options.pages,
+      chapters,
+      planSummary: options.planSummary,
+      recentMessages: options.recentMessages ?? [],
+      heuristic,
+      textModel,
+      loadPageBody: options.loadPageBody
+    });
+    return normalizeIntentForStage(withDeterministicContentTarget(routed, message), stage);
   } catch {
     return normalizeIntentForStage(heuristic, options.stage);
   }
+}
+
+/** Model-call budget for the whole routing loop (reads + final decision). */
+const ROUTER_MAX_MODEL_CALLS = 4;
+/** Prose cap per read_page result so a huge page cannot flood the router prompt. */
+const ROUTER_READ_PAGE_TEXT_CAP = 4_000;
+
+type RouteAgentOptions = {
+  message: string;
+  stage: Exclude<BookEditProjectStage, "other">;
+  pages: BookEditPageContext[];
+  chapters: BookEditChapterContext[];
+  planSummary?: string | undefined;
+  recentMessages: Array<{ role: "user" | "assistant"; content: string }>;
+  heuristic: BookEditIntent;
+  textModel: TextModelAdapter;
+  loadPageBody?: ((index: number) => Promise<string | null>) | undefined;
+};
+
+/**
+ * The routing agent: the model may inspect actual page prose with read_page
+ * before committing to a decision with the route_message finish tool, so
+ * "remove the part where the fox lies" can be routed to the right pages
+ * instead of guessed from titles and summaries alone.
+ */
+async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditIntent> {
+  const kinds = routeKindsByStage[options.stage];
+  const canReadPages = options.pages.length > 0;
+  const tools = canReadPages ? [readPageTool(options)] : [];
+  const pageSample = classifierPageSample(options.pages, options.message);
+  const result = await runToolLoop({
+    textModel: options.textModel,
+    purpose: "project_chat.edit_router",
+    temperature: 0,
+    maxTokens: 900,
+    toolChoice: "required",
+    maxModelCalls: ROUTER_MAX_MODEL_CALLS,
+    tools,
+    finishTool: {
+      name: "route_message",
+      description:
+        "Commit the final routing decision for the user's message. Call it exactly once, after any page reads.",
+      parameters: routeMessageSchema(kinds)
+    },
+    // Transient network failures get one quick retry per model call; an
+    // exhausted time budget does not (TimeBudgetExceededError never matches
+    // the network matcher), so the worst case stays bounded before the
+    // heuristic fallback in classifyProjectChatMessage.
+    onModelCall: (invoke) =>
+      withRecoverableNetworkRetry(
+        () => withTimeout(invoke(), CLASSIFIER_CALL_BUDGET_MS, "Edit-intent router"),
+        { attempts: 2, delayMs: 500 }
+      ),
+    messages: [
+      { role: "system", content: routerSystemPrompt(options.stage, canReadPages) },
+      {
+        role: "user",
+        content: JSON.stringify({
+          projectStage: options.stage,
+          userMessage: options.message,
+          recentConversation: options.recentMessages.slice(-12).map((turn) => ({
+            role: turn.role,
+            content: turn.content.slice(0, 800)
+          })),
+          planSummary: options.planSummary ?? null,
+          heuristicIntent: options.heuristic,
+          heuristicInstruction: "Use heuristicIntent only as a hint. Prefer the user's actual meaning and projectStage.",
+          chapters: options.chapters.map((chapter) => ({
+            index: chapter.index,
+            title: chapter.title,
+            pageIndexes: chapter.pageIndexes
+          })),
+          pages: pageSample.pages.map((page) => ({
+            index: page.index,
+            title: page.title,
+            summary: page.summary.slice(0, 240)
+          })),
+          pageContext: {
+            totalPages: options.pages.length,
+            includedPageCount: pageSample.pages.length,
+            truncated: pageSample.truncated
+          }
+        })
+      }
+    ]
+  });
+  if (result.status !== "finished" || !result.finish) {
+    throw new Error("Edit-intent router did not produce a routing decision.");
+  }
+  return result.finish;
+}
+
+function readPageTool(options: RouteAgentOptions): ToolLoopTool<{ index: number }> {
+  const pagesByIndex = new Map(options.pages.map((page) => [page.index, page]));
+  return {
+    name: "read_page",
+    description:
+      "Read one page's actual prose before routing. Use it when the page titles and summaries are not enough to tell which pages the user's request involves.",
+    parameters: z.object({ index: z.number().int().positive() }).strict(),
+    execute: async ({ index }) => {
+      const page = pagesByIndex.get(index);
+      if (!page) {
+        return { error: `Page ${index} does not exist. This book has ${options.pages.length} pages.` };
+      }
+      const body = options.loadPageBody ? await options.loadPageBody(index).catch(() => null) : null;
+      return {
+        index: page.index,
+        title: page.title,
+        summary: page.summary,
+        text: (body ?? page.previewText).slice(0, ROUTER_READ_PAGE_TEXT_CAP)
+      };
+    }
+  };
+}
+
+function routerSystemPrompt(stage: Exclude<BookEditProjectStage, "other">, canReadPages: boolean): string {
+  const common = [
+    "You route each user chat message in an AI book-making app to exactly one action.",
+    "You must decide by calling the route_message tool; never answer in plain text.",
+    ...(canReadPages
+      ? [
+          "When the page titles and summaries cannot tell which pages contain what the user mentions, call read_page on the most likely pages (at most two) before routing."
+        ]
+      : []),
+    "Use kind answer for general questions that should not change anything.",
+    "Messages that express dislike, discomfort, or a preference about existing content (for example: I don't like X, X should be Y, this feels too Z, too much X) are change requests, never answer.",
+    "Use kind clarify when the user wants a change but the target or scope is still unclear.",
+    "Use kind show_content when the user wants to read or see the outline, plan, table of contents, a chapter, or a page without changing it."
+  ];
+  const stageRules =
+    stage === "complete"
+      ? [
+          "Route content-preference changes to page_rewrite and set affectedPageIndexes to the pages whose text involves that content; use book_replan instead when the preference changes the premise, characters, audience, ending, or structure.",
+          "Use kind undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
+          "Use kind local_patch for exact replacements, renames, typos, grammar, and small wording edits.",
+          "Use kind page_rewrite for same-structure page or whole-book style/content rewrites.",
+          "Use kind chapter_regenerate when the user asks to rewrite, regenerate, or redo one specific chapter, and set affectedChapterIndex to that chapter number.",
+          "Use kind book_replan for main character, species, title, premise, audience, ending, chapter-structure, length, visual identity, or structure changes on this finished book.",
+          "Use kind book_replan with targetLanguage when the user asks for a generated, rewritten, translated, or new language version/copy of this finished book.",
+          "Use scope all_pages for whole book, all pages, every page, everywhere, globally, throughout, or across the book.",
+          "Use scope matching_pages for exact replacements when matching pages should be found from the existing text.",
+          "Use affectedPageIndexes only when the target pages are explicit, strongly inferable, or confirmed by read_page."
+        ]
+      : [
+          "This project is in plan review, so route every change request as plan_revision: content changes, planning preferences, media choices (no images, no covers, skip visuals, disable illustrations, turn off images), and structure requests (move the ending earlier, reorder chapters, restructure the outline).",
+          "Use plan_revision with targetLanguage when the user asks to change the book's language."
+        ];
+  const closing = [
+    "For change intents, write assistantMessage as a short confirmation of the specific change that will be made.",
+    "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
+    "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
+    "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."
+  ];
+  return [...common, ...stageRules, ...closing].join(" ");
 }
 
 /** The model cannot emit structured content targets; recover them from the message. */

@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type {
   GenerateJsonOptions,
   GenerateTextOptions,
   JsonResult,
   TextModelAdapter,
-  TextResult
+  TextResult,
+  ToolCallsResult
 } from "../adapters/types.js";
 import type { MarkdownPage } from "./markdown.js";
 import { createReaderChaptersForExport } from "./readerChapters.js";
@@ -118,6 +120,10 @@ class StaticJsonTextModel implements TextModelAdapter {
 
   async *streamText(): AsyncGenerator<string> {
     yield "";
+  }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
   }
 }
 

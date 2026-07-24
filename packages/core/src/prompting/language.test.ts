@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { FakeTextModelAdapter } from "../adapters/fake.js";
-import type { GenerateJsonOptions, GenerateTextOptions, TextModelAdapter, TextResult } from "../adapters/types.js";
+import { FakeTextModelAdapter, unsupportedGenerateWithTools } from "../adapters/fake.js";
+import type {
+  GenerateJsonOptions,
+  GenerateTextOptions,
+  TextModelAdapter,
+  TextResult,
+  ToolCallsResult
+} from "../adapters/types.js";
 import {
   detectPromptLanguage,
   normalizeProjectLanguage,
@@ -54,5 +60,9 @@ class LanguageOnlyDetectorAdapter implements TextModelAdapter {
 
   async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
     yield this.language;
+  }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
   }
 }

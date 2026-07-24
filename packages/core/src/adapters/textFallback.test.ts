@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { unsupportedGenerateWithTools } from "./fake.js";
 import { FallbackTextModelAdapter, TextGenerationFallbackError, type TextFallbackEvent } from "./textFallback.js";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "./types.js";
 
@@ -22,7 +23,8 @@ function stubAdapter(name: string, options?: { fail?: boolean }): TextModelAdapt
         throw new Error(`${name} failed`);
       }
       yield name;
-    }
+    },
+    generateWithTools: unsupportedGenerateWithTools
   };
 }
 

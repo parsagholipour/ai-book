@@ -12,6 +12,7 @@ import type {
   EmbeddingAdapter,
   GenerateJsonOptions,
   GenerateTextOptions,
+  GenerateWithToolsOptions,
   ImageAdapter,
   ImageRequest,
   ImageResult,
@@ -20,11 +21,24 @@ import type {
   ResearchQuery,
   ResearchResult,
   TextModelAdapter,
-  TextResult
+  TextResult,
+  ToolCallsResult
 } from "./types.js";
 
+/** One scripted assistant turn for tools-enabled fake calls. */
+export type FakeToolTurn = {
+  /** Tool calls the fake model requests this turn; omit to answer with text. */
+  toolCalls?: Array<{ name: string; arguments: unknown; id?: string }>;
+  text?: string;
+};
+
 export class FakeTextModelAdapter implements TextModelAdapter {
-  constructor(private readonly input?: CreateProjectInput) {}
+  private toolTurnIndex = 0;
+
+  constructor(
+    private readonly input?: CreateProjectInput,
+    private readonly toolTurns?: FakeToolTurn[]
+  ) {}
 
   async generateText(options: GenerateTextOptions): Promise<TextResult> {
     const text = `Drafted content for ${options.purpose ?? "book generation"}.`;
@@ -52,6 +66,44 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
   async *streamText(): AsyncGenerator<string> {
     yield "Fake streamed content.";
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    const scripted = this.toolTurns?.[this.toolTurnIndex];
+    if (scripted) {
+      this.toolTurnIndex += 1;
+      return {
+        text: scripted.text ?? "",
+        model: "fake-model",
+        provider: "fake",
+        toolCalls: (scripted.toolCalls ?? []).map((call, index) => ({
+          id: call.id ?? `fake_call_${this.toolTurnIndex}_${index}`,
+          name: call.name,
+          arguments: call.arguments
+        })),
+        usage: { promptTokens: 1, outputTokens: 1 }
+      };
+    }
+    // Unscripted dry runs finish structured loops with empty arguments (the
+    // caller's schema defaults apply); loops without a finish tool get plain
+    // text, so they fall through to their deterministic fallbacks.
+    const finishTool = options.tools.find((tool) => tool.name === "finish_turn");
+    if (finishTool) {
+      return {
+        text: "",
+        model: "fake-model",
+        provider: "fake",
+        toolCalls: [{ id: "fake_finish", name: finishTool.name, arguments: {} }],
+        usage: { promptTokens: 1, outputTokens: 1 }
+      };
+    }
+    return {
+      text: `Fake response for ${options.purpose ?? "tool call"}.`,
+      model: "fake-model",
+      provider: "fake",
+      toolCalls: [],
+      usage: { promptTokens: 1, outputTokens: 1 }
+    };
   }
 
   private fakeForSchema(schema: z.ZodTypeAny, options: GenerateJsonOptions<unknown>): unknown {
@@ -218,6 +270,11 @@ export class FakeTextModelAdapter implements TextModelAdapter {
 
     return {};
   }
+}
+
+/** Stub for test adapters that never exercise tool calling. */
+export function unsupportedGenerateWithTools(): Promise<ToolCallsResult> {
+  return Promise.reject(new Error("This adapter does not support tool calling."));
 }
 
 export class FakeResearchAdapter implements ResearchAdapter {

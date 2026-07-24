@@ -5,9 +5,11 @@ import {
   makeFallbackPlan,
   createPlanningPackage,
   revisePlanningPackage,
+  unsupportedGenerateWithTools,
   type CreateProjectInput,
   type GenerateJsonOptions,
-  type TextModelAdapter
+  type TextModelAdapter,
+  type ToolCallsResult
 } from "../index.js";
 
 describe("deterministic dry run", () => {
@@ -228,6 +230,10 @@ class FailingPlannerAdapter implements TextModelAdapter {
   async *streamText(): AsyncGenerator<string> {
     yield "";
   }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
+  }
 }
 
 class MismatchedPlannerAdapter implements TextModelAdapter {
@@ -264,6 +270,10 @@ class MismatchedPlannerAdapter implements TextModelAdapter {
   async *streamText(): AsyncGenerator<string> {
     yield "";
   }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
+  }
 }
 
 class WrappedPlannerAdapter implements TextModelAdapter {
@@ -290,6 +300,10 @@ class WrappedPlannerAdapter implements TextModelAdapter {
 
   async *streamText(): AsyncGenerator<string> {
     yield "";
+  }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
   }
 }
 
@@ -348,6 +362,10 @@ class GenerationPlanPlannerAdapter implements TextModelAdapter {
   async *streamText(): AsyncGenerator<string> {
     yield "";
   }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
+  }
 }
 
 class StringResearchNotesPlannerAdapter implements TextModelAdapter {
@@ -380,6 +398,10 @@ class StringResearchNotesPlannerAdapter implements TextModelAdapter {
   async *streamText(): AsyncGenerator<string> {
     yield "";
   }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
+  }
 }
 
 class PartialRevisionPlannerAdapter implements TextModelAdapter {
@@ -407,6 +429,10 @@ class PartialRevisionPlannerAdapter implements TextModelAdapter {
 
   async *streamText(): AsyncGenerator<string> {
     yield "";
+  }
+
+  generateWithTools(): Promise<ToolCallsResult> {
+    return unsupportedGenerateWithTools();
   }
 }
 

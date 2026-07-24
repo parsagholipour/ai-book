@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { GenerateJsonOptions, JsonResult, TextModelAdapter } from "@book-maker/core";
+import type { GenerateWithToolsOptions, TextModelAdapter, ToolCallsResult } from "@book-maker/core";
 import {
   CLASSIFIER_PAGE_SAMPLE_CAP,
   classifierPageSample,
@@ -163,14 +163,15 @@ describe("book edit intent heuristics", () => {
       textModel: model
     });
 
-    expect(model.generateJson).toHaveBeenCalledOnce();
+    expect(model.generateWithTools).toHaveBeenCalledOnce();
     expect(intent).toMatchObject({
       kind: "plan_revision",
       reasoning: "The model handled the routing."
     });
-    const call = vi.mocked(model.generateJson).mock.calls[0]![0];
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
     const prompt = JSON.parse(call.messages.at(-1)!.content);
     expect(prompt.heuristicIntent).toMatchObject({ kind: "plan_revision" });
+    expect(call.tools.map((tool) => tool.name)).toEqual(["read_page", "route_message"]);
   });
 
   it("falls back to heuristics when the AI router fails", async () => {
@@ -183,7 +184,7 @@ describe("book edit intent heuristics", () => {
       textModel: model
     });
 
-    expect(model.generateJson).toHaveBeenCalled();
+    expect(model.generateWithTools).toHaveBeenCalled();
     expect(intent.kind).toBe("plan_revision");
   });
 
@@ -207,7 +208,7 @@ describe("book edit intent heuristics", () => {
       textModel: model
     });
 
-    expect(model.generateJson).toHaveBeenCalledTimes(2);
+    expect(model.generateWithTools).toHaveBeenCalledTimes(2);
     expect(intent.reasoning).toBe("Recovered after the connection reset.");
   });
 
@@ -225,7 +226,7 @@ describe("book edit intent heuristics", () => {
       await vi.advanceTimersByTimeAsync(10_000);
       const intent = await pending;
 
-      expect(model.generateJson).toHaveBeenCalledTimes(1);
+      expect(model.generateWithTools).toHaveBeenCalledTimes(1);
       expect(intent.kind).toBe("plan_revision");
     } finally {
       vi.useRealTimers();
@@ -339,7 +340,7 @@ describe("book edit intent heuristics", () => {
       textModel: model
     });
 
-    expect(model.generateJson).not.toHaveBeenCalled();
+    expect(model.generateWithTools).not.toHaveBeenCalled();
     expect(intent.kind).toBe("show_content");
   });
 
@@ -393,11 +394,104 @@ describe("book edit intent heuristics", () => {
       textModel: model
     });
 
-    const call = vi.mocked(model.generateJson).mock.calls[0]![0];
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
     const prompt = JSON.parse(call.messages.at(-1)!.content);
     expect(prompt.pageContext).toMatchObject({ totalPages: 600, truncated: true });
     expect(prompt.pages.length).toBeLessThanOrEqual(CLASSIFIER_PAGE_SAMPLE_CAP);
     expect(prompt.pages.map((page: { index: number }) => page.index)).toContain(412);
+  });
+
+  it("lets the router read page prose before routing", async () => {
+    const loadPageBody = vi.fn(async () => "Full prose of the practice scene where the old phrase appears.");
+    const model = scriptedTextModel([
+      {
+        text: "",
+        model: "test-router",
+        provider: "test",
+        toolCalls: [{ id: "call-read", name: "read_page", arguments: { index: 2 } }]
+      },
+      routeDecision({
+        kind: "page_rewrite",
+        confidence: 0.93,
+        reasoning: "The phrase only appears on page 2.",
+        affectedPageIndexes: [2],
+        assistantMessage: "I’ll rewrite page 2 without that phrase.",
+        scope: "explicit_pages",
+        impact: "style_rewrite",
+        clarification: "none"
+      })
+    ]);
+
+    const intent = await classifyProjectChatMessage({
+      message: "Get rid of the part with the old phrase.",
+      stage: "complete",
+      pages,
+      textModel: model,
+      loadPageBody
+    });
+
+    expect(loadPageBody).toHaveBeenCalledWith(2);
+    expect(model.generateWithTools).toHaveBeenCalledTimes(2);
+    const secondCall = vi.mocked(model.generateWithTools).mock.calls[1]![0];
+    const toolResult = secondCall.messages.find((message) => message.role === "tool");
+    expect(toolResult?.content).toContain("Full prose of the practice scene");
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.affectedPageIndexes).toEqual([2]);
+  });
+
+  it("only offers stage-appropriate route kinds to the model", async () => {
+    const model = fakeTextModel({
+      kind: "plan_revision",
+      confidence: 0.9,
+      reasoning: "Plan-stage routing.",
+      affectedPageIndexes: [],
+      assistantMessage: "I’ll revise the plan.",
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    });
+
+    await classifyProjectChatMessage({
+      message: "Make the examples warmer.",
+      stage: "plan_ready",
+      pages,
+      textModel: model
+    });
+
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
+    const routeTool = call.tools.find((tool) => tool.name === "route_message")!;
+    const editKindAtPlanStage = routeTool.parameters.safeParse({
+      kind: "page_rewrite",
+      confidence: 0.9,
+      reasoning: "Not allowed at plan stage.",
+      affectedPageIndexes: [],
+      assistantMessage: "x",
+      scope: "none",
+      impact: "small_text",
+      clarification: "none",
+      affectedChapterIndex: null,
+      targetLanguage: null
+    });
+    expect(editKindAtPlanStage.success).toBe(false);
+  });
+
+  it("falls back to heuristics when the router never commits a decision", async () => {
+    const textOnly: ToolCallsResult = {
+      text: "I think this is a plan change.",
+      model: "test-router",
+      provider: "test",
+      toolCalls: []
+    };
+    const model = scriptedTextModel([textOnly, textOnly, textOnly, textOnly]);
+
+    const intent = await classifyProjectChatMessage({
+      message: "I don't want images or covers",
+      stage: "plan_ready",
+      pages,
+      textModel: model
+    });
+
+    expect(intent.kind).toBe("plan_revision");
   });
 
   it("recognizes a scope-only follow-up that can resolve a pending edit", () => {
@@ -425,69 +519,66 @@ function manyPages(count: number): BookEditPageContext[] {
   }));
 }
 
-function fakeTextModel(intent: BookEditIntent): TextModelAdapter {
-  const generateJson = vi.fn(async (options: GenerateJsonOptions<unknown>): Promise<JsonResult<unknown>> => {
-    const data = options.schema.parse(intent);
-    return {
-      data,
-      text: JSON.stringify(data),
-      model: "test-router",
-      provider: "test"
-    };
-  });
+function routerAdapter(
+  generateWithTools: (options: GenerateWithToolsOptions) => Promise<ToolCallsResult>
+): TextModelAdapter {
   return {
     generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
-    generateJson: generateJson as TextModelAdapter["generateJson"],
+    generateJson: async () => {
+      throw new Error("generateJson is not used by the tool-calling router");
+    },
+    generateWithTools: generateWithTools as TextModelAdapter["generateWithTools"],
     async *streamText() {
       yield "";
     }
   };
+}
+
+function routeDecision(intent: BookEditIntent): ToolCallsResult {
+  return {
+    text: "",
+    model: "test-router",
+    provider: "test",
+    toolCalls: [{ id: "call-route", name: "route_message", arguments: intent }]
+  };
+}
+
+function fakeTextModel(intent: BookEditIntent): TextModelAdapter {
+  return routerAdapter(vi.fn(async () => routeDecision(intent)));
 }
 
 function fakeFailingTextModel(): TextModelAdapter {
-  const generateJson = vi.fn(async () => {
-    throw new Error("router failed");
-  });
-  return {
-    generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
-    generateJson: generateJson as TextModelAdapter["generateJson"],
-    async *streamText() {
-      yield "";
-    }
-  };
+  return routerAdapter(
+    vi.fn(async () => {
+      throw new Error("router failed");
+    })
+  );
 }
 
 function fakeFlakyTextModel(intent: BookEditIntent): TextModelAdapter {
-  const generateJson = vi.fn(async (options: GenerateJsonOptions<unknown>): Promise<JsonResult<unknown>> => {
-    if (generateJson.mock.calls.length === 1) {
+  const generateWithTools = vi.fn(async () => {
+    if (generateWithTools.mock.calls.length === 1) {
       const error = new Error("socket hang up") as Error & { code: string };
       error.code = "ECONNRESET";
       throw error;
     }
-    const data = options.schema.parse(intent);
-    return {
-      data,
-      text: JSON.stringify(data),
-      model: "test-router",
-      provider: "test"
-    };
+    return routeDecision(intent);
   });
-  return {
-    generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
-    generateJson: generateJson as TextModelAdapter["generateJson"],
-    async *streamText() {
-      yield "";
-    }
-  };
+  return routerAdapter(generateWithTools);
 }
 
 function fakeHangingTextModel(): TextModelAdapter {
-  const generateJson = vi.fn(() => new Promise<never>(() => undefined));
-  return {
-    generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
-    generateJson: generateJson as unknown as TextModelAdapter["generateJson"],
-    async *streamText() {
-      yield "";
+  return routerAdapter(vi.fn(() => new Promise<never>(() => undefined)));
+}
+
+/** Scripts one generateWithTools result per model call, erroring past the script. */
+function scriptedTextModel(turns: ToolCallsResult[]): TextModelAdapter {
+  const generateWithTools = vi.fn(async () => {
+    const turn = turns[generateWithTools.mock.calls.length - 1];
+    if (!turn) {
+      throw new Error("scripted model ran out of turns");
     }
-  };
+    return turn;
+  });
+  return routerAdapter(generateWithTools);
 }

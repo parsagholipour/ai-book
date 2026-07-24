@@ -10,6 +10,8 @@ export * from "./prompting/language.js";
 export * from "./prompting/readingLevel.js";
 export * from "./generation/generateJsonWithRetry.js";
 export * from "./adapters/types.js";
+export * from "./adapters/toolLoop.js";
+export * from "./adapters/openaiToolCalling.js";
 export * from "./adapters/alibabaModels.js";
 export * from "./adapters/alibaba.js";
 export * from "./adapters/deepseek.js";

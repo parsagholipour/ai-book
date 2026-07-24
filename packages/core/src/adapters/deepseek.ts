@@ -2,11 +2,14 @@ import OpenAI from "openai";
 import type {
   GenerateJsonOptions,
   GenerateTextOptions,
+  GenerateWithToolsOptions,
   JsonResult,
   TextModelAdapter,
   TextResult,
+  ToolCallsResult,
   Usage
 } from "./types.js";
+import { generateWithToolsViaOpenAi } from "./openaiToolCalling.js";
 import {
   AdapterJsonParseError as DeepSeekJsonParseError,
   AdapterJsonValidationError as DeepSeekJsonValidationError,
@@ -70,6 +73,17 @@ export class DeepSeekAdapter implements TextModelAdapter {
       provider: "deepseek",
       ...(usage ? { usage } : {})
     };
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    return generateWithToolsViaOpenAi({
+      client: this.client,
+      model: this.model,
+      provider: "deepseek",
+      options,
+      extraParams: deepSeekThinkingConfig(this.thinkingEnabled, this.thinkingEffort),
+      usageFromResponse: usageFromDeepSeek
+    });
   }
 
   async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {

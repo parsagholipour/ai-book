@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeTextModelAdapter } from "../adapters/fake.js";
+import { FakeTextModelAdapter, unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { GenerateJsonOptions, TextModelAdapter } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput, PageDraft } from "../schemas/book.js";
@@ -202,7 +202,8 @@ describe("page quality review", () => {
       },
       async *streamText() {
         yield "";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     await generatePageDraft({
@@ -279,7 +280,8 @@ describe("page quality review", () => {
       },
       async *streamText() {
         yield "";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     await generatePageDraft({
@@ -353,7 +355,8 @@ describe("page quality review", () => {
       },
       async *streamText() {
         yield "";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     await generatePageDraft({
@@ -409,7 +412,8 @@ describe("page quality review", () => {
       },
       async *streamText() {
         yield "";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     const repaired = await repairPageBrief({
@@ -739,7 +743,8 @@ describe("page quality review", () => {
       },
       async *streamText() {
         yield "";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     };
 
     const draft = await generateWholeBookDraft({
@@ -825,7 +830,8 @@ describe("page quality review", () => {
         },
         async *streamText() {
           yield "";
-        }
+        },
+        generateWithTools: unsupportedGenerateWithTools
       }
     });
 
@@ -907,7 +913,8 @@ describe("page quality review", () => {
         },
         async *streamText() {
           yield "";
-        }
+        },
+        generateWithTools: unsupportedGenerateWithTools
       }
     });
 
@@ -990,7 +997,8 @@ describe("page quality review", () => {
         },
         async *streamText() {
           yield "";
-        }
+        },
+        generateWithTools: unsupportedGenerateWithTools
       }
     });
 
@@ -1971,7 +1979,8 @@ function jsonModel(rawData: unknown): TextModelAdapter {
     },
     async *streamText() {
       yield "";
-    }
+    },
+    generateWithTools: unsupportedGenerateWithTools
   };
 }
 
@@ -2001,7 +2010,8 @@ function malformedJsonModel(): TextModelAdapter {
     },
     async *streamText() {
       yield "";
-    }
+    },
+    generateWithTools: unsupportedGenerateWithTools
   };
 }
 
@@ -2039,7 +2049,8 @@ function capturingJsonModel(rawData: unknown): {
       },
       async *streamText() {
         yield "";
-      }
+      },
+      generateWithTools: unsupportedGenerateWithTools
     }
   };
   return capture;

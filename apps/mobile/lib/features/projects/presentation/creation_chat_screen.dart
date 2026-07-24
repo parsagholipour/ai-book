@@ -27,6 +27,7 @@ import 'branch_navigator.dart';
 import 'chat_media_preview.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
+import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
@@ -329,6 +330,22 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                                 project: planValue?.asData?.value,
                               ),
                             ),
+                            onApplyEditProposal: activeProjectId == null
+                                ? null
+                                : () => unawaited(
+                                    _sendProjectMessage(
+                                      projectId: activeProjectId,
+                                      message: 'apply it',
+                                    ),
+                                  ),
+                            onCancelEditProposal: activeProjectId == null
+                                ? null
+                                : () => unawaited(
+                                    _sendProjectMessage(
+                                      projectId: activeProjectId,
+                                      message: 'cancel',
+                                    ),
+                                  ),
                             onRetryFailedMessage: (localId) => unawaited(
                               ref
                                   .read(creationChatControllerProvider.notifier)
@@ -3110,6 +3127,8 @@ class _Transcript extends StatelessWidget {
     this.onEditProjectMessage,
     this.onOpenReplanCopy,
     this.onOpenPaywall,
+    this.onApplyEditProposal,
+    this.onCancelEditProposal,
     this.onRetryFailedMessage,
     this.onDismissFailedMessage,
     this.onRetryFailedOperation,
@@ -3130,6 +3149,8 @@ class _Transcript extends StatelessWidget {
   final void Function(MobileProjectChatMessage message)? onEditProjectMessage;
   final ValueChanged<String>? onOpenReplanCopy;
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
+  final VoidCallback? onApplyEditProposal;
+  final VoidCallback? onCancelEditProposal;
   final ValueChanged<String>? onRetryFailedMessage;
   final ValueChanged<String>? onDismissFailedMessage;
   final void Function(MobileBookEditOperation operation)?
@@ -3199,6 +3220,12 @@ class _Transcript extends StatelessWidget {
             onOpenPaywall: item.message!.hasInsufficientCredits
                 ? onOpenPaywall
                 : null,
+            showProposalActions: _isActiveCreationEditProposal(
+              projectItems,
+              item.message!,
+            ),
+            onApplyProposal: onApplyEditProposal,
+            onCancelProposal: onCancelEditProposal,
           );
         }
         cursor += projectItems.length;
@@ -3231,6 +3258,20 @@ class _Transcript extends StatelessWidget {
       },
     );
   }
+}
+
+bool _isActiveCreationEditProposal(
+  List<_ProjectTranscriptItem> projectItems,
+  MobileProjectChatMessage message,
+) {
+  if (message.editProposal == null) return false;
+  for (var index = projectItems.length - 1; index >= 0; index -= 1) {
+    final candidate = projectItems[index].message;
+    if (candidate?.editProposal != null) {
+      return candidate!.id == message.id;
+    }
+  }
+  return false;
 }
 
 List<_ProjectTranscriptItem> _projectTranscriptItems(MobileProjectChat? chat) {
@@ -3886,6 +3927,9 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.onEdit,
     this.onOpenReplanCopy,
     this.onOpenPaywall,
+    this.showProposalActions = false,
+    this.onApplyProposal,
+    this.onCancelProposal,
   });
 
   final MobileProjectChatMessage message;
@@ -3896,6 +3940,9 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   final void Function(MobileProjectChatMessage message)? onEdit;
   final ValueChanged<String>? onOpenReplanCopy;
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
+  final bool showProposalActions;
+  final VoidCallback? onApplyProposal;
+  final VoidCallback? onCancelProposal;
 
   @override
   Widget build(BuildContext context) {
@@ -3904,6 +3951,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     final background = isUser ? colors.primary : colors.surfaceContainerHighest;
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
     final contentCard = message.isAssistant ? message.contentCard : null;
+    final editProposal = message.isAssistant ? message.editProposal : null;
     final branch = message.branch;
     final timestamp = _formatChatTimestamp(message.createdAt);
     final replanCopyTargetProjectId = message.isAssistant
@@ -3984,7 +4032,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
       ),
     );
     final manualEdit = message.isAssistant ? message.manualEdit : null;
-    if (contentCard == null && manualEdit == null) {
+    if (contentCard == null && manualEdit == null && editProposal == null) {
       return Align(
         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
         child: bubble,
@@ -3998,6 +4046,13 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         children: [
           bubble,
           if (contentCard != null) _ContentCardBubble(card: contentCard),
+          if (editProposal != null)
+            EditProposalCard(
+              proposal: editProposal,
+              enabled: true,
+              onApply: showProposalActions ? onApplyProposal : null,
+              onCancel: showProposalActions ? onCancelProposal : null,
+            ),
           if (manualEdit != null) SavedExportCard(message: message),
         ],
       ),

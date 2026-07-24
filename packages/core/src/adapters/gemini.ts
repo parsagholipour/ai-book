@@ -8,6 +8,7 @@ import type {
   EmbeddingAdapter,
   GenerateJsonOptions,
   GenerateTextOptions,
+  GenerateWithToolsOptions,
   ImageAdapter,
   ImageRequest,
   ImageResult,
@@ -17,6 +18,9 @@ import type {
   ResearchResult,
   TextModelAdapter,
   TextResult,
+  ToolCall,
+  ToolCallsResult,
+  ToolDefinition,
   Usage
 } from "./types.js";
 import { geminiImageReferenceLimit, isGeminiNativeImageModel, normalizeGeminiImageModel } from "./geminiModels.js";
@@ -72,6 +76,33 @@ export class GeminiTextAdapter implements TextModelAdapter {
       text: responseText(response),
       model: this.model,
       provider: "gemini",
+      ...(usage ? { usage } : {})
+    };
+  }
+
+  async generateWithTools(options: GenerateWithToolsOptions): Promise<ToolCallsResult> {
+    const prompt = geminiPromptFromMessages(options.messages);
+    const response = await this.ai.models.generateContent({
+      model: this.model,
+      contents: prompt.contents,
+      config: {
+        ...prompt.config,
+        ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        temperature: options.temperature,
+        maxOutputTokens: options.maxTokens,
+        tools: [{ functionDeclarations: options.tools.map(geminiFunctionDeclaration) }],
+        ...(options.toolChoice === "required"
+          ? { toolConfig: { functionCallingConfig: { mode: "ANY" } } }
+          : {})
+      }
+    });
+
+    const usage = usageFromGeminiResponse(response);
+    return {
+      text: responseText(response),
+      model: this.model,
+      provider: "gemini",
+      toolCalls: toolCallsFromGeminiResponse(response),
       ...(usage ? { usage } : {})
     };
   }
@@ -271,15 +302,66 @@ function geminiPromptFromMessages(messages: ChatMessage[], extraSystemLines: str
     .join("\n\n");
   const contents = messages
     .filter((message) => message.role !== "system")
-    .map((message) => ({
-      role: message.role === "assistant" ? "model" : "user",
-      parts: [{ text: message.content }]
-    }));
+    .map((message) => geminiContentFromMessage(message));
 
   return {
     contents: contents.length > 0 ? contents : [{ role: "user", parts: [{ text: "Generate the requested response." }] }],
     config: systemInstruction ? { systemInstruction } : {}
   };
+}
+
+function geminiContentFromMessage(message: ChatMessage): { role: "user" | "model"; parts: unknown[] } {
+  if (message.role === "tool") {
+    return {
+      role: "user",
+      parts: [
+        {
+          functionResponse: {
+            name: message.toolName ?? "tool",
+            response: { result: message.content }
+          }
+        }
+      ]
+    };
+  }
+  if (message.role === "assistant" && message.toolCalls?.length) {
+    return {
+      role: "model",
+      parts: [
+        ...(message.content ? [{ text: message.content }] : []),
+        ...message.toolCalls.map((call) => ({
+          functionCall: { name: call.name, args: geminiFunctionCallArgs(call.arguments) }
+        }))
+      ]
+    };
+  }
+  return {
+    role: message.role === "assistant" ? "model" : "user",
+    parts: [{ text: message.content }]
+  };
+}
+
+function geminiFunctionCallArgs(args: unknown): Record<string, unknown> {
+  return args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+}
+
+function geminiFunctionDeclaration(tool: ToolDefinition) {
+  return {
+    name: tool.name,
+    description: tool.description,
+    parametersJsonSchema: z.toJSONSchema(tool.parameters as never, { unrepresentable: "any" })
+  };
+}
+
+function toolCallsFromGeminiResponse(response: any): ToolCall[] {
+  const parts = response.candidates?.[0]?.content?.parts ?? response.parts ?? [];
+  return parts
+    .filter((part: any) => part?.functionCall?.name)
+    .map((part: any, index: number) => ({
+      id: typeof part.functionCall.id === "string" && part.functionCall.id ? part.functionCall.id : `call_${index}`,
+      name: String(part.functionCall.name),
+      arguments: part.functionCall.args ?? {}
+    }));
 }
 
 function responseText(response: any): string {

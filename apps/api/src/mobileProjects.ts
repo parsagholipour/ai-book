@@ -2537,12 +2537,14 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       const pendingScope = editMessageId ? null : await findPendingScopeClarification(id, parsed.data.message);
       const currentScope = bookEditScopeFromMessage(parsed.data.message);
       const pendingResolutionScope = currentScope !== "none" ? currentScope : pendingScope?.scope ?? "none";
-      // Busy-queued edits carry their full target already; a bare confirmation
-      // ("apply it") is enough to resume them. Scope clarifications still need
-      // an actual scope answer.
+      // Busy-queued edits and priced proposals carry their full target
+      // already; a bare confirmation ("apply it") is enough to resume them.
+      // Scope clarifications still need an actual scope answer.
+      const pendingCarriesFullRequest =
+        pendingScope?.clarification === "busy" || pendingScope?.clarification === "confirm";
       const resolvesPendingScope = Boolean(
         pendingScope &&
-          (pendingScope.clarification === "busy"
+          (pendingCarriesFullRequest
             ? isPendingEditConfirmationMessage(parsed.data.message) || currentScope !== "none"
             : currentScope !== "none" ||
               (pendingResolutionScope !== "none" && isPendingEditConfirmationMessage(parsed.data.message)))
@@ -2556,10 +2558,17 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
             }
           : null;
       const resolvedMessage = resolvedPendingEdit
-        ? pendingScope?.clarification === "busy" && resolvedPendingEdit.scope === "none"
+        ? pendingCarriesFullRequest && resolvedPendingEdit.scope === "none"
           ? resolvedPendingEdit.request
           : messageWithScope(resolvedPendingEdit.request, resolvedPendingEdit.scope)
         : parsed.data.message;
+      // A pure confirmation of a priced proposal executes it; any other reply
+      // (new scope, refined request) goes back through routing and re-pricing.
+      const confirmedPendingEdit = Boolean(
+        resolvedPendingEdit &&
+          pendingScope?.clarification === "confirm" &&
+          isPendingEditConfirmationMessage(parsed.data.message)
+      );
 
       let userMessage: MobileProjectChatMessageRecord;
       try {
@@ -2585,13 +2594,30 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         throw error;
       }
 
+      if (pendingScope && isPendingEditCancellationMessage(parsed.data.message)) {
+        const replyMessage = await createAssistantChatMessage({
+          projectId: id,
+          parentId: userMessage.id,
+          content: "Okay, I dropped that request. Nothing was changed or charged.",
+          metadata: { pendingEditCancelled: true, charged: false }
+        });
+        return {
+          ...(await loadProjectChatResponse(id)),
+          reply: serializeProjectChatMessage(replyMessage),
+          operation: null
+        } satisfies MobileProjectChatMessageResponseDto;
+      }
+
       if (pendingScope && !resolvesPendingScope && isPendingEditNudgeMessage(parsed.data.message)) {
         const replyMessage = await createAssistantChatMessage({
           projectId: id,
           parentId: userMessage.id,
           content: pendingScopeRecoveryMessage(pendingScope),
           metadata: {
-            pendingEdit: { request: pendingScope.request, clarification: "scope" },
+            pendingEdit: pendingEditMetadataFromState(pendingScope),
+            ...(editProposalCardFromState(pendingScope)
+              ? { editProposal: editProposalCardFromState(pendingScope) }
+              : {}),
             recoveredPendingScope: pendingScope.scope,
             charged: false
           }
@@ -2606,18 +2632,28 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       const pages = chatPagesForProject(project);
       const stage = chatStageForProject(project.status, project.currentPlan);
       const routingTextModel = safeFastRoutingTextModel();
-      const intent = await classifyProjectChatMessage({
-        message: resolvedMessage,
-        stage,
-        pages,
-        chapters: chatChaptersForProject(project),
-        planSummary: project.currentPlan ? planSummaryForClassifier(project.currentPlan) : undefined,
-        recentMessages: activeMessages.slice(-12).map((message) => ({
-          role: message.role === "USER" ? "user" : "assistant",
-          content: message.content
-        })),
-        textModel: routingTextModel
-      });
+
+      // A pure confirmation of a priced proposal skips re-routing so the
+      // already-quoted credit cost and page targets stay authoritative.
+      const confirmedProposal =
+        confirmedPendingEdit && pendingScope?.intent
+          ? pendingScope
+          : null;
+      const intent = confirmedProposal?.intent
+        ? confirmedProposal.intent
+        : await classifyProjectChatMessage({
+            message: resolvedMessage,
+            stage,
+            pages,
+            chapters: chatChaptersForProject(project),
+            planSummary: project.currentPlan ? planSummaryForClassifier(project.currentPlan) : undefined,
+            recentMessages: activeMessages.slice(-12).map((message) => ({
+              role: message.role === "USER" ? "user" : "assistant",
+              content: message.content
+            })),
+            textModel: routingTextModel,
+            loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null
+          });
 
       // Answering questions and reading content are always allowed while a job
       // runs; edit requests get saved as the project's one pending edit and can
@@ -2644,7 +2680,8 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         userMessageId: userMessage.id,
         message: resolvedMessage,
         intent,
-        textModel: routingTextModel
+        textModel: routingTextModel,
+        executeProposal: Boolean(confirmedProposal)
       });
 
       return {
@@ -4362,10 +4399,23 @@ function shouldExposeChatOperation(
   return !planVersions.some((planVersion) => planVersion.createdAt > operation.createdAt);
 }
 
+type PendingEditClarification = "scope" | "busy" | "confirm";
+
+/** A saved edit waiting on scope, busy clearance, or an explicit Apply confirmation. */
+type PendingEditState = {
+  request: string;
+  scope: BookEditScope;
+  clarification: PendingEditClarification;
+  /** Present for priced proposals (`clarification: "confirm"`). */
+  intent?: BookEditIntent | undefined;
+  affectedPageIndexes?: number[] | undefined;
+  credits?: number | undefined;
+};
+
 async function findPendingScopeClarification(
   projectId: string,
   currentMessage: string
-): Promise<{ request: string; scope: BookEditScope; clarification: "scope" | "busy" } | null> {
+): Promise<PendingEditState | null> {
   const currentScope = bookEditScopeFromMessage(currentMessage);
   const messages = (await loadActiveProjectChatMessages(projectId)).reverse().slice(0, 24);
   for (let index = 0; index < messages.length; index += 1) {
@@ -4380,11 +4430,20 @@ async function findPendingScopeClarification(
     const metadata = jsonRecord(message.metadata);
     const pending = jsonRecord(metadata.pendingEdit);
     const request = typeof pending.request === "string" ? pending.request.trim() : "";
-    if ((pending.clarification === "scope" || pending.clarification === "busy") && request.length > 0) {
+    if (
+      (pending.clarification === "scope" ||
+        pending.clarification === "busy" ||
+        pending.clarification === "confirm") &&
+      request.length > 0
+    ) {
+      const proposal = pendingEditProposalFromMetadata(metadata, pending, request);
       return {
         request,
         scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index)),
-        clarification: pending.clarification
+        clarification: pending.clarification,
+        ...(proposal.intent ? { intent: proposal.intent } : {}),
+        ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
+        ...(proposal.credits !== undefined ? { credits: proposal.credits } : {})
       };
     }
     if (isScopeClarificationAssistantMessage(message.content)) {
@@ -4402,6 +4461,77 @@ async function findPendingScopeClarification(
     }
   }
   return null;
+}
+
+/** Rebuild a priced proposal from assistant metadata so "apply it" can skip re-routing. */
+function pendingEditProposalFromMetadata(
+  metadata: Record<string, unknown>,
+  pending: Record<string, unknown>,
+  request: string
+): Pick<PendingEditState, "intent" | "affectedPageIndexes" | "credits"> {
+  if (pending.clarification !== "confirm") {
+    return {};
+  }
+  const card = jsonRecord(metadata.editProposal);
+  const intentSource = jsonRecord(pending.intent);
+  const kind = typeof intentSource.kind === "string" ? intentSource.kind : typeof card.kind === "string" ? card.kind : "";
+  if (
+    !["local_patch", "page_rewrite", "chapter_regenerate", "book_replan"].includes(kind)
+  ) {
+    return {};
+  }
+  const affectedPageIndexes = Array.isArray(pending.affectedPageIndexes)
+    ? pending.affectedPageIndexes.filter((value): value is number => typeof value === "number" && Number.isInteger(value) && value > 0)
+    : Array.isArray(card.affectedPageIndexes)
+      ? card.affectedPageIndexes.filter((value): value is number => typeof value === "number" && Number.isInteger(value) && value > 0)
+      : [];
+  const creditsRaw = pending.credits ?? card.credits;
+  const credits = typeof creditsRaw === "number" && Number.isFinite(creditsRaw) ? Math.max(0, Math.round(creditsRaw)) : undefined;
+  const scope =
+    intentSource.scope === "explicit_pages" ||
+    intentSource.scope === "matching_pages" ||
+    intentSource.scope === "all_pages" ||
+    intentSource.scope === "none"
+      ? intentSource.scope
+      : affectedPageIndexes.length > 0
+        ? "explicit_pages"
+        : "none";
+  const impact =
+    intentSource.impact === "style_rewrite" || intentSource.impact === "structural_replan"
+      ? intentSource.impact
+      : kind === "book_replan"
+        ? "structural_replan"
+        : kind === "page_rewrite" || kind === "chapter_regenerate"
+          ? "style_rewrite"
+          : "small_text";
+  const intent: BookEditIntent = {
+    kind: kind as BookEditIntent["kind"],
+    confidence: typeof intentSource.confidence === "number" ? intentSource.confidence : 0.9,
+    reasoning: typeof intentSource.reasoning === "string" ? intentSource.reasoning : "Confirmed priced edit proposal.",
+    affectedPageIndexes,
+    assistantMessage:
+      typeof intentSource.assistantMessage === "string" && intentSource.assistantMessage.trim()
+        ? intentSource.assistantMessage
+        : request,
+    scope,
+    impact,
+    clarification: "none",
+    ...(typeof intentSource.affectedChapterIndex === "number"
+      ? { affectedChapterIndex: intentSource.affectedChapterIndex }
+      : typeof card.affectedChapterIndex === "number"
+        ? { affectedChapterIndex: card.affectedChapterIndex }
+        : {}),
+    ...(typeof intentSource.targetLanguage === "string"
+      ? { targetLanguage: intentSource.targetLanguage }
+      : typeof card.targetLanguage === "string"
+        ? { targetLanguage: card.targetLanguage }
+        : {})
+  };
+  return {
+    intent,
+    ...(affectedPageIndexes.length > 0 ? { affectedPageIndexes } : {}),
+    ...(credits !== undefined ? { credits } : {})
+  };
 }
 
 function scopeFromRecentUserMessages(messages: MobileProjectChatMessageRecord[]): BookEditScope {
@@ -4423,6 +4553,12 @@ function isPendingEditConfirmationMessage(message: string): boolean {
   );
 }
 
+function isPendingEditCancellationMessage(message: string): boolean {
+  return /^(?:no|nope|nah|cancel|never\s*mind|nevermind|don'?t|do not|stop|forget it|not now|discard)$/i.test(
+    normalizeShortFollowUpMessage(message)
+  );
+}
+
 function isPendingEditNudgeMessage(message: string): boolean {
   const normalized = normalizeShortFollowUpMessage(message);
   return isPendingEditConfirmationMessage(message) ||
@@ -4438,7 +4574,12 @@ function normalizeShortFollowUpMessage(message: string): string {
     .trim();
 }
 
-function pendingScopeRecoveryMessage(pending: { request: string; scope: BookEditScope }): string {
+function pendingScopeRecoveryMessage(pending: PendingEditState): string {
+  if (pending.clarification === "confirm") {
+    const credits =
+      typeof pending.credits === "number" ? ` It would use ${pending.credits} credits.` : "";
+    return `I still have that edit ready.${credits} Say “apply it” to run it, or “cancel” to drop it.`;
+  }
   if (pending.scope === "all_pages") {
     return `I still have your earlier edit: “${pending.request}”, and I saw that you want it for the whole book. Say “apply it” to start that edit, or send a new edit.`;
   }
@@ -4515,6 +4656,8 @@ async function handleProjectChatIntent(options: {
   message: string;
   intent: BookEditIntent;
   textModel?: TextModelAdapter | undefined;
+  /** When true, a previously priced proposal is executed immediately. */
+  executeProposal?: boolean | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   if (intent.kind === "answer" || intent.kind === "clarify") {
@@ -4570,7 +4713,179 @@ async function handleProjectChatIntent(options: {
     return { reply, operation: null };
   }
 
-  return queueChatBookEdit({ userId, project, userMessageId, message, intent });
+  if (options.executeProposal) {
+    return queueChatBookEdit({ userId, project, userMessageId, message, intent });
+  }
+  return proposeBookEdit({ project, userMessageId, message, intent });
+}
+
+/**
+ * Prices a charged book edit and asks the user to confirm before any credits
+ * are reserved. The proposal is stored in message metadata so “apply it” can
+ * execute it without re-routing.
+ */
+async function proposeBookEdit(options: {
+  project: ProjectForChat;
+  userMessageId: string;
+  message: string;
+  intent: BookEditIntent;
+}): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
+  const { project, userMessageId, message, intent } = options;
+  if (intent.kind === "book_replan") {
+    const cost = bookEditCreditCost(intent.kind, 0, project);
+    const proposalIntent = { ...intent, clarification: "none" as const };
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      parentId: userMessageId,
+      content: editProposalMessage(intent.kind, [], cost, intent),
+      metadata: {
+        intent: proposalIntent,
+        charged: false,
+        pendingEdit: pendingEditMetadataFromState({
+          request: message,
+          scope: intent.scope === "none" ? "all_pages" : intent.scope,
+          clarification: "confirm",
+          intent: proposalIntent,
+          affectedPageIndexes: [],
+          credits: cost
+        }),
+        editProposal: {
+          kind: intent.kind,
+          scope: intent.scope === "none" ? "all_pages" : intent.scope,
+          affectedPageIndexes: [],
+          ...(intent.affectedChapterIndex ? { affectedChapterIndex: intent.affectedChapterIndex } : {}),
+          ...(intent.targetLanguage ? { targetLanguage: intent.targetLanguage } : {}),
+          credits: cost,
+          summary: editProposalSummary(intent.kind, [], intent)
+        }
+      }
+    });
+    return { reply, operation: null };
+  }
+
+  const affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
+  if (affectedPageIndexes.length === 0) {
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      parentId: userMessageId,
+      content:
+        intent.kind === "chapter_regenerate"
+          ? `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book. Which chapter or pages should I rewrite?`.replace("  ", " ")
+          : "Which page or exact phrase should I edit?",
+      metadata: {
+        intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "scope" },
+        pendingEdit: { request: message, clarification: "scope" },
+        charged: false
+      }
+    });
+    return { reply, operation: null };
+  }
+
+  const cost = bookEditCreditCost(intent.kind, affectedPageIndexes.length, project);
+  const proposalIntent: BookEditIntent = {
+    ...intent,
+    affectedPageIndexes,
+    clarification: "none",
+    scope:
+      intent.scope === "all_pages" || intent.scope === "matching_pages"
+        ? intent.scope
+        : affectedPageIndexes.length > 0
+          ? "explicit_pages"
+          : intent.scope
+  };
+  const reply = await createAssistantChatMessage({
+    projectId: project.id,
+    parentId: userMessageId,
+    content: editProposalMessage(intent.kind, affectedPageIndexes, cost, proposalIntent),
+    metadata: {
+      intent: proposalIntent,
+      charged: false,
+      pendingEdit: pendingEditMetadataFromState({
+        request: message,
+        scope: proposalIntent.scope,
+        clarification: "confirm",
+        intent: proposalIntent,
+        affectedPageIndexes,
+        credits: cost
+      }),
+      editProposal: {
+        kind: intent.kind,
+        scope: proposalIntent.scope,
+        affectedPageIndexes,
+        ...(proposalIntent.affectedChapterIndex ? { affectedChapterIndex: proposalIntent.affectedChapterIndex } : {}),
+        ...(proposalIntent.targetLanguage ? { targetLanguage: proposalIntent.targetLanguage } : {}),
+        credits: cost,
+        summary: editProposalSummary(intent.kind, affectedPageIndexes, proposalIntent)
+      }
+    }
+  });
+  return { reply, operation: null };
+}
+
+function pendingEditMetadataFromState(state: PendingEditState): Record<string, unknown> {
+  return {
+    request: state.request,
+    clarification: state.clarification,
+    ...(state.intent ? { intent: state.intent } : {}),
+    ...(state.affectedPageIndexes ? { affectedPageIndexes: state.affectedPageIndexes } : {}),
+    ...(state.credits !== undefined ? { credits: state.credits } : {})
+  };
+}
+
+function editProposalCardFromState(state: PendingEditState): Record<string, unknown> | null {
+  if (!state.intent) {
+    return null;
+  }
+  return {
+    kind: state.intent.kind,
+    scope: state.intent.scope,
+    affectedPageIndexes: state.affectedPageIndexes ?? state.intent.affectedPageIndexes,
+    ...(state.intent.affectedChapterIndex ? { affectedChapterIndex: state.intent.affectedChapterIndex } : {}),
+    ...(state.intent.targetLanguage ? { targetLanguage: state.intent.targetLanguage } : {}),
+    ...(state.credits !== undefined ? { credits: state.credits } : {}),
+    summary: editProposalSummary(
+      state.intent.kind,
+      state.affectedPageIndexes ?? state.intent.affectedPageIndexes,
+      state.intent
+    )
+  };
+}
+
+function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexes: number[], intent: BookEditIntent): string {
+  if (kind === "book_replan") {
+    return intent.targetLanguage
+      ? `Create a new ${languageDisplayName(intent.targetLanguage)} copy and regenerate it`
+      : "Rebuild the plan and regenerate the book as a new copy";
+  }
+  if (kind === "chapter_regenerate") {
+    return intent.affectedChapterIndex
+      ? `Rewrite chapter ${intent.affectedChapterIndex}`
+      : "Rewrite that chapter";
+  }
+  if (intent.scope === "all_pages") {
+    return kind === "page_rewrite" ? "Rewrite the whole book" : "Edit the whole book";
+  }
+  if (affectedPageIndexes.length === 1) {
+    return kind === "page_rewrite"
+      ? `Rewrite page ${affectedPageIndexes[0]}`
+      : `Edit page ${affectedPageIndexes[0]}`;
+  }
+  if (affectedPageIndexes.length > 1) {
+    return kind === "page_rewrite"
+      ? `Rewrite pages ${affectedPageIndexes.join(", ")}`
+      : `Edit pages ${affectedPageIndexes.join(", ")}`;
+  }
+  return kind === "page_rewrite" ? "Rewrite matching pages" : "Edit matching pages";
+}
+
+function editProposalMessage(
+  kind: BookEditIntentKind,
+  affectedPageIndexes: number[],
+  credits: number,
+  intent: BookEditIntent
+): string {
+  const summary = editProposalSummary(kind, affectedPageIndexes, intent);
+  return `${summary}. This would use ${credits} credits. Say “apply it” to confirm, or “cancel” to drop it.`;
 }
 
 /** Per-attempt budget for the grounded-answer model call; overruns fall back to the intent's canned reply. */
