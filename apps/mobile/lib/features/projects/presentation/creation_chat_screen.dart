@@ -2608,11 +2608,20 @@ class _PlanFooter extends StatefulWidget {
 
 class _PlanFooterState extends State<_PlanFooter> {
   final _revisionFocus = FocusNode();
+  bool _questionMinimized = false;
 
   @override
   void initState() {
     super.initState();
     _revisionFocus.addListener(_onFocusChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlanFooter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.questionIndex != widget.questionIndex) {
+      _questionMinimized = false;
+    }
   }
 
   @override
@@ -2685,6 +2694,7 @@ class _PlanFooterState extends State<_PlanFooter> {
                   fit: FlexFit.loose,
                   child: _ScrollableFooterContext(
                     key: const ValueKey('plan-question-scroll'),
+                    showScrollAffordance: !_questionMinimized,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -2693,8 +2703,11 @@ class _PlanFooterState extends State<_PlanFooter> {
                           plan: plan,
                           questionIndex: widget.questionIndex,
                           collapsed: typingRevision,
+                          minimized: _questionMinimized,
                           keyboardOpen: keyboardOpen,
                           isBusy: widget.isBusy,
+                          onMinimizedChanged: (minimized) =>
+                              setState(() => _questionMinimized = minimized),
                           onSelect: widget.onSelectOption,
                           onSkip: widget.onSkip,
                         ),
@@ -2731,8 +2744,10 @@ class _PlanQuestionPanel extends StatefulWidget {
     required this.plan,
     required this.questionIndex,
     required this.collapsed,
+    required this.minimized,
     required this.keyboardOpen,
     required this.isBusy,
+    required this.onMinimizedChanged,
     required this.onSelect,
     required this.onSkip,
     super.key,
@@ -2744,8 +2759,10 @@ class _PlanQuestionPanel extends StatefulWidget {
   /// While typing a revision below, only the prompt shows so the composer
   /// stays visible above the keyboard.
   final bool collapsed;
+  final bool minimized;
   final bool keyboardOpen;
   final bool isBusy;
+  final ValueChanged<bool> onMinimizedChanged;
   final ValueChanged<String> onSelect;
   final VoidCallback onSkip;
 
@@ -2756,7 +2773,6 @@ class _PlanQuestionPanel extends StatefulWidget {
 class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
   final _customController = TextEditingController();
   bool _showCustomField = false;
-  bool _minimized = false;
 
   @override
   void dispose() {
@@ -2774,7 +2790,7 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
     final question = widget.plan.questions[widget.questionIndex];
     final total = widget.plan.questions.length;
     final colors = Theme.of(context).colorScheme;
-    final collapsed = widget.collapsed || _minimized;
+    final collapsed = widget.collapsed || widget.minimized;
     // While typing a custom answer, hide the option chips (via Visibility so
     // the field's slot doesn't shift and drop focus) to keep it visible
     // above the keyboard.
@@ -2794,16 +2810,18 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
               ),
             ),
             IconButton(
-              tooltip: _minimized ? 'Expand question' : 'Minimize question',
+              tooltip: widget.minimized
+                  ? 'Expand question'
+                  : 'Minimize question',
               constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               padding: EdgeInsets.zero,
               iconSize: 22,
               visualDensity: VisualDensity.compact,
               onPressed: widget.collapsed
                   ? null
-                  : () => setState(() => _minimized = !_minimized),
+                  : () => widget.onMinimizedChanged(!widget.minimized),
               icon: Icon(
-                _minimized
+                widget.minimized
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
               ),
@@ -2823,31 +2841,14 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
           const SizedBox(height: 8),
           Visibility(
             visible: !typingCustom,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final option in question.options)
-                  ActionChip(
-                    label: Text(option),
-                    onPressed: widget.isBusy
-                        ? null
-                        : () => widget.onSelect(option),
-                  ),
-                if (question.allowCustom && !_showCustomField)
-                  ActionChip(
-                    avatar: const Icon(Icons.edit_outlined, size: 16),
-                    label: const Text('Custom…'),
-                    onPressed: widget.isBusy
-                        ? null
-                        : () => setState(() => _showCustomField = true),
-                  ),
-                ActionChip(
-                  avatar: const Icon(Icons.skip_next_outlined, size: 18),
-                  label: const Text('Skip'),
-                  onPressed: widget.isBusy ? null : widget.onSkip,
-                ),
-              ],
+            child: _QuestionOptionList(
+              options: question.options,
+              enabled: !widget.isBusy,
+              onSelect: widget.onSelect,
+              onCustom: question.allowCustom && !_showCustomField
+                  ? () => setState(() => _showCustomField = true)
+                  : null,
+              onSkip: widget.onSkip,
             ),
           ),
         ],
@@ -4507,9 +4508,17 @@ class _TypingBubbleState extends State<_TypingBubble> {
 }
 
 class _ScrollableFooterContext extends StatefulWidget {
-  const _ScrollableFooterContext({required this.child, super.key});
+  const _ScrollableFooterContext({
+    required this.child,
+    this.showScrollAffordance = true,
+    super.key,
+  });
 
   final Widget child;
+
+  /// When false (e.g. question drawer minimized), hide the "Scroll for more"
+  /// cue even if the viewport could still scroll.
+  final bool showScrollAffordance;
 
   @override
   State<_ScrollableFooterContext> createState() =>
@@ -4581,7 +4590,7 @@ class _ScrollableFooterContextState extends State<_ScrollableFooterContext> {
             ),
           ),
         ),
-        if (_hasMoreBelow)
+        if (_hasMoreBelow && widget.showScrollAffordance)
           PositionedDirectional(
             start: 0,
             end: 12,
@@ -4650,7 +4659,7 @@ class _FooterLimiter extends StatelessWidget {
   }
 }
 
-class _ConversationFooter extends StatelessWidget {
+class _ConversationFooter extends StatefulWidget {
   const _ConversationFooter({
     required this.state,
     required this.keyboardOpen,
@@ -4676,10 +4685,28 @@ class _ConversationFooter extends StatelessWidget {
   final Future<void> Function() onBuild;
 
   @override
+  State<_ConversationFooter> createState() => _ConversationFooterState();
+}
+
+class _ConversationFooterState extends State<_ConversationFooter> {
+  bool _questionMinimized = false;
+
+  @override
+  void didUpdateWidget(covariant _ConversationFooter oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldPrompt = oldWidget.state.question?.prompt;
+    final newPrompt = widget.state.question?.prompt;
+    if (oldPrompt != newPrompt) {
+      _questionMinimized = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final question = state.question;
-    final disabled = state.isBusy;
+    final question = widget.state.question;
+    final disabled = widget.state.isBusy;
+    final keyboardOpen = widget.keyboardOpen;
 
     return Material(
       color: colors.surface,
@@ -4693,12 +4720,13 @@ class _ConversationFooter extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (question != null ||
-                  state.quickReplies.isNotEmpty ||
-                  state.pendingAttachments.isNotEmpty)
+                  widget.state.quickReplies.isNotEmpty ||
+                  widget.state.pendingAttachments.isNotEmpty)
                 Flexible(
                   fit: FlexFit.loose,
                   child: _ScrollableFooterContext(
                     key: const ValueKey('conversation-context-scroll'),
+                    showScrollAffordance: !_questionMinimized,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -4708,28 +4736,31 @@ class _ConversationFooter extends StatelessWidget {
                           _QuestionPanel(
                             question: question,
                             collapsed: keyboardOpen,
+                            minimized: _questionMinimized,
                             enabled: !disabled,
-                            onSelect: onAnswerOption,
+                            onMinimizedChanged: (minimized) =>
+                                setState(() => _questionMinimized = minimized),
+                            onSelect: widget.onAnswerOption,
                           )
-                        else if (state.quickReplies.isNotEmpty)
+                        else if (widget.state.quickReplies.isNotEmpty)
                           Visibility(
                             visible: !keyboardOpen,
                             child: _ChipRow(
-                              options: state.quickReplies,
+                              options: widget.state.quickReplies,
                               enabled: !disabled,
                               icon: Icons.bolt_outlined,
-                              onSelect: onQuickReply,
+                              onSelect: widget.onQuickReply,
                             ),
                           ),
                         if (question != null)
                           const SizedBox(height: 6)
-                        else if (state.quickReplies.isNotEmpty)
+                        else if (widget.state.quickReplies.isNotEmpty)
                           const SizedBox(height: 8),
-                        if (state.pendingAttachments.isNotEmpty) ...[
+                        if (widget.state.pendingAttachments.isNotEmpty) ...[
                           _PendingAttachmentsRow(
-                            attachments: state.pendingAttachments,
-                            onRetry: onRetryAttachment,
-                            onRemove: onRemoveAttachment,
+                            attachments: widget.state.pendingAttachments,
+                            onRetry: widget.onRetryAttachment,
+                            onRemove: widget.onRemoveAttachment,
                           ),
                           const SizedBox(height: 8),
                         ],
@@ -4738,21 +4769,22 @@ class _ConversationFooter extends StatelessWidget {
                   ),
                 ),
               _Composer(
-                controller: composerController,
+                controller: widget.composerController,
                 enabled: !disabled,
                 hasQuestion: question != null,
-                hasAttachments: state.pendingAttachments.isNotEmpty,
+                hasAttachments: widget.state.pendingAttachments.isNotEmpty,
                 canSendWithoutText:
-                    state.hasReadyAttachments && !state.hasUploadingAttachments,
-                waitingOnAttachments: state.hasUploadingAttachments,
-                onAttach: onAttach,
-                onSend: onSend,
+                    widget.state.hasReadyAttachments &&
+                    !widget.state.hasUploadingAttachments,
+                waitingOnAttachments: widget.state.hasUploadingAttachments,
+                onAttach: widget.onAttach,
+                onSend: widget.onSend,
               ),
               const SizedBox(height: 8),
               _BuildButton(
-                canBuild: state.canBuild,
-                building: state.building,
-                onBuild: onBuild,
+                canBuild: widget.state.canBuild,
+                building: widget.state.building,
+                onBuild: widget.onBuild,
               ),
             ],
           ),
@@ -4957,11 +4989,13 @@ class _PendingAttachmentChip extends ConsumerWidget {
   }
 }
 
-class _QuestionPanel extends StatefulWidget {
+class _QuestionPanel extends StatelessWidget {
   const _QuestionPanel({
     required this.question,
     required this.collapsed,
+    required this.minimized,
     required this.enabled,
+    required this.onMinimizedChanged,
     required this.onSelect,
   });
 
@@ -4970,27 +5004,14 @@ class _QuestionPanel extends StatefulWidget {
   /// While typing, only the prompt shows so the composer stays visible above
   /// the keyboard.
   final bool collapsed;
+  final bool minimized;
   final bool enabled;
+  final ValueChanged<bool> onMinimizedChanged;
   final ValueChanged<String> onSelect;
 
   @override
-  State<_QuestionPanel> createState() => _QuestionPanelState();
-}
-
-class _QuestionPanelState extends State<_QuestionPanel> {
-  bool _minimized = false;
-
-  @override
-  void didUpdateWidget(covariant _QuestionPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.question.prompt != widget.question.prompt) {
-      _minimized = false;
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final collapsed = widget.collapsed || _minimized;
+    final collapsed = this.collapsed || minimized;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -4999,7 +5020,7 @@ class _QuestionPanelState extends State<_QuestionPanel> {
           children: [
             Expanded(
               child: Text(
-                widget.question.prompt,
+                question.prompt,
                 maxLines: collapsed ? 2 : null,
                 overflow: collapsed ? TextOverflow.ellipsis : null,
                 style: Theme.of(
@@ -5008,16 +5029,16 @@ class _QuestionPanelState extends State<_QuestionPanel> {
               ),
             ),
             IconButton(
-              tooltip: _minimized ? 'Expand question' : 'Minimize question',
+              tooltip: minimized ? 'Expand question' : 'Minimize question',
               constraints: const BoxConstraints.tightFor(width: 36, height: 36),
               padding: EdgeInsets.zero,
               iconSize: 22,
               visualDensity: VisualDensity.compact,
-              onPressed: widget.collapsed
+              onPressed: this.collapsed
                   ? null
-                  : () => setState(() => _minimized = !_minimized),
+                  : () => onMinimizedChanged(!minimized),
               icon: Icon(
-                _minimized
+                minimized
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
               ),
@@ -5026,27 +5047,95 @@ class _QuestionPanelState extends State<_QuestionPanel> {
         ),
         if (!collapsed) ...[
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final option in widget.question.options)
-                ActionChip(
-                  label: Text(option),
-                  onPressed: widget.enabled
-                      ? () => widget.onSelect(option)
-                      : null,
-                ),
-              ActionChip(
-                avatar: const Icon(Icons.skip_next_outlined, size: 18),
-                label: const Text('Skip'),
-                onPressed: widget.enabled
-                    ? () => widget.onSelect('Skip this for now.')
-                    : null,
-              ),
-            ],
+          _QuestionOptionList(
+            options: question.options,
+            enabled: enabled,
+            onSelect: onSelect,
+            onSkip: () => onSelect('Skip this for now.'),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Numbered answer choices for the question drawer (not chips/badges).
+class _QuestionOptionList extends StatelessWidget {
+  const _QuestionOptionList({
+    required this.options,
+    required this.enabled,
+    required this.onSelect,
+    required this.onSkip,
+    this.onCustom,
+  });
+
+  final List<String> options;
+  final bool enabled;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onSkip;
+  final VoidCallback? onCustom;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < options.length; i++) ...[
+          if (i > 0) const SizedBox(height: 4),
+          Material(
+            color: colors.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: enabled ? () => onSelect(options[i]) : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 22,
+                      child: Text(
+                        '${i + 1}.',
+                        style: theme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: colors.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        options[i],
+                        style: theme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            if (onCustom != null)
+              TextButton.icon(
+                onPressed: enabled ? onCustom : null,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                label: const Text('Custom…'),
+              ),
+            TextButton.icon(
+              onPressed: enabled ? onSkip : null,
+              icon: const Icon(Icons.skip_next_outlined, size: 18),
+              label: const Text('Skip'),
+            ),
+          ],
+        ),
       ],
     );
   }

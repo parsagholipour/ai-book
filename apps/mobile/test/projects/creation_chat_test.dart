@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -526,6 +527,40 @@ void main() {
     },
   );
 
+  testWidgets('long question options wrap instead of fading away', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final creation = _ScriptedCreationRepository();
+    final projects = _PlanProjectsRepository(
+      project: _plannedProject(plan: _longQuestionPlan()),
+    );
+    await tester.pumpWidget(_app(creation: creation, projects: projects));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    const longOption =
+        'Busy solo teachers launching their first live course';
+    final optionText = find.text(longOption);
+    expect(optionText, findsOneWidget);
+    expect(find.text('1.'), findsOneWidget);
+    expect(find.text('2.'), findsOneWidget);
+    final paragraph = tester.renderObject<RenderParagraph>(optionText);
+    expect(paragraph.softWrap, isTrue);
+    expect(paragraph.size.height, greaterThan(20));
+    expect(tester.getSize(optionText).width, lessThan(360));
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('plan questions scroll separately from revision controls', (
     tester,
   ) async {
@@ -579,6 +614,14 @@ void main() {
       find.descendant(of: questionScroll, matching: approveButton),
       findsNothing,
     );
+
+    await tester.tap(find.byTooltip('Minimize question'));
+    await tester.pump();
+    expect(find.text('Scroll for more'), findsNothing);
+
+    await tester.tap(find.byTooltip('Expand question'));
+    await tester.pumpAndSettle();
+    expect(find.text('Scroll for more'), findsOneWidget);
 
     await tester.drag(questionScroll, const Offset(0, -1000));
     await tester.pumpAndSettle();
@@ -1750,14 +1793,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byTooltip('Minimize question'), findsOneWidget);
-    expect(find.widgetWithText(ActionChip, 'New managers'), findsOneWidget);
+    expect(find.text('New managers'), findsOneWidget);
+    expect(find.text('1.'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Minimize question'));
     await tester.pump();
 
     expect(find.text('Who is this book for?'), findsOneWidget);
-    expect(find.widgetWithText(ActionChip, 'New managers'), findsNothing);
+    expect(find.text('New managers'), findsNothing);
+    expect(find.text('1.'), findsNothing);
     expect(find.byTooltip('Expand question'), findsOneWidget);
+    expect(find.text('Scroll for more'), findsNothing);
     final promptRect = tester.getRect(find.text('Who is this book for?'));
     final expandButtonRect = tester.getRect(find.byTooltip('Expand question'));
     final composerRect = tester.getRect(find.byType(TextField).last);
@@ -1770,7 +1816,8 @@ void main() {
     await tester.tap(find.byTooltip('Expand question'));
     await tester.pump();
 
-    expect(find.widgetWithText(ActionChip, 'New managers'), findsOneWidget);
+    expect(find.text('New managers'), findsOneWidget);
+    expect(find.text('1.'), findsOneWidget);
     expect(find.byTooltip('Minimize question'), findsOneWidget);
 
     await tester.teardownScreen();
@@ -1821,10 +1868,11 @@ void main() {
       addTearDown(tester.view.resetViewInsets);
       await tester.pumpAndSettle();
 
-      // The prompt stays readable, the option chips collapse, and the
+      // The prompt stays readable, the options collapse, and the
       // composer sits above the keyboard instead of being pushed off screen.
       expect(find.text('Who is this book for?'), findsOneWidget);
-      expect(find.byType(ActionChip), findsNothing);
+      expect(find.text('New managers'), findsNothing);
+      expect(find.text('1.'), findsNothing);
       expect(buildButton, findsOneWidget);
       // Collapsing must not rebuild the composer's element: that would drop
       // focus and dismiss the keyboard the user just opened.
