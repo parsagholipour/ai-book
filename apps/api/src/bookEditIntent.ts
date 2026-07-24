@@ -73,41 +73,59 @@ export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
 
 /**
  * Actions the router may pick, scoped to the project stage so the model never
- * sees (or picks) actions that cannot run right now. normalizeIntentForStage
- * remains the server-side guard in case a fallback path produces an
- * out-of-stage kind.
+ * sees (or picks) actions that cannot run right now. Charged book edits go
+ * through propose_edit; the server maps that to a priced intent kind.
  */
-const routeKindsByStage: Record<Exclude<BookEditProjectStage, "other">, [BookEditIntentKind, ...BookEditIntentKind[]]> = {
+const decideActionsByStage: Record<
+  Exclude<BookEditProjectStage, "other">,
+  [DecideAction, ...DecideAction[]]
+> = {
   plan_ready: ["answer", "clarify", "plan_revision", "show_content"],
   approved_plan: ["answer", "clarify", "plan_revision", "show_content"],
-  complete: [
-    "answer",
-    "clarify",
-    "local_patch",
-    "page_rewrite",
-    "chapter_regenerate",
-    "undo_last_edit",
-    "show_content",
-    "book_replan"
-  ]
+  complete: ["answer", "clarify", "show_content", "undo_last_edit", "propose_edit"]
 };
 
-function routeMessageSchema(kinds: [BookEditIntentKind, ...BookEditIntentKind[]]) {
+export type DecideAction =
+  | "answer"
+  | "clarify"
+  | "show_content"
+  | "undo_last_edit"
+  | "plan_revision"
+  | "propose_edit";
+
+export type ProposeEditTarget =
+  | "pages"
+  | "matching"
+  | "whole_book"
+  | "chapter"
+  | "structural"
+  | "language_copy";
+
+export type ProposeEditStyle = "exact_replace" | "rewrite";
+
+function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
   return z
     .object({
-      kind: z.enum(kinds),
+      action: z.enum(actions),
       confidence: z.number().min(0).max(1),
       reasoning: z.string().trim().min(1).max(600),
-      affectedPageIndexes: z.array(z.number().int().positive()).max(100).default([]),
       assistantMessage: z.string().trim().min(1).max(1200),
-      scope: z.enum(["none", "explicit_pages", "matching_pages", "all_pages"]).default("none"),
-      impact: z.enum(["small_text", "style_rewrite", "structural_replan"]).default("small_text"),
       clarification: z.enum(["none", "scope"]).default("none"),
-      affectedChapterIndex: z.number().int().positive().nullable().default(null),
-      targetLanguage: z.string().trim().min(2).max(40).nullable().default(null)
+      /** Required when action is propose_edit. */
+      editTarget: z
+        .enum(["pages", "matching", "whole_book", "chapter", "structural", "language_copy"])
+        .optional(),
+      editStyle: z.enum(["exact_replace", "rewrite"]).optional(),
+      pageIndexes: z.array(z.number().int().positive()).max(100).default([]),
+      chapterIndex: z.number().int().positive().nullable().default(null),
+      targetLanguage: z.string().trim().min(2).max(40).nullable().default(null),
+      replacementFrom: z.string().trim().min(1).max(500).optional(),
+      replacementTo: z.string().trim().min(1).max(500).optional()
     })
     .strict();
 }
+
+type DecideActionPayload = z.infer<ReturnType<typeof decideActionSchema>>;
 
 export const CLASSIFIER_PAGE_SAMPLE_CAP = 120;
 
@@ -181,19 +199,18 @@ export async function classifyProjectChatMessage(options: {
   const message = options.message.trim();
   const chapters = options.chapters ?? [];
   const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters);
-  // Read/undo/chapter intents are detected deterministically with high
-  // precision; skip the model round-trip for them.
-  if (
-    heuristic.kind === "show_content" ||
-    heuristic.kind === "undo_last_edit" ||
-    heuristic.kind === "chapter_regenerate" ||
-    (heuristic.kind === "book_replan" && !!heuristic.targetLanguage)
-  ) {
+  // Only ultra-high-precision read/undo shortcuts skip the model; everything
+  // else (including chapter regen and language copies) goes through the tool agent.
+  if (heuristic.kind === "show_content" || heuristic.kind === "undo_last_edit") {
     return normalizeIntentForStage(heuristic, options.stage);
   }
   const textModel = options.textModel;
   if (!textModel || options.stage === "other") {
-    return normalizeIntentForStage(heuristic, options.stage);
+    // Without a router model, fall back to the richer English heuristic tree.
+    return normalizeIntentForStage(
+      classifyWithDegradedHeuristics(message, options.stage, options.pages, options.planSummary, chapters),
+      options.stage
+    );
   }
   const stage = options.stage;
 
@@ -211,7 +228,10 @@ export async function classifyProjectChatMessage(options: {
     });
     return normalizeIntentForStage(withDeterministicContentTarget(routed, message), stage);
   } catch {
-    return normalizeIntentForStage(heuristic, options.stage);
+    return normalizeIntentForStage(
+      classifyWithDegradedHeuristics(message, options.stage, options.pages, options.planSummary, chapters),
+      options.stage
+    );
   }
 }
 
@@ -234,12 +254,11 @@ type RouteAgentOptions = {
 
 /**
  * The routing agent: the model may inspect actual page prose with read_page
- * before committing to a decision with the route_message finish tool, so
- * "remove the part where the fox lies" can be routed to the right pages
- * instead of guessed from titles and summaries alone.
+ * before committing via decide. Charged edits use action propose_edit so the
+ * server — not the model — picks the pricing tier from the edit target/style.
  */
 async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditIntent> {
-  const kinds = routeKindsByStage[options.stage];
+  const actions = decideActionsByStage[options.stage];
   const canReadPages = options.pages.length > 0;
   const tools = canReadPages ? [readPageTool(options)] : [];
   const pageSample = classifierPageSample(options.pages, options.message);
@@ -252,15 +271,11 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
     maxModelCalls: ROUTER_MAX_MODEL_CALLS,
     tools,
     finishTool: {
-      name: "route_message",
+      name: "decide",
       description:
-        "Commit the final routing decision for the user's message. Call it exactly once, after any page reads.",
-      parameters: routeMessageSchema(kinds)
+        "Commit the final decision for the user's message. For any charged book change, use action propose_edit (never invent a pricing tier). Call exactly once after any page reads.",
+      parameters: decideActionSchema(actions)
     },
-    // Transient network failures get one quick retry per model call; an
-    // exhausted time budget does not (TimeBudgetExceededError never matches
-    // the network matcher), so the worst case stays bounded before the
-    // heuristic fallback in classifyProjectChatMessage.
     onModelCall: (invoke) =>
       withRecoverableNetworkRetry(
         () => withTimeout(invoke(), CLASSIFIER_CALL_BUDGET_MS, "Edit-intent router"),
@@ -302,7 +317,157 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
   if (result.status !== "finished" || !result.finish) {
     throw new Error("Edit-intent router did not produce a routing decision.");
   }
-  return result.finish;
+  return intentFromDecideAction(result.finish, options.message, options.chapters);
+}
+
+/**
+ * Maps the model's decide/propose_edit payload onto an internal BookEditIntent.
+ * Pricing tiers (local_patch vs page_rewrite vs book_replan) are derived here
+ * from editTarget + editStyle, never guessed as free-form kind labels.
+ */
+export function intentFromDecideAction(
+  decision: DecideActionPayload,
+  message: string,
+  chapters: BookEditChapterContext[] = []
+): BookEditIntent {
+  if (decision.action === "propose_edit") {
+    return intentFromProposeEdit(decision, message, chapters);
+  }
+  if (decision.action === "show_content") {
+    return {
+      kind: "show_content",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: [],
+      assistantMessage: decision.assistantMessage,
+      scope: "none",
+      impact: "small_text",
+      clarification: "none",
+      contentTarget: showContentTargetFromMessage(message) ?? { type: "outline" }
+    };
+  }
+  if (decision.action === "undo_last_edit") {
+    return {
+      kind: "undo_last_edit",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: [],
+      assistantMessage: decision.assistantMessage,
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    };
+  }
+  if (decision.action === "plan_revision") {
+    return {
+      kind: "plan_revision",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: [],
+      assistantMessage: decision.assistantMessage,
+      scope: "none",
+      impact: "small_text",
+      clarification: "none",
+      ...(decision.targetLanguage ? { targetLanguage: decision.targetLanguage } : {})
+    };
+  }
+  if (decision.action === "clarify") {
+    return {
+      kind: "clarify",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: decision.pageIndexes ?? [],
+      assistantMessage: decision.assistantMessage,
+      scope: "none",
+      impact: "small_text",
+      clarification: decision.clarification === "scope" ? "scope" : "scope"
+    };
+  }
+  return {
+    kind: "answer",
+    confidence: decision.confidence,
+    reasoning: decision.reasoning,
+    affectedPageIndexes: [],
+    assistantMessage: decision.assistantMessage,
+    scope: "none",
+    impact: "small_text",
+    clarification: "none"
+  };
+}
+
+export function intentFromProposeEdit(
+  decision: DecideActionPayload,
+  message: string,
+  chapters: BookEditChapterContext[] = []
+): BookEditIntent {
+  const target = decision.editTarget ?? "pages";
+  const style = decision.editStyle ?? (decision.replacementFrom ? "exact_replace" : "rewrite");
+  const pageIndexes = [...new Set(decision.pageIndexes ?? [])].sort((a, b) => a - b);
+  const chapterIndex = decision.chapterIndex ?? chapterRegenerateFromMessage(message);
+  const targetLanguage =
+    decision.targetLanguage ?? (target === "language_copy" ? targetLanguageFromLanguageVersionRequest(message) : null);
+
+  if (target === "language_copy" || target === "structural") {
+    return {
+      kind: "book_replan",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: [],
+      assistantMessage: decision.assistantMessage,
+      scope: "all_pages",
+      impact: "structural_replan",
+      clarification: "none",
+      ...(targetLanguage ? { targetLanguage } : {})
+    };
+  }
+
+  if (target === "chapter") {
+    const chapter = chapterIndex ? chapters.find((candidate) => candidate.index === chapterIndex) : undefined;
+    return {
+      kind: "chapter_regenerate",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: chapter?.pageIndexes ?? pageIndexes,
+      assistantMessage: decision.assistantMessage,
+      scope: "explicit_pages",
+      impact: "style_rewrite",
+      clarification: chapterIndex ? "none" : "scope",
+      affectedChapterIndex: chapterIndex
+    };
+  }
+
+  const scope: BookEditScope =
+    target === "whole_book"
+      ? "all_pages"
+      : target === "matching"
+        ? "matching_pages"
+        : pageIndexes.length > 0
+          ? "explicit_pages"
+          : "none";
+
+  if (style === "exact_replace") {
+    return {
+      kind: scope === "none" ? "clarify" : "local_patch",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: pageIndexes,
+      assistantMessage: decision.assistantMessage,
+      scope,
+      impact: "small_text",
+      clarification: scope === "none" ? "scope" : "none"
+    };
+  }
+
+  return {
+    kind: scope === "none" ? "clarify" : "page_rewrite",
+    confidence: decision.confidence,
+    reasoning: decision.reasoning,
+    affectedPageIndexes: pageIndexes,
+    assistantMessage: decision.assistantMessage,
+    scope,
+    impact: "style_rewrite",
+    clarification: scope === "none" ? "scope" : "none"
+  };
 }
 
 function readPageTool(options: RouteAgentOptions): ToolLoopTool<{ index: number }> {
@@ -330,38 +495,33 @@ function readPageTool(options: RouteAgentOptions): ToolLoopTool<{ index: number 
 
 function routerSystemPrompt(stage: Exclude<BookEditProjectStage, "other">, canReadPages: boolean): string {
   const common = [
-    "You route each user chat message in an AI book-making app to exactly one action.",
-    "You must decide by calling the route_message tool; never answer in plain text.",
+    "You decide what to do with each user chat message in an AI book-making app.",
+    "You must finish by calling the decide tool; never answer in plain text.",
     ...(canReadPages
       ? [
-          "When the page titles and summaries cannot tell which pages contain what the user mentions, call read_page on the most likely pages (at most two) before routing."
+          "When the page titles and summaries cannot tell which pages contain what the user mentions, call read_page on the most likely pages (at most two) before deciding."
         ]
       : []),
-    "Use kind answer for general questions that should not change anything.",
+    "Use action answer for general questions that should not change anything.",
     "Messages that express dislike, discomfort, or a preference about existing content (for example: I don't like X, X should be Y, this feels too Z, too much X) are change requests, never answer.",
-    "Use kind clarify when the user wants a change but the target or scope is still unclear.",
-    "Use kind show_content when the user wants to read or see the outline, plan, table of contents, a chapter, or a page without changing it."
+    "Use action clarify when the user wants a change but the target or scope is still unclear.",
+    "Use action show_content when the user wants to read or see the outline, plan, table of contents, a chapter, or a page without changing it."
   ];
   const stageRules =
     stage === "complete"
       ? [
-          "Route content-preference changes to page_rewrite and set affectedPageIndexes to the pages whose text involves that content; use book_replan instead when the preference changes the premise, characters, audience, ending, or structure.",
-          "Use kind undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
-          "Use kind local_patch for exact replacements, renames, typos, grammar, and small wording edits.",
-          "Use kind page_rewrite for same-structure page or whole-book style/content rewrites.",
-          "Use kind chapter_regenerate when the user asks to rewrite, regenerate, or redo one specific chapter, and set affectedChapterIndex to that chapter number.",
-          "Use kind book_replan for main character, species, title, premise, audience, ending, chapter-structure, length, visual identity, or structure changes on this finished book.",
-          "Use kind book_replan with targetLanguage when the user asks for a generated, rewritten, translated, or new language version/copy of this finished book.",
-          "Use scope all_pages for whole book, all pages, every page, everywhere, globally, throughout, or across the book.",
-          "Use scope matching_pages for exact replacements when matching pages should be found from the existing text.",
-          "Use affectedPageIndexes only when the target pages are explicit, strongly inferable, or confirmed by read_page."
+          "Use action undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
+          "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (premise/character/audience/ending/structure/visual identity), or language_copy (new language version).",
+          "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
+          "Set pageIndexes or chapterIndex when known. Set targetLanguage for language_copy.",
+          "Never invent credit prices or internal pricing tiers; the server prices propose_edit."
         ]
       : [
-          "This project is in plan review, so route every change request as plan_revision: content changes, planning preferences, media choices (no images, no covers, skip visuals, disable illustrations, turn off images), and structure requests (move the ending earlier, reorder chapters, restructure the outline).",
+          "This project is in plan review, so route every change request as plan_revision: content changes, planning preferences, media choices (no images, no covers, skip visuals), and structure requests.",
           "Use plan_revision with targetLanguage when the user asks to change the book's language."
         ];
   const closing = [
-    "For change intents, write assistantMessage as a short confirmation of the specific change that will be made.",
+    "For change actions, write assistantMessage as a short confirmation of the specific change that will be proposed or made.",
     "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
     "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
     "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."
@@ -446,14 +606,89 @@ export function pageIndexesMatchingSubject(subject: string, pages: BookEditPageC
     .sort((a, b) => a - b);
 }
 
-/** Dislike subjects that change the book's identity and need a replan rather than a page rewrite. */
-function isIdentityChangeSubject(subject: string): boolean {
-  return /\b(?:main\s+characters?|protagonists?|hero(?:es)?|species|titles?|premise|audience|endings?|structure|outline|covers?|visual\s+identity|illustration\s+style)\b/i.test(
-    subject
+/**
+ * High-precision shortcuts only. Charged edit routing belongs to the tool agent;
+ * this path is for show/undo short-circuits and degraded fallbacks when the model
+ * is unavailable.
+ */
+export function classifyWithHeuristics(
+  message: string,
+  stage: BookEditProjectStage,
+  pages: BookEditPageContext[],
+  planSummary?: string | undefined,
+  _chapters: BookEditChapterContext[] = []
+): BookEditIntent {
+  const isPlanStage = stage === "plan_ready" || stage === "approved_plan";
+  const asksQuestion = /\?$|^(what|why|how|can you explain|tell me|summari[sz]e|where|when)\b/i.test(message.trim());
+  const contentTarget = showContentTargetFromMessage(message);
+
+  if (contentTarget && !hasEditVerbBeyondShow(message)) {
+    return {
+      kind: "show_content",
+      confidence: 0.9,
+      reasoning: "The user wants to read book content, not change it.",
+      affectedPageIndexes: contentTarget.type === "page" ? [contentTarget.index] : [],
+      assistantMessage: showContentAcknowledgement(contentTarget),
+      scope: "none",
+      impact: "small_text",
+      clarification: "none",
+      contentTarget
+    };
+  }
+
+  if (isUndoRequestMessage(message)) {
+    return {
+      kind: "undo_last_edit",
+      confidence: 0.9,
+      reasoning: "The user asked to undo the most recent edit.",
+      affectedPageIndexes: [],
+      assistantMessage: "I’ll undo the last edit and restore the previous version of those pages.",
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    };
+  }
+
+  if (asksQuestion || !looksLikeChangeRequest(message)) {
+    return {
+      kind: "answer",
+      confidence: 0.78,
+      reasoning: "The message reads as a question or general chat, not a change request.",
+      affectedPageIndexes: [],
+      assistantMessage: isPlanStage ? answerPlanQuestion(message, planSummary) : answerMessage(message, pages),
+      scope: "none",
+      impact: "small_text",
+      clarification: "none"
+    };
+  }
+
+  // Degraded fallback: never invent a charged edit kind from English regex trees.
+  return {
+    kind: "clarify",
+    confidence: 0.45,
+    reasoning: "Heuristic fallback cannot safely price or target this change without the router.",
+    affectedPageIndexes: [],
+    assistantMessage: isPlanStage
+      ? "I can revise the plan — tell me what to change."
+      : "Should I edit a specific page, matching phrase, or the whole book?",
+    scope: "none",
+    impact: "small_text",
+    clarification: "scope"
+  };
+}
+
+function looksLikeChangeRequest(message: string): boolean {
+  return (
+    dislikePreferenceFromMessage(message) !== null ||
+    targetLanguageFromLanguageVersionRequest(message) !== null ||
+    /\b(change|edit|rewrite|revise|fix|replace|rename|swap|switch|remove|delete|add|insert|update|make|turn|shorten|expand|polish|regenerate|move|reorder|restructure|redo|rework|want|prefer)\b/i.test(
+      message
+    ) ||
+    /\b(?:no|without|skip)\s+(?:images?|covers?|illustrations?|visuals?)\b/i.test(message)
   );
 }
 
-export function classifyWithHeuristics(
+function classifyWithDegradedHeuristics(
   message: string,
   stage: BookEditProjectStage,
   pages: BookEditPageContext[],
@@ -786,6 +1021,30 @@ export function classifyWithHeuristics(
   };
 }
 
+function isIdentityChangeSubject(subject: string): boolean {
+  return /\b(?:main\s+characters?|protagonists?|hero(?:es)?|species|titles?|premise|audience|endings?|structure|outline|covers?|visual\s+identity|illustration\s+style)\b/i.test(
+    subject
+  );
+}
+
+function pageIndexesMatchingText(text: string, pages: BookEditPageContext[]): number[] {
+  const needle = text.toLowerCase();
+  if (!needle) {
+    return [];
+  }
+  return pages
+    .filter((page) =>
+      [page.title, page.summary, page.previewText].some((value) => value.toLowerCase().includes(needle))
+    )
+    .map((page) => page.index)
+    .sort((a, b) => a - b);
+}
+
+function formatPageList(indexes: number[]): string {
+  return indexes.length === 1 ? String(indexes[0]) : indexes.join(", ");
+}
+
+
 function normalizeIntentForStage(intent: BookEditIntent, stage: BookEditProjectStage): BookEditIntent {
   const bounded: BookEditIntent = {
     ...intent,
@@ -1002,6 +1261,15 @@ export function replacementTermsFromMessage(message: string): BookEditReplacemen
   return cleanReplacement({ from: match[1]!, to: match[2]! });
 }
 
+function cleanReplacement(replacement: BookEditReplacement): BookEditReplacement | null {
+  const from = cleanReplacementTerm(replacement.from);
+  const to = cleanReplacementTerm(replacement.to);
+  if (!from || !to || editAttributeTerms.has(from.toLowerCase())) {
+    return null;
+  }
+  return { from, to };
+}
+
 export function bookEditScopeFromMessage(message: string): BookEditScope {
   return hasAllPagesScope(message) ? "all_pages" : "none";
 }
@@ -1040,28 +1308,6 @@ function normalizeScopeOnlyText(message: string): string {
     .replace(/^(?:i\s+(?:said|mean|meant|told\s+you)\s+|just\s+|please\s+|do\s+|make\s+it\s+|the\s+)/i, "")
     .replace(/\s+please$/i, "")
     .trim();
-}
-
-function pageIndexesMatchingText(text: string, pages: BookEditPageContext[]): number[] {
-  const needle = text.toLowerCase();
-  if (!needle) {
-    return [];
-  }
-  return pages
-    .filter((page) =>
-      [page.title, page.summary, page.previewText].some((value) => value.toLowerCase().includes(needle))
-    )
-    .map((page) => page.index)
-    .sort((a, b) => a - b);
-}
-
-function cleanReplacement(replacement: BookEditReplacement): BookEditReplacement | null {
-  const from = cleanReplacementTerm(replacement.from);
-  const to = cleanReplacementTerm(replacement.to);
-  if (!from || !to || editAttributeTerms.has(from.toLowerCase())) {
-    return null;
-  }
-  return { from, to };
 }
 
 function cleanReplacementTerm(value: string): string {
@@ -1106,8 +1352,4 @@ function answerMessage(message: string, pages: BookEditPageContext[]): string {
     return pageLines || "There are no generated pages to summarize yet.";
   }
   return "I can answer questions about the latest book or edit it if you ask for a specific change.";
-}
-
-function formatPageList(indexes: number[]): string {
-  return indexes.length === 1 ? String(indexes[0]) : indexes.join(", ");
 }

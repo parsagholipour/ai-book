@@ -53,6 +53,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   String? _historyNextCursor;
   bool? _historyHasMore;
   String? _retryingOperationId;
+  bool _undoing = false;
   int _requestSequence = 0;
   _PendingEcho? _pendingEcho;
   final List<MobileProjectChatMessage> _olderMessages = [];
@@ -124,7 +125,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                         in chat.operations
                             .where(
                               (operation) =>
-                                  operation.isRunning || operation.isFailed,
+                                  operation.isRunning ||
+                                  operation.isFailed ||
+                                  operation.canUndo,
                             )
                             .take(3))
                       Padding(
@@ -132,8 +135,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                         child: _OperationBubble(
                           operation: operation,
                           retrying: _retryingOperationId == operation.id,
+                          undoing: _undoing,
                           onRetry: operation.isFailed
                               ? () => _retryOperation(operation)
+                              : null,
+                          onUndo: operation.canUndo
+                              ? () => unawaited(_undoLastEdit())
                               : null,
                           onViewPlan: operation.isPlanRevision
                               ? () => context.push(
@@ -172,8 +179,16 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                               : () => context.push(
                                   '/projects/${_replanCopyTargetProjectId(message)}/chat',
                                 ),
-                          onApplyProposal: () => unawaited(_sendMessage('apply it')),
-                          onCancelProposal: () => unawaited(_sendMessage('cancel')),
+                          onApplyProposal: message.editProposal == null
+                              ? null
+                              : () => unawaited(
+                                  _applyProposal(message.editProposal!.id),
+                                ),
+                          onCancelProposal: message.editProposal == null
+                              ? null
+                              : () => unawaited(
+                                  _cancelProposal(message.editProposal!.id),
+                                ),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -474,6 +489,91 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     }
   }
 
+  Future<void> _applyProposal(String proposalId) async {
+    if (_sending) return;
+    if (proposalId.isEmpty) {
+      await _sendMessage('apply it');
+      return;
+    }
+    final requestId = _newRequestId('proposal-apply');
+    setState(() => _sending = true);
+    try {
+      final result = await ref
+          .read(projectsRepositoryProvider)
+          .applyEditProposal(
+            projectId: widget.projectId,
+            proposalId: proposalId,
+            requestId: requestId,
+          );
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ref.invalidate(projectChatProvider(widget.projectId));
+      ref.invalidate(billingProvider);
+      if (result.operation != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.operation!.displayAction)),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _cancelProposal(String proposalId) async {
+    if (_sending) return;
+    if (proposalId.isEmpty) {
+      await _sendMessage('cancel');
+      return;
+    }
+    final requestId = _newRequestId('proposal-cancel');
+    setState(() => _sending = true);
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .cancelEditProposal(
+            projectId: widget.projectId,
+            proposalId: proposalId,
+            requestId: requestId,
+          );
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ref.invalidate(projectChatProvider(widget.projectId));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _sending = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _undoLastEdit() async {
+    if (_undoing || _sending) return;
+    final requestId = _newRequestId('undo');
+    setState(() => _undoing = true);
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .undoLastBookEdit(
+            projectId: widget.projectId,
+            requestId: requestId,
+          );
+      if (!mounted) return;
+      setState(() => _undoing = false);
+      _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _undoing = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
   Future<void> _openPaywall(MobileProjectDetail? project) async {
     await showBillingPaywall(
       context,
@@ -606,13 +706,17 @@ class _OperationBubble extends StatelessWidget {
   const _OperationBubble({
     required this.operation,
     required this.retrying,
+    this.undoing = false,
     this.onRetry,
+    this.onUndo,
     this.onViewPlan,
   });
 
   final MobileBookEditOperation operation;
   final bool retrying;
+  final bool undoing;
   final VoidCallback? onRetry;
+  final VoidCallback? onUndo;
   final VoidCallback? onViewPlan;
 
   @override
@@ -620,6 +724,7 @@ class _OperationBubble extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final waitingForRetry = operation.isAutomaticRetryPending;
     final failed = operation.isFailed && !waitingForRetry;
+    final applied = operation.isApplied && !failed;
     return Card(
       color: failed ? colors.errorContainer : colors.secondaryContainer,
       child: Padding(
@@ -631,6 +736,8 @@ class _OperationBubble extends StatelessWidget {
               children: [
                 if (failed)
                   Icon(Icons.error_outline, color: colors.onErrorContainer)
+                else if (applied)
+                  Icon(Icons.check_circle_outline, color: colors.primary)
                 else
                   const SizedBox.square(
                     dimension: 18,
@@ -648,7 +755,7 @@ class _OperationBubble extends StatelessWidget {
                   Text('${operation.creditsCharged} credits'),
               ],
             ),
-            if (failed) ...[
+            if (failed || onUndo != null) ...[
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -673,6 +780,17 @@ class _OperationBubble extends StatelessWidget {
                                   : 'Retry update'
                             : 'Edit request',
                       ),
+                    ),
+                  if (onUndo != null)
+                    TextButton.icon(
+                      onPressed: undoing ? null : onUndo,
+                      icon: undoing
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.undo),
+                      label: const Text('Undo'),
                     ),
                   if (onViewPlan != null)
                     TextButton.icon(

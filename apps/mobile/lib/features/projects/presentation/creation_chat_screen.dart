@@ -332,18 +332,25 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                             ),
                             onApplyEditProposal: activeProjectId == null
                                 ? null
-                                : () => unawaited(
-                                    _sendProjectMessage(
+                                : (proposalId) => unawaited(
+                                    _applyProjectEditProposal(
                                       projectId: activeProjectId,
-                                      message: 'apply it',
+                                      proposalId: proposalId,
                                     ),
                                   ),
                             onCancelEditProposal: activeProjectId == null
                                 ? null
-                                : () => unawaited(
-                                    _sendProjectMessage(
+                                : (proposalId) => unawaited(
+                                    _cancelProjectEditProposal(
                                       projectId: activeProjectId,
-                                      message: 'cancel',
+                                      proposalId: proposalId,
+                                    ),
+                                  ),
+                            onUndoProjectEdit: activeProjectId == null
+                                ? null
+                                : () => unawaited(
+                                    _undoProjectEdit(
+                                      projectId: activeProjectId,
                                     ),
                                   ),
                             onRetryFailedMessage: (localId) => unawaited(
@@ -1044,6 +1051,97 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     }
   }
 
+  Future<void> _applyProjectEditProposal({
+    required String projectId,
+    required String proposalId,
+  }) async {
+    if (_projectChatSending) return;
+    if (proposalId.isEmpty) {
+      await _sendProjectMessage(projectId: projectId, message: 'apply it');
+      return;
+    }
+    final requestId =
+        'project-proposal-apply-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() => _projectChatSending = true);
+    try {
+      final result = await ref
+          .read(projectsRepositoryProvider)
+          .applyEditProposal(
+            projectId: projectId,
+            proposalId: proposalId,
+            requestId: requestId,
+          );
+      _refreshOutput(projectId);
+      ref.invalidate(billingProvider);
+      if (!mounted) return;
+      setState(() => _projectChatSending = false);
+      if (result.operation != null) {
+        _startPlanPoll();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(result.operation!.displayAction)),
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _projectChatSending = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _cancelProjectEditProposal({
+    required String projectId,
+    required String proposalId,
+  }) async {
+    if (_projectChatSending) return;
+    if (proposalId.isEmpty) {
+      await _sendProjectMessage(projectId: projectId, message: 'cancel');
+      return;
+    }
+    final requestId =
+        'project-proposal-cancel-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() => _projectChatSending = true);
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .cancelEditProposal(
+            projectId: projectId,
+            proposalId: proposalId,
+            requestId: requestId,
+          );
+      _refreshOutput(projectId);
+      if (!mounted) return;
+      setState(() => _projectChatSending = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _projectChatSending = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  Future<void> _undoProjectEdit({required String projectId}) async {
+    if (_projectChatSending) return;
+    final requestId = 'project-undo-${DateTime.now().microsecondsSinceEpoch}';
+    setState(() => _projectChatSending = true);
+    try {
+      await ref
+          .read(projectsRepositoryProvider)
+          .undoLastBookEdit(projectId: projectId, requestId: requestId);
+      _refreshOutput(projectId);
+      if (!mounted) return;
+      setState(() => _projectChatSending = false);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _projectChatSending = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
   void _startProjectMessageEdit(MobileProjectChatMessage message) {
     if (_projectChatSending) return;
     setState(() {
@@ -1372,7 +1470,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
 String _planKey(MobilePlan plan) => '${plan.id}:${plan.version}';
 
 bool _showsOperationInTranscript(MobileBookEditOperation operation) =>
-    operation.isRunning || operation.isFailed;
+    operation.isRunning || operation.isFailed || operation.canUndo;
 
 String _planSnapshotLabel(MobilePlan plan) {
   if (plan.isSuperseded) return 'Previous plan';
@@ -2644,6 +2742,7 @@ class _PlanQuestionPanel extends StatefulWidget {
 class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
   final _customController = TextEditingController();
   bool _showCustomField = false;
+  bool _minimized = false;
 
   @override
   void dispose() {
@@ -2661,7 +2760,7 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
     final question = widget.plan.questions[widget.questionIndex];
     final total = widget.plan.questions.length;
     final colors = Theme.of(context).colorScheme;
-    final collapsed = widget.collapsed;
+    final collapsed = widget.collapsed || _minimized;
     // While typing a custom answer, hide the option chips (via Visibility so
     // the field's slot doesn't shift and drop focus) to keep it visible
     // above the keyboard.
@@ -2670,11 +2769,32 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Question ${widget.questionIndex + 1} of $total',
-          style: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Question ${widget.questionIndex + 1} of $total',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: _minimized ? 'Expand question' : 'Minimize question',
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              iconSize: 22,
+              visualDensity: VisualDensity.compact,
+              onPressed: widget.collapsed
+                  ? null
+                  : () => setState(() => _minimized = !_minimized),
+              icon: Icon(
+                _minimized
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 4),
         Text(
@@ -3129,6 +3249,7 @@ class _Transcript extends StatelessWidget {
     this.onOpenPaywall,
     this.onApplyEditProposal,
     this.onCancelEditProposal,
+    this.onUndoProjectEdit,
     this.onRetryFailedMessage,
     this.onDismissFailedMessage,
     this.onRetryFailedOperation,
@@ -3149,8 +3270,9 @@ class _Transcript extends StatelessWidget {
   final void Function(MobileProjectChatMessage message)? onEditProjectMessage;
   final ValueChanged<String>? onOpenReplanCopy;
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
-  final VoidCallback? onApplyEditProposal;
-  final VoidCallback? onCancelEditProposal;
+  final void Function(String proposalId)? onApplyEditProposal;
+  final void Function(String proposalId)? onCancelEditProposal;
+  final VoidCallback? onUndoProjectEdit;
   final ValueChanged<String>? onRetryFailedMessage;
   final ValueChanged<String>? onDismissFailedMessage;
   final void Function(MobileBookEditOperation operation)?
@@ -3208,6 +3330,7 @@ class _Transcript extends StatelessWidget {
               onRetry: operation.isFailed && onRetryFailedOperation != null
                   ? () => onRetryFailedOperation!(operation)
                   : null,
+              onUndo: operation.canUndo ? onUndoProjectEdit : null,
             );
           }
           return _ProjectChatMessageBubble(
@@ -3224,8 +3347,16 @@ class _Transcript extends StatelessWidget {
               projectItems,
               item.message!,
             ),
-            onApplyProposal: onApplyEditProposal,
-            onCancelProposal: onCancelEditProposal,
+            onApplyProposal:
+                onApplyEditProposal == null ||
+                    item.message!.editProposal == null
+                ? null
+                : () => onApplyEditProposal!(item.message!.editProposal!.id),
+            onCancelProposal:
+                onCancelEditProposal == null ||
+                    item.message!.editProposal == null
+                ? null
+                : () => onCancelEditProposal!(item.message!.editProposal!.id),
           );
         }
         cursor += projectItems.length;
@@ -4143,16 +4274,22 @@ class _ContentCardBubbleState extends State<_ContentCardBubble> {
 }
 
 class _OutputOperationBubble extends StatelessWidget {
-  const _OutputOperationBubble({required this.operation, this.onRetry});
+  const _OutputOperationBubble({
+    required this.operation,
+    this.onRetry,
+    this.onUndo,
+  });
 
   final MobileBookEditOperation operation;
   final VoidCallback? onRetry;
+  final VoidCallback? onUndo;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final waitingForRetry = operation.isAutomaticRetryPending;
     final isFailed = operation.isFailed && !waitingForRetry;
+    final applied = operation.isApplied && !isFailed;
     final label = waitingForRetry
         ? operation.displayAction
         : isFailed && operation.isPlanRevision
@@ -4189,6 +4326,13 @@ class _OutputOperationBubble extends StatelessWidget {
                     color: colors.onErrorContainer,
                     semanticLabel: operation.currentAction,
                   )
+                else if (applied)
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 18,
+                    color: colors.primary,
+                    semanticLabel: operation.currentAction,
+                  )
                 else
                   SizedBox.square(
                     dimension: 16,
@@ -4209,7 +4353,7 @@ class _OutputOperationBubble extends StatelessWidget {
                 ),
               ],
             ),
-            if (isFailed) ...[
+            if (isFailed || onUndo != null) ...[
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -4236,7 +4380,16 @@ class _OutputOperationBubble extends StatelessWidget {
                         visualDensity: VisualDensity.compact,
                       ),
                     ),
-                  if (operation.isPlanRevision)
+                  if (onUndo != null)
+                    TextButton.icon(
+                      onPressed: onUndo,
+                      icon: const Icon(Icons.undo, size: 18),
+                      label: const Text('Undo'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  if (isFailed && operation.isPlanRevision)
                     TextButton.icon(
                       onPressed: () =>
                           context.push('/projects/${operation.projectId}'),
@@ -4520,7 +4673,7 @@ class _ConversationFooter extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          padding: EdgeInsets.fromLTRB(12, question != null ? 4 : 10, 12, 10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4554,7 +4707,9 @@ class _ConversationFooter extends StatelessWidget {
                               onSelect: onQuickReply,
                             ),
                           ),
-                        if (question != null || state.quickReplies.isNotEmpty)
+                        if (question != null)
+                          const SizedBox(height: 6)
+                        else if (state.quickReplies.isNotEmpty)
                           const SizedBox(height: 8),
                         if (state.pendingAttachments.isNotEmpty) ...[
                           _PendingAttachmentsRow(
@@ -4788,7 +4943,7 @@ class _PendingAttachmentChip extends ConsumerWidget {
   }
 }
 
-class _QuestionPanel extends StatelessWidget {
+class _QuestionPanel extends StatefulWidget {
   const _QuestionPanel({
     required this.question,
     required this.collapsed,
@@ -4805,17 +4960,55 @@ class _QuestionPanel extends StatelessWidget {
   final ValueChanged<String> onSelect;
 
   @override
+  State<_QuestionPanel> createState() => _QuestionPanelState();
+}
+
+class _QuestionPanelState extends State<_QuestionPanel> {
+  bool _minimized = false;
+
+  @override
+  void didUpdateWidget(covariant _QuestionPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.question.prompt != widget.question.prompt) {
+      _minimized = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final collapsed = widget.collapsed || _minimized;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          question.prompt,
-          maxLines: collapsed ? 2 : null,
-          overflow: collapsed ? TextOverflow.ellipsis : null,
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                widget.question.prompt,
+                maxLines: collapsed ? 2 : null,
+                overflow: collapsed ? TextOverflow.ellipsis : null,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton(
+              tooltip: _minimized ? 'Expand question' : 'Minimize question',
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              iconSize: 22,
+              visualDensity: VisualDensity.compact,
+              onPressed: widget.collapsed
+                  ? null
+                  : () => setState(() => _minimized = !_minimized),
+              icon: Icon(
+                _minimized
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+              ),
+            ),
+          ],
         ),
         if (!collapsed) ...[
           const SizedBox(height: 8),
@@ -4823,16 +5016,18 @@ class _QuestionPanel extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final option in question.options)
+              for (final option in widget.question.options)
                 ActionChip(
                   label: Text(option),
-                  onPressed: enabled ? () => onSelect(option) : null,
+                  onPressed: widget.enabled
+                      ? () => widget.onSelect(option)
+                      : null,
                 ),
               ActionChip(
                 avatar: const Icon(Icons.skip_next_outlined, size: 18),
                 label: const Text('Skip'),
-                onPressed: enabled
-                    ? () => onSelect('Skip this for now.')
+                onPressed: widget.enabled
+                    ? () => widget.onSelect('Skip this for now.')
                     : null,
               ),
             ],

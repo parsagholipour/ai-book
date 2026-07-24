@@ -482,8 +482,17 @@ export async function runCreationTurn(
     return base;
   }
   try {
-    const patch = await withTimeout(options.enrich(request, base), options.timeoutMs ?? 8000);
-    return mobileCreationTurnSchema.parse(applyCreationTurnPatch(base, cleanCreationTurnPatch(patch)));
+    const patch = cleanCreationTurnPatch(
+      await withTimeout(options.enrich(request, base), options.timeoutMs ?? 8000)
+    );
+    if (creationEnrichmentIsEmpty(patch) || isUnchangedGenericAudienceFallback(patch, base)) {
+      const reason = creationEnrichmentIsEmpty(patch)
+        ? new Error("Creation enrichment produced no usable patch")
+        : new Error("Creation enrichment repeated the generic audience fallback");
+      options.onEnrichError?.(reason);
+      return base;
+    }
+    return mobileCreationTurnSchema.parse(applyCreationTurnPatch(base, patch));
   } catch (error) {
     options.onEnrichError?.(error);
     return base;
@@ -752,14 +761,21 @@ export async function enrichCreationTurnWithSearch(
         if (searchFailed) {
           return searchRecoveryPatch(request);
         }
+      } else {
+        const patch = cleanCreationTurnPatch(loop.finish);
+        const withTools = applyCreationToolSideEffects(patch, {
+          buildRequestedByTool,
+          settingsFromTool,
+          basePresets: base.presets
+        });
+        const enriched = research ? { ...withTools, research } : withTools;
+        if (
+          !creationEnrichmentIsEmpty(enriched) &&
+          !isUnchangedGenericAudienceFallback(enriched, base)
+        ) {
+          return enriched;
+        }
       }
-      const patch = cleanCreationTurnPatch(loop.finish);
-      const withTools = applyCreationToolSideEffects(patch, {
-        buildRequestedByTool,
-        settingsFromTool,
-        basePresets: base.presets
-      });
-      return research ? { ...withTools, research } : withTools;
     }
   } catch (error) {
     if (!research && !searchFailed) {
@@ -773,7 +789,9 @@ export async function enrichCreationTurnWithSearch(
   if (searchFailed) {
     return searchRecoveryPatch(request);
   }
-  return {};
+  // Exhausted tool loop, empty finish, or unchanged generic fallback: surface as
+  // failure so runCreationTurn keeps the (possibly topic-specific) deterministic turn.
+  throw new Error("Creation enrichment produced no usable patch");
 }
 
 /**
@@ -998,10 +1016,14 @@ type GapQuestion = MobileCreationTurnQuestion & {
 
 const MAX_INTERVIEW_QUESTIONS = 6;
 
+/** Canned auto-lane audience question; enrichment that only echoes this is rejected. */
+const GENERIC_AUTO_AUDIENCE_PROMPT = "Who is this book for?";
+const GENERIC_AUTO_AUDIENCE_OPTIONS = ["Young readers", "Clients or students", "General readers"] as const;
+
 function questionBankForLane(lane: MobileCreationLane): GapQuestion[] {
   if (lane === "auto") {
     return [
-      { field: "audience", prompt: "Who is this book for?", options: ["Young readers", "Clients or students", "General readers"], allowCustom: true },
+      { field: "audience", prompt: GENERIC_AUTO_AUDIENCE_PROMPT, options: [...GENERIC_AUTO_AUDIENCE_OPTIONS], allowCustom: true },
       { field: "tone", prompt: "What should the book feel like?", options: ["Warm and simple", "Practical and clear", "Imaginative and fun"], allowCustom: true },
       { field: "promise", prompt: "What should the reader remember?", options: ["A useful lesson", "A clear next step", "A memorable ending"], allowCustom: true },
       { field: "mustInclude", prompt: "Anything the book must include?", options: ["A specific scene or topic", "A favorite character", "Nothing special"], allowCustom: true }
@@ -1064,7 +1086,15 @@ function nextQuestionForRecipe(
     .map((message) => message.content)
     .join("\n");
   const skippedRecently = /\bskip\b/i.test(latestUserMessageText(messages));
-  const bank = questionBankForLane(lane);
+  const ideaText = messages
+    .filter((message) => message.role === "user")
+    .map((message) => message.content)
+    .join("\n");
+  const topicFirst =
+    lane === "auto" && isVagueScienceDiscoveryIdea(ideaText) ? scienceDiscoveryTopicQuestion() : null;
+  const bank = topicFirst
+    ? [topicFirst, ...questionBankForLane(lane).filter((candidate) => candidate.field !== topicFirst.field)]
+    : questionBankForLane(lane);
   const gaps = bank.filter(
     (candidate) =>
       !recipeFieldAnswered(recipe, candidate.field, lane) && !assistantText.includes(candidate.prompt)
@@ -1075,6 +1105,79 @@ function nextQuestionForRecipe(
   }
   const { field: _field, ...question } = next;
   return creationTurnQuestionSchema.parse(question);
+}
+
+/**
+ * True when the idea asks for a science / recent-discovery book without naming
+ * the discovery or field. Audience is the wrong first gap in that case.
+ */
+function isVagueScienceDiscoveryIdea(idea: string): boolean {
+  const text = idea.toLowerCase();
+  const mentionsScience = /\b(scientific|science)\b/.test(text);
+  const mentionsDiscovery = /\b(discovery|discoveries|discovering)\b/.test(text);
+  const mentionsRecent = /\brecent\b/.test(text);
+  if (!(mentionsScience || mentionsDiscovery) || !(mentionsDiscovery || mentionsRecent)) {
+    return false;
+  }
+  // Already named a concrete field or discovery — skip the clarification card.
+  if (
+    /\b(space|exoplanet|astronomy|astrophysics|medicine|medical|climate|ai|artificial intelligence|physics|biology|chemistry|crispr|quantum|nasa|vaccine|genome|genomics|neuroscience|geology)\b/.test(
+      text
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function scienceDiscoveryTopicQuestion(): GapQuestion {
+  return {
+    field: "mustInclude",
+    prompt: "Which recent scientific discovery should the book explore?",
+    options: ["Space", "Medicine", "Climate", "AI"],
+    allowCustom: true
+  };
+}
+
+/** Empty enrichment patch — nothing to merge onto the deterministic turn. */
+function creationEnrichmentIsEmpty(patch: Partial<MobileCreationTurn>): boolean {
+  return (
+    !patch.assistantMessage?.trim() &&
+    patch.question === undefined &&
+    !patch.research &&
+    patch.buildRequested !== true &&
+    patch.presets === undefined &&
+    patch.brief === undefined &&
+    !patch.language?.trim() &&
+    patch.quickReplies === undefined &&
+    patch.titleSuggestions === undefined &&
+    patch.shapePreview === undefined &&
+    patch.warnings === undefined
+  );
+}
+
+/**
+ * True when the model only echoed the canned auto-lane audience card instead of
+ * rewriting it for the user's idea.
+ */
+function isUnchangedGenericAudienceFallback(
+  patch: Partial<MobileCreationTurn>,
+  base: MobileCreationTurn
+): boolean {
+  const prompt = patch.question?.prompt?.trim();
+  if (prompt !== GENERIC_AUTO_AUDIENCE_PROMPT) {
+    return false;
+  }
+  const options = patch.question?.options ?? [];
+  const optionsAreGeneric =
+    options.length === GENERIC_AUTO_AUDIENCE_OPTIONS.length &&
+    GENERIC_AUTO_AUDIENCE_OPTIONS.every((option, index) => options[index] === option);
+  const message = patch.assistantMessage?.trim() ?? "";
+  const messageIsCanned =
+    !message ||
+    message === base.assistantMessage.trim() ||
+    /^(Got it\.|Thanks!|Noted\.|Lovely\.|Perfect\.)\s*Who is this book for\?$/i.test(message);
+  return optionsAreGeneric || messageIsCanned;
 }
 
 /** True when the recipe field holds real user-driven content, not a generic lane fallback. */

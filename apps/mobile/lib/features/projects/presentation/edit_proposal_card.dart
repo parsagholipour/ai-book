@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../domain/project_models.dart';
 
-/// Priced book-edit confirmation card. Apply / Cancel send short chat follow-ups
-/// the server already understands ("apply it" / "cancel").
+/// Priced book-edit confirmation card. Apply / Cancel call dedicated proposal
+/// endpoints (not chat-text confirmations).
 class EditProposalCard extends StatelessWidget {
   const EditProposalCard({
     required this.proposal,

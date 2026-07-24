@@ -496,6 +496,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       expect(find.text('Question 1 of 2'), findsOneWidget);
+      expect(find.byTooltip('Minimize question'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Minimize question'));
+      await tester.pump();
+      expect(find.text('Busy solo teachers'), findsNothing);
+      expect(find.byTooltip('Expand question'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Expand question'));
+      await tester.pump();
+      expect(find.text('Busy solo teachers'), findsOneWidget);
 
       await tester.tap(find.text('Busy solo teachers'));
       await tester.pump();
@@ -1725,6 +1735,46 @@ void main() {
       await tester.teardownScreen();
     },
   );
+
+  testWidgets('question drawer can be minimized and expanded', (tester) async {
+    final creation = _ScriptedCreationRepository(replyWithQuestion: true);
+    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'A practical guide for new managers',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Minimize question'), findsOneWidget);
+    expect(find.widgetWithText(ActionChip, 'New managers'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Minimize question'));
+    await tester.pump();
+
+    expect(find.text('Who is this book for?'), findsOneWidget);
+    expect(find.widgetWithText(ActionChip, 'New managers'), findsNothing);
+    expect(find.byTooltip('Expand question'), findsOneWidget);
+    final promptRect = tester.getRect(find.text('Who is this book for?'));
+    final expandButtonRect = tester.getRect(find.byTooltip('Expand question'));
+    final composerRect = tester.getRect(find.byType(TextField).last);
+    expect(
+      (promptRect.center.dy - expandButtonRect.center.dy).abs(),
+      lessThanOrEqualTo(1),
+    );
+    expect(composerRect.top - expandButtonRect.bottom, 12);
+
+    await tester.tap(find.byTooltip('Expand question'));
+    await tester.pump();
+
+    expect(find.widgetWithText(ActionChip, 'New managers'), findsOneWidget);
+    expect(find.byTooltip('Minimize question'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
 
   testWidgets(
     'typing with a question active keeps the composer above the keyboard '
@@ -3003,6 +3053,32 @@ class _PlanProjectsRepository implements ProjectsRepository {
     String? requestId,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> applyEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> cancelEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> undoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
   }
 
   @override

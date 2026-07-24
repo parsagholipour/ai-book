@@ -359,7 +359,34 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
-  }) {
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> applyEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> cancelEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> undoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  }) async {
+    throw UnimplementedError();
+  }
+) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }
 

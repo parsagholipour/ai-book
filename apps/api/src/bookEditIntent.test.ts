@@ -5,6 +5,8 @@ import {
   classifierPageSample,
   classifyProjectChatMessage,
   classifyWithHeuristics,
+  intentFromDecideAction,
+  intentFromProposeEdit,
   isBookEditScopeOnlyMessage,
   messageWithScope,
   type BookEditIntent,
@@ -41,13 +43,6 @@ describe("book edit intent heuristics", () => {
     expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
   });
 
-  it("routes plan-stage edit requests to plan revision", () => {
-    const intent = classifyWithHeuristics("Make the examples warmer and more practical.", "plan_ready", pages);
-
-    expect(intent.kind).toBe("plan_revision");
-    expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
-  });
-
   it("answers plan-stage questions without generated-book edit fallback copy", () => {
     const intent = classifyWithHeuristics("What is this plan about?", "plan_ready", pages);
 
@@ -56,229 +51,34 @@ describe("book edit intent heuristics", () => {
     expect(intent.assistantMessage).toMatch(/plan/i);
   });
 
-  it("routes soft plan-stage change requests to plan revision", () => {
-    const intent = classifyWithHeuristics("I want the audience to be parents.", "plan_ready", pages);
-
-    expect(intent.kind).toBe("plan_revision");
-    expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
-  });
-
-  it("routes negative media plan preferences to plan revision without a model", () => {
-    for (const message of ["I don't want images or covers", "No images please", "without covers"]) {
-      const intent = classifyWithHeuristics(message, "plan_ready", pages);
-
-      expect(intent.kind).toBe("plan_revision");
-      expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
-    }
-  });
-
-  it("routes completed-book dislike preferences to a rewrite of thematically matching pages", () => {
-    const scenePages: BookEditPageContext[] = [
-      {
-        id: "page-1",
-        index: 1,
-        title: "Morning",
-        summary: "A quiet private morning at home.",
-        previewText: "The day begins slowly."
-      },
-      {
-        id: "page-2",
-        index: 2,
-        title: "The Gathering",
-        summary: "A public gathering where the pair is on display.",
-        previewText: "Guests watch from the hall."
-      },
-      {
-        id: "page-3",
-        index: 3,
-        title: "The Feast",
-        summary: "A feast with a public display at the table.",
-        previewText: "The hall is crowded."
-      }
-    ];
-
-    const intent = classifyWithHeuristics(
-      "I don't like the public display. This should be private between them.",
-      "complete",
-      scenePages
-    );
-
-    expect(intent.kind).toBe("page_rewrite");
-    expect(intent.affectedPageIndexes).toEqual([2, 3]);
-    expect(intent.impact).toBe("style_rewrite");
-    expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
-  });
-
-  it("offers concrete options when a dislike preference matches no pages", () => {
-    const intent = classifyWithHeuristics("I don't like the dragon battles.", "complete", pages);
-
-    expect(intent.kind).toBe("clarify");
-    expect(intent.clarification).toBe("scope");
-    expect(intent.assistantMessage).toMatch(/whole book/i);
-  });
-
-  it("routes plan-stage dislike preferences to plan revision", () => {
-    const intent = classifyWithHeuristics("I don't like the villain being so scary.", "plan_ready", pages);
-
-    expect(intent.kind).toBe("plan_revision");
-    expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
-  });
-
-  it("routes identity-level dislike preferences on a finished book to replan", () => {
-    const intent = classifyWithHeuristics("I don't like the main character.", "complete", pages);
-
-    expect(intent.kind).toBe("book_replan");
-    expect(intent.impact).toBe("structural_replan");
-  });
-
-  it("treats bare should-be directives as edit requests, not answers", () => {
-    const intent = classifyWithHeuristics("This should be private between them.", "complete", pages);
-
-    expect(intent.kind).not.toBe("answer");
-  });
-
   it("keeps dislike-flavored questions as answers", () => {
     const intent = classifyWithHeuristics("Why is there a public display in chapter 2?", "complete", pages);
 
     expect(intent.kind).toBe("answer");
   });
 
-  it("uses the AI router even when heuristics are high-confidence", async () => {
-    const modelIntent: BookEditIntent = {
-      kind: "plan_revision",
-      confidence: 0.97,
-      reasoning: "The model handled the routing.",
-      affectedPageIndexes: [],
-      assistantMessage: "I’ll revise the plan with that media preference.",
-      scope: "none",
-      impact: "structural_replan",
-      clarification: "none"
-    };
-    const model = fakeTextModel(modelIntent);
-
-    const intent = await classifyProjectChatMessage({
-      message: "Make the examples warmer and more practical.",
-      stage: "plan_ready",
-      pages,
-      textModel: model
-    });
-
-    expect(model.generateWithTools).toHaveBeenCalledOnce();
-    expect(intent).toMatchObject({
-      kind: "plan_revision",
-      reasoning: "The model handled the routing."
-    });
-    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
-    const prompt = JSON.parse(call.messages.at(-1)!.content);
-    expect(prompt.heuristicIntent).toMatchObject({ kind: "plan_revision" });
-    expect(call.tools.map((tool) => tool.name)).toEqual(["read_page", "route_message"]);
-  });
-
-  it("falls back to heuristics when the AI router fails", async () => {
-    const model = fakeFailingTextModel();
-
-    const intent = await classifyProjectChatMessage({
-      message: "I don't want images or covers",
-      stage: "plan_ready",
-      pages,
-      textModel: model
-    });
-
-    expect(model.generateWithTools).toHaveBeenCalled();
-    expect(intent.kind).toBe("plan_revision");
-  });
-
-  it("retries the AI router once on a transient network failure", async () => {
-    const modelIntent: BookEditIntent = {
-      kind: "plan_revision",
-      confidence: 0.95,
-      reasoning: "Recovered after the connection reset.",
-      affectedPageIndexes: [],
-      assistantMessage: "I’ll revise the plan.",
-      scope: "none",
-      impact: "structural_replan",
-      clarification: "none"
-    };
-    const model = fakeFlakyTextModel(modelIntent);
-
-    const intent = await classifyProjectChatMessage({
-      message: "Make the examples warmer and more practical.",
-      stage: "plan_ready",
-      pages,
-      textModel: model
-    });
-
-    expect(model.generateWithTools).toHaveBeenCalledTimes(2);
-    expect(intent.reasoning).toBe("Recovered after the connection reset.");
-  });
-
-  it("falls back to heuristics without retrying when the AI router exceeds its time budget", async () => {
-    vi.useFakeTimers();
-    try {
-      const model = fakeHangingTextModel();
-
-      const pending = classifyProjectChatMessage({
-        message: "I don't want images or covers",
-        stage: "plan_ready",
-        pages,
-        textModel: model
-      });
-      await vi.advanceTimersByTimeAsync(10_000);
-      const intent = await pending;
-
-      expect(model.generateWithTools).toHaveBeenCalledTimes(1);
-      expect(intent.kind).toBe("plan_revision");
-    } finally {
-      vi.useRealTimers();
+  it("does not invent charged edit kinds from English regex trees", () => {
+    for (const message of [
+      "Make the examples warmer and more practical.",
+      "I don't like the dragon battles.",
+      "I don't like the main character.",
+      "On page 1, replace \"old phrase\" with \"new phrase\".",
+      "Add a new chapter about launch strategy.",
+      "Now generate the English version",
+      "Replace rabbit with fly throughout the whole book.",
+      "Make the whole book warmer and simpler.",
+      "Rewrite chapter 2 and make it funnier.",
+      "I don't want images or covers",
+      "Move the ending earlier in the outline."
+    ]) {
+      const intent = classifyWithHeuristics(message, "complete", pages, undefined, chapters);
+      expect(["clarify", "answer", "show_content", "undo_last_edit"]).toContain(intent.kind);
+      expect(intent.kind).not.toBe("local_patch");
+      expect(intent.kind).not.toBe("page_rewrite");
+      expect(intent.kind).not.toBe("book_replan");
+      expect(intent.kind).not.toBe("chapter_regenerate");
+      expect(intent.kind).not.toBe("plan_revision");
     }
-  });
-
-  it("routes exact generated text replacements to local patch", () => {
-    const intent = classifyWithHeuristics('On page 1, replace "old phrase" with "new phrase".', "complete", pages);
-
-    expect(intent.kind).toBe("local_patch");
-    expect(intent.scope).toBe("explicit_pages");
-    expect(intent.affectedPageIndexes).toEqual([1]);
-  });
-
-  it("routes structural generated-book changes to replan", () => {
-    const intent = classifyWithHeuristics("Add a new chapter about launch strategy.", "complete", pages);
-
-    expect(intent.kind).toBe("book_replan");
-    expect(intent.impact).toBe("structural_replan");
-  });
-
-  it("routes completed-book language version requests to replan with a target language", () => {
-    const intent = classifyWithHeuristics("Now generate the English version", "complete", pages);
-
-    expect(intent.kind).toBe("book_replan");
-    expect(intent.kind).not.toBe("answer");
-    expect(intent.targetLanguage).toBe("en");
-    expect(intent.scope).toBe("all_pages");
-    expect(intent.impact).toBe("structural_replan");
-  });
-
-  it("routes main character changes to replan", () => {
-    const intent = classifyWithHeuristics("Change the character of rabbit with a fly.", "complete", pages);
-
-    expect(intent.kind).toBe("book_replan");
-    expect(intent.impact).toBe("structural_replan");
-  });
-
-  it("routes whole-book replacements to matching local patches", () => {
-    const intent = classifyWithHeuristics("Replace rabbit with fly throughout the whole book.", "complete", pages);
-
-    expect(intent.kind).toBe("local_patch");
-    expect(intent.scope).toBe("matching_pages");
-    expect(intent.affectedPageIndexes).toEqual([1]);
-  });
-
-  it("routes whole-book style edits to all-page rewrites", () => {
-    const intent = classifyWithHeuristics("Make the whole book warmer and simpler.", "complete", pages);
-
-    expect(intent.kind).toBe("page_rewrite");
-    expect(intent.scope).toBe("all_pages");
-    expect(intent.impact).toBe("style_rewrite");
   });
 
   it("routes read requests to show_content with the right target", () => {
@@ -299,16 +99,8 @@ describe("book edit intent heuristics", () => {
   it("does not treat edit requests that mention chapters as read requests", () => {
     const intent = classifyWithHeuristics("Rewrite chapter 2 and make it funnier.", "complete", pages, undefined, chapters);
 
-    expect(intent.kind).toBe("chapter_regenerate");
-    expect(intent.affectedChapterIndex).toBe(2);
-    expect(intent.affectedPageIndexes).toEqual([2]);
-    expect(intent.impact).toBe("style_rewrite");
-  });
-
-  it("routes chapter regeneration requests in plan stage to plan revision", () => {
-    const intent = classifyWithHeuristics("Rewrite chapter 2 and make it funnier.", "plan_ready", pages, undefined, chapters);
-
-    expect(intent.kind).toBe("plan_revision");
+    expect(intent.kind).toBe("clarify");
+    expect(intent.kind).not.toBe("show_content");
   });
 
   it("routes undo requests to undo_last_edit", () => {
@@ -320,16 +112,16 @@ describe("book edit intent heuristics", () => {
     }
   });
 
-  it("short-circuits read/undo/chapter intents without calling the AI router", async () => {
-    const model = fakeTextModel({
-      kind: "answer",
+  it("short-circuits read/undo intents without calling the AI router", async () => {
+    const model = fakeDecideModel({
+      action: "answer",
       confidence: 0.9,
       reasoning: "Should never be used.",
-      affectedPageIndexes: [],
       assistantMessage: "Model reply",
-      scope: "none",
-      impact: "small_text",
-      clarification: "none"
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
     });
 
     const intent = await classifyProjectChatMessage({
@@ -344,11 +136,90 @@ describe("book edit intent heuristics", () => {
     expect(intent.kind).toBe("show_content");
   });
 
-  it("routes plan-stage structure requests to plan revision with structural impact", () => {
-    const intent = classifyWithHeuristics("Move the ending earlier in the outline.", "plan_ready", pages, undefined, chapters);
+  it("uses the AI router for plan revisions via decide", async () => {
+    const model = fakeDecideModel({
+      action: "plan_revision",
+      confidence: 0.97,
+      reasoning: "The model handled the routing.",
+      assistantMessage: "I’ll revise the plan with that media preference.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
 
+    const intent = await classifyProjectChatMessage({
+      message: "Make the examples warmer and more practical.",
+      stage: "plan_ready",
+      pages,
+      textModel: model
+    });
+
+    expect(model.generateWithTools).toHaveBeenCalledOnce();
+    expect(intent).toMatchObject({
+      kind: "plan_revision",
+      reasoning: "The model handled the routing."
+    });
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
+    expect(call.tools.map((tool: { name: string }) => tool.name)).toEqual(["read_page", "decide"]);
+  });
+
+  it("falls back to degraded heuristics when the AI router fails", async () => {
+    const model = fakeFailingTextModel();
+
+    const intent = await classifyProjectChatMessage({
+      message: "I don't want images or covers",
+      stage: "plan_ready",
+      pages,
+      textModel: model
+    });
+
+    expect(model.generateWithTools).toHaveBeenCalled();
     expect(intent.kind).toBe("plan_revision");
-    expect(intent.impact).toBe("structural_replan");
+  });
+
+  it("retries the AI router once on a transient network failure", async () => {
+    const model = fakeFlakyDecideModel({
+      action: "plan_revision",
+      confidence: 0.95,
+      reasoning: "Recovered after the connection reset.",
+      assistantMessage: "I’ll revise the plan.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Make the examples warmer and more practical.",
+      stage: "plan_ready",
+      pages,
+      textModel: model
+    });
+
+    expect(model.generateWithTools).toHaveBeenCalledTimes(2);
+    expect(intent.reasoning).toBe("Recovered after the connection reset.");
+  });
+
+  it("falls back to degraded heuristics without retrying when the AI router exceeds its time budget", async () => {
+    vi.useFakeTimers();
+    try {
+      const model = fakeHangingTextModel();
+
+      const pending = classifyProjectChatMessage({
+        message: "I don't want images or covers",
+        stage: "plan_ready",
+        pages,
+        textModel: model
+      });
+      await vi.advanceTimersByTimeAsync(10_000);
+      const intent = await pending;
+
+      expect(model.generateWithTools).toHaveBeenCalledTimes(1);
+      expect(intent.kind).toBe("plan_revision");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("passes small books to the classifier prompt without sampling", () => {
@@ -375,17 +246,18 @@ describe("book edit intent heuristics", () => {
   });
 
   it("tells the AI router when the page list was sampled", async () => {
-    const modelIntent: BookEditIntent = {
-      kind: "page_rewrite",
+    const model = fakeDecideModel({
+      action: "propose_edit",
       confidence: 0.9,
       reasoning: "Targeted page edit.",
-      affectedPageIndexes: [412],
       assistantMessage: "I’ll rewrite page 412.",
-      scope: "explicit_pages",
-      impact: "style_rewrite",
-      clarification: "none"
-    };
-    const model = fakeTextModel(modelIntent);
+      clarification: "none",
+      editTarget: "pages",
+      editStyle: "rewrite",
+      pageIndexes: [412],
+      chapterIndex: null,
+      targetLanguage: null
+    });
 
     await classifyProjectChatMessage({
       message: "Rewrite page 412 in a warmer tone.",
@@ -401,7 +273,7 @@ describe("book edit intent heuristics", () => {
     expect(prompt.pages.map((page: { index: number }) => page.index)).toContain(412);
   });
 
-  it("lets the router read page prose before routing", async () => {
+  it("lets the router read page prose before deciding", async () => {
     const loadPageBody = vi.fn(async () => "Full prose of the practice scene where the old phrase appears.");
     const model = scriptedTextModel([
       {
@@ -410,15 +282,17 @@ describe("book edit intent heuristics", () => {
         provider: "test",
         toolCalls: [{ id: "call-read", name: "read_page", arguments: { index: 2 } }]
       },
-      routeDecision({
-        kind: "page_rewrite",
+      decideDecision({
+        action: "propose_edit",
         confidence: 0.93,
         reasoning: "The phrase only appears on page 2.",
-        affectedPageIndexes: [2],
         assistantMessage: "I’ll rewrite page 2 without that phrase.",
-        scope: "explicit_pages",
-        impact: "style_rewrite",
-        clarification: "none"
+        clarification: "none",
+        editTarget: "pages",
+        editStyle: "rewrite",
+        pageIndexes: [2],
+        chapterIndex: null,
+        targetLanguage: null
       })
     ]);
 
@@ -433,22 +307,24 @@ describe("book edit intent heuristics", () => {
     expect(loadPageBody).toHaveBeenCalledWith(2);
     expect(model.generateWithTools).toHaveBeenCalledTimes(2);
     const secondCall = vi.mocked(model.generateWithTools).mock.calls[1]![0];
-    const toolResult = secondCall.messages.find((message) => message.role === "tool");
+    const toolResult = secondCall.messages.find(
+      (message: { role: string }) => message.role === "tool"
+    );
     expect(toolResult?.content).toContain("Full prose of the practice scene");
     expect(intent.kind).toBe("page_rewrite");
     expect(intent.affectedPageIndexes).toEqual([2]);
   });
 
-  it("only offers stage-appropriate route kinds to the model", async () => {
-    const model = fakeTextModel({
-      kind: "plan_revision",
+  it("only offers stage-appropriate decide actions to the model", async () => {
+    const model = fakeDecideModel({
+      action: "plan_revision",
       confidence: 0.9,
       reasoning: "Plan-stage routing.",
-      affectedPageIndexes: [],
       assistantMessage: "I’ll revise the plan.",
-      scope: "none",
-      impact: "small_text",
-      clarification: "none"
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
     });
 
     await classifyProjectChatMessage({
@@ -459,23 +335,21 @@ describe("book edit intent heuristics", () => {
     });
 
     const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
-    const routeTool = call.tools.find((tool) => tool.name === "route_message")!;
-    const editKindAtPlanStage = routeTool.parameters.safeParse({
-      kind: "page_rewrite",
+    const decideTool = call.tools.find((tool: { name: string }) => tool.name === "decide")!;
+    const editActionAtPlanStage = decideTool.parameters.safeParse({
+      action: "propose_edit",
       confidence: 0.9,
       reasoning: "Not allowed at plan stage.",
-      affectedPageIndexes: [],
       assistantMessage: "x",
-      scope: "none",
-      impact: "small_text",
       clarification: "none",
-      affectedChapterIndex: null,
+      pageIndexes: [],
+      chapterIndex: null,
       targetLanguage: null
     });
-    expect(editKindAtPlanStage.success).toBe(false);
+    expect(editActionAtPlanStage.success).toBe(false);
   });
 
-  it("falls back to heuristics when the router never commits a decision", async () => {
+  it("falls back to degraded heuristics when the router never commits a decision", async () => {
     const textOnly: ToolCallsResult = {
       text: "I think this is a plan change.",
       model: "test-router",
@@ -497,15 +371,116 @@ describe("book edit intent heuristics", () => {
   it("recognizes a scope-only follow-up that can resolve a pending edit", () => {
     expect(isBookEditScopeOnlyMessage("whole book")).toBe(true);
     expect(isBookEditScopeOnlyMessage("I said whole book")).toBe(true);
+    expect(messageWithScope("Replace rabbit with fly", "all_pages")).toMatch(/whole book/i);
+  });
+});
 
-    const resolved = classifyWithHeuristics(
-      messageWithScope("Replace rabbit with fly", "all_pages"),
-      "complete",
-      pages
+describe("propose_edit pricing mapping", () => {
+  it("maps exact page replacements to local_patch", () => {
+    const intent = intentFromProposeEdit(
+      {
+        action: "propose_edit",
+        confidence: 0.9,
+        reasoning: "Exact replacement.",
+        assistantMessage: "I’ll replace that phrase on page 1.",
+        clarification: "none",
+        editTarget: "pages",
+        editStyle: "exact_replace",
+        pageIndexes: [1],
+        chapterIndex: null,
+        targetLanguage: null
+      },
+      'On page 1, replace "old" with "new".',
+      chapters
     );
 
-    expect(resolved.kind).toBe("local_patch");
-    expect(resolved.scope).toBe("matching_pages");
+    expect(intent.kind).toBe("local_patch");
+    expect(intent.scope).toBe("explicit_pages");
+    expect(intent.impact).toBe("small_text");
+  });
+
+  it("maps whole-book rewrites to page_rewrite", () => {
+    const intent = intentFromProposeEdit(
+      {
+        action: "propose_edit",
+        confidence: 0.9,
+        reasoning: "Whole-book style.",
+        assistantMessage: "I’ll rewrite the whole book warmer.",
+        clarification: "none",
+        editTarget: "whole_book",
+        editStyle: "rewrite",
+        pageIndexes: [],
+        chapterIndex: null,
+        targetLanguage: null
+      },
+      "Make the whole book warmer.",
+      chapters
+    );
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("all_pages");
+  });
+
+  it("maps chapter targets to chapter_regenerate", () => {
+    const intent = intentFromProposeEdit(
+      {
+        action: "propose_edit",
+        confidence: 0.9,
+        reasoning: "Chapter rewrite.",
+        assistantMessage: "I’ll rewrite chapter 2.",
+        clarification: "none",
+        editTarget: "chapter",
+        editStyle: "rewrite",
+        pageIndexes: [],
+        chapterIndex: 2,
+        targetLanguage: null
+      },
+      "Rewrite chapter 2.",
+      chapters
+    );
+
+    expect(intent.kind).toBe("chapter_regenerate");
+    expect(intent.affectedChapterIndex).toBe(2);
+    expect(intent.affectedPageIndexes).toEqual([2]);
+  });
+
+  it("maps structural and language_copy targets to book_replan", () => {
+    const structural = intentFromDecideAction(
+      {
+        action: "propose_edit",
+        confidence: 0.9,
+        reasoning: "Identity change.",
+        assistantMessage: "I’ll rebuild around a new protagonist.",
+        clarification: "none",
+        editTarget: "structural",
+        editStyle: "rewrite",
+        pageIndexes: [],
+        chapterIndex: null,
+        targetLanguage: null
+      },
+      "Change the main character.",
+      chapters
+    );
+    expect(structural.kind).toBe("book_replan");
+
+    const language = intentFromDecideAction(
+      {
+        action: "propose_edit",
+        confidence: 0.9,
+        reasoning: "Language copy.",
+        assistantMessage: "I’ll create an English copy.",
+        clarification: "none",
+        editTarget: "language_copy",
+        editStyle: "rewrite",
+        pageIndexes: [],
+        chapterIndex: null,
+        targetLanguage: "en"
+      },
+      "Generate the English version",
+      chapters
+    );
+    expect(language.kind).toBe("book_replan");
+    expect(language.targetLanguage).toBe("en");
   });
 });
 
@@ -534,51 +509,68 @@ function routerAdapter(
   };
 }
 
-function routeDecision(intent: BookEditIntent): ToolCallsResult {
+type DecideArgs = {
+  action: string;
+  confidence: number;
+  reasoning: string;
+  assistantMessage: string;
+  clarification: "none" | "scope";
+  pageIndexes: number[];
+  chapterIndex: number | null;
+  targetLanguage: string | null;
+  editTarget?: string;
+  editStyle?: string;
+};
+
+function decideDecision(args: DecideArgs): ToolCallsResult {
   return {
     text: "",
     model: "test-router",
     provider: "test",
-    toolCalls: [{ id: "call-route", name: "route_message", arguments: intent }]
+    toolCalls: [{ id: "call-decide", name: "decide", arguments: args }]
   };
 }
 
-function fakeTextModel(intent: BookEditIntent): TextModelAdapter {
-  return routerAdapter(vi.fn(async () => routeDecision(intent)));
+function fakeDecideModel(args: DecideArgs): TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> } {
+  const generateWithTools = vi.fn(async () => decideDecision(args));
+  return Object.assign(routerAdapter(generateWithTools), { generateWithTools });
 }
 
-function fakeFailingTextModel(): TextModelAdapter {
-  return routerAdapter(
-    vi.fn(async () => {
-      throw new Error("router failed");
-    })
-  );
-}
-
-function fakeFlakyTextModel(intent: BookEditIntent): TextModelAdapter {
+function fakeFlakyDecideModel(args: DecideArgs): TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> } {
+  let attempts = 0;
   const generateWithTools = vi.fn(async () => {
-    if (generateWithTools.mock.calls.length === 1) {
-      const error = new Error("socket hang up") as Error & { code: string };
-      error.code = "ECONNRESET";
+    attempts += 1;
+    if (attempts === 1) {
+      const error = new Error("socket hang up");
+      (error as Error & { code?: string }).code = "ECONNRESET";
       throw error;
     }
-    return routeDecision(intent);
+    return decideDecision(args);
   });
-  return routerAdapter(generateWithTools);
+  return Object.assign(routerAdapter(generateWithTools), { generateWithTools });
 }
 
-function fakeHangingTextModel(): TextModelAdapter {
-  return routerAdapter(vi.fn(() => new Promise<never>(() => undefined)));
-}
-
-/** Scripts one generateWithTools result per model call, erroring past the script. */
-function scriptedTextModel(turns: ToolCallsResult[]): TextModelAdapter {
+function fakeFailingTextModel(): TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> } {
   const generateWithTools = vi.fn(async () => {
-    const turn = turns[generateWithTools.mock.calls.length - 1];
-    if (!turn) {
-      throw new Error("scripted model ran out of turns");
-    }
-    return turn;
+    throw new Error("router unavailable");
   });
-  return routerAdapter(generateWithTools);
+  return Object.assign(routerAdapter(generateWithTools), { generateWithTools });
 }
+
+function fakeHangingTextModel(): TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> } {
+  const generateWithTools = vi.fn(async () => new Promise<ToolCallsResult>(() => undefined));
+  return Object.assign(routerAdapter(generateWithTools), { generateWithTools });
+}
+
+function scriptedTextModel(results: ToolCallsResult[]): TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> } {
+  let index = 0;
+  const generateWithTools = vi.fn(async () => {
+    const next = results[Math.min(index, results.length - 1)]!;
+    index += 1;
+    return next;
+  });
+  return Object.assign(routerAdapter(generateWithTools), { generateWithTools });
+}
+
+// Silence unused BookEditIntent import warnings in helpers if needed.
+void (null as unknown as BookEditIntent);

@@ -3501,7 +3501,7 @@ describe("mobile project routes", () => {
     expect(proposal.statusCode).toBe(200);
     expect(proposalBody.operation).toBeNull();
     expect(proposalBody.reply.content).toContain("whole book");
-    expect(proposalBody.reply.content).toContain("apply it");
+    expect(proposalBody.reply.content).toMatch(/Tap Apply|apply it/i);
     expect(proposalBody.reply.metadata).toMatchObject({
       charged: false,
       pendingEdit: { clarification: "confirm" },
@@ -3510,13 +3510,14 @@ describe("mobile project routes", () => {
         affectedPageIndexes: [1, 2]
       }
     });
+    expect(typeof proposalBody.reply.metadata.editProposal.id).toBe("string");
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
 
     const confirm = await app.inject({
       method: "POST",
-      url: "/api/mobile/projects/project-1/chat/messages",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
       headers: bearer("token-a"),
-      payload: { message: "apply it" }
+      payload: { proposalId: proposalBody.reply.metadata.editProposal.id }
     });
     const body = confirm.json();
 
@@ -3559,12 +3560,13 @@ describe("mobile project routes", () => {
     });
     expect(proposal.statusCode).toBe(200);
     expect(proposal.json().reply.metadata.editProposal.kind).toBe("page_rewrite");
+    const proposalId = proposal.json().reply.metadata.editProposal.id as string;
 
     const cancel = await app.inject({
       method: "POST",
-      url: "/api/mobile/projects/project-1/chat/messages",
+      url: "/api/mobile/projects/project-1/chat/proposals/cancel",
       headers: bearer("token-a"),
-      payload: { message: "cancel" }
+      payload: { proposalId }
     });
     const body = cancel.json();
 

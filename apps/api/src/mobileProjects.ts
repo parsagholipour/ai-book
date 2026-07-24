@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import { extname, join } from "node:path";
 import {
@@ -448,6 +448,8 @@ export type MobileBookEditOperationDto = {
   requestId: string | null;
   createdAt: string;
   appliedAt: string | null;
+  /** True when this applied edit is the latest undoable snapshot-backed change. */
+  canUndo: boolean;
 };
 
 export type MobileProjectChatResponseDto = {
@@ -751,6 +753,20 @@ const mobileProjectChatMessageBodySchema = z
   })
   .strict();
 
+const mobileEditProposalActionBodySchema = z
+  .object({
+    proposalId: z.string().uuid(),
+    requestId: requestIdSchema.optional()
+  })
+  .strict();
+
+const mobileChatUndoBodySchema = z
+  .object({
+    requestId: requestIdSchema.optional()
+  })
+  .strict()
+  .default({});
+
 const mobileProjectChatBranchBodySchema = z
   .object({
     messageId: z.string().trim().min(1).max(128),
@@ -1009,6 +1025,24 @@ const mobileProjectChatBranchOpenApiBody = {
     direction: { type: "string", enum: ["previous", "next"] }
   },
   required: ["messageId", "direction"]
+} as const;
+
+const mobileEditProposalActionOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    proposalId: { type: "string", format: "uuid" },
+    requestId: { type: "string", minLength: 8, maxLength: 64 }
+  },
+  required: ["proposalId"]
+} as const;
+
+const mobileChatUndoOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    requestId: { type: "string", minLength: 8, maxLength: 64 }
+  }
 } as const;
 
 const mobileManualBookEditOpenApiBody = {
@@ -2693,6 +2727,150 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   );
 
   fastify.post(
+    "/api/mobile/projects/:id/chat/proposals/apply",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileEditProposalActionOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileEditProposalActionBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose a proposal to apply.");
+      }
+      return applyOrCancelEditProposal({
+        reply,
+        userId: auth.user.id,
+        projectId: id,
+        proposalId: parsed.data.proposalId,
+        requestId: parsed.data.requestId,
+        action: "apply",
+        textModel: safeFastRoutingTextModel()
+      });
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/projects/:id/chat/proposals/cancel",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileEditProposalActionOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileEditProposalActionBodySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Choose a proposal to cancel.");
+      }
+      return applyOrCancelEditProposal({
+        reply,
+        userId: auth.user.id,
+        projectId: id,
+        proposalId: parsed.data.proposalId,
+        requestId: parsed.data.requestId,
+        action: "cancel",
+        textModel: safeFastRoutingTextModel()
+      });
+    }
+  );
+
+  fastify.post(
+    "/api/mobile/projects/:id/chat/edits/undo",
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileChatUndoOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError }
+      }
+    },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "project-chat")) {
+        return;
+      }
+      const { id } = idParamsSchema.parse(request.params);
+      const parsed = mobileChatUndoBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Undo request was invalid.");
+      }
+      if (parsed.data.requestId) {
+        const replay = await replayProjectChatRequest(id, parsed.data.requestId);
+        if (replay) {
+          return replay;
+        }
+      }
+
+      const project = await loadProjectForChat(auth.user.id, id);
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+
+      const activeMessages = await loadActiveProjectChatMessages(id);
+      let userMessage: MobileProjectChatMessageRecord;
+      try {
+        userMessage = await createUserProjectChatMessage({
+          projectId: id,
+          parentId: activeProjectChatLeafId(activeMessages),
+          content: "Undo",
+          requestId: parsed.data.requestId,
+          metadata: { undoAction: true }
+        });
+      } catch (error) {
+        if (parsed.data.requestId && isPrismaUniqueConflict(error)) {
+          const replay = await replayProjectChatRequest(id, parsed.data.requestId);
+          if (replay) {
+            return replay;
+          }
+        }
+        throw error;
+      }
+
+      const intent: BookEditIntent = {
+        kind: "undo_last_edit",
+        confidence: 1,
+        reasoning: "Explicit undo API.",
+        affectedPageIndexes: [],
+        assistantMessage: "I’ll undo the last edit.",
+        scope: "none",
+        impact: "small_text",
+        clarification: "none"
+      };
+      const replyMessage = await undoLastBookEdit(project, intent, userMessage.id);
+      return {
+        ...(await loadProjectChatResponse(id)),
+        reply: serializeProjectChatMessage(replyMessage),
+        operation: null
+      } satisfies MobileProjectChatMessageResponseDto;
+    }
+  );
+
+  fastify.post(
     "/api/mobile/projects/:id/chat/branches",
     {
       attachValidation: true,
@@ -4159,13 +4337,16 @@ async function loadProjectChatResponse(
   const exposedMessages = activeChat.messages.slice(windowStart, windowEnd);
   const hasMore = windowStart > 0;
   const activeMessageIds = new Set(activeChat.messages.map((message) => message.id));
+  const exposedOperations = operations
+    .filter((operation) => shouldExposeChatOperation(operation, planVersions))
+    .filter((operation) => shouldExposeChatOperationForBranch(operation, activeMessageIds));
+  const latestUndoableId = exposedOperations.find((operation) => operationCanUndo(operation))?.id ?? null;
   return {
     messages: exposedMessages.map((message) => serializeProjectChatMessage(message, activeChat.branches.get(message.id) ?? null)),
     plans: planVersions.map((planVersion) => serializePlan(planVersion)),
-    operations: operations
-      .filter((operation) => shouldExposeChatOperation(operation, planVersions))
-      .filter((operation) => shouldExposeChatOperationForBranch(operation, activeMessageIds))
-      .map((operation) => serializeBookEditOperation(operation)),
+    operations: exposedOperations.map((operation) =>
+      serializeBookEditOperation(operation, { canUndo: operation.id === latestUndoableId })
+    ),
     hasMore,
     nextCursor: hasMore ? exposedMessages[0]?.id ?? null : null
   };
@@ -4410,7 +4591,133 @@ type PendingEditState = {
   intent?: BookEditIntent | undefined;
   affectedPageIndexes?: number[] | undefined;
   credits?: number | undefined;
+  proposalId?: string | undefined;
 };
+
+async function applyOrCancelEditProposal(options: {
+  reply: FastifyReply;
+  userId: string;
+  projectId: string;
+  proposalId: string;
+  requestId?: string | undefined;
+  action: "apply" | "cancel";
+  textModel?: TextModelAdapter | undefined;
+}): Promise<MobileProjectChatMessageResponseDto | void> {
+  const { reply, userId, projectId, proposalId, requestId, action, textModel } = options;
+  if (requestId) {
+    const replay = await replayProjectChatRequest(projectId, requestId);
+    if (replay) {
+      return replay;
+    }
+  }
+
+  const project = await loadProjectForChat(userId, projectId);
+  if (!project) {
+    return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+  }
+
+  const pending = await findPendingProposalById(projectId, proposalId);
+  if (!pending?.intent || pending.clarification !== "confirm") {
+    return sendMobileError(reply, 404, "PROPOSAL_NOT_FOUND", "That edit proposal is no longer available.");
+  }
+
+  const activeMessages = await loadActiveProjectChatMessages(projectId);
+  let userMessage: MobileProjectChatMessageRecord;
+  try {
+    userMessage = await createUserProjectChatMessage({
+      projectId,
+      parentId: activeProjectChatLeafId(activeMessages),
+      content: action === "apply" ? "Apply" : "Cancel",
+      requestId,
+      metadata: { proposalAction: action, proposalId }
+    });
+  } catch (error) {
+    if (requestId && isPrismaUniqueConflict(error)) {
+      const replay = await replayProjectChatRequest(projectId, requestId);
+      if (replay) {
+        return replay;
+      }
+    }
+    throw error;
+  }
+
+  if (action === "cancel") {
+    const replyMessage = await createAssistantChatMessage({
+      projectId,
+      parentId: userMessage.id,
+      content: "Okay, I dropped that request. Nothing was changed or charged.",
+      metadata: { pendingEditCancelled: true, charged: false, proposalId }
+    });
+    return {
+      ...(await loadProjectChatResponse(projectId)),
+      reply: serializeProjectChatMessage(replyMessage),
+      operation: null
+    } satisfies MobileProjectChatMessageResponseDto;
+  }
+
+  const openEditBlocked = await hasOpenProjectWork(projectId);
+  if (openEditBlocked) {
+    const replyMessage = await busyEditReply({
+      projectId,
+      parentMessageId: userMessage.id,
+      intent: pending.intent,
+      request: pending.request
+    });
+    return {
+      ...(await loadProjectChatResponse(projectId)),
+      reply: serializeProjectChatMessage(replyMessage),
+      operation: null
+    } satisfies MobileProjectChatMessageResponseDto;
+  }
+
+  const outcome = await handleProjectChatIntent({
+    userId,
+    project,
+    userMessageId: userMessage.id,
+    message: pending.request,
+    intent: pending.intent,
+    textModel,
+    executeProposal: true
+  });
+
+  return {
+    ...(await loadProjectChatResponse(projectId)),
+    reply: serializeProjectChatMessage(outcome.reply),
+    operation: outcome.operation ? serializeBookEditOperation(outcome.operation) : null
+  } satisfies MobileProjectChatMessageResponseDto;
+}
+
+async function findPendingProposalById(
+  projectId: string,
+  proposalId: string
+): Promise<PendingEditState | null> {
+  const messages = (await loadActiveProjectChatMessages(projectId)).reverse().slice(0, 40);
+  for (const message of messages) {
+    if (message.role !== "ASSISTANT") {
+      continue;
+    }
+    const metadata = jsonRecord(message.metadata);
+    const pending = jsonRecord(metadata.pendingEdit);
+    const request = typeof pending.request === "string" ? pending.request.trim() : "";
+    if (pending.clarification !== "confirm" || request.length === 0) {
+      continue;
+    }
+    const proposal = pendingEditProposalFromMetadata(metadata, pending, request);
+    if (proposal.proposalId !== proposalId) {
+      continue;
+    }
+    return {
+      request,
+      scope: proposal.intent?.scope ?? "none",
+      clarification: "confirm",
+      ...(proposal.intent ? { intent: proposal.intent } : {}),
+      ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
+      ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
+      proposalId
+    };
+  }
+  return null;
+}
 
 async function findPendingScopeClarification(
   projectId: string,
@@ -4443,7 +4750,8 @@ async function findPendingScopeClarification(
         clarification: pending.clarification,
         ...(proposal.intent ? { intent: proposal.intent } : {}),
         ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
-        ...(proposal.credits !== undefined ? { credits: proposal.credits } : {})
+        ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
+        ...(proposal.proposalId ? { proposalId: proposal.proposalId } : {})
       };
     }
     if (isScopeClarificationAssistantMessage(message.content)) {
@@ -4468,17 +4776,19 @@ function pendingEditProposalFromMetadata(
   metadata: Record<string, unknown>,
   pending: Record<string, unknown>,
   request: string
-): Pick<PendingEditState, "intent" | "affectedPageIndexes" | "credits"> {
+): Pick<PendingEditState, "intent" | "affectedPageIndexes" | "credits" | "proposalId"> {
   if (pending.clarification !== "confirm") {
     return {};
   }
   const card = jsonRecord(metadata.editProposal);
+  const proposalIdRaw = pending.proposalId ?? card.id;
+  const proposalId = typeof proposalIdRaw === "string" && proposalIdRaw.trim().length > 0 ? proposalIdRaw : undefined;
   const intentSource = jsonRecord(pending.intent);
   const kind = typeof intentSource.kind === "string" ? intentSource.kind : typeof card.kind === "string" ? card.kind : "";
   if (
     !["local_patch", "page_rewrite", "chapter_regenerate", "book_replan"].includes(kind)
   ) {
-    return {};
+    return proposalId ? { proposalId } : {};
   }
   const affectedPageIndexes = Array.isArray(pending.affectedPageIndexes)
     ? pending.affectedPageIndexes.filter((value): value is number => typeof value === "number" && Number.isInteger(value) && value > 0)
@@ -4530,7 +4840,8 @@ function pendingEditProposalFromMetadata(
   return {
     intent,
     ...(affectedPageIndexes.length > 0 ? { affectedPageIndexes } : {}),
-    ...(credits !== undefined ? { credits } : {})
+    ...(credits !== undefined ? { credits } : {}),
+    ...(proposalId ? { proposalId } : {})
   };
 }
 
@@ -4578,10 +4889,10 @@ function pendingScopeRecoveryMessage(pending: PendingEditState): string {
   if (pending.clarification === "confirm") {
     const credits =
       typeof pending.credits === "number" ? ` It would use ${pending.credits} credits.` : "";
-    return `I still have that edit ready.${credits} Say “apply it” to run it, or “cancel” to drop it.`;
+    return `I still have that edit ready.${credits} Tap Apply to run it, or Cancel to drop it.`;
   }
   if (pending.scope === "all_pages") {
-    return `I still have your earlier edit: “${pending.request}”, and I saw that you want it for the whole book. Say “apply it” to start that edit, or send a new edit.`;
+    return `I still have your earlier edit: “${pending.request}”, and I saw that you want it for the whole book. Tap Apply to start that edit, or send a new edit.`;
   }
   return `I still have your earlier edit: “${pending.request}”. Should I apply it to the whole book, matching text, or a specific page?`;
 }
@@ -4721,8 +5032,8 @@ async function handleProjectChatIntent(options: {
 
 /**
  * Prices a charged book edit and asks the user to confirm before any credits
- * are reserved. The proposal is stored in message metadata so “apply it” can
- * execute it without re-routing.
+ * are reserved. The proposal is stored in message metadata so Apply (API or
+ * chat confirmation) can execute it without re-routing.
  */
 async function proposeBookEdit(options: {
   project: ProjectForChat;
@@ -4731,6 +5042,7 @@ async function proposeBookEdit(options: {
   intent: BookEditIntent;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message, intent } = options;
+  const proposalId = randomUUID();
   if (intent.kind === "book_replan") {
     const cost = bookEditCreditCost(intent.kind, 0, project);
     const proposalIntent = { ...intent, clarification: "none" as const };
@@ -4747,9 +5059,11 @@ async function proposeBookEdit(options: {
           clarification: "confirm",
           intent: proposalIntent,
           affectedPageIndexes: [],
-          credits: cost
+          credits: cost,
+          proposalId
         }),
         editProposal: {
+          id: proposalId,
           kind: intent.kind,
           scope: intent.scope === "none" ? "all_pages" : intent.scope,
           affectedPageIndexes: [],
@@ -4806,9 +5120,11 @@ async function proposeBookEdit(options: {
         clarification: "confirm",
         intent: proposalIntent,
         affectedPageIndexes,
-        credits: cost
+        credits: cost,
+        proposalId
       }),
       editProposal: {
+        id: proposalId,
         kind: intent.kind,
         scope: proposalIntent.scope,
         affectedPageIndexes,
@@ -4828,7 +5144,8 @@ function pendingEditMetadataFromState(state: PendingEditState): Record<string, u
     clarification: state.clarification,
     ...(state.intent ? { intent: state.intent } : {}),
     ...(state.affectedPageIndexes ? { affectedPageIndexes: state.affectedPageIndexes } : {}),
-    ...(state.credits !== undefined ? { credits: state.credits } : {})
+    ...(state.credits !== undefined ? { credits: state.credits } : {}),
+    ...(state.proposalId ? { proposalId: state.proposalId } : {})
   };
 }
 
@@ -4837,6 +5154,7 @@ function editProposalCardFromState(state: PendingEditState): Record<string, unkn
     return null;
   }
   return {
+    ...(state.proposalId ? { id: state.proposalId } : {}),
     kind: state.intent.kind,
     scope: state.intent.scope,
     affectedPageIndexes: state.affectedPageIndexes ?? state.intent.affectedPageIndexes,
@@ -4885,7 +5203,7 @@ function editProposalMessage(
   intent: BookEditIntent
 ): string {
   const summary = editProposalSummary(kind, affectedPageIndexes, intent);
-  return `${summary}. This would use ${credits} credits. Say “apply it” to confirm, or “cancel” to drop it.`;
+  return `${summary}. This would use ${credits} credits. Tap Apply to confirm, or Cancel to drop it.`;
 }
 
 /** Per-attempt budget for the grounded-answer model call; overruns fall back to the intent's canned reply. */
@@ -6171,7 +6489,10 @@ function sanitizePublicChatMetadata(value: MobileJsonValue): MobileJsonValue {
   return safe;
 }
 
-function serializeBookEditOperation(operation: MobileBookEditOperationRecord): MobileBookEditOperationDto {
+function serializeBookEditOperation(
+  operation: MobileBookEditOperationRecord,
+  options?: { canUndo?: boolean }
+): MobileBookEditOperationDto {
   const retryLimit = operation.automaticRetryLimit ?? 0;
   const retryCount = operation.automaticRetryCount ?? 0;
   const retryBudgetAvailable = retryCount < retryLimit;
@@ -6214,8 +6535,19 @@ function serializeBookEditOperation(operation: MobileBookEditOperationRecord): M
     submittedText: typeof operation.request === "string" ? operation.request : null,
     requestId: operation.requestId ?? null,
     createdAt: operation.createdAt.toISOString(),
-    appliedAt: operation.appliedAt?.toISOString() ?? null
+    appliedAt: operation.appliedAt?.toISOString() ?? null,
+    canUndo: options?.canUndo ?? false
   };
+}
+
+function operationCanUndo(operation: MobileBookEditOperationRecord): boolean {
+  if (operation.status !== "APPLIED") {
+    return false;
+  }
+  if (!(UNDOABLE_EDIT_KINDS as readonly string[]).includes(operation.kind)) {
+    return false;
+  }
+  return jsonRecord(operation.classifier).undoneAt === undefined;
 }
 
 function chatPagesForProject(project: ProjectForChat): BookEditPageContext[] {

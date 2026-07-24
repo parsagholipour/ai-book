@@ -600,6 +600,7 @@ class MobileChatContentCard {
 /// A charged book edit the server priced but has not started yet.
 class MobileEditProposal {
   const MobileEditProposal({
+    required this.id,
     required this.kind,
     required this.scope,
     required this.affectedPageIndexes,
@@ -609,6 +610,7 @@ class MobileEditProposal {
     this.targetLanguage,
   });
 
+  final String id;
   final String kind;
   final String scope;
   final List<int> affectedPageIndexes;
@@ -620,6 +622,7 @@ class MobileEditProposal {
   factory MobileEditProposal.fromJson(Map<String, dynamic> json) {
     final pages = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
     return MobileEditProposal(
+      id: json['id'] as String? ?? '',
       kind: json['kind'] as String? ?? 'local_patch',
       scope: json['scope'] as String? ?? 'none',
       affectedPageIndexes: pages.whereType<int>().toList(growable: false),
@@ -673,6 +676,7 @@ class MobileBookEditOperation {
     this.retryMessage,
     this.submittedText,
     this.requestId,
+    this.canUndo = false,
   });
 
   final String id;
@@ -696,6 +700,9 @@ class MobileBookEditOperation {
   /// Original user input and idempotency key, when returned by newer servers.
   final String? submittedText;
   final String? requestId;
+
+  /// True when this applied edit can be undone from the chat transcript.
+  final bool canUndo;
 
   factory MobileBookEditOperation.fromJson(Map<String, dynamic> json) {
     final affected = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
@@ -738,6 +745,7 @@ class MobileBookEditOperation {
           json['retryMessage'] as String? ?? retry?['message'] as String?,
       submittedText: submittedText is String ? submittedText : null,
       requestId: json['requestId'] as String?,
+      canUndo: json['canUndo'] as bool? ?? false,
     );
   }
 

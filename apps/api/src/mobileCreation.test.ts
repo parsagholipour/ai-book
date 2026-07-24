@@ -132,6 +132,68 @@ describe("runCreationTurn", () => {
     expect(turn.question?.prompt).toBe("Who is this book for?");
   });
 
+  it("asks which discovery before audience for a vague scientific recent-discovery prompt", () => {
+    // Regression: "Make a scientific book about a recent discovering" used to get
+    // the canned auto-lane "Who is this book for?" even though the discovery
+    // itself was still unspecified.
+    const request: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "Make a scientific book about a recent discovering" }]
+    };
+    const turn = deterministicCreationTurn(request);
+
+    expect(turn.detectedLane).toBe("auto");
+    expect(turn.question?.prompt).toBe("Which recent scientific discovery should the book explore?");
+    expect(turn.question?.options).toEqual(["Space", "Medicine", "Climate", "AI"]);
+    expect(turn.assistantMessage).toBe(
+      "Got it. Which recent scientific discovery should the book explore?"
+    );
+    expect(turn.assistantMessage).not.toContain("Who is this book for?");
+  });
+
+  it("rejects enrichment that only echoes the generic audience fallback", async () => {
+    const request: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "Make a scientific book about a recent discovering" }]
+    };
+    let reported: unknown;
+    const turn = await runCreationTurn(request, {
+      enrich: async () => ({
+        assistantMessage: "Got it. Who is this book for?",
+        question: {
+          prompt: "Who is this book for?",
+          options: ["Young readers", "Clients or students", "General readers"],
+          allowCustom: true
+        }
+      }),
+      onEnrichError: (error) => {
+        reported = error;
+      }
+    });
+
+    expect(String(reported)).toMatch(/generic audience fallback/i);
+    expect(turn.question?.prompt).toBe("Which recent scientific discovery should the book explore?");
+    expect(turn.assistantMessage).toContain("Which recent scientific discovery");
+  });
+
+  it("throws when enrichment exhausts without a usable finish_turn patch", async () => {
+    const request: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "Make a scientific book about a recent discovering" }]
+    };
+    const model = toolModel([
+      { toolCalls: [{ name: "update_settings", arguments: { tone: "curious" } }] },
+      { toolCalls: [{ name: "update_settings", arguments: { tone: "curious" } }] },
+      { toolCalls: [{ name: "update_settings", arguments: { tone: "curious" } }] },
+      { toolCalls: [{ name: "update_settings", arguments: { tone: "curious" } }] }
+    ]);
+
+    await expect(
+      enrichCreationTurnWithSearch(
+        { textModel: model, research: neverSearchAdapter() },
+        request,
+        deterministicCreationTurn(request)
+      )
+    ).rejects.toThrow(/no usable patch/i);
+  });
+
   it("switches the book type when the user explicitly asks in chat", () => {
     const turn = deterministicCreationTurn({
       messages: [

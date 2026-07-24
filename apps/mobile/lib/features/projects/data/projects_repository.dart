@@ -51,6 +51,23 @@ abstract interface class ProjectsRepository {
     String? requestId,
   });
 
+  Future<MobileProjectChatSendResult> applyEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  });
+
+  Future<MobileProjectChatSendResult> cancelEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  });
+
+  Future<MobileProjectChatSendResult> undoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  });
+
   Future<MobileProjectChat> switchProjectChatBranch({
     required String projectId,
     required String messageId,
@@ -248,6 +265,53 @@ class MobileProjectsRepository implements ProjectsRepository {
         'editMessageId': messageId,
         'requestId': ?requestId,
       },
+      receiveTimeout: llmReceiveTimeout,
+    );
+    return MobileProjectChatSendResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> applyEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/chat/proposals/apply',
+      data: {'proposalId': proposalId, 'requestId': ?requestId},
+      receiveTimeout: llmReceiveTimeout,
+    );
+    return MobileProjectChatSendResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> cancelEditProposal({
+    required String projectId,
+    required String proposalId,
+    String? requestId,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/chat/proposals/cancel',
+      data: {'proposalId': proposalId, 'requestId': ?requestId},
+      receiveTimeout: llmReceiveTimeout,
+    );
+    return MobileProjectChatSendResult.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  @override
+  Future<MobileProjectChatSendResult> undoLastBookEdit({
+    required String projectId,
+    String? requestId,
+  }) async {
+    final response = await apiClient.postJson(
+      '/api/mobile/projects/$projectId/chat/edits/undo',
+      data: {'requestId': ?requestId},
       receiveTimeout: llmReceiveTimeout,
     );
     return MobileProjectChatSendResult.fromJson(
