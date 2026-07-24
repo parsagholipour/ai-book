@@ -11,6 +11,7 @@ import { prisma } from "@book-maker/db";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
+import { mobileImportRoutes } from "./mobileImports.js";
 import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
@@ -89,6 +90,7 @@ await app.register(swagger, {
 await app.register(swaggerUi, { routePrefix: "/docs" });
 await app.register(mobileAuthRoutes);
 await app.register(mobileProjectRoutes);
+await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);
 await app.register(projectRoutes);
 

@@ -8,6 +8,7 @@ import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/generation_progress_screen.dart';
+import '../../features/projects/presentation/import_book_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
 import '../../shared/api/api_error.dart';
@@ -78,6 +79,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           final fresh = state.uri.queryParameters['fresh'] == 'true';
           return CreationChatScreen(startFresh: fresh);
         },
+      ),
+      GoRoute(
+        path: '/books/import',
+        builder: (context, state) => const ImportBookScreen(),
       ),
       GoRoute(
         path: '/books/chat/:draftId',

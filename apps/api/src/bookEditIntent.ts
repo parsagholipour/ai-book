@@ -20,7 +20,8 @@ export type BookEditIntentKind =
   | "chapter_regenerate"
   | "undo_last_edit"
   | "show_content"
-  | "book_replan";
+  | "book_replan"
+  | "continue_book";
 
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
 export type BookEditScope = "none" | "explicit_pages" | "matching_pages" | "all_pages";
@@ -67,6 +68,8 @@ export type BookEditIntent = {
   contentTarget?: ShowContentTarget | null;
   /** Target book language for language-version replans. */
   targetLanguage?: string | null;
+  /** Set for continue_book intents: how many chapters to append. */
+  continuation?: { chapterCount: number } | null;
 };
 
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
@@ -99,7 +102,8 @@ export type ProposeEditTarget =
   | "whole_book"
   | "chapter"
   | "structural"
-  | "language_copy";
+  | "language_copy"
+  | "continuation";
 
 export type ProposeEditStyle = "exact_replace" | "rewrite";
 
@@ -113,11 +117,13 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       clarification: z.enum(["none", "scope"]).default("none"),
       /** Required when action is propose_edit. */
       editTarget: z
-        .enum(["pages", "matching", "whole_book", "chapter", "structural", "language_copy"])
+        .enum(["pages", "matching", "whole_book", "chapter", "structural", "language_copy", "continuation"])
         .optional(),
       editStyle: z.enum(["exact_replace", "rewrite"]).optional(),
       pageIndexes: z.array(z.number().int().positive()).max(100).default([]),
       chapterIndex: z.number().int().positive().nullable().default(null),
+      /** How many chapters to append when editTarget is continuation. */
+      newChapterCount: z.number().int().min(1).max(8).nullish(),
       targetLanguage: z.string().trim().min(2).max(40).nullable().default(null),
       replacementFrom: z.string().trim().min(1).max(500).optional(),
       replacementTo: z.string().trim().min(1).max(500).optional()
@@ -407,6 +413,24 @@ export function intentFromProposeEdit(
   const targetLanguage =
     decision.targetLanguage ?? (target === "language_copy" ? targetLanguageFromLanguageVersionRequest(message) : null);
 
+  if (target === "continuation") {
+    const chapterCount = Math.min(
+      8,
+      Math.max(1, decision.newChapterCount ?? continuationRequestFromMessage(message)?.chapterCount ?? 1)
+    );
+    return {
+      kind: "continue_book",
+      confidence: decision.confidence,
+      reasoning: decision.reasoning,
+      affectedPageIndexes: [],
+      assistantMessage: decision.assistantMessage,
+      scope: "none",
+      impact: "style_rewrite",
+      clarification: "none",
+      continuation: { chapterCount }
+    };
+  }
+
   if (target === "language_copy" || target === "structural") {
     return {
       kind: "book_replan",
@@ -511,7 +535,7 @@ function routerSystemPrompt(stage: Exclude<BookEditProjectStage, "other">, canRe
     stage === "complete"
       ? [
           "Use action undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
-          "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (premise/character/audience/ending/structure/visual identity), or language_copy (new language version).",
+          "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (premise/character/audience/ending/structure/visual identity), language_copy (new language version), or continuation (continue the book: write the next chapter(s), keep writing, finish the story; set newChapterCount when the user says how many).",
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
           "Set pageIndexes or chapterIndex when known. Set targetLanguage for language_copy.",
           "Never invent credit prices or internal pricing tiers; the server prices propose_edit."
@@ -677,10 +701,61 @@ export function classifyWithHeuristics(
   };
 }
 
+const continuationNumberWords: Record<string, number> = {
+  a: 1,
+  an: 1,
+  another: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8
+};
+
+/**
+ * Detects "continue my book" requests: keep writing, write the next chapter,
+ * add N more chapters, finish the story. Returns the requested chapter count
+ * (default 1) or null when the message is not a continuation request.
+ */
+export function continuationRequestFromMessage(message: string): { chapterCount: number } | null {
+  const text = message.trim();
+  if (/\?\s*$/.test(text)) {
+    return null;
+  }
+  const addChapters = text.match(
+    /\b(?:add|write|create|generate|give\s+me)\s+(?:(\d{1,2}|a|an|another|one|two|three|four|five|six|seven|eight)\s+)?(?:more\s+|new\s+|additional\s+|extra\s+)*chapters?\b/i
+  );
+  const nextChapter = text.match(
+    /\b(?:write|start|draft|do)\s+(?:the\s+)?next\s+(?:(\d{1,2}|two|three|four|five)\s+)?chapters?\b/i
+  );
+  const continueBook =
+    /\b(?:continue|keep\s+going\s+with|keep\s+writing|carry\s+on\s+with|pick\s+up)\b.{0,60}\b(?:book|story|novel|manuscript|writing|where\s+(?:i|it|we)\s+left\s+off)\b/i.test(
+      text
+    ) || /^(?:continue|keep\s+going|keep\s+writing)[.!\s]*$/i.test(text);
+  const finishBook = /\b(?:finish|complete)\s+(?:writing\s+)?(?:the\s+|my\s+)?(?:book|story|novel|manuscript)\b/i.test(text);
+  if (!addChapters && !nextChapter && !continueBook && !finishBook) {
+    return null;
+  }
+  const countToken = (addChapters?.[1] ?? nextChapter?.[1])?.toLowerCase();
+  const parsed = countToken ? continuationNumberWords[countToken] ?? Number.parseInt(countToken, 10) : 1;
+  const chapterCount = Number.isFinite(parsed) ? Math.min(8, Math.max(1, parsed)) : 1;
+  return { chapterCount };
+}
+
+function continuationAcknowledgement(chapterCount: number): string {
+  return chapterCount > 1
+    ? `I’ll write ${chapterCount} new chapters that continue your book in its own voice.`
+    : "I’ll write the next chapter of your book in its own voice.";
+}
+
 function looksLikeChangeRequest(message: string): boolean {
   return (
     dislikePreferenceFromMessage(message) !== null ||
     targetLanguageFromLanguageVersionRequest(message) !== null ||
+    continuationRequestFromMessage(message) !== null ||
     /\b(change|edit|rewrite|revise|fix|replace|rename|swap|switch|remove|delete|add|insert|update|make|turn|shorten|expand|polish|regenerate|move|reorder|restructure|redo|rework|want|prefer)\b/i.test(
       message
     ) ||
@@ -751,6 +826,21 @@ function classifyWithDegradedHeuristics(
       scope: "none",
       impact: "small_text",
       clarification: "none"
+    };
+  }
+
+  const continuation = stage === "complete" ? continuationRequestFromMessage(message) : null;
+  if (continuation) {
+    return {
+      kind: "continue_book",
+      confidence: 0.86,
+      reasoning: "The user asked to continue the book with new chapters.",
+      affectedPageIndexes: [],
+      assistantMessage: continuationAcknowledgement(continuation.chapterCount),
+      scope: "none",
+      impact: "style_rewrite",
+      clarification: "none",
+      continuation
     };
   }
 
@@ -1056,7 +1146,7 @@ function normalizeIntentForStage(intent: BookEditIntent, stage: BookEditProjectS
   };
   if (
     (stage === "plan_ready" || stage === "approved_plan") &&
-    ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate"].includes(bounded.kind)
+    ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate", "continue_book"].includes(bounded.kind)
   ) {
     return { ...bounded, kind: "plan_revision" };
   }

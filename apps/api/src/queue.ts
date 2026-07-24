@@ -39,7 +39,9 @@ export const jobNames = {
   REPLAN_BOOK: "replan-book",
   PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
   BUILD_CHARACTER_PERSONA: "build-character-persona",
-  RESEARCH: "research"
+  RESEARCH: "research",
+  IMPORT_BOOK: "import-book",
+  CONTINUE_BOOK: "continue-book"
 } as const;
 
 export type GenerationJobType = keyof typeof jobNames;

@@ -214,6 +214,12 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+  }) async {
+    editRequestIds.add(requestId);
+    if (editGates.isNotEmpty) {
+      await editGates.removeAt(0).future;
+    }
+    return _appendTurn(message);
   }
 
   @override
@@ -240,13 +246,6 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
     String? requestId,
   }) async {
     throw UnimplementedError();
-  }
-) async {
-    editRequestIds.add(requestId);
-    if (editGates.isNotEmpty) {
-      await editGates.removeAt(0).future;
-    }
-    return _appendTurn(message);
   }
 
   @override

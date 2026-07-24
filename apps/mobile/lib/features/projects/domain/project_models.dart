@@ -20,12 +20,16 @@ class MobileProjectSummary {
     required this.updatedAt,
     this.subtitle,
     this.authorName,
+    this.source = 'generated',
   });
 
   final String id;
   final String title;
   final String? subtitle;
   final String? authorName;
+
+  /// "imported" for books the author uploaded, "generated" otherwise.
+  final String source;
   final String bookType;
   final String lengthPreset;
   final String qualityPreset;
@@ -67,8 +71,11 @@ class MobileProjectSummary {
       ),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      source: json['source'] as String? ?? 'generated',
     );
   }
+
+  bool get isImported => source == 'imported';
 
   String get bookTypeLabel {
     return switch (bookType) {
@@ -125,6 +132,7 @@ class MobileProjectDetail extends MobileProjectSummary {
     required this.pages,
     super.subtitle,
     super.authorName,
+    super.source,
     this.plan,
     this.coverImage,
     this.quality = const MobileProjectQuality.pending(),
@@ -163,6 +171,7 @@ class MobileProjectDetail extends MobileProjectSummary {
       ),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      source: json['source'] as String? ?? 'generated',
       prompt: json['prompt'] as String,
       language: json['language'] as String,
       plan: plan == null
@@ -181,6 +190,34 @@ class MobileProjectDetail extends MobileProjectSummary {
       quality: MobileProjectQuality.fromJson(
         (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
+    );
+  }
+}
+
+/// Result of uploading a manuscript: the created project plus import status.
+class MobileImportedBook {
+  const MobileImportedBook({
+    required this.project,
+    required this.importId,
+    required this.importStatus,
+    this.stats,
+  });
+
+  final MobileProjectDetail project;
+  final String importId;
+  final String importStatus;
+  final Map<String, dynamic>? stats;
+
+  factory MobileImportedBook.fromJson(Map<String, dynamic> json) {
+    final importJson =
+        (json['import'] as Map?)?.cast<String, dynamic>() ?? const {};
+    return MobileImportedBook(
+      project: MobileProjectDetail.fromJson(
+        json['project'] as Map<String, dynamic>,
+      ),
+      importId: importJson['id'] as String? ?? '',
+      importStatus: importJson['status'] as String? ?? 'UPLOADED',
+      stats: (importJson['stats'] as Map?)?.cast<String, dynamic>(),
     );
   }
 }

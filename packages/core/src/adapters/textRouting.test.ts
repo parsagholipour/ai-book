@@ -84,7 +84,12 @@ describe("RoutingTextModelAdapter", () => {
 
   it("pins mechanical purposes to the strings actually used by generation code", async () => {
     const sources = await Promise.all(
-      ["../generation/pages.ts", "../generation/bestOf.ts", "../generation/readerChapters.ts"].map((path) =>
+      [
+        "../generation/pages.ts",
+        "../generation/bestOf.ts",
+        "../generation/readerChapters.ts",
+        "../ingestion/manuscriptImport.ts"
+      ].map((path) =>
         readFile(new URL(path, import.meta.url), "utf8")
       )
     );

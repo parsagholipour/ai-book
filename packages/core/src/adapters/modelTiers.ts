@@ -15,7 +15,9 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "chapterize-export",
   "repair-page-brief",
   "generate-page-map",
-  "generate-chapter-brief"
+  "generate-chapter-brief",
+  "import-chapterize",
+  "import-style-profile"
 ]);
 
 export type ModelTierTextSelections = {

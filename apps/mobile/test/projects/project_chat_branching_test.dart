@@ -236,6 +236,10 @@ class _BranchingProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+  }) async {
+    editedMessageIds.add(messageId);
+    final edited = _nodes.firstWhere((node) => node.id == messageId);
+    return _appendTurn(parentId: edited.parentId, message: message);
   }
 
   @override
@@ -262,11 +266,6 @@ class _BranchingProjectsRepository implements ProjectsRepository {
     String? requestId,
   }) async {
     throw UnimplementedError();
-  }
-) async {
-    editedMessageIds.add(messageId);
-    final edited = _nodes.firstWhere((node) => node.id == messageId);
-    return _appendTurn(parentId: edited.parentId, message: message);
   }
 
   @override

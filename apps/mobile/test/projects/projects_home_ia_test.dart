@@ -359,6 +359,8 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+  }) {
+    return sendProjectChatMessage(projectId: projectId, message: message);
   }
 
   @override
@@ -386,8 +388,18 @@ class FakeProjectsRepository implements ProjectsRepository {
   }) async {
     throw UnimplementedError();
   }
-) {
-    return sendProjectChatMessage(projectId: projectId, message: message);
+
+  @override
+  Future<MobileImportedBook> importBook({
+    required List<int> bytes,
+    required String filename,
+    required String requestId,
+    String? mimeType,
+    String? title,
+    String? language,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    throw UnimplementedError();
   }
 
   @override

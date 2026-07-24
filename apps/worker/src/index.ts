@@ -1,9 +1,10 @@
 import { Job, Queue, UnrecoverableError, Worker, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  analyzeManuscriptStyle,
   appendQualityIssue,
   assertBookLikeMarkdown,
   bookPlanSchema,
@@ -37,6 +38,9 @@ import {
   loadConfig,
   normalizePlanPageTargets,
   optimizeImageForStorage,
+  parseManuscript,
+  segmentManuscript,
+  synthesizeImportedBookPlan,
   PREMIUM_COVER_IMAGE_MODEL,
   PREMIUM_FALLBACK_IMAGE_MODEL,
   publicAssetUrl,
@@ -65,6 +69,7 @@ import {
   type ImageModelSelection,
   type OptimizedImage,
   type JobStep,
+  type ManuscriptImportFormat,
   type ManuscriptQualityIssue,
   type ManuscriptQualityReport,
   type PageQualityReport,
@@ -91,6 +96,22 @@ import {
 import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 import { z } from "zod";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
+import {
+  CONTINUATION_EXCERPT_GUARD,
+  continuationChapterPlans,
+  continuationOutlineAiSchema,
+  continuationPageIndexes,
+  distributeContinuationPages,
+  fallbackContinuationOutline,
+  type ContinuationOutline
+} from "./continueBook.js";
+import {
+  importChapterRows,
+  importStats,
+  importStyleProfileFromMediaSettings,
+  mediaSettingsWithImportStyle,
+  normalizeImportedLanguage
+} from "./importBook.js";
 import { directGenerationResumeState, type DirectResumeState } from "./directGenerationResume.js";
 import { planRevisionConsistencyWarning } from "./planRevisionSafety.js";
 import {
@@ -215,6 +236,18 @@ const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> 
     { key: "persona", label: "Build persona" },
     { key: "portrait", label: "Create profile picture" },
     { key: "save", label: "Save character" }
+  ],
+  "import-book": [
+    { key: "read", label: "Read manuscript" },
+    { key: "segment", label: "Split into chapters" },
+    { key: "analyze", label: "Learn writing style" },
+    { key: "save", label: "Save your book" }
+  ],
+  "continue-book": [
+    { key: "outline", label: "Outline new chapters" },
+    { key: "draft", label: "Write new pages" },
+    { key: "save", label: "Save chapters" },
+    { key: "export", label: "Refresh exports" }
   ]
 };
 
@@ -271,6 +304,12 @@ const worker = new Worker(
           break;
         case "build-character-persona":
           await buildCharacterPersona(job);
+          break;
+        case "import-book":
+          await importBook(job);
+          break;
+        case "continue-book":
+          await continueBook(job);
           break;
         default:
           throw new Error(`Unknown worker job: ${job.name}`);
@@ -3260,6 +3299,399 @@ async function applyBookEdit(job: Job) {
   await maybeEnqueueCompile(projectId, effectivePlanVersion.id);
 }
 
+async function importBook(job: Job) {
+  const { projectId, importId } = job.data as { projectId: string; importId: string };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  const payloadLanguage =
+    typeof job.data.language === "string" && job.data.language.trim() ? job.data.language.trim() : null;
+  const bookImport = await prisma.bookImport.findUnique({ where: { id: importId } });
+  if (!bookImport) {
+    throw new Error("Book import not found");
+  }
+  const project = await getProjectOrThrow(projectId);
+  try {
+    await prisma.bookImport.update({ where: { id: importId }, data: { status: "PARSING", error: null } });
+    await advanceJobStep(generationJobId, "read", 10, "Reading your manuscript");
+    const data = await readFile(join(config.ATTACHMENT_STORAGE_DIR, importId, "source")).catch(() => null);
+    if (!data) {
+      throw new Error("The uploaded manuscript file is no longer available. Import the book again.");
+    }
+    const parsed = await parseManuscript({ data, format: bookImport.format as ManuscriptImportFormat });
+
+    await advanceJobStep(generationJobId, "segment", 35, "Splitting into chapters");
+    const input = inputFromProject(project);
+    const providers = createLoggedProviders(job, createProviders(config, input), input);
+    const segmented = await segmentManuscript(parsed, {
+      chapterizeModel: providers.text,
+      language: payloadLanguage ?? project.language
+    });
+    if (segmented.pageCount === 0) {
+      throw new Error("No readable pages were found in that manuscript.");
+    }
+
+    await advanceJobStep(generationJobId, "analyze", 60, "Learning your writing style");
+    const style = await analyzeManuscriptStyle(
+      { text: parsed.text, language: payloadLanguage ?? undefined },
+      { model: providers.text }
+    );
+    const plan = synthesizeImportedBookPlan({
+      title: project.title,
+      ...(project.subtitle ? { subtitle: project.subtitle } : {}),
+      segmented,
+      style
+    });
+
+    await advanceJobStep(generationJobId, "save", 85, "Saving your book");
+    const rows = importChapterRows(segmented);
+    const language = payloadLanguage ?? normalizeImportedLanguage(style.detectedLanguage, project.language);
+    const mediaSettings = mediaSettingsWithImportStyle(project.mediaSettings, style);
+    const updatedInput = inputFromProject({
+      ...project,
+      targetPages: segmented.pageCount,
+      language,
+      mediaSettings
+    });
+    const version = await nextPlanVersion(projectId);
+    const planVersionId = await prisma.$transaction(
+      async (tx) => {
+        const planVersion = await tx.planVersion.create({
+          data: {
+            projectId,
+            version,
+            status: "APPROVED",
+            approvedAt: new Date(),
+            planningPackage: plan,
+            inputSnapshot: planInputSnapshot(updatedInput),
+            messages: []
+          }
+        });
+        await tx.project.update({
+          where: { id: projectId },
+          data: {
+            currentPlanId: planVersion.id,
+            targetPages: segmented.pageCount,
+            language,
+            mediaSettings: mediaSettings as Prisma.InputJsonValue,
+            contentRevision: { increment: 1 }
+          }
+        });
+        for (const row of rows) {
+          const chapter = await tx.chapter.create({
+            data: {
+              projectId,
+              index: row.index,
+              title: row.title,
+              summary: row.summary,
+              targetPages: row.targetPages,
+              status: "COMPLETED"
+            }
+          });
+          await tx.page.createMany({
+            data: row.pages.map((page) => ({
+              projectId,
+              chapterId: chapter.id,
+              index: page.index,
+              title: page.title,
+              markdown: page.markdown,
+              summary: page.summary,
+              status: "COMPLETED"
+            }))
+          });
+        }
+        await tx.bookImport.update({
+          where: { id: importId },
+          data: { status: "COMPLETE", stats: importStats(parsed, segmented) as Prisma.InputJsonValue }
+        });
+        return planVersion.id;
+      },
+      // Large manuscripts create hundreds of rows; give the transaction room.
+      { timeout: 120_000 }
+    );
+
+    // Best-effort: page embeddings power "matching pages" edit targeting.
+    const savedPages = await prisma.page.findMany({
+      where: { projectId },
+      select: { id: true, index: true, summary: true },
+      orderBy: { index: "asc" }
+    });
+    for (const page of savedPages) {
+      await storeEmbedding(projectId, `page:${page.index}`, page.id, page.summary, providers.embedding);
+    }
+
+    await prisma.project.update({ where: { id: projectId }, data: { status: "COMPLETE" } });
+    await maybeEnqueueCompile(projectId, planVersionId);
+  } catch (error) {
+    await prisma.bookImport
+      .update({ where: { id: importId }, data: { status: "FAILED", error: errorMessage(error) } })
+      .catch(() => undefined);
+    throw error;
+  }
+}
+
+async function continueBook(job: Job) {
+  const { projectId, operationId, request, planId } = job.data as {
+    projectId: string;
+    operationId: string;
+    request: string;
+    planId?: string;
+  };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  const chapterCount = Math.min(8, Math.max(1, Math.floor(Number(job.data.chapterCount) || 1)));
+  const requestedPageCount = Math.max(chapterCount, Math.floor(Number(job.data.newPageCount) || chapterCount * 5));
+
+  const operation = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
+  if (!operation) {
+    throw new Error("Book edit operation not found");
+  }
+  await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
+  await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
+  await advanceJobStep(generationJobId, "outline", 15, "Outlining new chapters");
+
+  const project = await getProjectOrThrow(projectId);
+  const basePlanVersion = planId
+    ? await prisma.planVersion.findUnique({ where: { id: planId } })
+    : project.currentPlanId
+      ? await prisma.planVersion.findUnique({ where: { id: project.currentPlanId } })
+      : null;
+  if (!basePlanVersion) {
+    throw new Error("Current plan not found");
+  }
+  const input = inputForPlanVersion(project, basePlanVersion.inputSnapshot);
+  const plan = bookPlanSchema.parse(basePlanVersion.planningPackage);
+  const strategy = strategyForInput(input);
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+
+  const trailingPagesDesc = await prisma.page.findMany({
+    where: { projectId, status: "COMPLETED" },
+    orderBy: { index: "desc" },
+    take: 12
+  });
+  if (trailingPagesDesc.length === 0) {
+    throw new Error("This book has no finished pages to continue from");
+  }
+  const lastPageIndex =
+    (await prisma.page.findFirst({ where: { projectId }, orderBy: { index: "desc" }, select: { index: true } }))
+      ?.index ?? 0;
+  const lastChapterIndex =
+    (await prisma.chapter.findFirst({ where: { projectId }, orderBy: { index: "desc" }, select: { index: true } }))
+      ?.index ?? plan.chapters.length;
+  const startChapterIndex = Math.max(lastChapterIndex, plan.chapters.at(-1)?.index ?? 0) + 1;
+  const trailingPages = [...trailingPagesDesc].reverse();
+  const styleProfile = importStyleProfileFromMediaSettings(project.mediaSettings);
+
+  const outline = await continuationOutlineWithModel({
+    plan,
+    request,
+    chapterCount,
+    styleProfile,
+    trailingPages,
+    language: project.language,
+    textModel: providers.text
+  });
+  const pageDistribution = distributeContinuationPages(requestedPageCount, outline.chapters.length);
+  const newChapterPlans = continuationChapterPlans(plan, outline, pageDistribution, startChapterIndex);
+  const newPageIndexes = continuationPageIndexes(lastPageIndex, pageDistribution);
+  const extendedPlan = bookPlanSchema.parse({ ...plan, chapters: [...plan.chapters, ...newChapterPlans] });
+  const totalPages = lastPageIndex + newPageIndexes.length;
+
+  const version = await nextPlanVersion(projectId);
+  const newPlanVersion = await prisma.$transaction(async (tx) => {
+    await tx.planVersion.update({ where: { id: basePlanVersion.id }, data: { status: "SUPERSEDED" } });
+    const created = await tx.planVersion.create({
+      data: {
+        projectId,
+        version,
+        status: "APPROVED",
+        approvedAt: new Date(),
+        planningPackage: extendedPlan,
+        inputSnapshot: planInputSnapshot({ ...input, targetPages: totalPages }),
+        messages: [
+          { role: "user", content: `Continue the book: ${request}`.slice(0, 2000), at: new Date().toISOString() }
+        ]
+      }
+    });
+    await tx.project.update({
+      where: { id: projectId },
+      data: { currentPlanId: created.id, targetPages: totalPages }
+    });
+    let pageCursor = lastPageIndex;
+    for (const chapterPlan of newChapterPlans) {
+      const chapter = await tx.chapter.create({
+        data: {
+          projectId,
+          index: chapterPlan.index,
+          title: chapterPlan.title,
+          summary: chapterPlan.summary,
+          targetPages: chapterPlan.targetPages,
+          status: "PENDING"
+        }
+      });
+      await tx.page.createMany({
+        data: Array.from({ length: chapterPlan.targetPages }, (_, offset) => ({
+          projectId,
+          chapterId: chapter.id,
+          index: pageCursor + offset + 1,
+          title: `Page ${pageCursor + offset + 1}`,
+          markdown: "",
+          summary: "",
+          status: "PENDING"
+        }))
+      });
+      pageCursor += chapterPlan.targetPages;
+    }
+    return created;
+  });
+
+  try {
+    await advanceJobStep(generationJobId, "draft", 30, "Writing new pages");
+    const continuityNotes = await loadContinuityNotes(projectId);
+    const earlierSummaries = await prisma.page.findMany({
+      where: { projectId, index: { lte: lastPageIndex }, status: "COMPLETED" },
+      orderBy: { index: "asc" },
+      select: { summary: true }
+    });
+    const previousSummaries = earlierSummaries.map((page) => page.summary).filter(Boolean).slice(-40);
+    const previousPages = trailingPages.map(toPriorPageContext);
+
+    let drafted = 0;
+    for (const chapterPlan of newChapterPlans) {
+      const chapter = await prisma.chapter.findUnique({
+        where: { projectId_index: { projectId, index: chapterPlan.index } }
+      });
+      for (let offset = 0; offset < chapterPlan.targetPages; offset += 1) {
+        const pageIndex = newPageIndexes[drafted]!;
+        await updateJobProgress(generationJobId, {
+          progress: 30 + Math.round((drafted / Math.max(newPageIndexes.length, 1)) * 45),
+          message: `Writing page ${pageIndex}`
+        });
+        const draft = await strategy.generatePageDraft({
+          input,
+          plan: extendedPlan,
+          chapter: chapterPlan,
+          pageIndex,
+          previousSummaries: [...previousSummaries, ...previousPages.map((page) => page.summary)].slice(-40),
+          previousPages: previousPages.slice(-6),
+          continuityNotes,
+          researchNotes: [],
+          textModel: providers.text
+        });
+        const saved = await prisma.page.update({
+          where: { projectId_index: { projectId, index: pageIndex } },
+          data: {
+            title: draft.title,
+            markdown: draft.markdown,
+            summary: draft.summary,
+            status: "COMPLETED"
+          }
+        });
+        if (draft.continuityNotes.length > 0) {
+          await prisma.continuityNote.createMany({
+            data: draft.continuityNotes.map((body) => ({
+              projectId,
+              scope: `page:${pageIndex}:continue:${operationId}`,
+              body,
+              tags: ["page", String(pageIndex), "continue"]
+            }))
+          });
+        }
+        await storeEmbedding(projectId, `page:${pageIndex}`, saved.id, saved.summary, providers.embedding);
+        previousPages.push({ index: pageIndex, title: saved.title, markdown: saved.markdown, summary: saved.summary });
+        drafted += 1;
+      }
+      if (chapter) {
+        await prisma.chapter.update({ where: { id: chapter.id }, data: { status: "COMPLETED" } });
+      }
+    }
+
+    await advanceJobStep(generationJobId, "save", 82, "Saving chapters");
+    await prisma.bookEditOperation.update({
+      where: { id: operationId },
+      data: { status: "APPLIED", affectedPageIndexes: newPageIndexes, appliedAt: new Date() }
+    });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { status: "COMPLETE", contentRevision: { increment: 1 } }
+    });
+    await advanceJobStep(generationJobId, "export", 90, "Refreshing exports");
+    await invalidateProjectExports(projectId);
+    await maybeEnqueueCompile(projectId, newPlanVersion.id);
+  } catch (error) {
+    // Roll the append back so a retry starts from the original book state.
+    await prisma
+      .$transaction(async (tx) => {
+        await tx.page.deleteMany({ where: { projectId, index: { gt: lastPageIndex } } });
+        await tx.chapter.deleteMany({ where: { projectId, index: { gte: startChapterIndex } } });
+        await tx.embedding.deleteMany({
+          where: { projectId, scope: { in: newPageIndexes.map((index) => `page:${index}`) } }
+        });
+        await tx.project.update({
+          where: { id: projectId },
+          data: { currentPlanId: basePlanVersion.id, targetPages: project.targetPages }
+        });
+        await tx.planVersion.update({ where: { id: basePlanVersion.id }, data: { status: "APPROVED" } });
+        await tx.planVersion.delete({ where: { id: newPlanVersion.id } });
+      })
+      .catch((cleanupError) => {
+        console.error(`Continuation cleanup failed for project ${projectId}`, cleanupError);
+      });
+    throw error;
+  }
+}
+
+async function continuationOutlineWithModel(options: {
+  plan: BookPlan;
+  request: string;
+  chapterCount: number;
+  styleProfile: Record<string, unknown> | null;
+  trailingPages: Array<{ index: number; title: string; markdown: string; summary: string }>;
+  language: string;
+  textModel: TextModelAdapter;
+}): Promise<ContinuationOutline> {
+  const excerpt = options.trailingPages
+    .slice(-2)
+    .map((page) => `Page ${page.index} — ${page.title}\n${page.markdown}`)
+    .join("\n\n")
+    .slice(-6000);
+  const recentSummaries = options.trailingPages.map((page) => `${page.index}: ${page.summary}`).join("\n");
+  try {
+    const result = await generateJsonWithRetry(options.textModel, {
+      purpose: "generate-chapter-brief",
+      temperature: 0.4,
+      maxTokens: 1600,
+      schema: continuationOutlineAiSchema,
+      messages: [
+        {
+          role: "system",
+          content:
+            `You outline the next chapters of an existing book so a writer can continue it in the author's voice. Propose exactly ${options.chapterCount} new chapter(s) that pick up where the book ends and satisfy the author's directive. Write titles and summaries in the book's language ("${options.language}"). ${CONTINUATION_EXCERPT_GUARD}`
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            premise: options.plan.premise,
+            voiceGuide: options.plan.voiceGuide,
+            existingChapters: options.plan.chapters.map((chapter) => ({
+              index: chapter.index,
+              title: chapter.title,
+              summary: chapter.summary
+            })),
+            styleProfile: options.styleProfile,
+            recentPageSummaries: recentSummaries,
+            finalPagesExcerpt: excerpt,
+            authorDirective: options.request
+          })
+        }
+      ]
+    });
+    if (result.data.chapters.length > 0) {
+      return { chapters: result.data.chapters.slice(0, options.chapterCount) };
+    }
+  } catch (error) {
+    console.warn(`Continuation outline model call failed; using fallback`, error);
+  }
+  return fallbackContinuationOutline(options.request, options.chapterCount);
+}
+
 async function replanBook(job: Job) {
   const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId, targetLanguage } = job.data as {
     projectId: string;
@@ -4135,7 +4567,9 @@ function workerJobNameForType(type: string): string {
     APPLY_BOOK_EDIT: "apply-book-edit",
     REPLAN_BOOK: "replan-book",
     PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
-    BUILD_CHARACTER_PERSONA: "build-character-persona"
+    BUILD_CHARACTER_PERSONA: "build-character-persona",
+    IMPORT_BOOK: "import-book",
+    CONTINUE_BOOK: "continue-book"
   };
   const name = names[type];
   if (!name) {

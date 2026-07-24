@@ -38,6 +38,14 @@ class MobileBilling {
         .where((entitlement) => entitlement.type == 'EXPORT_UNLOCK')
         .length;
   }
+
+  /// Active Creator/Pro subscription — gates "bring your own book" import.
+  bool get hasCreatorSubscription {
+    return entitlements.any(
+      (entitlement) =>
+          entitlement.type == 'CREATOR_PLAN' || entitlement.type == 'PRO_PLAN',
+    );
+  }
 }
 
 class GooglePlayVerificationResult {

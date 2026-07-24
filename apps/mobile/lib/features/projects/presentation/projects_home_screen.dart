@@ -45,6 +45,7 @@ class ProjectsHomeScreen extends ConsumerWidget {
                 projects: items,
                 billing: billing,
                 onStartBook: () => context.push('/books/new'),
+                onImportBook: () => context.push('/books/import'),
                 onAddCredits: () => showBillingPaywall(
                   context,
                   title: 'Add book credits',
@@ -91,6 +92,7 @@ class _HomeContent extends StatelessWidget {
     required this.projects,
     required this.billing,
     required this.onStartBook,
+    required this.onImportBook,
     required this.onAddCredits,
     required this.onRetryBilling,
     this.displayName,
@@ -100,6 +102,7 @@ class _HomeContent extends StatelessWidget {
   final List<MobileProjectSummary> projects;
   final AsyncValue<MobileBilling> billing;
   final VoidCallback onStartBook;
+  final VoidCallback onImportBook;
   final VoidCallback onAddCredits;
   final VoidCallback onRetryBilling;
 
@@ -116,6 +119,8 @@ class _HomeContent extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           _FirstProjectCard(onStartBook: onStartBook),
+          const SizedBox(height: 14),
+          _ImportBookAction(billing: billing, onImportBook: onImportBook),
           const SizedBox(height: 14),
           _BillingSummarySlot(
             billing: billing,
@@ -150,6 +155,8 @@ class _HomeContent extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         _SecondaryStartBookAction(onStartBook: onStartBook),
+        const SizedBox(height: 12),
+        _ImportBookAction(billing: billing, onImportBook: onImportBook),
         const SizedBox(height: 18),
         if (attentionProjects.isNotEmpty) ...[
           _ProjectSection(
@@ -310,6 +317,51 @@ class _SecondaryStartBookAction extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// "Bring your own book" entry: import a finished manuscript to improve or
+/// continue it. Shows a lock badge until the account has a Creator/Pro
+/// subscription (the import API is gated on it).
+class _ImportBookAction extends StatelessWidget {
+  const _ImportBookAction({required this.billing, required this.onImportBook});
+
+  final AsyncValue<MobileBilling> billing;
+  final VoidCallback onImportBook;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final hasSubscription =
+        billing.asData?.value.hasCreatorSubscription ?? false;
+    return Material(
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: ListTile(
+        key: const ValueKey('home-import-book'),
+        onTap: onImportBook,
+        leading: const Icon(Icons.auto_stories_outlined),
+        title: Text(
+          'Import your book',
+          style: Theme.of(
+            context,
+          ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+        ),
+        subtitle: const Text(
+          'Upload a manuscript you wrote — improve it, keep writing, export.',
+        ),
+        trailing: hasSubscription
+            ? const Icon(Icons.chevron_right)
+            : Icon(
+                Icons.lock_outline,
+                key: const ValueKey('home-import-book-lock'),
+                color: colors.onSurfaceVariant,
+              ),
       ),
     );
   }

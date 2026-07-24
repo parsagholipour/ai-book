@@ -2069,6 +2069,7 @@ describe("mobile project routes", () => {
         "promptPreview",
         "quality",
         "qualityPreset",
+        "source",
         "status",
         "statusLabel",
         "subtitle",
@@ -3576,6 +3577,66 @@ describe("mobile project routes", () => {
     expect(body.reply.metadata).toMatchObject({ pendingEditCancelled: true, charged: false });
     expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("proposes a book continuation and queues CONTINUE_BOOK after confirmation", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-continue", type: "CONTINUE_BOOK" }));
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Continue the story and add 2 more chapters" }
+    });
+    const proposalBody = proposal.json();
+
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.operation).toBeNull();
+    expect(proposalBody.reply.content).toContain("2 new chapters");
+    expect(proposalBody.reply.metadata).toMatchObject({
+      charged: false,
+      pendingEdit: { clarification: "confirm" },
+      editProposal: {
+        kind: "continue_book",
+        affectedPageIndexes: [],
+        // 2 chapters × 5 estimated pages × 80 credits/page.
+        credits: 800
+      }
+    });
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: proposalBody.reply.metadata.editProposal.id }
+    });
+    const body = confirm.json();
+
+    expect(confirm.statusCode).toBe(200);
+    expect(body.operation).toMatchObject({ kind: "continue_book" });
+    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "PAGE_REGENERATION", amountCredits: 800 })
+    );
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        type: "CONTINUE_BOOK",
+        payload: expect.objectContaining({ chapterCount: 2, newPageCount: 10, planId: "plan-1" })
+      })
+    );
     await app.close();
   });
 

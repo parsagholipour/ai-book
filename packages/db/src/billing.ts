@@ -619,6 +619,17 @@ export async function hasActiveProjectEntitlement(options: {
   return Boolean(entitlement);
 }
 
+export async function hasActiveSubscriptionEntitlement(userId: string, now = new Date()): Promise<boolean> {
+  const entitlement = await prisma.userEntitlement.findFirst({
+    where: {
+      ...activeEntitlementWhere(userId, now),
+      type: { in: ["CREATOR_PLAN", "PRO_PLAN"] }
+    },
+    select: { id: true }
+  });
+  return Boolean(entitlement);
+}
+
 export async function ensureProjectExportEntitlementOrSpend(options: {
   userId: string;
   projectId: string;

@@ -233,6 +233,8 @@ export type MobileProjectSummaryDto = {
   pageCount: number;
   imageCount: number;
   hasPlan: boolean;
+  /** "imported" for books brought in by the author, "generated" otherwise. */
+  source: "imported" | "generated";
   exports: MobileExportSetDto;
   createdAt: string;
   updatedAt: string;
@@ -564,7 +566,7 @@ type MobileCreateProjectInput = CreateProjectInput & {
   };
 };
 
-type MobileProjectRecord = {
+export type MobileProjectRecord = {
   id: string;
   userId?: string;
   title: string;
@@ -958,7 +960,7 @@ export const MOBILE_PRODUCT_PRESETS: Record<
   }
 };
 
-const mobileAuthError = {
+export const mobileAuthError = {
   type: "object",
   properties: {
     error: {
@@ -3920,7 +3922,7 @@ function revisedCopyTitle(title: string): string {
   return `${title.slice(0, 160 - suffix.length)}${suffix}`;
 }
 
-async function loadMobileProjectDetail(userId: string, projectId: string): Promise<MobileProjectRecord | null> {
+export async function loadMobileProjectDetail(userId: string, projectId: string): Promise<MobileProjectRecord | null> {
   return (await prisma.project.findFirst({
     where: { id: projectId, userId },
     include: mobileProjectDetailInclude()
@@ -4786,7 +4788,7 @@ function pendingEditProposalFromMetadata(
   const intentSource = jsonRecord(pending.intent);
   const kind = typeof intentSource.kind === "string" ? intentSource.kind : typeof card.kind === "string" ? card.kind : "";
   if (
-    !["local_patch", "page_rewrite", "chapter_regenerate", "book_replan"].includes(kind)
+    !["local_patch", "page_rewrite", "chapter_regenerate", "book_replan", "continue_book"].includes(kind)
   ) {
     return proposalId ? { proposalId } : {};
   }
@@ -4835,7 +4837,17 @@ function pendingEditProposalFromMetadata(
       ? { targetLanguage: intentSource.targetLanguage }
       : typeof card.targetLanguage === "string"
         ? { targetLanguage: card.targetLanguage }
-        : {})
+        : {}),
+    ...(kind === "continue_book"
+      ? {
+          continuation: {
+            chapterCount:
+              typeof jsonRecord(intentSource.continuation).chapterCount === "number"
+                ? Math.min(8, Math.max(1, jsonRecord(intentSource.continuation).chapterCount as number))
+                : 1
+          }
+        }
+      : {})
   };
   return {
     intent,
@@ -5043,6 +5055,38 @@ async function proposeBookEdit(options: {
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message, intent } = options;
   const proposalId = randomUUID();
+  if (intent.kind === "continue_book") {
+    const newPageCount = continuationNewPageCount(intent, project);
+    const cost = bookEditCreditCost(intent.kind, newPageCount, project);
+    const proposalIntent = { ...intent, clarification: "none" as const };
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      parentId: userMessageId,
+      content: editProposalMessage(intent.kind, [], cost, intent),
+      metadata: {
+        intent: proposalIntent,
+        charged: false,
+        pendingEdit: pendingEditMetadataFromState({
+          request: message,
+          scope: "none",
+          clarification: "confirm",
+          intent: proposalIntent,
+          affectedPageIndexes: [],
+          credits: cost,
+          proposalId
+        }),
+        editProposal: {
+          id: proposalId,
+          kind: intent.kind,
+          scope: "none",
+          affectedPageIndexes: [],
+          credits: cost,
+          summary: editProposalSummary(intent.kind, [], intent)
+        }
+      }
+    });
+    return { reply, operation: null };
+  }
   if (intent.kind === "book_replan") {
     const cost = bookEditCreditCost(intent.kind, 0, project);
     const proposalIntent = { ...intent, clarification: "none" as const };
@@ -5170,6 +5214,12 @@ function editProposalCardFromState(state: PendingEditState): Record<string, unkn
 }
 
 function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexes: number[], intent: BookEditIntent): string {
+  if (kind === "continue_book") {
+    const chapterCount = intent.continuation?.chapterCount ?? 1;
+    return chapterCount > 1
+      ? `Write ${chapterCount} new chapters continuing your book`
+      : "Write the next chapter of your book";
+  }
   if (kind === "book_replan") {
     return intent.targetLanguage
       ? `Create a new ${languageDisplayName(intent.targetLanguage)} copy and regenerate it`
@@ -5549,6 +5599,9 @@ async function queueChatBookEdit(options: {
   if (intent.kind === "book_replan") {
     return queueChatBookReplanCopy({ userId, project, userMessageId, message, intent });
   }
+  if (intent.kind === "continue_book") {
+    return queueChatContinueBook({ userId, project, userMessageId, message, intent });
+  }
 
   const affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
   if (affectedPageIndexes.length === 0) {
@@ -5639,6 +5692,103 @@ async function queueChatBookEdit(options: {
     const entryToRefund = spend ?? reservation;
     if (entryToRefund) {
       await refundCreditLedgerEntry(entryToRefund.id, "Book edit could not be queued.");
+    }
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { status: "FAILED", error: errorMessage(error) }
+    });
+    await prisma.project.update({ where: { id: project.id }, data: { status: "COMPLETE" } }).catch(() => undefined);
+    if (error instanceof InsufficientCreditsError) {
+      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
+      return { reply, operation: null };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Charges and queues a continuation: new chapters written in the book's own
+ * voice and appended after the last page. Zero existing pages are affected —
+ * the credited page count is the number of pages the continuation will add.
+ */
+async function queueChatContinueBook(options: {
+  userId: string;
+  project: ProjectForChat;
+  userMessageId: string;
+  message: string;
+  intent: BookEditIntent;
+}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+  const { userId, project, userMessageId, message, intent } = options;
+  const chapterCount = Math.min(8, Math.max(1, intent.continuation?.chapterCount ?? 1));
+  const newPageCount = continuationNewPageCount(intent, project);
+  const cost = bookEditCreditCost(intent.kind, newPageCount, project);
+  const operation = await createOpenBookEditOperation({
+    projectId: project.id,
+    userMessageId,
+    kind: "CONTINUE_BOOK",
+    status: "QUEUED",
+    request: message,
+    classifier: jsonInputValue(intent),
+    affectedPageIndexes: [],
+    creditsCharged: 0
+  });
+  if (!operation) {
+    const reply = await busyEditReply({ projectId: project.id, parentMessageId: userMessageId, intent, request: message });
+    return { reply, operation: null };
+  }
+
+  let reservation: CreditLedgerEntryRecord | null = null;
+  let spend: CreditLedgerEntryRecord | null = null;
+  try {
+    reservation = await reserveCredits({
+      userId,
+      projectId: project.id,
+      operation: "PAGE_REGENERATION",
+      amountCredits: cost,
+      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:charge`,
+      description: "Mobile book continuation",
+      metadata: { intent, chapterCount, newPageCount }
+    });
+    spend = reservation ? await commitReservedCredits(reservation.id) : null;
+    await prisma.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
+    const job = await enqueueGenerationJob({
+      projectId: project.id,
+      type: "CONTINUE_BOOK",
+      dedupeKey: `continue-book:${project.id}:${operation.id}`,
+      payload: {
+        operationId: operation.id,
+        request: message,
+        chapterCount,
+        newPageCount,
+        ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
+        ...(spend ? { billingLedgerEntryId: spend.id } : {})
+      }
+    });
+    const updated = await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: {
+        generationJobId: job.id,
+        ledgerEntryId: spend?.id ?? null,
+        creditsCharged: cost
+      },
+      include: { generationJob: { select: { id: true, status: true } } }
+    });
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      parentId: userMessageId,
+      operationId: operation.id,
+      content: operationQueuedMessage(intent.kind, [], cost, intent),
+      metadata: { intent, charged: true, creditsCharged: cost }
+    });
+    await prisma.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { assistantMessageId: reply.id }
+    });
+    return { reply, operation: updated };
+  } catch (error) {
+    const entryToRefund = spend ?? reservation;
+    if (entryToRefund) {
+      await refundCreditLedgerEntry(entryToRefund.id, "Book continuation could not be queued.");
     }
     await prisma.bookEditOperation.update({
       where: { id: operation.id },
@@ -6640,8 +6790,9 @@ function bookEditCreditCost(kind: BookEditIntentKind, affectedPageCount: number,
   if (kind === "local_patch") {
     return CREDIT_COSTS.bookTextEditBase + Math.max(1, affectedPageCount) * CREDIT_COSTS.bookTextEditPerPage;
   }
-  // Chapter regeneration is priced like a multi-page rewrite of that chapter.
-  if (kind === "page_rewrite" || kind === "chapter_regenerate") {
+  // Chapter regeneration is priced like a multi-page rewrite of that chapter;
+  // continuation is priced like regenerating the pages it will append.
+  if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
     return Math.max(1, affectedPageCount) * CREDIT_COSTS.pageRegenerationPerPage;
   }
   if (kind === "book_replan") {
@@ -6653,7 +6804,7 @@ function bookEditCreditCost(kind: BookEditIntentKind, affectedPageCount: number,
 
 function operationKindForIntent(
   kind: BookEditIntentKind
-): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" {
+): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" | "CONTINUE_BOOK" {
   if (kind === "page_rewrite") {
     return "PAGE_REWRITE";
   }
@@ -6663,17 +6814,39 @@ function operationKindForIntent(
   if (kind === "book_replan") {
     return "BOOK_REPLAN";
   }
+  if (kind === "continue_book") {
+    return "CONTINUE_BOOK";
+  }
   return "LOCAL_PATCH";
 }
 
 function billingOperationForIntent(kind: BookEditIntentKind): "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" {
-  if (kind === "page_rewrite" || kind === "chapter_regenerate") {
+  if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
     return "PAGE_REGENERATION";
   }
   if (kind === "book_replan") {
     return "BOOK_REPLAN";
   }
   return "BOOK_TEXT_EDIT";
+}
+
+/**
+ * Pages a continuation will append: requested chapter count × the median
+ * size of the book's existing chapters (clamped 3-15). Deterministic, so the
+ * proposal price and the queued job always agree.
+ */
+function continuationNewPageCount(intent: BookEditIntent, project: Pick<ProjectForChat, "pages">): number {
+  const chapterCount = Math.min(8, Math.max(1, intent.continuation?.chapterCount ?? 1));
+  const chapterSizes = new Map<number, number>();
+  for (const page of project.pages) {
+    const chapterIndex = page.chapter?.index;
+    if (typeof chapterIndex === "number") {
+      chapterSizes.set(chapterIndex, (chapterSizes.get(chapterIndex) ?? 0) + 1);
+    }
+  }
+  const sizes = [...chapterSizes.values()].sort((a, b) => a - b);
+  const median = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)]! : 5;
+  return chapterCount * Math.min(15, Math.max(3, median));
 }
 
 function exactReplacementFromMessage(message: string): { from: string; to: string } | null {
@@ -6717,6 +6890,11 @@ async function pagesMatchingNeedle(needleSource: string, projectId: string): Pro
 }
 
 function operationQueuedMessage(kind: BookEditIntentKind, affectedPageIndexes: number[], credits: number, intent: BookEditIntent): string {
+  if (kind === "continue_book") {
+    const chapterCount = intent.continuation?.chapterCount ?? 1;
+    const chapterText = chapterCount > 1 ? `${chapterCount} new chapters` : "the next chapter";
+    return `I’ll write ${chapterText} in your book’s voice and refresh the exports. This uses ${credits} credits.`;
+  }
   if (kind === "book_replan") {
     return `I’ll rebuild the plan and regenerate the book. This uses ${credits} credits.`;
   }
@@ -6766,6 +6944,9 @@ function currentActionForEditOperation(operation: MobileBookEditOperationRecord)
   }
   if (operation.kind === "CHAPTER_REGENERATE") {
     return "Rewriting the chapter.";
+  }
+  if (operation.kind === "CONTINUE_BOOK") {
+    return "Writing new chapters.";
   }
   if (operation.kind === "PLAN_REVISION") {
     return "Revising the plan.";
@@ -6836,7 +7017,7 @@ function hashString(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }
 
-async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): Promise<MobileAuthContext | null> {
+export async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): Promise<MobileAuthContext | null> {
   const auth = await authenticateMobileBearer(request);
   if (!auth) {
     sendMobileError(reply, 401, "AUTH_REQUIRED", "Sign in to continue.");
@@ -6849,7 +7030,7 @@ async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): 
   return auth;
 }
 
-function hitAuthenticatedLimit(
+export function hitAuthenticatedLimit(
   limiter: InMemoryRateLimiter,
   request: FastifyRequest,
   reply: FastifyReply,
@@ -6868,7 +7049,7 @@ function isAuthFailure(auth: MobileAuthContext | AuthFailure): auth is AuthFailu
   return "ok" in auth && auth.ok === false;
 }
 
-function sendMobileError(reply: FastifyReply, statusCode: number, code: string, message: string): FastifyReply {
+export function sendMobileError(reply: FastifyReply, statusCode: number, code: string, message: string): FastifyReply {
   return reply.code(statusCode).send({
     error: {
       code,
@@ -6974,13 +7155,14 @@ async function serializeProjectSummary(
     pageCount,
     imageCount,
     hasPlan: hasExistingPlan,
+    source: projectSourceFromMediaSettings(project.mediaSettings),
     exports: await serializeExportSet(project.id, project.title, appConfig, userId),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString()
   };
 }
 
-async function serializeProjectDetail(
+export async function serializeProjectDetail(
   project: MobileProjectRecord,
   appConfig: ReturnType<typeof loadConfig>,
   userId: string
@@ -7407,7 +7589,9 @@ function failureMessageForJob(type: GenerationJobType, rawError: string | null):
     REPLAN_BOOK: "rebuilding your book plan",
     PREPARE_CHARACTER_CANDIDATES: "preparing voice characters",
     BUILD_CHARACTER_PERSONA: "building a voice character",
-    RESEARCH: "checking research"
+    RESEARCH: "checking research",
+    IMPORT_BOOK: "importing your book",
+    CONTINUE_BOOK: "writing new chapters"
   } satisfies Record<GenerationJobType, string>;
   const detail = rawError?.replace(/\s+/g, " ").trim();
   return detail ? `We hit a problem while ${phase[type]}: ${detail.slice(0, 240)}` : `We hit a problem while ${phase[type]}.`;
@@ -7715,4 +7899,10 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
 
 function jsonRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/** Imported manuscripts carry mediaSettings.mobile.import provenance. */
+export function projectSourceFromMediaSettings(mediaSettings: unknown): "imported" | "generated" {
+  const mobile = jsonRecord(jsonRecord(mediaSettings).mobile);
+  return Object.keys(jsonRecord(mobile.import)).length > 0 ? "imported" : "generated";
 }

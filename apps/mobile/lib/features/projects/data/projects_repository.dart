@@ -106,6 +106,17 @@ abstract interface class ProjectsRepository {
     String? comment,
   });
 
+  /// Uploads an author's finished manuscript and creates an imported project.
+  Future<MobileImportedBook> importBook({
+    required List<int> bytes,
+    required String filename,
+    required String requestId,
+    String? mimeType,
+    String? title,
+    String? language,
+    void Function(int sent, int total)? onProgress,
+  });
+
   Future<ProjectExportFile> downloadExport({
     required String projectId,
     required MobileExportAvailability export,
@@ -427,6 +438,32 @@ class MobileProjectsRepository implements ProjectsRepository {
     return ModerationReportReceipt.fromJson(
       data['report'] as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<MobileImportedBook> importBook({
+    required List<int> bytes,
+    required String filename,
+    required String requestId,
+    String? mimeType,
+    String? title,
+    String? language,
+    void Function(int sent, int total)? onProgress,
+  }) async {
+    final response = await apiClient.postBytes(
+      '/api/mobile/projects/import',
+      bytes: bytes,
+      queryParameters: {
+        'filename': filename,
+        'requestId': requestId,
+        if (mimeType != null && mimeType.isNotEmpty) 'mimeType': mimeType,
+        if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        if (language != null && language.trim().isNotEmpty)
+          'language': language.trim(),
+      },
+      onSendProgress: onProgress,
+    );
+    return MobileImportedBook.fromJson(response.data as Map<String, dynamic>);
   }
 
   @override

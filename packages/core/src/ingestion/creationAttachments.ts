@@ -1,9 +1,17 @@
 import { randomUUID } from "node:crypto";
-import JSZip from "jszip";
 import { z } from "zod";
 import type { FileDigestAdapter } from "../adapters/fileUnderstanding.js";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { generateJsonWithRetry } from "../generation/generateJsonWithRetry.js";
+import {
+  decodeUtf8,
+  DocumentTextError,
+  extractDocxText,
+  extractEpubText,
+  normalizeExtractedText,
+  stripHtml,
+  stripRtf
+} from "./documentText.js";
 
 /**
  * Attachments uploaded into the creation chat (documents as source material,
@@ -261,113 +269,27 @@ function boundContent(text: string): { content: string; truncated: boolean } {
 }
 
 async function extractLocalText(data: Buffer, format: AttachmentFormat): Promise<string> {
-  if (format === "docx") {
-    return extractDocxText(data);
-  }
-  if (format === "epub") {
-    return extractEpubText(data);
-  }
-  const text = decodeUtf8(data);
-  if (format === "html") {
-    return stripHtml(text);
-  }
-  if (format === "rtf") {
-    return stripRtf(text);
-  }
-  return text;
-}
-
-function decodeUtf8(data: Buffer): string {
-  const text = data.toString("utf8");
-  // A UTF-16 file decoded as UTF-8 is mostly NUL bytes; re-decode it instead.
-  const nulRatio = (text.match(/\u0000/g)?.length ?? 0) / Math.max(1, text.length);
-  if (nulRatio > 0.1) {
-    return data.toString("utf16le");
-  }
-  return text.replace(/^﻿/, "");
-}
-
-async function extractDocxText(data: Buffer): Promise<string> {
-  const zip = await loadZip(data, "Word document");
-  const documentXml = await zip.file("word/document.xml")?.async("string");
-  if (!documentXml) {
-    throw new CreationAttachmentError("UNREADABLE_FILE", "That Word document could not be read.");
-  }
-  return documentXml
-    .replace(/<w:p\b[^>]*>/g, "\n")
-    .replace(/<w:tab\b[^>]*\/>/g, "\t")
-    .replace(/<w:br\b[^>]*\/>/g, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
-}
-
-async function extractEpubText(data: Buffer): Promise<string> {
-  const zip = await loadZip(data, "EPUB");
-  const chapterFiles = Object.keys(zip.files)
-    .filter((path) => /\.(x?html?)$/i.test(path) && !zip.files[path]!.dir)
-    .sort();
-  const chapters: string[] = [];
-  for (const path of chapterFiles) {
-    const html = await zip.file(path)?.async("string");
-    if (html) {
-      const text = stripHtml(html);
-      if (text.trim()) {
-        chapters.push(text.trim());
-      }
-    }
-    if (chapters.join("\n\n").length > CREATION_ATTACHMENT_CONTENT_MAX * 2) {
-      break;
-    }
-  }
-  if (chapters.length === 0) {
-    throw new CreationAttachmentError("UNREADABLE_FILE", "No readable chapters were found in that EPUB.");
-  }
-  return chapters.join("\n\n");
-}
-
-async function loadZip(data: Buffer, label: string): Promise<JSZip> {
   try {
-    return await JSZip.loadAsync(data);
-  } catch {
-    throw new CreationAttachmentError("UNREADABLE_FILE", `That ${label} could not be opened.`);
+    if (format === "docx") {
+      return await extractDocxText(data);
+    }
+    if (format === "epub") {
+      return await extractEpubText(data, { maxChars: CREATION_ATTACHMENT_CONTENT_MAX * 2 });
+    }
+    const text = decodeUtf8(data);
+    if (format === "html") {
+      return stripHtml(text);
+    }
+    if (format === "rtf") {
+      return stripRtf(text);
+    }
+    return text;
+  } catch (error) {
+    if (error instanceof DocumentTextError) {
+      throw new CreationAttachmentError(error.code, error.message);
+    }
+    throw error;
   }
-}
-
-function stripHtml(html: string): string {
-  return html
-    .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<(br|\/p|\/div|\/h[1-6]|\/li|\/tr)\b[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#(\d+);/g, (_, code: string) => safeFromCharCode(Number.parseInt(code, 10)));
-}
-
-function safeFromCharCode(code: number): string {
-  return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : " ";
-}
-
-function stripRtf(rtf: string): string {
-  return rtf
-    .replace(/\\par[d]?\b/g, "\n")
-    .replace(/\\'([0-9a-f]{2})/gi, (_, hex: string) => String.fromCharCode(Number.parseInt(hex, 16)))
-    .replace(/\\[a-z]+-?\d*\s?/gi, " ")
-    .replace(/[{}]/g, "");
-}
-
-function normalizeExtractedText(text: string): string {
-  return text
-    .replace(/\r\n?/g, "\n")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 const attachmentSummaryAiSchema = z
