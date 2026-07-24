@@ -29,6 +29,7 @@ void main() {
               status: fakeStatus(),
               project: fakeProjectWithVisuals(),
               onRefresh: () async {},
+              onOpen: (_) async {},
               onDownload: (_) async {},
               onOpenPaywall: (_) async {},
               onReportProject: () async {

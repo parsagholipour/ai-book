@@ -73,6 +73,7 @@ void main() {
           status: _fakeStatus(),
           billing: _fakeBilling(),
           onRefresh: () async {},
+          onOpen: (_) async {},
           onDownload: (_) async {},
           onOpenPaywall: (_) async {},
         ),

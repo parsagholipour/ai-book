@@ -101,7 +101,8 @@ class _GenerationProgressScreenState
           busyAction: _busyAction,
           onRefresh: () async => _refresh(),
           onResume: status.retryAvailable ? _resumeGeneration : null,
-          onDownload: _exportAndOpen,
+          onOpen: _exportAndOpen,
+          onDownload: _exportAndDownload,
           onOpenPaywall: _openExportPaywall,
           onReportProject: _reportProject,
           onReportImage: _reportImage,
@@ -154,6 +155,22 @@ class _GenerationProgressScreenState
   Future<void> _exportAndOpen(MobileExportAvailability export) async {
     setState(() => _busyAction = projectExportDownloadAction(export));
     await openProjectExport(
+      context: context,
+      ref: ref,
+      projectId: widget.projectId,
+      export: export,
+      isMounted: () => mounted,
+      onRefresh: _refresh,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _busyAction = null);
+  }
+
+  Future<void> _exportAndDownload(MobileExportAvailability export) async {
+    setState(() => _busyAction = projectExportSaveAction(export));
+    await downloadProjectExport(
       context: context,
       ref: ref,
       projectId: widget.projectId,
@@ -247,6 +264,7 @@ class ProjectGenerationView extends StatelessWidget {
   const ProjectGenerationView({
     required this.status,
     required this.onRefresh,
+    required this.onOpen,
     required this.onDownload,
     required this.onOpenPaywall,
     this.project,
@@ -266,6 +284,7 @@ class ProjectGenerationView extends StatelessWidget {
   final String? busyAction;
   final Future<void> Function() onRefresh;
   final Future<void> Function()? onResume;
+  final Future<void> Function(MobileExportAvailability export) onOpen;
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
   final Future<void> Function()? onReportProject;
@@ -310,6 +329,7 @@ class ProjectGenerationView extends StatelessWidget {
               exports: status.exports,
               billing: billing,
               busyAction: busyAction,
+              onOpen: onOpen,
               onDownload: onDownload,
               onOpenPaywall: onOpenPaywall,
               editBookProjectId: status.isComplete ? status.projectId : null,
@@ -973,6 +993,7 @@ class _ContentReportDialogState extends State<ContentReportDialog> {
 class ProjectExportPanel extends StatelessWidget {
   const ProjectExportPanel({
     required this.exports,
+    required this.onOpen,
     required this.onDownload,
     required this.onOpenPaywall,
     this.billing,
@@ -984,6 +1005,7 @@ class ProjectExportPanel extends StatelessWidget {
   final MobileExportSet exports;
   final MobileBilling? billing;
   final String? busyAction;
+  final Future<void> Function(MobileExportAvailability export) onOpen;
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
 
@@ -1017,6 +1039,7 @@ class ProjectExportPanel extends StatelessWidget {
               availableCredits: billing?.credits.available,
               icon: Icons.picture_as_pdf_outlined,
               busyAction: busyAction,
+              onOpen: onOpen,
               onDownload: onDownload,
               onOpenPaywall: onOpenPaywall,
             ),
@@ -1026,6 +1049,7 @@ class ProjectExportPanel extends StatelessWidget {
               availableCredits: billing?.credits.available,
               icon: Icons.menu_book_outlined,
               busyAction: busyAction,
+              onOpen: onOpen,
               onDownload: onDownload,
               onOpenPaywall: onOpenPaywall,
             ),
@@ -1065,6 +1089,7 @@ class _ExportFormatTile extends StatelessWidget {
     required this.availableCredits,
     required this.icon,
     required this.busyAction,
+    required this.onOpen,
     required this.onDownload,
     required this.onOpenPaywall,
   });
@@ -1073,16 +1098,20 @@ class _ExportFormatTile extends StatelessWidget {
   final int? availableCredits;
   final IconData icon;
   final String? busyAction;
+  final Future<void> Function(MobileExportAvailability export) onOpen;
   final Future<void> Function(MobileExportAvailability export) onDownload;
   final Future<void> Function(MobileExportAvailability export) onOpenPaywall;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final format = export.format.toUpperCase();
-    final downloadAction = projectExportDownloadAction(export);
-    final isDownloading = busyAction == downloadAction;
+    final openAction = projectExportDownloadAction(export);
+    final saveAction = projectExportSaveAction(export);
+    final isOpening = busyAction == openAction;
+    final isDownloading = busyAction == saveAction;
+    final isBusy = isOpening || isDownloading;
     final needsCredits = projectExportNeedsCredits(export, availableCredits);
+    final canAct = export.available && !isBusy;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1096,7 +1125,7 @@ class _ExportFormatTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    format,
+                    export.format.toUpperCase(),
                     style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -1114,26 +1143,46 @@ class _ExportFormatTile extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        FilledButton.icon(
-          onPressed: export.available && !isDownloading
-              ? () => needsCredits ? onOpenPaywall(export) : onDownload(export)
-              : null,
-          icon: isDownloading
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    semanticsLabel: 'Downloading export',
-                  ),
-                )
-              : Icon(
-                  export.unlocked
-                      ? Icons.ios_share_outlined
-                      : needsCredits
-                      ? Icons.add_card_outlined
-                      : Icons.lock_open_outlined,
-                ),
-          label: Text(projectExportDownloadLabel(export, needsCredits)),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: canAct
+                  ? () => needsCredits ? onOpenPaywall(export) : onOpen(export)
+                  : null,
+              icon: isOpening
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        semanticsLabel: 'Opening export',
+                      ),
+                    )
+                  : Icon(
+                      export.unlocked
+                          ? Icons.open_in_new_outlined
+                          : needsCredits
+                          ? Icons.add_card_outlined
+                          : Icons.lock_open_outlined,
+                    ),
+              label: Text(projectExportDownloadLabel(export, needsCredits)),
+            ),
+            if (export.unlocked)
+              OutlinedButton.icon(
+                onPressed: canAct ? () => onDownload(export) : null,
+                icon: isDownloading
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          semanticsLabel: 'Downloading export',
+                        ),
+                      )
+                    : const Icon(Icons.download_outlined),
+                label: const Text('Download'),
+              ),
+          ],
         ),
       ],
     );

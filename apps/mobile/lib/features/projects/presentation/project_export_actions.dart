@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../billing/data/billing_repository.dart';
@@ -8,6 +9,9 @@ import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
 String projectExportDownloadAction(MobileExportAvailability export) =>
+    'open-${export.format}';
+
+String projectExportSaveAction(MobileExportAvailability export) =>
     'download-${export.format}';
 
 bool projectExportNeedsCredits(
@@ -28,7 +32,7 @@ String projectExportStateText(
     return 'Preparing this file after generation finishes.';
   }
   if (export.unlocked) {
-    return 'Ready to open or share.';
+    return 'Ready to open or download.';
   }
   if (availableCredits != null && availableCredits < export.creditsRequired) {
     return 'Ready after export unlock. You need ${export.creditsRequired} credits and have $availableCredits.';
@@ -45,7 +49,7 @@ String projectExportDownloadLabel(
     return 'Preparing $format';
   }
   if (export.unlocked) {
-    return 'Get $format';
+    return 'Open $format';
   }
   if (needsCredits) {
     return 'Get credits';
@@ -87,6 +91,41 @@ Future<bool> openProjectExport({
         ),
       );
     }
+    ref.invalidate(billingProvider);
+    onRefresh?.call();
+    return true;
+  } catch (error) {
+    if (isMounted()) {
+      messenger.showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+    return false;
+  }
+}
+
+Future<bool> downloadProjectExport({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String projectId,
+  required MobileExportAvailability export,
+  required bool Function() isMounted,
+  VoidCallback? onRefresh,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final file = await ref
+        .read(projectsRepositoryProvider)
+        .downloadExport(projectId: projectId, export: export);
+    if (!isMounted()) {
+      return true;
+    }
+    await SharePlus.instance.share(
+      ShareParams(
+        title: file.filename,
+        subject: file.filename,
+        files: [XFile(file.path, mimeType: export.contentType)],
+        fileNameOverrides: [file.filename],
+      ),
+    );
     ref.invalidate(billingProvider);
     onRefresh?.call();
     return true;

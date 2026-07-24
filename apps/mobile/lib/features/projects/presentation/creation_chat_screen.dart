@@ -1832,7 +1832,7 @@ class _CompletionDownloadButton extends StatelessWidget {
                 semanticsLabel: 'Downloading export',
               ),
             )
-          : const Icon(Icons.ios_share_outlined),
+          : const Icon(Icons.open_in_new_outlined),
       label: Text(projectExportDownloadLabel(export, false)),
     );
   }

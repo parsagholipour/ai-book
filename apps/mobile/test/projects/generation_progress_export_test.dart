@@ -26,6 +26,7 @@ void main() {
             onResume: () async {
               retried = true;
             },
+            onOpen: (_) async {},
             onDownload: (_) async {},
             onOpenPaywall: (_) async {},
           ),
@@ -72,6 +73,7 @@ void main() {
             status: status,
             onRefresh: () async {},
             onResume: () async => resumed = true,
+            onOpen: (_) async {},
             onDownload: (_) async {},
             onOpenPaywall: (_) async {},
           ),
@@ -87,6 +89,7 @@ void main() {
   });
 
   testWidgets('export panel shows locked and unlocked states', (tester) async {
+    final openedFormats = <String>[];
     final downloadedFormats = <String>[];
     final paywalledFormats = <String>[];
 
@@ -101,6 +104,9 @@ void main() {
               epubAvailable: true,
             ),
             billing: fakeBilling(availableCredits: 200),
+            onOpen: (export) async {
+              openedFormats.add(export.format);
+            },
             onDownload: (export) async {
               downloadedFormats.add(export.format);
             },
@@ -113,21 +119,25 @@ void main() {
     );
 
     expect(find.text('Unlock PDF'), findsOneWidget);
-    expect(find.text('Get EPUB'), findsOneWidget);
+    expect(find.text('Open EPUB'), findsOneWidget);
+    expect(find.text('Download'), findsOneWidget);
     expect(
       find.text(
         'Ready after export unlock. This uses 150 credits if not already included.',
       ),
       findsOneWidget,
     );
-    expect(find.text('Ready to open or share.'), findsOneWidget);
+    expect(find.text('Ready to open or download.'), findsOneWidget);
 
     await tester.tap(find.text('Unlock PDF'));
     await tester.pump();
-    await tester.tap(find.text('Get EPUB'));
+    await tester.tap(find.text('Open EPUB'));
+    await tester.pump();
+    await tester.tap(find.text('Download'));
     await tester.pump();
 
-    expect(downloadedFormats, ['pdf', 'epub']);
+    expect(openedFormats, ['pdf', 'epub']);
+    expect(downloadedFormats, ['epub']);
     expect(paywalledFormats, isEmpty);
   });
 
@@ -156,6 +166,7 @@ void main() {
             body: ProjectGenerationView(
               status: fakeStatus(quality: quality),
               onRefresh: () async {},
+              onOpen: (_) async {},
               onDownload: (_) async {},
               onOpenPaywall: (_) async {},
             ),
@@ -186,6 +197,7 @@ void main() {
               epubAvailable: true,
             ),
             billing: fakeBilling(availableCredits: 25),
+            onOpen: (_) async {},
             onDownload: (_) async {},
             onOpenPaywall: (export) async {
               paywalledFormats.add(export.format);

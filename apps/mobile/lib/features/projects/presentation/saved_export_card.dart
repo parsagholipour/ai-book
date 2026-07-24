@@ -9,8 +9,8 @@ import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'project_export_actions.dart';
 
-/// Chat card for a manual Edit Mode save: keeps the export actions (Get PDF,
-/// Get EPUB) and re-opens Edit Mode targeting the same saved export, so the
+/// Chat card for a manual Edit Mode save: keeps the export actions (Open PDF,
+/// Open EPUB) and re-opens Edit Mode targeting the same saved export, so the
 /// next save updates this card instead of creating a new message.
 class SavedExportCard extends ConsumerStatefulWidget {
   const SavedExportCard({required this.message, super.key});
@@ -35,7 +35,7 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
 
   /// The status stream ends once the project settles, so if the exports are
   /// still being rebuilt at that point nothing would ever re-check them.
-  /// Poll until a file shows up so the buttons flip to "Get PDF" on their own.
+  /// Poll until a file shows up so the buttons flip to "Open PDF" on their own.
   void _ensureExportRefresh(MobileProjectStatus? status) {
     final waitingForExports =
         status != null &&

@@ -1367,10 +1367,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Ready to export'), findsOneWidget);
-    expect(find.text('Get PDF'), findsOneWidget);
+    expect(find.text('Open PDF'), findsOneWidget);
     expect(find.text('View progress'), findsOneWidget);
 
-    await tester.tap(find.text('Get PDF'));
+    await tester.tap(find.text('Open PDF'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
