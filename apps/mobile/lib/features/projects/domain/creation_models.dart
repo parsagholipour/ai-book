@@ -407,6 +407,7 @@ class MobileCreationMessage {
     required this.role,
     required this.content,
     this.attachments = const [],
+    this.research,
     this.createdAt,
     this.sendStatus = CreationMessageSendStatus.sent,
     this.sendError,
@@ -421,6 +422,7 @@ class MobileCreationMessage {
   final String role;
   final String content;
   final List<MobileCreationMessageAttachment> attachments;
+  final MobileCreationResearch? research;
 
   /// Server id; null for optimistic messages that were not persisted yet.
   final String? id;
@@ -463,6 +465,7 @@ class MobileCreationMessage {
       role: role,
       content: content,
       attachments: attachments,
+      research: research,
       createdAt: createdAt ?? this.createdAt,
       sendStatus: sendStatus ?? this.sendStatus,
       sendError: sendError == _messageSentinel
@@ -483,6 +486,7 @@ class MobileCreationMessage {
     final attachments = json['attachments'] as List<dynamic>? ?? const [];
     final createdAtRaw = json['createdAt'];
     final branch = json['branch'];
+    final research = json['research'];
     return MobileCreationMessage(
       role: json['role'] as String,
       content: json['content'] as String,
@@ -493,6 +497,9 @@ class MobileCreationMessage {
             ),
           )
           .toList(),
+      research: research is Map
+          ? MobileCreationResearch.fromJson(Map<String, dynamic>.from(research))
+          : null,
       createdAt: createdAtRaw is String
           ? DateTime.tryParse(createdAtRaw)
           : null,
@@ -513,12 +520,86 @@ class MobileCreationMessage {
         'attachments': attachments
             .map((attachment) => attachment.toJson())
             .toList(),
+      if (research != null) 'research': research!.toJson(),
       if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
       if (id != null) 'id': id,
       if (parentId != null) 'parentId': parentId,
       if (requestId != null) 'requestId': requestId,
     };
   }
+}
+
+class MobileCreationResearchSource {
+  const MobileCreationResearchSource({
+    required this.title,
+    required this.summary,
+    this.url,
+    this.publishedAt,
+  });
+
+  final String title;
+  final String summary;
+  final String? url;
+  final String? publishedAt;
+
+  Uri? get uri {
+    final parsed = Uri.tryParse(url ?? '');
+    if (parsed == null ||
+        (parsed.scheme != 'https' && parsed.scheme != 'http')) {
+      return null;
+    }
+    return parsed;
+  }
+
+  factory MobileCreationResearchSource.fromJson(Map<String, dynamic> json) {
+    return MobileCreationResearchSource(
+      title: json['title'] as String? ?? 'Source',
+      summary: json['summary'] as String? ?? '',
+      url: json['url'] as String?,
+      publishedAt: json['publishedAt'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'title': title,
+    'summary': summary,
+    if (url != null) 'url': url,
+    if (publishedAt != null) 'publishedAt': publishedAt,
+  };
+}
+
+class MobileCreationResearch {
+  const MobileCreationResearch({
+    required this.query,
+    required this.summary,
+    required this.sources,
+  });
+
+  final String query;
+  final String summary;
+  final List<MobileCreationResearchSource> sources;
+
+  factory MobileCreationResearch.fromJson(Map<String, dynamic> json) {
+    final sources = json['sources'] as List<dynamic>? ?? const [];
+    return MobileCreationResearch(
+      query: json['query'] as String? ?? '',
+      summary: json['summary'] as String? ?? '',
+      sources: sources
+          .whereType<Map>()
+          .map(
+            (source) => MobileCreationResearchSource.fromJson(
+              Map<String, dynamic>.from(source),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'query': query,
+    'summary': summary,
+    'sources': sources.map((source) => source.toJson()).toList(),
+  };
 }
 
 /// Reference from a chat message to a file uploaded into the conversation.

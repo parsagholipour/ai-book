@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'chat_history_drawer.dart';
 
@@ -3516,6 +3517,13 @@ class _MessageBubble extends StatelessWidget {
                     context,
                   ).textTheme.bodyMedium?.copyWith(color: foreground),
                 ),
+              if (!isUser && message.research?.sources.isNotEmpty == true) ...[
+                const SizedBox(height: 10),
+                _ResearchSources(
+                  sources: message.research!.sources,
+                  foreground: foreground,
+                ),
+              ],
               if (timestamp != null) ...[
                 const SizedBox(height: 6),
                 Text(
@@ -3574,6 +3582,103 @@ class _MessageBubble extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ResearchSources extends StatelessWidget {
+  const _ResearchSources({required this.sources, required this.foreground});
+
+  final List<MobileCreationResearchSource> sources;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.public,
+              size: 15,
+              color: foreground.withValues(alpha: 0.8),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'Sources',
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        for (var index = 0; index < sources.length; index++)
+          _ResearchSourceLink(
+            index: index + 1,
+            source: sources[index],
+            foreground: foreground,
+          ),
+      ],
+    );
+  }
+}
+
+class _ResearchSourceLink extends StatelessWidget {
+  const _ResearchSourceLink({
+    required this.index,
+    required this.source,
+    required this.foreground,
+  });
+
+  final int index;
+  final MobileCreationResearchSource source;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    final uri = source.uri;
+    final label = '$index. ${source.title}${_domain(uri)}';
+    final text = Text(
+      label,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: foreground,
+        decoration: uri == null ? null : TextDecoration.underline,
+        decorationColor: foreground,
+      ),
+    );
+    if (uri == null) {
+      return Padding(padding: const EdgeInsets.only(top: 3), child: text);
+    }
+    return Semantics(
+      link: true,
+      label: 'Source $index. ${source.title}. Opens ${uri.host}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: () => _open(context, uri),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: text,
+        ),
+      ),
+    );
+  }
+
+  String _domain(Uri? uri) => uri == null || uri.host.isEmpty
+      ? ''
+      : ' · ${uri.host.replaceFirst(RegExp(r'^www\\.'), '')}';
+
+  Future<void> _open(BuildContext context, Uri uri) async {
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open that source.')),
+      );
+    }
   }
 }
 

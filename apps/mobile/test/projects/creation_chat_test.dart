@@ -131,6 +131,97 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('grounded creation answers render tappable web sources', (
+    tester,
+  ) async {
+    final creation = _ScriptedCreationRepository(
+      sessions: [
+        _chatSession(draftId: 'research-chat', title: 'Research chat'),
+      ],
+    );
+    creation.resumeMessages['research-chat'] = const [
+      {
+        'role': 'assistant',
+        'content': 'A recent exoplanet discovery is a strong topic.',
+        'research': {
+          'query': 'recent exoplanet discovery',
+          'summary': 'Grounded summary',
+          'sources': [
+            {
+              'title': 'NASA Science',
+              'url': 'https://science.nasa.gov/example',
+              'summary': 'NASA explains the discovery.',
+            },
+            {
+              'title': 'Grounded note',
+              'summary': 'A source without a public URL.',
+            },
+          ],
+        },
+      },
+    ];
+    await tester.pumpWidget(_app(creation: creation, draftId: 'research-chat'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sources'), findsOneWidget);
+    expect(find.textContaining('NASA Science'), findsOneWidget);
+    expect(find.textContaining('science.nasa.gov'), findsOneWidget);
+    expect(find.textContaining('Grounded note'), findsOneWidget);
+    final links = tester
+        .widgetList<Semantics>(find.byType(Semantics))
+        .where((widget) => widget.properties.link == true);
+    expect(links.length, 1);
+
+    final sourceSemantics = tester.widgetList<Semantics>(
+      find.ancestor(
+        of: find.textContaining('NASA Science'),
+        matching: find.byType(Semantics),
+      ),
+    );
+    expect(
+      sourceSemantics.any(
+        (widget) =>
+            widget.properties.link == true &&
+            (widget.properties.label ?? '').contains('science.nasa.gov'),
+      ),
+      isTrue,
+    );
+
+    await tester.teardownScreen();
+  });
+
+  test('creation research parsing stays backward compatible', () {
+    final legacy = MobileCreationMessage.fromJson(const {
+      'role': 'assistant',
+      'content': 'Legacy answer',
+    });
+    final grounded = MobileCreationMessage.fromJson(const {
+      'role': 'assistant',
+      'content': 'Grounded answer',
+      'research': {
+        'query': 'current topic',
+        'summary': 'Summary',
+        'sources': [
+          {
+            'title': 'Example',
+            'url': 'https://example.com/source',
+            'summary': 'Evidence',
+          },
+          {
+            'title': 'Unsafe URL',
+            'url': 'javascript:alert(1)',
+            'summary': 'Not tappable',
+          },
+        ],
+      },
+    });
+
+    expect(legacy.research, isNull);
+    expect(grounded.research?.sources, hasLength(2));
+    expect(grounded.research?.sources.first.uri?.host, 'example.com');
+    expect(grounded.research?.sources.last.uri, isNull);
+  });
+
   testWidgets('editing a sent message forks a branch with arrows', (
     tester,
   ) async {

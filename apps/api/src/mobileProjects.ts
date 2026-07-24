@@ -14,6 +14,7 @@ import {
   createFileDigestAdapter,
   createLanguageDetectionTextModel,
   createProjectSchema,
+  createResearchAdapter,
   creditCostForOperation,
   estimateFullBookCreditCost,
   generateJsonWithRetry,
@@ -26,6 +27,7 @@ import {
   type CreationAttachment,
   type IngestCreationAttachmentInput,
   type ModelTier,
+  type ResearchAdapter,
   type TextModelAdapter,
   type ToneProfile
 } from "@book-maker/core";
@@ -102,7 +104,7 @@ import {
   composeMobileProjectPrompt,
   deterministicCreationTurn,
   enrichAdvisorWithAi,
-  enrichCreationTurnWithAi,
+  enrichCreationTurnWithSearch,
   explicitTargetPagesForMobilePayload,
   greetingCreationTurn,
   mobileBookAdvisorBodySchema,
@@ -186,6 +188,7 @@ const DEFAULT_BILLING_VERIFICATION_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 
 const DEFAULT_ADVISOR_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
 const DEFAULT_DRAFT_RATE_LIMIT = { maxAttempts: 120, windowMs: 60 * 60 * 1000 };
 const DEFAULT_ATTACHMENT_RATE_LIMIT = { maxAttempts: 60, windowMs: 60 * 60 * 1000 };
+const DEFAULT_CREATION_TURN_TIMEOUT_MS = 85_000;
 const UNTITLED_MOBILE_PROJECT_TITLE = "Untitled Book";
 const MOBILE_TITLE_SOURCE_PLANNER_PENDING = "planner_pending";
 
@@ -275,6 +278,7 @@ export type MobileCreationMessageDto = {
   role: "user" | "assistant";
   content: string;
   attachments?: MobileCreationMessage["attachments"];
+  research?: MobileCreationMessage["research"];
   branch: CreationChatBranchDto | null;
 };
 
@@ -1047,6 +1051,8 @@ export type MobileProjectRoutesOptions = {
     | false
     | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => Promise<Partial<MobileBookAdvisorResponse>>);
   creationTurnTimeoutMs?: number;
+  creationSearchTimeoutMs?: number;
+  creationResearch?: ResearchAdapter;
   creationEnrichment?:
     | false
     | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>);
@@ -1109,7 +1115,15 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       ? undefined
       : options.creationEnrichment ??
         ((request: MobileCreationTurnRequest, base: MobileCreationTurn) =>
-          enrichCreationTurnWithAi(createLanguageDetectionTextModel(appConfig), request, base));
+          enrichCreationTurnWithSearch(
+            {
+              textModel: createLanguageDetectionTextModel(appConfig),
+              research: options.creationResearch ?? (() => createResearchAdapter(appConfig)),
+              searchTimeoutMs: options.creationSearchTimeoutMs
+            },
+            request,
+            base
+          ));
 
   fastify.get(
     "/api/mobile/me",
@@ -1497,9 +1511,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         };
         turn = await runCreationTurn(turnRequest, {
           enrich: creationEnrichment,
-          timeoutMs: options.creationTurnTimeoutMs,
+          timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
           onEnrichError: (error) =>
-            request.log.warn({ err: error }, "creation turn enrichment failed; using deterministic fallback")
+            request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
         });
         messages = normalizeCreationMessageIds(
           [...nextMessages, creationAssistantMessage(turn)].slice(-60)
@@ -1620,9 +1634,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
       };
       const turn = await runCreationTurn(turnRequest, {
         enrich: creationEnrichment,
-        timeoutMs: options.creationTurnTimeoutMs,
+        timeoutMs: options.creationTurnTimeoutMs ?? DEFAULT_CREATION_TURN_TIMEOUT_MS,
         onEnrichError: (error) =>
-          request.log.warn({ err: error }, "creation turn enrichment failed; using deterministic fallback")
+          request.log.warn({ err: error }, "creation turn enrichment failed; using safe fallback")
       });
       const persisted = foldCreationTranscriptTree(
         appendCreationMessage(incoming.messages, creationAssistantMessage(turn)).messages,
@@ -3906,6 +3920,7 @@ function serializeCreationMessages(tree: MobileCreationMessage[]): MobileCreatio
     role: message.role,
     content: message.content,
     ...(message.attachments && message.attachments.length > 0 ? { attachments: message.attachments } : {}),
+    ...(message.research ? { research: message.research } : {}),
     branch: branches.get(message.id ?? "") ?? null
   }));
 }
@@ -3962,6 +3977,7 @@ function creationAssistantMessage(turn: MobileCreationTurn): MobileCreationMessa
   return {
     role: "assistant",
     content: turn.assistantMessage,
+    ...(turn.research ? { research: turn.research } : {}),
     turnUi: {
       question: turn.question,
       quickReplies: turn.quickReplies

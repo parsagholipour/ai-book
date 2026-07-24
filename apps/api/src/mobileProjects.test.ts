@@ -1212,6 +1212,166 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("uses the search-capable timeout budget for continuation messages", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          rawIdea: "A scientific book about a recent discovery",
+          messages: [
+            { role: "assistant", content: "Hi!" },
+            { role: "user", content: "A scientific book about a recent discovery" }
+          ]
+        }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload, lastTurn: data.lastTurn })
+    );
+    const app = await buildMobileApp({
+      creationEnrichment: async () => ({
+        assistantMessage: "I found a current, grounded topic.",
+        question: null
+      })
+    });
+    const timeoutSpy = vi.spyOn(globalThis, "setTimeout");
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/creation-sessions/session-draft/messages",
+        headers: bearer("token-a"),
+        payload: { message: "Find the latest on the internet" }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().turn.assistantMessage).toContain("grounded topic");
+      expect(timeoutSpy.mock.calls.some((call) => call[1] === 85_000)).toBe(true);
+    } finally {
+      timeoutSpy.mockRestore();
+      await app.close();
+    }
+  });
+
+  it("persists and serializes grounded research on a creation answer", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          rawIdea: "A scientific book about a recent discovery",
+          messages: [
+            { role: "assistant", content: "Hi!" },
+            { role: "user", content: "A scientific book about a recent discovery" },
+            { role: "assistant", content: "Which discovery?" }
+          ]
+        }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload, lastTurn: data.lastTurn })
+    );
+    const research = {
+      query: "recent scientific discovery",
+      summary: "A grounded discovery summary.",
+      sources: [
+        {
+          title: "NASA Science",
+          url: "https://science.nasa.gov/example",
+          summary: "NASA's source-backed explanation."
+        }
+      ]
+    };
+    let enrichCalls = 0;
+    const app = await buildMobileApp({
+      creationEnrichment: async () => {
+        enrichCalls += 1;
+        return {
+          assistantMessage: "A recent NASA-reported discovery is a strong topic.",
+          question: null,
+          research
+        };
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Find it on the internet and tell me", requestId: "search-request-0001" }
+    });
+    const body = response.json();
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: { messages: Array<Record<string, any>> } };
+    };
+
+    expect(response.statusCode).toBe(200);
+    expect(enrichCalls).toBe(1);
+    expect(body.turn.research).toEqual(research);
+    expect(body.session.messages.at(-1).research).toEqual(research);
+    expect(updateCall!.data.payload.messages.at(-1)!.research).toEqual(research);
+    expect(JSON.stringify(body.session)).not.toContain("turnUi");
+    await app.close();
+  });
+
+  it("replays a searched request id without running enrichment again", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const research = {
+      query: "recent scientific discovery",
+      summary: "A grounded discovery summary.",
+      sources: [{ title: "NASA", summary: "Grounded evidence." }]
+    };
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "A recent discovery",
+      messages: [
+        { id: "m0", parentId: null, isActiveChild: true, role: "assistant", content: "Hi!" },
+        {
+          id: "m1",
+          parentId: "m0",
+          isActiveChild: true,
+          role: "user",
+          content: "Find it online",
+          requestId: "search-request-0002"
+        },
+        {
+          id: "m2",
+          parentId: "m1",
+          isActiveChild: true,
+          role: "assistant",
+          content: "I found a grounded topic.",
+          research
+        }
+      ]
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    let enrichCalls = 0;
+    const app = await buildMobileApp({
+      creationEnrichment: async () => {
+        enrichCalls += 1;
+        return {};
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Find it online", requestId: "search-request-0002" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(enrichCalls).toBe(0);
+    expect(response.json().session.messages.at(-1).research).toEqual(research);
+    expect(mockPrisma.mobileCreationDraft.update).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("appends a conversation message and persists the updated transcript", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
@@ -1451,6 +1611,65 @@ describe("mobile project routes", () => {
     const storedById = new Map(updateCall.data.payload.messages.map((message) => [message.id, message]));
     expect(storedById.get("m1")).toMatchObject({ isActiveChild: true });
     expect(storedById.get("m3")).toMatchObject({ isActiveChild: false });
+    await app.close();
+  });
+
+  it("restores branch-specific grounded research when switching creation chat branches", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const bedtimeResearch = {
+      query: "bedtime science",
+      summary: "Grounded bedtime evidence.",
+      sources: [{ title: "Sleep Foundation", summary: "A bedtime source." }]
+    };
+    const spaceResearch = {
+      query: "space science",
+      summary: "Grounded space evidence.",
+      sources: [{ title: "NASA", summary: "A space source." }]
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          messages: [
+            { id: "m0", parentId: null, isActiveChild: true, role: "assistant", content: "Hi!" },
+            { id: "m1", parentId: "m0", isActiveChild: false, role: "user", content: "Bedtime science" },
+            {
+              id: "m2",
+              parentId: "m1",
+              isActiveChild: true,
+              role: "assistant",
+              content: "Bedtime answer",
+              research: bedtimeResearch
+            },
+            { id: "m3", parentId: "m0", isActiveChild: true, role: "user", content: "Space science" },
+            {
+              id: "m4",
+              parentId: "m3",
+              isActiveChild: true,
+              role: "assistant",
+              content: "Space answer",
+              research: spaceResearch
+            }
+          ]
+        }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload, lastTurn: data.lastTurn })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/branches",
+      headers: bearer("token-a"),
+      payload: { messageId: "m3", direction: "previous" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().session.messages.at(-1).research).toEqual(bedtimeResearch);
+    expect(JSON.stringify(response.json().session)).not.toContain("space science");
     await app.close();
   });
 

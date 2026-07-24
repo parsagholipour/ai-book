@@ -10,6 +10,8 @@ import {
   explicitTargetPagesForMobilePayload,
   deterministicCreationTurn,
   enrichCreationTurnWithAi,
+  enrichCreationTurnWithSearch,
+  explicitWebSearchQuery,
   greetingCreationTurn,
   isBuildRequestMessage,
   metaAnswerForMessage,
@@ -18,6 +20,7 @@ import {
   titleForMobilePayload,
   type MobileCreationTurnRequest
 } from "./mobileCreation.js";
+import type { ResearchAdapter } from "@book-maker/core";
 
 describe("runCreationTurn", () => {
   const autoRequest: MobileCreationTurnRequest = {
@@ -358,6 +361,448 @@ describe("runCreationTurn", () => {
   });
 });
 
+
+
+describe("creation chat web search", () => {
+  const request: MobileCreationTurnRequest = {
+    messages: [
+      { role: "user", content: "Make a scientific book about a recent discovery" },
+      { role: "assistant", content: "What recent discovery would you like to focus on?" },
+      { role: "user", content: "Find it on the internet and tell me" }
+    ]
+  };
+
+  const groundedResearch: ResearchAdapter = {
+    async search(query) {
+      return {
+        query: query.query,
+        summary: "Astronomers reported a newly characterized nearby exoplanet.",
+        sources: [
+          {
+            title: "NASA discovery brief",
+            url: "https://science.nasa.gov/example",
+            summary: "NASA describes the evidence and discovery method."
+          }
+        ]
+      };
+    }
+  };
+
+  function textModel(responses: Array<Record<string, unknown>>): TextModelAdapter {
+    let index = 0;
+    return {
+      async generateJson(options) {
+        const raw = responses[Math.min(index++, responses.length - 1)] ?? {};
+        return {
+          data: options.schema.parse(raw),
+          text: JSON.stringify(raw),
+          model: "fake",
+          provider: "fake"
+        };
+      },
+      generateText: () => Promise.reject(new Error("not used")),
+      // eslint-disable-next-line require-yield
+      streamText: async function* () {
+        throw new Error("not used");
+      }
+    };
+  }
+
+  it("resolves the observed short request from recent conversation context", () => {
+    const query = explicitWebSearchQuery(request.messages);
+
+    expect(query).toContain("recent discovery");
+    expect(query).toContain("Find it on the internet and tell me");
+  });
+
+  it("recognizes the observed latest-on-the-internet wording", () => {
+    const query = explicitWebSearchQuery([
+      { role: "user", content: "Make a scientific book about a recent discovery" },
+      { role: "assistant", content: "What is the most exciting thing readers should take away?" },
+      { role: "user", content: "Find the latest on the internet" }
+    ]);
+
+    expect(query).toContain("recent discovery");
+    expect(query).toContain("Find the latest on the internet");
+    expect(explicitWebSearchQuery([{ role: "user", content: "Find the latest chapter" }])).toBeUndefined();
+  });
+
+  it("keeps the latest request and original topic when recent context is long", () => {
+    const query = explicitWebSearchQuery([
+      { role: "user", content: "Make a scientific book about a recent discovery" },
+      { role: "assistant", content: "A".repeat(700) },
+      { role: "user", content: "B".repeat(700) },
+      { role: "assistant", content: "C".repeat(700) },
+      { role: "user", content: "Find the latest on the internet" }
+    ]);
+
+    expect(query).toContain("Find the latest on the internet");
+    expect(query).toContain("recent discovery");
+    expect(query!.length).toBeLessThanOrEqual(600);
+  });
+
+  it("does not browse for negated, narrative, or attachment-local search mentions", () => {
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "Don't search the internet; make it fictional" }])
+    ).toBeUndefined();
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "My story is about the search for a missing child" }])
+    ).toBeUndefined();
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "Search is the title of my story" }])
+    ).toBeUndefined();
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "Search for Tomorrow is the title of my story" }])
+    ).toBeUndefined();
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "Browse for Trouble is my chapter title" }])
+    ).toBeUndefined();
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "Google It is the title of my book" }])
+    ).toBeUndefined();
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "Find information in my uploaded document" }])
+    ).toBeUndefined();
+    expect(
+      explicitWebSearchQuery([{ role: "user", content: "Find it in the attached PDF" }])
+    ).toBeUndefined();
+  });
+
+  it("takes the direct search path for latest-on-the-internet requests", async () => {
+    let modelCalls = 0;
+    let searches = 0;
+    const latestRequest: MobileCreationTurnRequest = {
+      messages: [
+        { role: "user", content: "Make a scientific book about a recent discovery" },
+        { role: "assistant", content: "What is the most exciting thing readers should take away?" },
+        { role: "user", content: "Find the latest on the internet" }
+      ]
+    };
+    const model: TextModelAdapter = {
+      ...textModel([]),
+      async generateJson(options) {
+        modelCalls += 1;
+        const raw = {
+          assistantMessage: "A newly characterized exoplanet is a strong current topic.",
+          question: null
+        };
+        return { data: options.schema.parse(raw), text: JSON.stringify(raw), model: "fake", provider: "fake" };
+      }
+    };
+    const research: ResearchAdapter = {
+      async search(query) {
+        searches += 1;
+        expect(query.query).toContain("recent discovery");
+        return groundedResearch.search(query);
+      }
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research },
+      latestRequest,
+      deterministicCreationTurn(latestRequest)
+    );
+
+    expect(searches).toBe(1);
+    expect(modelCalls).toBe(1);
+    expect(patch.research).toBeDefined();
+  });
+
+  it("searches, grounds the answer, and stores structured sources", async () => {
+    let searched = "";
+    let finalPrompt = "";
+    const research: ResearchAdapter = {
+      async search(query) {
+        searched = query.query;
+        return groundedResearch.search(query);
+      }
+    };
+    const model: TextModelAdapter = {
+      ...textModel([]),
+      async generateJson(options) {
+        finalPrompt = options.messages.at(-1)?.content ?? "";
+        const raw = {
+          assistantMessage: "A promising option is a newly characterized nearby exoplanet.",
+          question: {
+            prompt: "Should the book focus on how it was detected or why it matters?",
+            options: ["How it was detected", "Why it matters"],
+            allowCustom: true
+          }
+        };
+        return {
+          data: options.schema.parse(raw),
+          text: JSON.stringify(raw),
+          model: "fake",
+          provider: "fake"
+        };
+      }
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(searched).toContain("recent discovery");
+    expect(finalPrompt).toContain("webResearch");
+    expect(finalPrompt).toContain("NASA discovery brief");
+    expect(patch.assistantMessage).toContain("exoplanet");
+    expect(patch.research?.sources[0]).toMatchObject({
+      title: "NASA discovery brief",
+      url: "https://science.nasa.gov/example"
+    });
+  });
+
+  it("keeps ordinary chat to one enrichment call without searching", async () => {
+    let modelCalls = 0;
+    let searches = 0;
+    const model: TextModelAdapter = {
+      ...textModel([]),
+      async generateJson(options) {
+        modelCalls += 1;
+        const raw = {
+          assistantMessage: "Lovely. What mood should the story have?",
+          question: {
+            prompt: "What mood should the story have?",
+            options: ["Cozy", "Funny"],
+            allowCustom: true
+          }
+        };
+        return { data: options.schema.parse(raw), text: JSON.stringify(raw), model: "fake", provider: "fake" };
+      }
+    };
+    const research: ResearchAdapter = {
+      async search(query) {
+        searches += 1;
+        return groundedResearch.search(query);
+      }
+    };
+    const normalRequest: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "A bedtime story about a fox" }]
+    };
+
+    await enrichCreationTurnWithSearch(
+      { textModel: model, research },
+      normalRequest,
+      deterministicCreationTurn(normalRequest)
+    );
+
+    expect(modelCalls).toBe(1);
+    expect(searches).toBe(0);
+  });
+
+  it("honors a model-detected non-English search request", async () => {
+    let searches = 0;
+    const nonEnglish: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "لطفاً جدیدترین کشف علمی را برایم پیدا کن" }]
+    };
+    const model = textModel([
+      {
+        assistantMessage: "جستجو می‌کنم.",
+        question: null,
+        webSearchQuery: "جدیدترین کشف علمی معتبر ۲۰۲۶"
+      },
+      {
+        assistantMessage: "یک کشف تازه و مستند پیدا کردم.",
+        question: null
+      }
+    ]);
+    const research: ResearchAdapter = {
+      async search(query) {
+        searches += 1;
+        expect(query.query).toContain("کشف علمی");
+        return groundedResearch.search(query);
+      }
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research },
+      nonEnglish,
+      deterministicCreationTurn(nonEnglish)
+    );
+
+    expect(searches).toBe(1);
+    expect(patch.research).toBeDefined();
+  });
+
+  it("keeps grounded evidence when final answer synthesis fails", async () => {
+    const model: TextModelAdapter = {
+      generateJson: () => Promise.reject(new Error("answer model unavailable")),
+      generateText: () => Promise.reject(new Error("not used")),
+      // eslint-disable-next-line require-yield
+      streamText: async function* () {
+        throw new Error("not used");
+      }
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: groundedResearch },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.assistantMessage).toContain("nearby exoplanet");
+    expect(patch.question).toBeNull();
+    expect(patch.research?.sources[0]?.title).toBe("NASA discovery brief");
+  });
+
+  it("keeps grounded evidence when final answer synthesis times out", async () => {
+    const model: TextModelAdapter = {
+      generateJson: () => new Promise<never>(() => undefined),
+      generateText: () => Promise.reject(new Error("not used")),
+      // eslint-disable-next-line require-yield
+      streamText: async function* () {
+        throw new Error("not used");
+      }
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: groundedResearch, answerTimeoutMs: 5 },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.assistantMessage).toContain("nearby exoplanet");
+    expect(patch.question).toBeNull();
+    expect(patch.research?.sources[0]?.title).toBe("NASA discovery brief");
+  });
+
+  it("does not retry timed-out searches, avoiding duplicate provider work", async () => {
+    let searches = 0;
+    const research: ResearchAdapter = {
+      search() {
+        searches += 1;
+        return new Promise<never>(() => undefined);
+      }
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: textModel([]), research, searchTimeoutMs: 5 },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(searches).toBe(1);
+    expect(patch.assistantMessage).toMatch(/try again|narrow/i);
+  });
+
+  it("uses the grounded summary when synthesis returns an empty answer", async () => {
+    const model = textModel([{ assistantMessage: "", question: null }]);
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: groundedResearch },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.assistantMessage).toContain("nearby exoplanet");
+    expect(patch.research).toBeDefined();
+  });
+
+  it("keeps model-detected search failure recovery in the conversation language", async () => {
+    const nonEnglish: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "لطفاً جدیدترین کشف علمی را برایم پیدا کن" }]
+    };
+    const model = textModel([
+      {
+        assistantMessage: "جستجو می‌کنم.",
+        question: null,
+        webSearchQuery: "جدیدترین کشف علمی معتبر ۲۰۲۶",
+        webSearchFailureMessage: "جستجو الان کامل نشد؛ دوباره تلاش کنید یا موضوع را دقیق‌تر کنید."
+      },
+      { assistantMessage: "", question: null }
+    ]);
+    const research: ResearchAdapter = {
+      search: () => Promise.reject(new Error("search unavailable"))
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research },
+      nonEnglish,
+      deterministicCreationTurn(nonEnglish)
+    );
+
+    expect(patch.assistantMessage).toContain("جستجو الان کامل نشد");
+    expect(patch.question).toBeNull();
+  });
+
+  it("uses hardcoded recovery when failure synthesis returns an empty answer", async () => {
+    const research: ResearchAdapter = {
+      search: () => Promise.reject(new Error("search unavailable"))
+    };
+    const model = textModel([{ assistantMessage: "", question: null }]);
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.assistantMessage).toMatch(/try again|narrow/i);
+    expect(patch.question).toBeNull();
+  });
+
+  it("bounds model-detected search classification before search starts", async () => {
+    const nonEnglish: MobileCreationTurnRequest = {
+      messages: [{ role: "user", content: "لطفاً جدیدترین کشف علمی را برایم پیدا کن" }]
+    };
+    const model: TextModelAdapter = {
+      generateJson: () => new Promise<never>(() => undefined),
+      generateText: () => Promise.reject(new Error("not used")),
+      // eslint-disable-next-line require-yield
+      streamText: async function* () {
+        throw new Error("not used");
+      }
+    };
+
+    await expect(
+      enrichCreationTurnWithSearch(
+        { textModel: model, research: groundedResearch, classificationTimeoutMs: 5 },
+        nonEnglish,
+        deterministicCreationTurn(nonEnglish)
+      )
+    ).rejects.toThrow(/classification request timed out/i);
+  });
+
+  it("returns a search-specific recovery turn when the outer budget expires", async () => {
+    const latestRequest: MobileCreationTurnRequest = {
+      messages: [
+        { role: "user", content: "Make a scientific book about a recent discovery" },
+        { role: "assistant", content: "What should readers learn?" },
+        { role: "user", content: "Find the latest on the internet" }
+      ]
+    };
+
+    const turn = await runCreationTurn(latestRequest, {
+      enrich: () => new Promise<never>(() => undefined),
+      timeoutMs: 5
+    });
+
+    expect(turn.assistantMessage).toMatch(/couldn't complete that search/i);
+    expect(turn.question).toBeNull();
+    expect(turn.quickReplies).toContain("Try the search again");
+  });
+
+  it("returns a recoverable answer when search is unavailable", async () => {
+    const research: ResearchAdapter = {
+      async search() {
+        throw new Error("search unavailable");
+      }
+    };
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: textModel([]), research },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.assistantMessage).toMatch(/try again|narrow/i);
+    expect(patch.assistantMessage).not.toMatch(/can't browse|cannot browse/i);
+    expect(patch.research).toBeUndefined();
+  });
+});
+
 describe("briefForMobilePayload", () => {
   it("builds a brief from a chat whose combined user text exceeds the topic cap", () => {
     // Regression: rawIdea joins every user message; a long interview made
@@ -581,6 +1026,51 @@ describe("creation chat branch isolation", () => {
   it("ignores titles and page counts that only exist in edited-away branches", () => {
     expect(titleForMobilePayload(branched, deterministicAdvisor(branched))).toBeUndefined();
     expect(explicitTargetPagesForMobilePayload(branched)).toBeUndefined();
+  });
+
+  it("keeps edited-away web research out of the project prompt", () => {
+    const branchedWithResearch = mobileCreationDraftPayloadSchema.parse({
+      ...branched,
+      messages: branched.messages?.map((message) =>
+        message.id === "m2"
+          ? {
+              ...message,
+              research: {
+                query: "wrong branch research",
+                summary: "This abandoned evidence must not be used.",
+                sources: [
+                  {
+                    title: "Wrong source",
+                    url: "https://example.com/wrong",
+                    summary: "Wrong branch only."
+                  }
+                ]
+              }
+            }
+          : message.id === "m4"
+            ? {
+                ...message,
+                research: {
+                  query: "Brazilian romance research",
+                  summary: "Active evidence for the corrected branch.",
+                  sources: [
+                    {
+                      title: "Active source",
+                      url: "https://example.com/active",
+                      summary: "Correct branch evidence."
+                    }
+                  ]
+                }
+              }
+            : message
+      )
+    });
+
+    const prompt = composeMobileProjectPrompt(branchedWithResearch, deterministicAdvisor(branchedWithResearch));
+
+    expect(prompt).toContain("Active source");
+    expect(prompt).not.toContain("Wrong source");
+    expect(prompt).toContain("Untrusted web evidence");
   });
 
   it("sends only the active thread to the AI advisor enrichment", async () => {

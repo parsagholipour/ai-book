@@ -78,7 +78,7 @@ describe("Google Play billing verifier", () => {
         lineItems: [
           {
             productId: "tomeza.creator_monthly",
-            expiryTime: "2026-07-15T00:00:00Z",
+            expiryTime: "2099-07-15T00:00:00Z",
             autoRenewingPlan: { autoRenewEnabled: true }
           }
         ]
@@ -106,7 +106,7 @@ describe("Google Play billing verifier", () => {
       subscription: {
         status: "ACTIVE",
         currentPeriodStart: new Date("2026-06-15T00:00:00Z"),
-        currentPeriodEnd: new Date("2026-07-15T00:00:00Z")
+        currentPeriodEnd: new Date("2099-07-15T00:00:00Z")
       }
     });
   });

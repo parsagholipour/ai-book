@@ -208,7 +208,12 @@ function foldedSummary(
     return existingSummary?.trim() || undefined;
   }
   const droppedLines = dropped
-    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.content.replace(/\s+/g, " ").slice(0, 160)}`)
+    .map((message) => {
+      const text = `${message.role === "user" ? "User" : "Assistant"}: ${message.content.replace(/\s+/g, " ").slice(0, 160)}`;
+      return message.research
+        ? `${text}\nResearch: ${message.research.summary.replace(/\s+/g, " ").slice(0, 240)}`
+        : text;
+    })
     .join("\n");
   const combined = [existingSummary?.trim(), droppedLines].filter(Boolean).join("\n");
   // Keep the newest folded content when the summary itself overflows.

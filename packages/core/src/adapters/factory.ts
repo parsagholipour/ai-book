@@ -206,11 +206,21 @@ export function resolveImageModelSelection(config: AppConfig, input?: CreateProj
   return tierSelection ?? { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
 }
 
+export function createResearchAdapter(config: AppConfig): ResearchAdapter {
+  if (config.MOCK_AI) {
+    return new FakeResearchAdapter();
+  }
+  return new GeminiResearchAdapter({
+    apiKey: config.GEMINI_API_KEY,
+    textModel: config.GEMINI_TEXT_MODEL
+  });
+}
+
 export function createProviders(config: AppConfig, input?: CreateProjectInput): ProviderSet {
   if (config.MOCK_AI) {
     return {
       text: new FakeTextModelAdapter(input),
-      research: new FakeResearchAdapter(),
+      research: createResearchAdapter(config),
       image: new FakeImageAdapter(),
       embedding: new FakeEmbeddingAdapter()
     };
@@ -219,10 +229,7 @@ export function createProviders(config: AppConfig, input?: CreateProjectInput): 
   const textModel = createRoutedTextModel(config, resolveTextModelSelections(config, input));
   return {
     text: textModel,
-    research: new GeminiResearchAdapter({
-      apiKey: config.GEMINI_API_KEY,
-      textModel: config.GEMINI_TEXT_MODEL
-    }),
+    research: createResearchAdapter(config),
     image: createImageModelAdapter(config, resolveImageModelSelection(config, input)),
     embedding: new GeminiEmbeddingAdapter({
       apiKey: config.GEMINI_API_KEY,
