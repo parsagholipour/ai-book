@@ -11,6 +11,7 @@ import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'book_cover.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'project_route_error.dart';
@@ -730,20 +731,51 @@ class _ProjectHeader extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              project.title,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              project.prompt,
-              maxLines: 4,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+            // The book leads its own page: cover beside title, the way it
+            // would sit on a shelf.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                BookCover(
+                  title: project.title,
+                  seed: project.id,
+                  image: project.coverImage,
+                  authorName: project.authorName,
+                  width: 76,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        project.title,
+                        key: const ValueKey('project-header-title'),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (project.authorName?.trim().isNotEmpty == true) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          'by ${project.authorName!.trim()}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.onSurfaceVariant),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Text(
+                        project.prompt,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             Wrap(

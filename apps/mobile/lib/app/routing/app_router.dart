@@ -13,6 +13,37 @@ import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
 import '../../shared/api/api_error.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
+import '../../shared/ui/motion.dart';
+
+/// Screen transition used for every route.
+///
+/// A short fade paired with a small upward slide reads as "this screen came
+/// from the one you were on", without the latency of a full slide-across. The
+/// slide is dropped when the platform asks for reduced motion.
+CustomTransitionPage<void> _appPage(GoRouterState state, Widget child) {
+  return CustomTransitionPage<void>(
+    key: state.pageKey,
+    child: child,
+    transitionDuration: AppMotion.medium,
+    reverseTransitionDuration: AppMotion.fast,
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final fade = CurvedAnimation(parent: animation, curve: AppMotion.enter);
+      if (AppMotion.reducedMotion(context)) {
+        return FadeTransition(opacity: fade, child: child);
+      }
+      return FadeTransition(
+        opacity: fade,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.02),
+            end: Offset.zero,
+          ).animate(fade),
+          child: child,
+        ),
+      );
+    },
+  );
+}
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authRefresh = ValueNotifier(0);
@@ -53,67 +84,81 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(
         path: '/splash',
-        builder: (context, state) => const SplashScreen(),
+        pageBuilder: (context, state) => _appPage(state, const SplashScreen()),
       ),
       GoRoute(
         path: '/auth/sign-in',
-        builder: (context, state) =>
-            const AuthScreen(mode: AuthScreenMode.signIn),
+        pageBuilder: (context, state) =>
+            _appPage(state, const AuthScreen(mode: AuthScreenMode.signIn)),
       ),
       GoRoute(
         path: '/auth/sign-up',
-        builder: (context, state) =>
-            const AuthScreen(mode: AuthScreenMode.signUp),
+        pageBuilder: (context, state) =>
+            _appPage(state, const AuthScreen(mode: AuthScreenMode.signUp)),
       ),
       GoRoute(
         path: '/home',
-        builder: (context, state) => const CreationChatScreen(),
+        pageBuilder: (context, state) =>
+            _appPage(state, const CreationChatScreen()),
       ),
       GoRoute(
         path: '/account',
-        builder: (context, state) => const AccountScreen(),
+        pageBuilder: (context, state) => _appPage(state, const AccountScreen()),
       ),
       GoRoute(
         path: '/books/new',
-        builder: (context, state) {
+        pageBuilder: (context, state) {
           final fresh = state.uri.queryParameters['fresh'] == 'true';
-          return CreationChatScreen(startFresh: fresh);
+          return _appPage(state, CreationChatScreen(startFresh: fresh));
         },
       ),
       GoRoute(
         path: '/books/import',
-        builder: (context, state) => const ImportBookScreen(),
+        pageBuilder: (context, state) =>
+            _appPage(state, const ImportBookScreen()),
       ),
       GoRoute(
         path: '/books/chat/:draftId',
-        builder: (context, state) =>
-            CreationChatScreen(draftId: state.pathParameters['draftId']),
+        pageBuilder: (context, state) => _appPage(
+          state,
+          CreationChatScreen(draftId: state.pathParameters['draftId']),
+        ),
       ),
       GoRoute(
         path: '/projects/:id',
-        builder: (context, state) =>
-            ProjectDetailScreen(projectId: state.pathParameters['id']!),
+        pageBuilder: (context, state) => _appPage(
+          state,
+          ProjectDetailScreen(projectId: state.pathParameters['id']!),
+        ),
       ),
       GoRoute(
         path: '/projects/:id/handoff',
-        builder: (context, state) => GenerationProgressScreen(
-          projectId: state.pathParameters['id']!,
-          initialMessage: state.extra as String?,
+        pageBuilder: (context, state) => _appPage(
+          state,
+          GenerationProgressScreen(
+            projectId: state.pathParameters['id']!,
+            initialMessage: state.extra as String?,
+          ),
         ),
       ),
       GoRoute(
         path: '/projects/:id/chat',
-        builder: (context, state) =>
-            ProjectChatScreen(projectId: state.pathParameters['id']!),
+        pageBuilder: (context, state) => _appPage(
+          state,
+          ProjectChatScreen(projectId: state.pathParameters['id']!),
+        ),
       ),
       GoRoute(
         path: '/projects/:id/edit',
-        builder: (context, state) => BookEditScreen(
-          projectId: state.pathParameters['id']!,
-          savedExportMessageId:
-              state.uri.queryParameters['savedExportMessageId'],
-          initialPageIndex: int.tryParse(
-            state.uri.queryParameters['pageIndex'] ?? '',
+        pageBuilder: (context, state) => _appPage(
+          state,
+          BookEditScreen(
+            projectId: state.pathParameters['id']!,
+            savedExportMessageId:
+                state.uri.queryParameters['savedExportMessageId'],
+            initialPageIndex: int.tryParse(
+              state.uri.queryParameters['pageIndex'] ?? '',
+            ),
           ),
         ),
       ),

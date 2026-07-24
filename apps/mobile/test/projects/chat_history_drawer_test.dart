@@ -70,11 +70,45 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.drag(find.byType(ListView), const Offset(0, -240));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -240));
     await tester.pumpAndSettle();
 
     expect(find.text('New book'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('date header stays pinned while its chats scroll under it', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final now = DateTime.now();
+    final sessions = List.generate(
+      24,
+      (index) => _chatSession(
+        draftId: 'draft-$index',
+        title: 'Chat $index',
+        lastMessageAt: now,
+      ),
+    );
+
+    await tester.pumpWidget(_app(sessions: sessions, activeDraftId: 'other'));
+    await tester.pumpAndSettle();
+
+    final listTop = tester.getTopLeft(find.byType(CustomScrollView)).dy;
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Chat 0'), findsOneWidget);
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    // The first chats scrolled away but the group label held the top edge.
+    expect(find.text('Chat 0'), findsNothing);
+    expect(find.text('Today'), findsOneWidget);
+    final headerTop = tester.getTopLeft(find.text('Today')).dy;
+    expect(headerTop, greaterThanOrEqualTo(listTop));
+    expect(headerTop, lessThan(listTop + 24));
   });
 
   testWidgets('sessions group by last message time, not row update time', (
@@ -144,6 +178,7 @@ Widget _app({
 MobileChatSession _chatSession({
   required String draftId,
   required String title,
+  DateTime? lastMessageAt,
 }) {
   final now = DateTime.utc(2026, 6, 15);
   return MobileChatSession(
@@ -154,6 +189,7 @@ MobileChatSession _chatSession({
     status: 'ACTIVE',
     createdAt: now,
     updatedAt: now,
+    lastMessageAt: lastMessageAt,
   );
 }
 

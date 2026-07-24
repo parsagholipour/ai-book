@@ -17,6 +17,8 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/easy_drawer_open.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/creation_repository.dart';
@@ -747,6 +749,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   Future<void> _send(String text) async {
     final trimmed = text.trim();
     final state = ref.read(creationChatControllerProvider);
+    AppHaptics.tap();
     final activeProjectId = _activeProjectId(state);
     if (activeProjectId != null) {
       if (trimmed.isEmpty) return;
@@ -1321,6 +1324,9 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       },
     );
     if (operation == null || !mounted) return;
+    // Approving spends credits and starts the long write: the heaviest,
+    // least-reversible tap in the product, so it gets the weightiest feedback.
+    AppHaptics.commit();
     _startPlanPoll();
     _refreshOutput(project.id);
     ref.invalidate(projectsProvider);
@@ -3321,87 +3327,116 @@ class _Transcript extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(14, 16, 14, 8),
       itemCount: itemCount,
       itemBuilder: (context, index) {
-        var cursor = state.messages.length;
-        if (index >= cursor && index < cursor + projectItems.length) {
-          final item = projectItems[index - cursor];
-          final plan = item.plan;
-          if (plan != null) {
-            return _PlanWithGenerationProgress(
-              showGeneration:
-                  showGenerationForCurrentPlan &&
-                  currentPlanKey == _planKey(plan),
-              statusValue: generationStatusValue,
-              projectId: plan.projectId,
-              child: _PlanBubble.snapshot(
-                key: ValueKey('project-plan-${plan.id}'),
-                plan: plan,
-              ),
-            );
-          }
-          final operation = item.operation;
-          if (operation != null) {
-            return _OutputOperationBubble(
-              operation: operation,
-              onRetry: operation.isFailed && onRetryFailedOperation != null
-                  ? () => onRetryFailedOperation!(operation)
-                  : null,
-              onUndo: operation.canUndo ? onUndoProjectEdit : null,
-            );
-          }
-          return _ProjectChatMessageBubble(
-            message: item.message!,
-            switchingBranch: switchingProjectBranch,
-            activeProjectId: activeProjectId,
-            onSwitchBranch: onSwitchProjectBranch,
-            onEdit: onEditProjectMessage,
-            onOpenReplanCopy: onOpenReplanCopy,
-            onOpenPaywall: item.message!.hasInsufficientCredits
-                ? onOpenPaywall
-                : null,
-            showProposalActions: _isActiveCreationEditProposal(
-              projectItems,
-              item.message!,
-            ),
-            onApplyProposal:
-                onApplyEditProposal == null ||
-                    item.message!.editProposal == null
-                ? null
-                : () => onApplyEditProposal!(item.message!.editProposal!.id),
-            onCancelProposal:
-                onCancelEditProposal == null ||
-                    item.message!.editProposal == null
-                ? null
-                : () => onCancelEditProposal!(item.message!.editProposal!.id),
-          );
+        final item = _buildTranscriptItem(
+          context: context,
+          index: index,
+          projectItems: projectItems,
+          currentProject: currentProject,
+          currentPlanKey: currentPlanKey,
+          showGenerationForCurrentPlan: showGenerationForCurrentPlan,
+          hasLivePlanBubble: hasLivePlanBubble,
+          hasTyping: hasTyping,
+        );
+        // Only the newest entry animates in. Wrapping every row would replay
+        // the entrance whenever an old row scrolled back into view, which
+        // makes reading back through a conversation feel unstable.
+        if (index != itemCount - 1) {
+          return item;
         }
-        cursor += projectItems.length;
-        if (hasLivePlanBubble && index == cursor) {
-          return _PlanWithGenerationProgress(
-            showGeneration: showGenerationForCurrentPlan,
-            statusValue: generationStatusValue,
-            projectId: currentProject?.id,
-            child: _PlanBubble.live(
-              key: const ValueKey('project-plan-live'),
-              planValue: planValue!,
-              busyAction: planBusyAction,
-            ),
-          );
-        }
-        if (hasLivePlanBubble) cursor++;
-        if (hasTyping && index == cursor) {
-          return const _TypingBubble();
-        }
-        return _MessageBubble(
-          message: state.messages[index],
-          attachmentThumbnails: state.attachmentThumbnails,
-          attachmentUrls: state.attachmentUrls,
-          onRetryFailed: onRetryFailedMessage,
-          onDismissFailed: onDismissFailedMessage,
-          onEdit: onEditCreationMessage,
-          onSwitchBranch: onSwitchCreationBranch,
-          switchingBranch: state.switchingBranch || state.isBusy,
+        return AppEntrance(
+          key: ValueKey('transcript-newest-$index'),
+          child: item,
         );
       },
+    );
+  }
+
+  Widget _buildTranscriptItem({
+    required BuildContext context,
+    required int index,
+    required List<_ProjectTranscriptItem> projectItems,
+    required MobileProjectDetail? currentProject,
+    required String? currentPlanKey,
+    required bool showGenerationForCurrentPlan,
+    required bool hasLivePlanBubble,
+    required bool hasTyping,
+  }) {
+    var cursor = state.messages.length;
+    if (index >= cursor && index < cursor + projectItems.length) {
+      final item = projectItems[index - cursor];
+      final plan = item.plan;
+      if (plan != null) {
+        return _PlanWithGenerationProgress(
+          showGeneration:
+              showGenerationForCurrentPlan && currentPlanKey == _planKey(plan),
+          statusValue: generationStatusValue,
+          projectId: plan.projectId,
+          child: _PlanBubble.snapshot(
+            key: ValueKey('project-plan-${plan.id}'),
+            plan: plan,
+          ),
+        );
+      }
+      final operation = item.operation;
+      if (operation != null) {
+        return _OutputOperationBubble(
+          operation: operation,
+          onRetry: operation.isFailed && onRetryFailedOperation != null
+              ? () => onRetryFailedOperation!(operation)
+              : null,
+          onUndo: operation.canUndo ? onUndoProjectEdit : null,
+        );
+      }
+      return _ProjectChatMessageBubble(
+        message: item.message!,
+        switchingBranch: switchingProjectBranch,
+        activeProjectId: activeProjectId,
+        onSwitchBranch: onSwitchProjectBranch,
+        onEdit: onEditProjectMessage,
+        onOpenReplanCopy: onOpenReplanCopy,
+        onOpenPaywall: item.message!.hasInsufficientCredits
+            ? onOpenPaywall
+            : null,
+        showProposalActions: _isActiveCreationEditProposal(
+          projectItems,
+          item.message!,
+        ),
+        onApplyProposal:
+            onApplyEditProposal == null || item.message!.editProposal == null
+            ? null
+            : () => onApplyEditProposal!(item.message!.editProposal!.id),
+        onCancelProposal:
+            onCancelEditProposal == null || item.message!.editProposal == null
+            ? null
+            : () => onCancelEditProposal!(item.message!.editProposal!.id),
+      );
+    }
+    cursor += projectItems.length;
+    if (hasLivePlanBubble && index == cursor) {
+      return _PlanWithGenerationProgress(
+        showGeneration: showGenerationForCurrentPlan,
+        statusValue: generationStatusValue,
+        projectId: currentProject?.id,
+        child: _PlanBubble.live(
+          key: const ValueKey('project-plan-live'),
+          planValue: planValue!,
+          busyAction: planBusyAction,
+        ),
+      );
+    }
+    if (hasLivePlanBubble) cursor++;
+    if (hasTyping && index == cursor) {
+      return const _TypingBubble();
+    }
+    return _MessageBubble(
+      message: state.messages[index],
+      attachmentThumbnails: state.attachmentThumbnails,
+      attachmentUrls: state.attachmentUrls,
+      onRetryFailed: onRetryFailedMessage,
+      onDismissFailed: onDismissFailedMessage,
+      onEdit: onEditCreationMessage,
+      onSwitchBranch: onSwitchCreationBranch,
+      switchingBranch: state.switchingBranch || state.isBusy,
     );
   }
 }
@@ -5091,7 +5126,10 @@ class _QuestionOptionList extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               onTap: enabled ? () => onSelect(options[i]) : null,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 10,
+                ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

@@ -2173,6 +2173,49 @@ describe("mobile project routes", () => {
     await app.close();
   });
 
+  it("includes cover art on listed projects so the library can show a shelf", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findMany.mockResolvedValueOnce([
+      projectRecord({
+        id: "project-a",
+        title: "Covered Book",
+        images: [
+          {
+            id: "image-cover",
+            projectId: "project-a",
+            pageId: null,
+            type: "COVER",
+            path: "http://localhost:4001/assets/images/project-a/cover.png",
+            metadata: { mimeType: "image/png", model: "hidden" }
+          }
+        ]
+      }),
+      projectRecord({ id: "project-b", title: "Coverless Book", images: [] })
+    ]);
+    const app = await buildMobileApp();
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects",
+      headers: bearer("token-a")
+    });
+    const [covered, coverless] = list.json().projects;
+
+    expect(list.statusCode).toBe(200);
+    expect(covered.coverImage).toMatchObject({ id: "image-cover", role: "cover" });
+    // A book without a rendered cover reports null rather than omitting the key.
+    expect(coverless.coverImage).toBeNull();
+    // Only the cover is loaded for a list; page visuals would bloat the payload.
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          images: expect.objectContaining({ where: { type: "COVER" }, take: 1 })
+        })
+      })
+    );
+    await app.close();
+  });
+
   it("returns generated page previews and mobile-safe image references on project detail", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValueOnce(

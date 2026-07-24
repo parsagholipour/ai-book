@@ -45,7 +45,9 @@ void main() {
     repository.completePending(planReadyProject());
     await tester.pump();
 
-    expect(find.text('Generated Plan'), findsOneWidget);
+    // Matched by key, not by text: the title is now also drawn on the book
+    // cover beside the header, so a bare text finder matches twice.
+    expect(find.byKey(const ValueKey('project-header-title')), findsOneWidget);
   });
 }
 

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/haptics.dart';
 import '../data/billing_repository.dart';
 import '../data/google_play_billing_client.dart';
 import '../domain/billing_models.dart';
@@ -234,6 +235,7 @@ class BillingController extends ChangeNotifier {
         );
         return;
       case StorePurchaseStatus.error:
+        AppHaptics.error();
         final nextPending = {..._state.pendingProductIds}
           ..remove(purchase.productId);
         _setState(
@@ -291,6 +293,7 @@ class BillingController extends ChangeNotifier {
           );
           final nextPending = {..._state.pendingProductIds}
             ..remove(purchase.productId);
+          AppHaptics.success();
           _setState(
             _state.copyWith(
               billing: result.billing,
@@ -301,6 +304,7 @@ class BillingController extends ChangeNotifier {
           );
           _onBillingChanged();
         } catch (error) {
+          AppHaptics.error();
           final nextPending = {..._state.pendingProductIds}
             ..remove(purchase.productId);
           _setState(

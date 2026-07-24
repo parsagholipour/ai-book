@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
@@ -87,15 +88,19 @@ Future<bool> openProjectExport({
     if (outcome == ExportOpenOutcome.sharedFallback) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('No app can open this file, so sharing was opened instead.'),
+          content: Text(
+            'No app can open this file, so sharing was opened instead.',
+          ),
         ),
       );
     }
+    AppHaptics.success();
     ref.invalidate(billingProvider);
     onRefresh?.call();
     return true;
   } catch (error) {
     if (isMounted()) {
+      AppHaptics.error();
       messenger.showSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
     return false;
@@ -126,11 +131,13 @@ Future<bool> downloadProjectExport({
         fileNameOverrides: [file.filename],
       ),
     );
+    AppHaptics.success();
     ref.invalidate(billingProvider);
     onRefresh?.call();
     return true;
   } catch (error) {
     if (isMounted()) {
+      AppHaptics.error();
       messenger.showSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
     return false;

@@ -1,3 +1,15 @@
+/// Reads `coverImage` from a project summary or detail payload.
+///
+/// Older API builds only sent the cover on the detail response, so a missing
+/// key is treated as "no cover yet" rather than an error.
+MobileProjectImage? parseProjectCoverImage(Map<String, dynamic> json) {
+  final cover = json['coverImage'];
+  if (cover is! Map) {
+    return null;
+  }
+  return MobileProjectImage.fromJson(cover.cast<String, dynamic>());
+}
+
 class MobileProjectSummary {
   const MobileProjectSummary({
     required this.id,
@@ -21,12 +33,16 @@ class MobileProjectSummary {
     this.subtitle,
     this.authorName,
     this.source = 'generated',
+    this.coverImage,
   });
 
   final String id;
   final String title;
   final String? subtitle;
   final String? authorName;
+
+  /// Cover art once the cover job has finished; null before that.
+  final MobileProjectImage? coverImage;
 
   /// "imported" for books the author uploaded, "generated" otherwise.
   final String source;
@@ -72,6 +88,7 @@ class MobileProjectSummary {
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       source: json['source'] as String? ?? 'generated',
+      coverImage: parseProjectCoverImage(json),
     );
   }
 
@@ -133,8 +150,8 @@ class MobileProjectDetail extends MobileProjectSummary {
     super.subtitle,
     super.authorName,
     super.source,
+    super.coverImage,
     this.plan,
-    this.coverImage,
     this.quality = const MobileProjectQuality.pending(),
   });
 
@@ -142,7 +159,6 @@ class MobileProjectDetail extends MobileProjectSummary {
   final String language;
   final MobilePlan? plan;
   final List<MobileProjectPage> pages;
-  final MobileProjectImage? coverImage;
   final MobileProjectQuality quality;
 
   factory MobileProjectDetail.fromJson(Map<String, dynamic> json) {
@@ -182,11 +198,7 @@ class MobileProjectDetail extends MobileProjectSummary {
             (page) => MobileProjectPage.fromJson(page as Map<String, dynamic>),
           )
           .toList(),
-      coverImage: json['coverImage'] == null
-          ? null
-          : MobileProjectImage.fromJson(
-              json['coverImage'] as Map<String, dynamic>,
-            ),
+      coverImage: parseProjectCoverImage(json),
       quality: MobileProjectQuality.fromJson(
         (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
@@ -1106,6 +1118,8 @@ class MobileProjectStatus {
   }
 
   bool get isComplete => status == 'complete';
+
+  bool get hasReadyExport => exports.pdf.available || exports.epub.available;
 
   bool get requiresReview => status == 'review_required' || quality.isBlocked;
 

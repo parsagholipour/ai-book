@@ -3,11 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
+import 'book_shelf.dart';
 import 'creation_chat_controller.dart';
 import 'pending_chat_sessions.dart';
 
@@ -48,6 +50,7 @@ class ChatHistoryDrawer extends ConsumerWidget {
                   _DrawerHeader(),
                   _NewBookButton(),
                   SizedBox(height: 8),
+                  BookShelf(),
                 ],
               ),
             ),
@@ -126,6 +129,7 @@ class _NewBookButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: FilledButton.tonalIcon(
         onPressed: () {
+          AppHaptics.tap();
           Navigator.of(context).pop();
           context.go('/books/new?fresh=true');
         },
@@ -204,51 +208,120 @@ class _ChatList extends StatelessWidget {
     }
 
     final groups = _groupByDate(sessions);
-    final pendingOffset = pending.isEmpty ? 0 : 1;
+    final headerExtent = _groupHeaderExtent(context);
+    final background =
+        DrawerTheme.of(context).backgroundColor ??
+        Theme.of(context).colorScheme.surfaceContainerLow;
 
-    return ListView.builder(
-      padding: EdgeInsets.zero,
-      itemCount: groups.length + pendingOffset,
-      itemBuilder: (context, index) {
-        if (pendingOffset == 1 && index == 0) {
-          return _PendingChatGroup(entries: pending);
-        }
-        final group = groups[index - pendingOffset];
-        return _ChatGroup(
-          label: group.label,
-          sessions: group.sessions,
-          activeDraftId: activeDraftId,
-        );
-      },
+    return CustomScrollView(
+      slivers: [
+        if (pending.isNotEmpty)
+          SliverMainAxisGroup(
+            slivers: [
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _GroupHeaderDelegate(
+                  label: 'In progress',
+                  extent: headerExtent,
+                  background: background,
+                ),
+              ),
+              SliverList.builder(
+                itemCount: pending.length,
+                itemBuilder: (context, index) =>
+                    _PendingChatTile(entry: pending[index]),
+              ),
+            ],
+          ),
+        for (final group in groups)
+          SliverMainAxisGroup(
+            slivers: [
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _GroupHeaderDelegate(
+                  label: group.label,
+                  extent: headerExtent,
+                  background: background,
+                ),
+              ),
+              SliverList.builder(
+                itemCount: group.sessions.length,
+                itemBuilder: (context, index) {
+                  final session = group.sessions[index];
+                  return _ChatTile(
+                    session: session,
+                    isSelected: session.draftId == activeDraftId,
+                  );
+                },
+              ),
+            ],
+          ),
+      ],
     );
   }
 }
 
-class _PendingChatGroup extends StatelessWidget {
-  const _PendingChatGroup({required this.entries});
+/// Height of a pinned group label, scaled with the user's text size so the
+/// fixed-extent header never clips its own text.
+double _groupHeaderExtent(BuildContext context) {
+  final fontSize = Theme.of(context).textTheme.labelSmall?.fontSize ?? 11;
+  return MediaQuery.textScalerOf(context).scale(fontSize) * 1.4 + 16;
+}
 
-  final List<PendingChatSession> entries;
+class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
+  const _GroupHeaderDelegate({
+    required this.label,
+    required this.extent,
+    required this.background,
+  });
+
+  final String label;
+  final double extent;
+  final Color background;
 
   @override
-  Widget build(BuildContext context) {
+  double get minExtent => extent;
+
+  @override
+  double get maxExtent => extent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     final colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text(
-            'In progress',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: colors.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
+    return Container(
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        // Opaque so chats scroll underneath the label instead of through it.
+        color: background,
+        border: overlapsContent
+            ? Border(
+                bottom: BorderSide(
+                  color: colors.outlineVariant.withValues(alpha: 0.5),
+                ),
+              )
+            : null,
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          color: colors.onSurfaceVariant,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
         ),
-        for (final entry in entries) _PendingChatTile(entry: entry),
-      ],
+      ),
     );
+  }
+
+  @override
+  bool shouldRebuild(_GroupHeaderDelegate oldDelegate) {
+    return oldDelegate.label != label ||
+        oldDelegate.extent != extent ||
+        oldDelegate.background != background;
   }
 }
 
@@ -260,36 +333,41 @@ class _PendingChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return ListTile(
-      dense: true,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      leading: Icon(
-        Icons.chat_bubble_outline,
-        size: 20,
-        color: colors.onSurfaceVariant,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+        minVerticalPadding: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        leading: Icon(
+          Icons.chat_bubble_outline,
+          size: 20,
+          color: colors.onSurfaceVariant,
+        ),
+        title: Text(
+          entry.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        subtitle: Text(
+          'Creating…',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        trailing: entry.draftId == null
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : null,
+        onTap: () => _open(context),
       ),
-      title: Text(
-        entry.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
-      subtitle: Text(
-        'Creating…',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
-      ),
-      trailing: entry.draftId == null
-          ? const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : null,
-      onTap: () => _open(context),
     );
   }
 
@@ -300,51 +378,15 @@ class _PendingChatTile extends StatelessWidget {
       // so there is nothing to navigate to yet.
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Still creating this chat — it will be ready in a moment.'),
+          content: Text(
+            'Still creating this chat — it will be ready in a moment.',
+          ),
         ),
       );
       return;
     }
     Navigator.of(context).pop();
     context.go('/books/chat/$draftId');
-  }
-}
-
-class _ChatGroup extends StatelessWidget {
-  const _ChatGroup({
-    required this.label,
-    required this.sessions,
-    required this.activeDraftId,
-  });
-
-  final String label;
-  final List<MobileChatSession> sessions;
-  final String? activeDraftId;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: colors.onSurfaceVariant,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        for (final session in sessions)
-          _ChatTile(
-            session: session,
-            isSelected: session.draftId == activeDraftId,
-          ),
-      ],
-    );
   }
 }
 
@@ -367,49 +409,60 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
       borderRadius: BorderRadius.circular(12),
     );
 
-    return Material(
-      color: selected
-          ? colors.primaryContainer.withValues(alpha: 0.55)
-          : Colors.transparent,
-      shape: shape,
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        dense: true,
-        selected: selected,
-        tileColor: Colors.transparent,
-        selectedTileColor: Colors.transparent,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: Material(
+        color: selected
+            ? colors.primaryContainer.withValues(alpha: 0.55)
+            : Colors.transparent,
         shape: shape,
-        leading: Icon(
-          Icons.chat_bubble_outline,
-          size: 20,
-          color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
-        ),
-        title: Text(
-          widget.session.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: selected ? colors.onPrimaryContainer : null,
-            fontWeight: selected ? FontWeight.w700 : null,
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          dense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          minVerticalPadding: 2,
+          selected: selected,
+          tileColor: Colors.transparent,
+          selectedTileColor: Colors.transparent,
+          shape: shape,
+          leading: Icon(
+            Icons.chat_bubble_outline,
+            size: 20,
+            color: selected
+                ? colors.onPrimaryContainer
+                : colors.onSurfaceVariant,
           ),
+          title: Text(
+            widget.session.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: selected ? colors.onPrimaryContainer : null,
+              fontWeight: selected ? FontWeight.w700 : null,
+            ),
+          ),
+          subtitle: widget.session.preview.isNotEmpty
+              ? Text(
+                  widget.session.preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                )
+              : null,
+          onTap: () => _open(context),
+          onLongPress: () {
+            AppHaptics.longPress();
+            _showOptions(context);
+          },
         ),
-        subtitle: widget.session.preview.isNotEmpty
-            ? Text(
-                widget.session.preview,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              )
-            : null,
-        onTap: () => _open(context),
-        onLongPress: () => _showOptions(context),
       ),
     );
   }
 
   void _open(BuildContext context) {
+    AppHaptics.tap();
     Navigator.of(context).pop();
     context.go('/books/chat/${widget.session.draftId}');
   }

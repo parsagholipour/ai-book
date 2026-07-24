@@ -5,13 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/config/app_config.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'book_cover.dart';
 import 'project_route_error.dart';
 import 'project_export_actions.dart';
 
@@ -34,6 +38,8 @@ class _GenerationProgressScreenState
     extends ConsumerState<GenerationProgressScreen> {
   Timer? _pollTimer;
   String? _busyAction;
+  bool _celebrated = false;
+  bool _notifiedFailure = false;
   ProviderSubscription<AsyncValue<MobileProjectStatus>>? _statusSubscription;
 
   @override
@@ -49,7 +55,24 @@ class _GenerationProgressScreenState
     );
   }
 
+  /// Announce the finish once per visit, the first time the poll reports a
+  /// completed book. Guarded so a later refresh does not re-celebrate.
+  void _announceCompletion(AsyncValue<MobileProjectStatus> statusValue) {
+    final status = statusValue.asData?.value;
+    if (status == null || _celebrated) {
+      return;
+    }
+    if (status.isComplete && status.hasReadyExport) {
+      _celebrated = true;
+      AppHaptics.success();
+    } else if (status.status == 'failed' && !_notifiedFailure) {
+      _notifiedFailure = true;
+      AppHaptics.error();
+    }
+  }
+
   void _syncDetailPolling(AsyncValue<MobileProjectStatus> statusValue) {
+    _announceCompletion(statusValue);
     final live = statusValue.asData?.value.isLive ?? false;
     if (live) {
       _pollTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
@@ -298,13 +321,20 @@ class ProjectGenerationView extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
         children: [
-          _ProgressOverviewCard(
-            status: status,
-            initialMessage: initialMessage,
-            busyAction: busyAction,
-            onResume: onResume,
-          ),
-          const SizedBox(height: 12),
+          // Once the book is finished, the finished book leads — the progress
+          // breakdown becomes reference material rather than the headline.
+          if (status.isComplete && status.hasReadyExport) ...[
+            _BookReadyCard(status: status, project: project),
+            const SizedBox(height: 12),
+          ] else ...[
+            _ProgressOverviewCard(
+              status: status,
+              initialMessage: initialMessage,
+              busyAction: busyAction,
+              onResume: onResume,
+            ),
+            const SizedBox(height: 12),
+          ],
           if (status.quality.isBlocked || status.quality.recommendsReview) ...[
             _QualityGateCard(
               quality: status.quality,
@@ -335,6 +365,92 @@ class ProjectGenerationView extends StatelessWidget {
               editBookProjectId: status.isComplete ? status.projectId : null,
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// The payoff: shown in place of the progress breakdown once the book exists.
+///
+/// Finishing a book is the moment the whole product is for, and before this it
+/// was marked only by a progress bar quietly reaching 100%. Showing the cover
+/// the user just made, at size, is the reward.
+class _BookReadyCard extends StatelessWidget {
+  const _BookReadyCard({required this.status, this.project});
+
+  final MobileProjectStatus status;
+  final MobileProjectDetail? project;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final title = project?.title ?? 'Your book';
+    final pages = status.pageProgress.completed;
+
+    return AppEntrance(
+      offset: 16,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colors.primary,
+              Color.lerp(colors.primary, colors.tertiary, 0.55)!,
+            ],
+          ),
+          borderRadius: BorderRadius.circular(TomezaRadii.card),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              BookCover(
+                title: title,
+                seed: status.projectId,
+                image: project?.coverImage,
+                authorName: project?.authorName,
+                width: 84,
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Your book is ready',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        color: colors.onPrimary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: colors.onPrimary.withValues(alpha: 0.92),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      pages > 0
+                          ? '$pages pages written. Download or share it below.'
+                          : 'Download or share it below.',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colors.onPrimary.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -499,17 +615,15 @@ class _ProgressOverviewCard extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Semantics(
-                    label: 'Book generation progress',
-                    value: '$progress percent complete',
-                    child: ExcludeSemantics(
-                      child: LinearProgressIndicator(value: progress / 100),
-                    ),
+                  child: AppAnimatedProgressBar(
+                    value: progress / 100,
+                    semanticLabel: 'Book generation progress',
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  '$progress%',
+                AppAnimatedCount(
+                  value: progress,
+                  builder: (value) => '$value%',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
               ],

@@ -235,6 +235,12 @@ export type MobileProjectSummaryDto = {
   hasPlan: boolean;
   /** "imported" for books brought in by the author, "generated" otherwise. */
   source: "imported" | "generated";
+  /**
+   * Cover art, when the project has one. Present on summaries so the mobile
+   * library can render a real bookshelf instead of placeholder tiles; null
+   * until the cover image job finishes.
+   */
+  coverImage: MobileProjectImageDto | null;
   exports: MobileExportSetDto;
   createdAt: string;
   updatedAt: string;
@@ -245,7 +251,6 @@ export type MobileProjectDetailDto = MobileProjectSummaryDto & {
   language: string;
   plan: MobilePlanDto | null;
   pages: MobileProjectPageDto[];
-  coverImage: MobileProjectImageDto | null;
   quality: ProjectQualityStatus;
 };
 
@@ -2421,6 +2426,9 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
         orderBy: { updatedAt: "desc" },
         include: {
           currentPlan: true,
+          // Only the cover: the library renders cover art per project, and
+          // pulling every page visual here would be a large payload for a list.
+          images: { where: { type: "COVER" }, orderBy: { createdAt: "desc" }, take: 1 },
           _count: { select: { pages: true, images: true, jobs: true } }
         }
       })) as MobileProjectRecord[];
@@ -7156,6 +7164,11 @@ async function serializeProjectSummary(
     imageCount,
     hasPlan: hasExistingPlan,
     source: projectSourceFromMediaSettings(project.mediaSettings),
+    coverImage: serializeImage(
+      project.images?.find((image) => image.type === "COVER") ?? null,
+      "cover",
+      `Cover for ${project.title}`
+    ),
     exports: await serializeExportSet(project.id, project.title, appConfig, userId),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString()
@@ -7168,7 +7181,6 @@ export async function serializeProjectDetail(
   userId: string
 ): Promise<MobileProjectDetailDto> {
   const summary = await serializeProjectSummary(project, appConfig, userId);
-  const coverImage = project.images?.find((image) => image.type === "COVER") ?? null;
   const latestCompile = await prisma.generationJob.findFirst({
     where: { projectId: project.id, type: "COMPILE_EXPORT" },
     orderBy: { createdAt: "desc" },
@@ -7188,7 +7200,6 @@ export async function serializeProjectDetail(
       status: page.status.toLowerCase(),
       image: serializeImage(page.images?.[0] ?? null, "page_visual", `Visual for ${page.title}`)
     })),
-    coverImage: serializeImage(coverImage, "cover", `Cover for ${project.title}`),
     quality: normalizeProjectQuality(latestCompile?.qualityReport)
   };
 }
