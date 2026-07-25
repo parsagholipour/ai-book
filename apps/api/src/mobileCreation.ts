@@ -843,7 +843,7 @@ function applyCreationToolSideEffects(
     };
   }
   if (settings.tone !== undefined) {
-    brief = { ...(brief ?? {}), tone: settings.tone } as MobileCreationTurn["brief"];
+    brief = { ...brief, tone: settings.tone } as MobileCreationTurn["brief"];
   }
 
   return {

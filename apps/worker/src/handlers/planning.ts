@@ -1,0 +1,225 @@
+import {
+  getProjectOrThrow,
+  nextPlanVersion,
+  planInputSnapshot,
+  planMediaSettingsSnapshot,
+  strategyForInput
+} from "../generation/bookHelpers.js";
+import { embedResearchSourcesForProject } from "../generation/semanticMemory.js";
+import { planRevisionConsistencyWarning } from "../generation/planRevisionSafety.js";
+import {
+  inputForPlanVersion,
+  inputFromProject,
+  inputFromSnapshot,
+  inputWithMessageMediaPreferences,
+  inputWithMobileSourceMaterial
+} from "../generation/projectInput.js";
+import { createLoggedProviders } from "../providers/loggedAdapters.js";
+import { config } from "../runtime/config.js";
+import { advanceJobStep, editOperationIdFromJob } from "../runtime/jobLifecycle.js";
+import { type JobCompletion } from "../runtime/jobTypes.js";
+import { jsonPayloadToRecord } from "../runtime/serialization.js";
+import { bookPlanSchema, createProviders } from "@book-maker/core";
+import { prisma } from "@book-maker/db";
+import { Job } from "bullmq";
+
+/**
+ * `plan-book` and `revise-plan` jobs: research a brief and turn it into a BookPlan.
+ */
+
+export async function planBook(job: Job): Promise<JobCompletion> {
+  const { projectId, inputSnapshot } = job.data as { projectId: string; inputSnapshot?: unknown };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  const project = await getProjectOrThrow(projectId);
+  const input = inputFromSnapshot(inputSnapshot) ?? inputFromProject(project);
+  const strategy = strategyForInput(input);
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const plan = await strategy.createPlan({
+    // Planning sees pasted notes and uploaded-file digests; the stored
+    // snapshot below stays clean so page generation input is unchanged.
+    input: inputWithMobileSourceMaterial(input),
+    textModel: providers.text,
+    research: providers.research,
+    forceFallback: config.MOCK_AI,
+    onPhase: async (phase) => {
+      switch (phase) {
+        case "understand":
+          await advanceJobStep(generationJobId, "research", 20, "Understanding your idea");
+          break;
+        case "shape":
+          await advanceJobStep(generationJobId, "plan", 45, "Shaping the chapters and flow");
+          break;
+        case "finalize":
+          await advanceJobStep(generationJobId, "save", 80, "Finalizing your plan");
+          break;
+      }
+    }
+  });
+  const version = await nextPlanVersion(projectId);
+
+  await prisma.$transaction(async (tx) => {
+    const planVersion = await tx.planVersion.create({
+      data: {
+        projectId,
+        version,
+        planningPackage: plan,
+        inputSnapshot: planInputSnapshot(input),
+        messages: []
+      }
+    });
+
+    await tx.project.update({
+      where: { id: projectId },
+      data: { currentPlanId: planVersion.id, title: plan.title }
+    });
+
+    await tx.character.deleteMany({ where: { projectId } });
+    await tx.location.deleteMany({ where: { projectId } });
+
+    if (plan.characters.length > 0) {
+      await tx.character.createMany({
+        data: plan.characters.map((character) => ({
+          projectId,
+          name: character.name,
+          role: character.role,
+          description: character.description,
+          traits: character.traits,
+          visualRules: character.visualRules
+        }))
+      });
+    }
+
+    if (plan.locations.length > 0) {
+      await tx.location.createMany({
+        data: plan.locations.map((location) => ({
+          projectId,
+          name: location.name,
+          description: location.description,
+          rules: location.rules
+        }))
+      });
+    }
+
+    if (plan.researchNotes.length > 0) {
+      await tx.researchSource.createMany({
+        data: plan.researchNotes.map((source) => ({
+          projectId,
+          query: source.query,
+          title: source.title,
+          url: source.url ?? null,
+          summary: source.summary,
+          publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
+        }))
+      });
+    }
+  });
+  await embedResearchSourcesForProject(projectId, providers.embedding);
+  return {
+    afterJobCompleted: async () => {
+      await prisma.project.update({
+        where: { id: projectId },
+        data: { status: "PLAN_READY" }
+      });
+    }
+  };
+}
+
+export async function revisePlan(job: Job) {
+  const { projectId, planId, message } = job.data as { projectId: string; planId: string; message: string };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  const operationId = editOperationIdFromJob(job);
+  const respondedQuestionPrompts = Array.isArray(job.data.respondedQuestionPrompts)
+    ? (job.data.respondedQuestionPrompts as unknown[]).filter((prompt): prompt is string => typeof prompt === "string")
+    : undefined;
+  const planVersion = await prisma.planVersion.findUnique({ where: { id: planId }, include: { project: true } });
+  if (!planVersion) {
+    throw new Error("Plan not found");
+  }
+  if (planVersion.project.currentPlanId !== planId) {
+    console.warn("Plan revision consistency warning", {
+      event: "plan_revision.consistency_warning",
+      warning: "stale_plan",
+      projectId,
+      planId,
+      currentPlanId: planVersion.project.currentPlanId,
+      operationId,
+      generationJobId
+    });
+    throw new Error("Plan revision targets a superseded plan");
+  }
+  if (operationId) {
+    const operation = await prisma.bookEditOperation.findUnique({
+      where: { id: operationId },
+      select: { generationJobId: true, ledgerEntryId: true, status: true, classifier: true }
+    });
+    const billingLedgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : null;
+    const operationClassifier = jsonPayloadToRecord(operation?.classifier);
+    const warning = planRevisionConsistencyWarning({
+      durableGenerationJobId: generationJobId,
+      linkedGenerationJobId: operation?.generationJobId,
+      linkedLedgerEntryId: operation?.ledgerEntryId,
+      payloadLedgerEntryId: billingLedgerEntryId,
+      billingRequired: operationClassifier.source !== "web"
+    });
+    if (warning) {
+      console.warn("Plan revision consistency warning", {
+        event: "plan_revision.consistency_warning",
+        warning,
+        projectId,
+        planId,
+        operationId,
+        generationJobId,
+        linkedGenerationJobId: operation?.generationJobId
+      });
+      throw new Error(
+        warning === "operation_job_mismatch"
+          ? "Plan revision operation no longer owns this job"
+          : "Plan revision billing linkage is inconsistent"
+      );
+    }
+  }
+  const input = inputWithMessageMediaPreferences(inputForPlanVersion(planVersion.project, planVersion.inputSnapshot), message);
+  const strategy = strategyForInput(input);
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
+  await advanceJobStep(generationJobId, "revise", 35);
+  const revised = await strategy.revisePlan({
+    currentPlan,
+    userMessage: message,
+    textModel: providers.text,
+    input: inputWithMobileSourceMaterial(input),
+    targetPages: input.targetPages,
+    temperature: input.temperature,
+    language: input.language,
+    toneProfile: input.mediaSettings.toneProfile,
+    respondedQuestionPrompts
+  });
+  const version = await nextPlanVersion(projectId);
+  const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];
+
+  await prisma.$transaction(async (tx) => {
+    await tx.planVersion.update({
+      where: { id: planId },
+      data: { status: "SUPERSEDED" }
+    });
+    const newPlan = await tx.planVersion.create({
+      data: {
+        projectId,
+        version,
+        planningPackage: revised,
+        inputSnapshot: planInputSnapshot(input),
+        messages: [...priorMessages, { role: "user", content: message, at: new Date().toISOString() }]
+      }
+    });
+    await tx.project.update({
+      where: { id: projectId },
+      data: {
+        currentPlanId: newPlan.id,
+        status: "PLAN_READY",
+        title: revised.title,
+        mediaSettings: planMediaSettingsSnapshot(input)
+      }
+    });
+  });
+  await advanceJobStep(generationJobId, "save", 90);
+}

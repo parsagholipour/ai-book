@@ -4,7 +4,6 @@ import { kidsReadingGuidanceLines, kidsReadingGuidancePayload } from "../prompti
 import { getTemplateForInput, makeFallbackPlan, type TemplateDefinition } from "../prompting/templates.js";
 import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/tone.js";
 import {
-  bookPlanSchema,
   bookPlanSchemaWithFallback,
   type BookPlan,
   type ChapterPlan,

@@ -1,4 +1,4 @@
-import { CheckCircle2, Loader2, MessageSquareText, Play, RefreshCcw, Send } from "lucide-react";
+import { Loader2, MessageSquareText, Play, RefreshCcw, Send } from "lucide-react";
 import type { BookPlan } from "../../api.js";
 import { PlanQuestionStepper } from "./PlanQuestionStepper.js";
 import type { NormalizedPlanQuestion, QuestionResponse } from "./planQuestions.js";

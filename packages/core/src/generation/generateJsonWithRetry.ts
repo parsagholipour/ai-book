@@ -81,7 +81,7 @@ function isRepairableJsonError(error: unknown): boolean {
 }
 
 function isSchemaValidationError(error: unknown): boolean {
-  return error instanceof AdapterJsonValidationError || (error instanceof Error && /JsonValidationError$/.test(error.name));
+  return error instanceof AdapterJsonValidationError || (error instanceof Error && error.name.endsWith('JsonValidationError'));
 }
 
 function validationDetails(error: unknown): string {
@@ -106,7 +106,7 @@ function isRecoverableJsonSyntaxError(error: unknown): boolean {
   const message = error.message;
   return (
     error instanceof SyntaxError ||
-    /JsonParseError$/.test(error.name) ||
+    error.name.endsWith('JsonParseError') ||
     /(?:Model did not return a JSON object|invalid JSON|Expected .* in JSON|Unexpected token|Unterminated string)/i.test(
       message
     )

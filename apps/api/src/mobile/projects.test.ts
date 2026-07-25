@@ -1,0 +1,554 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@book-maker/db", async () => (await import("./testing/mobileApiMocks.js")).dbModuleMock());
+vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApiMocks.js")).billingModuleMock());
+vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
+vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
+
+import { buildProjectStatus } from "../projectStatus.js";
+import {
+  bearer,
+  buildMobileApp,
+  mockAccessTokens,
+  mockPrisma,
+  projectRecord,
+  resetMobileHarness,
+  statusRecord,
+  teardownMobileHarness
+} from "./testing/mobileApiHarness.js";
+
+describe("mobile project listing, detail and status", () => {
+  beforeEach(resetMobileHarness);
+  afterEach(teardownMobileHarness);
+
+  it("lists and reads only the signed-in user's mobile project DTOs", async () => {
+    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
+    mockPrisma.project.findMany.mockResolvedValueOnce([projectRecord({ id: "project-a", title: "Owned Mobile Book" })]);
+    mockPrisma.project.findFirst.mockResolvedValueOnce(null);
+    const app = await buildMobileApp();
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects",
+      headers: bearer("token-a")
+    });
+    const crossUserDetail = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-b",
+      headers: bearer("token-a")
+    });
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json().projects).toEqual([expect.objectContaining({ id: "project-a", title: "Owned Mobile Book" })]);
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "user-a" } }));
+    expect(crossUserDetail.statusCode).toBe(404);
+    expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "project-b", userId: "user-a" } })
+    );
+    expect(JSON.stringify(list.json())).not.toMatch(/temperature|generationStrategy|provider|model|mediaSettings|cost|tokens/);
+    await app.close();
+  });
+
+  it("includes cover art on listed projects so the library can show a shelf", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findMany.mockResolvedValueOnce([
+      projectRecord({
+        id: "project-a",
+        title: "Covered Book",
+        images: [
+          {
+            id: "image-cover",
+            projectId: "project-a",
+            pageId: null,
+            type: "COVER",
+            path: "http://localhost:4001/assets/images/project-a/cover.png",
+            metadata: { mimeType: "image/png", model: "hidden" }
+          }
+        ]
+      }),
+      projectRecord({ id: "project-b", title: "Coverless Book", images: [] })
+    ]);
+    const app = await buildMobileApp();
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects",
+      headers: bearer("token-a")
+    });
+    const [covered, coverless] = list.json().projects;
+
+    expect(list.statusCode).toBe(200);
+    expect(covered.coverImage).toMatchObject({ id: "image-cover", role: "cover" });
+    // A book without a rendered cover reports null rather than omitting the key.
+    expect(coverless.coverImage).toBeNull();
+    // Only the cover is loaded for a list; page visuals would bloat the payload.
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          images: expect.objectContaining({ where: { type: "COVER" }, take: 1 })
+        })
+      })
+    );
+    await app.close();
+  });
+
+  it("returns generated page previews and mobile-safe image references on project detail", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(
+      projectRecord({
+        id: "project-a",
+        title: "Preview Book",
+        status: "GENERATING",
+        pages: [
+          {
+            id: "page-1",
+            projectId: "project-a",
+            index: 1,
+            title: "Set the promise",
+            markdown:
+              "## Set the promise\n\nA strong promise names the reader, the outcome, and the moment they can see progress.",
+            summary: "Define the result the reader should get.",
+            status: "COMPLETED",
+            images: [
+              {
+                id: "image-page",
+                projectId: "project-a",
+                pageId: "page-1",
+                type: "DIAGRAM",
+                path: "http://localhost:4001/assets/images/project-a/page-1.png",
+                metadata: { mimeType: "image/png", model: "hidden" }
+              }
+            ]
+          }
+        ],
+        images: [
+          {
+            id: "image-cover",
+            projectId: "project-a",
+            pageId: null,
+            type: "COVER",
+            path: "http://localhost:4001/assets/images/project-a/cover.png",
+            metadata: { mimeType: "image/png", provider: "hidden" }
+          }
+        ],
+        _count: { pages: 1, images: 2, jobs: 1 }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a",
+      headers: bearer("token-a")
+    });
+    const project = response.json().project;
+
+    expect(response.statusCode).toBe(200);
+    expect(project.pages[0]).toMatchObject({
+      title: "Set the promise",
+      previewText: expect.stringContaining("A strong promise names the reader"),
+      image: {
+        id: "image-page",
+        url: "/api/mobile/projects/project-a/assets/image-page",
+        contentType: "image/png"
+      }
+    });
+    expect(project.coverImage).toMatchObject({
+      id: "image-cover",
+      role: "cover",
+      url: "/api/mobile/projects/project-a/assets/image-cover"
+    });
+    expect(JSON.stringify(project)).not.toMatch(/temperature|generationStrategy|mediaSettings|cost|tokens/);
+    await app.close();
+  });
+
+  it("returns a readable mobile status DTO without queue-centric internals", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          id: "project-1",
+          title: "Progress Book",
+          status: "GENERATING",
+          updatedAt: new Date("2026-06-15T12:30:00.000Z"),
+          jobs: [
+            { id: "job-failed", type: "GENERATE_PAGE", status: "FAILED", error: "Page draft timed out." },
+            { id: "job-active", type: "GENERATE_PAGE", status: "ACTIVE", error: null }
+          ]
+        },
+        progress: {
+          pages: { complete: 3, target: 10 },
+          images: 1,
+          resumableFailedJobs: 1,
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done" },
+            { key: "pages", label: "Pages", status: "active", detail: "3/10 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "1 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        },
+        quality: {
+          state: "review_recommended",
+          score: 88,
+          issues: [
+            {
+              code: "CHAPTER_TRANSITION",
+              severity: "warning",
+              source: "model",
+              message: "The handoff is abrupt.",
+              guidance: "Review pages 3 and 4.",
+              affectedPageIndexes: [3, 4]
+            }
+          ],
+          affectedPageIndexes: [3, 4]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.status).toMatchObject({
+      projectId: "project-1",
+      status: "generating",
+      statusLabel: "Generating your book",
+      progressPercent: 38,
+      currentAction: "Writing your book pages.",
+      retryAvailable: true,
+      pageProgress: { completed: 3, target: 10 },
+      imageCount: 1
+    });
+    expect(body.status.quality).toMatchObject({
+      state: "review_recommended",
+      score: 88,
+      affectedPageIndexes: [3, 4]
+    });
+    expect(body.status.failureMessage).toContain("while writing a page");
+    expect(body.status.failureMessage).not.toContain("GENERATE_PAGE");
+    expect(JSON.stringify(body.status)).not.toMatch(/jobs|queue|tokens|cost|provider/);
+    await app.close();
+  });
+
+  it("exposes real planning milestones without queue internals", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "ACTIVE",
+              progress: 55,
+              error: null,
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "active" },
+                { key: "save", label: "Save plan", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/12 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Shaping the chapters and flow");
+    expect(status.planningProgress).toEqual({
+      percent: 55,
+      steps: [
+        { key: "understand", label: "Understanding your idea", status: "done" },
+        { key: "shape", label: "Shaping the chapters and flow", status: "active" },
+        { key: "finalize", label: "Finalizing your plan", status: "pending" }
+      ]
+    });
+    expect(JSON.stringify(status)).not.toMatch(/job-plan|PLAN_BOOK|queue|Research|Create plan|Save plan/);
+    await app.close();
+  });
+
+  it("uses live generated output to advance planning within milestone guardrails", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    const planningStatus = (outputTokens: number) =>
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          targetPages: 24,
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "ACTIVE",
+              progress: 45,
+              error: null,
+              tokens: { outputTokens },
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "active" },
+                { key: "save", label: "Save plan", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/24 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      });
+    vi.mocked(buildProjectStatus)
+      .mockResolvedValueOnce(planningStatus(200))
+      .mockResolvedValueOnce(planningStatus(1_200))
+      .mockResolvedValueOnce(planningStatus(100_000));
+    const app = await buildMobileApp();
+
+    const percentages: number[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/mobile/projects/project-1/status",
+        headers: bearer("token-a")
+      });
+      expect(response.statusCode).toBe(200);
+      percentages.push(response.json().status.planningProgress.percent);
+      expect(JSON.stringify(response.json().status)).not.toMatch(/tokens|provider|model|cost|queue/i);
+    }
+
+    expect(percentages[0]).toBeGreaterThan(45);
+    expect(percentages[1]).toBeGreaterThan(percentages[0]!);
+    expect(percentages[2]).toBeGreaterThanOrEqual(percentages[1]!);
+    expect(percentages[2]).toBeLessThan(100);
+    await app.close();
+  });
+
+  it("preserves milestone progress when no live output tokens are available", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          targetPages: 24,
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "ACTIVE",
+              progress: 45,
+              error: null,
+              tokens: { outputTokens: 0 },
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "active" },
+                { key: "save", label: "Save plan", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/24 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().status.planningProgress.percent).toBe(45);
+    await app.close();
+  });
+
+  it("uses a smaller adaptive output target for live plan revisions", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          targetPages: 24,
+          jobs: [
+            {
+              id: "job-revision",
+              type: "REVISE_PLAN",
+              status: "ACTIVE",
+              progress: 35,
+              error: null,
+              tokens: { outputTokens: 450 },
+              steps: [
+                { key: "revise", label: "Revise plan", status: "active" },
+                { key: "save", label: "Save revision", status: "pending" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/24 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Improving your plan");
+    expect(status.planningProgress.percent).toBeGreaterThan(35);
+    expect(status.planningProgress.percent).toBeLessThan(90);
+    expect(JSON.stringify(status)).not.toMatch(/tokens|provider|model|cost|queue/i);
+    await app.close();
+  });
+
+  it("keeps completed planning milestones for the plan-ready handoff", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLAN_READY",
+          jobs: [
+            {
+              id: "job-plan",
+              type: "PLAN_BOOK",
+              status: "COMPLETED",
+              progress: 100,
+              error: null,
+              steps: [
+                { key: "research", label: "Research", status: "done" },
+                { key: "plan", label: "Create plan", status: "done" },
+                { key: "save", label: "Save plan", status: "done" }
+              ]
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done", detail: "Plan ready" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/12 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Ready for review.");
+    expect(status.planningProgress).toEqual({
+      percent: 100,
+      steps: [
+        { key: "understand", label: "Understanding your idea", status: "done" },
+        { key: "shape", label: "Shaping the chapters and flow", status: "done" },
+        { key: "finalize", label: "Finalizing your plan", status: "done" }
+      ]
+    });
+    await app.close();
+  });
+
+  it("uses revision copy and a safe queued planning fallback", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          status: "PLANNING",
+          jobs: [
+            {
+              id: "job-revision",
+              type: "REVISE_PLAN",
+              status: "QUEUED",
+              progress: 0,
+              error: null,
+              steps: []
+            }
+          ]
+        },
+        progress: {
+          pipeline: [
+            { key: "plan", label: "Plan", status: "active", detail: "Planning in progress" },
+            { key: "pages", label: "Pages", status: "pending", detail: "0/12 pages" },
+            { key: "images", label: "Images", status: "pending", detail: "0 images" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status.currentAction).toBe("Improving your plan");
+    expect(status.planningProgress).toEqual({
+      percent: 0,
+      steps: [
+        { key: "understand", label: "Understanding your changes", status: "done" },
+        { key: "shape", label: "Improving your plan", status: "active" },
+        { key: "finalize", label: "Saving your revision", status: "pending" }
+      ]
+    });
+    expect(JSON.stringify(status)).not.toMatch(/job-revision|REVISE_PLAN|queue/);
+    await app.close();
+  });
+
+});

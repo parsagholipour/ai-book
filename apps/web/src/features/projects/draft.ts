@@ -363,8 +363,8 @@ export function draftFromSavedInputs(project: Project): DraftProject {
   const snapshot: ProjectInputSnapshot | null = project.currentPlan?.inputSnapshot ?? null;
   const category = projectCategoryFromValue(firstString(snapshot?.category, project.category));
   const mediaSettings = {
-    ...(project.mediaSettings ?? {}),
-    ...(snapshot?.mediaSettings ?? {})
+    ...project.mediaSettings,
+    ...snapshot?.mediaSettings
   };
   const subcategory = draftSubcategoryFromValue(category, firstString(snapshot?.subcategory, project.subcategory));
 

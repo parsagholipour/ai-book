@@ -1,0 +1,310 @@
+import {
+  getProjectOrThrow,
+  invalidateProjectExports,
+  nextPlanVersion,
+  parseChapterBrief,
+  planInputSnapshot,
+  planMediaSettingsSnapshot,
+  strategyForInput,
+  toPriorPageContext
+} from "../generation/bookHelpers.js";
+import { loadContinuityNotes } from "../generation/generationContext.js";
+import { revisePageDraftWithRestart } from "../generation/pageReview.js";
+import { inputForPlanVersion, inputWithMessageMediaPreferences, inputWithMobileSourceMaterial } from "../generation/projectInput.js";
+import { createLoggedProviders } from "../providers/loggedAdapters.js";
+import { config } from "../runtime/config.js";
+import { enqueueWorkerJob } from "../runtime/dispatch.js";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
+import { cleanTargetLanguage } from "../runtime/serialization.js";
+import {
+  bookPlanSchema,
+  createProviders,
+  type BookGenerationStrategy,
+  type BookPlan,
+  type CreateProjectInput,
+  type PageDraft,
+  type PageQualityReport,
+  type ProviderSet
+} from "@book-maker/core";
+import { Prisma, prisma } from "@book-maker/db";
+import { Job } from "bullmq";
+
+/**
+ * `replan-book` job: replace a project's plan and regenerate affected pages.
+ */
+
+export async function replanBook(job: Job) {
+  const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId, targetLanguage } = job.data as {
+    projectId: string;
+    operationId: string;
+    request: string;
+    planId?: string;
+    sourceProjectId?: string;
+    sourcePlanId?: string | null;
+    targetLanguage?: string | null;
+  };
+  const generationJobId = job.data.generationJobId as string | undefined;
+  await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
+  await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
+  await advanceJobStep(generationJobId, "revise", 30, "Rebuilding book plan");
+
+  const targetProject = await getProjectOrThrow(projectId);
+  const sourceProject = sourceProjectId && sourceProjectId !== projectId
+    ? await getProjectOrThrow(sourceProjectId)
+    : targetProject;
+  const currentPlanId = sourcePlanId ?? planId ?? sourceProject.currentPlanId;
+  if (!currentPlanId) {
+    throw new Error("Cannot replan without a current plan");
+  }
+  const planVersion = await prisma.planVersion.findUnique({ where: { id: currentPlanId }, include: { project: true } });
+  if (!planVersion) {
+    throw new Error("Current plan not found");
+  }
+  const requestedLanguage = cleanTargetLanguage(targetLanguage);
+  const sourceInput = inputWithMessageMediaPreferences(inputForPlanVersion(sourceProject, planVersion.inputSnapshot), request);
+  const input = requestedLanguage ? { ...sourceInput, language: requestedLanguage } : sourceInput;
+  const strategy = strategyForInput(input);
+  const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
+  const revised = await strategy.revisePlan({
+    currentPlan,
+    userMessage: request,
+    textModel: providers.text,
+    input: inputWithMobileSourceMaterial(input),
+    targetPages: input.targetPages,
+    temperature: input.temperature,
+    language: input.language,
+    toneProfile: input.mediaSettings.toneProfile
+  });
+  const version = await nextPlanVersion(projectId);
+  const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];
+  await advanceJobStep(generationJobId, "save", 65, "Saving approved plan");
+
+  let newPlanId = "";
+  await prisma.$transaction(async (tx) => {
+    if (sourceProject.id === targetProject.id) {
+      await tx.planVersion.updateMany({
+        where: { projectId, id: { not: currentPlanId } },
+        data: { status: "SUPERSEDED" }
+      });
+      await tx.planVersion.update({ where: { id: currentPlanId }, data: { status: "SUPERSEDED" } });
+    } else {
+      await tx.planVersion.updateMany({
+        where: { projectId },
+        data: { status: "SUPERSEDED" }
+      });
+    }
+    const newPlan = await tx.planVersion.create({
+      data: {
+        projectId,
+        version,
+        status: "APPROVED",
+        approvedAt: new Date(),
+        planningPackage: revised,
+        inputSnapshot: planInputSnapshot(input),
+        messages: [...priorMessages, { role: "user", content: request, at: new Date().toISOString(), source: "book_replan" }]
+      }
+    });
+    newPlanId = newPlan.id;
+    await tx.project.update({
+      where: { id: projectId },
+      data: {
+        currentPlanId: newPlan.id,
+        status: "GENERATING",
+        title: revised.title,
+        language: input.language,
+        mediaSettings: planMediaSettingsSnapshot(input)
+      }
+    });
+    await replaceProjectPlanReferenceRecords(tx, projectId, revised);
+  });
+
+  await invalidateProjectExports(projectId);
+  await advanceJobStep(generationJobId, "generate", 85, "Queueing regenerated book");
+  const generateJob = await enqueueWorkerJob({
+    projectId,
+    type: "GENERATE_BOOK",
+    name: "generate-book",
+    dedupeKey: `generate-book:${projectId}:${newPlanId}`,
+    payload: {
+      planId: newPlanId,
+      replanOperationId: operationId,
+      billingLedgerEntryId: job.data.billingLedgerEntryId
+    }
+  });
+  if (!generateJob) {
+    throw new Error("Could not queue regenerated book");
+  }
+  await prisma.bookEditOperation.update({
+    where: { id: operationId },
+    data: {
+      status: "APPLIED",
+      generationJobId: generateJob.id,
+      appliedAt: new Date()
+    }
+  });
+}
+
+export async function replaceProjectPlanReferenceRecords(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  plan: BookPlan
+): Promise<void> {
+  await tx.character.deleteMany({ where: { projectId } });
+  await tx.location.deleteMany({ where: { projectId } });
+  await tx.researchSource.deleteMany({ where: { projectId } });
+
+  if (plan.characters.length > 0) {
+    await tx.character.createMany({
+      data: plan.characters.map((character) => ({
+        projectId,
+        name: character.name,
+        role: character.role,
+        description: character.description,
+        traits: character.traits,
+        visualRules: character.visualRules
+      }))
+    });
+  }
+
+  if (plan.locations.length > 0) {
+    await tx.location.createMany({
+      data: plan.locations.map((location) => ({
+        projectId,
+        name: location.name,
+        description: location.description,
+        rules: location.rules
+      }))
+    });
+  }
+
+  if (plan.researchNotes.length > 0) {
+    await tx.researchSource.createMany({
+      data: plan.researchNotes.map((source) => ({
+        projectId,
+        query: source.query,
+        title: source.title,
+        url: source.url ?? null,
+        summary: source.summary,
+        publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
+      }))
+    });
+  }
+}
+
+export function locallyPatchedPage(
+  page: { title: string; markdown: string; summary: string; imagePrompt: string | null; qualityReport: unknown },
+  replacement: { from: string; to: string }
+): PageDraft & { qualityReport: PageQualityReport } {
+  const markdown = page.markdown.split(replacement.from).join(replacement.to);
+  return {
+    title: page.title.split(replacement.from).join(replacement.to),
+    markdown,
+    summary: page.summary.split(replacement.from).join(replacement.to),
+    imagePrompt: page.imagePrompt ?? undefined,
+    continuityNotes: [],
+    qualityReport: {
+      approved: true,
+      score: 90,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Applied exact user-requested text replacement.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    }
+  };
+}
+
+export async function rewritePageForUserRequest(options: {
+  projectId: string;
+  page: {
+    id: string;
+    index: number;
+    title: string;
+    markdown: string;
+    summary: string;
+    imagePrompt: string | null;
+    chapterId: string | null;
+    chapter?: { index: number; productionBrief: unknown } | null;
+  };
+  input: CreateProjectInput;
+  plan: BookPlan;
+  strategy: BookGenerationStrategy;
+  providers: ProviderSet;
+  request: string;
+  generationJobId?: string | undefined;
+}): Promise<PageDraft & { qualityReport: PageQualityReport }> {
+  const previousPages = await prisma.page.findMany({
+    where: { projectId: options.projectId, index: { lt: options.page.index }, status: "COMPLETED" },
+    orderBy: { index: "desc" },
+    take: 18
+  });
+  const priorPageContext = previousPages.reverse().map(toPriorPageContext);
+  const continuityNotes = await loadContinuityNotes(options.projectId);
+  const chapterPlan = options.plan.chapters.find((chapter) => chapter.index === options.page.chapter?.index);
+  const chapterBrief = parseChapterBrief(options.page.chapter?.productionBrief);
+  const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === options.page.index);
+  const report: PageQualityReport = {
+    approved: false,
+    score: 50,
+    issues: [`User requested this page edit: ${options.request}`],
+    requiredRevisions: [
+      "Revise the existing page to satisfy the user's requested edit.",
+      "Keep the same page role and overall book structure unless the request explicitly requires otherwise.",
+      "Return a complete replacement page draft, not a diff."
+    ],
+    notes: "User-requested book edit.",
+    checks: {
+      placeholderFree: true,
+      promptLeakFree: true,
+      titleClean: true,
+      repetitionOk: true,
+      progressionOk: true,
+      styleNatural: true
+    }
+  };
+  const draft = await revisePageDraftWithRestart({
+    strategy: options.strategy,
+    generationJobId: options.generationJobId,
+    progress: 62,
+    context: `User edit page ${options.page.index}`,
+    reviseOptions: {
+      input: options.input,
+      plan: options.plan,
+      chapter: chapterPlan,
+      chapterBrief,
+      pageBrief,
+      pageIndex: options.page.index,
+      draft: {
+        title: options.page.title,
+        markdown: options.page.markdown,
+        summary: options.page.summary,
+        imagePrompt: options.page.imagePrompt ?? undefined,
+        continuityNotes: []
+      },
+      report,
+      previousPages: priorPageContext,
+      continuityNotes,
+      textModel: options.providers.text
+    }
+  });
+  const qualityReport = await options.strategy.reviewPageDraft({
+    input: options.input,
+    plan: options.plan,
+    chapter: chapterPlan,
+    chapterBrief,
+    pageBrief,
+    pageIndex: options.page.index,
+    draft,
+    previousPages: priorPageContext,
+    continuityNotes,
+    textModel: options.providers.text
+  });
+  return { ...draft, qualityReport };
+}

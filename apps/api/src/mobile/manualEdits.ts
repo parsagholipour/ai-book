@@ -1,0 +1,321 @@
+import { type BookEditIntent } from "../bookEditIntent.js";
+import { enqueueGenerationJob } from "../queue.js";
+import {
+  type MobileBookEditOperationRecord,
+  type MobileManualBookEditResponseDto,
+  type MobileProjectChatMessageRecord
+} from "./dto.js";
+import {
+  activeProjectChatLeafId,
+  createAssistantChatMessage,
+  loadActiveProjectChatMessages,
+  loadProjectChatResponse,
+  serializeBookEditOperation,
+  serializeProjectChatMessage,
+  type ProjectForChat
+} from "./projectChat.js";
+import { jsonInputValue, jsonRecord } from "./support.js";
+import { prisma } from "@book-maker/db";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
+
+/**
+ * Direct page edits made in the book editor, plus undo and export recompilation.
+ */
+
+export type ManualBookPageEdit = { id: string; title: string; markdown: string };
+
+export type ManualBookPageRecord = {
+  id: string;
+  index: number;
+  title: string;
+  markdown: string;
+  summary: string;
+  revision: number;
+};
+
+/** Reads the saved-export marker this feature stores on assistant messages. */
+export function manualEditInfoFromMessage(message: MobileProjectChatMessageRecord): Record<string, unknown> | null {
+  const manualEdit = jsonRecord(message.metadata).manualEdit;
+  return manualEdit && typeof manualEdit === "object" && !Array.isArray(manualEdit)
+    ? (manualEdit as Record<string, unknown>)
+    : null;
+}
+
+/** Removes compiled export files so downloads show "preparing" until the re-compile lands. */
+export async function invalidateCompiledProjectExports(bookStorageDir: string, projectId: string): Promise<void> {
+  const projectDir = join(bookStorageDir, projectId);
+  await Promise.all(
+    ["book.md", "README.md", "book.pdf", "book.epub"].map((filename) =>
+      rm(join(projectDir, filename), { force: true }).catch(() => undefined)
+    )
+  );
+}
+
+/**
+ * Applies a user's Edit Mode changes: snapshots and updates the pages, records
+ * a free APPLIED operation, and creates the saved-export chat message — or
+ * updates the existing one in place when the user re-edited a saved export.
+ */
+export async function applyManualBookEdit(options: {
+  projectId: string;
+  currentPlanId: string | null;
+  fallbackProjectStatus: "COMPLETE" | "REVIEW_REQUIRED";
+  edits: ManualBookPageEdit[];
+  pagesById: Map<string, ManualBookPageRecord>;
+  savedExportMessage: MobileProjectChatMessageRecord | null;
+  requestId?: string | undefined;
+  bookStorageDir: string;
+}): Promise<{ message: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord }> {
+  const { projectId, edits, pagesById, savedExportMessage } = options;
+  const affectedPageIndexes = edits.map((edit) => pagesById.get(edit.id)!.index).sort((a, b) => a - b);
+  const parentId = savedExportMessage
+    ? null
+    : activeProjectChatLeafId(await loadActiveProjectChatMessages(projectId));
+
+  const { message, operation } = await prisma.$transaction(async (tx) => {
+    const operation = await tx.bookEditOperation.create({
+      data: {
+        projectId,
+        ...(options.requestId ? { requestId: options.requestId } : {}),
+        kind: "MANUAL_EDIT",
+        status: "APPLIED",
+        request: "Manual edit in Edit Mode",
+        classifier: jsonInputValue({ source: "manual_edit_mode" }),
+        affectedPageIndexes,
+        creditsCharged: 0,
+        appliedAt: new Date()
+      }
+    });
+
+    for (const edit of edits) {
+      const before = pagesById.get(edit.id)!;
+      const saved = await tx.page.update({
+        where: { id: edit.id },
+        data: {
+          title: edit.title,
+          markdown: edit.markdown,
+          status: "COMPLETED",
+          revision: { increment: 1 }
+        }
+      });
+      await tx.pageEditSnapshot.create({
+        data: {
+          projectId,
+          pageId: edit.id,
+          operationId: operation.id,
+          pageIndex: before.index,
+          titleBefore: before.title,
+          markdownBefore: before.markdown,
+          summaryBefore: before.summary,
+          revisionBefore: before.revision,
+          titleAfter: saved.title,
+          markdownAfter: saved.markdown,
+          summaryAfter: saved.summary,
+          revisionAfter: saved.revision
+        }
+      });
+    }
+
+    let message: MobileProjectChatMessageRecord;
+    if (savedExportMessage) {
+      const previousInfo = manualEditInfoFromMessage(savedExportMessage) ?? {};
+      const previousIndexes = Array.isArray(previousInfo.pageIndexes)
+        ? previousInfo.pageIndexes.filter((value): value is number => typeof value === "number")
+        : [];
+      const mergedIndexes = [...new Set([...previousIndexes, ...affectedPageIndexes])].sort((a, b) => a - b);
+      const previousEditCount = typeof previousInfo.editCount === "number" ? previousInfo.editCount : 1;
+      message = await tx.projectChatMessage.update({
+        where: { id: savedExportMessage.id },
+        data: {
+          content: manualEditMessageContent(mergedIndexes),
+          operationId: operation.id,
+          metadata: jsonInputValue({
+            ...jsonRecord(savedExportMessage.metadata),
+            manualEdit: {
+              operationId: operation.id,
+              pageIndexes: mergedIndexes,
+              editCount: previousEditCount + 1,
+              savedAt: new Date().toISOString()
+            }
+          })
+        }
+      });
+    } else {
+      message = await tx.projectChatMessage.create({
+        data: {
+          projectId,
+          parentId,
+          role: "ASSISTANT",
+          content: manualEditMessageContent(affectedPageIndexes),
+          operationId: operation.id,
+          metadata: jsonInputValue({
+            charged: false,
+            manualEdit: {
+              operationId: operation.id,
+              pageIndexes: affectedPageIndexes,
+              editCount: 1,
+              savedAt: new Date().toISOString()
+            }
+          })
+        }
+      });
+    }
+    await tx.bookEditOperation.update({
+      where: { id: operation.id },
+      data: { assistantMessageId: message.id }
+    });
+    return { message, operation };
+  });
+
+  await invalidateCompiledProjectExports(options.bookStorageDir, projectId);
+  if (options.currentPlanId) {
+    await queueUserEditExportRecompile(projectId, options.currentPlanId, options.fallbackProjectStatus);
+  }
+
+  return { message, operation };
+}
+
+export async function replayManualBookEdit(
+  projectId: string,
+  requestId: string
+): Promise<MobileManualBookEditResponseDto | null> {
+  const operation = (await prisma.bookEditOperation.findFirst({
+    where: { projectId, requestId },
+    include: { generationJob: { select: { id: true, status: true } } }
+  })) as MobileBookEditOperationRecord | null;
+  if (!operation) return null;
+  const message = (await prisma.projectChatMessage.findFirst({
+    where: { projectId, operationId: operation.id, role: "ASSISTANT" }
+  })) as MobileProjectChatMessageRecord | null;
+  if (!message) return null;
+  return {
+    ...(await loadProjectChatResponse(projectId)),
+    savedExportMessage: serializeProjectChatMessage(message),
+    operation: serializeBookEditOperation(operation)
+  };
+}
+
+/**
+ * Queues the export recompile for a user-driven edit (manual edit or undo).
+ * The project goes to EDITING while the compile runs so the mobile status
+ * stream stays live and flips the export buttons once the files are rebuilt;
+ * the compile job restores COMPLETE when it finishes. skipFinalReview keeps
+ * the compile QA pass from rewriting text the user chose deliberately.
+ */
+export async function queueUserEditExportRecompile(
+  projectId: string,
+  planId: string,
+  fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED" = "COMPLETE"
+): Promise<void> {
+  const project = await prisma.project.update({
+    where: { id: projectId },
+    data: { status: "EDITING", contentRevision: { increment: 1 } },
+    select: { contentRevision: true }
+  });
+  try {
+    await enqueueGenerationJob({
+      projectId,
+      type: "COMPILE_EXPORT",
+      dedupeKey: `compile-export:${projectId}:${planId}:content-${project.contentRevision}`,
+      contentRevision: project.contentRevision,
+      payload: { planId, skipFinalReview: true, contentRevision: project.contentRevision }
+    });
+  } catch {
+    // Without a queued compile nothing will restore COMPLETE, so put the
+    // project back instead of stranding it in EDITING.
+    await prisma.project
+      .update({ where: { id: projectId }, data: { status: fallbackStatus } })
+      .catch(() => undefined);
+  }
+}
+
+export function manualEditMessageContent(pageIndexes: number[]): string {
+  const pageText =
+    pageIndexes.length === 1 ? `page ${pageIndexes[0]}` : `pages ${pageIndexes.join(", ")}`;
+  return `You edited ${pageText} yourself in Edit Mode. The exports are refreshing with your changes.`;
+}
+
+/**
+ * Restores the before-snapshots of the most recent applied text edit, then
+ * queues an export refresh. Free: nothing is regenerated.
+ */
+export async function undoLastBookEdit(
+  project: ProjectForChat,
+  intent: BookEditIntent,
+  parentId: string
+): Promise<MobileProjectChatMessageRecord> {
+  const recentOperations = await prisma.bookEditOperation.findMany({
+    where: {
+      projectId: project.id,
+      status: "APPLIED",
+      kind: { in: [...UNDOABLE_EDIT_KINDS] }
+    },
+    orderBy: [{ appliedAt: "desc" }, { createdAt: "desc" }],
+    take: 10,
+    include: { snapshots: true }
+  });
+  const operation = recentOperations.find(
+    (candidate) => candidate.snapshots.length > 0 && jsonRecord(candidate.classifier).undoneAt === undefined
+  );
+  if (!operation) {
+    return createAssistantChatMessage({
+      projectId: project.id,
+      parentId,
+      content: "There’s no recent text edit I can undo on this book.",
+      metadata: { intent, charged: false }
+    });
+  }
+
+  const restoredPageIndexes: number[] = [];
+  await prisma.$transaction(async (tx) => {
+    for (const snapshot of operation.snapshots) {
+      await tx.page.update({
+        where: { id: snapshot.pageId },
+        data: {
+          title: snapshot.titleBefore,
+          markdown: snapshot.markdownBefore,
+          summary: snapshot.summaryBefore,
+          status: "COMPLETED",
+          revision: { increment: 1 }
+        }
+      });
+      restoredPageIndexes.push(snapshot.pageIndex);
+    }
+    await tx.bookEditOperation.update({
+      where: { id: operation.id },
+      data: {
+        classifier: jsonInputValue({
+          ...jsonRecord(operation.classifier),
+          undoneAt: new Date().toISOString()
+        })
+      }
+    });
+  });
+  restoredPageIndexes.sort((a, b) => a - b);
+
+  if (project.currentPlanId) {
+    await queueUserEditExportRecompile(
+      project.id,
+      project.currentPlanId,
+      project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE"
+    );
+  }
+
+  const pageText =
+    restoredPageIndexes.length === 1
+      ? `page ${restoredPageIndexes[0]}`
+      : `pages ${restoredPageIndexes.join(", ")}`;
+  return createAssistantChatMessage({
+    projectId: project.id,
+    parentId,
+    content: `Done - I restored ${pageText} to how they were before “${operation.request.slice(0, 120)}” and I’m refreshing the exports. Undo is free.`,
+    metadata: {
+      intent,
+      charged: false,
+      undo: { operationId: operation.id, restoredPageIndexes }
+    }
+  });
+}
+
+export const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE", "MANUAL_EDIT"] as const;

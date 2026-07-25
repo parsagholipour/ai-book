@@ -5,7 +5,7 @@ import {
   continuationPageIndexes,
   distributeContinuationPages,
   fallbackContinuationOutline
-} from "./continueBook.js";
+} from "./continueBookSupport.js";
 
 describe("distributeContinuationPages", () => {
   it("spreads the charged page budget evenly with remainders first", () => {

@@ -6,7 +6,7 @@ import {
   importStyleProfileFromMediaSettings,
   mediaSettingsWithImportStyle,
   normalizeImportedLanguage
-} from "./importBook.js";
+} from "./importBookSupport.js";
 
 const segmented: SegmentedManuscript = {
   segmentation: "structure",

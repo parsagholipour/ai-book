@@ -246,7 +246,7 @@ export function sanitizePageTitle(index: number, title: string): string {
   while (exactPagePrefix.test(clean)) {
     clean = clean.replace(exactPagePrefix, "").trim();
   }
-  clean = clean.replace(/^page\s+\d+\s*[:\-]\s*/i, "").trim();
+  clean = clean.replace(/^page\s+\d+\s*[:-]\s*/i, "").trim();
   return clean || `Page ${index}`;
 }
 

@@ -274,7 +274,7 @@ function sanitizeReaderChapterTitle(title: string, index: number, pages: Markdow
   while (duplicatePrefix.test(clean)) {
     clean = clean.replace(duplicatePrefix, "").trim();
   }
-  clean = clean.replace(/^page\s+\d+\s*[:\-]\s*/i, "").trim();
+  clean = clean.replace(/^page\s+\d+\s*[:-]\s*/i, "").trim();
   if (!clean || /^chapter\s+\d+$/i.test(clean) || /^page\s+\d+$/i.test(clean)) {
     clean = deriveTitleFromPages(pages);
   }
@@ -306,7 +306,7 @@ function deriveTitleFromPages(pages: MarkdownPage[]): string {
     const clean = candidate
       .trim()
       .replace(/^#+\s*/, "")
-      .replace(/^page\s+\d+\s*[:\-]\s*/i, "")
+      .replace(/^page\s+\d+\s*[:-]\s*/i, "")
       .replace(/\s+/g, " ");
     if (clean && !/^page\s+\d+$/i.test(clean)) {
       return clean;

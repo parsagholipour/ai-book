@@ -2,6 +2,11 @@
 
 Local single-user AI book generation service with planning, long-book job orchestration, template-specific style rules, continuity memory, Markdown export, and illustrations.
 
+Architecture notes for contributors (and AI assistants) are in [`CLAUDE.md`](CLAUDE.md), with
+per-app detail in `apps/api/CLAUDE.md` and `apps/worker/CLAUDE.md`.
+
+Run `pnpm check` (typecheck + lint + file-size budget + tests) before opening a change.
+
 ## Stack
 
 - Node.js 22, TypeScript, `tsx`

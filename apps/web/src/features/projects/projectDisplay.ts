@@ -103,8 +103,8 @@ export function projectUsesImageModel(project: Project): boolean {
 
 export function projectSavedMediaSettings(project: Project): NonNullable<Project["mediaSettings"]> {
   return {
-    ...(project.mediaSettings ?? {}),
-    ...(project.currentPlan?.inputSnapshot?.mediaSettings ?? {})
+    ...project.mediaSettings,
+    ...project.currentPlan?.inputSnapshot?.mediaSettings
   };
 }
 

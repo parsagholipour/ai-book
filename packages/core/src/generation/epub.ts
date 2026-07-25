@@ -180,7 +180,7 @@ function splitIntoChapters(markdown: string, bookTitle: string): Array<{ title: 
   let inCodeFence = false;
 
   for (const line of lines) {
-    if (/^```/.test(line.trim())) {
+    if (line.trim().startsWith('```')) {
       inCodeFence = !inCodeFence;
     }
     const heading = !inCodeFence ? line.match(/^##\s+(.+)$/) : null;

@@ -1910,7 +1910,7 @@ function compactPriorPages(pages: PriorPageContext[], count: number, excerptLeng
 function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
-    .replace(/^page\s+\d+\s*[:\-]\s*/i, "")
+    .replace(/^page\s+\d+\s*[:-]\s*/i, "")
     .replace(/[^\p{L}\p{N}\s']/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -2211,7 +2211,7 @@ function arrayLikeField(record: Record<string, unknown>, key: string): unknown[]
 }
 
 function looksLikePageBeatArray(value: unknown[]): boolean {
-  return value.length > 0 && value.some(looksLikePageBeat);
+  return value.some(looksLikePageBeat);
 }
 
 function looksLikePageBeat(value: unknown): boolean {

@@ -823,7 +823,7 @@ function verificationMetadata(verification: VerifiedGooglePlayPurchase, tokenHas
           currentPeriodEnd: verification.subscription.currentPeriodEnd?.toISOString() ?? null
         }
       : null,
-    ...(verification.metadata ?? {})
+    ...verification.metadata
   };
 }
 
