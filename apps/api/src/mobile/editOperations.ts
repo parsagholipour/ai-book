@@ -2,14 +2,12 @@ import { type BookEditIntent } from "../bookEditIntent.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   affectedPagesForIntent,
-  billingOperationForIntent,
-  bookEditCreditCost,
   busyEditReply,
   continuationNewPageCount,
   exactReplacementFromMessage,
-  operationKindForIntent,
   operationQueuedMessage
 } from "./bookEditIntents.js";
+import { billingOperationForIntent, bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
 import {
   type MobileBookEditOperationRecord,
   type MobileProjectChatMessageRecord,

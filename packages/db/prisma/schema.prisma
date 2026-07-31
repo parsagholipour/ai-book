@@ -150,6 +150,7 @@ enum CreditOperation {
   BOOK_TEXT_EDIT
   PAGE_REGENERATION
   BOOK_REPLAN
+  VOICE_CALL_MINUTE
   PURCHASE_CREDIT_GRANT
   SUBSCRIPTION_CREDIT_GRANT
   ADMIN_GRANT
@@ -253,6 +254,7 @@ model User {
   accountDeletionRequests AccountDeletionRequest[]
   mobileCreationDrafts    MobileCreationDraft[]
   bookImports             BookImport[]
+  voiceCalls              VoiceCall[]
 }
 
 model UserPasswordCredential {
@@ -306,6 +308,26 @@ model ProductCatalog {
   creditLedger  CreditLedgerEntry[]
   purchases     PurchaseRecord[]
   subscriptions SubscriptionState[]
+}
+
+/// Operator-set credit prices, kept as an append-only history rather than a
+/// mutable settings row: the highest `version` *is* the current price list, an
+/// empty table means "use the defaults compiled into packages/core", and a
+/// revert is a new forward revision carrying an older one's values. One table
+/// means the audit trail and the config can never disagree.
+model CreditPricingRevision {
+  id        String   @id @default(cuid())
+  version   Int      @unique
+  values    Json
+  /// Only the keys that moved: { key: { from, to } }.
+  changed   Json
+  note      String?
+  /// The operator console is one shared password, so this records that the
+  /// console made the change, not which person did. `note` is the real trail.
+  updatedBy String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model UserCreditAccount {
@@ -469,6 +491,7 @@ model Project {
   providerLogs       ProviderCallLog[]
   embeddings         Embedding[]
   voiceCharacters    VoiceCharacter[]
+  voiceCalls         VoiceCall[]
   voiceCallEvents    VoiceCallEvent[]
   voiceConversations VoiceConversation[]
   creditLedger       CreditLedgerEntry[]
@@ -737,6 +760,7 @@ model VoiceCharacter {
   updatedAt           DateTime             @updatedAt
 
   project    Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  calls      VoiceCall[]
   callEvents VoiceCallEvent[]
 
   @@index([projectId, status])
@@ -891,6 +915,43 @@ model ProviderCallLog {
   generationJob GenerationJob? @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
 
   @@index([generationJobId])
+}
+
+/// One metered realtime call between a user and a book character.
+///
+/// Voice is the only operation priced by time, so unlike every other paid
+/// action it needs a durable row: the credit hold has to survive the app being
+/// killed mid-call, and a call nobody settles has to be settleable from the
+/// last heartbeat. `heldCredits` is the sum of the still-RESERVED ledger
+/// entries in `reservationEntryIds`; nothing is spent until the call ends.
+model VoiceCall {
+  id                 String    @id @default(cuid())
+  userId             String
+  projectId          String
+  characterId        String
+  status             String    @default("ACTIVE")
+  reservationEntryIds String[]
+  heldCredits        Int       @default(0)
+  chargedCredits     Int       @default(0)
+  elapsedSeconds     Int       @default(0)
+  endReason          String?
+  /// The tail of what was said, as `[{ speaker, text }]`, uploaded by the app
+  /// while the call runs — audio never reaches us, so neither does a transcript
+  /// unless the client sends one. Opaque JSON: it is read back whole to give
+  /// the character a memory of earlier calls, and never queried into.
+  transcript         Json?
+  lastHeartbeatAt    DateTime  @default(now())
+  startedAt          DateTime  @default(now())
+  endedAt            DateTime?
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  voiceCharacter VoiceCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([projectId, startedAt])
+  @@index([status, lastHeartbeatAt])
+  @@index([userId, characterId, startedAt])
 }
 
 model VoiceCallEvent {

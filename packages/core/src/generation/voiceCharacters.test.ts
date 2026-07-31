@@ -9,6 +9,7 @@ import {
   buildVoiceCharacterPersona,
   candidatesFromPlanCharacters,
   extractVoiceCharacterCandidates,
+  refineVoiceCharacterCandidatesWithPageSamples,
   reinforceRealtimeCharacterRoleplay,
   shouldExtractFallbackVoiceCharacters,
   voiceCharactersDisabledForInput
@@ -349,6 +350,120 @@ describe("voice character helpers", () => {
     expect(instructions).toContain("Other characters in the room: Captain Orlo");
     expect(instructions).toContain("Speak only as Lina");
     expect(instructions).toContain("Avoid later spoilers unless asked");
+  });
+
+  describe("age inference", () => {
+    function ageFor(role: string, description: string, category: CreateProjectInput["category"] = "STORY") {
+      const candidates = candidatesFromPlanCharacters(
+        { ...input, category },
+        { ...plan, characters: [{ name: "Sam", role, description, traits: [], visualRules: [] }] }
+      );
+      return candidates[0]!.voiceProfile.ageBand;
+    }
+
+    it("reads a stated age over any other word in the description", () => {
+      // The regression this whole group exists for: an adult described as a
+      // "slave girl" was read as a child, which put a child's voice into an
+      // explicit book.
+      expect(ageFor("Protagonist, slave girl", "A young woman in her early twenties.")).toBe("young_adult");
+      expect(ageFor("Master", "A tall, imposing man in his late thirties.")).toBe("adult");
+      expect(ageFor("Neighbour", "She is 34 years old.")).toBe("adult");
+      expect(ageFor("Elder", "A man aged 71.")).toBe("elder");
+    });
+
+    it("still reads a child in a children's book", () => {
+      expect(ageFor("Girl protagonist", "A brave girl who asks careful questions.", "KIDS")).toBe("child");
+      expect(ageFor("Sidekick", "A small boy with a wooden sword.", "KIDS")).toBe("child");
+    });
+
+    it("does not read an adult called a girl or boy as a child", () => {
+      // Outside a children's book, "girl" and "boy" are gender words.
+      expect(ageFor("Escort", "A call girl working the late shift.")).toBe("adult");
+      expect(ageFor("Clerk", "The new boy in accounting.")).toBe("adult");
+      // And an adult stays an adult even inside one.
+      expect(ageFor("Mum", "A girl no longer — a woman with two children.", "KIDS")).toBe("adult");
+    });
+  });
+
+  describe("gender refinement from page samples", () => {
+    const pages = [
+      {
+        index: 1,
+        title: "One",
+        summary: "",
+        markdown: [
+          "Parsa watched from the doorway.",
+          "She shivered, and her breath caught.",
+          "She reached for the lamp.",
+          "Her hands were shaking."
+        ].join(" ")
+      }
+    ];
+
+    function refine(genderPresentation: "masculine" | "unknown") {
+      const candidate = {
+        name: "Parsa",
+        role: "Master",
+        description: "A man.",
+        traits: [],
+        visualRules: [],
+        source: "PLAN" as const,
+        voiceProfile: {
+          ageBand: "adult" as const,
+          genderPresentation,
+          energy: "medium" as const,
+          warmth: "medium" as const,
+          pace: "medium" as const,
+          formality: "balanced" as const
+        }
+      };
+      return refineVoiceCharacterCandidatesWithPageSamples([candidate], pages)[0]!.voiceProfile
+        .genderPresentation;
+    }
+
+    it("never overrules a gender the description stated", () => {
+      // Prose that sits close to one character floods the text around every
+      // other name with her pronouns. That is not evidence about Parsa.
+      expect(refine("masculine")).toBe("masculine");
+    });
+
+    it("still fills in a gender the description left open", () => {
+      const pages = [
+        {
+          index: 1,
+          title: "One",
+          summary: "",
+          // Each sentence names him and carries his pronoun: evidence only
+          // counts where it can actually be attributed.
+          markdown: "Parsa said he was calm. Parsa knew he was right. Parsa took his coat."
+        }
+      ];
+      const candidate = {
+        name: "Parsa",
+        role: "Master",
+        description: "Someone.",
+        traits: [],
+        visualRules: [],
+        source: "PLAN" as const,
+        voiceProfile: {
+          ageBand: "adult" as const,
+          genderPresentation: "unknown" as const,
+          energy: "medium" as const,
+          warmth: "medium" as const,
+          pace: "medium" as const,
+          formality: "balanced" as const
+        }
+      };
+      expect(
+        refineVoiceCharacterCandidatesWithPageSamples([candidate], pages)[0]!.voiceProfile.genderPresentation
+      ).toBe("masculine");
+    });
+
+    it("does not credit a character with pronouns from sentences that never name them", () => {
+      // One sentence names Parsa; the three after it are about someone else.
+      // Carrying his name forward handed him all of their pronouns.
+      expect(refine("unknown")).toBe("unknown");
+    });
   });
 
   it("builds a text-free profile portrait prompt", () => {

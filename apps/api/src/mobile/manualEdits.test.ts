@@ -9,6 +9,7 @@ import { enqueueGenerationJob } from "../queue.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
+  appliedEditOperationRecord,
   bearer,
   buildMobileApp,
   editablePages,
@@ -142,6 +143,148 @@ describe("mobile editable book and manual edits", () => {
       where: { id: "project-1" },
       data: { status: "COMPLETE" }
     });
+    await app.close();
+  });
+
+  it("reads an applied edit back as a page-by-page diff", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(appliedEditOperationRecord());
+    state.pageEditSnapshots.push({
+      id: "snapshot-1",
+      projectId: "project-1",
+      pageId: "page-1",
+      operationId: "operation-applied",
+      pageIndex: 1,
+      titleBefore: "Night Falls",
+      markdownBefore: "The city slept under a heavy night sky.",
+      summaryBefore: "Night.",
+      revisionBefore: 1,
+      titleAfter: "Day Breaks",
+      markdownAfter: "The city slept under a heavy day sky.",
+      summaryAfter: "Day.",
+      revisionAfter: 2
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+    const changes = response.json().changes;
+
+    expect(response.statusCode).toBe(200);
+    expect(changes).toMatchObject({
+      operationId: "operation-applied",
+      status: "applied",
+      undone: false,
+      addedWords: 1,
+      removedWords: 1
+    });
+    expect(changes.pages).toHaveLength(1);
+    expect(changes.pages[0]).toMatchObject({
+      pageIndex: 1,
+      titleBefore: "Night Falls",
+      titleAfter: "Day Breaks",
+      titleChanged: true
+    });
+    // The word that moved, not the whole paragraph reprinted twice.
+    expect(changes.pages[0].blocks).toEqual([
+      {
+        type: "changed",
+        runs: [
+          { type: "equal", text: "The city slept under a heavy " },
+          { type: "delete", text: "night " },
+          { type: "insert", text: "day " },
+          { type: "equal", text: "sky." }
+        ]
+      }
+    ]);
+    await app.close();
+  });
+
+  it("omits pages an edit left untouched", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(appliedEditOperationRecord());
+    state.pageEditSnapshots.push({
+      id: "snapshot-1",
+      projectId: "project-1",
+      pageId: "page-1",
+      operationId: "operation-applied",
+      pageIndex: 1,
+      titleBefore: "Same",
+      markdownBefore: "Nothing moved on this page.",
+      summaryBefore: "Same.",
+      revisionBefore: 1,
+      titleAfter: "Same",
+      markdownAfter: "Nothing moved on this page.",
+      summaryAfter: "Same.",
+      revisionAfter: 2
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+
+    expect(response.json().changes.pages).toEqual([]);
+    await app.close();
+  });
+
+  it("does not read another user's edit", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(null);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("PROJECT_NOT_FOUND");
+    await app.close();
+  });
+
+  it("flags an edit as reviewable in the chat only once it has snapshots", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(appliedEditOperationRecord());
+    const app = await buildMobileApp();
+
+    const before = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+    expect(before.json().operations[0]).toMatchObject({ changesAvailable: false });
+
+    state.pageEditSnapshots.push({
+      id: "snapshot-1",
+      projectId: "project-1",
+      pageId: "page-1",
+      operationId: "operation-applied",
+      pageIndex: 1,
+      titleBefore: "Night Falls",
+      markdownBefore: "Before.",
+      summaryBefore: "",
+      revisionBefore: 1,
+      titleAfter: "Night Falls",
+      markdownAfter: "After.",
+      summaryAfter: "",
+      revisionAfter: 2
+    });
+    const after = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+    expect(after.json().operations[0]).toMatchObject({ changesAvailable: true });
     await app.close();
   });
 

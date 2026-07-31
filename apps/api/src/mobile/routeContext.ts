@@ -13,16 +13,20 @@ import {
   DEFAULT_ATTACHMENT_RATE_LIMIT,
   DEFAULT_BILLING_VERIFICATION_RATE_LIMIT,
   DEFAULT_DRAFT_RATE_LIMIT,
-  DEFAULT_GENERATION_RATE_LIMIT
+  DEFAULT_GENERATION_RATE_LIMIT,
+  DEFAULT_VOICE_CALL_RATE_LIMIT
 } from "./schemas.js";
 import {
   createFastRoutingTextModel,
   createFileDigestAdapter,
   createLanguageDetectionTextModel,
   createResearchAdapter,
+  createVoiceProvider,
   ingestCreationAttachment,
   loadConfig,
+  type CreateGeminiLiveSessionRequest,
   type CreationAttachment,
+  type GeminiLiveSessionResponse,
   type IngestCreationAttachmentInput,
   type ResearchAdapter,
   type TextModelAdapter
@@ -40,6 +44,7 @@ export type MobileProjectRoutesOptions = {
   advisorRateLimit?: Partial<RateLimitConfig>;
   draftRateLimit?: Partial<RateLimitConfig>;
   attachmentRateLimit?: Partial<RateLimitConfig>;
+  voiceCallRateLimit?: Partial<RateLimitConfig>;
   /** Test seam for attachment ingestion; defaults to the core pipeline. */
   attachmentIngestion?: (input: IngestCreationAttachmentInput) => Promise<CreationAttachment>;
   advisorTimeoutMs?: number;
@@ -53,6 +58,8 @@ export type MobileProjectRoutesOptions = {
     | false
     | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>);
   pageCountRecommendationTimeoutMs?: number;
+  /** Test seam for minting Gemini Live call tokens; defaults to the core provider. */
+  voiceSession?: (request: CreateGeminiLiveSessionRequest) => Promise<GeminiLiveSessionResponse>;
 };
 
 export type MobileRouteContext = {
@@ -64,6 +71,7 @@ export type MobileRouteContext = {
   advisorLimiter: InMemoryRateLimiter;
   draftLimiter: InMemoryRateLimiter;
   attachmentLimiter: InMemoryRateLimiter;
+  voiceCallLimiter: InMemoryRateLimiter;
   attachmentIngestion: (input: IngestCreationAttachmentInput) => Promise<CreationAttachment>;
   safeFastRoutingTextModel: () => TextModelAdapter | undefined;
   advisorEnrichment:
@@ -72,6 +80,7 @@ export type MobileRouteContext = {
   creationEnrichment:
     | ((request: MobileCreationTurnRequest, base: MobileCreationTurn) => Promise<Partial<MobileCreationTurn>>)
     | undefined;
+  voiceSession: (request: CreateGeminiLiveSessionRequest) => Promise<GeminiLiveSessionResponse>;
 };
 
 export function createMobileRouteContext(options: MobileProjectRoutesOptions): MobileRouteContext {
@@ -104,6 +113,10 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
     ...DEFAULT_ATTACHMENT_RATE_LIMIT,
     ...options.attachmentRateLimit
   });
+  const voiceCallLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_VOICE_CALL_RATE_LIMIT,
+    ...options.voiceCallRateLimit
+  });
   const attachmentIngestion =
     options.attachmentIngestion ??
     ((input: IngestCreationAttachmentInput) =>
@@ -132,6 +145,16 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
             base
           ));
 
+  const voiceSession =
+    options.voiceSession ??
+    (async (request: CreateGeminiLiveSessionRequest) => {
+      const session = await createVoiceProvider(appConfig, "gemini_live").createRealtimeSession(request);
+      if (session.type !== "gemini_live_token") {
+        throw new Error("Gemini Live returned an unexpected voice session.");
+      }
+      return session;
+    });
+
   return {
     options,
     appConfig,
@@ -141,9 +164,11 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
     advisorLimiter,
     draftLimiter,
     attachmentLimiter,
+    voiceCallLimiter,
     attachmentIngestion,
     safeFastRoutingTextModel,
     advisorEnrichment,
     creationEnrichment,
+    voiceSession
   };
 }

@@ -102,6 +102,9 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.2.6(react@19.2.6)
+      react-router:
+        specifier: ^7.18.1
+        version: 7.18.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       vite:
         specifier: ^7.2.6
         version: 7.3.3(@types/node@24.12.4)(jiti@2.7.0)(tsx@4.22.3)(yaml@2.9.0)
@@ -2638,6 +2641,16 @@ packages:
   react-refresh@0.18.0:
     resolution: {integrity: sha512-QgT5//D3jfjJb6Gsjxv0Slpj23ip+HtOpnNgnb2S5zU3CB26G/IDPGoy4RJB42wzFE46DRsstbW6tKHoKbhAxw==}
     engines: {node: '>=0.10.0'}
+
+  react-router@7.18.1:
+    resolution: {integrity: sha512-GDLgg3i3uM0aeJO3Fm+TCS+sDQ7gu12T6x0qdTEzcwqEfleci7JwugVNIF3U//0FWKnJT7ptG+20B2jfDqnZAg==}
+    engines: {node: '>=20.0.0'}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
 
   react@19.2.6:
     resolution: {integrity: sha512-sfWGGfavi0xr8Pg0sVsyHMAOziVYKgPLNrS7ig+ivMNb3wbCBw3KxtflsGBAwD3gYQlE/AEZsTLgToRrSCjb0Q==}
@@ -5344,6 +5357,14 @@ snapshots:
       scheduler: 0.27.0
 
   react-refresh@0.18.0: {}
+
+  react-router@7.18.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+    dependencies:
+      cookie: 1.1.1
+      react: 19.2.6
+      set-cookie-parser: 2.7.2
+    optionalDependencies:
+      react-dom: 19.2.6(react@19.2.6)
 
   react@19.2.6: {}
 

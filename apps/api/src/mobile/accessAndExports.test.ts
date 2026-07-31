@@ -142,6 +142,33 @@ describe("mobile rate limits, exports and operator routes", () => {
     await app.close();
   });
 
+  it("reports export size, mtime and content revision so the reader can cache the file", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-cacheable");
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-a", status: "COMPLETE", contentRevision: 7 })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    const exports = response.json().project.exports;
+    expect(exports.pdf).toMatchObject({
+      available: true,
+      revision: 7,
+      byteSize: "%PDF-cacheable".length
+    });
+    expect(Date.parse(exports.pdf.updatedAt)).not.toBeNaN();
+    // The EPUB was never compiled, so it carries the revision but no file facts.
+    expect(exports.epub).toMatchObject({ available: false, revision: 7, byteSize: null, updatedAt: null });
+    await app.close();
+  });
+
   it("blocks mobile export downloads when export unlock credits are insufficient", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-mobile-owned");

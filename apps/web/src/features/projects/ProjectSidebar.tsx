@@ -1,5 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
+import { Link } from "react-router";
 import {
+  BarChart3,
   Info,
   ListChecks,
   Loader2,
@@ -42,6 +44,7 @@ import {
   type ProjectHoverState
 } from "./projectDisplay.js";
 import { AppLogo } from "../shared/AppLogo.js";
+import { ADMIN_PATH } from "./routing.js";
 
 export function ProjectSidebar(props: {
   authEnabled: boolean;
@@ -75,12 +78,18 @@ export function ProjectSidebar(props: {
           <p>Local generation console</p>
         </div>
       </div>
-      {props.authEnabled ? (
-        <button className="icon-text-button auth-logout" type="button" onClick={props.onLogout} disabled={props.authBusy}>
-          {props.authBusy ? <Loader2 className="spin" size={16} /> : <LogOut size={16} />}
-          Log out
-        </button>
-      ) : null}
+      <div className="sidebar-nav">
+        <Link className="icon-text-button" to={ADMIN_PATH}>
+          <BarChart3 size={16} aria-hidden />
+          Operations
+        </Link>
+        {props.authEnabled ? (
+          <button className="icon-text-button auth-logout" type="button" onClick={props.onLogout} disabled={props.authBusy}>
+            {props.authBusy ? <Loader2 className="spin" size={16} /> : <LogOut size={16} />}
+            Log out
+          </button>
+        ) : null}
+      </div>
 
       <section className="tool-panel">
         <div className="panel-title">

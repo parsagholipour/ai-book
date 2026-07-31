@@ -5,6 +5,7 @@ import {
 } from "@book-maker/core";
 import { createHash } from "node:crypto";
 import { Prisma, prisma } from "./client.ts";
+import { activeCreditPricingVersion } from "./creditPricing.ts";
 
 export type CreditBalance = {
   availableCredits: number;
@@ -888,7 +889,9 @@ function ledgerData(options: LedgerContext & {
     balanceAfterCredits: options.balanceAfterCredits,
     idempotencyKey: options.idempotencyKey,
     ...(options.description ? { description: options.description } : {}),
-    metadata: jsonInput(options.metadata ?? {})
+    // Which price list produced this amount. Stamped here rather than at each
+    // charge site so no future one can forget it. Callers may override.
+    metadata: jsonInput({ pricingVersion: activeCreditPricingVersion(), ...options.metadata })
   };
 }
 

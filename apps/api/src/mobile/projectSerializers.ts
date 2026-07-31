@@ -34,11 +34,11 @@ import {
 } from "./schemas.js";
 import { generatedPagePreview, jsonRecord, previewText, sanitizeDownloadFilename, stringField } from "./support.js";
 import {
-  CREDIT_COSTS,
   DEFAULT_BILLING_PRODUCTS,
   bookPlanSchema,
   createProjectSchema,
   creditCostForOperation,
+  creditPricing,
   loadConfig,
   mediaSettingsSchema,
   type BookPlan
@@ -75,7 +75,9 @@ export async function serializeMobileBilling(userId: string): Promise<MobileBill
       startsAt: entitlement.startsAt.toISOString(),
       expiresAt: entitlement.expiresAt?.toISOString() ?? null
     })),
-    creditCosts: CREDIT_COSTS,
+    // The live prices, so an operator's change reaches the app without a client
+    // release. The Flutter side reads this map with per-key fallbacks.
+    creditCosts: creditPricing(),
     products: DEFAULT_BILLING_PRODUCTS.map((product) => ({
       sku: product.sku,
       title: product.title,
@@ -123,7 +125,7 @@ export async function serializeProjectSummary(
       "cover",
       `Cover for ${project.title}`
     ),
-    exports: await serializeExportSet(project.id, project.title, appConfig, userId),
+    exports: await serializeExportSet(project.id, project.title, appConfig, userId, project.contentRevision),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString()
   };
@@ -234,7 +236,8 @@ export async function serializeExportSet(
   projectId: string,
   title: string,
   appConfig: ReturnType<typeof loadConfig>,
-  userId: string
+  userId: string,
+  contentRevision: number
 ): Promise<MobileExportSetDto> {
   const [pdf, epub, unlocked] = await Promise.all([
     projectExportAvailability(appConfig, projectId, "pdf"),
@@ -242,8 +245,8 @@ export async function serializeExportSet(
     hasActiveProjectEntitlement({ userId, projectId, type: "EXPORT_UNLOCK" })
   ]);
   return {
-    pdf: serializeExport(projectId, title, "pdf", pdf.available, unlocked),
-    epub: serializeExport(projectId, title, "epub", epub.available, unlocked)
+    pdf: serializeExport(projectId, title, "pdf", pdf, unlocked, contentRevision),
+    epub: serializeExport(projectId, title, "epub", epub, unlocked, contentRevision)
   };
 }
 
@@ -251,17 +254,21 @@ export function serializeExport(
   projectId: string,
   title: string,
   format: ProjectExportFormat,
-  available: boolean,
-  unlocked: boolean
+  file: { available: boolean; byteSize: number | null; modifiedAt: Date | null },
+  unlocked: boolean,
+  contentRevision: number
 ): MobileExportAvailabilityDto {
   return {
     format,
-    available,
+    available: file.available,
     unlocked,
     creditsRequired: unlocked ? 0 : creditCostForOperation("EXPORT_UNLOCK"),
     downloadUrl: `/api/mobile/projects/${encodeURIComponent(projectId)}/export/${format}`,
     filename: `${sanitizeDownloadFilename(title)}.${format}`,
-    contentType: format === "pdf" ? "application/pdf" : "application/epub+zip"
+    contentType: format === "pdf" ? "application/pdf" : "application/epub+zip",
+    revision: contentRevision,
+    byteSize: file.byteSize,
+    updatedAt: file.modifiedAt?.toISOString() ?? null
   };
 }
 
@@ -274,7 +281,13 @@ export async function loadSerializedProjectStatus(
   if (!status) {
     return null;
   }
-  const exports = await serializeExportSet(projectId, status.project.title, appConfig, userId);
+  const exports = await serializeExportSet(
+    projectId,
+    status.project.title,
+    appConfig,
+    userId,
+    status.project.contentRevision
+  );
   return serializeProjectStatus(status, exports);
 }
 

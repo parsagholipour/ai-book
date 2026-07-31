@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/generation_progress_screen.dart';
+import 'package:tomeza/features/projects/presentation/project_export_panel.dart';
 
 void main() {
   testWidgets('generation view renders progress, pages, visuals, and retry', (

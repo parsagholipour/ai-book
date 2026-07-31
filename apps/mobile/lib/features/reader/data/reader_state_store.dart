@@ -1,0 +1,45 @@
+import 'dart:convert';
+import 'dart:io';
+
+import '../domain/reader_models.dart';
+import 'reader_storage.dart';
+
+/// Reading position and bookmarks, stored as JSON on the device.
+///
+/// Deliberately local: reading state is cheap to lose, not worth a schema
+/// change and a round trip on every page turn, and works offline. If it ever
+/// needs to follow a user across devices, this is the seam to move server-side.
+class ReaderStateStore {
+  ReaderStateStore({required this.storage});
+
+  final ReaderStorage storage;
+
+  static const _filename = 'state.json';
+
+  Future<ReaderState> load(String projectId) async {
+    final file = await _file(projectId);
+    if (!await file.exists()) {
+      return const ReaderState();
+    }
+    try {
+      final json = jsonDecode(await file.readAsString());
+      if (json is! Map<String, dynamic>) {
+        return const ReaderState();
+      }
+      return ReaderState.fromJson(json);
+    } on FormatException {
+      // A corrupt file is not worth surfacing — the reader just starts over.
+      return const ReaderState();
+    }
+  }
+
+  Future<void> save(String projectId, ReaderState state) async {
+    final file = await _file(projectId);
+    await file.writeAsString(jsonEncode(state.toJson()));
+  }
+
+  Future<File> _file(String projectId) async {
+    final directory = await storage.projectDirectory(projectId);
+    return File('${directory.path}/$_filename');
+  }
+}

@@ -190,6 +190,14 @@ class SlowPlanRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileEditChanges> getEditChanges({
+    required String projectId,
+    required String operationId,
+  }) {
+    throw UnimplementedError('Edit review is not used in this test.');
+  }
+
+  @override
   Future<MobileManualBookEditResult> saveManualBookEdit({
     required String projectId,
     required List<MobileManualBookPageEdit> pages,

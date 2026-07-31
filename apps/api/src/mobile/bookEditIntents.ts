@@ -29,17 +29,9 @@ import {
   serializeProjectChatMessage,
   type ProjectForChat
 } from "./projectChat.js";
-import { inputSnapshotFromProject } from "./projectSerializers.js";
+import { bookEditCreditCost } from "./bookEditPricing.js";
 import { clipText, isPrismaUniqueConflict, jsonRecord, languageDisplayName } from "./support.js";
-import {
-  CREDIT_COSTS,
-  bookPlanSchema,
-  createProjectSchema,
-  creditCostForOperation,
-  estimateFullBookCreditCost,
-  withRecoverableNetworkRetry,
-  type TextModelAdapter
-} from "@book-maker/core";
+import { bookPlanSchema, withRecoverableNetworkRetry, type TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
@@ -939,52 +931,8 @@ export async function affectedPagesForIntent(
   return [];
 }
 
-export function bookEditCreditCost(kind: BookEditIntentKind, affectedPageCount: number, project: ProjectForChat): number {
-  if (kind === "local_patch") {
-    return CREDIT_COSTS.bookTextEditBase + Math.max(1, affectedPageCount) * CREDIT_COSTS.bookTextEditPerPage;
-  }
-  // Chapter regeneration is priced like a multi-page rewrite of that chapter;
-  // continuation is priced like regenerating the pages it will append.
-  if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
-    return Math.max(1, affectedPageCount) * CREDIT_COSTS.pageRegenerationPerPage;
-  }
-  if (kind === "book_replan") {
-    const input = createProjectSchema.parse(inputSnapshotFromProject(project));
-    return CREDIT_COSTS.bookReplanBase + estimateFullBookCreditCost(input).totalCredits;
-  }
-  return creditCostForOperation("PLAN_REVISION");
-}
-
 /** Per-attempt budget for the grounded-answer model call; overruns fall back to the intent's canned reply. */
 export const GROUNDED_ANSWER_CALL_BUDGET_MS = 25_000;
-
-export function operationKindForIntent(
-  kind: BookEditIntentKind
-): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" | "CONTINUE_BOOK" {
-  if (kind === "page_rewrite") {
-    return "PAGE_REWRITE";
-  }
-  if (kind === "chapter_regenerate") {
-    return "CHAPTER_REGENERATE";
-  }
-  if (kind === "book_replan") {
-    return "BOOK_REPLAN";
-  }
-  if (kind === "continue_book") {
-    return "CONTINUE_BOOK";
-  }
-  return "LOCAL_PATCH";
-}
-
-export function billingOperationForIntent(kind: BookEditIntentKind): "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" {
-  if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
-    return "PAGE_REGENERATION";
-  }
-  if (kind === "book_replan") {
-    return "BOOK_REPLAN";
-  }
-  return "BOOK_TEXT_EDIT";
-}
 
 /**
  * Pages a continuation will append: requested chapter count × the median

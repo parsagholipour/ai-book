@@ -1,7 +1,9 @@
 export * from "./config.js";
 export * from "./urls.js";
+export * from "./textDiff.js";
 export * from "./categories.js";
 export * from "./costs.js";
+export * from "./creditPricing.js";
 export * from "./billing.js";
 export * from "./schemas/book.js";
 export * from "./prompting/templates.js";
@@ -47,5 +49,6 @@ export * from "./generation/pdf.js";
 export * from "./generation/strategies/index.js";
 export * from "./voiceProviders.js";
 export * from "./voiceConversations.js";
+export * from "./voiceCallMetering.js";
 export * from "./voiceRtc.js";
 export * from "./jobSteps.js";

@@ -32,6 +32,109 @@ void main() {
     expect(find.text('Reply about Make chapter two warmer'), findsOneWidget);
   });
 
+  testWidgets('a message handed in on open is sent without the caller waiting', (
+    tester,
+  ) async {
+    // The reader pushes the chat and hands over the edit rather than awaiting
+    // the request itself, so acting on a passage opens the chat immediately.
+    final repository = _ScriptedProjectsRepository();
+    final gate = Completer<void>();
+    repository.sendGates.add(gate);
+
+    await tester.pumpWidget(
+      _app(repository, initialMessage: 'On page 3, rewrite this passage: "x".'),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    // On screen as a pending bubble before the server has answered.
+    expect(
+      find.text('On page 3, rewrite this passage: "x".'),
+      findsOneWidget,
+    );
+    expect(repository.sentMessages, ['On page 3, rewrite this passage: "x".']);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Reply about On page 3, rewrite this passage: "x".'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an empty handed-in message sends nothing', (tester) async {
+    final repository = _ScriptedProjectsRepository();
+    await tester.pumpWidget(_app(repository, initialMessage: '   '));
+    await tester.pumpAndSettle();
+
+    expect(repository.sentMessages, isEmpty);
+  });
+
+  testWidgets('the transcript opens at the newest message', (tester) async {
+    final repository = _ScriptedProjectsRepository()..fillWithManyMessages();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    final position = scrollPosition(tester);
+    expect(
+      position.pixels,
+      position.maxScrollExtent,
+      reason: 'a chat that opens at the oldest message hides what just happened',
+    );
+    expect(position.maxScrollExtent, greaterThan(0), reason: 'needs overflow');
+  });
+
+  testWidgets('a running edit reports progress and lands the result on its own', (
+    tester,
+  ) async {
+    // Applying hands the work to the worker. Before this the chat went silent:
+    // no progress, and the finished text only appeared on a manual refresh.
+    final repository = _ScriptedProjectsRepository()..fillWithManyMessages();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    final fetchesBefore = repository.chatFetches.length;
+
+    repository.emitStatus(
+      status: 'editing',
+      progressPercent: 40,
+      action: 'Rewriting page 3',
+    );
+    // Not pumpAndSettle: the progress card spins for as long as the work runs.
+    // The follow-scroll needs a couple of frames — the card sizes itself in the
+    // first, and the scroll animates after that.
+    for (var frame = 0; frame < 6; frame++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    expect(find.text('Rewriting page 3'), findsOneWidget);
+    expect(find.text('3 of 12 pages'), findsOneWidget);
+    expect(scrollPosition(tester).pixels, scrollPosition(tester).maxScrollExtent,
+        reason: 'progress must be in view, not above the fold');
+
+    // Work finishes: the transcript refreshes without the user asking.
+    repository.emitStatus(status: 'complete', progressPercent: 100);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rewriting page 3'), findsNothing);
+    expect(repository.chatFetches.length, greaterThan(fetchesBefore));
+    expect(scrollPosition(tester).pixels, scrollPosition(tester).maxScrollExtent);
+  });
+
+  testWidgets('a settled book that was never live does not refetch', (
+    tester,
+  ) async {
+    final repository = _ScriptedProjectsRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    final fetchesBefore = repository.chatFetches.length;
+
+    repository.emitStatus(status: 'complete', progressPercent: 100);
+    await tester.pumpAndSettle();
+
+    expect(repository.chatFetches.length, fetchesBefore);
+  });
+
   testWidgets('a failed send shows a retry bubble and never clobbers text '
       'typed while waiting', (tester) async {
     final repository = _ScriptedProjectsRepository();
@@ -109,6 +212,110 @@ void main() {
     expect(find.text('Retry'), findsNothing);
   });
 
+  testWidgets('an applied edit stays with the turn that caused it instead of '
+      'trailing a newer proposal', (tester) async {
+    // An applied edit keeps its Undo for several turns. Rendered at the end of
+    // the transcript it landed under a proposal still waiting on Apply, so the
+    // untouched proposal looked applied and billed at the older edit's price.
+    final repository = _ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    final applied = tester.getTopLeft(find.text('Edit applied.')).dy;
+    final request = tester
+        .getTopLeft(find.text('On page 1, replace "night" with "day".'))
+        .dy;
+    final proposal = tester
+        .getTopLeft(find.text('Edit page 1. This would use 35 credits.'))
+        .dy;
+
+    expect(find.text('Undo'), findsOneWidget);
+    expect(
+      applied,
+      lessThan(request),
+      reason: 'the applied edit belongs to the turn before the new request',
+    );
+    expect(applied, lessThan(proposal));
+  });
+
+  testWidgets('an applied edit offers the book and its own diff', (
+    tester,
+  ) async {
+    final repository = _ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open book'), findsOneWidget);
+    expect(find.text('See changes'), findsOneWidget);
+  });
+
+  testWidgets('an edit with no recorded snapshots does not offer a diff', (
+    tester,
+  ) async {
+    // The button would open a screen with nothing on it. Older edits predate
+    // snapshots, so the affordance has to follow the data.
+    final repository = _ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal(changesAvailable: false);
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Open book'), findsOneWidget);
+    expect(find.text('See changes'), findsNothing);
+  });
+
+  testWidgets('every applied edit gets its own entry, not just the newest', (
+    tester,
+  ) async {
+    // The transcript is the book's history: an edit two turns ago still has to
+    // say what it did, even though only the latest one can be undone.
+    final repository = _ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal()
+      ..withSecondAppliedEdit();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Edit applied.'), findsNWidgets(2));
+    expect(find.text('See changes'), findsNWidgets(2));
+    // Undo belongs to the newest undoable edit alone.
+    expect(find.text('Undo'), findsOneWidget);
+  });
+
+  testWidgets('an old failure stays on its own turn and says the credits came '
+      'back', (tester) async {
+    // A failed replan from weeks ago rendered under a fresh, untouched proposal
+    // reads as "the thing you are about to approve failed and cost you 705
+    // credits" — when nothing was approved and the credits were refunded.
+    final repository = _ScriptedProjectsRepository()..withOldFailedReplan();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    final failure = tester.getTopLeft(find.text('Edit failed.')).dy;
+    final proposal = tester
+        .getTopLeft(find.text('Edit page 2. This would use 35 credits.'))
+        .dy;
+
+    expect(failure, lessThan(proposal));
+    expect(find.text('705 credits refunded'), findsOneWidget);
+    expect(find.text('705 credits'), findsNothing);
+  });
+
+  testWidgets('an operation with no anchor still renders at the end', (
+    tester,
+  ) async {
+    final repository = _ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal(anchored: false);
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    final applied = tester.getTopLeft(find.text('Edit applied.')).dy;
+    final proposal = tester
+        .getTopLeft(find.text('Edit page 1. This would use 35 credits.'))
+        .dy;
+    expect(applied, greaterThan(proposal));
+  });
+
   testWidgets('a failed inline edit keeps the edited text in the editor', (
     tester,
   ) async {
@@ -138,10 +345,25 @@ void main() {
   });
 }
 
-Widget _app(_ScriptedProjectsRepository repository) {
+ScrollPosition scrollPosition(WidgetTester tester) {
+  return tester
+      .widget<Scrollable>(find.byType(Scrollable).first)
+      .controller!
+      .position;
+}
+
+Widget _app(
+  _ScriptedProjectsRepository repository, {
+  String? initialMessage,
+}) {
   return ProviderScope(
     overrides: [projectsRepositoryProvider.overrideWithValue(repository)],
-    child: const MaterialApp(home: ProjectChatScreen(projectId: 'project-1')),
+    child: MaterialApp(
+      home: ProjectChatScreen(
+        projectId: 'project-1',
+        initialMessage: initialMessage,
+      ),
+    ),
   );
 }
 
@@ -155,7 +377,146 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
   final sendGates = <Completer<void>>[];
   final editGates = <Completer<void>>[];
   final sendRequestIds = <String?>[];
+  final sentMessages = <String>[];
+  final chatFetches = <String>[];
+  final statusController = StreamController<MobileProjectStatus>.broadcast();
+  MobileProjectChatSendResult Function()? applyResult;
+
+  /// Pushes a status the screen's live tracker will react to.
+  void emitStatus({required String status, int progressPercent = 0, String action = ''}) {
+    statusController.add(
+      MobileProjectStatus(
+        projectId: 'project-1',
+        status: status,
+        statusLabel: status,
+        progressPercent: progressPercent,
+        currentAction: action,
+        retryAvailable: false,
+        steps: const [],
+        pageProgress: const MobilePageProgress(completed: 3, target: 12),
+        imageCount: 0,
+        exports: const MobileExportSet(
+          pdf: MobileExportAvailability(
+            format: 'pdf',
+            available: false,
+            unlocked: true,
+            creditsRequired: 0,
+            downloadUrl: '',
+            filename: 'book.pdf',
+            contentType: 'application/pdf',
+          ),
+          epub: MobileExportAvailability(
+            format: 'epub',
+            available: false,
+            unlocked: true,
+            creditsRequired: 0,
+            downloadUrl: '',
+            filename: 'book.epub',
+            contentType: 'application/epub+zip',
+          ),
+        ),
+        updatedAt: DateTime.utc(2026, 6, 15),
+      ),
+    );
+  }
+
+  @override
+  Stream<MobileProjectStatus> watchProjectStatus(String id) =>
+      statusController.stream;
   final editRequestIds = <String?>[];
+
+  final operations = <MobileBookEditOperation>[];
+
+  /// An edit that was applied a turn ago, followed by a fresh request whose
+  /// priced proposal is still waiting on Apply.
+  void withAppliedEditThenPendingProposal({
+    bool anchored = true,
+    bool changesAvailable = true,
+  }) {
+    _contents
+      ..add((role: 'user', content: 'Apply'))
+      ..add((
+        role: 'assistant',
+        content: 'I’ll rewrite page 1 and refresh the exports. '
+            'This uses 80 credits.',
+      ))
+      ..add((role: 'user', content: 'On page 1, replace "night" with "day".'))
+      ..add((
+        role: 'assistant',
+        content: 'Edit page 1. This would use 35 credits.',
+      ));
+    operations.add(
+      MobileBookEditOperation(
+        id: 'op-1',
+        projectId: 'project-1',
+        kind: 'page_rewrite',
+        status: 'applied',
+        affectedPageIndexes: const [1],
+        creditsCharged: 80,
+        currentAction: 'Edit applied.',
+        createdAt: DateTime.utc(2026, 6, 15, 1),
+        anchorMessageId: anchored ? 'm3' : null,
+        canUndo: true,
+        changesAvailable: changesAvailable,
+      ),
+    );
+  }
+
+  /// A book-replan that failed weeks ago, then a fresh page edit awaiting Apply.
+  void withOldFailedReplan() {
+    _contents
+      ..add((role: 'user', content: 'Now regenerate it in Persian'))
+      ..add((
+        role: 'assistant',
+        content: 'I created a new Persian copy and I\u2019ll rebuild the plan '
+            'and book there.',
+      ))
+      ..add((role: 'user', content: 'On page 2, replace "Bunny" with "cute Bunny".'))
+      ..add((
+        role: 'assistant',
+        content: 'Edit page 2. This would use 35 credits.',
+      ));
+    operations.add(
+      MobileBookEditOperation(
+        id: 'op-replan',
+        projectId: 'project-1',
+        kind: 'book_replan',
+        status: 'failed',
+        affectedPageIndexes: const [],
+        creditsCharged: 705,
+        currentAction: 'Edit failed.',
+        createdAt: DateTime.utc(2026, 7, 5),
+        anchorMessageId: 'm3',
+        creditsRefunded: true,
+      ),
+    );
+  }
+
+  /// An earlier applied edit, superseded for undo by the newer one.
+  void withSecondAppliedEdit() {
+    operations.add(
+      MobileBookEditOperation(
+        id: 'op-0',
+        projectId: 'project-1',
+        kind: 'local_patch',
+        status: 'applied',
+        affectedPageIndexes: const [4],
+        creditsCharged: 35,
+        currentAction: 'Edit applied.',
+        createdAt: DateTime.utc(2026, 6, 15),
+        anchorMessageId: 'm1',
+        changesAvailable: true,
+      ),
+    );
+  }
+
+  /// Enough history that the transcript scrolls.
+  void fillWithManyMessages() {
+    for (var index = 0; index < 40; index++) {
+      _contents.add((role: 'assistant', content: 'Earlier message $index'));
+    }
+    _contents.add((role: 'user', content: 'The newest message'));
+  }
 
   MobileProjectChat _chat() {
     return MobileProjectChat(
@@ -171,7 +532,7 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
             createdAt: DateTime.utc(2026, 6, 15).add(Duration(minutes: index)),
           ),
       ],
-      operations: const [],
+      operations: List.of(operations),
     );
   }
 
@@ -192,6 +553,7 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
     String? beforeMessageId,
     int limit = 150,
   }) async {
+    chatFetches.add(id);
     return _chat();
   }
 
@@ -202,6 +564,7 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
     String? requestId,
   }) async {
     sendRequestIds.add(requestId);
+    sentMessages.add(message);
     if (sendGates.isNotEmpty) {
       await sendGates.removeAt(0).future;
     }
@@ -228,7 +591,9 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
     required String proposalId,
     String? requestId,
   }) async {
-    throw UnimplementedError();
+    final build = applyResult;
+    if (build == null) throw UnimplementedError();
+    return build();
   }
 
   @override

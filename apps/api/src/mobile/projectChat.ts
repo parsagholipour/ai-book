@@ -44,7 +44,13 @@ export async function loadProjectChatResponse(
       where: { projectId },
       orderBy: { createdAt: "desc" },
       take: 50,
-      include: { generationJob: { select: { id: true, status: true } } }
+      // The snapshot count is what tells the app an edit can be reviewed; the
+      // rows themselves are only read when the user opens the diff.
+      include: {
+        generationJob: { select: { id: true, status: true } },
+        ledgerEntry: { select: { status: true, reversedByEntry: { select: { id: true } } } },
+        _count: { select: { snapshots: true } }
+      }
     })
   ]);
   const activeChat = linearizeProjectChatMessages(messages.reverse());
@@ -420,8 +426,26 @@ export function serializeBookEditOperation(
     requestId: operation.requestId ?? null,
     createdAt: operation.createdAt.toISOString(),
     appliedAt: operation.appliedAt?.toISOString() ?? null,
-    canUndo: options?.canUndo ?? false
+    anchorMessageId: operation.assistantMessageId ?? operation.userMessageId ?? null,
+    canUndo: options?.canUndo ?? false,
+    changesAvailable: (operation._count?.snapshots ?? 0) > 0,
+    creditsRefunded: operationCreditsRefunded(operation)
   };
+}
+
+/**
+ * Whether the credits this operation reserved ended up back in the balance.
+ *
+ * Two shapes, because a refund depends on how far the spend got: an entry still
+ * reserved is released in place and left `REFUNDED`, while a settled one keeps
+ * its row and gains a separate reversing entry.
+ */
+export function operationCreditsRefunded(operation: MobileBookEditOperationRecord): boolean {
+  const ledgerEntry = operation.ledgerEntry;
+  if (!ledgerEntry) {
+    return false;
+  }
+  return ledgerEntry.status === "REFUNDED" || Boolean(ledgerEntry.reversedByEntry);
 }
 
 export function operationCanUndo(operation: MobileBookEditOperationRecord): boolean {

@@ -499,6 +499,27 @@ describe("credit ledger operations", () => {
     expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 50, reservedCredits: 0 });
   });
 
+  it("stamps the price list every entry was written under", async () => {
+    // Prices are operator-editable and live, so an amount alone cannot say which
+    // price list produced it. Stamped once at the point every entry is built, so
+    // a new charge site cannot forget to.
+    await grantCredits({ userId: "user-a", amountCredits: 500, idempotencyKey: "grant:stamp" });
+    await spendCredits({
+      userId: "user-a",
+      operation: "EXPORT_UNLOCK",
+      amountCredits: 150,
+      idempotencyKey: "spend:stamp",
+      metadata: { reason: "manual" }
+    });
+
+    for (const call of fakeDb.prisma.creditLedgerEntry.create.mock.calls) {
+      expect(call[0].data.metadata).toHaveProperty("pricingVersion");
+    }
+    const spendCall = fakeDb.prisma.creditLedgerEntry.create.mock.calls.at(-1);
+    // Caller metadata survives alongside it.
+    expect(spendCall?.[0].data.metadata).toMatchObject({ reason: "manual" });
+  });
+
   it("refunds failed project generation once and revokes ledger-backed entitlements", async () => {
     await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
     const spend = await spendCredits({

@@ -17,7 +17,7 @@ import {
   mobileLengthPresetSchema,
   mobileQualityPresetSchema
 } from "./schemas.js";
-import { CREDIT_COSTS, type CreateProjectInput } from "@book-maker/core";
+import { type CreateProjectInput, type CreditPricing } from "@book-maker/core";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
 import { z } from "zod";
 
@@ -233,7 +233,7 @@ export type MobileProjectPageDto = {
 
 export type MobileProjectImageDto = {
   id: string;
-  role: "cover" | "page_visual";
+  role: "cover" | "page_visual" | "character";
   url: string;
   contentType: string;
   altText: string;
@@ -291,8 +291,56 @@ export type MobileBookEditOperationDto = {
   requestId: string | null;
   createdAt: string;
   appliedAt: string | null;
+  /**
+   * The transcript message this operation belongs under, so the app can render its
+   * outcome in place instead of pinning it below newer messages. Null for operations
+   * with no chat anchor (older rows, or edits made outside the chat).
+   */
+  anchorMessageId: string | null;
   /** True when this applied edit is the latest undoable snapshot-backed change. */
   canUndo: boolean;
+  /** True when before/after page snapshots exist, so the edit can be reviewed. */
+  changesAvailable: boolean;
+  /**
+   * True when the credits this operation reserved were given back. A failed
+   * operation is refunded, so reporting `creditsCharged` next to it without
+   * this reads as a charge the user never actually paid.
+   */
+  creditsRefunded: boolean;
+};
+
+export type MobileEditDiffRunDto = {
+  type: "equal" | "insert" | "delete";
+  text: string;
+};
+
+export type MobileEditDiffBlockDto = {
+  type: "unchanged" | "added" | "removed" | "changed";
+  runs: MobileEditDiffRunDto[];
+};
+
+export type MobileEditPageChangeDto = {
+  pageIndex: number;
+  titleBefore: string;
+  titleAfter: string;
+  titleChanged: boolean;
+  blocks: MobileEditDiffBlockDto[];
+  addedWords: number;
+  removedWords: number;
+};
+
+/** What one applied edit did to the book, page by page. */
+export type MobileEditChangesDto = {
+  operationId: string;
+  kind: MobileBookEditOperationDto["kind"];
+  status: MobileBookEditOperationDto["status"];
+  request: string;
+  creditsCharged: number;
+  appliedAt: string | null;
+  undone: boolean;
+  pages: MobileEditPageChangeDto[];
+  addedWords: number;
+  removedWords: number;
 };
 
 export type MobileProjectChatResponseDto = {
@@ -382,6 +430,12 @@ export type MobileExportAvailabilityDto = {
   downloadUrl: string;
   filename: string;
   contentType: string;
+  /** Project content revision this export set was reported against. */
+  revision: number;
+  /** Size of the compiled file, or null when it has not been compiled yet. */
+  byteSize: number | null;
+  /** When the compiled file was last written, or null when absent. */
+  updatedAt: string | null;
 };
 
 export type MobileExportSetDto = {
@@ -423,6 +477,7 @@ export type MobileProjectRecord = {
   language: string;
   mediaSettings: unknown;
   status: string;
+  contentRevision: number;
   templateId?: string | null;
   currentPlanId: string | null;
   currentPlan?: MobilePlanRecord | null;
@@ -514,6 +569,14 @@ export type MobileBookEditOperationRecord = {
   retryRequestId?: string | null;
   error?: string | null;
   generationJob?: { id: string; status: string } | null;
+  /**
+   * The credit entry this operation spent against, when the query asked for it.
+   * A reserved entry is refunded in place (`REFUNDED`); a settled one is
+   * reversed by a separate entry, which is what `reversedByEntry` catches.
+   */
+  ledgerEntry?: { status: string; reversedByEntry?: { id: string } | null } | null;
+  /** Present when the query asked for it; how many pages this edit snapshotted. */
+  _count?: { snapshots: number };
   createdAt: Date;
   appliedAt: Date | null;
 };
@@ -537,7 +600,7 @@ export type MobileBillingDto = {
     startsAt: string;
     expiresAt: string | null;
   }>;
-  creditCosts: typeof CREDIT_COSTS;
+  creditCosts: CreditPricing;
   products: Array<{
     sku: string;
     title: string;
@@ -561,3 +624,64 @@ export type MobileGooglePlayVerificationResponseDto = {
 };
 
 export type MobileCreationBuildOverrides = z.infer<typeof mobileCreationBuildBodySchema>;
+
+/**
+ * `ready` can be called right now. `preparing` is being built and will become
+ * callable on its own. `unavailable` will not — the app shows it greyed rather
+ * than hiding it, so a cast that is partly ready still reads as one cast.
+ */
+export type MobileVoiceCharacterStatus = "ready" | "preparing" | "unavailable";
+
+export type MobileVoiceCharacterDto = {
+  id: string;
+  projectId: string;
+  name: string;
+  role: string;
+  description: string;
+  traits: string[];
+  status: MobileVoiceCharacterStatus;
+  /** True when the first call has to build the persona before connecting. */
+  needsPreparation: boolean;
+  image: MobileProjectImageDto | null;
+};
+
+export type MobileVoiceCastDto = {
+  characters: MobileVoiceCharacterDto[];
+  creditsPerMinute: number;
+  creditsToStart: number;
+  availableCredits: number;
+  maxCallSeconds: number;
+};
+
+/**
+ * Everything the app needs to open its own Gemini Live socket.
+ *
+ * The token is ephemeral and single-use, and the persona, voice and transcript
+ * settings are locked into it server-side — the app cannot widen them. `model`
+ * is here because it is a connection parameter the socket handshake requires,
+ * not because the app is told which model wrote the book.
+ */
+export type MobileVoiceCallSessionDto = {
+  callId: string;
+  characterId: string;
+  characterName: string;
+  token: string;
+  model: string;
+  expiresAt: string;
+  inputSampleRate: number;
+  outputSampleRate: number;
+  secondsRemaining: number;
+  creditsPerMinute: number;
+  heartbeatSeconds: number;
+  maxCallSeconds: number;
+};
+
+export type MobileVoiceCallMeterDto = {
+  callId: string;
+  elapsedSeconds: number;
+  secondsRemaining: number;
+  chargedCredits: number;
+  endingSoon: boolean;
+  /** "credits" | "limit" | null — what is about to end the call, if anything. */
+  endingReason: string | null;
+};

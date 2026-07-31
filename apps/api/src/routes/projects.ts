@@ -43,7 +43,7 @@ import {
   type VoiceChatProviderId
 } from "@book-maker/core";
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
@@ -58,6 +58,28 @@ import {
   type GenerationJobType
 } from "../queue.js";
 import { resolveProjectActor, sendProjectNotFound, type ProjectActor } from "../requestAuth.js";
+import {
+  compileProjectMarkdown,
+  projectExportAvailability,
+  sanitizeDownloadFilename,
+  sendProjectEpubExport,
+  sendProjectPdfExport,
+  strategyForMediaSettings
+} from "./projectExports.js";
+
+// The compiled-book helpers moved to ./projectExports.js; re-exported here
+// because the mobile routes and serializers import them from this module.
+export {
+  compileProjectMarkdown,
+  projectExportAvailability,
+  sanitizeDownloadFilename,
+  sendProjectEpubExport,
+  sendProjectPdfExport,
+  strategyForMediaSettings,
+  type ProjectEpubExportSource,
+  type ProjectExportFormat,
+  type ProjectPdfExportSource
+} from "./projectExports.js";
 import { z } from "zod";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
@@ -165,10 +187,6 @@ const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLA
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
 const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
-const BOOK_MARKDOWN_FILENAME = "book.md";
-const LEGACY_BOOK_MARKDOWN_FILENAME = "README.md";
-const BOOK_PDF_FILENAME = "book.pdf";
-const BOOK_EPUB_FILENAME = "book.epub";
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -188,117 +206,6 @@ type ResumeContext = {
   pageIds: Set<string>;
 };
 
-export type ProjectPdfExportSource = {
-  title: string;
-  currentPlanId: string | null;
-  mediaSettings: unknown;
-};
-
-export type ProjectEpubExportSource = {
-  title: string;
-  language: string;
-  currentPlanId: string | null;
-};
-
-export type ProjectExportFormat = "pdf" | "epub";
-
-export async function projectExportAvailability(
-  appConfig: AppConfig,
-  projectId: string,
-  format: ProjectExportFormat
-): Promise<{ available: boolean }> {
-  const filename = format === "pdf" ? BOOK_PDF_FILENAME : BOOK_EPUB_FILENAME;
-  try {
-    await access(join(appConfig.BOOK_STORAGE_DIR, projectId, filename));
-    return { available: true };
-  } catch {
-    return { available: false };
-  }
-}
-
-export async function sendProjectPdfExport(options: {
-  request: FastifyRequest;
-  reply: FastifyReply;
-  appConfig: AppConfig;
-  projectId: string;
-  project: ProjectPdfExportSource;
-  disposition?: "attachment" | "inline";
-}) {
-  const { request, reply, appConfig, projectId, project, disposition = "attachment" } = options;
-  const pdfPath = join(appConfig.BOOK_STORAGE_DIR, projectId, BOOK_PDF_FILENAME);
-  let pdf: Buffer;
-  try {
-    await access(pdfPath);
-    pdf = await readFile(pdfPath);
-  } catch {
-    if (!project.currentPlanId) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    const markdown = await compileProjectMarkdown(projectId, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-    if (!markdown) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    try {
-      await mkdir(dirname(pdfPath), { recursive: true });
-      const strategy = strategyForMediaSettings(project.mediaSettings);
-      pdf = await strategy.generatePdf(markdown, {
-        imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
-        publicApiUrl: appConfig.PUBLIC_API_URL,
-        outputPath: pdfPath
-      });
-    } catch (error) {
-      request.log.error({ err: error, projectId }, "PDF generation failed");
-      return reply.code(500).send({ error: "PDF generation failed" });
-    }
-  }
-
-  const filename = `${sanitizeDownloadFilename(project.title)}.pdf`;
-  reply.header("Content-Disposition", `${disposition}; filename="${filename}"`);
-  reply.type("application/pdf");
-  return pdf;
-}
-
-export async function sendProjectEpubExport(options: {
-  request: FastifyRequest;
-  reply: FastifyReply;
-  appConfig: AppConfig;
-  projectId: string;
-  project: ProjectEpubExportSource;
-}) {
-  const { request, reply, appConfig, projectId, project } = options;
-  const epubPath = join(appConfig.BOOK_STORAGE_DIR, projectId, BOOK_EPUB_FILENAME);
-  let epub: Buffer;
-  try {
-    await access(epubPath);
-    epub = await readFile(epubPath);
-  } catch {
-    if (!project.currentPlanId) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    const markdown = await compileProjectMarkdown(projectId, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-    if (!markdown) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    try {
-      await mkdir(dirname(epubPath), { recursive: true });
-      epub = await generateBookEpub(markdown, {
-        title: project.title,
-        language: project.language,
-        imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
-        publicApiUrl: appConfig.PUBLIC_API_URL,
-        outputPath: epubPath
-      });
-    } catch (error) {
-      request.log.error({ err: error, projectId }, "EPUB generation failed");
-      return reply.code(500).send({ error: "EPUB generation failed" });
-    }
-  }
-
-  const filename = `${sanitizeDownloadFilename(project.title)}.epub`;
-  reply.header("Content-Disposition", `attachment; filename="${filename}"`);
-  reply.type("application/epub+zip");
-  return epub;
-}
 
 export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   await ensureSeedTemplates();
@@ -1577,76 +1484,7 @@ function mimeTypeForPath(filePath: string): string {
   return MIME_BY_EXT[extname(filePath).toLowerCase()] ?? "application/octet-stream";
 }
 
-async function compileProjectMarkdown(
-  projectId: string,
-  publicApiUrl: string,
-  bookStorageDir: string
-): Promise<string | null> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      currentPlan: true,
-      pages: { orderBy: { index: "asc" }, include: { images: true } },
-      images: true,
-      research: true
-    }
-  });
-  if (!project?.currentPlan) {
-    return readSavedBookMarkdown(projectId, bookStorageDir);
-  }
 
-  const generatedPages = project.pages.filter((page) => page.markdown.trim().length > 0);
-  if (generatedPages.length === 0) {
-    return readSavedBookMarkdown(projectId, bookStorageDir);
-  }
-
-  const strategy = strategyForMediaSettings(project.mediaSettings);
-  const cover = project.images.find((image) => image.type === "COVER");
-  const markdown = strategy.compileMarkdown({
-    plan: project.currentPlan.planningPackage as never,
-    category: project.category,
-    language: project.language,
-    ...(cover
-      ? {
-          cover: {
-            imagePath: resolvePublicImageUrl(cover.path, publicApiUrl) ?? cover.path,
-            imageAlt: `Cover for ${project.title}`
-          }
-        }
-      : {}),
-    pages: generatedPages.map((page) => ({
-      index: page.index,
-      title: page.title,
-      markdown: page.markdown,
-      imagePath: resolvePublicImageUrl(page.images[0]?.path, publicApiUrl),
-      imageAlt: "Illustration"
-    })),
-    researchSources: project.research.map((source) => ({
-      title: source.title,
-      url: source.url ?? undefined,
-      summary: source.summary
-    }))
-  });
-  assertBookLikeMarkdown(markdown);
-  return markdown;
-}
-
-async function readSavedBookMarkdown(projectId: string, bookStorageDir: string): Promise<string | null> {
-  for (const filename of [BOOK_MARKDOWN_FILENAME, LEGACY_BOOK_MARKDOWN_FILENAME]) {
-    try {
-      const markdown = await readFile(join(bookStorageDir, projectId, filename), "utf8");
-      return markdown.trim().length > 0 ? markdown : null;
-    } catch {
-      // Try the next legacy filename.
-    }
-  }
-  return null;
-}
-
-function strategyForMediaSettings(mediaSettings: unknown) {
-  const selection = mediaSettingsSchema.parse(mediaSettings).generationStrategy;
-  return getBookGenerationStrategy(selection === AUTO_BOOK_GENERATION_STRATEGY_ID ? undefined : selection);
-}
 
 type ProjectStrategySource = {
   title: string;
@@ -1684,14 +1522,6 @@ function planInputForStrategy(inputSnapshot: unknown, project: ProjectStrategySo
   });
 }
 
-function sanitizeDownloadFilename(title: string): string {
-  const clean = title
-    .trim()
-    .replace(/[^\w\s-]+/g, "")
-    .replace(/\s+/g, "-")
-    .slice(0, 80);
-  return clean || "book";
-}
 
 function safePathPart(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "asset";

@@ -117,6 +117,28 @@ describe("localizeImagesInMarkdown", () => {
     expect(text).toMatch(/\bPage\s+1\b/);
   }, 30_000);
 
+  it("builds a document outline from the chapter headings", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-outline-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    await generateBookPdf(
+      "# The Book\n\nIntro.\n\n## Chapter 1 — Beginnings\n\nText.\n\n## Chapter 2 — Endings\n\nMore text.",
+      {
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001",
+        outputPath
+      }
+    );
+
+    // The mobile reader's table of contents navigates by PDF bookmarks, so the
+    // catalog has to carry an outline tree with an entry per heading.
+    const pdf = (await readFile(outputPath)).toString("latin1");
+    expect(pdf).toContain("/Outlines");
+    expect((pdf.match(/\/Title/g) ?? []).length).toBeGreaterThan(1);
+  }, 30_000);
+
   const itIfPdfRasterAvailable = hasCommand("pdftoppm") ? it : it.skip;
 
   itIfPdfRasterAvailable("renders a leading cover to the first page edge", async () => {

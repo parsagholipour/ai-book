@@ -107,7 +107,9 @@ void main() {
     expect(find.text('Retry or review the issue'), findsOneWidget);
     expect(find.text('Review plan'), findsOneWidget);
     expect(find.text('Ready for a plan'), findsOneWidget);
-    expect(find.text('Open exports'), findsOneWidget);
+    // A finished book leads with reading it; downloads live in the long-press
+    // menu and on the progress screen.
+    expect(find.text('Read book'), findsOneWidget);
     expect(find.text('Working in the background'), findsOneWidget);
     expect(find.text('Writing in progress'), findsOneWidget);
     expect(find.text('Plan in progress'), findsOneWidget);
@@ -414,6 +416,14 @@ class FakeProjectsRepository implements ProjectsRepository {
   @override
   Future<MobileEditableBook> getEditableBook(String projectId) {
     throw UnimplementedError('Edit Mode is not used in this test.');
+  }
+
+  @override
+  Future<MobileEditChanges> getEditChanges({
+    required String projectId,
+    required String operationId,
+  }) {
+    throw UnimplementedError('Edit review is not used in this test.');
   }
 
   @override

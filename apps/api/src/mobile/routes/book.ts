@@ -1,9 +1,16 @@
 import { type MobileEditableBookDto, type MobileManualBookEditResponseDto } from "../dto.js";
+import { loadEditChanges } from "../editChanges.js";
 import { hasOpenProjectWork } from "../editOperations.js";
 import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import { applyManualBookEdit, manualEditInfoFromMessage, replayManualBookEdit } from "../manualEdits.js";
 import { loadProjectChatResponse, serializeBookEditOperation, serializeProjectChatMessage } from "../projectChat.js";
-import { idParamsSchema, mobileAuthError, mobileManualBookEditBodySchema, mobileManualBookEditOpenApiBody } from "../schemas.js";
+import {
+  idParamsSchema,
+  mobileAuthError,
+  mobileManualBookEditBodySchema,
+  mobileManualBookEditOpenApiBody,
+  operationParamsSchema
+} from "../schemas.js";
 import { isPrismaUniqueConflict } from "../support.js";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
@@ -52,6 +59,33 @@ export async function registerMobileBookRoutes(fastify: FastifyInstance, context
           pages: project.pages
         } satisfies MobileEditableBookDto
       };
+    }
+  );
+
+  // What one applied edit did, diffed from the snapshots undo restores from.
+  // Read-only and free: reviewing an edit must never cost anything or touch the
+  // book, so nothing here writes.
+  fastify.get(
+    "/api/mobile/projects/:id/operations/:operationId/changes",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const { id, operationId } = operationParamsSchema.parse(request.params);
+      const project = await prisma.project.findFirst({
+        where: { id, userId: auth.user.id },
+        select: { id: true }
+      });
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+      const changes = await loadEditChanges(id, operationId);
+      if (!changes) {
+        return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "That edit was not found.");
+      }
+      return { changes };
     }
   );
 

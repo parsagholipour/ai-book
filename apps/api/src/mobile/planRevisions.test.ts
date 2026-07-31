@@ -369,12 +369,67 @@ describe("mobile plan revision retries and operations", () => {
         status: "failed",
         currentAction: "Plan revision failed.",
         error: "AI plan revision failed. No revised plan was created.",
+        anchorMessageId: "chat-assistant-1",
         job: expect.objectContaining({
           id: "job-failed-revision",
           status: "failed"
         })
       })
     ]);
+    await app.close();
+  });
+
+  it("anchors an operation to its user message when no reply was written", async () => {
+    // The app renders an operation's outcome under its anchor. Without one it
+    // falls back to the end of the transcript, where an applied edit reads as
+    // the result of whatever the user asked most recently.
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(failedPlanRevisionOperationRecord({ assistantMessageId: null }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+
+    expect(response.json().operations[0]).toMatchObject({ anchorMessageId: "chat-user-1" });
+    await app.close();
+  });
+
+  it("reports a failed operation's credits as refunded, both refund shapes", async () => {
+    // A failure is refunded. Showing its price with nothing to say otherwise
+    // reads as a charge the user actually paid.
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    // Released in place: the spend never settled.
+    state.bookEditOperations.push(
+      failedPlanRevisionOperationRecord({ id: "operation-released", ledgerEntry: { id: "ledger-1", status: "REFUNDED" } })
+    );
+    // Settled, then reversed by a separate entry.
+    state.bookEditOperations.push(
+      failedPlanRevisionOperationRecord({
+        id: "operation-reversed",
+        ledgerEntry: { id: "ledger-2", status: "SETTLED", reversedByEntry: { id: "ledger-refund" } }
+      })
+    );
+    // Charged and kept.
+    state.bookEditOperations.push(
+      failedPlanRevisionOperationRecord({ id: "operation-charged", ledgerEntry: { id: "ledger-3", status: "SETTLED" } })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+    const byId = new Map<string, any>(response.json().operations.map((operation: any) => [operation.id, operation]));
+
+    expect(byId.get("operation-released")).toMatchObject({ creditsRefunded: true });
+    expect(byId.get("operation-reversed")).toMatchObject({ creditsRefunded: true });
+    expect(byId.get("operation-charged")).toMatchObject({ creditsRefunded: false });
     await app.close();
   });
 

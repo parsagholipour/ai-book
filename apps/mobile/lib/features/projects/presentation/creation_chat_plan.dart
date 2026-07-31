@@ -205,6 +205,8 @@ class _GenerationProgressBubbleState
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (status.exports.pdf.available)
+                    _ReadBookButton(projectId: widget.projectId),
                   if (downloadExport != null)
                     _CompletionDownloadButton(
                       export: downloadExport,
@@ -289,6 +291,22 @@ class _CompletionDownloadButton extends StatelessWidget {
             )
           : const Icon(Icons.open_in_new_outlined),
       label: Text(projectExportDownloadLabel(export, false)),
+    );
+  }
+}
+
+/// Opens the finished book in the in-app reader.
+class _ReadBookButton extends StatelessWidget {
+  const _ReadBookButton({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: () => context.push('/projects/$projectId/read'),
+      icon: const Icon(Icons.auto_stories_outlined),
+      label: const Text('Read book'),
     );
   }
 }

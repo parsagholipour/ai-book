@@ -7,10 +7,12 @@ import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
+import '../../features/projects/presentation/edit_changes_screen.dart';
 import '../../features/projects/presentation/generation_progress_screen.dart';
 import '../../features/projects/presentation/import_book_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
+import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../shared/api/api_error.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 import '../../shared/ui/motion.dart';
@@ -43,6 +45,15 @@ CustomTransitionPage<void> _appPage(GoRouterState state, Widget child) {
       );
     },
   );
+}
+
+/// Reads what a caller asked the book chat to do on open.
+///
+/// A bare string stays supported as a composer prefill.
+ProjectChatLaunch? _chatLaunch(Object? extra) {
+  if (extra is ProjectChatLaunch) return extra;
+  if (extra is String) return ProjectChatLaunch(draft: extra);
+  return null;
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -142,10 +153,39 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(
+        path: '/projects/:id/read',
+        pageBuilder: (context, state) => _appPage(
+          state,
+          BookReaderScreen(
+            projectId: state.pathParameters['id']!,
+            // `?page=` is a book page index, not a PDF page: the reader has to
+            // find where that page was rendered. Carried in the URL rather than
+            // `extra` so the jump survives a deep link.
+            openAtBookPage: int.tryParse(
+              state.uri.queryParameters['page'] ?? '',
+            ),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: '/projects/:id/changes/:operationId',
+        pageBuilder: (context, state) => _appPage(
+          state,
+          EditChangesScreen(
+            projectId: state.pathParameters['id']!,
+            operationId: state.pathParameters['operationId']!,
+          ),
+        ),
+      ),
+      GoRoute(
         path: '/projects/:id/chat',
         pageBuilder: (context, state) => _appPage(
           state,
-          ProjectChatScreen(projectId: state.pathParameters['id']!),
+          ProjectChatScreen(
+            projectId: state.pathParameters['id']!,
+            initialDraft: _chatLaunch(state.extra)?.draft,
+            initialMessage: _chatLaunch(state.extra)?.send,
+          ),
         ),
       ),
       GoRoute(

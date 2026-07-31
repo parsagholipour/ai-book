@@ -34,6 +34,8 @@ export const projectChatQuerySchema = z.object({
 
 export const assetParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().min(1) });
 
+export const operationParamsSchema = z.object({ id: z.string().min(1), operationId: z.string().min(1) });
+
 export const attachmentParamsSchema = z.object({ id: z.string().min(1), attachmentId: z.string().min(1).max(64) });
 
 export const attachmentUploadQuerySchema = z.object({
@@ -67,6 +69,15 @@ export const DEFAULT_BILLING_VERIFICATION_RATE_LIMIT = { maxAttempts: 20, window
 export const DEFAULT_ADVISOR_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
 
 export const DEFAULT_DRAFT_RATE_LIMIT = { maxAttempts: 120, windowMs: 60 * 60 * 1000 };
+
+/**
+ * Voice calls get their own budget rather than sharing the generation one.
+ * Placing a call is cheap for us — the cost is metered in credits by the
+ * minute — so the only job here is to stop a runaway client, not to ration a
+ * feature the user has already paid for. Sharing the 12/hour generation budget
+ * meant a few calls locked the user out of writing books.
+ */
+export const DEFAULT_VOICE_CALL_RATE_LIMIT = { maxAttempts: 40, windowMs: 60 * 60 * 1000 };
 
 export const DEFAULT_ATTACHMENT_RATE_LIMIT = { maxAttempts: 60, windowMs: 60 * 60 * 1000 };
 
@@ -429,4 +440,79 @@ export const mobileManualBookEditOpenApiBody = {
     requestId: { type: "string", minLength: 8, maxLength: 64 }
   },
   required: ["pages"]
+} as const;
+
+export const voiceCharacterParamsSchema = z.object({
+  id: z.string().min(1),
+  characterId: z.string().min(1)
+});
+
+export const voiceCallParamsSchema = z.object({ callId: z.string().min(1) });
+
+/**
+ * `pageIndex` is where the reader was when they placed the call. It scopes what
+ * the character is told about the book, which is what keeps a call from the
+ * middle of a story free of spoilers.
+ */
+export const mobileVoiceCallStartBodySchema = z
+  .object({
+    pageIndex: z.number().int().min(0).max(5000).optional()
+  })
+  .strict();
+
+/**
+ * `messages` is the stretch of transcript the app heard since its last report.
+ *
+ * It is sent in batches rather than all at once at the end because the app
+ * keeps only a screenful of captions, and because a call that dies with the app
+ * never gets to send an end. What arrives is appended to the call, and read
+ * back the next time the reader rings the same character.
+ */
+export const mobileVoiceCallProgressBodySchema = z
+  .object({
+    elapsedSeconds: z.number().int().min(0).max(24 * 60 * 60),
+    reason: z.string().trim().min(1).max(60).optional(),
+    messages: z
+      .array(
+        z
+          .object({
+            speaker: z.enum(["caller", "character"]),
+            text: z.string().trim().min(1).max(2000)
+          })
+          .strict()
+      )
+      .max(60)
+      .optional()
+  })
+  .strict();
+
+export const mobileVoiceCallStartOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    pageIndex: { type: "integer", minimum: 0, maximum: 5000 }
+  }
+} as const;
+
+export const mobileVoiceCallProgressOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    elapsedSeconds: { type: "integer", minimum: 0 },
+    reason: { type: "string", minLength: 1, maxLength: 60 },
+    messages: {
+      type: "array",
+      maxItems: 60,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          speaker: { type: "string", enum: ["caller", "character"] },
+          text: { type: "string", minLength: 1, maxLength: 2000 }
+        },
+        required: ["speaker", "text"]
+      }
+    }
+  },
+  required: ["elapsedSeconds"]
 } as const;

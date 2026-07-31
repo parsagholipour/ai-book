@@ -76,6 +76,11 @@ abstract interface class ProjectsRepository {
 
   Future<MobileEditableBook> getEditableBook(String projectId);
 
+  Future<MobileEditChanges> getEditChanges({
+    required String projectId,
+    required String operationId,
+  });
+
   Future<MobileManualBookEditResult> saveManualBookEdit({
     required String projectId,
     required List<MobileManualBookPageEdit> pages,
@@ -353,6 +358,18 @@ class MobileProjectsRepository implements ProjectsRepository {
   }
 
   @override
+  Future<MobileEditChanges> getEditChanges({
+    required String projectId,
+    required String operationId,
+  }) async {
+    final response = await apiClient.getJson(
+      '/api/mobile/projects/$projectId/operations/$operationId/changes',
+    );
+    final data = response.data as Map<String, dynamic>;
+    return MobileEditChanges.fromJson(data['changes'] as Map<String, dynamic>);
+  }
+
+  @override
   Future<MobileManualBookEditResult> saveManualBookEdit({
     required String projectId,
     required List<MobileManualBookPageEdit> pages,
@@ -527,11 +544,22 @@ final projectsRepositoryProvider = Provider<ProjectsRepository>((ref) {
   return MobileProjectsRepository(apiClient: ref.watch(apiClientProvider));
 });
 
-final projectsProvider = FutureProvider.autoDispose<List<MobileProjectSummary>>(
-  (ref) {
-    return ref.watch(projectsRepositoryProvider).listProjects();
-  },
-);
+/// The signed-in user's books. Cached, deliberately not `autoDispose`.
+///
+/// The drawer's book shelf is mounted only while the drawer is open, so an
+/// autoDispose list was thrown away on every close: reopening started from an
+/// empty shelf and shoved the chat list down a frame later when the books
+/// landed. Holding the last result lets consumers paint what they already know
+/// and refresh behind it — `ref.invalidate` keeps the previous value on the
+/// resulting loading state, which is what `AsyncValue.when` renders while the
+/// request is in flight.
+///
+/// Because the cache outlives any one screen, it has to be cleared on sign-out;
+/// `AuthController.logout` invalidates it with `asReload: true` so the next
+/// account gets the loading state instead of the previous account's books.
+final projectsProvider = FutureProvider<List<MobileProjectSummary>>((ref) {
+  return ref.watch(projectsRepositoryProvider).listProjects();
+});
 
 final projectDetailProvider = FutureProvider.autoDispose
     .family<MobileProjectDetail, String>((ref, id) {
@@ -546,6 +574,19 @@ final projectStatusProvider = StreamProvider.autoDispose
 final projectChatProvider = FutureProvider.autoDispose
     .family<MobileProjectChat, String>((ref, id) {
       return ref.watch(projectsRepositoryProvider).getProjectChat(id);
+    });
+
+/// Identifies one applied edit, so its diff can be cached per operation.
+typedef EditChangesRef = ({String projectId, String operationId});
+
+final editChangesProvider = FutureProvider.autoDispose
+    .family<MobileEditChanges, EditChangesRef>((ref, target) {
+      return ref
+          .watch(projectsRepositoryProvider)
+          .getEditChanges(
+            projectId: target.projectId,
+            operationId: target.operationId,
+          );
     });
 
 final projectAssetHeadersProvider =

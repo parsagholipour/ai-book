@@ -8,37 +8,56 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../../voice/presentation/character_cast_sheet.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
-import 'branch_navigator.dart';
-import 'edit_proposal_card.dart';
-import 'message_actions_menu.dart';
-import 'message_hold_feedback.dart';
 import 'plan_revision_retry.dart';
+import 'project_chat_bubbles.dart';
+import 'project_chat_composer.dart';
 import 'project_route_error.dart';
-import 'saved_export_card.dart';
+
+/// What a screen wants the book chat to do when it opens.
+///
+/// Carried as the route's `extra`. The reader uses it so acting on a passage
+/// lands in the chat immediately: sending first and navigating afterwards left
+/// the user looking at the book for as long as the request took.
+class ProjectChatLaunch {
+  const ProjectChatLaunch({this.draft, this.send});
+
+  /// Text to prefill the composer with, left unsent.
+  final String? draft;
+
+  /// Text to send as soon as the chat is on screen.
+  final String? send;
+}
 
 class ProjectChatScreen extends ConsumerStatefulWidget {
-  const ProjectChatScreen({required this.projectId, super.key});
+  const ProjectChatScreen({
+    required this.projectId,
+    this.initialDraft,
+    this.initialMessage,
+    super.key,
+  });
 
   final String projectId;
+
+  /// Text the composer opens with, left unsent so the user can finish the
+  /// thought. The reader uses it to carry a selected passage into the chat.
+  final String? initialDraft;
+
+  /// Text sent automatically once the screen is up, through the same optimistic
+  /// path as typing it, so the pending bubble, retry and errors all behave
+  /// exactly as they normally do.
+  final String? initialMessage;
 
   @override
   ConsumerState<ProjectChatScreen> createState() => _ProjectChatScreenState();
 }
 
-/// A just-sent user message shown optimistically until the refreshed
-/// transcript (or a failure) replaces it.
-class _PendingEcho {
-  const _PendingEcho({required this.text, this.failed = false, this.error});
-
-  final String text;
-  final bool failed;
-  final String? error;
-}
-
 class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
-  final _controller = TextEditingController();
+  late final _controller = TextEditingController(
+    text: widget.initialDraft ?? '',
+  );
   final _editController = TextEditingController();
   final _scrollController = ScrollController();
   bool _sending = false;
@@ -55,26 +74,101 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   String? _retryingOperationId;
   bool _undoing = false;
   int _requestSequence = 0;
-  _PendingEcho? _pendingEcho;
+  bool _initialScrollDone = false;
+  ProviderSubscription<AsyncValue<MobileProjectStatus>>? _statusSubscription;
+  bool _wasLive = false;
+  PendingEcho? _pendingEcho;
   final List<MobileProjectChatMessage> _olderMessages = [];
 
   @override
+  void initState() {
+    super.initState();
+    // The project status stream is what makes a running edit visible: it
+    // reports progress while the worker is busy and tells us the moment the
+    // result is ready to pull into the transcript.
+    _statusSubscription = ref.listenManual(
+      projectStatusProvider(widget.projectId),
+      (previous, next) => _onStatusChanged(next),
+      fireImmediately: true,
+    );
+    final message = widget.initialMessage?.trim();
+    if (message == null || message.isEmpty) {
+      return;
+    }
+    // After the first frame so the transcript, and the optimistic bubble the
+    // send adds to it, have somewhere to appear.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_sendMessage(message));
+    });
+  }
+
+  /// Reacts to the book starting and finishing a piece of work.
+  ///
+  /// The transcript is only refetched on the falling edge, so the finished
+  /// message arrives on its own instead of the user having to pull to refresh.
+  void _onStatusChanged(AsyncValue<MobileProjectStatus> value) {
+    final status = value.asData?.value;
+    if (status == null) return;
+    final live = status.isLive;
+    if (live) {
+      _wasLive = true;
+      // Stay pinned to the progress card while it advances, unless the reader
+      // has scrolled up to read something.
+      _followBottom();
+      return;
+    }
+    if (!_wasLive) return;
+    _wasLive = false;
+    ref.invalidate(projectChatProvider(widget.projectId));
+    ref.invalidate(projectDetailProvider(widget.projectId));
+    ref.invalidate(projectsProvider);
+    _scrollToBottomSoon();
+  }
+
+  @override
   void dispose() {
+    _statusSubscription?.close();
     _controller.dispose();
     _editController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
+  /// Puts the transcript at the newest message the first time it renders.
+  ///
+  /// The list is in reading order, so without this the chat opens on the oldest
+  /// message and the reader has to scroll to find what just happened.
+  void _scheduleInitialScroll() {
+    if (_initialScrollDone) return;
+    _initialScrollDone = true;
+    _scrollToBottomSoon(animate: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatValue = ref.watch(projectChatProvider(widget.projectId));
     final projectValue = ref.watch(projectDetailProvider(widget.projectId));
+    final status = ref
+        .watch(projectStatusProvider(widget.projectId))
+        .asData
+        ?.value;
+    final liveStatus = status != null && status.isLive ? status : null;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(projectValue.asData?.value.title ?? 'Book chat'),
         actions: [
+          // Only offered once the book is finished: characters do not exist
+          // until the manuscript they come from does.
+          if (projectValue.asData?.value.status == 'complete')
+            IconButton(
+              tooltip: 'Call a character',
+              onPressed: () => showCharacterCastSheet(
+                context: context,
+                projectId: widget.projectId,
+              ),
+              icon: const Icon(Icons.record_voice_over_outlined),
+            ),
           IconButton(
             tooltip: 'Book progress',
             onPressed: () =>
@@ -89,128 +183,123 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
         ],
       ),
       body: chatValue.when(
-        data: (chat) => Column(
-          children: [
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: () async => _refresh(),
-                child: ListView(
-                  controller: _scrollController,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  children: [
-                    _ChatIntroCard(project: projectValue.asData?.value),
-                    const SizedBox(height: 12),
-                    if (_canLoadEarlier(chat)) ...[
-                      Center(
-                        child: TextButton.icon(
-                          onPressed: _loadingEarlier
-                              ? null
-                              : () => _loadEarlier(chat),
-                          icon: _loadingEarlier
-                              ? const SizedBox.square(
-                                  dimension: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+        data: (chat) {
+          _scheduleInitialScroll();
+          final operations = _transcriptOperations(chat);
+          return Column(
+            children: [
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async => _refresh(),
+                  child: ListView(
+                    controller: _scrollController,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                    children: [
+                      ChatIntroCard(project: projectValue.asData?.value),
+                      const SizedBox(height: 12),
+                      if (_canLoadEarlier(chat)) ...[
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: _loadingEarlier
+                                ? null
+                                : () => _loadEarlier(chat),
+                            icon: _loadingEarlier
+                                ? const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.history),
+                            label: const Text('Load earlier messages'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (_visibleMessages(chat).isEmpty &&
+                          _pendingEcho == null)
+                        const EmptyProjectChat()
+                      else
+                        for (final message in _visibleMessages(chat)) ...[
+                          ProjectMessageBubble(
+                            message: message,
+                            editController: _editController,
+                            editing: _editingMessageId == message.id,
+                            submittingEdit:
+                                _editing && _editingMessageId == message.id,
+                            switchingBranch: _switchingBranch,
+                            showProposalActions: _isActiveEditProposal(
+                              chat,
+                              message,
+                            ),
+                            sending: _sending || _editing,
+                            onStartEdit: message.isUser
+                                ? () => _startEdit(message)
+                                : null,
+                            onCancelEdit: _cancelEdit,
+                            onSubmitEdit: _submitEdit,
+                            onSwitchBranch: (direction) =>
+                                _switchBranch(message, direction),
+                            onOpenPaywall: message.hasInsufficientCredits
+                                ? () => _openPaywall(projectValue.asData?.value)
+                                : null,
+                            onOpenReplanCopy:
+                                _replanCopyTargetProjectId(message) == null
+                                ? null
+                                : () => context.push(
+                                    '/projects/${_replanCopyTargetProjectId(message)}/chat',
                                   ),
-                                )
-                              : const Icon(Icons.history),
-                          label: const Text('Load earlier messages'),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    for (final operation
-                        in chat.operations
-                            .where(
-                              (operation) =>
-                                  operation.isRunning ||
-                                  operation.isFailed ||
-                                  operation.canUndo,
-                            )
-                            .take(3))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _OperationBubble(
-                          operation: operation,
-                          retrying: _retryingOperationId == operation.id,
-                          undoing: _undoing,
-                          onRetry: operation.isFailed
-                              ? () => _retryOperation(operation)
-                              : null,
-                          onUndo: operation.canUndo
-                              ? () => unawaited(_undoLastEdit())
-                              : null,
-                          onViewPlan: operation.isPlanRevision
-                              ? () => context.push(
-                                  '/projects/${widget.projectId}',
-                                )
-                              : null,
-                        ),
-                      ),
-                    if (_visibleMessages(chat).isEmpty && _pendingEcho == null)
-                      const _EmptyProjectChat()
-                    else
-                      for (final message in _visibleMessages(chat)) ...[
-                        _ProjectMessageBubble(
-                          message: message,
-                          editController: _editController,
-                          editing: _editingMessageId == message.id,
-                          submittingEdit:
-                              _editing && _editingMessageId == message.id,
-                          switchingBranch: _switchingBranch,
-                          showProposalActions:
-                              _isActiveEditProposal(chat, message),
-                          sending: _sending || _editing,
-                          onStartEdit: message.isUser
-                              ? () => _startEdit(message)
-                              : null,
-                          onCancelEdit: _cancelEdit,
-                          onSubmitEdit: _submitEdit,
-                          onSwitchBranch: (direction) =>
-                              _switchBranch(message, direction),
-                          onOpenPaywall: message.hasInsufficientCredits
-                              ? () => _openPaywall(projectValue.asData?.value)
-                              : null,
-                          onOpenReplanCopy:
-                              _replanCopyTargetProjectId(message) == null
-                              ? null
-                              : () => context.push(
-                                  '/projects/${_replanCopyTargetProjectId(message)}/chat',
-                                ),
-                          onApplyProposal: message.editProposal == null
-                              ? null
-                              : () => unawaited(
-                                  _applyProposal(message.editProposal!.id),
-                                ),
-                          onCancelProposal: message.editProposal == null
-                              ? null
-                              : () => unawaited(
-                                  _cancelProposal(message.editProposal!.id),
-                                ),
+                            onApplyProposal: message.editProposal == null
+                                ? null
+                                : () => unawaited(
+                                    _applyProposal(message.editProposal!.id),
+                                  ),
+                            onCancelProposal: message.editProposal == null
+                                ? null
+                                : () => unawaited(
+                                    _cancelProposal(message.editProposal!.id),
+                                  ),
+                          ),
+                          const SizedBox(height: 10),
+                          for (final operation in operations.anchoredTo(
+                            message.id,
+                          )) ...[
+                            _operationBubble(operation),
+                            const SizedBox(height: 10),
+                          ],
+                        ],
+                      if (_pendingEcho != null) ...[
+                        PendingEchoBubble(
+                          echo: _pendingEcho!,
+                          onRetry: _retryPendingEcho,
+                          onDismiss: _dismissPendingEcho,
                         ),
                         const SizedBox(height: 10),
                       ],
-                    if (_pendingEcho != null) ...[
-                      _PendingEchoBubble(
-                        echo: _pendingEcho!,
-                        onRetry: _retryPendingEcho,
-                        onDismiss: _dismissPendingEcho,
-                      ),
-                      const SizedBox(height: 10),
+                      for (final operation in operations.unanchored)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _operationBubble(operation),
+                        ),
+                      if (liveStatus != null) ...[
+                        const SizedBox(height: 4),
+                        ChatOperationProgressCard(status: liveStatus),
+                        const SizedBox(height: 8),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            _ProjectChatComposer(
-              controller: _controller,
-              sending: _sending || _editing,
-              onSend: _send,
-            ),
-          ],
-        ),
+              ProjectChatComposer(
+                controller: _controller,
+                sending: _sending || _editing,
+                onSend: _send,
+              ),
+            ],
+          );
+        },
         loading: () => const AppLoadingState(message: 'Loading book chat'),
         error: (error, stackTrace) => ProjectRouteErrorState(
           error: error,
@@ -233,6 +322,67 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     ref.invalidate(projectChatProvider(widget.projectId));
     ref.invalidate(projectDetailProvider(widget.projectId));
     ref.invalidate(projectStatusProvider(widget.projectId));
+  }
+
+  /// Splits the operations worth showing into the ones that belong under a
+  /// visible message and the ones with nowhere else to go.
+  ///
+  /// Every applied and failed edit appears, each under the turn that produced
+  /// it, so the transcript reads as the book's history. Rendering them at the
+  /// end of the list instead put "Edit applied" and its credit charge underneath
+  /// whatever the user asked most recently — including a proposal still waiting
+  /// on Apply, which read as if that proposal had gone through and been billed.
+  _TranscriptOperations _transcriptOperations(MobileProjectChat chat) {
+    final visibleIds = _visibleMessages(
+      chat,
+    ).map((message) => message.id).toSet();
+    final anchored = <String, List<MobileBookEditOperation>>{};
+    final unanchored = <MobileBookEditOperation>[];
+    for (final operation in chat.operations) {
+      if (!operation.isFailed && !operation.isApplied) {
+        continue;
+      }
+      final anchor = operation.anchorMessageId;
+      if (anchor != null && visibleIds.contains(anchor)) {
+        (anchored[anchor] ??= []).add(operation);
+        continue;
+      }
+      // Nowhere to sit in the transcript. Only the most recent couple are worth
+      // stacking at the end; older ones would be history without its context.
+      if (unanchored.length < 2) {
+        unanchored.add(operation);
+      }
+    }
+    return _TranscriptOperations(anchored: anchored, unanchored: unanchored);
+  }
+
+  Widget _operationBubble(MobileBookEditOperation operation) {
+    final openAtPage = operation.affectedPageIndexes.isEmpty
+        ? null
+        : operation.affectedPageIndexes.reduce((a, b) => a < b ? a : b);
+    return OperationBubble(
+      operation: operation,
+      retrying: _retryingOperationId == operation.id,
+      undoing: _undoing,
+      onRetry: operation.isFailed ? () => _retryOperation(operation) : null,
+      onUndo: operation.canUndo ? () => unawaited(_undoLastEdit()) : null,
+      onViewPlan: operation.isPlanRevision
+          ? () => context.push('/projects/${widget.projectId}')
+          : null,
+      onOpenBook: operation.isApplied
+          ? () => context.push(
+              '/projects/${widget.projectId}/read'
+              '${openAtPage == null ? '' : '?page=$openAtPage'}',
+            )
+          : null,
+      // A failed edit keeps whatever snapshots it managed to write, but its card
+      // is for getting the book back on track — Retry, not a diff.
+      onSeeChanges: operation.isApplied && operation.changesAvailable
+          ? () => context.push(
+              '/projects/${widget.projectId}/changes/${operation.id}',
+            )
+          : null,
+    );
   }
 
   String? _replanCopyTargetProjectId(MobileProjectChatMessage message) {
@@ -300,7 +450,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     final requestId = _pendingSendRequestId!;
     setState(() {
       _sending = true;
-      _pendingEcho = _PendingEcho(text: message);
+      _pendingEcho = PendingEcho(text: message);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     try {
@@ -339,7 +489,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() {
         _sending = false;
-        _pendingEcho = _PendingEcho(
+        _pendingEcho = PendingEcho(
           text: message,
           failed: true,
           error: userFacingError(error),
@@ -480,6 +630,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() => _retryingOperationId = null);
       _refresh();
+      _scrollToBottomSoon();
     } catch (error) {
       if (!mounted) return;
       setState(() => _retryingOperationId = null);
@@ -497,8 +648,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     }
     final requestId = _newRequestId('proposal-apply');
     setState(() => _sending = true);
+    // Move to where the progress will appear before the request even returns.
+    _scrollToBottomSoon();
     try {
-      final result = await ref
+      await ref
           .read(projectsRepositoryProvider)
           .applyEditProposal(
             projectId: widget.projectId,
@@ -508,12 +661,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() => _sending = false);
       ref.invalidate(projectChatProvider(widget.projectId));
+      ref.invalidate(projectStatusProvider(widget.projectId));
       ref.invalidate(billingProvider);
-      if (result.operation != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.operation!.displayAction)),
-        );
-      }
+      _scrollToBottomSoon();
     } catch (error) {
       if (!mounted) return;
       setState(() => _sending = false);
@@ -542,6 +692,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       if (!mounted) return;
       setState(() => _sending = false);
       ref.invalidate(projectChatProvider(widget.projectId));
+      _scrollToBottomSoon();
     } catch (error) {
       if (!mounted) return;
       setState(() => _sending = false);
@@ -558,13 +709,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     try {
       await ref
           .read(projectsRepositoryProvider)
-          .undoLastBookEdit(
-            projectId: widget.projectId,
-            requestId: requestId,
-          );
+          .undoLastBookEdit(projectId: widget.projectId, requestId: requestId);
       if (!mounted) return;
       setState(() => _undoing = false);
       _refresh();
+      _scrollToBottomSoon();
     } catch (error) {
       if (!mounted) return;
       setState(() => _undoing = false);
@@ -587,10 +736,45 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     _refresh();
   }
 
-  void _scrollToBottom() {
+  /// Whether the newest message is already in view.
+  ///
+  /// Used to decide between following the conversation and leaving someone who
+  /// has scrolled back where they are.
+  bool get _isNearBottom {
+    if (!_scrollController.hasClients) return true;
+    final position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels < 120;
+  }
+
+  void _followBottom() {
+    if (_isNearBottom) _scrollToBottomSoon();
+  }
+
+  /// Scrolls to the newest content once the frame that added it has laid out.
+  ///
+  /// Two passes, because a card arriving with the new content sizes itself
+  /// during that first layout: a single scroll aims at an extent that is about
+  /// to grow and stops just short of the bottom.
+  void _scrollToBottomSoon({bool animate = true}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollToBottom(animate: animate);
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _scrollToBottom(animate: animate),
+      );
+      WidgetsBinding.instance.scheduleFrame();
+    });
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  void _scrollToBottom({bool animate = true}) {
     if (!_scrollController.hasClients) return;
+    final target = _scrollController.position.maxScrollExtent;
+    if (!animate) {
+      _scrollController.jumpTo(target);
+      return;
+    }
     _scrollController.animateTo(
-      _scrollController.position.maxScrollExtent,
+      target,
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
     );
@@ -644,580 +828,17 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   }
 }
 
-class _ChatIntroCard extends StatelessWidget {
-  const _ChatIntroCard({this.project});
-
-  final MobileProjectDetail? project;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final status = project?.status;
-    final hint = status == 'plan_ready'
-        ? 'Ask questions or request plan changes. Plan edits use credits.'
-        : status == 'complete'
-        ? 'Ask questions or request edits to the latest generated book. Real edits show a credit price and need your confirmation before they run.'
-        : 'You can ask questions now. Editing unlocks after planning or generation reaches the right stage.';
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.auto_fix_high_outlined, color: colors.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Edit in chat',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(hint),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EmptyProjectChat extends StatelessWidget {
-  const _EmptyProjectChat();
-
-  @override
-  Widget build(BuildContext context) {
-    return const AppEmptyState(
-      title: 'No messages yet',
-      message:
-          'Ask “What should I improve?” or “Rewrite page 3 to sound warmer.”',
-      icon: Icons.chat_bubble_outline,
-    );
-  }
-}
-
-class _OperationBubble extends StatelessWidget {
-  const _OperationBubble({
-    required this.operation,
-    required this.retrying,
-    this.undoing = false,
-    this.onRetry,
-    this.onUndo,
-    this.onViewPlan,
+/// Operation bubbles placed against the transcript: [anchored] renders under the
+/// message that produced it, [unanchored] falls back to the end of the list.
+class _TranscriptOperations {
+  const _TranscriptOperations({
+    required this.anchored,
+    required this.unanchored,
   });
 
-  final MobileBookEditOperation operation;
-  final bool retrying;
-  final bool undoing;
-  final VoidCallback? onRetry;
-  final VoidCallback? onUndo;
-  final VoidCallback? onViewPlan;
+  final Map<String, List<MobileBookEditOperation>> anchored;
+  final List<MobileBookEditOperation> unanchored;
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final waitingForRetry = operation.isAutomaticRetryPending;
-    final failed = operation.isFailed && !waitingForRetry;
-    final applied = operation.isApplied && !failed;
-    return Card(
-      color: failed ? colors.errorContainer : colors.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                if (failed)
-                  Icon(Icons.error_outline, color: colors.onErrorContainer)
-                else if (applied)
-                  Icon(Icons.check_circle_outline, color: colors.primary)
-                else
-                  const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    failed && operation.isPlanRevision
-                        ? 'Plan revision failed. Your current plan is unchanged.'
-                        : operation.displayAction,
-                  ),
-                ),
-                if (operation.creditsCharged > 0)
-                  Text('${operation.creditsCharged} credits'),
-              ],
-            ),
-            if (failed || onUndo != null) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  if (onRetry != null)
-                    FilledButton.tonalIcon(
-                      onPressed: retrying ? null : onRetry,
-                      icon: retrying
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(
-                              operation.retryAvailable
-                                  ? Icons.refresh
-                                  : Icons.edit_outlined,
-                            ),
-                      label: Text(
-                        operation.retryAvailable
-                            ? operation.isPlanRevision
-                                  ? 'Retry revision'
-                                  : 'Retry update'
-                            : 'Edit request',
-                      ),
-                    ),
-                  if (onUndo != null)
-                    TextButton.icon(
-                      onPressed: undoing ? null : onUndo,
-                      icon: undoing
-                          ? const SizedBox.square(
-                              dimension: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.undo),
-                      label: const Text('Undo'),
-                    ),
-                  if (onViewPlan != null)
-                    TextButton.icon(
-                      onPressed: onViewPlan,
-                      icon: const Icon(Icons.article_outlined),
-                      label: const Text('View current plan'),
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The optimistic bubble for a message that is still in flight or has failed.
-class _PendingEchoBubble extends StatelessWidget {
-  const _PendingEchoBubble({
-    required this.echo,
-    required this.onRetry,
-    required this.onDismiss,
-  });
-
-  final _PendingEcho echo;
-  final VoidCallback onRetry;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final background = echo.failed ? colors.errorContainer : colors.primary;
-    final foreground = echo.failed ? colors.onErrorContainer : colors.onPrimary;
-    return Align(
-      alignment: Alignment.centerRight,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Flexible(
-                      child: Text(
-                        echo.text,
-                        style: TextStyle(color: foreground),
-                      ),
-                    ),
-                    if (!echo.failed) ...[
-                      const SizedBox(width: 8),
-                      SizedBox.square(
-                        dimension: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: foreground,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (echo.failed) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    echo.error ?? 'The message could not be sent.',
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: foreground),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 4,
-                    children: [
-                      TextButton(
-                        onPressed: onDismiss,
-                        child: Text(
-                          'Dismiss',
-                          style: TextStyle(color: foreground),
-                        ),
-                      ),
-                      FilledButton.tonalIcon(
-                        onPressed: onRetry,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ProjectMessageBubble extends StatelessWidget {
-  const _ProjectMessageBubble({
-    required this.message,
-    required this.editController,
-    required this.editing,
-    required this.submittingEdit,
-    required this.switchingBranch,
-    required this.onSwitchBranch,
-    required this.showProposalActions,
-    required this.sending,
-    this.onStartEdit,
-    this.onCancelEdit,
-    this.onSubmitEdit,
-    this.onOpenPaywall,
-    this.onOpenReplanCopy,
-    this.onApplyProposal,
-    this.onCancelProposal,
-  });
-
-  final MobileProjectChatMessage message;
-  final TextEditingController editController;
-  final bool editing;
-  final bool submittingEdit;
-  final bool switchingBranch;
-  final bool showProposalActions;
-  final bool sending;
-  final ValueChanged<String> onSwitchBranch;
-  final VoidCallback? onStartEdit;
-  final VoidCallback? onCancelEdit;
-  final VoidCallback? onSubmitEdit;
-  final VoidCallback? onOpenPaywall;
-  final VoidCallback? onOpenReplanCopy;
-  final VoidCallback? onApplyProposal;
-  final VoidCallback? onCancelProposal;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final isUser = message.isUser;
-    final branch = message.branch;
-    final manualEdit = message.isAssistant ? message.manualEdit : null;
-    final contentCard = message.isAssistant ? message.contentCard : null;
-    final editProposal = message.isAssistant ? message.editProposal : null;
-    final background = editing
-        ? colors.surfaceContainerHighest
-        : isUser
-        ? colors.primary
-        : colors.surfaceContainerHighest;
-    final foreground = editing
-        ? colors.onSurface
-        : isUser
-        ? colors.onPrimary
-        : colors.onSurface;
-    final bubble = MessageHoldFeedback(
-      onLongPressStart: (details) => showMessageActionsMenu(
-        context: context,
-        position: details.globalPosition,
-        message: message.content,
-        onEdit: isUser ? onStartEdit : null,
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(18),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (editing)
-                  _InlineMessageEditor(
-                    controller: editController,
-                    submitting: submittingEdit,
-                    onCancel: onCancelEdit,
-                    onSubmit: onSubmitEdit,
-                  )
-                else
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          message.content,
-                          style: TextStyle(color: foreground),
-                        ),
-                      ),
-                      if (isUser && onStartEdit != null) ...[
-                        const SizedBox(width: 4),
-                        IconButton(
-                          tooltip: 'Edit message',
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints(
-                            minWidth: 32,
-                            minHeight: 32,
-                          ),
-                          padding: EdgeInsets.zero,
-                          onPressed: onStartEdit,
-                          icon: Icon(
-                            Icons.edit_outlined,
-                            size: 18,
-                            color: foreground,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                if (branch != null) ...[
-                  const SizedBox(height: 8),
-                  BranchNavigator(
-                    branch: branch,
-                    foreground: foreground,
-                    switching: switchingBranch,
-                    onPrevious: () => onSwitchBranch('previous'),
-                    onNext: () => onSwitchBranch('next'),
-                  ),
-                ],
-                if (onOpenPaywall != null) ...[
-                  const SizedBox(height: 10),
-                  FilledButton.icon(
-                    onPressed: onOpenPaywall,
-                    icon: const Icon(Icons.add_card_outlined),
-                    label: const Text('Add credits'),
-                  ),
-                ],
-                if (onOpenReplanCopy != null) ...[
-                  const SizedBox(height: 10),
-                  ActionChip(
-                    avatar: const Icon(Icons.open_in_new_outlined, size: 18),
-                    label: const Text('Open the new book'),
-                    onPressed: onOpenReplanCopy,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    final extras = <Widget>[
-      if (contentCard != null)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: _StandaloneContentCard(card: contentCard),
-        ),
-      if (editProposal != null)
-        EditProposalCard(
-          proposal: editProposal,
-          enabled: !sending,
-          onApply: showProposalActions ? onApplyProposal : null,
-          onCancel: showProposalActions ? onCancelProposal : null,
-        ),
-      if (manualEdit != null) SavedExportCard(message: message),
-    ];
-    return Align(
-      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: extras.isEmpty
-          ? bubble
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [bubble, ...extras],
-            ),
-    );
-  }
-}
-
-class _StandaloneContentCard extends StatelessWidget {
-  const _StandaloneContentCard({required this.card});
-
-  final MobileChatContentCard card;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      constraints: BoxConstraints(
-        maxWidth: MediaQuery.sizeOf(context).width * 0.86,
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            card.title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          for (final section in card.sections.take(4)) ...[
-            const SizedBox(height: 8),
-            if (section.label.trim().isNotEmpty)
-              Text(
-                section.label,
-                style: Theme.of(context).textTheme.labelMedium,
-              ),
-            Text(section.body),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _InlineMessageEditor extends StatelessWidget {
-  const _InlineMessageEditor({
-    required this.controller,
-    required this.submitting,
-    this.onCancel,
-    this.onSubmit,
-  });
-
-  final TextEditingController controller;
-  final bool submitting;
-  final VoidCallback? onCancel;
-  final VoidCallback? onSubmit;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: controller,
-          autofocus: true,
-          minLines: 1,
-          maxLines: 6,
-          textInputAction: TextInputAction.newline,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Wrap(
-          alignment: WrapAlignment.end,
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            TextButton(
-              onPressed: submitting ? null : onCancel,
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              onPressed: submitting ? null : onSubmit,
-              icon: submitting
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send_outlined),
-              label: const Text('Save & Submit'),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _ProjectChatComposer extends StatelessWidget {
-  const _ProjectChatComposer({
-    required this.controller,
-    required this.sending,
-    required this.onSend,
-  });
-
-  final TextEditingController controller;
-  final bool sending;
-  final VoidCallback onSend;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return SafeArea(
-      top: false,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          border: Border(top: BorderSide(color: colors.outlineVariant)),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  minLines: 1,
-                  maxLines: 5,
-                  textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(
-                    hintText: 'Ask or request an edit…',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: sending ? null : onSend,
-                child: sending
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send_outlined),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  List<MobileBookEditOperation> anchoredTo(String messageId) =>
+      anchored[messageId] ?? const [];
 }

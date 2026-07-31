@@ -13,11 +13,30 @@ import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
-class ProjectsHomeScreen extends ConsumerWidget {
+class ProjectsHomeScreen extends ConsumerStatefulWidget {
   const ProjectsHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProjectsHomeScreen> createState() => _ProjectsHomeScreenState();
+}
+
+class _ProjectsHomeScreenState extends ConsumerState<ProjectsHomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // [projectsProvider] is cached for the whole session, so entering the
+    // library shows the books we already know and refreshes them underneath
+    // rather than replacing the list with a spinner. Deferred past the first
+    // frame because invalidating mid-build marks the ProviderScope dirty.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (ref.read(projectsProvider).isLoading) return;
+      ref.invalidate(projectsProvider);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final session = ref.watch(authControllerProvider).asData?.value;
     final projects = ref.watch(projectsProvider);
     final billing = ref.watch(billingProvider);
@@ -34,7 +53,7 @@ class ProjectsHomeScreen extends ConsumerWidget {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: () => _refresh(ref),
+        onRefresh: _refresh,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(18, 8, 18, 32),
@@ -77,7 +96,7 @@ class ProjectsHomeScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _refresh(WidgetRef ref) async {
+  Future<void> _refresh() async {
     ref.invalidate(projectsProvider);
     ref.invalidate(billingProvider);
     await Future.wait([
@@ -651,6 +670,7 @@ class ProjectHomeAction {
     required this.buttonIcon,
     this.needsUserAction = false,
     this.opensProgress = false,
+    this.opensReader = false,
     this.showProgress = false,
   });
 
@@ -663,10 +683,15 @@ class ProjectHomeAction {
   final IconData buttonIcon;
   final bool needsUserAction;
   final bool opensProgress;
+  final bool opensReader;
   final bool showProgress;
 
   String pathFor(MobileProjectSummary project) {
-    final suffix = opensProgress ? '/handoff' : '';
+    final suffix = opensReader
+        ? '/read'
+        : opensProgress
+        ? '/handoff'
+        : '';
     return '/projects/${project.id}$suffix';
   }
 
@@ -703,16 +728,18 @@ class ProjectHomeAction {
     }
 
     if (status == 'complete' || project.hasReadyExport) {
+      // A finished book's first affordance is reading it. Downloading and
+      // sharing stay one long-press away in the book actions menu.
       return const ProjectHomeAction(
         priority: 3,
-        statusLabel: 'Exports ready',
-        nextAction: 'Download or share',
-        detail: 'Your finished files are ready to open from progress.',
-        buttonLabel: 'Open exports',
-        icon: Icons.download_done_outlined,
-        buttonIcon: Icons.download_outlined,
+        statusLabel: 'Ready to read',
+        nextAction: 'Read your book',
+        detail: 'Open it in the reader, or download and share it.',
+        buttonLabel: 'Read book',
+        icon: Icons.auto_stories_outlined,
+        buttonIcon: Icons.auto_stories_outlined,
         needsUserAction: true,
-        opensProgress: true,
+        opensReader: true,
         showProgress: true,
       );
     }

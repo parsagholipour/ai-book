@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  CREDIT_COSTS,
   PROVIDER_COST_ASSUMPTIONS_USD,
   buildMarginEstimate,
   estimateFullBookCreditCost,
@@ -8,6 +7,7 @@ import {
   estimateProviderCostForProject,
   providerCostAssumptionsForInput
 } from "./billing.js";
+import { DEFAULT_CREDIT_COSTS } from "./creditPricing.js";
 import { createProjectSchema } from "./schemas/book.js";
 
 describe("billing credit assumptions", () => {
@@ -36,7 +36,7 @@ describe("billing credit assumptions", () => {
       expect.arrayContaining([
         expect.objectContaining({ code: "FULL_BOOK_GENERATION", credits: 574 }),
         expect.objectContaining({ code: "IMAGE_GENERATION", quantity: 6, credits: 270 }),
-        expect.objectContaining({ code: "EXPORT_UNLOCK", credits: CREDIT_COSTS.exportUnlock })
+        expect.objectContaining({ code: "EXPORT_UNLOCK", credits: DEFAULT_CREDIT_COSTS.exportUnlock })
       ])
     );
   });
@@ -64,7 +64,7 @@ describe("billing credit assumptions", () => {
 
     expect(estimate.assumptions.includesPremiumReview).toBe(true);
     expect(estimate.lineItems).toContainEqual(
-      expect.objectContaining({ code: "PREMIUM_REVIEW", credits: CREDIT_COSTS.premiumReview })
+      expect.objectContaining({ code: "PREMIUM_REVIEW", credits: DEFAULT_CREDIT_COSTS.premiumReview })
     );
   });
 

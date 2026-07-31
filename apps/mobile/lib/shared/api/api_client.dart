@@ -143,13 +143,26 @@ class ApiClient {
     return _request('DELETE', path, data: data, requiresAuth: requiresAuth);
   }
 
-  Future<void> downloadFile(String path, String savePath) async {
+  /// Downloads [path] to [savePath].
+  ///
+  /// [onReceiveProgress] reports bytes received; its `total` is -1 when the
+  /// response carries no Content-Length. [cancelToken] lets a caller abandon a
+  /// download it no longer needs — the reader cancels when the screen closes
+  /// mid-download.
+  Future<void> downloadFile(
+    String path,
+    String savePath, {
+    ProgressCallback? onReceiveProgress,
+    CancelToken? cancelToken,
+  }) async {
     final accessToken = await _validAccessToken();
     try {
       await dio.download(
         path,
         savePath,
         options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+        onReceiveProgress: onReceiveProgress,
+        cancelToken: cancelToken,
       );
     } on DioException catch (error) {
       if (error.response?.statusCode == 401) {
@@ -160,6 +173,8 @@ class ApiClient {
           options: Options(
             headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
           ),
+          onReceiveProgress: onReceiveProgress,
+          cancelToken: cancelToken,
         );
         return;
       }

@@ -292,14 +292,25 @@ export function resetMobileHarness(): void {
     }
     return include ? record : { ...record, generationJob: undefined };
   });
-  mockPrisma.bookEditOperation.findMany.mockImplementation(async ({ where, orderBy, take }: { where: { projectId: string }; orderBy?: { createdAt: "asc" | "desc" }; take?: number }) => {
+  mockPrisma.bookEditOperation.findMany.mockImplementation(async ({ where, orderBy, take, include }: { where: { projectId: string }; orderBy?: { createdAt: "asc" | "desc" }; take?: number; include?: Record<string, any> }) => {
     const rows = state.bookEditOperations.filter((operation) => operation.projectId === where.projectId);
     const sorted = [...rows].sort((a, b) =>
       orderBy?.createdAt === "asc"
         ? a.createdAt.getTime() - b.createdAt.getTime()
         : b.createdAt.getTime() - a.createdAt.getTime()
     );
-    return typeof take === "number" ? sorted.slice(0, take) : sorted;
+    const page = typeof take === "number" ? sorted.slice(0, take) : sorted;
+    if (!include?._count?.select?.snapshots) {
+      return page;
+    }
+    return page.map((operation) => ({
+      ...operation,
+      _count: {
+        snapshots:
+          operation._count?.snapshots ??
+          state.pageEditSnapshots.filter((snapshot) => snapshot.operationId === operation.id).length
+      }
+    }));
   });
   mockPrisma.bookEditOperation.findUnique.mockImplementation(async ({ where }: { where: { id?: string } }) =>
     state.bookEditOperations.find((operation) => operation.id === where.id) ?? null
@@ -313,18 +324,28 @@ export function resetMobileHarness(): void {
     if (automaticRetryCount?.increment) record.automaticRetryCount += automaticRetryCount.increment;
     return { count: 1 };
   });
-  mockPrisma.bookEditOperation.findFirst.mockImplementation(async ({ where }: { where: Record<string, any> }) =>
-    state.bookEditOperations.find(
-      (operation) =>
-        (where.projectId === undefined || operation.projectId === where.projectId) &&
-        (typeof where.id !== "string" || operation.id === where.id) &&
-        (where.id?.not === undefined || operation.id !== where.id.not) &&
-        (where.userMessageId === undefined || operation.userMessageId === where.userMessageId) &&
-        (where.kind === undefined || operation.kind === where.kind) &&
-        (typeof where.status !== "string" || operation.status === where.status) &&
-        (where.status?.in === undefined || where.status.in.includes(operation.status))
-    ) ?? null
-  );
+  mockPrisma.bookEditOperation.findFirst.mockImplementation(async ({ where, include }: { where: Record<string, any>; include?: Record<string, any> }) => {
+    const operation =
+      state.bookEditOperations.find(
+        (operation) =>
+          (where.projectId === undefined || operation.projectId === where.projectId) &&
+          (typeof where.id !== "string" || operation.id === where.id) &&
+          (where.id?.not === undefined || operation.id !== where.id.not) &&
+          (where.userMessageId === undefined || operation.userMessageId === where.userMessageId) &&
+          (where.kind === undefined || operation.kind === where.kind) &&
+          (typeof where.status !== "string" || operation.status === where.status) &&
+          (where.status?.in === undefined || where.status.in.includes(operation.status))
+      ) ?? null;
+    if (!operation || !include?.snapshots) {
+      return operation;
+    }
+    return {
+      ...operation,
+      snapshots: state.pageEditSnapshots
+        .filter((snapshot) => snapshot.operationId === operation.id)
+        .sort((a, b) => a.pageIndex - b.pageIndex)
+    };
+  });
   mockPrisma.mobileCreationOutput.create.mockImplementation(async ({ data, include }: { data: Record<string, any>; include?: unknown }) => ({
     id: `output-${data.projectId}`,
     draftId: data.draftId,
@@ -436,6 +457,7 @@ export function projectRecord(overrides: Record<string, unknown> = {}) {
       }
     },
     status: "DRAFT",
+    contentRevision: 0,
     templateId: null,
     currentPlanId: null,
     currentPlan: null,
@@ -503,6 +525,37 @@ export function approvedPlanRecord(overrides: Record<string, unknown> = {}) {
     createdAt: new Date("2026-06-15T10:00:00.000Z"),
     updatedAt: new Date("2026-06-15T10:00:00.000Z"),
     approvedAt: new Date("2026-06-15T10:05:00.000Z"),
+    ...overrides
+  };
+}
+
+/** An applied page edit — the kind that snapshots pages and can be reviewed. */
+export function appliedEditOperationRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "operation-applied",
+    projectId: "project-1",
+    userMessageId: "chat-user-1",
+    assistantMessageId: "chat-assistant-1",
+    generationJobId: null,
+    ledgerEntryId: null,
+    kind: "LOCAL_PATCH",
+    status: "APPLIED",
+    requestId: "edit-request-1",
+    automaticRetryCount: 0,
+    automaticRetryLimit: 2,
+    nextRetryAt: null,
+    lastRetryAt: null,
+    lastRetryReason: null,
+    retryRequestId: null,
+    request: 'On page 1, replace "night" with "day".',
+    classifier: {},
+    affectedPageIndexes: [1],
+    creditsCharged: 35,
+    error: null,
+    generationJob: null,
+    createdAt: new Date("2026-06-15T13:10:00.000Z"),
+    updatedAt: new Date("2026-06-15T13:11:00.000Z"),
+    appliedAt: new Date("2026-06-15T13:11:00.000Z"),
     ...overrides
   };
 }

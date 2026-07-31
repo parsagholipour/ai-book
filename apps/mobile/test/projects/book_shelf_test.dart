@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
@@ -95,10 +96,58 @@ void main() {
     await tester.longPress(find.byType(BookCover));
     await tester.pumpAndSettle();
 
+    expect(find.text('Go to chat'), findsOneWidget);
     expect(find.text('Open PDF'), findsOneWidget);
     expect(find.text('Open EPUB'), findsOneWidget);
     expect(find.text('Share PDF'), findsOneWidget);
     expect(find.text('Share EPUB'), findsOneWidget);
+  });
+
+  testWidgets('Go to chat opens the selected book chat', (tester) async {
+    final router = GoRouter(
+      initialLocation: '/',
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) =>
+              const Scaffold(body: SizedBox(width: 400, child: BookShelf())),
+        ),
+        GoRoute(
+          path: '/projects/:id/chat',
+          builder: (context, state) =>
+              Text('Chat for ${state.pathParameters['id']}'),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          projectsProvider.overrideWith(
+            (ref) async => [
+              shelfProject(
+                id: 'selected-book',
+                title: 'Selected Book',
+                status: 'generating',
+                hasPlan: true,
+                progressPercent: 40,
+              ),
+            ],
+          ),
+          billingProvider.overrideWith((ref) async => billingWith(900)),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(BookCover));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Go to chat'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chat for selected-book'), findsOneWidget);
   });
 
   testWidgets('formats that are not compiled yet are held but disabled', (
@@ -120,7 +169,10 @@ void main() {
     await tester.longPress(find.byType(BookCover));
     await tester.pumpAndSettle();
 
-    // Still four entries, so the menu does not change shape mid-generation.
+    // Export entries do not change shape mid-generation, while chat stays
+    // available so the user can continue working on the book.
+    expect(find.text('Go to chat'), findsOneWidget);
+    expect(find.text('Read in Tomeza — preparing'), findsOneWidget);
     expect(find.text('Open PDF — preparing'), findsOneWidget);
     expect(find.text('Open EPUB — preparing'), findsOneWidget);
     expect(find.text('Share PDF — preparing'), findsOneWidget);
@@ -130,7 +182,11 @@ void main() {
     // can be tapped into a dead end.
     expect(
       find.byWidgetPredicate((w) => w is PopupMenuItem && !w.enabled),
-      findsNWidgets(4),
+      findsNWidgets(5),
+    );
+    expect(
+      find.byWidgetPredicate((w) => w is PopupMenuItem && w.enabled),
+      findsOneWidget,
     );
   });
 
@@ -170,9 +226,77 @@ void main() {
     await tester.longPress(find.byType(BookCover));
     await tester.pumpAndSettle();
 
-    // One lock for Open PDF and one for Share PDF.
-    expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
+    // One lock each for Read, Open PDF and Share PDF — reading downloads
+    // through the same entitlement-gated route as the other two.
+    expect(find.byIcon(Icons.lock_outline), findsNWidgets(3));
   });
+
+  testWidgets('reopening the shelf paints known books before refetching', (
+    tester,
+  ) async {
+    final repository = _CountingProjectsRepository([
+      shelfProject(
+        id: 'done',
+        title: 'Finished Book',
+        status: 'complete',
+        hasPlan: true,
+        exportsReady: true,
+      ),
+    ]);
+    // One list, so remounting updates the same ProviderScope instead of
+    // building a fresh container and hiding the cache we are testing.
+    final overrides = [
+      projectsRepositoryProvider.overrideWithValue(repository),
+      billingProvider.overrideWith((ref) async => billingWith(900)),
+    ];
+    Widget app({required bool shelfMounted}) => ProviderScope(
+      overrides: overrides,
+      child: MaterialApp(
+        home: Scaffold(
+          body: shelfMounted
+              ? const SizedBox(width: 400, child: BookShelf())
+              : const SizedBox.shrink(),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(app(shelfMounted: true));
+    await tester.pumpAndSettle();
+    expect(find.byType(BookCover), findsOneWidget);
+    expect(repository.listCalls, 1);
+
+    // Closing the drawer unmounts the shelf.
+    await tester.pumpWidget(app(shelfMounted: false));
+    await tester.pumpAndSettle();
+    expect(find.byType(BookCover), findsNothing);
+
+    // Reopening it must not blank out first: the cover is there on the very
+    // first frame, before the refresh this mount kicks off comes back.
+    await tester.pumpWidget(app(shelfMounted: true));
+    expect(find.byType(BookCover), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.byType(BookCover), findsOneWidget);
+    expect(repository.listCalls, 2);
+  });
+}
+
+class _CountingProjectsRepository implements ProjectsRepository {
+  _CountingProjectsRepository(this.projects);
+
+  final List<MobileProjectSummary> projects;
+  int listCalls = 0;
+
+  @override
+  Future<List<MobileProjectSummary>> listProjects() async {
+    listCalls += 1;
+    return projects;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    return super.noSuchMethod(invocation);
+  }
 }
 
 Widget shelfTestApp(List<MobileProjectSummary> projects, {int credits = 900}) {

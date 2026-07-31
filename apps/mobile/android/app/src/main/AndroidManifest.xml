@@ -1,5 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Live character voice calls. MODIFY_AUDIO_SETTINGS lets the call take the
+         voice-communication audio path, which is what the echo canceller uses. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
 
     <application
         android:label="Tomeza"

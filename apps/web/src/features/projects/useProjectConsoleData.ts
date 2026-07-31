@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router";
 import {
   apiGet,
   apiPost,
@@ -17,13 +18,26 @@ import {
 import { normalizeProjectStatus } from "../../jobsDisplay.js";
 import { readError } from "../shared/formatters.js";
 import { VOICE_CHARACTER_JOB_TYPES } from "./actionKeys.js";
-import { projectIdFromCurrentPath, SELECTED_PROJECT_STORAGE_KEY, syncProjectPath } from "./routing.js";
+import { projectPath, SELECTED_PROJECT_STORAGE_KEY } from "./routing.js";
 
 export function useProjectConsoleData(args: { authenticated: boolean | undefined }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(() => projectIdFromCurrentPath());
+
+  // The URL is the selection. Keeping a second copy in state was what made the
+  // old hand-rolled pushState necessary, and a router cannot see a bare
+  // pushState — so the address bar and the router's idea of it would drift.
+  const navigate = useNavigate();
+  const { projectId } = useParams();
+  const selectedId = projectId ?? null;
+  const setSelectedId = useCallback(
+    (id: string | null, options?: { replace?: boolean }) => {
+      navigate(id ? projectPath(id) : "/", { replace: options?.replace ?? false });
+    },
+    [navigate]
+  );
+
   const [detailsByProjectId, setDetailsByProjectId] = useState<Record<string, ProjectDetails>>({});
   const [statusByProjectId, setStatusByProjectId] = useState<Record<string, ProjectStatus>>({});
   const [bookMarkdownByProjectId, setBookMarkdownByProjectId] = useState<Record<string, string>>({});
@@ -48,12 +62,6 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
     : "";
 
   useEffect(() => {
-    const handlePopState = () => setSelectedId(projectIdFromCurrentPath());
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-
-  useEffect(() => {
     if (args.authenticated) {
       void refreshAll();
     }
@@ -61,10 +69,8 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
 
   useEffect(() => {
     if (!selectedId) {
-      syncProjectPath(null);
       return;
     }
-    syncProjectPath(selectedId);
     localStorage.setItem(SELECTED_PROJECT_STORAGE_KEY, selectedId);
     if (!args.authenticated) {
       return;
@@ -151,7 +157,9 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
         (selectedId && projectData.some((project) => project.id === selectedId) ? selectedId : null) ??
         (storedId && projectData.some((project) => project.id === storedId) ? storedId : null) ??
         projectData[0]!.id;
-      setSelectedId(nextId);
+      // Replace, not push: restoring the last selection on load must not leave
+      // "/" in the history, or Back lands there and restores forward again.
+      setSelectedId(nextId, { replace: true });
     } catch (refreshError) {
       setError(readError(refreshError));
     }
@@ -159,7 +167,7 @@ export function useProjectConsoleData(args: { authenticated: boolean | undefined
 
   function clearProjectData() {
     setProjects([]);
-    setSelectedId(null);
+    setSelectedId(null, { replace: true });
     setDetailsByProjectId({});
     setStatusByProjectId({});
     setBookMarkdownByProjectId({});

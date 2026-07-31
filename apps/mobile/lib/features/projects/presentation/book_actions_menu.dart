@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../voice/presentation/character_cast_sheet.dart';
 import '../domain/project_models.dart';
 import 'project_export_actions.dart';
 
-enum _BookAction { openPdf, openEpub, sharePdf, shareEpub }
+enum _BookAction { chat, call, read, openPdf, openEpub, sharePdf, shareEpub }
 
 /// Long-press menu for a book on the shelf.
 ///
@@ -41,6 +43,45 @@ Future<void> showBookActionsMenu({
       Offset.zero & overlay.size,
     ),
     items: [
+      const PopupMenuItem<_BookAction>(
+        value: _BookAction.chat,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat_bubble_outline),
+            SizedBox(width: 12),
+            Flexible(
+              child: Text('Go to chat', overflow: TextOverflow.ellipsis),
+            ),
+          ],
+        ),
+      ),
+      // Characters only exist for a finished book, so unlike the export items
+      // this one is hidden rather than disabled: there is nothing to promise.
+      if (project.status == 'complete')
+        const PopupMenuItem<_BookAction>(
+          value: _BookAction.call,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.record_voice_over_outlined),
+              SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  'Talk to characters',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      _bookActionItem(
+        value: _BookAction.read,
+        icon: Icons.auto_stories_outlined,
+        label: 'Read in Tomeza',
+        export: pdf,
+        credits: credits,
+      ),
       _bookActionItem(
         value: _BookAction.openPdf,
         icon: Icons.picture_as_pdf_outlined,
@@ -74,9 +115,26 @@ Future<void> showBookActionsMenu({
 
   if (action == null || !context.mounted) return;
 
+  // Chat is available throughout the book lifecycle and is unrelated to
+  // export readiness or unlock credits.
+  if (action == _BookAction.chat) {
+    context.push('/projects/${project.id}/chat');
+    return;
+  }
+
+  // Calls are metered per minute by the call screen itself, so they do not go
+  // through the export unlock check below.
+  if (action == _BookAction.call) {
+    await showCharacterCastSheet(context: context, projectId: project.id);
+    return;
+  }
+
   final export = switch (action) {
-    _BookAction.openPdf || _BookAction.sharePdf => pdf,
+    _BookAction.read || _BookAction.openPdf || _BookAction.sharePdf => pdf,
     _BookAction.openEpub || _BookAction.shareEpub => epub,
+    _BookAction.chat || _BookAction.call => throw StateError(
+      'Chat and calls are handled before export actions',
+    ),
   };
 
   // Same rule the export panel uses: a locked export still goes through when
@@ -95,6 +153,14 @@ Future<void> showBookActionsMenu({
   }
 
   switch (action) {
+    case _BookAction.chat:
+    case _BookAction.call:
+      // Handled above because neither requires an export.
+      return;
+    case _BookAction.read:
+      // The reader downloads through the same entitlement-gated route, so a
+      // covered unlock is spent there exactly as it would be by "Open PDF".
+      context.push('/projects/${project.id}/read');
     case _BookAction.openPdf:
     case _BookAction.openEpub:
       await openProjectExport(

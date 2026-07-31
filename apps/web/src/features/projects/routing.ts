@@ -1,26 +1,16 @@
 export const SELECTED_PROJECT_STORAGE_KEY = "ai-book-maker:selected-project-id";
 
-export function projectIdFromCurrentPath(): string | null {
-  return projectIdFromPath(window.location.pathname);
+/**
+ * The console's project route.
+ *
+ * React Router owns reading the id back out (`useParams`); this exists only so
+ * the encoding is written once. Ids come out of the router already decoded, so
+ * nothing should decode them a second time.
+ */
+export function projectPath(projectId: string): string {
+  return `/projects/${encodeURIComponent(projectId)}`;
 }
 
-export function projectIdFromPath(pathname: string): string | null {
-  const match = /^\/projects\/([^/]+)\/?$/.exec(pathname);
-  if (!match) {
-    return null;
-  }
-
-  try {
-    return decodeURIComponent(match[1]!);
-  } catch {
-    return match[1]!;
-  }
-}
-
-export function syncProjectPath(projectId: string | null): void {
-  const nextPath = projectId ? `/projects/${encodeURIComponent(projectId)}` : "/";
-  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-  if (currentPath !== nextPath) {
-    window.history.pushState(null, "", nextPath);
-  }
-}
+export const ADMIN_PATH = "/admin";
+/** Kept as a redirect into the dashboard: it was a real URL before the tabs existed. */
+export const PRICING_PATH = "/pricing";

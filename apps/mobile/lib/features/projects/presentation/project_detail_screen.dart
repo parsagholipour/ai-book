@@ -9,6 +9,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../reader/data/reader_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'book_cover.dart';
@@ -260,6 +261,11 @@ class _ProjectDetailScreenState extends ConsumerState<ProjectDetailScreen> {
     setState(() => _busyAction = 'delete');
     try {
       await ref.read(projectsRepositoryProvider).deleteProject(project.id);
+      // The reader keeps the downloaded PDF, the reading position and the
+      // reader's own markup on the device. Deleting the book on the server and
+      // leaving all of that behind would be the one part of "removes its
+      // generated files" that was not true — and markup is the part they wrote.
+      await ref.read(readerRepositoryProvider).clearProject(project.id);
       ref.invalidate(projectsProvider);
       ref.invalidate(projectDetailProvider(project.id));
       if (!mounted) {

@@ -7,14 +7,17 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { loadCreditPricing, prisma } from "@book-maker/db";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
 import { mobileImportRoutes } from "./mobileImports.js";
 import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
+import { sweepStaleVoiceCalls } from "./mobile/voiceCalls.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
+import { adminAnalyticsRoutes } from "./routes/adminAnalytics.js";
+import { adminPricingRoutes } from "./routes/adminPricing.js";
 import { projectRoutes } from "./routes/projects.js";
 
 const config = loadConfig();
@@ -57,6 +60,38 @@ await sweepAttachments();
 const attachmentSweepTimer = setInterval(() => void sweepAttachments(), 24 * 60 * 60 * 1000);
 attachmentSweepTimer.unref();
 
+// A voice call holds credits while it runs. An app killed mid-call stops
+// heartbeating without ever ending the call, so the hold has to be released for
+// it — and the time it did use charged — or the credits stay stuck.
+const sweepVoiceCalls = async () => {
+  try {
+    const settled = await sweepStaleVoiceCalls();
+    if (settled > 0) {
+      app.log.info({ event: "voice.calls_settled", settled }, "Stale voice calls settled");
+    }
+  } catch (error) {
+    app.log.warn({ err: error }, "Voice call settlement sweep failed");
+  }
+};
+await sweepVoiceCalls();
+const voiceCallSweepTimer = setInterval(() => void sweepVoiceCalls(), 30_000);
+voiceCallSweepTimer.unref();
+
+// Credit prices are operator-editable and live in the database. Load them before
+// anything can be charged, then re-read on a timer so a second API instance
+// picks up a change made through the first.
+const refreshPricing = async () => {
+  try {
+    await loadCreditPricing();
+  } catch (error) {
+    // The in-memory prices stay as they are — stale beats unpriced.
+    app.log.warn({ err: error, event: "pricing.refresh_failed" }, "Credit pricing refresh failed");
+  }
+};
+await refreshPricing();
+const pricingRefreshTimer = setInterval(() => void refreshPricing(), 15_000);
+pricingRefreshTimer.unref();
+
 const reconcileQueue = async () => {
   try {
     const [dispatched, retried] = await Promise.all([
@@ -92,6 +127,8 @@ await app.register(mobileAuthRoutes);
 await app.register(mobileProjectRoutes);
 await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);
+await app.register(adminPricingRoutes);
+await app.register(adminAnalyticsRoutes);
 await app.register(projectRoutes);
 
 const webDistDir = findWebDistDir();
@@ -112,6 +149,8 @@ if (webDistDir) {
 
 const shutdown = async () => {
   clearInterval(attachmentSweepTimer);
+  clearInterval(voiceCallSweepTimer);
+  clearInterval(pricingRefreshTimer);
   clearInterval(queueReconcileTimer);
   await app.close();
   await closeQueue();

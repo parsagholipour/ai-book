@@ -304,7 +304,12 @@ export async function generateBookPdf(
       ...(options.outputPath ? { dest: options.outputPath } : {}),
       pdf_options: {
         format: "a4",
-        printBackground: true
+        printBackground: true,
+        // Chapter and page headings become PDF bookmarks, which is what the
+        // mobile reader's table of contents navigates by. Books compiled
+        // before this was added have no outline; the reader falls back to the
+        // Contents page links.
+        outline: true
       },
       css,
       launch_options: {

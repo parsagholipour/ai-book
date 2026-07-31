@@ -1,23 +1,8 @@
+import { type CreditPricing, creditPricing } from "./creditPricing.js";
 import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
 
 export const CREDIT_USD_VALUE = 0.01;
 export const STANDARD_EXPORT_CREDIT_AMOUNT = 1_000;
-
-export const CREDIT_COSTS = {
-  planGeneration: 0,
-  previewGeneration: 0,
-  fullBookBase: 350,
-  fullBookPerPage: 8,
-  imageGeneration: 45,
-  coverRegeneration: 120,
-  premiumReview: 200,
-  exportUnlock: 150,
-  planRevision: 40,
-  bookTextEditBase: 25,
-  bookTextEditPerPage: 10,
-  pageRegenerationPerPage: 80,
-  bookReplanBase: 120
-} as const;
 
 export const PROVIDER_COST_ASSUMPTIONS_USD = {
   textBase: 0.08,
@@ -115,6 +100,7 @@ export type BillingOperation =
   | "BOOK_TEXT_EDIT"
   | "PAGE_REGENERATION"
   | "BOOK_REPLAN"
+  | "VOICE_CALL_MINUTE"
   | "PURCHASE_CREDIT_GRANT"
   | "SUBSCRIPTION_CREDIT_GRANT"
   | "ADMIN_GRANT";
@@ -157,30 +143,37 @@ export type MarginEstimate = {
   actualMarginPercent: number | null;
 };
 
-export function creditCostForOperation(operation: BillingOperation): number {
+/**
+ * `pricing` defaults to the live snapshot. Pass it explicitly only to price
+ * against values that are not (or not yet) in effect — the pricing dashboard's
+ * preview does exactly that, which is why the parameter exists at all.
+ */
+export function creditCostForOperation(operation: BillingOperation, pricing: CreditPricing = creditPricing()): number {
   switch (operation) {
     case "PLAN_GENERATION":
-      return CREDIT_COSTS.planGeneration;
+      return pricing.planGeneration;
     case "PREVIEW_GENERATION":
-      return CREDIT_COSTS.previewGeneration;
+      return pricing.previewGeneration;
     case "IMAGE_GENERATION":
-      return CREDIT_COSTS.imageGeneration;
+      return pricing.imageGeneration;
     case "COVER_REGENERATION":
-      return CREDIT_COSTS.coverRegeneration;
+      return pricing.coverRegeneration;
     case "PREMIUM_REVIEW":
-      return CREDIT_COSTS.premiumReview;
+      return pricing.premiumReview;
     case "EXPORT_UNLOCK":
-      return CREDIT_COSTS.exportUnlock;
+      return pricing.exportUnlock;
     case "PLAN_REVISION":
-      return CREDIT_COSTS.planRevision;
+      return pricing.planRevision;
     case "BOOK_TEXT_EDIT":
-      return CREDIT_COSTS.bookTextEditBase;
+      return pricing.bookTextEditBase;
     case "PAGE_REGENERATION":
-      return CREDIT_COSTS.pageRegenerationPerPage;
+      return pricing.pageRegenerationPerPage;
     case "BOOK_REPLAN":
-      return CREDIT_COSTS.bookReplanBase;
+      return pricing.bookReplanBase;
+    case "VOICE_CALL_MINUTE":
+      return pricing.voiceCallPerMinute;
     case "FULL_BOOK_GENERATION":
-      return CREDIT_COSTS.fullBookBase;
+      return pricing.fullBookBase;
     case "PURCHASE_CREDIT_GRANT":
     case "SUBSCRIPTION_CREDIT_GRANT":
     case "ADMIN_GRANT":
@@ -190,40 +183,44 @@ export function creditCostForOperation(operation: BillingOperation): number {
   }
 }
 
-export function estimateFullBookCreditCost(input: CreateProjectInput): CreditCostEstimate {
+/** See {@link creditCostForOperation} for why `pricing` is a parameter. */
+export function estimateFullBookCreditCost(
+  input: CreateProjectInput,
+  pricing: CreditPricing = creditPricing()
+): CreditCostEstimate {
   const estimatedInteriorImages = estimateInteriorImageCount(input);
-  const fullBookCredits = CREDIT_COSTS.fullBookBase + input.targetPages * CREDIT_COSTS.fullBookPerPage;
-  const imageCredits = estimatedInteriorImages * CREDIT_COSTS.imageGeneration;
+  const fullBookCredits = pricing.fullBookBase + input.targetPages * pricing.fullBookPerPage;
+  const imageCredits = estimatedInteriorImages * pricing.imageGeneration;
   const includesPremiumReview = isPremiumProject(input);
-  const premiumCredits = includesPremiumReview ? CREDIT_COSTS.premiumReview : 0;
+  const premiumCredits = includesPremiumReview ? pricing.premiumReview : 0;
   const lineItems: CreditLineItem[] = [
     {
       code: "FULL_BOOK_GENERATION",
       label: "Full book generation",
       quantity: input.targetPages,
-      unitCredits: CREDIT_COSTS.fullBookPerPage,
+      unitCredits: pricing.fullBookPerPage,
       credits: fullBookCredits
     },
     {
       code: "IMAGE_GENERATION",
       label: "Interior image generation",
       quantity: estimatedInteriorImages,
-      unitCredits: CREDIT_COSTS.imageGeneration,
+      unitCredits: pricing.imageGeneration,
       credits: imageCredits
     },
     {
       code: "PREMIUM_REVIEW",
       label: "Premium review",
       quantity: includesPremiumReview ? 1 : 0,
-      unitCredits: CREDIT_COSTS.premiumReview,
+      unitCredits: pricing.premiumReview,
       credits: premiumCredits
     },
     {
       code: "EXPORT_UNLOCK",
       label: "PDF/EPUB export unlock",
       quantity: 1,
-      unitCredits: CREDIT_COSTS.exportUnlock,
-      credits: CREDIT_COSTS.exportUnlock
+      unitCredits: pricing.exportUnlock,
+      credits: pricing.exportUnlock
     }
   ];
 
