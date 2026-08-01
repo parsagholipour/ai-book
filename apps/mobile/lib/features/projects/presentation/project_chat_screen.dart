@@ -480,7 +480,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
         _pendingEcho = null;
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-      if (result.operation != null) {
+      if (result.operation != null && !result.operation!.isPlanRevision) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result.operation!.currentAction)),
         );
@@ -553,7 +553,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
         _editController.clear();
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-      if (result.operation != null) {
+      if (result.operation != null && !result.operation!.isPlanRevision) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(result.operation!.currentAction)),
         );

@@ -1056,9 +1056,13 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       });
       if (result.operation != null) {
         _startPlanPoll();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.operation!.displayAction)),
-        );
+        // Plan revision already surfaces in the transcript and plan footer;
+        // a toast would just duplicate that.
+        if (!result.operation!.isPlanRevision) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result.operation!.displayAction)),
+          );
+        }
       }
       return result;
     } catch (error) {
