@@ -10,6 +10,8 @@ import { loadConfig } from "@book-maker/core";
 import { loadCreditPricing, prisma } from "@book-maker/db";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
+import { createGooglePlayVerifierFromConfig } from "./googlePlayBilling.js";
+import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
 import { mobileImportRoutes } from "./mobileImports.js";
 import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
@@ -91,6 +93,29 @@ const refreshPricing = async () => {
 await refreshPricing();
 const pricingRefreshTimer = setInterval(() => void refreshPricing(), 15_000);
 pricingRefreshTimer.unref();
+
+// Google renews subscriptions on its own schedule and only the app finding out
+// used to trigger the next month's credits. This asks Google directly for the
+// subscriptions whose period has run out, so a subscriber who does not open the
+// app on renewal day still gets what they paid for.
+const renewalVerifier = createGooglePlayVerifierFromConfig(config);
+const sweepSubscriptionRenewals = async () => {
+  try {
+    const swept = await runSubscriptionRenewalSweep({
+      verifier: renewalVerifier,
+      packageName: config.GOOGLE_PLAY_PACKAGE_NAME ?? "",
+      log: app.log
+    });
+    if (swept.granted > 0 || swept.failed > 0) {
+      app.log.info({ event: "subscription.renewals_swept", ...swept }, "Subscription renewals swept");
+    }
+  } catch (error) {
+    app.log.warn({ err: error, event: "subscription.renewal_sweep_failed" }, "Subscription renewal sweep failed");
+  }
+};
+await sweepSubscriptionRenewals();
+const subscriptionRenewalTimer = setInterval(() => void sweepSubscriptionRenewals(), 60 * 60 * 1000);
+subscriptionRenewalTimer.unref();
 
 const reconcileQueue = async () => {
   try {

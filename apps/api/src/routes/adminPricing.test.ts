@@ -1,12 +1,22 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CREDIT_PRICING_LIMITS, DEFAULT_CREDIT_COSTS, creditPricing, resetCreditPricing } from "@book-maker/core";
+import {
+  CREDIT_PRICE_KEYS,
+  CREDIT_PRICING_KEYS,
+  CREDIT_PRICING_LIMITS,
+  DEFAULT_CREDIT_COSTS,
+  type CreditPricing,
+  creditPricing,
+  resetCreditPricing
+} from "@book-maker/core";
 import { registerAuth } from "../auth.js";
 import { adminPricingRoutes } from "./adminPricing.js";
 import { revenueAtPricing, type PricingDrivers } from "../admin/pricingDrivers.js";
 
-const ZERO_DRIVERS = Object.fromEntries(Object.keys(DEFAULT_CREDIT_COSTS).map((key) => [key, 0])) as PricingDrivers;
-const ZERO_PRICING = { ...ZERO_DRIVERS };
+// Drivers cover the price keys only; the allowance keys in the same table are
+// limits, not something a quantity multiplies.
+const ZERO_DRIVERS = Object.fromEntries(CREDIT_PRICE_KEYS.map((key) => [key, 0])) as PricingDrivers;
+const ZERO_PRICING = Object.fromEntries(CREDIT_PRICING_KEYS.map((key) => [key, 0])) as CreditPricing;
 
 const mockDb = vi.hoisted(() => {
   class FakeConflictError extends Error {

@@ -39,13 +39,37 @@ export const DEFAULT_CREDIT_COSTS = {
   bookTextEditPerPage: 10,
   pageRegenerationPerPage: 80,
   bookReplanBase: 120,
-  voiceCallPerMinute: 60
+  voiceCallPerMinute: 60,
+  // Not prices — the free tier's monthly limits. They live here because they are
+  // the same kind of knob: something an operator has to be able to move against
+  // abuse without a deploy, with the same audit trail behind it. Paid tiers take
+  // their allowance from the product catalog instead, since those numbers are
+  // pinned to a Play price point that cannot change without one.
+  freeMonthlyCredits: 1_000,
+  freeIllustratedBooksPerMonth: 3
 } as const;
 
 export type CreditPricingKey = keyof typeof DEFAULT_CREDIT_COSTS;
 export type CreditPricing = { [K in CreditPricingKey]: number };
 
 export const CREDIT_PRICING_KEYS = Object.keys(DEFAULT_CREDIT_COSTS) as CreditPricingKey[];
+
+/**
+ * The entries that are a plan limit rather than a price per unit of work.
+ *
+ * They share this table because they share the operator workflow — same audit
+ * trail, same live reload — but they are not multiplied by a quantity, so
+ * anything projecting revenue has to leave them out or it will invent income
+ * from the free tier.
+ */
+export const PLAN_ALLOWANCE_KEYS = ["freeMonthlyCredits", "freeIllustratedBooksPerMonth"] as const;
+
+export type PlanAllowanceKey = (typeof PLAN_ALLOWANCE_KEYS)[number];
+export type CreditPriceKey = Exclude<CreditPricingKey, PlanAllowanceKey>;
+
+export const CREDIT_PRICE_KEYS = CREDIT_PRICING_KEYS.filter(
+  (key): key is CreditPriceKey => !(PLAN_ALLOWANCE_KEYS as readonly string[]).includes(key)
+);
 
 /**
  * Per-key ceilings, because the failure mode here is a typo that charges real
@@ -69,7 +93,11 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   bookTextEditPerPage: 2_000,
   pageRegenerationPerPage: 5_000,
   bookReplanBase: 20_000,
-  voiceCallPerMinute: 2_000
+  voiceCallPerMinute: 2_000,
+  // Generous ceilings: the failure mode for an allowance is giving too much
+  // away, which is bounded and reversible next period, not an instant charge.
+  freeMonthlyCredits: 100_000,
+  freeIllustratedBooksPerMonth: 100
 };
 
 /**

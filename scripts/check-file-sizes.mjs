@@ -47,7 +47,6 @@ const GRANDFATHERED = {
   "apps/mobile/lib/features/projects/presentation/generation_progress_screen.dart": 1110,
   "apps/mobile/lib/features/projects/presentation/project_detail_screen.dart": 1110,
   "apps/mobile/lib/features/projects/domain/creation_models.dart": 1080,
-  "packages/db/src/billing.ts": 930,
   "apps/mobile/test/projects/creation_chat_test.dart": 3470
 };
 

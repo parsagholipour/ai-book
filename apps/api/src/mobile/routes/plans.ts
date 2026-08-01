@@ -7,7 +7,13 @@ import {
 } from "../../queue.js";
 import { type MobileProjectRecoveryDto } from "../dto.js";
 import { queueDirectPlanRevision, retryPlanRevisionOperation } from "../editOperations.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendInsufficientCredits, sendMobileError } from "../httpErrors.js";
+import {
+  hitAuthenticatedLimit,
+  requireMobileAuth,
+  sendImageLimitReached,
+  sendInsufficientCredits,
+  sendMobileError
+} from "../httpErrors.js";
 import { serializeBookEditOperation } from "../projectChat.js";
 import { queueInitialMobilePlan } from "../projectRecords.js";
 import {
@@ -33,8 +39,11 @@ import { prisma } from "@book-maker/db";
 import {
   InsufficientCreditsError,
   commitReservedCredits,
+  consumeIllustratedBookUse,
+  getImageQuota,
   grantProjectEntitlement,
   refundCreditLedgerEntry,
+  releaseIllustratedBookUse,
   reserveCredits,
   type CreditLedgerEntryRecord
 } from "@book-maker/db/billing";
@@ -232,6 +241,23 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
 
       const generationInput = createProjectSchema.parse(inputSnapshotFromProject(plan.project));
       const creditEstimate = estimateFullBookCreditCost(generationInput);
+
+      // This is the only route that starts an illustrated generation, so it is
+      // the only place the free tier's monthly image budget has to be claimed.
+      // Claimed before the charge, and handed back with it if the refund path
+      // ever runs — see `metadata.imageQuota` below.
+      let quotaPeriodKey: string | null = null;
+      if (creditEstimate.assumptions.estimatedInteriorImages > 0) {
+        const quota = await getImageQuota(auth.user.id);
+        if (quota) {
+          const claim = await consumeIllustratedBookUse({ userId: auth.user.id, limit: quota.limit });
+          if (!claim.allowed) {
+            return sendImageLimitReached(reply, claim);
+          }
+          quotaPeriodKey = claim.periodKey;
+        }
+      }
+
       let reservation: CreditLedgerEntryRecord | null = null;
       let spend: CreditLedgerEntryRecord | null = null;
       try {
@@ -245,7 +271,8 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
             : `mobile:plan:${id}:approve`,
           description: "Mobile full book generation package",
           metadata: {
-            creditEstimate
+            creditEstimate,
+            ...(quotaPeriodKey ? { imageQuota: { periodKey: quotaPeriodKey } } : {})
           }
         });
 
@@ -302,7 +329,13 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       } catch (error) {
         const entryToRefund = spend ?? reservation;
         if (entryToRefund) {
+          // The refund releases the quota slot too, because the entry carries
+          // the period it was claimed against.
           await refundCreditLedgerEntry(entryToRefund.id, "Full generation could not be queued.");
+        } else if (quotaPeriodKey) {
+          // Nothing was ever charged — the reservation itself threw — so the
+          // slot has to be handed back here.
+          await releaseIllustratedBookUse(auth.user.id, quotaPeriodKey);
         }
         if (error instanceof InsufficientCreditsError) {
           return sendInsufficientCredits(reply, error);

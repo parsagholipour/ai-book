@@ -7,11 +7,16 @@ export type PricingFieldGroup = {
 };
 
 /**
- * How the fourteen prices are presented.
+ * How the price list is presented.
  *
  * Grouped by the moment a reader is charged rather than by the shape of the
  * number, because that is the question an operator is answering: "what does it
  * cost someone to make a book / change one / read one out loud".
+ *
+ * The last group is the exception: those two are limits on the free tier, not
+ * prices. They live in the same table because they need the same audit trail
+ * and the same live reload, and an operator tuning one is usually reacting to
+ * the same thing — abuse, or a margin that moved.
  */
 export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
   {
@@ -44,6 +49,22 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
     fields: [
       { key: "exportUnlock", label: "Export unlock", help: "One-off unlock for PDF/EPUB download." },
       { key: "voiceCallPerMinute", label: "Voice call per minute", help: "Rounded up; calls are capped at 30 minutes." }
+    ]
+  },
+  {
+    title: "Free plan limits",
+    blurb: "What a reader gets each month without paying. Paid tiers take their allowance from the product catalog instead, because those numbers are pinned to a Play price.",
+    fields: [
+      {
+        key: "freeMonthlyCredits",
+        label: "Monthly credits",
+        help: "Granted at the start of each calendar month. Resets rather than accumulating."
+      },
+      {
+        key: "freeIllustratedBooksPerMonth",
+        label: "Illustrated books a month",
+        help: "After this, a free reader can still write books, but only without visuals."
+      }
     ]
   }
 ];

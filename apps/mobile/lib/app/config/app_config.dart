@@ -1,5 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// Must match `applicationId` in `android/app/build.gradle.kts`. Needed to deep
+/// link into this app's Play subscription settings.
+const androidPackageName = 'com.tomeza.tomeza';
+
 enum AppEnvironment {
   local,
   staging,

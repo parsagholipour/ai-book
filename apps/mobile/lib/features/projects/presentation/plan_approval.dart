@@ -48,6 +48,21 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   if (!context.mounted) {
     return null;
   }
+  // The server refuses this too, but catching it here means the choice — upgrade
+  // or write it without visuals — is offered before anything is charged.
+  if (project.imagesEnabled && billing.isImageQuotaExhausted) {
+    final quota = billing.imageQuota!;
+    await showBillingPaywall(
+      context,
+      projectId: project.id,
+      title: 'Out of illustrated books',
+      message:
+          'Your plan includes ${quota.limit} illustrated books a month and you have used all of them. '
+          'Upgrade for unlimited illustrations, or turn Visuals off to write this one as text.',
+    );
+    ref.invalidate(billingProvider);
+    return null;
+  }
   if (billing.credits.available < estimate) {
     await showBillingPaywall(
       context,

@@ -92,9 +92,10 @@ class BillingController extends ChangeNotifier {
           'tomeza.one_book_export' => 0,
           'tomeza.creator_monthly' => 1,
           'tomeza.pro_monthly' => 2,
-          'tomeza.credit_pack_1' => 3,
-          'tomeza.credit_pack_2' => 4,
-          _ => 5,
+          'tomeza.max_monthly' => 3,
+          'tomeza.credit_pack_1' => 4,
+          'tomeza.credit_pack_2' => 5,
+          _ => 6,
         };
       }
 
@@ -102,6 +103,15 @@ class BillingController extends ChangeNotifier {
     });
     return copy;
   }
+
+  /// Plans, cheapest first — the headline of the paywall.
+  List<MobileBillingProduct> get plans =>
+      products.where((product) => product.isSubscription).toList();
+
+  /// One-off purchases: an export unlock or a credit pack. These stay for the
+  /// subscriber who runs dry mid-month and for anyone who will not subscribe.
+  List<MobileBillingProduct> get topUps =>
+      products.where((product) => !product.isSubscription).toList();
 
   Future<void> load() async {
     _setState(

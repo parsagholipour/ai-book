@@ -40,6 +40,59 @@ export function providerCostAssumptionsForInput(input: CreateProjectInput): Prov
   return (tier && MODEL_TIER_COST_ASSUMPTIONS_USD[tier]) || PROVIDER_COST_ASSUMPTIONS_USD;
 }
 
+/**
+ * The plan a user is on. Free is the absence of a paid entitlement rather than a
+ * product, so it has no SKU; the other three each map to one subscription SKU
+ * and one entitlement type.
+ */
+export type PlanTier = "free" | "creator" | "pro" | "max";
+
+export const PLAN_TIER_ORDER: PlanTier[] = ["free", "creator", "pro", "max"];
+
+/** Subscription SKU → tier. The single place that mapping is written down. */
+export const PLAN_TIER_BY_SKU: Record<string, Exclude<PlanTier, "free">> = {
+  "tomeza.creator_monthly": "creator",
+  "tomeza.pro_monthly": "pro",
+  "tomeza.max_monthly": "max"
+};
+
+export const PLAN_ENTITLEMENT_TYPE_BY_TIER = {
+  creator: "CREATOR_PLAN",
+  pro: "PRO_PLAN",
+  max: "MAX_PLAN"
+} as const;
+
+export type PlanEntitlementType = (typeof PLAN_ENTITLEMENT_TYPE_BY_TIER)[keyof typeof PLAN_ENTITLEMENT_TYPE_BY_TIER];
+
+export const PLAN_ENTITLEMENT_TYPES: PlanEntitlementType[] = Object.values(PLAN_ENTITLEMENT_TYPE_BY_TIER);
+
+const PLAN_TIER_BY_ENTITLEMENT_TYPE: Record<string, Exclude<PlanTier, "free">> = {
+  CREATOR_PLAN: "creator",
+  PRO_PLAN: "pro",
+  MAX_PLAN: "max"
+};
+
+export function planTierForSubscriptionSku(sku: string): Exclude<PlanTier, "free"> | null {
+  return PLAN_TIER_BY_SKU[sku] ?? null;
+}
+
+export function planEntitlementTypeForSubscriptionSku(sku: string): PlanEntitlementType | null {
+  const tier = planTierForSubscriptionSku(sku);
+  return tier ? PLAN_ENTITLEMENT_TYPE_BY_TIER[tier] : null;
+}
+
+export function planTierForEntitlementType(type: string): PlanTier {
+  return PLAN_TIER_BY_ENTITLEMENT_TYPE[type] ?? "free";
+}
+
+/** Highest tier wins when a user somehow holds two plan entitlements at once. */
+export function highestPlanTier(tiers: readonly PlanTier[]): PlanTier {
+  return tiers.reduce<PlanTier>(
+    (best, tier) => (PLAN_TIER_ORDER.indexOf(tier) > PLAN_TIER_ORDER.indexOf(best) ? tier : best),
+    "free"
+  );
+}
+
 export const DEFAULT_BILLING_PRODUCTS = [
   {
     sku: "tomeza.one_book_export",
@@ -52,20 +105,29 @@ export const DEFAULT_BILLING_PRODUCTS = [
   },
   {
     sku: "tomeza.creator_monthly",
-    title: "Creator monthly",
-    description: "Monthly creator plan with three standard export credits.",
+    title: "Creator",
+    description: "6,000 credits a month, unlimited illustrated books, and manuscript import.",
     productType: "SUBSCRIPTION",
-    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 3,
+    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 6,
     priceMicros: 19_990_000,
     currency: "USD"
   },
   {
     sku: "tomeza.pro_monthly",
-    title: "Pro monthly",
-    description: "Monthly pro plan with six standard export credits for busier creators.",
+    title: "Pro",
+    description: "15,000 credits a month for creators shipping a book a week.",
     productType: "SUBSCRIPTION",
-    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 6,
+    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 15,
     priceMicros: 39_990_000,
+    currency: "USD"
+  },
+  {
+    sku: "tomeza.max_monthly",
+    title: "Max",
+    description: "80,000 credits a month — effectively unlimited for one person.",
+    productType: "SUBSCRIPTION",
+    creditAmount: STANDARD_EXPORT_CREDIT_AMOUNT * 80,
+    priceMicros: 199_990_000,
     currency: "USD"
   },
   {
@@ -103,6 +165,7 @@ export type BillingOperation =
   | "VOICE_CALL_MINUTE"
   | "PURCHASE_CREDIT_GRANT"
   | "SUBSCRIPTION_CREDIT_GRANT"
+  | "PLAN_ALLOWANCE_GRANT"
   | "ADMIN_GRANT";
 
 export type CreditLineItem = {
@@ -176,6 +239,7 @@ export function creditCostForOperation(operation: BillingOperation, pricing: Cre
       return pricing.fullBookBase;
     case "PURCHASE_CREDIT_GRANT":
     case "SUBSCRIPTION_CREDIT_GRANT":
+    case "PLAN_ALLOWANCE_GRANT":
     case "ADMIN_GRANT":
       return 0;
     default:

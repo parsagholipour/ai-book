@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { vi } from "vitest";
 import { hashToken } from "../../mobileAuth.js";
 import type { enqueueGenerationJob } from "../../queue.js";
+import type { CreditBalance } from "@book-maker/db/billing";
 import {
   MockPrismaKnownRequestError,
   mockBilling,
@@ -425,6 +426,27 @@ export function mockAccessTokens(tokensByRawToken: Record<string, string>) {
 
 export function bearer(token: string) {
   return { authorization: `Bearer ${token}` };
+}
+
+/**
+ * A `CreditBalance` with both pools filled in. `availableCredits` is what the
+ * user can spend in total, so pass it and let the pools default to purchased
+ * unless a test is specifically about the allowance.
+ */
+export function creditBalance(overrides: Partial<CreditBalance> = {}): CreditBalance {
+  const available = overrides.availableCredits ?? 1000;
+  return {
+    availableCredits: available,
+    purchasedCredits: available,
+    planCredits: 0,
+    planCreditsPerPeriod: 0,
+    planPeriodEnd: null,
+    planPeriodKey: null,
+    reservedCredits: 0,
+    lifetimeCreditsGranted: available,
+    lifetimeCreditsSpent: 0,
+    ...overrides
+  };
 }
 
 export function projectRecord(overrides: Record<string, unknown> = {}) {

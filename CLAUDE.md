@@ -141,7 +141,31 @@ tells you when a listed file has dropped under the default so the entry can be d
 - **Run logs are the debugging artifact.** Every provider call is appended as JSON lines under
   `<BOOK_STORAGE_DIR>/<projectId>/runs/`. Read those before adding new logging.
 - **Credits are reserved, then committed or refunded.** Any new priced operation has to close that
-  loop, including on the failure path — see `packages/db/src/billing.ts`.
+  loop, including on the failure path. `packages/db/src/billing.ts` is a facade over
+  `billingLedger.ts` (balances), `billingEntitlements.ts`, `billingSubscriptions.ts` (Google Play),
+  `planPeriods.ts` (allowances and quotas) and `billingInternals.ts` (shared plumbing) — import the
+  facade, never a module behind it, or the `vi.mock("@book-maker/db/billing")` in the API suites
+  stops covering you.
+- **A balance is two pools, and spending draws the expiring one first.** `planCredits` is the
+  monthly allowance — free tier or subscription period — and it *resets* at each period boundary
+  rather than accumulating; `availableCredits` is what was bought outright and never expires.
+  `CreditBalance.availableCredits` is deliberately still the *total* of both, because shipped
+  clients compare it against a quote. Each ledger entry records how much of itself came from the
+  allowance in `planCreditsDelta`, which is what lets a refund put credits back where they came
+  from — and after a period rollover a refund goes entirely to the purchased pool, because that
+  period's allowance has already been re-granted in full.
+- **The free month is granted lazily, not by a cron.** `ensureCurrentPlanPeriod` runs at the top of
+  `reserveCredits` and before `serializeMobileBilling`, so anyone who can spend or look has already
+  been granted. It never overwrites a plan period that is still live, which is what stops it
+  clobbering a subscription's allowance. Subscription periods are granted only by the Google Play
+  verify path and the hourly renewal sweep in `apps/api/src/subscriptionRenewal.ts`, which is why
+  `SubscriptionState.purchaseToken` keeps the raw token.
+- **The free tier's illustrated-book limit is enforced in exactly one place.**
+  `POST /api/mobile/plans/:id/approve` is the only mobile route that starts an image-producing
+  generation, so that is where the `UsageCounter` slot is claimed (403 `IMAGE_LIMIT_REACHED` when
+  it is gone — never a silent downgrade to text-only). The claim is stamped onto the reservation as
+  `metadata.imageQuota`, so `refundCreditLedgerEntry` hands the slot back on every failure path
+  without each of them knowing about quotas.
 - **A non-null `ProviderCallLog.costHint` *is* a settled, priced call.** Provisional, in-flight and
   failed rows all write `null` (`apps/worker/src/providers/usageAccounting.ts`), so real provider
   spend is `SUM("costHint")` — do not replay the rate cards in `packages/core/src/costs.ts` to
@@ -161,8 +185,12 @@ tells you when a listed file has dropped under the default so the entry can be d
   and deliberately never loads. The pure pricing functions take an optional trailing `pricing`
   argument so `/api/admin/pricing/preview` can quote unsaved values without moving the live ones —
   and the snapshot must only ever be applied *after* a write commits. The console edits this at
-  `/pricing`, and `serializeMobileBilling` ships the result to the Flutter app, so a price change
-  needs no client release.
+  `/pricing`, and `serializeMobileBilling` (`apps/api/src/mobile/billingSerializer.ts`) ships the
+  result to the Flutter app, so a price change needs no client release. Two keys in that table are
+  free-tier *limits* rather than prices (`freeMonthlyCredits`, `freeIllustratedBooksPerMonth`);
+  anything projecting revenue iterates `CREDIT_PRICE_KEYS`, not every key, or it invents income
+  from the free tier. Paid tiers take their monthly credits from `DEFAULT_BILLING_PRODUCTS`
+  instead, because those numbers are pinned to a Play price point that needs a release anyway.
 - **The Flutter creation chat screen is one library split with `part` files**
   (`creation_chat_screen.dart` plus `creation_chat_*.dart`). Part files have no imports of their
   own; add imports to the parent. This keeps the `_Private` widgets private.

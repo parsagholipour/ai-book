@@ -3,13 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
-import '../domain/billing_models.dart';
 import 'billing_controller.dart';
+import 'billing_plan_tiles.dart';
 
+/// Plans first, top-ups underneath.
+///
+/// The same sheet answers both "I ran out of credits" and "I hit the free
+/// tier's image limit", because in both cases the best answer is a plan and the
+/// second-best is a one-off purchase — so it leads with the ladder and keeps the
+/// packs available below rather than making them the whole offer.
 Future<void> showBillingPaywall(
   BuildContext context, {
   String? projectId,
-  String title = 'Add credits',
+  String title = 'Upgrade your plan',
   String? message,
 }) {
   return showModalBottomSheet<void>(
@@ -24,7 +30,7 @@ Future<void> showBillingPaywall(
 class BillingPaywall extends ConsumerWidget {
   const BillingPaywall({
     this.projectId,
-    this.title = 'Add credits',
+    this.title = 'Upgrade your plan',
     this.message,
     super.key,
   });
@@ -41,6 +47,7 @@ class BillingPaywall extends ConsumerWidget {
       builder: (context, _) {
         final state = controller.state;
         final colors = Theme.of(context).colorScheme;
+        final currentSku = state.billing?.plan?.productSku;
 
         return DraggableScrollableSheet(
           expand: false,
@@ -53,10 +60,7 @@ class BillingPaywall extends ConsumerWidget {
             children: [
               Row(
                 children: [
-                  Icon(
-                    Icons.account_balance_wallet_outlined,
-                    color: colors.primary,
-                  ),
+                  Icon(Icons.workspace_premium_outlined, color: colors.primary),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -82,7 +86,7 @@ class BillingPaywall extends ConsumerWidget {
                 ),
               ],
               const SizedBox(height: 14),
-              _BalanceStrip(billing: state.billing),
+              BillingPlanBanner(billing: state.billing),
               const SizedBox(height: 14),
               if (state.loading)
                 const AppLoadingState(message: 'Loading purchase options')
@@ -94,14 +98,44 @@ class BillingPaywall extends ConsumerWidget {
                       'Use an Android build installed from a Play testing track or a license tester account to buy credits.',
                 )
               else ...[
-                for (final product in controller.products) ...[
-                  _ProductTile(
-                    product: product,
-                    storeProduct: state.storeProducts[product.sku],
-                    pending: state.pendingProductIds.contains(product.sku),
-                    onBuy: () => controller.buy(product),
+                for (final plan in controller.plans) ...[
+                  BillingPlanCard(
+                    key: ValueKey('paywall-plan-${plan.sku}'),
+                    product: plan,
+                    storeProduct: state.storeProducts[plan.sku],
+                    isCurrentPlan: plan.sku == currentSku,
+                    pending: state.pendingProductIds.contains(plan.sku),
+                    onBuy: () => controller.buy(plan),
                   ),
                   const SizedBox(height: 10),
+                ],
+                if (controller.topUps.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    'One-off top-ups',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Credits you buy outright never expire, and they are spent '
+                    'only after your monthly allowance runs out.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  for (final product in controller.topUps) ...[
+                    BillingTopUpTile(
+                      key: ValueKey('paywall-topup-${product.sku}'),
+                      product: product,
+                      storeProduct: state.storeProducts[product.sku],
+                      pending: state.pendingProductIds.contains(product.sku),
+                      onBuy: () => controller.buy(product),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                 ],
                 if (state.missingProductIds.isNotEmpty)
                   AppInlineNotice(
@@ -148,146 +182,5 @@ class BillingPaywall extends ConsumerWidget {
         );
       },
     );
-  }
-}
-
-class _BalanceStrip extends StatelessWidget {
-  const _BalanceStrip({this.billing});
-
-  final MobileBilling? billing;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final credits = billing?.credits.available;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            const Icon(Icons.savings_outlined),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                credits == null
-                    ? 'Checking your credit balance'
-                    : '$credits credits available',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProductTile extends StatelessWidget {
-  const _ProductTile({
-    required this.product,
-    required this.pending,
-    required this.onBuy,
-    this.storeProduct,
-  });
-
-  final MobileBillingProduct product;
-  final StoreProduct? storeProduct;
-  final bool pending;
-  final VoidCallback onBuy;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final available = storeProduct != null;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(_iconFor(product), color: colors.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        product.title,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _productMessage(product),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        product.benefitLabel,
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton(
-                onPressed: available && !pending ? onBuy : null,
-                child: pending
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          semanticsLabel: 'Purchase pending',
-                        ),
-                      )
-                    : Text(storeProduct?.price ?? _fallbackPrice(product)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  IconData _iconFor(MobileBillingProduct product) {
-    if (product.isSubscription) {
-      return Icons.workspace_premium_outlined;
-    }
-    if (product.productType == 'CREDIT_PACK') {
-      return Icons.add_card_outlined;
-    }
-    return Icons.lock_open_outlined;
-  }
-
-  String _productMessage(MobileBillingProduct product) {
-    return switch (product.sku) {
-      'tomeza.one_book_export' =>
-        'Best for unlocking one complete book package or topping up a project.',
-      'tomeza.creator_monthly' =>
-        'A steady monthly plan for creators and teachers making a few books.',
-      'tomeza.pro_monthly' =>
-        'More monthly credits for heavier publishing or classroom use.',
-      _ => product.description,
-    };
-  }
-
-  String _fallbackPrice(MobileBillingProduct product) {
-    final price = product.priceMicros / 1000000;
-    return '${product.currency} ${price.toStringAsFixed(2)}';
   }
 }

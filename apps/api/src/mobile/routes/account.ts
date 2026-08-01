@@ -1,7 +1,7 @@
 import { GooglePlayBillingConfigError, GooglePlayVerificationError } from "../../googlePlayBilling.js";
 import { type MobileGooglePlayVerificationResponseDto } from "../dto.js";
 import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
-import { serializeMobileBilling } from "../projectSerializers.js";
+import { serializeMobileBilling } from "../billingSerializer.js";
 import { mobileAuthError, mobileGooglePlayVerificationBodySchema } from "../schemas.js";
 import { prisma } from "@book-maker/db";
 import { recordVerifiedGooglePlayPurchase } from "@book-maker/db/billing";

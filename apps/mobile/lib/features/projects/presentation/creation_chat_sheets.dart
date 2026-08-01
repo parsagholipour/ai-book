@@ -314,9 +314,11 @@ class _AdvancedSheet extends ConsumerWidget {
                 ],
               ),
               subtitle: Text(
-                presets.imagesEnabled
-                    ? 'Cover plus up to ${visualLimitFor(presets.bookType)} supporting visuals.'
-                    : 'Text-first project with no planned visuals.',
+                _visualsSubtitle(
+                  presets.imagesEnabled,
+                  presets.bookType,
+                  ref.watch(billingProvider).asData?.value.imageQuota,
+                ),
               ),
             ),
             const SizedBox(height: 10),
@@ -341,6 +343,35 @@ class _AdvancedSheet extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Which server refusals the paywall can answer, and what to call it when it
+/// opens. Anything else is a snackbar — the paywall is not a general error
+/// screen, it is the one that has something to offer.
+String? _paywallTitleForError(String? code) => switch (code) {
+  'INSUFFICIENT_CREDITS' => 'Credits needed',
+  'IMAGE_LIMIT_REACHED' => 'Out of illustrated books',
+  _ => null,
+};
+
+/// Says what visuals will cost against the month's budget, when there is one.
+/// A null quota is a plan with no image limit, so it says nothing extra.
+String _visualsSubtitle(
+  bool enabled,
+  String bookType,
+  MobileImageQuota? quota,
+) {
+  if (!enabled) {
+    return 'Text-first project with no planned visuals.';
+  }
+  final base = 'Cover plus up to ${visualLimitFor(bookType)} supporting visuals.';
+  if (quota == null) {
+    return base;
+  }
+  if (quota.isExhausted) {
+    return '$base You have used all ${quota.limit} illustrated books this month — upgrade to keep going.';
+  }
+  return '$base ${quota.remaining} of ${quota.limit} illustrated books left this month.';
 }
 
 class _BookTypeDropdown extends StatelessWidget {

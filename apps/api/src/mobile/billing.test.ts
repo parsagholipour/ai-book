@@ -5,11 +5,18 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { getCreditBalance, listActiveUserEntitlements, recordVerifiedGooglePlayPurchase } from "@book-maker/db/billing";
+import {
+  getCreditBalance,
+  getImageQuota,
+  getPlanSummary,
+  listActiveUserEntitlements,
+  recordVerifiedGooglePlayPurchase
+} from "@book-maker/db/billing";
 
 import {
   bearer,
   buildMobileApp,
+  creditBalance,
   mockAccessTokens,
   mockPrisma,
   resetMobileHarness,
@@ -22,12 +29,9 @@ describe("mobile billing and Google Play", () => {
 
   it("exposes mobile credit balance and active entitlements without provider internals", async () => {
     mockAccessTokens({ "token-a": "user-a" });
-    vi.mocked(getCreditBalance).mockResolvedValue({
-      availableCredits: 850,
-      reservedCredits: 150,
-      lifetimeCreditsGranted: 1000,
-      lifetimeCreditsSpent: 150
-    });
+    vi.mocked(getCreditBalance).mockResolvedValue(
+      creditBalance({ availableCredits: 850, reservedCredits: 150, lifetimeCreditsGranted: 1000, lifetimeCreditsSpent: 150 })
+    );
     vi.mocked(listActiveUserEntitlements).mockResolvedValue([
       {
         id: "entitlement-export",
@@ -53,6 +57,7 @@ describe("mobile billing and Google Play", () => {
     expect(response.statusCode).toBe(200);
     expect(body.billing.credits).toEqual({
       available: 850,
+      purchased: 850,
       reserved: 150,
       lifetimeGranted: 1000,
       lifetimeSpent: 150
@@ -66,6 +71,81 @@ describe("mobile billing and Google Play", () => {
     ]);
     expect(body.billing.products.map((product: { sku: string }) => product.sku)).toContain("tomeza.one_book_export");
     expect(JSON.stringify(body.billing)).not.toMatch(/provider|model|temperature|generationStrategy/);
+    await app.close();
+  });
+
+  it("reports the plan, its allowance, and the free tier's image budget", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(getCreditBalance).mockResolvedValue(
+      creditBalance({
+        availableCredits: 1400,
+        purchasedCredits: 500,
+        planCredits: 900,
+        planCreditsPerPeriod: 1000,
+        planPeriodEnd: new Date("2026-07-01T00:00:00.000Z"),
+        planPeriodKey: "free:2026-06"
+      })
+    );
+    vi.mocked(listActiveUserEntitlements).mockResolvedValue([]);
+    vi.mocked(getImageQuota).mockResolvedValue({
+      used: 2,
+      limit: 3,
+      periodKey: "2026-06",
+      resetsAt: new Date("2026-07-01T00:00:00.000Z")
+    });
+    const app = await buildMobileApp();
+
+    const body = (
+      await app.inject({ method: "GET", url: "/api/mobile/billing", headers: bearer("token-a") })
+    ).json();
+
+    expect(body.billing.plan).toEqual({
+      tier: "free",
+      source: "free",
+      status: null,
+      renewsAt: null,
+      productSku: null
+    });
+    expect(body.billing.allowance).toEqual({
+      monthlyCredits: 1000,
+      planCredits: 900,
+      resetsAt: "2026-07-01T00:00:00.000Z"
+    });
+    expect(body.billing.imageQuota).toEqual({ used: 2, limit: 3, resetsAt: "2026-07-01T00:00:00.000Z" });
+    // The app reads `available` as everything spendable, allowance included.
+    expect(body.billing.credits).toMatchObject({ available: 1400, purchased: 500 });
+
+    const subscriptions = body.billing.products.filter(
+      (product: { productType: string }) => product.productType === "SUBSCRIPTION"
+    );
+    expect(subscriptions.map((product: { sku: string }) => product.sku)).toEqual([
+      "tomeza.creator_monthly",
+      "tomeza.pro_monthly",
+      "tomeza.max_monthly"
+    ]);
+    // Credits per dollar has to climb with the tier or the ladder makes no sense.
+    const perDollar = subscriptions.map(
+      (product: { creditAmount: number; priceMicros: number }) => product.creditAmount / (product.priceMicros / 1_000_000)
+    );
+    expect(perDollar[1]).toBeGreaterThan(perDollar[0]);
+    expect(perDollar[2]).toBeGreaterThan(perDollar[1]);
+
+    // Same app, same route: on a paid plan the image limit goes away entirely.
+    vi.mocked(getCreditBalance).mockResolvedValue(creditBalance({ availableCredits: 15_000 }));
+    vi.mocked(getImageQuota).mockResolvedValue(null);
+    vi.mocked(getPlanSummary).mockResolvedValue({
+      tier: "pro",
+      source: "google_play",
+      status: "ACTIVE",
+      renewsAt: new Date("2026-07-15T00:00:00.000Z"),
+      productSku: "tomeza.pro_monthly"
+    });
+    const paid = (
+      await app.inject({ method: "GET", url: "/api/mobile/billing", headers: bearer("token-a") })
+    ).json();
+
+    expect(paid.billing.imageQuota).toBeNull();
+    expect(paid.billing.plan).toMatchObject({ tier: "pro", renewsAt: "2026-07-15T00:00:00.000Z" });
     await app.close();
   });
 
@@ -84,12 +164,7 @@ describe("mobile billing and Google Play", () => {
       subscriptionStatus: null,
       entitlementType: null
     });
-    vi.mocked(getCreditBalance).mockResolvedValueOnce({
-      availableCredits: 1100,
-      reservedCredits: 0,
-      lifetimeCreditsGranted: 1100,
-      lifetimeCreditsSpent: 0
-    });
+    vi.mocked(getCreditBalance).mockResolvedValueOnce(creditBalance({ availableCredits: 1100 }));
     const verifier = {
       verifyPurchase: vi.fn(async () => ({
         productSku: "tomeza.credit_pack_1",
@@ -168,12 +243,7 @@ describe("mobile billing and Google Play", () => {
       subscriptionStatus: null,
       entitlementType: null
     });
-    vi.mocked(getCreditBalance).mockResolvedValueOnce({
-      availableCredits: 2100,
-      reservedCredits: 0,
-      lifetimeCreditsGranted: 2100,
-      lifetimeCreditsSpent: 0
-    });
+    vi.mocked(getCreditBalance).mockResolvedValueOnce(creditBalance({ availableCredits: 2100 }));
     const app = await buildMobileApp();
 
     const response = await app.inject({

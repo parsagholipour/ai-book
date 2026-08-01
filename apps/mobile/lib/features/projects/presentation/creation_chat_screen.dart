@@ -20,6 +20,7 @@ import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
+import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/creation_repository.dart';
 import '../data/projects_repository.dart';
@@ -1241,10 +1242,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       _startPlanPoll();
     } on ApiException catch (error) {
       if (!mounted) return;
-      if (error.code == 'INSUFFICIENT_CREDITS') {
+      final paywallTitle = _paywallTitleForError(error.code);
+      if (paywallTitle != null) {
         await showBillingPaywall(
           context,
-          title: 'Credits needed',
+          title: paywallTitle,
           message: error.message,
         );
         ref.invalidate(billingProvider);

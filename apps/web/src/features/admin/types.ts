@@ -59,6 +59,8 @@ export type AdminUserRow = {
   status: string;
   createdAt: string;
   availableCredits: number;
+  planCredits: number;
+  planCreditsPerPeriod: number;
   reservedCredits: number;
   lifetimeGranted: number;
   lifetimeSpent: number;
@@ -75,7 +77,17 @@ export type AdminUserSort = "recent" | "spend" | "cash" | "credits" | "projects"
 
 export type AdminUserDetail = {
   user: { id: string; email: string; displayName: string | null; status: string; createdAt: string; disabledAt: string | null };
-  credits: { available: number; reserved: number; lifetimeGranted: number; lifetimeSpent: number };
+  credits: {
+    available: number;
+    purchased: number;
+    planCredits: number;
+    planCreditsPerPeriod: number;
+    planPeriodEnd: string | null;
+    reserved: number;
+    lifetimeGranted: number;
+    lifetimeSpent: number;
+  };
+  plan: { tier: string; illustratedBooksUsed: number | null };
   spendByOperation: NamedTotal[];
   purchases: Array<{ id: string; status: string; provider: string; creditsGranted: number; amountUsd: number | null; purchasedAt: string | null }>;
   subscriptions: Array<{ id: string; status: string; creditsPerPeriod: number; currentPeriodEnd: string | null; canceledAt: string | null }>;

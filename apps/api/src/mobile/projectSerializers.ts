@@ -8,7 +8,6 @@ import { buildProjectStatus, normalizeProjectQuality, type PipelineStep } from "
 import { type GenerationJobType } from "../queue.js";
 import { projectExportAvailability, type ProjectExportFormat } from "../routes/projects.js";
 import {
-  type MobileBillingDto,
   type MobileBookEditOperationRecord,
   type MobileExportAvailabilityDto,
   type MobileExportSetDto,
@@ -34,17 +33,15 @@ import {
 } from "./schemas.js";
 import { generatedPagePreview, jsonRecord, previewText, sanitizeDownloadFilename, stringField } from "./support.js";
 import {
-  DEFAULT_BILLING_PRODUCTS,
   bookPlanSchema,
   createProjectSchema,
   creditCostForOperation,
-  creditPricing,
   loadConfig,
   mediaSettingsSchema,
   type BookPlan
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import { getCreditBalance, hasActiveProjectEntitlement, listActiveUserEntitlements } from "@book-maker/db/billing";
+import { hasActiveProjectEntitlement } from "@book-maker/db/billing";
 import { extname } from "node:path";
 import { z } from "zod";
 
@@ -52,43 +49,6 @@ import { z } from "zod";
  * Turns Prisma project rows into the summary/detail/status DTOs the app renders,
  * including progress percentages and recovery affordances.
  */
-
-export async function serializeMobileBilling(userId: string): Promise<MobileBillingDto> {
-  const [balance, entitlements] = await Promise.all([
-    getCreditBalance(userId),
-    listActiveUserEntitlements(userId)
-  ]);
-  return {
-    credits: {
-      available: balance.availableCredits,
-      reserved: balance.reservedCredits,
-      lifetimeGranted: balance.lifetimeCreditsGranted,
-      lifetimeSpent: balance.lifetimeCreditsSpent
-    },
-    entitlements: entitlements.map((entitlement) => ({
-      id: entitlement.id,
-      type: entitlement.type,
-      projectId: entitlement.projectId,
-      status: entitlement.status,
-      source: entitlement.source,
-      creditsCost: entitlement.creditsCost,
-      startsAt: entitlement.startsAt.toISOString(),
-      expiresAt: entitlement.expiresAt?.toISOString() ?? null
-    })),
-    // The live prices, so an operator's change reaches the app without a client
-    // release. The Flutter side reads this map with per-key fallbacks.
-    creditCosts: creditPricing(),
-    products: DEFAULT_BILLING_PRODUCTS.map((product) => ({
-      sku: product.sku,
-      title: product.title,
-      description: product.description,
-      productType: product.productType,
-      creditAmount: product.creditAmount,
-      priceMicros: product.priceMicros,
-      currency: product.currency
-    }))
-  };
-}
 
 export async function serializeProjectSummary(
   project: MobileProjectRecord,

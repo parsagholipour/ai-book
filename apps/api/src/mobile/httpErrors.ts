@@ -61,6 +61,30 @@ export function sendInsufficientCredits(reply: FastifyReply, error: Insufficient
   });
 }
 
+/**
+ * The free tier's illustrated-book budget is spent for this month.
+ *
+ * Deliberately not a silent downgrade to a text-only book: the user asked for
+ * illustrations, so they get the choice between upgrading and turning visuals
+ * off, and the quota travels with the error so the app can say which it is.
+ */
+export function sendImageLimitReached(
+  reply: FastifyReply,
+  quota: { used: number; limit: number; resetsAt: Date }
+): FastifyReply {
+  return reply.code(403).send({
+    error: {
+      code: "IMAGE_LIMIT_REACHED",
+      message: `Free plans include ${quota.limit} illustrated books a month. Upgrade for unlimited, or turn visuals off.`,
+      imageQuota: {
+        used: quota.used,
+        limit: quota.limit,
+        resetsAt: quota.resetsAt.toISOString()
+      }
+    }
+  });
+}
+
 export async function ensureExportEntitlementForDownload(
   reply: FastifyReply,
   userId: string,

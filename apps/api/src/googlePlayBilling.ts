@@ -73,8 +73,12 @@ export function createMockGooglePlayVerifier(): GooglePlayVerifier {
   return {
     async verifyPurchase(request) {
       const now = new Date();
+      // Google issues a fresh order id every renewal, and the credit grant is
+      // idempotent on it. Varying the mock's by month gives dev the same
+      // behaviour — otherwise a renewal here could never grant a second period.
+      const period = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
       const externalPurchaseId = `MOCK.${createHash("sha256")
-        .update(`${request.productId}:${request.purchaseToken}`)
+        .update(`${request.productId}:${request.purchaseToken}:${period}`)
         .digest("hex")
         .slice(0, 16)}`;
 

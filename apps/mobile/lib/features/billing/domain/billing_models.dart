@@ -1,9 +1,15 @@
+/// Plan tiers, cheapest first. The names match the server's `PlanTier`.
+const planTierOrder = <String>['free', 'creator', 'pro', 'max'];
+
 class MobileBilling {
   const MobileBilling({
     required this.credits,
     required this.entitlements,
     required this.products,
     required this.creditCosts,
+    this.plan,
+    this.allowance,
+    this.imageQuota,
   });
 
   final CreditBalance credits;
@@ -11,9 +17,20 @@ class MobileBilling {
   final List<MobileBillingProduct> products;
   final Map<String, dynamic> creditCosts;
 
+  /// Optional so an older server — and every test fixture that predates plans —
+  /// still parses. A null plan reads as free.
+  final MobileSubscriptionPlan? plan;
+  final MobileAllowance? allowance;
+
+  /// Null means this plan has no image limit at all. Only meaningful on free.
+  final MobileImageQuota? imageQuota;
+
   factory MobileBilling.fromJson(Map<String, dynamic> json) {
     final entitlements = json['entitlements'] as List<dynamic>;
     final products = json['products'] as List<dynamic>;
+    final plan = json['plan'];
+    final allowance = json['allowance'];
+    final imageQuota = json['imageQuota'];
     return MobileBilling(
       credits: CreditBalance.fromJson(json['credits'] as Map<String, dynamic>),
       entitlements: entitlements
@@ -30,6 +47,15 @@ class MobileBilling {
       creditCosts: Map<String, dynamic>.from(
         json['creditCosts'] as Map<String, dynamic>,
       ),
+      plan: plan is Map<String, dynamic>
+          ? MobileSubscriptionPlan.fromJson(plan)
+          : null,
+      allowance: allowance is Map<String, dynamic>
+          ? MobileAllowance.fromJson(allowance)
+          : null,
+      imageQuota: imageQuota is Map<String, dynamic>
+          ? MobileImageQuota.fromJson(imageQuota)
+          : null,
     );
   }
 
@@ -39,13 +65,110 @@ class MobileBilling {
         .length;
   }
 
-  /// Active Creator/Pro subscription — gates "bring your own book" import.
+  String get planTier => plan?.tier ?? 'free';
+
+  bool get isPaidPlan => planTier != 'free';
+
+  /// Any paid plan — gates "bring your own book" import.
   bool get hasCreatorSubscription {
+    if (isPaidPlan) {
+      return true;
+    }
     return entitlements.any(
       (entitlement) =>
-          entitlement.type == 'CREATOR_PLAN' || entitlement.type == 'PRO_PLAN',
+          entitlement.type == 'CREATOR_PLAN' ||
+          entitlement.type == 'PRO_PLAN' ||
+          entitlement.type == 'MAX_PLAN',
     );
   }
+
+  /// True once the month's illustrated books are used up. Paid plans, and a
+  /// server that did not send a quota, are never out.
+  bool get isImageQuotaExhausted => imageQuota?.isExhausted ?? false;
+}
+
+class MobileSubscriptionPlan {
+  const MobileSubscriptionPlan({
+    required this.tier,
+    required this.source,
+    this.status,
+    this.renewsAt,
+    this.productSku,
+  });
+
+  final String tier;
+  final String source;
+  final String? status;
+  final DateTime? renewsAt;
+  final String? productSku;
+
+  factory MobileSubscriptionPlan.fromJson(Map<String, dynamic> json) {
+    final renewsAt = json['renewsAt'];
+    return MobileSubscriptionPlan(
+      tier: json['tier'] as String? ?? 'free',
+      source: json['source'] as String? ?? 'free',
+      status: json['status'] as String?,
+      renewsAt: renewsAt is String ? DateTime.tryParse(renewsAt) : null,
+      productSku: json['productSku'] as String?,
+    );
+  }
+
+  String get label => switch (tier) {
+    'creator' => 'Creator',
+    'pro' => 'Pro',
+    'max' => 'Max',
+    _ => 'Free',
+  };
+}
+
+class MobileAllowance {
+  const MobileAllowance({
+    required this.monthlyCredits,
+    required this.planCredits,
+    this.resetsAt,
+  });
+
+  /// What the plan grants each period.
+  final int monthlyCredits;
+
+  /// What is left of it — this does not carry over.
+  final int planCredits;
+  final DateTime? resetsAt;
+
+  factory MobileAllowance.fromJson(Map<String, dynamic> json) {
+    final resetsAt = json['resetsAt'];
+    return MobileAllowance(
+      monthlyCredits: json['monthlyCredits'] as int? ?? 0,
+      planCredits: json['planCredits'] as int? ?? 0,
+      resetsAt: resetsAt is String ? DateTime.tryParse(resetsAt) : null,
+    );
+  }
+}
+
+class MobileImageQuota {
+  const MobileImageQuota({
+    required this.used,
+    required this.limit,
+    required this.resetsAt,
+  });
+
+  final int used;
+  final int limit;
+  final DateTime resetsAt;
+
+  factory MobileImageQuota.fromJson(Map<String, dynamic> json) {
+    return MobileImageQuota(
+      used: json['used'] as int? ?? 0,
+      limit: json['limit'] as int? ?? 0,
+      resetsAt:
+          DateTime.tryParse(json['resetsAt'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
+
+  int get remaining => limit - used < 0 ? 0 : limit - used;
+
+  bool get isExhausted => remaining <= 0;
 }
 
 class GooglePlayVerificationResult {
@@ -99,9 +222,14 @@ class CreditBalance {
     required this.reserved,
     required this.lifetimeGranted,
     required this.lifetimeSpent,
+    this.purchased = 0,
   });
 
+  /// Everything spendable: the month's allowance plus anything bought.
   final int available;
+
+  /// The part of [available] that was bought and never expires.
+  final int purchased;
   final int reserved;
   final int lifetimeGranted;
   final int lifetimeSpent;
@@ -109,6 +237,7 @@ class CreditBalance {
   factory CreditBalance.fromJson(Map<String, dynamic> json) {
     return CreditBalance(
       available: json['available'] as int,
+      purchased: json['purchased'] as int? ?? 0,
       reserved: json['reserved'] as int,
       lifetimeGranted: json['lifetimeGranted'] as int,
       lifetimeSpent: json['lifetimeSpent'] as int,

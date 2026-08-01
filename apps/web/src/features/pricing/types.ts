@@ -12,7 +12,10 @@ export type CreditPricingKey =
   | "bookTextEditPerPage"
   | "pageRegenerationPerPage"
   | "bookReplanBase"
-  | "voiceCallPerMinute";
+  | "voiceCallPerMinute"
+  // Not prices — the free tier's monthly limits. Same table, same audit trail.
+  | "freeMonthlyCredits"
+  | "freeIllustratedBooksPerMonth";
 
 export type CreditPricingValues = Record<CreditPricingKey, number>;
 

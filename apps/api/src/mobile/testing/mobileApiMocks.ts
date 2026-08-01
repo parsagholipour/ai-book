@@ -24,6 +24,7 @@ export const mockPrisma = ({
   bookEditOperation: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   generationJob: { count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   creditLedgerEntry: { update: vi.fn() },
+  subscriptionState: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
   imageAsset: { findFirst: vi.fn(), findMany: vi.fn() },
   voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
@@ -59,7 +60,28 @@ export const mockBilling = (() => {
     grantProjectEntitlement: vi.fn(),
     hasActiveProjectEntitlement: vi.fn(),
     ensureProjectExportEntitlementOrSpend: vi.fn(),
-    recordVerifiedGooglePlayPurchase: vi.fn()
+    recordVerifiedGooglePlayPurchase: vi.fn(),
+    hasActiveSubscriptionEntitlement: vi.fn(async () => false),
+    ensureCurrentPlanPeriod: vi.fn(),
+    resolvePlanTier: vi.fn(async () => "free"),
+    getPlanSummary: vi.fn(async () => ({
+      tier: "free",
+      source: "free",
+      status: null,
+      renewsAt: null,
+      productSku: null
+    })),
+    // Null is "no limit on this plan". Suites that want the free tier's limit
+    // override this with a quota object.
+    getImageQuota: vi.fn(async () => null),
+    consumeIllustratedBookUse: vi.fn(async () => ({
+      allowed: true,
+      used: 1,
+      limit: 3,
+      periodKey: "2026-06",
+      resetsAt: new Date("2026-07-01T00:00:00.000Z")
+    })),
+    releaseIllustratedBookUse: vi.fn()
   };
 })();
 

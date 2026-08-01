@@ -9,6 +9,7 @@
 
 import { CREDIT_USD_VALUE } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
+import { getImageQuota, resolvePlanTier } from "@book-maker/db/billing";
 import { round2, titleCase } from "./metrics.js";
 
 export type AdminUserRow = {
@@ -17,7 +18,10 @@ export type AdminUserRow = {
   displayName: string | null;
   status: string;
   createdAt: string;
+  /** Spendable: the live allowance plus what they bought. */
   availableCredits: number;
+  planCredits: number;
+  planCreditsPerPeriod: number;
   reservedCredits: number;
   lifetimeGranted: number;
   lifetimeSpent: number;
@@ -44,6 +48,8 @@ type UserRollupRow = {
   status: string;
   createdAt: Date;
   availableCredits: bigint | null;
+  planCredits: bigint | null;
+  planCreditsPerPeriod: bigint | null;
   reservedCredits: bigint | null;
   lifetimeGranted: bigint | null;
   lifetimeSpent: bigint | null;
@@ -85,7 +91,13 @@ export async function listAdminUsers(options: {
     `
     SELECT
       u.id, u.email, u."displayName", u.status::text AS status, u."createdAt",
-      COALESCE(a."availableCredits", 0) AS "availableCredits",
+      -- Spendable is both pools, and an allowance past its period is already
+      -- gone. Reading the column alone would under-report every subscriber.
+      COALESCE(a."availableCredits", 0)
+        + CASE WHEN a."planPeriodEnd" > now() THEN COALESCE(a."planCredits", 0) ELSE 0 END
+        AS "availableCredits",
+      CASE WHEN a."planPeriodEnd" > now() THEN COALESCE(a."planCredits", 0) ELSE 0 END AS "planCredits",
+      COALESCE(a."planCreditsPerPeriod", 0) AS "planCreditsPerPeriod",
       COALESCE(a."reservedCredits", 0) AS "reservedCredits",
       COALESCE(a."lifetimeCreditsGranted", 0) AS "lifetimeGranted",
       COALESCE(a."lifetimeCreditsSpent", 0) AS "lifetimeSpent",
@@ -116,6 +128,8 @@ export async function listAdminUsers(options: {
       status: row.status,
       createdAt: row.createdAt.toISOString(),
       availableCredits: Number(row.availableCredits ?? 0),
+      planCredits: Number(row.planCredits ?? 0),
+      planCreditsPerPeriod: Number(row.planCreditsPerPeriod ?? 0),
       reservedCredits: Number(row.reservedCredits ?? 0),
       lifetimeGranted: Number(row.lifetimeGranted ?? 0),
       lifetimeSpent: Number(row.lifetimeSpent ?? 0),
@@ -140,7 +154,17 @@ export type AdminUserDetail = {
     createdAt: string;
     disabledAt: string | null;
   };
-  credits: { available: number; reserved: number; lifetimeGranted: number; lifetimeSpent: number };
+  credits: {
+    available: number;
+    purchased: number;
+    planCredits: number;
+    planCreditsPerPeriod: number;
+    planPeriodEnd: string | null;
+    reserved: number;
+    lifetimeGranted: number;
+    lifetimeSpent: number;
+  };
+  plan: { tier: string; illustratedBooksUsed: number | null };
   spendByOperation: Array<{ key: string; label: string; value: number }>;
   purchases: Array<{
     id: string;
@@ -190,8 +214,11 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
     return null;
   }
 
-  const [account, spendGroups, purchases, subscriptions, ledger, projects, deletionRequests] = await Promise.all([
+  const now = new Date();
+  const [account, tier, imageQuota, spendGroups, purchases, subscriptions, ledger, projects, deletionRequests] = await Promise.all([
     prisma.userCreditAccount.findUnique({ where: { userId } }),
+    resolvePlanTier(userId, now),
+    getImageQuota(userId, now),
     prisma.creditLedgerEntry.groupBy({
       by: ["operation"],
       _sum: { amountCredits: true },
@@ -273,11 +300,18 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
       disabledAt: user.disabledAt?.toISOString() ?? null
     },
     credits: {
-      available: account?.availableCredits ?? 0,
+      // Same rule as the list query: an allowance past its period is not
+      // spendable, so it is not reported as available either.
+      available: (account?.availableCredits ?? 0) + livePlanCredits(account, now),
+      purchased: account?.availableCredits ?? 0,
+      planCredits: livePlanCredits(account, now),
+      planCreditsPerPeriod: account?.planCreditsPerPeriod ?? 0,
+      planPeriodEnd: account?.planPeriodEnd?.toISOString() ?? null,
       reserved: account?.reservedCredits ?? 0,
       lifetimeGranted: account?.lifetimeCreditsGranted ?? 0,
       lifetimeSpent: account?.lifetimeCreditsSpent ?? 0
     },
+    plan: { tier, illustratedBooksUsed: imageQuota?.used ?? null },
     spendByOperation: spendGroups
       .map((group) => ({
         key: group.operation,
@@ -495,6 +529,16 @@ export async function loadAdminProjectDetail(projectId: string): Promise<AdminPr
       createdAt: entry.createdAt.toISOString()
     }))
   };
+}
+
+function livePlanCredits(
+  account: { planCredits: number; planPeriodEnd: Date | null } | null,
+  now: Date
+): number {
+  if (!account?.planPeriodEnd || account.planPeriodEnd <= now) {
+    return 0;
+  }
+  return Math.max(0, account.planCredits);
 }
 
 /** Written onto every ledger entry by `packages/db/src/billing.ts`. */

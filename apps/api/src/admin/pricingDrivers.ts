@@ -20,6 +20,7 @@
  */
 
 import {
+  type CreditPriceKey,
   type CreditPricing,
   createProjectSchema,
   estimateInteriorImageCount,
@@ -30,7 +31,8 @@ import { prisma } from "@book-maker/db";
 import { inputSnapshotFromProject } from "../mobile/projectSerializers.js";
 import { round2, type AdminWindow } from "./metrics.js";
 
-export type PricingDrivers = Record<keyof CreditPricing, number>;
+/** Quantities only for the keys that are prices — see `PLAN_ALLOWANCE_KEYS`. */
+export type PricingDrivers = Record<CreditPriceKey, number>;
 
 export type PricingDriverReport = {
   window: { days: number; since: string; until: string };
@@ -85,7 +87,7 @@ function emptyDrivers(): PricingDrivers {
 }
 
 export function revenueAtPricing(drivers: PricingDrivers, pricing: CreditPricing): number {
-  return (Object.keys(drivers) as Array<keyof CreditPricing>).reduce(
+  return (Object.keys(drivers) as CreditPriceKey[]).reduce(
     (total, key) => total + drivers[key] * pricing[key],
     0
   );

@@ -29,6 +29,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       appBar: AppBar(title: const Text('Account')),
       body: AppScreenLayout(
         children: [
+          AccountPlanCard(
+            billing: billing,
+            onUpgrade: _openBillingPaywall,
+            onManageSubscription: _openPlaySubscriptions,
+          ),
+          const SizedBox(height: 12),
           _AccountCreditsCard(
             billing: billing,
             onAddCredits: _openBillingPaywall,
@@ -50,13 +56,26 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
   Future<void> _openBillingPaywall() async {
     await showBillingPaywall(
       context,
-      title: 'Add book credits',
+      title: 'Plans and credits',
       message:
           'Credits are used when you approve a full book or unlock finished exports.',
     );
     if (mounted) {
       ref.invalidate(billingProvider);
     }
+  }
+
+  /// Cancelling and changing a subscription happens in Play, not here — Google
+  /// requires it, and it is where the payment method already lives.
+  Future<void> _openPlaySubscriptions(String? sku) async {
+    final query = <String>[
+      if (sku != null) 'sku=$sku',
+      'package=$androidPackageName',
+    ].join('&');
+    await launchUrl(
+      Uri.parse('https://play.google.com/store/account/subscriptions?$query'),
+      mode: LaunchMode.externalApplication,
+    );
   }
 
   Future<void> _requestAccountDeletion() async {
@@ -98,6 +117,104 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       }
     }
   }
+}
+
+/// Public so it can be pumped on its own, like [AccountPrivacyControls].
+class AccountPlanCard extends StatelessWidget {
+  const AccountPlanCard({
+    required this.billing,
+    required this.onUpgrade,
+    required this.onManageSubscription,
+    super.key,
+  });
+
+  final AsyncValue<MobileBilling> billing;
+  final VoidCallback onUpgrade;
+  final void Function(String? sku) onManageSubscription;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final value = billing.asData?.value;
+    final plan = value?.plan;
+    final allowance = value?.allowance;
+    final quota = value?.imageQuota;
+    final paid = value?.isPaidPlan ?? false;
+
+    return Card(
+      key: const ValueKey('account-plan-card'),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.workspace_premium_outlined, color: colors.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    plan == null ? 'Your plan' : '${plan.label} plan',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            if (allowance != null && allowance.monthlyCredits > 0)
+              Text(
+                '${allowance.planCredits} of ${allowance.monthlyCredits} monthly credits left',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              )
+            else if (billing.isLoading)
+              Text(
+                'Checking your plan',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+            if (quota != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${quota.used} of ${quota.limit} illustrated books used this month',
+                style: TextStyle(
+                  color: quota.isExhausted
+                      ? colors.error
+                      : colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (paid && plan?.renewsAt != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Renews ${_formatDate(plan!.renewsAt!)}',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+            ],
+            const SizedBox(height: 12),
+            paid
+                ? OutlinedButton.icon(
+                    key: const ValueKey('account-manage-subscription'),
+                    onPressed: () => onManageSubscription(plan?.productSku),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Manage subscription'),
+                  )
+                : FilledButton.icon(
+                    key: const ValueKey('account-upgrade-plan'),
+                    onPressed: onUpgrade,
+                    icon: const Icon(Icons.arrow_upward),
+                    label: const Text('Upgrade'),
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _formatDate(DateTime value) {
+  final local = value.toLocal();
+  return '${local.day}/${local.month}/${local.year}';
 }
 
 class _AccountCreditsCard extends StatelessWidget {

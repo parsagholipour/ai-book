@@ -18,6 +18,7 @@ import { enqueueGenerationJob } from "../queue.js";
 import {
   bearer,
   buildMobileApp,
+  creditBalance,
   jobRecord,
   mockAccessTokens,
   mockPrisma,
@@ -90,12 +91,7 @@ describe("mobile voice calls", () => {
     resetMobileHarness();
     process.env.GEMINI_API_KEY = "test-key";
     mockAccessTokens({ "token-a": "user-a" });
-    vi.mocked(getCreditBalance).mockResolvedValue({
-      availableCredits: 5_000,
-      reservedCredits: 0,
-      lifetimeCreditsGranted: 5_000,
-      lifetimeCreditsSpent: 0
-    });
+    vi.mocked(getCreditBalance).mockResolvedValue(creditBalance({ availableCredits: 5_000 }));
     mockPrisma.voiceCall.findMany.mockResolvedValue([]);
     mockPrisma.voiceCall.create.mockResolvedValue({ id: "call-1" });
     mockPrisma.voiceCall.update.mockResolvedValue({});

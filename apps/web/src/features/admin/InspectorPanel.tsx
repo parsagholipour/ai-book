@@ -55,13 +55,27 @@ function UserBody(props: {
   detail: NonNullable<ReturnType<typeof useAdminUserDetail>["data"]>;
   onOpenProject: (projectId: string) => void;
 }) {
-  const { credits, user } = props.detail;
+  const { credits, plan, user } = props.detail;
   const cash = props.detail.purchases.reduce((total, purchase) => total + (purchase.amountUsd ?? 0), 0);
 
   return (
     <>
       <div className="stat-grid compact">
-        <MiniStat label="Credits available" value={count(credits.available)} note={`${count(credits.reserved)} reserved`} />
+        <MiniStat
+          label="Credits available"
+          value={count(credits.available)}
+          // Two pools: the allowance expires at the period boundary, the rest does not.
+          note={`${count(credits.planCredits)} allowance · ${count(credits.purchased)} bought`}
+        />
+        <MiniStat
+          label="Plan"
+          value={plan.tier}
+          note={
+            plan.illustratedBooksUsed === null
+              ? "no image limit"
+              : `${count(plan.illustratedBooksUsed)} illustrated books this month`
+          }
+        />
         <MiniStat label="Lifetime spent" value={count(credits.lifetimeSpent)} note={`${count(credits.lifetimeGranted)} granted`} />
         <MiniStat label="Money spent" value={usd(cash)} note={`${count(props.detail.purchases.length)} purchases`} />
         <MiniStat label="Joined" value={relative(user.createdAt)} note={user.status.toLowerCase()} />

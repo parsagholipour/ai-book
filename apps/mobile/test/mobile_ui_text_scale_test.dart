@@ -93,7 +93,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Add credits'), findsOneWidget);
+    expect(find.text('Upgrade your plan'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(

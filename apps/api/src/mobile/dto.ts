@@ -17,7 +17,7 @@ import {
   mobileLengthPresetSchema,
   mobileQualityPresetSchema
 } from "./schemas.js";
-import { type CreateProjectInput, type CreditPricing } from "@book-maker/core";
+import { type CreateProjectInput, type CreditPricing, type PlanTier } from "@book-maker/core";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
 import { z } from "zod";
 
@@ -585,11 +585,35 @@ export type ProjectStatusResult = NonNullable<Awaited<ReturnType<typeof buildPro
 
 export type MobileBillingDto = {
   credits: {
+    /** Everything the user can spend right now: allowance plus purchased. */
     available: number;
+    /** The part of `available` that came from a purchase and never expires. */
+    purchased: number;
     reserved: number;
     lifetimeGranted: number;
     lifetimeSpent: number;
   };
+  plan: {
+    tier: PlanTier;
+    source: "free" | "google_play";
+    /** Google Play subscription status, or null on the free tier. */
+    status: string | null;
+    renewsAt: string | null;
+    productSku: string | null;
+  };
+  allowance: {
+    /** What this plan grants each period. */
+    monthlyCredits: number;
+    /** What is left of it. Resets rather than carrying over. */
+    planCredits: number;
+    resetsAt: string | null;
+  };
+  /** Null means no image limit on this plan — unlimited, not unknown. */
+  imageQuota: {
+    used: number;
+    limit: number;
+    resetsAt: string;
+  } | null;
   entitlements: Array<{
     id: string;
     type: string;

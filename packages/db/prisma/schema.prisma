@@ -113,6 +113,7 @@ enum UserEntitlementType {
   EXTRA_IMAGES
   CREATOR_PLAN
   PRO_PLAN
+  MAX_PLAN
 }
 
 enum UserEntitlementStatus {
@@ -153,6 +154,7 @@ enum CreditOperation {
   VOICE_CALL_MINUTE
   PURCHASE_CREDIT_GRANT
   SUBSCRIPTION_CREDIT_GRANT
+  PLAN_ALLOWANCE_GRANT
   ADMIN_GRANT
 }
 
@@ -245,6 +247,7 @@ model User {
   mobileSessions          MobileSession[]
   projects                Project[]
   creditAccount           UserCreditAccount?
+  usageCounters           UsageCounter[]
   creditLedger            CreditLedgerEntry[]
   entitlements            UserEntitlement[]
   purchases               PurchaseRecord[]
@@ -330,16 +333,46 @@ model CreditPricingRevision {
   @@index([createdAt])
 }
 
+/// Two pools, spent plan-first. `availableCredits` is what the user bought and
+/// never expires; `planCredits` is the monthly allowance (free tier or
+/// subscription period) and is reset — not topped up — at each period boundary,
+/// so it cannot accumulate. An allowance past `planPeriodEnd` is unspendable
+/// even before the reset lands. See `planPeriods.ts`.
 model UserCreditAccount {
-  userId                 String   @id
-  availableCredits       Int      @default(0)
-  reservedCredits        Int      @default(0)
-  lifetimeCreditsGranted Int      @default(0)
-  lifetimeCreditsSpent   Int      @default(0)
-  createdAt              DateTime @default(now())
-  updatedAt              DateTime @updatedAt
+  userId                 String    @id
+  availableCredits       Int       @default(0)
+  reservedCredits        Int       @default(0)
+  lifetimeCreditsGranted Int       @default(0)
+  lifetimeCreditsSpent   Int       @default(0)
+  planCredits            Int       @default(0)
+  planCreditsPerPeriod   Int       @default(0)
+  planPeriodStart        DateTime?
+  planPeriodEnd          DateTime?
+  /// `free:2026-08` or `sub:{tokenHash}:{periodEnd}` — the grant's idempotency anchor.
+  planPeriodKey          String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Non-credit monthly limits, one row per user per counter per period.
+/// Today only `illustrated_books` (free tier: N illustrated generations a
+/// month); the shape is generic so the next limit needs no migration.
+model UsageCounter {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  /// UTC calendar month, `2026-08`.
+  periodKey String
+  used      Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, periodKey])
+  @@index([userId, kind])
 }
 
 model UserEntitlement {
@@ -380,6 +413,10 @@ model CreditLedgerEntry {
   status              CreditLedgerEntryStatus @default(SETTLED)
   operation           CreditOperation
   amountCredits       Int
+  /// How much of `amountCredits` moved the allowance pool rather than the
+  /// purchased one, same sign. Refunds read it back to restore the right pool;
+  /// SUM over a period reconciles `UserCreditAccount.planCredits`.
+  planCreditsDelta    Int                     @default(0)
   balanceAfterCredits Int?
   idempotencyKey      String                  @unique
   reversesEntryId     String?                 @unique
@@ -437,6 +474,10 @@ model SubscriptionState {
   productId              String?
   provider               BillingProvider    @default(GOOGLE_PLAY)
   externalSubscriptionId String?
+  /// Raw Google Play token, kept so the renewal sweep can re-verify without the
+  /// app. Useless to anyone without our service-account credentials; every other
+  /// record stores only the hash.
+  purchaseToken          String?
   status                 SubscriptionStatus @default(INACTIVE)
   creditsPerPeriod       Int                @default(0)
   currentPeriodStart     DateTime?
@@ -452,6 +493,7 @@ model SubscriptionState {
 
   @@index([userId, status])
   @@index([provider, externalSubscriptionId])
+  @@index([status, nextCreditGrantAt])
 }
 
 model Project {
