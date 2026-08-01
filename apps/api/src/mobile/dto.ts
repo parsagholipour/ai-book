@@ -404,6 +404,21 @@ export type MobileProjectStatusDto = {
       status: "pending" | "active" | "done" | "failed";
     }>;
   } | null;
+  /**
+   * Live milestones for the book itself, once a plan is approved. A superset of
+   * `planningProgress`: writing has far more meaningful sub-states than
+   * planning, so `detail` carries the phrase for what is happening right now.
+   */
+  generationProgress: {
+    percent: number;
+    detail: string | null;
+    steps: Array<{
+      key: "prepare" | "write" | "illustrate" | "finish";
+      label: string;
+      status: "pending" | "active" | "done" | "failed";
+      detail: string | null;
+    }>;
+  } | null;
   failureMessage: string | null;
   retryAvailable: boolean;
   steps: Array<{

@@ -271,6 +271,68 @@ describe("mobile plan revision retries and operations", () => {
     );
   });
 
+  it("retires a superseded plan revision so the sweep stops re-rejecting it", async () => {
+    const superseded = failedPlanRevisionOperationRecord();
+    state.bookEditOperations.push(superseded);
+    mockPrisma.bookEditOperation.findMany.mockImplementation(async () =>
+      state.bookEditOperations
+        .filter(
+          (operation) =>
+            operation.kind === "PLAN_REVISION" && operation.status === "FAILED" && operation.automaticRetryCount < 2
+        )
+        .map((operation) => ({
+          id: operation.id,
+          project: { userId: "user-a" },
+          automaticRetryCount: operation.automaticRetryCount,
+          automaticRetryLimit: operation.automaticRetryLimit
+        }))
+    );
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-2" });
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const { reconcileRetryablePlanRevisionOperations } = await import("../mobileProjects.js");
+
+    expect(await reconcileRetryablePlanRevisionOperations({ log })).toBe(0);
+    expect(await reconcileRetryablePlanRevisionOperations({ log })).toBe(0);
+
+    expect(superseded).toMatchObject({ automaticRetryCount: 2, nextRetryAt: null });
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ warning: "stale_plan", operationId: "operation-failed-revision" }),
+      "Plan revision retry rejected because its plan is stale"
+    );
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it("defers rather than retires a revision blocked by another open operation", async () => {
+    const blocked = failedPlanRevisionOperationRecord();
+    state.bookEditOperations.push(
+      blocked,
+      failedPlanRevisionOperationRecord({
+        id: "operation-open-edit",
+        generationJobId: "job-open-edit",
+        status: "QUEUED",
+        kind: "LOCAL_PATCH",
+        requestId: null
+      })
+    );
+    mockPrisma.bookEditOperation.findMany.mockResolvedValueOnce([
+      { id: blocked.id, project: { userId: "user-a" }, automaticRetryCount: 0, automaticRetryLimit: 2 }
+    ]);
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
+    const now = new Date("2026-06-15T14:00:00.000Z");
+    const log = { info: vi.fn(), warn: vi.fn() };
+    const { reconcileRetryablePlanRevisionOperations } = await import("../mobileProjects.js");
+
+    expect(await reconcileRetryablePlanRevisionOperations({ log, now })).toBe(0);
+
+    expect(blocked).toMatchObject({
+      automaticRetryCount: 0,
+      nextRetryAt: new Date(now.getTime() + 30_000)
+    });
+    expect(log.info).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+  });
+
   it("keeps the legacy operation retry alias available", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     state.bookEditOperations.push(failedPlanRevisionOperationRecord());

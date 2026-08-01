@@ -3,6 +3,7 @@ import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   generateBookEpub,
   getBookGenerationStrategy,
+  includeSourcesPreference,
   mediaSettingsSchema,
   resolvePublicImageUrl,
   type AppConfig
@@ -191,7 +192,8 @@ export async function compileProjectMarkdown(
       title: source.title,
       url: source.url ?? undefined,
       summary: source.summary
-    }))
+    })),
+    includeSources: includeSourcesPreference(project.mediaSettings)
   });
   assertBookLikeMarkdown(markdown);
   return markdown;

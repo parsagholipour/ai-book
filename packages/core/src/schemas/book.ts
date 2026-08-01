@@ -521,6 +521,13 @@ export const mediaSettingsSchema = z.object({
   includeCover: z.boolean().default(true),
   coverTemplate: coverTemplateIdSchema.default("auto"),
   finalReview: z.boolean().default(true),
+  /**
+   * Print the reader-facing Sources list at the end of the book. Unset leaves
+   * the automatic per-category decision in place; false suppresses it. Read it
+   * with `includeSourcesPreference` from the live project row, not from a plan
+   * snapshot — see that helper.
+   */
+  includeSources: z.boolean().optional(),
   imageStyle: z.string().optional(),
   imageModel: imageModelSelectionSchema.optional(),
   generationStrategy: bookGenerationStrategySelectionSchema.optional(),

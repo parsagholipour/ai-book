@@ -54,6 +54,6 @@ export { MOBILE_PRODUCT_PRESETS, mobileAuthError } from "./mobile/schemas.js";
 export { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "./mobile/httpErrors.js";
 export { buildMobileCreateProjectInput, loadMobileProjectDetail } from "./mobile/projectRecords.js";
 export { serializeProjectDetail } from "./mobile/projectSerializers.js";
-export { reconcileRetryablePlanRevisionOperations } from "./mobile/editOperations.js";
+export { reconcileRetryablePlanRevisionOperations } from "./mobile/planRevisionRetries.js";
 export type { MobileProjectRoutesOptions } from "./mobile/routeContext.js";
 export type * from "./mobile/dto.js";

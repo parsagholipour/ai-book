@@ -5,6 +5,7 @@ import {
   mobileTargetPagesSchema
 } from "../mobileCreation.js";
 import { buildProjectStatus, normalizeProjectQuality, type PipelineStep } from "../projectStatus.js";
+import { serializeGenerationProgress } from "./generationProgress.js";
 import { type GenerationJobType } from "../queue.js";
 import { projectExportAvailability, type ProjectExportFormat } from "../routes/projects.js";
 import {
@@ -255,7 +256,11 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   const project = status.project;
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
   const failedJob = project.jobs.find((job) => job.status === "FAILED");
-  const progressPercent = statusProgressPercent(status);
+  const mobile = mobileMetadataFromMediaSettings(project.mediaSettings);
+  const generationProgress = serializeGenerationProgress(status, {
+    imagesEnabled: mobile?.imagesEnabled ?? imagesEnabledFromMediaSettings(project.mediaSettings)
+  });
+  const progressPercent = statusProgressPercent(status, generationProgress);
   const planningProgress = serializePlanningProgress(status);
 
   return {
@@ -263,9 +268,13 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
+    // The live phrase leads whenever there is one: it is the only part of this
+    // payload that says what is happening right now rather than what stage it is.
     currentAction: planningProgress?.steps.find((step) => step.status === "active")?.label ??
+      generationProgress?.detail ??
       currentActionFromSteps(project.status, steps, progressPercent),
     planningProgress,
+    generationProgress,
     failureMessage: failedJob ? failureMessageForJob(failedJob.type as GenerationJobType, failedJob.error) : null,
     retryAvailable: status.progress.resumableFailedJobs > 0,
     steps,
@@ -398,7 +407,10 @@ export function mobileStepFromPipeline(step: PipelineStep): MobileProjectStatusD
   };
 }
 
-export function statusProgressPercent(status: ProjectStatusResult): number {
+export function statusProgressPercent(
+  status: ProjectStatusResult,
+  generationProgress?: MobileProjectStatusDto["generationProgress"]
+): number {
   const projectStatus = status.project.status;
   if (projectStatus === "COMPLETE" || projectStatus === "REVIEW_REQUIRED") {
     return 100;
@@ -414,6 +426,11 @@ export function statusProgressPercent(status: ProjectStatusResult): number {
   }
   if (projectStatus === "EDITING") {
     return 92;
+  }
+  // One number, one source: the bar the app draws and the bar inside the step
+  // list must never disagree about the same book.
+  if (generationProgress) {
+    return generationProgress.percent;
   }
 
   const pageTarget = Math.max(1, status.progress.pages.target);

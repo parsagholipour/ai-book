@@ -8,6 +8,7 @@ import {
   type BookEditScope
 } from "../bookEditIntent.js";
 import { withTimeout } from "../withTimeout.js";
+import { applyBackMatterEdit } from "./backMatterEdits.js";
 import {
   type MobileBookEditOperationRecord,
   type MobileProjectChatMessageRecord,
@@ -424,6 +425,11 @@ export async function handleProjectChatIntent(options: {
       return { reply, operation: null };
     }
     return queueChatPlanRevision({ userId, project, userMessageId, message, intent });
+  }
+
+  if (intent.kind === "back_matter" && ["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
+    const reply = await applyBackMatterEdit(project, intent, userMessageId);
+    return { reply, operation: null };
   }
 
   if (!["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {

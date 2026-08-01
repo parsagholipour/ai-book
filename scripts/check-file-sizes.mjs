@@ -44,7 +44,7 @@ const GRANDFATHERED = {
   "apps/api/src/mobile/bookEditIntents.ts": 1080,
   "apps/mobile/lib/features/projects/presentation/creation_chat_screen.dart": 1540,
   "apps/mobile/lib/features/projects/presentation/creation_chat_controller.dart": 1500,
-  "apps/mobile/lib/features/projects/presentation/generation_progress_screen.dart": 1110,
+  "apps/mobile/lib/features/projects/presentation/generation_progress_screen.dart": 920,
   "apps/mobile/lib/features/projects/presentation/project_detail_screen.dart": 1110,
   "apps/mobile/lib/features/projects/domain/creation_models.dart": 1080,
   "apps/mobile/test/projects/creation_chat_test.dart": 3470

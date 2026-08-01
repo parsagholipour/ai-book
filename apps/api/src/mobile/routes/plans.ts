@@ -6,7 +6,8 @@ import {
   type GenerationJobType
 } from "../../queue.js";
 import { type MobileProjectRecoveryDto } from "../dto.js";
-import { queueDirectPlanRevision, retryPlanRevisionOperation } from "../editOperations.js";
+import { queueDirectPlanRevision } from "../editOperations.js";
+import { retryPlanRevisionOperation } from "../planRevisionRetries.js";
 import {
   hitAuthenticatedLimit,
   requireMobileAuth,

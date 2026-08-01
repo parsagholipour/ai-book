@@ -1026,7 +1026,9 @@ void main() {
         initialLocation: '/books/chat/draft-done',
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Book plan approved'), findsOneWidget);
     expect(find.text('Tap to open plan page'), findsOneWidget);
@@ -1307,7 +1309,9 @@ void main() {
         initialLocation: '/books/chat/draft-done',
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Book plan approved'), findsOneWidget);
     expect(find.text('Generating your book'), findsOneWidget);
@@ -3238,6 +3242,7 @@ MobileProjectStatus _projectStatus({
   int targetPages = 28,
   int imageCount = 1,
   MobilePlanningProgress? planningProgress,
+  MobileGenerationProgress? generationProgress,
   MobileExportSet exports = _exports,
 }) {
   final complete = status == 'complete';
@@ -3249,6 +3254,7 @@ MobileProjectStatus _projectStatus({
     progressPercent: progressPercent,
     currentAction: currentAction,
     planningProgress: planningProgress,
+    generationProgress: generationProgress,
     failureMessage: failureMessage,
     retryAvailable: retryAvailable,
     steps: [

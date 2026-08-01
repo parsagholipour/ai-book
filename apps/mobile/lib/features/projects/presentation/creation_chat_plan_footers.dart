@@ -182,7 +182,7 @@ class _PlanBuildingFooter extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              for (final step in steps) _PlanningStepRow(step: step),
+              for (final step in steps) ProgressStepRow(step: step),
               const SizedBox(height: 6),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -202,74 +202,6 @@ class _PlanBuildingFooter extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PlanningStepRow extends StatelessWidget {
-  const _PlanningStepRow({required this.step});
-
-  final MobileProjectStatusStep step;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final stateLabel = step.isDone
-        ? 'Done'
-        : step.isFailed
-        ? 'Needs attention'
-        : step.isActive
-        ? 'In progress'
-        : 'Waiting';
-    final icon = step.isDone
-        ? Icons.check_circle
-        : step.isFailed
-        ? Icons.error
-        : Icons.radio_button_unchecked;
-    final color = step.isDone || step.isActive
-        ? colors.primary
-        : step.isFailed
-        ? colors.error
-        : colors.outline;
-
-    return Semantics(
-      container: true,
-      label: '${step.label}. $stateLabel.',
-      child: ExcludeSemantics(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          child: Row(
-            children: [
-              SizedBox.square(
-                dimension: 18,
-                child: step.isActive
-                    ? Center(
-                        child: SizedBox.square(
-                          dimension: 15,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: color,
-                          ),
-                        ),
-                      )
-                    : Icon(icon, size: 18, color: color),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  step.label,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: step.isActive
-                        ? colors.onSurface
-                        : colors.onSurfaceVariant,
-                    fontWeight: step.isActive ? FontWeight.w700 : null,
-                  ),
-                ),
               ),
             ],
           ),

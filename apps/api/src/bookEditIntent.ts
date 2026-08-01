@@ -6,6 +6,7 @@ import {
   type ToolLoopTool
 } from "@book-maker/core";
 import { z } from "zod";
+import { backMatterIntent, backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
 import { withTimeout } from "./withTimeout.js";
 
 /** Per-attempt budget for the classifier model call; the heuristic fallback covers overruns. */
@@ -21,7 +22,8 @@ export type BookEditIntentKind =
   | "undo_last_edit"
   | "show_content"
   | "book_replan"
-  | "continue_book";
+  | "continue_book"
+  | "back_matter";
 
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
 export type BookEditScope = "none" | "explicit_pages" | "matching_pages" | "all_pages";
@@ -70,6 +72,8 @@ export type BookEditIntent = {
   targetLanguage?: string | null;
   /** Set for continue_book intents: how many chapters to append. */
   continuation?: { chapterCount: number } | null;
+  /** Set for back_matter intents: whether the Sources list should be printed. */
+  backMatter?: BackMatterEdit | null;
 };
 
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
@@ -96,17 +100,6 @@ export type DecideAction =
   | "plan_revision"
   | "propose_edit";
 
-export type ProposeEditTarget =
-  | "pages"
-  | "matching"
-  | "whole_book"
-  | "chapter"
-  | "structural"
-  | "language_copy"
-  | "continuation";
-
-export type ProposeEditStyle = "exact_replace" | "rewrite";
-
 function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
   return z
     .object({
@@ -117,9 +110,11 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       clarification: z.enum(["none", "scope"]).default("none"),
       /** Required when action is propose_edit. */
       editTarget: z
-        .enum(["pages", "matching", "whole_book", "chapter", "structural", "language_copy", "continuation"])
+        .enum(["pages", "matching", "whole_book", "chapter", "structural", "language_copy", "continuation", "back_matter"])
         .optional(),
       editStyle: z.enum(["exact_replace", "rewrite"]).optional(),
+      /** Whether the Sources list should be printed, when editTarget is back_matter. */
+      backMatterSources: z.boolean().nullish(),
       pageIndexes: z.array(z.number().int().positive()).max(100).default([]),
       chapterIndex: z.number().int().positive().nullable().default(null),
       /** How many chapters to append when editTarget is continuation. */
@@ -204,6 +199,13 @@ export async function classifyProjectChatMessage(options: {
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
   const chapters = options.chapters ?? [];
+  // The sources list is compiled back matter, so no page edit can touch it.
+  // Catching that here keeps it from being priced as a page rewrite that would
+  // then leave the section in place.
+  const backMatter = options.stage === "complete" ? backMatterIntentFromMessage(message) : null;
+  if (backMatter) {
+    return backMatter;
+  }
   const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters);
   // Only ultra-high-precision read/undo shortcuts skip the model; everything
   // else (including chapter regen and language copies) goes through the tool agent.
@@ -431,6 +433,12 @@ export function intentFromProposeEdit(
     };
   }
 
+  if (target === "back_matter") {
+    // Defaults to removal: the section only exists to be dropped, so a model
+    // that picks this target without saying which way meant "take it out".
+    return backMatterIntent({ includeSources: decision.backMatterSources ?? false }, decision);
+  }
+
   if (target === "language_copy" || target === "structural") {
     return {
       kind: "book_replan",
@@ -537,6 +545,7 @@ function routerSystemPrompt(stage: Exclude<BookEditProjectStage, "other">, canRe
           "Use action undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
           "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (premise/character/audience/ending/structure/visual identity), language_copy (new language version), or continuation (continue the book: write the next chapter(s), keep writing, finish the story; set newChapterCount when the user says how many).",
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
+          "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           "Set pageIndexes or chapterIndex when known. Set targetLanguage for language_copy.",
           "Never invent credit prices or internal pricing tiers; the server prices propose_edit."
         ]

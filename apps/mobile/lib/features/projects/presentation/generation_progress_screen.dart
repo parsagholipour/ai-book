@@ -7,7 +7,6 @@ import 'package:go_router/go_router.dart';
 import '../../../app/config/app_config.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_error.dart';
-import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
@@ -16,6 +15,7 @@ import '../../billing/domain/billing_models.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'book_cover.dart';
+import 'generation_progress_overview.dart';
 import 'project_route_error.dart';
 import 'project_export_actions.dart';
 import 'project_export_panel.dart';
@@ -328,7 +328,7 @@ class ProjectGenerationView extends StatelessWidget {
             _BookReadyCard(status: status, project: project),
             const SizedBox(height: 12),
           ] else ...[
-            _ProgressOverviewCard(
+            GenerationProgressOverviewCard(
               status: status,
               initialMessage: initialMessage,
               busyAction: busyAction,
@@ -566,205 +566,6 @@ class _QualityGateCard extends StatelessWidget {
   }
 }
 
-class _ProgressOverviewCard extends StatelessWidget {
-  const _ProgressOverviewCard({
-    required this.status,
-    required this.busyAction,
-    this.initialMessage,
-    this.onResume,
-  });
-
-  final MobileProjectStatus status;
-  final String? initialMessage;
-  final String? busyAction;
-  final Future<void> Function()? onResume;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final progress = status.progressPercent.clamp(0, 100).toInt();
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              status.statusLabel,
-              style: Theme.of(
-                context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              status.effectiveAction,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
-            ),
-            if (initialMessage != null &&
-                initialMessage != status.currentAction) ...[
-              const SizedBox(height: 4),
-              Text(
-                initialMessage!,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-              ),
-            ],
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: AppAnimatedProgressBar(
-                    value: progress / 100,
-                    semanticLabel: 'Book generation progress',
-                  ),
-                ),
-                const SizedBox(width: 12),
-                AppAnimatedCount(
-                  value: progress,
-                  builder: (value) => '$value%',
-                  style: Theme.of(context).textTheme.labelLarge,
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                AppMetricChip(
-                  icon: Icons.menu_book_outlined,
-                  label:
-                      '${status.pageProgress.completed}/${status.pageProgress.target} pages',
-                ),
-                AppMetricChip(
-                  icon: Icons.image_outlined,
-                  label: '${status.imageCount} visuals',
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            for (final step in status.steps) _ProgressStepTile(step: step),
-            if (status.isAutomaticRetryPending) ...[
-              const SizedBox(height: 12),
-              AppInlineNotice(
-                icon: Icons.autorenew_outlined,
-                title: 'Retry scheduled',
-                message: status.retryMessage?.trim().isNotEmpty == true
-                    ? status.retryMessage!
-                    : 'Writing will continue automatically. You can leave this screen.',
-                tone: AppNoticeTone.info,
-              ),
-            ] else if (status.hasFailure || status.status == 'failed') ...[
-              const SizedBox(height: 12),
-              AppInlineNotice(
-                icon: Icons.error_outline,
-                title: status.retryAvailable
-                    ? 'Writing needs a retry'
-                    : 'Writing needs attention',
-                message: status.failureMessage?.trim().isNotEmpty == true
-                    ? status.failureMessage!
-                    : status.effectiveAction,
-                tone: AppNoticeTone.error,
-              ),
-              if (onResume != null) ...[
-                const SizedBox(height: 10),
-                FilledButton.icon(
-                  onPressed: busyAction == 'resume' ? null : () => onResume!(),
-                  icon: busyAction == 'resume'
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            semanticsLabel: 'Retrying generation',
-                          ),
-                        )
-                      : const Icon(Icons.replay_outlined),
-                  label: const Text('Retry generation'),
-                ),
-              ],
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ProgressStepTile extends StatelessWidget {
-  const _ProgressStepTile({required this.step});
-
-  final MobileProjectStatusStep step;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final icon = step.isDone
-        ? Icons.check_circle
-        : step.isFailed
-        ? Icons.error
-        : step.isActive
-        ? Icons.radio_button_checked
-        : Icons.radio_button_unchecked;
-    final color = step.isDone
-        ? colors.primary
-        : step.isFailed
-        ? colors.error
-        : step.isActive
-        ? colors.tertiary
-        : colors.onSurfaceVariant;
-    final stateLabel = step.isDone
-        ? 'Done'
-        : step.isFailed
-        ? 'Needs attention'
-        : step.isActive
-        ? 'In progress'
-        : 'Waiting';
-    final semanticLabel = [
-      step.label,
-      stateLabel,
-      if (step.detail != null) step.detail!,
-    ].join('. ');
-    return Semantics(
-      container: true,
-      label: semanticLabel,
-      child: ExcludeSemantics(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      step.label,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    if (step.detail != null)
-                      Text(
-                        step.detail!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 class GeneratedBookPreview extends StatelessWidget {
   const GeneratedBookPreview({

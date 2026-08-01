@@ -10,7 +10,7 @@ import 'package:tomeza/features/projects/presentation/book_cover.dart';
 import 'package:tomeza/features/projects/presentation/book_shelf.dart';
 
 void main() {
-  testWidgets('shelf shows a cover per book, finished ones first', (
+  testWidgets('shelf shows a cover per book, most recent first', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -40,9 +40,11 @@ void main() {
     expect(find.text('Ready'), findsOneWidget);
     expect(find.text('40% written'), findsOneWidget);
 
-    // Finished books lead, even though the in-progress one is more recent.
+    // A book still being written is not pushed behind the finished one: the
+    // shelf is ordered by what was touched last.
     final covers = tester.widgetList<BookCover>(find.byType(BookCover));
-    expect(covers.first.title, 'Finished Book');
+    expect(covers.first.title, 'Half Written');
+    expect(covers.last.title, 'Finished Book');
   });
 
   testWidgets('ideas without a plan are not shelved as books', (tester) async {

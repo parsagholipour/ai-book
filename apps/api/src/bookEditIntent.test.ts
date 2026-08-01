@@ -137,6 +137,65 @@ describe("book edit intent heuristics", () => {
     expect(intent.kind).toBe("show_content");
   });
 
+  it("keeps a sources-removal request off the priced page-edit path", async () => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.95,
+      reasoning: "Should never be used.",
+      assistantMessage: "Model reply",
+      clarification: "none",
+      pageIndexes: [1, 2],
+      chapterIndex: null,
+      targetLanguage: null,
+      editTarget: "whole_book"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Remove the sources at the end of the book",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    // The sources list is compiled back matter: rewriting pages would charge
+    // for work that cannot remove it.
+    expect(model.generateWithTools).not.toHaveBeenCalled();
+    expect(intent.kind).toBe("back_matter");
+    expect(intent.backMatter).toEqual({ includeSources: false });
+    expect(intent.affectedPageIndexes).toEqual([]);
+  });
+
+  it("routes the router's back_matter edit target to a free back-matter intent", async () => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.93,
+      reasoning: "The reader wants the citation list gone.",
+      assistantMessage: "Ich entferne die Quellenliste.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null,
+      editTarget: "back_matter",
+      backMatterSources: false
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Entferne die Quellenliste am Ende des Buches",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    expect(model.generateWithTools).toHaveBeenCalledOnce();
+    expect(intent).toMatchObject({
+      kind: "back_matter",
+      backMatter: { includeSources: false },
+      assistantMessage: "Ich entferne die Quellenliste."
+    });
+  });
+
   it("uses the AI router for plan revisions via decide", async () => {
     const model = fakeDecideModel({
       action: "plan_revision",
@@ -521,6 +580,7 @@ type DecideArgs = {
   targetLanguage: string | null;
   editTarget?: string;
   editStyle?: string;
+  backMatterSources?: boolean;
 };
 
 function decideDecision(args: DecideArgs): ToolCallsResult {

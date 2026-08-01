@@ -172,6 +172,14 @@ tells you when a listed file has dropped under the default so the entry can be d
   credits buy and that failures are refunded. `stripCreditAnnouncement` in
   `apps/api/src/mobile/projectChat.ts` removes the old sentence from transcripts written before
   that, so a new priced reply that writes the price into its text would say it twice.
+- **The Sources list at the end of a book is not page text.** `compileBookMarkdown` builds it from
+  the project's `ResearchSource` rows on every export, so no page edit can remove it — routed as
+  one it charges for rewriting pages that never held it and then recompiles the section straight
+  back. "Remove the sources" is a `back_matter` intent instead
+  (`apps/api/src/bookEditBackMatter.ts` recognises it, the router has a matching `back_matter`
+  edit target): free, it sets `mediaSettings.includeSources` on the project and queues the same
+  recompile undo uses. Read that flag with `includeSourcesPreference` from the **project row**,
+  never from a plan version's `inputSnapshot`, or toggling it would need a replan to take effect.
 - **A non-null `ProviderCallLog.costHint` *is* a settled, priced call.** Provisional, in-flight and
   failed rows all write `null` (`apps/worker/src/providers/usageAccounting.ts`), so real provider
   spend is `SUM("costHint")` — do not replay the rate cards in `packages/core/src/costs.ts` to
@@ -249,3 +257,11 @@ tells you when a listed file has dropped under the default so the entry can be d
   outside the Dio client and without the bearer token.
 - Docker bind-mounts the repo, so `node_modules` uses anonymous volumes. After changing
   `pnpm-lock.yaml`, rebuild images or run `make deps`, or the containers keep a stale install.
+- **`make up` and `pnpm dev` are the same queue.** A host worker defaults to
+  `redis://localhost:6379` and `./storage`, which are the published ports and the bind mount of the
+  Docker stack — so running both means two workers racing for one book's jobs, and a
+  `MOCK_AI=true` host worker will happily answer a real generation with canned text. The container
+  writes as root; `scripts/docker-dev-entrypoint.sh` sets `umask 0000` so the host user can still
+  write into directories the container created first, but the fix for a stray `EACCES` under
+  `storage/` is to stop the duplicate stack, not to loosen permissions further. Check with
+  `ps -eo pid,args | grep dev:worker` before blaming the code.

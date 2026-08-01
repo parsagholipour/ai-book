@@ -36,12 +36,14 @@ import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
+import 'progress_step_row.dart';
 import 'project_export_actions.dart';
 import 'saved_export_card.dart';
 
 // This screen is one Dart library split across part files so the private
 // widgets below can stay private while living in readable, focused files.
 part 'creation_chat_plan.dart';
+part 'creation_chat_generation.dart';
 part 'creation_chat_plan_footers.dart';
 part 'creation_chat_brief.dart';
 part 'creation_chat_transcript.dart';

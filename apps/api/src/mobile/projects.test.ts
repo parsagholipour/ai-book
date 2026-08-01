@@ -219,8 +219,8 @@ describe("mobile project listing, detail and status", () => {
       projectId: "project-1",
       status: "generating",
       statusLabel: "Generating your book",
-      progressPercent: 38,
-      currentAction: "Writing your book pages.",
+      progressPercent: 44,
+      currentAction: "Writing page 4",
       retryAvailable: true,
       pageProgress: { completed: 3, target: 10 },
       imageCount: 1

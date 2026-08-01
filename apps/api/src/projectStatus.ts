@@ -190,6 +190,11 @@ export async function buildProjectStatus(projectId: string) {
       research: project._count.research,
       failedJobs,
       resumableFailedJobs,
+      // Image work still owed and whether an export has ever been compiled:
+      // both already drive the pipeline steps, and the mobile generation
+      // progress needs them to size its illustration and finish bands.
+      openImageJobs,
+      hasCompileJob: compileJobs > 0,
       pipeline,
       tokens: projectTokens,
       cost,

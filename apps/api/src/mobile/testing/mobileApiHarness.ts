@@ -492,6 +492,7 @@ export function projectRecord(overrides: Record<string, unknown> = {}) {
     currentPlan: null,
     chapters: [],
     pages: [],
+    research: [],
     _count: { pages: 0, images: 0, jobs: 0 },
     createdAt: new Date("2026-06-01T12:00:00.000Z"),
     updatedAt: new Date("2026-06-01T12:00:00.000Z"),
@@ -753,6 +754,9 @@ export function statusRecord(overrides: Record<string, any> = {}) {
       id: "project-1",
       title: "Owned Book",
       status: "DRAFT",
+      targetPages: 12,
+      mediaSettings: { fullIllustrations: true, includeCover: true },
+      currentPlan: null,
       updatedAt: new Date("2026-06-15T12:00:00.000Z"),
       jobs: []
     },
@@ -768,6 +772,8 @@ export function statusRecord(overrides: Record<string, any> = {}) {
       research: 0,
       failedJobs: 0,
       resumableFailedJobs: 0,
+      openImageJobs: 0,
+      hasCompileJob: false,
       pipeline: [
         { key: "plan", label: "Plan", status: "pending" },
         { key: "pages", label: "Pages", status: "pending", detail: "0/12 pages" },

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { assertBookLikeMarkdown, compileBookMarkdown, findBookLikeMarkdownIssues } from "./markdown.js";
+import {
+  assertBookLikeMarkdown,
+  compileBookMarkdown,
+  findBookLikeMarkdownIssues,
+  includeSourcesPreference
+} from "./markdown.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 
 describe("compileBookMarkdown", () => {
@@ -398,6 +403,50 @@ describe("compileBookMarkdown", () => {
 
     expect(markdown).toContain("## Sources");
     expect(markdown).toContain("- [Sleep research](https://example.com/sleep)");
+  });
+
+  it("drops the sources back matter when the reader turned it off", () => {
+    const plan = makeFallbackPlan({
+      prompt: "A careful patient education book about sleep and long-term health.",
+      category: "HEALTH",
+      targetPages: 1,
+      complexity: 6,
+      temperature: 0.45,
+      language: "en",
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        toneProfile: "neutral" as const
+      }
+    });
+
+    const markdown = compileBookMarkdown({
+      plan,
+      category: "HEALTH",
+      pages: [{ index: 1, title: "First", markdown: "The first page." }],
+      researchSources: [
+        {
+          title: "Sleep research",
+          url: "https://example.com/sleep",
+          summary: "A source the reader asked us to stop printing."
+        }
+      ],
+      includeSources: false
+    });
+
+    expect(markdown).not.toContain("## Sources");
+    expect(markdown).not.toContain("https://example.com/sleep");
+  });
+
+  it("reads the sources preference off a project's media settings", () => {
+    expect(includeSourcesPreference({ includeSources: false })).toBe(false);
+    expect(includeSourcesPreference({ includeSources: true })).toBe(true);
+    // Unset (and anything unparseable) leaves the automatic decision alone.
+    expect(includeSourcesPreference({ includeCover: true })).toBeUndefined();
+    expect(includeSourcesPreference(null)).toBeUndefined();
   });
 
   it("omits source citations for fictional kid stories even when source rows exist", () => {

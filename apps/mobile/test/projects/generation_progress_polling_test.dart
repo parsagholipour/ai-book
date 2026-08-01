@@ -46,6 +46,62 @@ void main() {
     await statusController.close();
   });
 
+  testWidgets('the progress card prefers the live milestones and falls back '
+      'to the pipeline steps', (tester) async {
+    final withMilestones = _CountingProjectsRepository(
+      () => Stream.value(
+        _status(
+          'generating',
+          generationProgress: const MobileGenerationProgress(
+            percent: 44,
+            detail: 'Writing page 5 of 10',
+            steps: [
+              MobileProjectStatusStep(
+                key: 'prepare',
+                label: 'Preparing your chapters',
+                status: 'done',
+              ),
+              MobileProjectStatusStep(
+                key: 'write',
+                label: 'Writing your pages',
+                status: 'active',
+                detail: '4 of 10 pages',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpWidget(_app(withMilestones));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('Writing your pages'), findsOneWidget);
+    expect(find.text('4 of 10 pages'), findsOneWidget);
+
+    final withoutMilestones = _CountingProjectsRepository(
+      () => Stream.value(
+        _status(
+          'generating',
+          steps: const [
+            MobileProjectStatusStep(
+              key: 'write',
+              label: 'Write',
+              status: 'active',
+              detail: '4/10 pages',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(_app(withoutMilestones));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('Write'), findsOneWidget);
+    expect(find.text('Writing your pages'), findsNothing);
+  });
+
   testWidgets('a project that is already settled never starts the poll timer', (
     tester,
   ) async {
@@ -78,7 +134,11 @@ Widget _app(_CountingProjectsRepository repository) {
   );
 }
 
-MobileProjectStatus _status(String status) {
+MobileProjectStatus _status(
+  String status, {
+  MobileGenerationProgress? generationProgress,
+  List<MobileProjectStatusStep> steps = const [],
+}) {
   return MobileProjectStatus(
     projectId: 'project-1',
     status: status,
@@ -87,8 +147,9 @@ MobileProjectStatus _status(String status) {
         : 'Generating your book',
     progressPercent: status == 'complete' ? 100 : 40,
     currentAction: 'Writing your book pages.',
+    generationProgress: generationProgress,
     retryAvailable: false,
-    steps: const [],
+    steps: steps,
     pageProgress: const MobilePageProgress(completed: 4, target: 10),
     imageCount: 0,
     exports: _exports(),

@@ -30,7 +30,28 @@ export type CompileMarkdownInput = {
     imageAlt?: string | undefined;
   } | undefined;
   researchSources?: Array<{ title: string; url?: string | undefined; summary: string }>;
+  /**
+   * Reader preference for the Sources back matter. `false` drops the section
+   * even when the category and plan would normally print it; `undefined` leaves
+   * the automatic decision in {@link shouldRenderSources} alone.
+   */
+  includeSources?: boolean | undefined;
 };
+
+/**
+ * Reads {@link CompileMarkdownInput.includeSources} out of a project's stored
+ * `mediaSettings`. This is a live project preference, so read it from the
+ * project row and never from a plan version's frozen `inputSnapshot` — turning
+ * the Sources list off has to take effect on the next recompile, without
+ * replanning.
+ */
+export function includeSourcesPreference(mediaSettings: unknown): boolean | undefined {
+  const settings =
+    mediaSettings && typeof mediaSettings === "object" && !Array.isArray(mediaSettings)
+      ? (mediaSettings as Record<string, unknown>)
+      : {};
+  return typeof settings.includeSources === "boolean" ? settings.includeSources : undefined;
+}
 
 type MarkdownLabels = {
   contentsEyebrow: string;
@@ -520,6 +541,9 @@ function escapeMarkdownLinkText(text: string): string {
 }
 
 function formatReaderFacingSources(input: CompileMarkdownInput, pages: MarkdownPage[]): string {
+  if (input.includeSources === false) {
+    return "";
+  }
   const citations = uniqueResearchCitations(input.researchSources ?? []);
   if (citations.length === 0 || !shouldRenderSources(input, pages)) {
     return "";

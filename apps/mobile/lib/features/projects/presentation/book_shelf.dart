@@ -126,15 +126,10 @@ List<MobileProjectSummary> _shelfBooks(List<MobileProjectSummary> projects) {
   final books = projects
       .where((project) => project.hasPlan || project.pageCount > 0)
       .toList();
-  books.sort((a, b) {
-    // Finished books first — they are what people come back to open.
-    final aDone = a.hasReadyExport ? 0 : 1;
-    final bDone = b.hasReadyExport ? 0 : 1;
-    if (aDone != bDone) {
-      return aDone.compareTo(bDone);
-    }
-    return b.updatedAt.compareTo(a.updatedAt);
-  });
+  // Most recently touched first, whatever state it is in. Ranking finished
+  // books above the rest buried the book being written right now — the one the
+  // user is most likely to be waiting on — behind every book they already read.
+  books.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
   return books;
 }
 

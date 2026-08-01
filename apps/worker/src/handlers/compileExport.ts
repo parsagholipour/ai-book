@@ -30,6 +30,7 @@ import {
   createReaderChaptersForExport,
   generateBookEpub,
   generateJsonWithRetry,
+  includeSourcesPreference,
   publicAssetUrl,
   resolvePublicImageUrl,
   runDeterministicManuscriptChecks,
@@ -212,7 +213,11 @@ export async function compileExport(job: Job) {
       title: source.title,
       url: source.url ?? undefined,
       summary: source.summary
-    }))
+    })),
+    // From the project row rather than `input`, whose mediaSettings come from
+    // the plan's frozen snapshot: dropping the Sources list is a live reader
+    // preference that only queues a recompile.
+    includeSources: includeSourcesPreference(project.mediaSettings)
   });
   assertBookLikeMarkdown(markdown);
   await advanceJobStep(generationJobId, "write", 80);
