@@ -5,6 +5,7 @@ import 'package:tomeza/features/account/presentation/account_screen.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/presentation/billing_plan_tiles.dart';
+import 'package:tomeza/features/billing/presentation/billing_tier_style.dart';
 
 /// Plan tiers, the allowance, and the free tier's image budget as the app shows
 /// them. The purchase plumbing itself is covered by billing_paywall_test.dart.
@@ -107,7 +108,59 @@ void main() {
 
       expect(find.text('80,000 credits every month'), findsOneWidget);
       expect(find.text('Unlimited illustrated books'), findsOneWidget);
-      expect(find.text(r'$199.99 / month'), findsOneWidget);
+      expect(find.text(r'$199.99'), findsOneWidget);
+      expect(find.text('per month'), findsOneWidget);
+      // The call to action names the move, not the price — the price is already
+      // the largest thing on the card.
+      expect(find.text('Upgrade to Max'), findsOneWidget);
+    });
+
+    testWidgets('the better deal is worked out from the prices on offer', (
+      tester,
+    ) async {
+      final value = billingPlanValue(const [_creator, _max], const {});
+
+      // $19.99/6,000 is 300 credits per dollar against Max's 400, so Max is a
+      // quarter cheaper per credit.
+      expect(value.bestValueSku, 'tomeza.max_monthly');
+      expect(value.savingsFor('tomeza.max_monthly'), 25);
+      expect(value.savingsFor('tomeza.creator_monthly'), isNull);
+
+      await tester.pumpWidget(
+        _wrap(
+          BillingPlanCard(
+            product: _max,
+            isCurrentPlan: false,
+            pending: false,
+            bestValue: true,
+            savingsPercent: value.savingsFor('tomeza.max_monthly'),
+            onBuy: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('BEST VALUE'), findsOneWidget);
+      expect(find.text('Save 25%'), findsOneWidget);
+    });
+
+    testWidgets('a downgrade is offered as a switch, not an upgrade', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          BillingPlanCard(
+            product: _creator,
+            isCurrentPlan: false,
+            currentTier: 'max',
+            pending: false,
+            onBuy: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Switch to Creator'), findsOneWidget);
     });
 
     testWidgets('the plan you are on cannot be bought again', (tester) async {
@@ -131,10 +184,71 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Current'), findsOneWidget);
+      expect(find.text('YOUR CURRENT PLAN'), findsOneWidget);
+      expect(find.text('Your plan'), findsOneWidget);
       final button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
     });
+  });
+
+  group('plan card layout', () {
+    // The card packs a price, a savings chip, a ribbon and a benefit list into
+    // a phone's width. Long localised prices and large type are where that
+    // comes apart, so both are rendered rather than assumed.
+    for (final scale in <double>[1, 1.6]) {
+      testWidgets('survives a long price and a $scale text scale', (
+        tester,
+      ) async {
+        tester.view.physicalSize = const Size(360, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          _scope(
+            _billing(),
+            MaterialApp(
+              home: Scaffold(
+                body: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        BillingPlanCard(
+                          product: _max,
+                          isCurrentPlan: false,
+                          pending: false,
+                          bestValue: true,
+                          savingsPercent: 25,
+                          onBuy: () {},
+                          storeProduct: const StoreProduct(
+                            id: 'tomeza.max_monthly',
+                            title: 'Max',
+                            description: '',
+                            price: 'Rp 3.199.000,00',
+                            rawPrice: 3199000,
+                            currencyCode: 'IDR',
+                          ),
+                        ),
+                        BillingPlanCard(
+                          product: _creator,
+                          isCurrentPlan: true,
+                          pending: false,
+                          currentTier: 'creator',
+                          onBuy: () {},
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 
   group('plan banner', () {
@@ -156,7 +270,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining('600 of 1000 monthly credits left'), findsOneWidget);
+      expect(find.text('600'), findsOneWidget);
+      expect(find.text('credits available'), findsOneWidget);
+      expect(find.textContaining('600 of 1,000 monthly credits left'), findsOneWidget);
       expect(find.textContaining('2 of 3 illustrated books left'), findsOneWidget);
     });
 

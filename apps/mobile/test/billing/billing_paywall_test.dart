@@ -20,9 +20,17 @@ void main() {
     await tester.pumpWidget(testPaywall(store: store, repository: repository));
     await tester.pumpAndSettle();
 
-    expect(find.text('One book export'), findsOneWidget);
     expect(find.text('Creator monthly'), findsOneWidget);
-    expect(find.text('100 credits available'), findsOneWidget);
+    expect(find.text('100'), findsOneWidget);
+    expect(find.text('credits available'), findsOneWidget);
+
+    // Plans lead the sheet, so the one-off purchases are a scroll away.
+    await tester.scrollUntilVisible(
+      find.text('Restore purchases'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('One book export'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, r'$9.99'));
     await tester.pump();
@@ -58,14 +66,14 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.scrollUntilVisible(
-      find.text('1100 credits available'),
+      find.text('1,100'),
       -200,
       scrollable: find.byType(Scrollable).first,
     );
     expect(repository.verifications.single.productId, 'tomeza.one_book_export');
     expect(repository.verifications.single.purchaseToken, 'purchase-token-1');
     expect(store.finished.single.purchaseToken, 'purchase-token-1');
-    expect(find.text('1100 credits available'), findsOneWidget);
+    expect(find.text('1,100'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('1000 credits added.'),
       200,
