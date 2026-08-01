@@ -37,6 +37,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
     final contentCard = message.isAssistant ? message.contentCard : null;
     final editProposal = message.isAssistant ? message.editProposal : null;
+    final creditsCharged = message.isAssistant ? message.creditsCharged : null;
     final branch = message.branch;
     final timestamp = _formatChatTimestamp(message.createdAt);
     final replanCopyTargetProjectId = message.isAssistant
@@ -71,11 +72,28 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              message.content,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: foreground),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: Text(
+                    message.content,
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodyMedium?.copyWith(color: foreground),
+                  ),
+                ),
+                // The reply no longer names its price; the badge does, and it
+                // explains what credits buy when tapped.
+                if (creditsCharged != null) ...[
+                  const SizedBox(width: 8),
+                  CreditCostBadge(
+                    credits: creditsCharged,
+                    foreground: foreground,
+                  ),
+                ],
+              ],
             ),
             if (timestamp != null) ...[
               const SizedBox(height: 6),

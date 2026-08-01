@@ -343,6 +343,21 @@ export async function insufficientCreditsChatMessage(
   });
 }
 
+/**
+ * Assistant replies used to announce the price in prose ("This uses 800
+ * credits."). The app now shows that number as a tappable badge sourced from
+ * `metadata.creditsCharged` / `metadata.editProposal.credits`, so the sentence
+ * is dropped on the way out — otherwise every message stored before the change
+ * would state the price twice. Stored content is left intact: the intent
+ * classifier reads the records, not this DTO.
+ */
+const CREDIT_ANNOUNCEMENT = /\s*(?:this|it)\s+(?:uses|would\s+use)\s+[\d,]+\s+credits\./gi;
+
+export function stripCreditAnnouncement(content: string): string {
+  const stripped = content.replace(CREDIT_ANNOUNCEMENT, "");
+  return stripped === content ? content : stripped.replace(/[ \t]{2,}/g, " ").trim();
+}
+
 export function serializeProjectChatMessage(
   message: MobileProjectChatMessageRecord,
   branch: MobileProjectChatBranchDto | null = null
@@ -352,7 +367,7 @@ export function serializeProjectChatMessage(
     projectId: message.projectId,
     parentId: message.parentId ?? null,
     role: message.role.toLowerCase() as MobileProjectChatMessageDto["role"],
-    content: message.content,
+    content: message.role === "ASSISTANT" ? stripCreditAnnouncement(message.content) : message.content,
     operationId: message.operationId,
     metadata: sanitizePublicChatMetadata(jsonValue(message.metadata)),
     branch,

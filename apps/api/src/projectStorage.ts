@@ -7,12 +7,14 @@ export async function deleteProjectStorage(appConfig: AppConfig, projectId: stri
   const targets = {
     book: join(appConfig.BOOK_STORAGE_DIR, projectId),
     images: join(appConfig.IMAGE_STORAGE_DIR, projectId),
-    voice: join(appConfig.VOICE_STORAGE_DIR, projectId)
+    voice: join(appConfig.VOICE_STORAGE_DIR, projectId),
+    audio: join(appConfig.AUDIO_STORAGE_DIR, projectId)
   };
   const results: Record<keyof typeof targets, boolean> = {
     book: false,
     images: false,
-    voice: false
+    voice: false,
+    audio: false
   };
 
   for (const [key, path] of Object.entries(targets) as Array<[keyof typeof targets, string]>) {

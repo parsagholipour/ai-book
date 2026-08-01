@@ -4,6 +4,11 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Talk out loud with the characters from your books.</string>
+	<!-- Keeps an audiobook playing when the app is backgrounded or the screen locks. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to use as source material or inspiration for your book.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

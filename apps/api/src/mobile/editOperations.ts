@@ -113,8 +113,8 @@ export async function queueChatPlanRevision(options: {
       operationId: operation.id,
       content:
         project.currentPlan?.status === "APPROVED"
-          ? `I’ll revise the approved plan and reopen it for review. This uses ${credits} credits.`
-          : `I’ll revise the plan now. This uses ${credits} credits.`,
+          ? "I’ll revise the approved plan and reopen it for review."
+          : "I’ll revise the plan now.",
       metadata: { intent, charged: true, creditsCharged: credits }
     });
     await prisma.bookEditOperation.update({
@@ -218,7 +218,7 @@ export async function queueChatBookReplanCopy(options: {
       projectId: project.id,
       parentId: userMessageId,
       operationId: operation.id,
-      content: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged. This uses ${cost} credits.`,
+      content: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged.`,
       metadata: {
         intent,
         charged: true,
@@ -343,7 +343,7 @@ export async function queueChatBookEdit(options: {
       projectId: project.id,
       parentId: userMessageId,
       operationId: operation.id,
-      content: operationQueuedMessage(intent.kind, affectedPageIndexes, cost, intent),
+      content: operationQueuedMessage(intent.kind, affectedPageIndexes, intent),
       metadata: { intent, charged: true, creditsCharged: cost }
     });
     await prisma.bookEditOperation.update({
@@ -440,7 +440,7 @@ export async function queueChatContinueBook(options: {
       projectId: project.id,
       parentId: userMessageId,
       operationId: operation.id,
-      content: operationQueuedMessage(intent.kind, [], cost, intent),
+      content: operationQueuedMessage(intent.kind, [], intent),
       metadata: { intent, charged: true, creditsCharged: cost }
     });
     await prisma.bookEditOperation.update({

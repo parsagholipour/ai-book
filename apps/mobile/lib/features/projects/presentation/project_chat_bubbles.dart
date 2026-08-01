@@ -5,6 +5,7 @@ import '../../../shared/ui/motion.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
+import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
@@ -141,14 +142,18 @@ class OperationBubble extends StatelessWidget {
                         : operation.displayAction,
                   ),
                 ),
-                if (operation.creditsCharged > 0)
-                  Text(
-                    operation.creditsRefunded
-                        // A failure costs nothing. Printing the price on its own
-                        // reads as a charge that stood.
-                        ? '${operation.creditsCharged} credits refunded'
-                        : '${operation.creditsCharged} credits',
+                if (operation.creditsCharged > 0) ...[
+                  const SizedBox(width: 8),
+                  CreditCostBadge(
+                    credits: operation.creditsCharged,
+                    // A failure costs nothing, and a bare price reads as a
+                    // charge that stood — the refunded badge says otherwise.
+                    kind: operation.creditsRefunded
+                        ? CreditCostKind.refunded
+                        : CreditCostKind.charged,
+                    foreground: failed ? colors.onErrorContainer : null,
                   ),
+                ],
               ],
             ),
             if (failed ||
@@ -321,6 +326,7 @@ class ProjectMessageBubble extends StatelessWidget {
     required this.onSwitchBranch,
     required this.showProposalActions,
     required this.sending,
+    this.showCreditCost = true,
     this.onStartEdit,
     this.onCancelEdit,
     this.onSubmitEdit,
@@ -338,6 +344,11 @@ class ProjectMessageBubble extends StatelessWidget {
   final bool switchingBranch;
   final bool showProposalActions;
   final bool sending;
+
+  /// False when this turn's edit already has an operation card underneath it:
+  /// that card carries the charge (and knows whether it was refunded), so the
+  /// bubble would only be repeating the number.
+  final bool showCreditCost;
   final ValueChanged<String> onSwitchBranch;
   final VoidCallback? onStartEdit;
   final VoidCallback? onCancelEdit;
@@ -355,6 +366,9 @@ class ProjectMessageBubble extends StatelessWidget {
     final manualEdit = message.isAssistant ? message.manualEdit : null;
     final contentCard = message.isAssistant ? message.contentCard : null;
     final editProposal = message.isAssistant ? message.editProposal : null;
+    final creditsCharged = message.isAssistant && showCreditCost
+        ? message.creditsCharged
+        : null;
     final background = editing
         ? colors.surfaceContainerHighest
         : isUser
@@ -402,6 +416,13 @@ class ProjectMessageBubble extends StatelessWidget {
                           style: TextStyle(color: foreground),
                         ),
                       ),
+                      if (creditsCharged != null) ...[
+                        const SizedBox(width: 8),
+                        CreditCostBadge(
+                          credits: creditsCharged,
+                          foreground: foreground,
+                        ),
+                      ],
                       if (isUser && onStartEdit != null) ...[
                         const SizedBox(width: 4),
                         IconButton(

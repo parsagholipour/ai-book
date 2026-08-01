@@ -6,9 +6,10 @@ import { AlibabaImageAdapter, AlibabaTextAdapter } from "./alibaba.js";
 import { DeepInfraAdapter } from "./deepinfra.js";
 import { DeepSeekAdapter } from "./deepseek.js";
 import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
-import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeTextModelAdapter } from "./fake.js";
+import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeSpeechAdapter, FakeTextModelAdapter } from "./fake.js";
 import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
-import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, TextModelAdapter } from "./types.js";
+import { GeminiSpeechAdapter } from "./geminiSpeech.js";
+import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, SpeechAdapter, TextModelAdapter } from "./types.js";
 import { modelTierImageSelection, modelTierTextFallbackSelection, modelTierTextSelections } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
 import { FallbackTextModelAdapter } from "./textFallback.js";
@@ -25,6 +26,7 @@ export type ProviderSet = {
   research: ResearchAdapter;
   image: ImageAdapter;
   embedding: EmbeddingAdapter;
+  speech: SpeechAdapter;
 };
 
 export type TextModelOption = TextModelSelection & {
@@ -222,7 +224,8 @@ export function createProviders(config: AppConfig, input?: CreateProjectInput): 
       text: new FakeTextModelAdapter(input),
       research: createResearchAdapter(config),
       image: new FakeImageAdapter(),
-      embedding: new FakeEmbeddingAdapter()
+      embedding: new FakeEmbeddingAdapter(),
+      speech: new FakeSpeechAdapter()
     };
   }
 
@@ -234,8 +237,19 @@ export function createProviders(config: AppConfig, input?: CreateProjectInput): 
     embedding: new GeminiEmbeddingAdapter({
       apiKey: config.GEMINI_API_KEY,
       embeddingModel: config.GEMINI_EMBEDDING_MODEL
-    })
+    }),
+    speech: createSpeechAdapter(config)
   };
+}
+
+export function createSpeechAdapter(config: AppConfig): SpeechAdapter {
+  if (config.MOCK_AI) {
+    return new FakeSpeechAdapter();
+  }
+  return new GeminiSpeechAdapter({
+    apiKey: config.GEMINI_API_KEY,
+    model: config.GEMINI_TTS_MODEL
+  });
 }
 
 export function createFastRoutingTextModel(config: AppConfig): TextModelAdapter {

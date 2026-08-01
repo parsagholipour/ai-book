@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/features/projects/presentation/credit_cost_badge.dart';
 import 'package:tomeza/features/projects/presentation/project_chat_screen.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 
@@ -227,7 +228,9 @@ void main() {
         .getTopLeft(find.text('On page 1, replace "night" with "day".'))
         .dy;
     final proposal = tester
-        .getTopLeft(find.text('Edit page 1. This would use 35 credits.'))
+        .getTopLeft(
+          find.text('Edit page 1. Tap Apply to confirm, or Cancel to drop it.'),
+        )
         .dy;
 
     expect(find.text('Undo'), findsOneWidget);
@@ -293,12 +296,40 @@ void main() {
 
     final failure = tester.getTopLeft(find.text('Edit failed.')).dy;
     final proposal = tester
-        .getTopLeft(find.text('Edit page 2. This would use 35 credits.'))
+        .getTopLeft(
+          find.text('Edit page 2. Tap Apply to confirm, or Cancel to drop it.'),
+        )
         .dy;
 
     expect(failure, lessThan(proposal));
-    expect(find.text('705 credits refunded'), findsOneWidget);
-    expect(find.text('705 credits'), findsNothing);
+    final refund = tester.widget<CreditCostBadge>(
+      find.byWidgetPredicate(
+        (widget) => widget is CreditCostBadge && widget.credits == 705,
+      ),
+    );
+    expect(refund.kind, CreditCostKind.refunded);
+  });
+
+  testWidgets('the credit badge explains the charge instead of announcing it '
+      'in the reply', (tester) async {
+    final repository = _ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    // The applied edit's charge is stated once — on its operation card, not
+    // also on the reply that queued it.
+    final charge = find.byWidgetPredicate(
+      (widget) => widget is CreditCostBadge && widget.credits == 80,
+    );
+    expect(charge, findsOneWidget);
+
+    await tester.tap(charge);
+    await tester.pumpAndSettle();
+
+    expect(find.text('80 credits'), findsOneWidget);
+    expect(find.text('Credits pay for the writing'), findsOneWidget);
+    expect(find.text('Failed updates are refunded'), findsOneWidget);
   });
 
   testWidgets('an operation with no anchor still renders at the end', (
@@ -311,7 +342,9 @@ void main() {
 
     final applied = tester.getTopLeft(find.text('Edit applied.')).dy;
     final proposal = tester
-        .getTopLeft(find.text('Edit page 1. This would use 35 credits.'))
+        .getTopLeft(
+          find.text('Edit page 1. Tap Apply to confirm, or Cancel to drop it.'),
+        )
         .dy;
     expect(applied, greaterThan(proposal));
   });
@@ -437,13 +470,12 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
       ..add((role: 'user', content: 'Apply'))
       ..add((
         role: 'assistant',
-        content: 'I’ll rewrite page 1 and refresh the exports. '
-            'This uses 80 credits.',
+        content: 'I’ll rewrite page 1 and refresh the exports.',
       ))
       ..add((role: 'user', content: 'On page 1, replace "night" with "day".'))
       ..add((
         role: 'assistant',
-        content: 'Edit page 1. This would use 35 credits.',
+        content: 'Edit page 1. Tap Apply to confirm, or Cancel to drop it.',
       ));
     operations.add(
       MobileBookEditOperation(
@@ -474,7 +506,7 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
       ..add((role: 'user', content: 'On page 2, replace "Bunny" with "cute Bunny".'))
       ..add((
         role: 'assistant',
-        content: 'Edit page 2. This would use 35 credits.',
+        content: 'Edit page 2. Tap Apply to confirm, or Cancel to drop it.',
       ));
     operations.add(
       MobileBookEditOperation(

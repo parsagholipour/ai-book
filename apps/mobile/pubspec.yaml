@@ -52,6 +52,9 @@ dependencies:
   # mic PCM and plays the reply PCM back on the voice-communication path.
   web_socket_channel: ^3.0.3
   record: ^7.1.1
+  just_audio: ^0.10.6
+  just_audio_background: ^0.0.1-beta.17
+  audio_session: ^0.2.4
 dev_dependencies:
   flutter_test:
     sdk: flutter

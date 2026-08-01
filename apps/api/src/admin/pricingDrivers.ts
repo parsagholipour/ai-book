@@ -82,8 +82,15 @@ function emptyDrivers(): PricingDrivers {
     bookTextEditPerPage: 0,
     pageRegenerationPerPage: 0,
     bookReplanBase: 0,
-    voiceCallPerMinute: 0
+    voiceCallPerMinute: 0,
+    audiobookBase: 0,
+    audiobookPerPage: 0
   };
+}
+
+function audiobookPageCount(metadata: unknown): number {
+  const value = metadata && typeof metadata === "object" ? (metadata as Record<string, unknown>).pageCount : undefined;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
 }
 
 export function revenueAtPricing(drivers: PricingDrivers, pricing: CreditPricing): number {
@@ -100,7 +107,7 @@ export async function loadPricingDrivers(
   const inWindow = { gte: window.since, lte: window.until };
   const spend = { entryType: "SPEND", status: "SETTLED", createdAt: inWindow } as const;
 
-  const [bookCharges, replanCharges, flatCounts, chargedTotal, providerTotal, voiceCalls, edits] = await Promise.all([
+  const [bookCharges, replanCharges, flatCounts, chargedTotal, providerTotal, voiceCalls, edits, audiobookCharges] = await Promise.all([
     prisma.creditLedgerEntry.groupBy({
       by: ["projectId"],
       _count: { _all: true },
@@ -118,6 +125,12 @@ export async function loadPricingDrivers(
     prisma.bookEditOperation.findMany({
       where: { createdAt: inWindow, creditsCharged: { gt: 0 } },
       select: { kind: true, affectedPageIndexes: true }
+    }),
+    // The per-page half of an audiobook charge is only recoverable from the
+    // reservation metadata — the ledger row holds a total, not a page count.
+    prisma.creditLedgerEntry.findMany({
+      where: { ...spend, operation: "AUDIOBOOK_GENERATION" },
+      select: { metadata: true }
     })
   ]);
 
@@ -178,6 +191,11 @@ export async function loadPricingDrivers(
 
   for (const call of voiceCalls) {
     drivers.voiceCallPerMinute += settleVoiceCall(call.elapsedSeconds).billableMinutes;
+  }
+
+  for (const charge of audiobookCharges) {
+    drivers.audiobookBase += 1;
+    drivers.audiobookPerPage += audiobookPageCount(charge.metadata);
   }
 
   for (const edit of edits) {

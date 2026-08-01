@@ -30,6 +30,7 @@ import 'branch_navigator.dart';
 import 'chat_media_preview.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
+import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
@@ -275,9 +276,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                 ),
                 IconButton(
                   tooltip: 'Advanced settings',
-                  onPressed: !state.initializing
-                      ? () => _openAdvancedSheet(state)
-                      : null,
+                  onPressed: !state.initializing ? openAdvancedSheet : null,
                   icon: const Icon(Icons.tune),
                 ),
               ],
@@ -890,7 +889,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
       case 'document':
         await _pickDocument();
       case 'notes':
-        await _openSourceNotesSheet(ref.read(creationChatControllerProvider));
+        await openSourceNotesSheet(ref.read(creationChatControllerProvider));
       case 'import':
         if (mounted) context.push('/books/import');
     }
@@ -1404,41 +1403,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _activePlanKey = planKey;
     _planQuestionIndex = 0;
     _planQuestionAnswers = {};
-  }
-
-  Future<void> _openSourceNotesSheet(CreationChatState state) async {
-    final controller = TextEditingController(text: state.sourceNotes);
-    final saved = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _SourceNotesSheet(controller: controller),
-    );
-    controller.dispose();
-    if (saved != null) {
-      ref.read(creationChatControllerProvider.notifier).setSourceNotes(saved);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              saved.trim().isEmpty
-                  ? 'Source notes cleared.'
-                  : 'Source notes attached.',
-            ),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _openAdvancedSheet(CreationChatState state) async {
-    final controller = ref.read(creationChatControllerProvider.notifier);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => _AdvancedSheet(controller: controller),
-    );
   }
 
   void _startPlanPoll() {

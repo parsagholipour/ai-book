@@ -235,6 +235,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                               message,
                             ),
                             sending: _sending || _editing,
+                            // While the edit runs it has no card yet, so the
+                            // reply itself carries the charge; once the card
+                            // appears it owns the number.
+                            showCreditCost: operations
+                                .anchoredTo(message.id)
+                                .isEmpty,
                             onStartEdit: message.isUser
                                 ? () => _startEdit(message)
                                 : null,

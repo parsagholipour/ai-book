@@ -8,6 +8,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import { reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
+import { serializeProjectChatMessage, stripCreditAnnouncement } from "./projectChat.js";
 import {
   approvedPlanRecord,
   bearer,
@@ -101,6 +102,30 @@ describe("mobile project chat", () => {
       messages: [{ id: "chat-3" }, { id: "chat-4" }]
     });
     await app.close();
+  });
+
+  it("drops the announced price from transcripts written before the credit badge", () => {
+    // Otherwise an old turn states the price twice: once in prose, once on the
+    // badge the app now draws from metadata.
+    const serialized = serializeProjectChatMessage({
+      id: "chat-2",
+      projectId: "project-1",
+      parentId: "chat-1",
+      role: "ASSISTANT",
+      content: "I’ll rewrite page 3 and refresh the exports. This uses 80 credits.",
+      operationId: null,
+      metadata: { charged: true, creditsCharged: 80 },
+      isActiveChild: true,
+      createdAt: new Date("2026-06-15T12:02:00.000Z")
+    });
+    expect(serialized.content).toBe("I’ll rewrite page 3 and refresh the exports.");
+    expect(serialized.metadata).toMatchObject({ creditsCharged: 80 });
+    expect(stripCreditAnnouncement("Edit page 2. It would use 35 credits. Tap Apply to confirm.")).toBe(
+      "Edit page 2. Tap Apply to confirm."
+    );
+    // Not an announcement: this one is the whole message and has to survive.
+    const shortfall = "You need 800 credits for that edit, but you have 120.";
+    expect(stripCreditAnnouncement(shortfall)).toBe(shortfall);
   });
 
   it("replays a project-chat request ID without duplicating the turn", async () => {
@@ -461,6 +486,10 @@ describe("mobile project chat", () => {
     expect(proposalBody.operation).toBeNull();
     expect(proposalBody.reply.content).toContain("whole book");
     expect(proposalBody.reply.content).toMatch(/Tap Apply|apply it/i);
+    // The price rides in metadata for the app's credit badge; the reply itself
+    // never states it.
+    expect(proposalBody.reply.content).not.toMatch(/credits/i);
+    expect(proposalBody.reply.metadata.editProposal.credits).toBeGreaterThan(0);
     expect(proposalBody.reply.metadata).toMatchObject({
       charged: false,
       pendingEdit: { clarification: "confirm" },
@@ -485,6 +514,8 @@ describe("mobile project chat", () => {
       kind: "page_rewrite",
       affectedPageIndexes: [1, 2]
     });
+    expect(body.reply.content).not.toMatch(/credits/i);
+    expect(body.reply.metadata.creditsCharged).toBeGreaterThan(0);
     expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: "project-1",

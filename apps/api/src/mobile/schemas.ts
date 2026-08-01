@@ -116,6 +116,22 @@ export const mobilePlanRevisionBodySchema = z
 
 export const mobilePlanApprovalBodySchema = z.object({ requestId: requestIdSchema.optional() }).strict().default({});
 
+export const mobileAudiobookStartBodySchema = z
+  .object({
+    voice: z.string().trim().min(1).max(60),
+    /** Required to re-narrate a book that already has a finished audiobook. */
+    replace: z.boolean().optional(),
+    requestId: requestIdSchema.optional()
+  })
+  .strict();
+
+export const mobileAudiobookChapterParamsSchema = z.object({
+  id: z.string().min(1),
+  index: z.coerce.number().int().min(0).max(10_000)
+});
+
+export const mobileVoiceSampleParamsSchema = z.object({ voice: z.string().trim().min(1).max(60) });
+
 export const mobileProjectChatMessageBodySchema = z
   .object({
     message: z.string().trim().min(1).max(5000),
@@ -365,6 +381,17 @@ export const mobileProjectCreateOpenApiBody = {
     advisor: { type: "object" }
   },
   required: ["bookType", "prompt"]
+} as const;
+
+export const mobileAudiobookStartOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    voice: { type: "string", minLength: 1, maxLength: 60 },
+    replace: { type: "boolean" },
+    requestId: { type: "string", minLength: 8, maxLength: 64 }
+  },
+  required: ["voice"]
 } as const;
 
 export const mobilePlanRevisionOpenApiBody = {

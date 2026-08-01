@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/project_models.dart';
+import 'credit_cost_badge.dart';
 
 /// Priced book-edit confirmation card. Apply / Cancel call dedicated proposal
 /// endpoints (not chat-text confirmations).
@@ -36,13 +37,29 @@ class EditProposalCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            proposal.summary,
-            style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  proposal.summary,
+                  style: textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (proposal.credits > 0) ...[
+                const SizedBox(width: 8),
+                CreditCostBadge(
+                  credits: proposal.credits,
+                  kind: CreditCostKind.quoted,
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: 6),
           Text(
-            '${proposal.pageLabel} · ${proposal.credits} credits',
+            proposal.pageLabel,
             style: textTheme.bodySmall?.copyWith(
               color: colors.onSurfaceVariant,
             ),

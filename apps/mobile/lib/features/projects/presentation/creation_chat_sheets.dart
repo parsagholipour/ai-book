@@ -3,6 +3,45 @@ part of 'creation_chat_screen.dart';
 // Modal sheets for page count, source notes and advanced book settings.
 // Imports and shared state live in the parent library file.
 
+/// The screen's own openers for the sheets below. They live here, next to the
+/// sheets they present, rather than among the screen's chat logic.
+extension _CreationChatSheets on _CreationChatScreenState {
+  Future<void> openSourceNotesSheet(CreationChatState state) async {
+    final controller = TextEditingController(text: state.sourceNotes);
+    final saved = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _SourceNotesSheet(controller: controller),
+    );
+    controller.dispose();
+    if (saved != null) {
+      ref.read(creationChatControllerProvider.notifier).setSourceNotes(saved);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              saved.trim().isEmpty
+                  ? 'Source notes cleared.'
+                  : 'Source notes attached.',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> openAdvancedSheet() async {
+    final controller = ref.read(creationChatControllerProvider.notifier);
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AdvancedSheet(controller: controller),
+    );
+  }
+}
+
 class _PageCountSelection {
   const _PageCountSelection({required this.targetPages, required this.source});
 

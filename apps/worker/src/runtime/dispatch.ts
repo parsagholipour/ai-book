@@ -30,14 +30,16 @@ export async function enqueueWorkerJob(options: {
     | "GENERATE_IMAGE"
     | "COMPILE_EXPORT"
     | "PREPARE_CHARACTER_CANDIDATES"
-    | "BUILD_CHARACTER_PERSONA";
+    | "BUILD_CHARACTER_PERSONA"
+    | "GENERATE_AUDIOBOOK";
   name:
     | "generate-book"
     | "generate-page"
     | "generate-image"
     | "compile-export"
     | "prepare-character-candidates"
-    | "build-character-persona";
+    | "build-character-persona"
+    | "generate-audiobook";
   payload: Record<string, unknown>;
   dedupeKey?: string | undefined;
   contentRevision?: number | undefined;
@@ -152,7 +154,8 @@ export function workerJobNameForType(type: string): string {
     PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
     BUILD_CHARACTER_PERSONA: "build-character-persona",
     IMPORT_BOOK: "import-book",
-    CONTINUE_BOOK: "continue-book"
+    CONTINUE_BOOK: "continue-book",
+    GENERATE_AUDIOBOOK: "generate-audiobook"
   };
   const name = names[type];
   if (!name) {

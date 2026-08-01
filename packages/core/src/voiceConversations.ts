@@ -1,5 +1,17 @@
 import { z } from "zod";
+import {
+  DEFAULT_TTS_CHANNELS,
+  DEFAULT_TTS_SAMPLE_RATE,
+  concatPcm16ChunksWithSilence,
+  pcm16ChunkFromInlineAudio,
+  wavDurationMs,
+  wavFromInlineAudio,
+  wavFromPcm16,
+  type Pcm16AudioChunk
+} from "./audio/pcm.js";
 import type { VoiceProfile } from "./generation/voiceCharacters.js";
+
+export { wavDurationMs, wavFromPcm16 };
 
 export type VoiceConversationSpeaker = {
   id: string;
@@ -81,9 +93,6 @@ type VoiceConversationSpeakerReference = Pick<VoiceConversationSpeaker, "id" | "
   Partial<Pick<VoiceConversationSpeaker, "role" | "description" | "voiceName" | "voiceProfile" | "temporary">>;
 
 const GEMINI_TTS_API_VERSION = "v1beta";
-const DEFAULT_TTS_SAMPLE_RATE = 24000;
-const DEFAULT_TTS_CHANNELS = 1;
-const DEFAULT_TTS_SAMPLE_WIDTH = 2;
 const VOICE_CONVERSATION_TRANSCRIPT_MAX_OUTPUT_TOKENS = 4096;
 const MAX_VOICE_CONVERSATION_SPEAKERS = 4;
 const MAX_TEMPORARY_VOICE_CONVERSATION_SPEAKERS = 2;
@@ -369,7 +378,7 @@ export async function synthesizeGeminiTtsConversation(options: {
   );
 
   const inlineAudio = extractGeminiInlineAudio(response);
-  const audio = wavFromGeminiInlineAudio(inlineAudio);
+  const audio = wavFromInlineAudio(inlineAudio);
 
   return {
     audio,
@@ -469,7 +478,7 @@ async function synthesizeGeminiTtsConversationByTurn(options: {
       options.fetchImpl
     );
     try {
-      chunks.push(pcm16ChunkFromGeminiInlineAudio(extractGeminiInlineAudio(response)));
+      chunks.push(pcm16ChunkFromInlineAudio(extractGeminiInlineAudio(response)));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Gemini TTS failed for turn ${index + 1} (${speaker.name}): ${message}`);
@@ -569,142 +578,6 @@ export function selectGeminiTtsVoice(profile: VoiceProfile, fallback: GeminiTtsV
 
 export function voiceConversationTranscriptToText(transcript: VoiceConversationTranscript): string {
   return transcript.turns.map((turn) => `${turn.speakerName}: ${turn.text}`).join("\n");
-}
-
-type Pcm16AudioChunk = {
-  pcm: Buffer;
-  sampleRate: number;
-  channels: number;
-};
-
-function wavFromGeminiInlineAudio(inlineAudio: { data: string; mimeType?: string | undefined }): Buffer {
-  const audioBytes = Buffer.from(inlineAudio.data, "base64");
-  const sourceSampleRate = sampleRateFromMimeType(inlineAudio.mimeType) ?? DEFAULT_TTS_SAMPLE_RATE;
-  return isWavAudio(inlineAudio.mimeType, audioBytes) ? audioBytes : wavFromPcm16(audioBytes, { sampleRate: sourceSampleRate });
-}
-
-function pcm16ChunkFromGeminiInlineAudio(inlineAudio: { data: string; mimeType?: string | undefined }): Pcm16AudioChunk {
-  const audioBytes = Buffer.from(inlineAudio.data, "base64");
-  if (isWavAudio(inlineAudio.mimeType, audioBytes)) {
-    const chunk = parsePcm16Wav(audioBytes);
-    if (!chunk) {
-      throw new Error("Gemini TTS WAV response was not readable PCM16 audio.");
-    }
-    return chunk;
-  }
-  return {
-    pcm: audioBytes,
-    sampleRate: sampleRateFromMimeType(inlineAudio.mimeType) ?? DEFAULT_TTS_SAMPLE_RATE,
-    channels: DEFAULT_TTS_CHANNELS
-  };
-}
-
-function concatPcm16ChunksWithSilence(chunks: Pcm16AudioChunk[], silenceMs: number): Buffer {
-  if (chunks.length === 0) {
-    return Buffer.alloc(0);
-  }
-  const sampleRate = chunks[0]?.sampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
-  const channels = chunks[0]?.channels ?? DEFAULT_TTS_CHANNELS;
-  const silenceFrameCount = Math.max(0, Math.round((sampleRate * silenceMs) / 1000));
-  const silence = Buffer.alloc(silenceFrameCount * channels * DEFAULT_TTS_SAMPLE_WIDTH);
-  const parts: Buffer[] = [];
-
-  chunks.forEach((chunk, index) => {
-    if (chunk.sampleRate !== sampleRate || chunk.channels !== channels) {
-      throw new Error("Gemini TTS returned inconsistent audio formats across conversation turns.");
-    }
-    if (index > 0 && silence.length > 0) {
-      parts.push(silence);
-    }
-    parts.push(chunk.pcm);
-  });
-
-  return Buffer.concat(parts);
-}
-
-export function wavFromPcm16(
-  pcm: Buffer,
-  options: { sampleRate?: number | undefined; channels?: number | undefined } = {}
-): Buffer {
-  const sampleRate = options.sampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
-  const channels = options.channels ?? DEFAULT_TTS_CHANNELS;
-  const byteRate = sampleRate * channels * DEFAULT_TTS_SAMPLE_WIDTH;
-  const blockAlign = channels * DEFAULT_TTS_SAMPLE_WIDTH;
-  const header = Buffer.alloc(44);
-
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + pcm.length, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16);
-  header.writeUInt16LE(1, 20);
-  header.writeUInt16LE(channels, 22);
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(byteRate, 28);
-  header.writeUInt16LE(blockAlign, 32);
-  header.writeUInt16LE(DEFAULT_TTS_SAMPLE_WIDTH * 8, 34);
-  header.write("data", 36);
-  header.writeUInt32LE(pcm.length, 40);
-
-  return Buffer.concat([header, pcm]);
-}
-
-export function wavDurationMs(wav: Buffer): number | null {
-  if (wav.length < 44 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") {
-    return null;
-  }
-  const channels = wav.readUInt16LE(22);
-  const sampleRate = wav.readUInt32LE(24);
-  const bitsPerSample = wav.readUInt16LE(34);
-  const dataSize = wav.readUInt32LE(40);
-  const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
-    return null;
-  }
-  return Math.round((dataSize / bytesPerSecond) * 1000);
-}
-
-function parsePcm16Wav(wav: Buffer): Pcm16AudioChunk | null {
-  if (wav.length < 44 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") {
-    return null;
-  }
-
-  let offset = 12;
-  let audioFormat: number | null = null;
-  let channels: number | null = null;
-  let sampleRate: number | null = null;
-  let bitsPerSample: number | null = null;
-  let data: Buffer | null = null;
-
-  while (offset + 8 <= wav.length) {
-    const chunkId = wav.toString("ascii", offset, offset + 4);
-    const chunkSize = wav.readUInt32LE(offset + 4);
-    const chunkStart = offset + 8;
-    const chunkEnd = Math.min(chunkStart + chunkSize, wav.length);
-    if (chunkEnd < chunkStart) {
-      return null;
-    }
-
-    if (chunkId === "fmt " && chunkSize >= 16 && chunkStart + 16 <= wav.length) {
-      audioFormat = wav.readUInt16LE(chunkStart);
-      channels = wav.readUInt16LE(chunkStart + 2);
-      sampleRate = wav.readUInt32LE(chunkStart + 4);
-      bitsPerSample = wav.readUInt16LE(chunkStart + 14);
-    } else if (chunkId === "data") {
-      data = wav.subarray(chunkStart, chunkEnd);
-    }
-
-    offset = chunkStart + chunkSize + (chunkSize % 2);
-  }
-
-  if (audioFormat !== 1 || bitsPerSample !== 16 || !channels || !sampleRate || !data) {
-    return null;
-  }
-  return {
-    pcm: data,
-    sampleRate,
-    channels
-  };
 }
 
 export function makeMockVoiceConversationTranscript(
@@ -1146,16 +1019,6 @@ function geminiResponseParts(response: unknown): Record<string, unknown>[] {
     const recordPart = recordField(part);
     return recordPart ? [recordPart] : [];
   });
-}
-
-function isWavAudio(mimeType: string | undefined, bytes: Buffer): boolean {
-  return /wav|wave/i.test(mimeType ?? "") || (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF");
-}
-
-function sampleRateFromMimeType(mimeType: string | undefined): number | undefined {
-  const match = /rate=(\d+)/i.exec(mimeType ?? "");
-  const rate = match?.[1] ? Number(match[1]) : undefined;
-  return rate && Number.isFinite(rate) && rate > 0 ? rate : undefined;
 }
 
 function recordField(value: unknown): Record<string, unknown> | undefined {

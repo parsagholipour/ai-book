@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  CREDIT_USD_VALUE,
   PROVIDER_COST_ASSUMPTIONS_USD,
   buildMarginEstimate,
+  creditCostForOperation,
+  estimateAudiobookCreditCost,
   estimateFullBookCreditCost,
   estimateInteriorImageCount,
   estimateProviderCostForProject,
@@ -136,5 +139,44 @@ describe("billing credit assumptions", () => {
     expect(margin.actualProviderCostUsd).toBe(1.25);
     expect(margin.actualMarginUsd).toBe(6.83);
     expect(margin.actualMarginPercent).toBeGreaterThan(80);
+  });
+});
+
+describe("audiobook pricing", () => {
+  it("charges a base plus the real page count", () => {
+    const estimate = estimateAudiobookCreditCost(60);
+    expect(estimate.totalCredits).toBe(
+      DEFAULT_CREDIT_COSTS.audiobookBase + 60 * DEFAULT_CREDIT_COSTS.audiobookPerPage
+    );
+    expect(estimate.lineItems).toHaveLength(1);
+    expect(estimate.lineItems[0]).toMatchObject({
+      code: "AUDIOBOOK_GENERATION",
+      quantity: 60,
+      unitCredits: DEFAULT_CREDIT_COSTS.audiobookPerPage
+    });
+  });
+
+  it("does not bundle an export unlock, because narrating is not downloading", () => {
+    expect(estimateAudiobookCreditCost(20).assumptions.includesExportUnlock).toBe(false);
+  });
+
+  it("prices a book with no pages at the base alone rather than going negative", () => {
+    expect(estimateAudiobookCreditCost(0).totalCredits).toBe(DEFAULT_CREDIT_COSTS.audiobookBase);
+    expect(estimateAudiobookCreditCost(-5).totalCredits).toBe(DEFAULT_CREDIT_COSTS.audiobookBase);
+  });
+
+  it("honours operator overrides instead of the compiled defaults", () => {
+    const pricing = { ...DEFAULT_CREDIT_COSTS, audiobookBase: 500, audiobookPerPage: 20 };
+    expect(estimateAudiobookCreditCost(10, pricing).totalCredits).toBe(700);
+    expect(creditCostForOperation("AUDIOBOOK_GENERATION", pricing)).toBe(500);
+  });
+
+  it("keeps a comfortable margin over the provider's per-second TTS rate", () => {
+    // ~14.5 characters/second of speech, ~1,800 characters/page, so a page is
+    // roughly two minutes of audio at $0.00025/second.
+    const pages = 60;
+    const providerUsd = pages * ((1800 / 14.5) * 0.00025);
+    const revenueUsd = estimateAudiobookCreditCost(pages).totalCredits * CREDIT_USD_VALUE;
+    expect(revenueUsd).toBeGreaterThan(providerUsd * 2);
   });
 });

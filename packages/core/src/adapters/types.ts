@@ -144,3 +144,27 @@ export interface ImageAdapter {
 export interface EmbeddingAdapter {
   embed(text: string): Promise<number[]>;
 }
+
+export type SpeechRequest = {
+  text: string;
+  voice: string;
+  /** Human-readable language name, used as pronunciation guidance. */
+  language?: string | undefined;
+  /** Performance direction — how to read, never what to read. */
+  stylePrompt?: string | undefined;
+  projectId?: string | undefined;
+};
+
+export type SpeechResult = {
+  provider: string;
+  model: string;
+  /** Raw PCM16 with its format, so consecutive results can be joined exactly. */
+  pcm: Buffer;
+  sampleRate: number;
+  channels: number;
+  durationMs: number;
+};
+
+export interface SpeechAdapter {
+  synthesize(request: SpeechRequest): Promise<SpeechResult>;
+}

@@ -443,6 +443,54 @@ export type MobileExportSetDto = {
   epub: MobileExportAvailabilityDto;
 };
 
+export type MobileAudiobookStatus = "generating" | "complete" | "failed";
+export type MobileAudiobookChapterStatus = "pending" | "ready" | "failed";
+
+export type MobileNarratorVoiceDto = {
+  /** Stable identifier sent back when starting a narration. */
+  voice: string;
+  name: string;
+  blurb: string;
+  sampleUrl: string;
+};
+
+export type MobileAudiobookChapterDto = {
+  index: number;
+  title: string;
+  status: MobileAudiobookChapterStatus;
+  /** Measured length, present once the chapter is ready. */
+  durationMs: number | null;
+  /** Predicted length, used to draw the not-yet-narrated tail of the timeline. */
+  estimatedDurationMs: number | null;
+  byteSize: number | null;
+  segmentCount: number | null;
+  /** Null until the chapter is ready to download. */
+  audioUrl: string | null;
+  timelineUrl: string | null;
+};
+
+export type MobileAudiobookDto = {
+  id: string;
+  projectId: string;
+  status: MobileAudiobookStatus;
+  voice: string;
+  narratorName: string;
+  /** True when the book was edited after this narration was made. */
+  isStale: boolean;
+  totalDurationMs: number | null;
+  totalEstimatedDurationMs: number | null;
+  failureMessage: string | null;
+  progress: MobileAudiobookProgressDto | null;
+  chapters: MobileAudiobookChapterDto[];
+};
+
+export type MobileAudiobookProgressDto = {
+  percent: number;
+  currentAction: string;
+  chaptersReady: number;
+  chapterCount: number;
+};
+
 export type MobileMediaMetadata = {
   [key: string]: MobileJsonValue;
   bookType: MobileBookType | "custom";

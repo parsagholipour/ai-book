@@ -89,6 +89,11 @@ const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> 
     { key: "draft", label: "Write new pages" },
     { key: "save", label: "Save chapters" },
     { key: "export", label: "Refresh exports" }
+  ],
+  "generate-audiobook": [
+    { key: "prepare", label: "Prepare narration" },
+    { key: "synthesize", label: "Narrate chapters" },
+    { key: "finalize", label: "Finish audiobook" }
   ]
 };
 
@@ -401,6 +406,10 @@ export async function markFailed(job: Job, error: unknown) {
       return;
     }
   }
+  if (job.name === "generate-audiobook") {
+    await failAudiobookForJob(job, errorMessage(error));
+    return;
+  }
   if (projectId && shouldFailProjectForJob(job.name)) {
     await refundFailedProjectCredits(projectId, errorMessage(error));
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
@@ -408,7 +417,36 @@ export async function markFailed(job: Job, error: unknown) {
 }
 
 export function shouldFailProjectForJob(jobName: string): boolean {
-  return !["prepare-character-candidates", "build-character-persona"].includes(jobName);
+  return !["prepare-character-candidates", "build-character-persona", "generate-audiobook"].includes(jobName);
+}
+
+/**
+ * An audiobook is made *from* a finished book, so a failed narration must not
+ * touch the project: the book is still complete and still readable. It refunds
+ * against the entry the start route stamped on the payload rather than the
+ * project's latest charge, which would otherwise claw back an unrelated
+ * generation.
+ */
+async function failAudiobookForJob(job: Job, reason: string): Promise<void> {
+  const audiobookId = typeof job.data.audiobookId === "string" ? job.data.audiobookId : undefined;
+  const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
+  const projectId = job.data.projectId as string | undefined;
+
+  if (ledgerEntryId) {
+    await refundCreditLedgerEntry(ledgerEntryId, reason).catch((error) => {
+      console.error(`Failed to refund audiobook ${audiobookId ?? "?"}`, error);
+    });
+  } else if (projectId) {
+    await refundLatestProjectOperationCredits({ projectId, operation: "AUDIOBOOK_GENERATION", reason }).catch((error) => {
+      console.error(`Failed to refund audiobook credits for project ${projectId}`, error);
+    });
+  }
+
+  if (audiobookId) {
+    await prisma.audiobook
+      .updateMany({ where: { id: audiobookId, status: "GENERATING" }, data: { status: "FAILED", error: reason } })
+      .catch(() => ({ count: 0 }));
+  }
 }
 
 export async function markEditOperationActive(job: Job): Promise<void> {
@@ -474,6 +512,10 @@ export async function markStopped(job: Job) {
         error: STOPPED_JOB_ERROR
       }
     });
+  }
+  if (job.name === "generate-audiobook") {
+    await failAudiobookForJob(job, STOPPED_JOB_ERROR);
+    return;
   }
   if (projectId) {
     await refundFailedProjectCredits(projectId, STOPPED_JOB_ERROR);

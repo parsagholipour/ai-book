@@ -358,9 +358,8 @@ export function normalizeShortFollowUpMessage(message: string): string {
 
 export function pendingScopeRecoveryMessage(pending: PendingEditState): string {
   if (pending.clarification === "confirm") {
-    const credits =
-      typeof pending.credits === "number" ? ` It would use ${pending.credits} credits.` : "";
-    return `I still have that edit ready.${credits} Tap Apply to run it, or Cancel to drop it.`;
+    // The price is carried by the proposal card's credit badge, not the prose.
+    return "I still have that edit ready. Tap Apply to run it, or Cancel to drop it.";
   }
   if (pending.scope === "all_pages") {
     return `I still have your earlier edit: “${pending.request}”, and I saw that you want it for the whole book. Tap Apply to start that edit, or send a new edit.`;
@@ -463,7 +462,7 @@ export async function proposeBookEdit(options: {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
-      content: editProposalMessage(intent.kind, [], cost, intent),
+      content: editProposalMessage(intent.kind, [], intent),
       metadata: {
         intent: proposalIntent,
         charged: false,
@@ -494,7 +493,7 @@ export async function proposeBookEdit(options: {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
-      content: editProposalMessage(intent.kind, [], cost, intent),
+      content: editProposalMessage(intent.kind, [], intent),
       metadata: {
         intent: proposalIntent,
         charged: false,
@@ -555,7 +554,7 @@ export async function proposeBookEdit(options: {
   const reply = await createAssistantChatMessage({
     projectId: project.id,
     parentId: userMessageId,
-    content: editProposalMessage(intent.kind, affectedPageIndexes, cost, proposalIntent),
+    content: editProposalMessage(intent.kind, affectedPageIndexes, proposalIntent),
     metadata: {
       intent: proposalIntent,
       charged: false,
@@ -647,14 +646,19 @@ export function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexe
   return kind === "page_rewrite" ? "Rewrite matching pages" : "Edit matching pages";
 }
 
+/**
+ * The confirmation prose. It deliberately never names a price: the credits live
+ * in `editProposal.credits`, which the app renders as a tappable badge on the
+ * proposal card, so the number is one glance away instead of buried in a
+ * sentence the reader has to parse on every edit.
+ */
 export function editProposalMessage(
   kind: BookEditIntentKind,
   affectedPageIndexes: number[],
-  credits: number,
   intent: BookEditIntent
 ): string {
   const summary = editProposalSummary(kind, affectedPageIndexes, intent);
-  return `${summary}. This would use ${credits} credits. Tap Apply to confirm, or Cancel to drop it.`;
+  return `${summary}. Tap Apply to confirm, or Cancel to drop it.`;
 }
 
 export async function generateGroundedProjectAnswer(
@@ -993,18 +997,23 @@ export async function pagesMatchingNeedle(needleSource: string, projectId: strin
   return matches.map((match) => match.index).sort((a, b) => a - b);
 }
 
-export function operationQueuedMessage(kind: BookEditIntentKind, affectedPageIndexes: number[], credits: number, intent: BookEditIntent): string {
+/**
+ * The "work is queued" reply. Like {@link editProposalMessage} it stays silent
+ * about the price — the charge is on the message as `metadata.creditsCharged`
+ * and renders as the badge in the bubble's corner.
+ */
+export function operationQueuedMessage(kind: BookEditIntentKind, affectedPageIndexes: number[], intent: BookEditIntent): string {
   if (kind === "continue_book") {
     const chapterCount = intent.continuation?.chapterCount ?? 1;
     const chapterText = chapterCount > 1 ? `${chapterCount} new chapters` : "the next chapter";
-    return `I’ll write ${chapterText} in your book’s voice and refresh the exports. This uses ${credits} credits.`;
+    return `I’ll write ${chapterText} in your book’s voice and refresh the exports.`;
   }
   if (kind === "book_replan") {
-    return `I’ll rebuild the plan and regenerate the book. This uses ${credits} credits.`;
+    return "I’ll rebuild the plan and regenerate the book.";
   }
   if (kind === "chapter_regenerate") {
     const chapterText = intent.affectedChapterIndex ? `chapter ${intent.affectedChapterIndex}` : "that chapter";
-    return `I’ll rewrite ${chapterText} (${affectedPageIndexes.length} page${affectedPageIndexes.length === 1 ? "" : "s"}) with that direction and refresh the exports. This uses ${credits} credits.`;
+    return `I’ll rewrite ${chapterText} (${affectedPageIndexes.length} page${affectedPageIndexes.length === 1 ? "" : "s"}) with that direction and refresh the exports.`;
   }
   const pageText =
     intent.scope === "all_pages"
@@ -1017,6 +1026,6 @@ export function operationQueuedMessage(kind: BookEditIntentKind, affectedPageInd
       ? `page ${affectedPageIndexes[0]}`
       : `pages ${affectedPageIndexes.join(", ")}`;
   return kind === "page_rewrite"
-    ? `I’ll rewrite ${pageText} and refresh the exports. This uses ${credits} credits.`
-    : `I’ll edit ${pageText} and refresh the exports. This uses ${credits} credits.`;
+    ? `I’ll rewrite ${pageText} and refresh the exports.`
+    : `I’ll edit ${pageText} and refresh the exports.`;
 }

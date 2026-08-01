@@ -40,6 +40,8 @@ export const DEFAULT_CREDIT_COSTS = {
   pageRegenerationPerPage: 80,
   bookReplanBase: 120,
   voiceCallPerMinute: 60,
+  audiobookBase: 80,
+  audiobookPerPage: 12,
   // Not prices — the free tier's monthly limits. They live here because they are
   // the same kind of knob: something an operator has to be able to move against
   // abuse without a deploy, with the same audit trail behind it. Paid tiers take
@@ -94,6 +96,8 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   pageRegenerationPerPage: 5_000,
   bookReplanBase: 20_000,
   voiceCallPerMinute: 2_000,
+  audiobookBase: 20_000,
+  audiobookPerPage: 2_000,
   // Generous ceilings: the failure mode for an allowance is giving too much
   // away, which is bounded and reversible next period, not an instant charge.
   freeMonthlyCredits: 100_000,

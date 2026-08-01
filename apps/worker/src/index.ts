@@ -33,6 +33,7 @@ import { applyBookEdit } from "./handlers/applyBookEdit.js";
 import { buildCharacterPersona, prepareCharacterCandidates } from "./handlers/characters.js";
 import { compileExport } from "./handlers/compileExport.js";
 import { continueBook } from "./handlers/continueBook.js";
+import { generateAudiobook } from "./handlers/generateAudiobook.js";
 import { generateBook } from "./handlers/generateBook.js";
 import { generateImage } from "./handlers/generateImage.js";
 import { generatePage } from "./handlers/generatePage.js";
@@ -96,6 +97,9 @@ const worker = new Worker(
           break;
         case "continue-book":
           await continueBook(job);
+          break;
+        case "generate-audiobook":
+          await generateAudiobook(job);
           break;
         default:
           throw new Error(`Unknown worker job: ${job.name}`);

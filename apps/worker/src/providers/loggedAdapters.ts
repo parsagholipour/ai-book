@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   AlibabaImageAdapter,
   calculateImageGenerationCost,
+  estimateSpeechCostUsd,
   FallbackImageAdapter,
   GeminiImageAdapter,
   PREMIUM_COVER_IMAGE_MODEL,
@@ -23,6 +24,8 @@ import {
   type ProviderSet,
   type ResearchAdapter,
   type ResearchQuery,
+  type SpeechAdapter,
+  type SpeechRequest,
   type TextModelAdapter
 } from "@book-maker/core";
 import { config } from "../runtime/config.js";
@@ -45,6 +48,7 @@ import {
   estimateTokenCountFromTextLength,
   markLiveTextUsageFailed,
   maybeUpdateLiveTextOutput,
+  recordProviderAudioCost,
   recordProviderImageCost,
   recordProviderUsage,
   recordProviderUsageFromError,
@@ -80,7 +84,8 @@ export function createLoggedProviders(
     text: new LoggingTextModelAdapter(providers.text, logger, generationJobId, projectId, textModel),
     research: new LoggingResearchAdapter(providers.research, logger, generationJobId),
     image: createLoggedImageAdapter(providers.image, logger, generationJobId, input, options?.imageSelection),
-    embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId)
+    embedding: new LoggingEmbeddingAdapter(providers.embedding, logger, generationJobId),
+    speech: new LoggingSpeechAdapter(providers.speech, logger, generationJobId, projectId)
   };
 }
 
@@ -527,6 +532,60 @@ class LoggingImageAdapter implements ImageAdapter {
 
   private providerCostAttemptMetadata(): Record<string, unknown> {
     return this.attempt ? { attempt: this.attempt } : {};
+  }
+}
+
+class LoggingSpeechAdapter implements SpeechAdapter {
+  constructor(
+    private readonly delegate: SpeechAdapter,
+    private readonly logger: RunLogger,
+    private readonly generationJobId: string | undefined,
+    private readonly projectId: string | undefined
+  ) {}
+
+  async synthesize(request: SpeechRequest) {
+    const callId = randomUUID();
+    const startedAt = Date.now();
+    await this.logger.append("tts.synthesize.request", {
+      callId,
+      voice: request.voice,
+      textLength: request.text.length,
+      textPreview: request.text.slice(0, 300)
+    });
+    try {
+      await assertJobNotStopped(this.generationJobId);
+      const result = await withRecoverableNetworkRetry(
+        () => this.delegate.synthesize(request),
+        providerRetryOptions(this.logger, this.generationJobId, "tts.synthesize")
+      );
+      const durationMs = Date.now() - startedAt;
+      await this.logger.append("tts.synthesize.response", {
+        callId,
+        provider: result.provider,
+        model: result.model,
+        audioMs: Math.round(result.durationMs),
+        bytes: result.pcm.length,
+        durationMs
+      });
+      await recordProviderAudioCost({
+        projectId: this.projectId,
+        generationJobId: this.generationJobId,
+        provider: result.provider,
+        model: result.model,
+        operation: "tts.synthesize",
+        callId,
+        costHint: estimateSpeechCostUsd({ provider: result.provider, audioMs: result.durationMs }),
+        durationMs,
+        audioMs: result.durationMs,
+        metadata: { voice: request.voice, textLength: request.text.length }
+      });
+      await assertJobNotStopped(this.generationJobId);
+      return result;
+    } catch (error) {
+      await this.logger.append("tts.synthesize.error", { callId, error: serializeError(error) });
+      await assertJobNotStopped(this.generationJobId);
+      throw error;
+    }
   }
 }
 

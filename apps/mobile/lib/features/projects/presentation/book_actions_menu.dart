@@ -6,7 +6,7 @@ import '../../voice/presentation/character_cast_sheet.dart';
 import '../domain/project_models.dart';
 import 'project_export_actions.dart';
 
-enum _BookAction { chat, call, read, openPdf, openEpub, sharePdf, shareEpub }
+enum _BookAction { chat, call, listen, read, openPdf, openEpub, sharePdf, shareEpub }
 
 /// Long-press menu for a book on the shelf.
 ///
@@ -75,6 +75,21 @@ Future<void> showBookActionsMenu({
             ],
           ),
         ),
+      // Narration, like characters, needs a finished book to exist at all.
+      if (project.status == 'complete')
+        const PopupMenuItem(
+          value: _BookAction.listen,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.headphones_outlined),
+              SizedBox(width: 12),
+              Flexible(
+                child: Text('Listen', overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+        ),
       _bookActionItem(
         value: _BookAction.read,
         icon: Icons.auto_stories_outlined,
@@ -129,11 +144,17 @@ Future<void> showBookActionsMenu({
     return;
   }
 
+  // Narration is priced on its own screen, so it skips the export unlock too.
+  if (action == _BookAction.listen) {
+    context.push('/projects/${project.id}/listen');
+    return;
+  }
+
   final export = switch (action) {
     _BookAction.read || _BookAction.openPdf || _BookAction.sharePdf => pdf,
     _BookAction.openEpub || _BookAction.shareEpub => epub,
-    _BookAction.chat || _BookAction.call => throw StateError(
-      'Chat and calls are handled before export actions',
+    _BookAction.chat || _BookAction.call || _BookAction.listen => throw StateError(
+      'Chat, calls and listening are handled before export actions',
     ),
   };
 
@@ -155,7 +176,8 @@ Future<void> showBookActionsMenu({
   switch (action) {
     case _BookAction.chat:
     case _BookAction.call:
-      // Handled above because neither requires an export.
+    case _BookAction.listen:
+      // Handled above because none of them requires an export.
       return;
     case _BookAction.read:
       // The reader downloads through the same entitlement-gated route, so a

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 /// Everything the reader can reach from the overflow menu.
 enum ReaderMenuAction {
   contents,
+  listen,
   callCharacter,
   toggleBookmark,
   savedPlaces,
@@ -45,6 +46,11 @@ Future<ReaderMenuAction?> showReaderMenu({
         value: ReaderMenuAction.contents,
         icon: Icons.list_alt_outlined,
         label: 'Contents',
+      ),
+      _item(
+        value: ReaderMenuAction.listen,
+        icon: Icons.headphones_outlined,
+        label: 'Listen instead',
       ),
       _item(
         value: ReaderMenuAction.callCharacter,

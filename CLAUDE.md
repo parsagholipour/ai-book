@@ -166,6 +166,12 @@ tells you when a listed file has dropped under the default so the entry can be d
   it is gone — never a silent downgrade to text-only). The claim is stamped onto the reservation as
   `metadata.imageQuota`, so `refundCreditLedgerEntry` hands the slot back on every failure path
   without each of them knowing about quotas.
+- **Chat replies never name a credit price.** The number travels as
+  `metadata.creditsCharged` (queued work) or `metadata.editProposal.credits` (a proposal), and the
+  app draws it as the tappable badge in `credit_cost_badge.dart` — one place that also explains what
+  credits buy and that failures are refunded. `stripCreditAnnouncement` in
+  `apps/api/src/mobile/projectChat.ts` removes the old sentence from transcripts written before
+  that, so a new priced reply that writes the price into its text would say it twice.
 - **A non-null `ProviderCallLog.costHint` *is* a settled, priced call.** Provisional, in-flight and
   failed rows all write `null` (`apps/worker/src/providers/usageAccounting.ts`), so real provider
   spend is `SUM("costHint")` — do not replay the rate cards in `packages/core/src/costs.ts` to
@@ -217,5 +223,29 @@ tells you when a listed file has dropped under the default so the entry can be d
   into the next one's system instructions. That is *memory, not resumption*: every call is a fresh
   session, and the prompt says so in as many words. Uploads are at-least-once, so the append drops
   the overlap when a retried batch arrives twice.
+- **An audiobook is made *from* a finished book, so failing one must not touch the book.**
+  `generate-audiobook` is excluded from `shouldFailProjectForJob`, and `markFailed`/`markStopped`
+  route it to a branch that refunds `payload.billingLedgerEntryId` and marks the `Audiobook` row
+  FAILED. The default path would set a COMPLETE project to FAILED and refund
+  `FULL_BOOK_GENERATION` — someone else's charge entirely.
+- **Narration is chaptered deterministically, never by the model.** `audiobookChapterPlans` uses the
+  book's own `Chapter` rows, or `createDeterministicReaderChapters` when it has none — deliberately
+  not `createReaderChaptersForExport`, which the exporter uses. A retry has to produce the same
+  partition, or it would renumber chapters whose audio is already on disk and marked READY. For the
+  same reason a chapter flips to READY only after *both* `chapter-<n>.mp3` and
+  `chapter-<n>.timeline.json` are renamed into place, which is what makes a resumed job safe.
+- **Sentence timings are measured, not guessed.** A TTS request ("chunk") holds whole consecutive
+  sentences of one paragraph under ~400 characters, so every chunk boundary is a real audio boundary
+  with an exact time. Only *within* a multi-sentence chunk is the span split by character count, and
+  that error is erased at the next boundary rather than accumulating. The result is a sidecar
+  `chapter-<n>.timeline.json` — the transcript the app highlights is rendered from those segments,
+  not from `Page.markdown`, so what is shown is exactly what was spoken.
+- **The app plays local files, not a URL, and draws one timeline over many of them.** Chapter audio
+  is downloaded into `tomeza_audiobook/<projectId>/<audiobookId>/` because the media session keeps
+  playing when the app is backgrounded, where a token refresh cannot be relied on. Every chapter has
+  a length from the moment it is planned — `estimatedDurationMs` until it is narrated,
+  `durationMs` after — which is what lets the seek bar show the whole book while the back half is
+  still being made. Lock-screen artwork must be a `file://` URI: the media session fetches it
+  outside the Dio client and without the bearer token.
 - Docker bind-mounts the repo, so `node_modules` uses anonymous volumes. After changing
   `pnpm-lock.yaml`, rebuild images or run `make deps`, or the containers keep a stale install.

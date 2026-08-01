@@ -163,6 +163,7 @@ export type BillingOperation =
   | "PAGE_REGENERATION"
   | "BOOK_REPLAN"
   | "VOICE_CALL_MINUTE"
+  | "AUDIOBOOK_GENERATION"
   | "PURCHASE_CREDIT_GRANT"
   | "SUBSCRIPTION_CREDIT_GRANT"
   | "PLAN_ALLOWANCE_GRANT"
@@ -235,6 +236,8 @@ export function creditCostForOperation(operation: BillingOperation, pricing: Cre
       return pricing.bookReplanBase;
     case "VOICE_CALL_MINUTE":
       return pricing.voiceCallPerMinute;
+    case "AUDIOBOOK_GENERATION":
+      return pricing.audiobookBase;
     case "FULL_BOOK_GENERATION":
       return pricing.fullBookBase;
     case "PURCHASE_CREDIT_GRANT":
@@ -296,6 +299,39 @@ export function estimateFullBookCreditCost(
       estimatedInteriorImages,
       includesExportUnlock: true,
       includesPremiumReview
+    }
+  };
+}
+
+/**
+ * What narrating a finished book costs.
+ *
+ * Priced off the real page count rather than `targetPages`, because by the time
+ * anyone can ask for an audiobook the book exists and its length is a fact.
+ * See {@link creditCostForOperation} for why `pricing` is a parameter.
+ */
+export function estimateAudiobookCreditCost(
+  pageCount: number,
+  pricing: CreditPricing = creditPricing()
+): CreditCostEstimate {
+  const pages = Math.max(0, Math.round(pageCount));
+  const credits = pricing.audiobookBase + pages * pricing.audiobookPerPage;
+  return {
+    totalCredits: credits,
+    lineItems: [
+      {
+        code: "AUDIOBOOK_GENERATION",
+        label: "Audiobook narration",
+        quantity: pages,
+        unitCredits: pricing.audiobookPerPage,
+        credits
+      }
+    ],
+    assumptions: {
+      creditUsdValue: CREDIT_USD_VALUE,
+      estimatedInteriorImages: 0,
+      includesExportUnlock: false,
+      includesPremiumReview: false
     }
   };
 }

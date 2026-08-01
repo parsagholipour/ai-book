@@ -11,7 +11,6 @@ import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../projects/data/projects_repository.dart';
 import '../../projects/domain/project_models.dart';
-import '../../voice/presentation/character_cast_sheet.dart';
 import '../data/reader_pdf_page_text.dart';
 import '../data/reader_repository.dart';
 import '../domain/reader_annotation.dart';
@@ -24,6 +23,7 @@ import 'reader_annotation_controller.dart';
 import 'reader_annotation_overlays.dart';
 import 'reader_annotation_painter.dart';
 import 'reader_app_bar.dart';
+import 'reader_departures.dart';
 import 'reader_document_loader.dart';
 import 'reader_ink_layer.dart';
 import 'reader_markup_actions.dart';
@@ -379,16 +379,6 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// has got to, instead of answering "what happens to you?" with the ending.
   /// A page that cannot be placed — the cover, the contents — simply sends
   /// nothing, and the call is unscoped rather than wrong.
-  Future<void> _callCharacter() async {
-    final pageIndex = await _currentBookPageIndex();
-    if (!mounted) return;
-    await showCharacterCastSheet(
-      context: context,
-      projectId: widget.projectId,
-      pageIndex: pageIndex,
-    );
-  }
-
   Future<int?> _currentBookPageIndex() async {
     final document = _document;
     if (document == null) return null;
@@ -423,8 +413,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     switch (action) {
       case ReaderMenuAction.contents:
         _places.showContents();
+      case ReaderMenuAction.listen:
+        _departures.listen();
       case ReaderMenuAction.callCharacter:
-        unawaited(_callCharacter());
+        unawaited(_departures.callCharacter());
       case ReaderMenuAction.toggleBookmark:
         if (_stateLoaded) _places.toggleBookmark(_currentPage);
       case ReaderMenuAction.savedPlaces:
@@ -439,6 +431,13 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         setState(() => _immersive = !_immersive);
     }
   }
+
+  ReaderDepartures get _departures => ReaderDepartures(
+    context: context,
+    projectId: widget.projectId,
+    bookPageIndex: _currentBookPageIndex,
+    isMounted: () => mounted,
+  );
 
   ReaderPlaces get _places => ReaderPlaces(
     context: context,

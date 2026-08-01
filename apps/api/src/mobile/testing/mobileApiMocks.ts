@@ -17,7 +17,7 @@ export const mockPrisma = ({
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },
   project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
-  page: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+  page: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), count: vi.fn() },
   pageEditSnapshot: { create: vi.fn() },
   planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
@@ -30,7 +30,15 @@ export const mockPrisma = ({
   voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
   voiceCall: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   voiceCallEvent: { create: vi.fn() },
-  voiceConversation: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() }
+  voiceConversation: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
+  audiobook: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    deleteMany: vi.fn()
+  },
+  audiobookChapter: { findMany: vi.fn(), upsert: vi.fn(), update: vi.fn(), deleteMany: vi.fn() }
 });
 
 export const mockBilling = (() => {

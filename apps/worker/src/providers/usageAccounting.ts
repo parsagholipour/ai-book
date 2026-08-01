@@ -309,6 +309,55 @@ export async function recordProviderImageCost(options: {
   }
 }
 
+/**
+ * Narration spend, priced by seconds of audio produced rather than by tokens.
+ *
+ * Like the image path, a null `costHint` writes nothing at all: a row with a
+ * cost is a settled, priced call, and that invariant is what lets provider spend
+ * be read as `SUM("costHint")` without replaying any rate card.
+ */
+export async function recordProviderAudioCost(options: {
+  projectId: string | undefined;
+  generationJobId: string | undefined;
+  provider: string;
+  model: string;
+  operation: string;
+  callId: string;
+  costHint: number | null;
+  durationMs: number | null;
+  audioMs: number;
+  metadata?: Record<string, unknown> | undefined;
+}) {
+  if (options.costHint === null) {
+    return;
+  }
+
+  try {
+    await prisma.providerCallLog.create({
+      data: {
+        projectId: options.projectId ?? null,
+        generationJobId: options.generationJobId ?? null,
+        provider: options.provider,
+        model: options.model,
+        purpose: options.operation,
+        promptTokens: null,
+        outputTokens: null,
+        cacheHitTokens: null,
+        costHint: options.costHint,
+        durationMs: options.durationMs,
+        metadata: jsonInputValue({
+          operation: options.operation,
+          callId: options.callId,
+          audioMs: Math.round(options.audioMs),
+          ...options.metadata
+        })
+      }
+    });
+  } catch (error) {
+    console.error("Failed to record provider audio cost", error);
+  }
+}
+
 export function finiteTokenCount(value: number | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }

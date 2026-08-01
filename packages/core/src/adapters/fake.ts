@@ -8,6 +8,7 @@ import {
   pageQualityReportSchema,
   type CreateProjectInput
 } from "../schemas/book.js";
+import { DEFAULT_TTS_CHANNELS, DEFAULT_TTS_SAMPLE_RATE, pcm16DurationMs } from "../audio/pcm.js";
 import type {
   EmbeddingAdapter,
   GenerateJsonOptions,
@@ -20,6 +21,9 @@ import type {
   ResearchAdapter,
   ResearchQuery,
   ResearchResult,
+  SpeechAdapter,
+  SpeechRequest,
+  SpeechResult,
   TextModelAdapter,
   TextResult,
   ToolCallsResult
@@ -336,6 +340,34 @@ export class FakeEmbeddingAdapter implements EmbeddingAdapter {
   async embed(text: string): Promise<number[]> {
     const seed = [...text].reduce((sum, char) => sum + char.charCodeAt(0), 0);
     return Array.from({ length: 768 }, (_, index) => ((seed + index * 17) % 1000) / 1000);
+  }
+}
+
+/**
+ * A quiet tone whose length tracks the text, so a MOCK_AI run produces a real
+ * MP3, a real timeline and a player that visibly follows along — just without
+ * words. Length is derived from the text alone, which keeps timelines identical
+ * across runs and lets tests assert on them.
+ */
+export class FakeSpeechAdapter implements SpeechAdapter {
+  async synthesize(request: SpeechRequest): Promise<SpeechResult> {
+    const durationMs = Math.min(20_000, Math.max(400, request.text.length * 45));
+    const frames = Math.round((DEFAULT_TTS_SAMPLE_RATE * durationMs) / 1000);
+    const pcm = Buffer.alloc(frames * 2);
+    const angularStep = (2 * Math.PI * 220) / DEFAULT_TTS_SAMPLE_RATE;
+
+    for (let frame = 0; frame < frames; frame += 1) {
+      const fade = Math.min(1, Math.min(frame, frames - frame) / (DEFAULT_TTS_SAMPLE_RATE * 0.02));
+      pcm.writeInt16LE(Math.round(Math.sin(frame * angularStep) * 1800 * fade), frame * 2);
+    }
+
+    const chunk = { pcm, sampleRate: DEFAULT_TTS_SAMPLE_RATE, channels: DEFAULT_TTS_CHANNELS };
+    return {
+      provider: "fake",
+      model: "fake-tts",
+      ...chunk,
+      durationMs: pcm16DurationMs(chunk)
+    };
   }
 }
 

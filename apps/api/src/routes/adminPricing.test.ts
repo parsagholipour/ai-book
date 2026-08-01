@@ -39,7 +39,7 @@ const mockDb = vi.hoisted(() => {
     prisma: {
       user: { upsert: vi.fn() },
       mobileSession: { findUnique: vi.fn() },
-      creditLedgerEntry: { groupBy: vi.fn(), aggregate: vi.fn() },
+      creditLedgerEntry: { groupBy: vi.fn(), aggregate: vi.fn(), findMany: vi.fn() },
       providerCallLog: { aggregate: vi.fn() },
       voiceCall: { findMany: vi.fn() },
       bookEditOperation: { findMany: vi.fn() },
@@ -115,6 +115,7 @@ beforeEach(() => {
   mockDb.prisma.mobileSession.findUnique.mockResolvedValue(null);
   mockDb.prisma.creditLedgerEntry.groupBy.mockResolvedValue([]);
   mockDb.prisma.creditLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountCredits: null } });
+  mockDb.prisma.creditLedgerEntry.findMany.mockResolvedValue([]);
   mockDb.prisma.providerCallLog.aggregate.mockResolvedValue({ _sum: { costHint: null } });
   mockDb.prisma.voiceCall.findMany.mockResolvedValue([]);
   mockDb.prisma.bookEditOperation.findMany.mockResolvedValue([]);

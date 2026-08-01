@@ -43,6 +43,7 @@ await mkdir(config.BOOK_STORAGE_DIR, { recursive: true });
 await mkdir(config.IMAGE_STORAGE_DIR, { recursive: true });
 await mkdir(config.VOICE_STORAGE_DIR, { recursive: true });
 await mkdir(config.ATTACHMENT_STORAGE_DIR, { recursive: true });
+await mkdir(config.AUDIO_STORAGE_DIR, { recursive: true });
 
 // Uploaded user files are kept for 6 months; generated books and plans are kept forever.
 const sweepAttachments = async () => {

@@ -62,6 +62,19 @@ enum JobType {
   RESEARCH
   IMPORT_BOOK
   CONTINUE_BOOK
+  GENERATE_AUDIOBOOK
+}
+
+enum AudiobookStatus {
+  GENERATING
+  COMPLETE
+  FAILED
+}
+
+enum AudiobookChapterStatus {
+  PENDING
+  READY
+  FAILED
 }
 
 enum AssetType {
@@ -152,6 +165,7 @@ enum CreditOperation {
   PAGE_REGENERATION
   BOOK_REPLAN
   VOICE_CALL_MINUTE
+  AUDIOBOOK_GENERATION
   PURCHASE_CREDIT_GRANT
   SUBSCRIPTION_CREDIT_GRANT
   PLAN_ALLOWANCE_GRANT
@@ -544,6 +558,7 @@ model Project {
   pageEditSnapshots  PageEditSnapshot[]
   mobileCreationOutputs MobileCreationOutput[]
   bookImport         BookImport?
+  audiobook          Audiobook?
 
   @@index([userId, updatedAt])
   @@index([userId, createdAt])
@@ -1044,6 +1059,52 @@ model VoiceConversation {
   @@index([projectId, createdAt])
   @@index([parentConversationId])
   @@index([rootConversationId, createdAt])
+}
+
+/// One narrated rendering of a book. There is at most one per project: asking for
+/// a new narrator replaces the old row (and its files) rather than versioning it.
+/// `contentRevision` is the project revision the narration was read from, which is
+/// what lets the app say "this audiobook predates your latest edits".
+model Audiobook {
+  id              String          @id @default(cuid())
+  projectId       String          @unique
+  voice           String
+  status          AudiobookStatus @default(GENERATING)
+  contentRevision Int?
+  totalDurationMs Int?
+  generationJobId String?
+  error           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  project  Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  chapters AudiobookChapter[]
+}
+
+/// Audio and its sentence timeline live on disk under
+/// <AUDIO_STORAGE_DIR>/<projectId>/<audiobookId>/chapter-<index>.{mp3,timeline.json},
+/// so the row carries no path — only the facts the manifest needs before a
+/// download. A chapter flips to READY only once both files are in place, which is
+/// what makes a retried job safe to resume.
+model AudiobookChapter {
+  id                  String                 @id @default(cuid())
+  audiobookId         String
+  index               Int
+  title               String
+  status              AudiobookChapterStatus @default(PENDING)
+  durationMs          Int?
+  estimatedDurationMs Int?
+  byteSize            Int?
+  segmentCount        Int?
+  pageStartIndex      Int?
+  pageEndIndex        Int?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+
+  audiobook Audiobook @relation(fields: [audiobookId], references: [id], onDelete: Cascade)
+
+  @@unique([audiobookId, index])
+  @@index([audiobookId, index])
 }
 
 model Embedding {

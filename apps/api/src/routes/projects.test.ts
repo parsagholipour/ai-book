@@ -221,7 +221,7 @@ describe("project routes", () => {
       expect.objectContaining({
         ok: true,
         deletedProjectId: "project-a",
-        assetCleanup: { book: true, images: true, voice: true }
+        assetCleanup: { book: true, images: true, voice: true, audio: true }
       })
     );
     expect(mockPrisma.project.delete).toHaveBeenCalledWith({ where: { id: "project-a" } });

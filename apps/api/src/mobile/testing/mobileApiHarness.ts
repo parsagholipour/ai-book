@@ -30,6 +30,7 @@ export const state = {
   bookStorageDir: null as string | null,
   imageStorageDir: null as string | null,
   voiceStorageDir: null as string | null,
+  audioStorageDir: null as string | null,
   projectChatMessages: [] as any[],
   planVersions: [] as any[],
   bookEditOperations: [] as any[],
@@ -362,6 +363,7 @@ export function resetMobileHarness(): void {
   state.bookStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-books-"));
   state.imageStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-images-"));
   state.voiceStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-voice-"));
+  state.audioStorageDir = mkdtempSync(join(tmpdir(), "book-maker-mobile-audio-"));
   process.env = {
     ...originalEnv,
     WEB_PASSWORD: "",
@@ -377,7 +379,8 @@ export function resetMobileHarness(): void {
     CLOUDFLARE_TURN_TOKEN: "",
     BOOK_STORAGE_DIR: state.bookStorageDir,
     IMAGE_STORAGE_DIR: state.imageStorageDir,
-    VOICE_STORAGE_DIR: state.voiceStorageDir
+    VOICE_STORAGE_DIR: state.voiceStorageDir,
+    AUDIO_STORAGE_DIR: state.audioStorageDir
   };
 }
 
@@ -395,6 +398,10 @@ export function teardownMobileHarness(): void {
   if (state.voiceStorageDir) {
     rmSync(state.voiceStorageDir, { recursive: true, force: true });
     state.voiceStorageDir = null;
+  }
+  if (state.audioStorageDir) {
+    rmSync(state.audioStorageDir, { recursive: true, force: true });
+    state.audioStorageDir = null;
   }
 }
 

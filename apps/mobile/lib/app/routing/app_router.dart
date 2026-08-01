@@ -12,6 +12,7 @@ import '../../features/projects/presentation/generation_progress_screen.dart';
 import '../../features/projects/presentation/import_book_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
+import '../../features/audiobook/presentation/audiobook_screen.dart';
 import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../shared/api/api_error.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
@@ -165,6 +166,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               state.uri.queryParameters['page'] ?? '',
             ),
           ),
+        ),
+      ),
+      GoRoute(
+        path: '/projects/:id/listen',
+        pageBuilder: (context, state) => _appPage(
+          state,
+          AudiobookScreen(projectId: state.pathParameters['id']!),
         ),
       ),
       GoRoute(

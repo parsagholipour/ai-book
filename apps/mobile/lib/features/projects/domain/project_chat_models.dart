@@ -58,6 +58,15 @@ class MobileProjectChatMessage {
       metadata['insufficientCredits'] is Map<String, dynamic> ||
       metadata['insufficientCredits'] is Map;
 
+  /// Credits this reply spent, when it queued paid work. The server stopped
+  /// naming the price in the reply text, so this is what the credit badge in
+  /// the bubble's corner shows. Null when the turn was free.
+  int? get creditsCharged {
+    final charged = metadata['creditsCharged'];
+    if (charged is! int || charged <= 0) return null;
+    return charged;
+  }
+
   /// Structured read-only book content (outline/chapter/page) attached to
   /// this message by the show-content intent.
   MobileChatContentCard? get contentCard {

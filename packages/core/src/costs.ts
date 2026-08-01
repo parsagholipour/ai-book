@@ -17,9 +17,11 @@ export type ImageCostSource = {
 export type ProjectCostSummary = {
   textUsd: number;
   imageUsd: number;
+  audioUsd: number;
   totalUsd: number;
   unpricedTextCalls: number;
   unpricedImages: number;
+  unpricedAudioCalls: number;
 };
 
 type TextRate = {
@@ -330,6 +332,31 @@ const ALIBABA_IMAGE_COSTS_USD = new Map<string, number>([
   ["qwen-image", 0.035]
 ]);
 
+/**
+ * Text-to-speech is billed per second of audio produced, not per token, so it
+ * gets its own tiny rate card instead of a slot in the text tables.
+ */
+const SPEECH_COSTS_USD_PER_AUDIO_SECOND = new Map<string, number>([
+  ["gemini_tts", 0.00025],
+  ["gemini", 0.00025]
+]);
+
+export function estimateSpeechCostUsd(input: { provider?: string | null; audioMs: number }): number | null {
+  const rate = SPEECH_COSTS_USD_PER_AUDIO_SECOND.get(normalizeProvider(input.provider) ?? "");
+  if (rate === undefined || !Number.isFinite(input.audioMs) || input.audioMs < 0) {
+    return null;
+  }
+  return roundCost((input.audioMs / 1000) * rate);
+}
+
+function calculateSpeechGenerationCost(log: ProviderCostLog): number | null {
+  const audioMs = metadataNumber(log.metadata, "audioMs");
+  if (audioMs === null) {
+    return null;
+  }
+  return estimateSpeechCostUsd({ provider: log.provider ?? null, audioMs });
+}
+
 export function calculateTextGenerationCost(log: ProviderCostLog): number | null {
   const hintedCost = finiteCost(log.costHint);
   if (hintedCost !== null) {
@@ -406,12 +433,26 @@ export function calculateProjectCostSummary(
 ): ProjectCostSummary {
   let textUsd = 0;
   let imageUsd = 0;
+  let audioUsd = 0;
   let unpricedTextCalls = 0;
   let unpricedImages = 0;
+  let unpricedAudioCalls = 0;
   const imageLogs = providerLogs.filter(isImageProviderLog);
 
   for (const log of providerLogs) {
     if (isImageProviderLog(log)) {
+      continue;
+    }
+    if (isAudioProviderLog(log)) {
+      // Narration is billed by audio seconds, which only the caller knows, so
+      // the settled `costHint` is the whole answer. A row without one is
+      // counted as unpriced rather than dropped.
+      const cost = finiteCost(log.costHint) ?? calculateSpeechGenerationCost(log);
+      if (cost === null) {
+        unpricedAudioCalls += 1;
+      } else {
+        audioUsd += cost;
+      }
       continue;
     }
     if (!isTextProviderLog(log)) {
@@ -448,13 +489,16 @@ export function calculateProjectCostSummary(
 
   textUsd = roundCost(textUsd);
   imageUsd = roundCost(imageUsd);
+  audioUsd = roundCost(audioUsd);
 
   return {
     textUsd,
     imageUsd,
-    totalUsd: roundCost(textUsd + imageUsd),
+    audioUsd,
+    totalUsd: roundCost(textUsd + imageUsd + audioUsd),
     unpricedTextCalls,
-    unpricedImages
+    unpricedImages,
+    unpricedAudioCalls
   };
 }
 
@@ -559,6 +603,11 @@ function isTextProviderLog(log: ProviderCostLog): boolean {
 function isImageProviderLog(log: ProviderCostLog): boolean {
   const operation = metadataString(log.metadata, "operation");
   return operation === "image.generate" || log.purpose === "image.generate";
+}
+
+function isAudioProviderLog(log: ProviderCostLog): boolean {
+  const operation = metadataString(log.metadata, "operation");
+  return operation?.startsWith("tts.") === true || log.purpose?.startsWith("tts.") === true;
 }
 
 function imageSizeTier(metadata: unknown): string {

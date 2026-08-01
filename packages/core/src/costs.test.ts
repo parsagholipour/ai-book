@@ -151,9 +151,11 @@ describe("provider cost calculation", () => {
     ).toEqual({
       textUsd: 0,
       imageUsd: 0.039,
+      audioUsd: 0,
       totalUsd: 0.039,
       unpricedTextCalls: 0,
-      unpricedImages: 1
+      unpricedImages: 1,
+      unpricedAudioCalls: 0
     });
 
     expect(

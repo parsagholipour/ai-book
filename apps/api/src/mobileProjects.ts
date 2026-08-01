@@ -12,6 +12,7 @@ import { registerMobileStatusRoutes } from "./mobile/routes/status.js";
 import { registerMobilePlanRoutes } from "./mobile/routes/plans.js";
 import { registerMobileExportRoutes } from "./mobile/routes/exports.js";
 import { registerMobileVoiceRoutes } from "./mobile/routes/voice.js";
+import { registerMobileAudiobookRoutes } from "./mobile/routes/audiobook.js";
 
 /**
  * Composition root for the mobile API.
@@ -46,6 +47,7 @@ export const mobileProjectRoutes: FastifyPluginAsync<MobileProjectRoutesOptions>
   await registerMobilePlanRoutes(fastify, context);
   await registerMobileExportRoutes(fastify, context);
   await registerMobileVoiceRoutes(fastify, context);
+  await registerMobileAudiobookRoutes(fastify, context);
 };
 
 export { MOBILE_PRODUCT_PRESETS, mobileAuthError } from "./mobile/schemas.js";
