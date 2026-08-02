@@ -118,14 +118,12 @@ class _BookShelfState extends ConsumerState<BookShelf> {
   }
 }
 
-/// Books worth shelving: anything past the idea stage.
+/// Books worth shelving: projects with generated manuscript pages.
 ///
-/// Drafts with no plan are still conversations rather than books, and showing
-/// them as covers would promise more than exists.
+/// Ideas and plans remain available in chat, but they are not books yet and
+/// should not appear under "Your books" until writing has actually started.
 List<MobileProjectSummary> _shelfBooks(List<MobileProjectSummary> projects) {
-  final books = projects
-      .where((project) => project.hasPlan || project.pageCount > 0)
-      .toList();
+  final books = projects.where((project) => project.pageCount > 0).toList();
   // Most recently touched first, whatever state it is in. Ranking finished
   // books above the rest buried the book being written right now — the one the
   // user is most likely to be waiting on — behind every book they already read.

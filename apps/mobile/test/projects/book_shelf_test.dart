@@ -59,6 +59,35 @@ void main() {
     expect(find.byType(BookCover), findsNothing);
   });
 
+  testWidgets('plans without generated pages are not shelved as books', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      shelfTestApp([
+        shelfProject(
+          id: 'planned',
+          title: 'Planned Only',
+          status: 'plan_ready',
+          hasPlan: true,
+          pageCount: 0,
+        ),
+        shelfProject(
+          id: 'started',
+          title: 'Writing Started',
+          status: 'generating',
+          hasPlan: true,
+          pageCount: 1,
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your books'), findsOneWidget);
+    expect(find.text('Planned Only'), findsNothing);
+    expect(find.text('Writing Started'), findsNWidgets(2));
+    expect(find.byType(BookCover), findsOneWidget);
+  });
+
   testWidgets('a book with no cover art still renders a cover', (tester) async {
     await tester.pumpWidget(
       shelfTestApp([
@@ -372,6 +401,7 @@ MobileProjectSummary shelfProject({
   bool exportsReady = false,
   bool epubReady = false,
   int progressPercent = 0,
+  int? pageCount,
   DateTime? updatedAt,
 }) {
   return MobileProjectSummary(
@@ -387,7 +417,7 @@ MobileProjectSummary shelfProject({
     currentAction: status,
     promptPreview: 'A practical workbook.',
     targetPages: 18,
-    pageCount: hasPlan ? 6 : 0,
+    pageCount: pageCount ?? (hasPlan ? 6 : 0),
     imageCount: 0,
     hasPlan: hasPlan,
     exports: shelfExports(ready: exportsReady, epubReady: epubReady),
