@@ -38,6 +38,7 @@ import {
   bookPlanSchema,
   createProjectSchema,
   creditCostForOperation,
+  generationJobControlsProjectStatus,
   loadConfig,
   mediaSettingsSchema,
   type BookPlan
@@ -256,7 +257,12 @@ export async function loadSerializedProjectStatus(
 export function serializeProjectStatus(status: ProjectStatusResult, exports: MobileExportSetDto): MobileProjectStatusDto {
   const project = status.project;
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
-  const failedJob = project.jobs.find((job) => job.status === "FAILED");
+  // Derivative operations report failure through their own resources. A
+  // narration or voice-character failure must not make a healthy book look
+  // failed or replace the book's own recovery guidance.
+  const failedJob = project.jobs.find(
+    (job) => job.status === "FAILED" && generationJobControlsProjectStatus(job.type)
+  );
   const mobile = mobileMetadataFromMediaSettings(project.mediaSettings);
   const generationProgress = serializeGenerationProgress(status, {
     imagesEnabled: mobile?.imagesEnabled ?? imagesEnabledFromMediaSettings(project.mediaSettings)

@@ -282,7 +282,7 @@ describe("mobile audiobook routes", () => {
         expect.objectContaining({
           projectId: "project-1",
           type: "GENERATE_AUDIOBOOK",
-          dedupeKey: "generate-audiobook:project-1:audiobook-new",
+          dedupeKey: "generate-audiobook:project-1:audiobook-new:new",
           dispatch: false,
           payload: expect.objectContaining({ audiobookId: "audiobook-new", billingLedgerEntryId: "spend-1" })
         })
@@ -391,6 +391,78 @@ describe("mobile audiobook routes", () => {
       });
       expect(accepted.statusCode).toBe(202);
       expect(vi.mocked(reserveCredits)).toHaveBeenCalled();
+      await app.close();
+    });
+
+    it("resumes a narration that failed part way rather than re-reading the finished chapters", async () => {
+      mockPrisma.audiobook.findUnique.mockResolvedValue(
+        audiobookRecord({ status: "FAILED", error: "Gemini TTS request failed (429)" })
+      );
+      mockPrisma.audiobook.update.mockResolvedValue({ id: "audiobook-1" });
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        // Same book, same narrator: the chapters already on disk still apply.
+        payload: { voice: "Zephyr" }
+      });
+
+      expect(response.statusCode).toBe(202);
+      // The row survives, so the worker still sees which chapters are READY.
+      expect(mockPrisma.audiobook.deleteMany).not.toHaveBeenCalled();
+      expect(mockPrisma.audiobook.create).not.toHaveBeenCalled();
+      expect(mockPrisma.audiobook.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "audiobook-1" },
+          data: expect.objectContaining({ status: "GENERATING", error: null })
+        })
+      );
+      expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          // Naming the failed run keeps the key new; the old one already has a job row.
+          dedupeKey: "generate-audiobook:project-1:audiobook-1:job-1",
+          payload: expect.objectContaining({ audiobookId: "audiobook-1" })
+        })
+      );
+      await app.close();
+    });
+
+    it("starts clean when the failed narration used a different narrator", async () => {
+      mockPrisma.audiobook.findUnique.mockResolvedValue(audiobookRecord({ status: "FAILED" }));
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Kore" }
+      });
+
+      expect(response.statusCode).toBe(202);
+      // Chapters read by another narrator cannot be kept, so the row goes.
+      expect(mockPrisma.audiobook.deleteMany).toHaveBeenCalled();
+      expect(mockPrisma.audiobook.create).toHaveBeenCalled();
+      await app.close();
+    });
+
+    it("starts clean when the book has been edited since the narration failed", async () => {
+      mockPrisma.audiobook.findUnique.mockResolvedValue(
+        audiobookRecord({ status: "FAILED", contentRevision: 2 })
+      );
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Zephyr" }
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(mockPrisma.audiobook.deleteMany).toHaveBeenCalled();
+      expect(mockPrisma.audiobook.create).toHaveBeenCalled();
       await app.close();
     });
 

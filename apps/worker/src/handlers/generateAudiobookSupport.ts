@@ -4,18 +4,22 @@ import {
   languageLabel,
   silencePcm16,
   type ChapterNarration,
-  type Pcm16AudioChunk
+  type Pcm16AudioChunk,
+  type SpeechAdapter
 } from "@book-maker/core";
 
 /**
- * The pure parts of narrating a book: how it is divided into chapters, how the
+ * The parts of narrating a book that need no queue, database or storage: how it
+ * is divided into chapters, how the speech requests are scheduled, how the
  * pieces are joined, and what the narrator calls a chapter.
  *
- * Split out of the handler so they can be tested without a queue, a database or
- * a provider — the partition in particular is worth pinning down, because a
- * retry that chapters the book differently would renumber audio that is already
- * on disk.
+ * Split out of the handler so they can be tested against a stub adapter — the
+ * partition in particular is worth pinning down, because a retry that chapters
+ * the book differently would renumber audio that is already on disk.
  */
+
+/** In-flight speech requests. Enough to hide latency, low enough to stay under provider rate limits. */
+const MAX_PARALLEL_CHUNKS = 3;
 
 export type AudiobookSourcePage = {
   index: number;
@@ -72,6 +76,62 @@ export function audiobookChapterPlans(pages: AudiobookSourcePage[]): AudiobookCh
 
 function bookPage(page: AudiobookSourcePage) {
   return { index: page.index, title: page.title, markdown: page.markdown };
+}
+
+/**
+ * Runs a bounded window of speech requests but keeps the results in narration
+ * order, because the order is what the timeline's arithmetic depends on.
+ *
+ * The first failure stops the others. `Promise.all` rejects as soon as one
+ * worker throws, but it cannot stop the workers still running — left alone they
+ * narrate the rest of a chapter nobody will keep, spending money and burning the
+ * per-minute quota that the *next* attempt needs.
+ */
+export async function synthesizeChunks(options: {
+  narration: ChapterNarration;
+  voice: string;
+  stylePrompt: string;
+  speech: SpeechAdapter;
+}): Promise<Pcm16AudioChunk[]> {
+  const { chunks } = options.narration;
+  const results = Array.from<Pcm16AudioChunk | undefined>({ length: chunks.length });
+  let next = 0;
+  let failure: unknown;
+
+  const worker = async () => {
+    while (failure === undefined) {
+      const index = next;
+      next += 1;
+      const chunk = chunks[index];
+      if (!chunk) {
+        return;
+      }
+      try {
+        const result = await options.speech.synthesize({
+          text: chunk.text,
+          voice: options.voice,
+          stylePrompt: options.stylePrompt,
+          language: options.narration.language
+        });
+        results[index] = { pcm: result.pcm, sampleRate: result.sampleRate, channels: result.channels };
+      } catch (error) {
+        failure ??= error;
+        return;
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_CHUNKS, chunks.length) }, worker));
+  if (failure !== undefined) {
+    throw failure;
+  }
+
+  return results.map((result, index) => {
+    if (!result) {
+      throw new Error(`Narration chunk ${index} produced no audio.`);
+    }
+    return result;
+  });
 }
 
 /**

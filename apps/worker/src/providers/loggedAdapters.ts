@@ -535,6 +535,9 @@ class LoggingImageAdapter implements ImageAdapter {
   }
 }
 
+/** Narration outlives a rate-limit window; see the call site below. */
+const SPEECH_RETRY_ATTEMPTS = 5;
+
 class LoggingSpeechAdapter implements SpeechAdapter {
   constructor(
     private readonly delegate: SpeechAdapter,
@@ -554,10 +557,12 @@ class LoggingSpeechAdapter implements SpeechAdapter {
     });
     try {
       await assertJobNotStopped(this.generationJobId);
-      const result = await withRecoverableNetworkRetry(
-        () => this.delegate.synthesize(request),
-        providerRetryOptions(this.logger, this.generationJobId, "tts.synthesize")
-      );
+      const result = await withRecoverableNetworkRetry(() => this.delegate.synthesize(request), {
+        ...providerRetryOptions(this.logger, this.generationJobId, "tts.synthesize"),
+        // A book is dozens of sequential calls against a per-minute quota, so
+        // giving up early here costs the whole chapter rather than one page.
+        attempts: SPEECH_RETRY_ATTEMPTS
+      });
       const durationMs = Date.now() - startedAt;
       await this.logger.append("tts.synthesize.response", {
         callId,
@@ -565,7 +570,8 @@ class LoggingSpeechAdapter implements SpeechAdapter {
         model: result.model,
         audioMs: Math.round(result.durationMs),
         bytes: result.pcm.length,
-        durationMs
+        durationMs,
+        ...(result.stylePromptDropped ? { stylePromptDropped: true } : {})
       });
       await recordProviderAudioCost({
         projectId: this.projectId,

@@ -6,13 +6,17 @@
  * generate-page has always retried; generate-book joined once the direct
  * generation modes learned to resume (directGenerationResume.ts), so a retry
  * continues from the settled pages instead of regenerating the whole book.
+ * generate-audiobook resumes the same way, from the chapters already marked
+ * READY — and it is the job most exposed to a per-minute quota, because it is
+ * dozens of speech calls in a row.
  */
 
 export const GENERATE_PAGE_RECOVERY_ATTEMPTS = 4;
 export const GENERATE_BOOK_RECOVERY_ATTEMPTS = 2;
+export const GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS = 3;
 export const RECOVERY_BACKOFF_MS = 15_000;
 
-const NETWORK_RETRYABLE_JOB_NAMES = new Set(["generate-page", "generate-book"]);
+const NETWORK_RETRYABLE_JOB_NAMES = new Set(["generate-page", "generate-book", "generate-audiobook"]);
 
 export type JobRetryContext = {
   jobName: string;
@@ -31,7 +35,9 @@ export function retryJobOptions(
       ? GENERATE_PAGE_RECOVERY_ATTEMPTS
       : jobName === "generate-book"
         ? GENERATE_BOOK_RECOVERY_ATTEMPTS
-        : undefined;
+        : jobName === "generate-audiobook"
+          ? GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS
+          : undefined;
   if (attempts === undefined) {
     return undefined;
   }

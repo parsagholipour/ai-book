@@ -8,7 +8,6 @@ import {
   pcm16DurationMs,
   serializeAudiobookTimeline,
   type ChapterNarration,
-  type Pcm16AudioChunk,
   type SpeechAdapter,
   type SynthesizedChunkTiming
 } from "@book-maker/core";
@@ -16,6 +15,7 @@ import {
   audiobookChapterPlans,
   joinNarrationChunks,
   spokenChapterLabel,
+  synthesizeChunks,
   type AudiobookChapterPlan
 } from "./generateAudiobookSupport.js";
 import { prisma } from "@book-maker/db";
@@ -37,9 +37,6 @@ import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
  * only reaches READY once both its audio and its timeline are on disk under
  * their final names.
  */
-
-/** In-flight speech requests. Enough to hide latency, low enough to stay under provider rate limits. */
-const MAX_PARALLEL_CHUNKS = 3;
 
 export async function generateAudiobook(job: Job) {
   const projectId = job.data.projectId as string;
@@ -86,6 +83,10 @@ export async function generateAudiobook(job: Job) {
 
   const audioDir = join(config.AUDIO_STORAGE_DIR, projectId, audiobookId);
   await mkdir(audioDir, { recursive: true });
+  // Up front as well as at the end: only this audiobook's files are ever served,
+  // so a narration that failed before it could clean up would otherwise leave
+  // its chapters on disk forever.
+  await removeSupersededAudiobookDirs(projectId, audiobookId);
   await syncChapterRows(audiobookId, narrations, plans);
 
   const readyIndexes = new Set(
@@ -172,48 +173,6 @@ async function narrateChapter(options: {
       byteSize: mp3.length,
       segmentCount: timeline.segments.length
     }
-  });
-}
-
-/**
- * Runs a bounded window of requests but keeps the results in narration order,
- * because the order is what the timeline's arithmetic depends on.
- */
-async function synthesizeChunks(options: {
-  narration: ChapterNarration;
-  voice: string;
-  stylePrompt: string;
-  speech: SpeechAdapter;
-}): Promise<Pcm16AudioChunk[]> {
-  const { chunks } = options.narration;
-  const results = Array.from<Pcm16AudioChunk | undefined>({ length: chunks.length });
-  let next = 0;
-
-  const worker = async () => {
-    while (true) {
-      const index = next;
-      next += 1;
-      const chunk = chunks[index];
-      if (!chunk) {
-        return;
-      }
-      const result = await options.speech.synthesize({
-        text: chunk.text,
-        voice: options.voice,
-        stylePrompt: options.stylePrompt,
-        language: options.narration.language
-      });
-      results[index] = { pcm: result.pcm, sampleRate: result.sampleRate, channels: result.channels };
-    }
-  };
-
-  await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_CHUNKS, chunks.length) }, worker));
-
-  return results.map((result, index) => {
-    if (!result) {
-      throw new Error(`Narration chunk ${index} produced no audio.`);
-    }
-    return result;
   });
 }
 

@@ -173,6 +173,7 @@ describe("mobile project listing, detail and status", () => {
           status: "GENERATING",
           updatedAt: new Date("2026-06-15T12:30:00.000Z"),
           jobs: [
+            { id: "job-audio-failed", type: "GENERATE_AUDIOBOOK", status: "FAILED", error: "Speech quota exhausted." },
             { id: "job-failed", type: "GENERATE_PAGE", status: "FAILED", error: "Page draft timed out." },
             { id: "job-active", type: "GENERATE_PAGE", status: "ACTIVE", error: null }
           ]
@@ -231,8 +232,61 @@ describe("mobile project listing, detail and status", () => {
       affectedPageIndexes: [3, 4]
     });
     expect(body.status.failureMessage).toContain("while writing a page");
+    expect(body.status.failureMessage).not.toContain("narrat");
     expect(body.status.failureMessage).not.toContain("GENERATE_PAGE");
     expect(JSON.stringify(body.status)).not.toMatch(/jobs|queue|tokens|cost|provider/);
+    await app.close();
+  });
+
+  it("keeps a derivative operation failure out of a completed book's status", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          id: "project-1",
+          title: "Finished Book",
+          status: "COMPLETE",
+          jobs: [
+            {
+              id: "job-audio-failed",
+              type: "GENERATE_AUDIOBOOK",
+              status: "FAILED",
+              progress: 33,
+              error: "Speech quota exhausted."
+            },
+            { id: "job-compile", type: "COMPILE_EXPORT", status: "COMPLETED", progress: 100, error: null }
+          ]
+        },
+        progress: {
+          pages: { complete: 12, target: 12 },
+          images: 3,
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done" },
+            { key: "pages", label: "Pages", status: "done", detail: "12/12 pages" },
+            { key: "images", label: "Images", status: "done", detail: "3 images" },
+            { key: "export", label: "Export", status: "done", detail: "Markdown & PDF ready" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status).toMatchObject({
+      status: "complete",
+      progressPercent: 100,
+      currentAction: "Ready to download.",
+      failureMessage: null
+    });
+    expect(status.generationProgress).toMatchObject({ percent: 100, detail: null });
     await app.close();
   });
 

@@ -1,5 +1,5 @@
 import type { Job } from "bullmq";
-import { isRecoverableNetworkError, type JobStep } from "@book-maker/core";
+import { isRecoverableNetworkError, workerJobControlsProjectStatus, type JobStep } from "@book-maker/core";
 import { Prisma, planRevisionRetryDelayMs, prisma } from "@book-maker/db";
 import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
@@ -445,14 +445,10 @@ export async function markFailed(job: Job, error: unknown) {
     await failAudiobookForJob(job, errorMessage(error));
     return;
   }
-  if (projectId && shouldFailProjectForJob(job.name)) {
+  if (projectId && workerJobControlsProjectStatus(job.name)) {
     await refundFailedProjectCredits(projectId, errorMessage(error));
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
-}
-
-export function shouldFailProjectForJob(jobName: string): boolean {
-  return !["prepare-character-candidates", "build-character-persona", "generate-audiobook"].includes(jobName);
 }
 
 /**
@@ -552,7 +548,7 @@ export async function markStopped(job: Job) {
     await failAudiobookForJob(job, STOPPED_JOB_ERROR);
     return;
   }
-  if (projectId) {
+  if (projectId && workerJobControlsProjectStatus(job.name)) {
     await refundFailedProjectCredits(projectId, STOPPED_JOB_ERROR);
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
@@ -586,7 +582,7 @@ export async function markRecovering(job: Job, error: unknown) {
       }
     });
   }
-  if (projectId) {
+  if (projectId && workerJobControlsProjectStatus(job.name)) {
     await prisma.project.update({ where: { id: projectId }, data: { status: "GENERATING" } }).catch(() => undefined);
   }
 }

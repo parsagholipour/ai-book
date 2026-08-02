@@ -22,6 +22,9 @@ const GENERATE_PAGE_RECOVERY_ATTEMPTS = 4;
 // without regenerating finished work. Keep in sync with the worker's
 // jobRetryPolicy.ts.
 const GENERATE_BOOK_RECOVERY_ATTEMPTS = 2;
+// generate-audiobook resumes from the chapters already marked READY, and it is
+// the job most exposed to a per-minute speech quota. Same file to keep in sync.
+const GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS = 3;
 const GENERATE_PAGE_RECOVERY_BACKOFF_MS = 15_000;
 const DISPATCH_BACKOFF_BASE_MS = 5_000;
 const DISPATCH_BACKOFF_MAX_MS = 5 * 60_000;
@@ -290,7 +293,9 @@ function jobOptionsForType(type: GenerationJobType): JobsOptions | undefined {
       ? GENERATE_PAGE_RECOVERY_ATTEMPTS
       : type === "GENERATE_BOOK"
         ? GENERATE_BOOK_RECOVERY_ATTEMPTS
-        : undefined;
+        : type === "GENERATE_AUDIOBOOK"
+          ? GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS
+          : undefined;
   if (attempts === undefined) {
     return undefined;
   }

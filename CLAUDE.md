@@ -267,6 +267,27 @@ tells you when a listed file has dropped under the default so the entry can be d
   that error is erased at the next boundary rather than accumulating. The result is a sidecar
   `chapter-<n>.timeline.json` — the transcript the app highlights is rendered from those segments,
   not from `Page.markdown`, so what is shown is exactly what was spoken.
+- **Narration fails in three provider-shaped ways, and all three guards are load-bearing.** One bad
+  chunk used to lose the whole audiobook. (1) The TTS model answers a bare `400 INVALID_ARGUMENT`
+  for a handful of ordinary passages *only* when the style prompt is prefixed to them — either half
+  alone is accepted, and it reproduces exactly — so `GeminiSpeechAdapter.synthesize` reads a refused
+  chunk again without the direction and flags `stylePromptDropped`. (2) A per-minute speech quota
+  makes 429 the normal case rather than an outage, so `ProviderHttpError` carries the status as a
+  *field* — a status that appears only inside the message text matches none of
+  `isRecoverableNetworkError`'s patterns and would never be retried — along with the `retryDelay` the
+  response names, which `withRecoverableNetworkRetry` waits out instead of backing off blindly —
+  but only up to `PROVIDER_RETRY_AFTER_CEILING_MS`. A cooldown longer than that is the *daily* cap,
+  not the per-minute one, so `isRecoverableNetworkError` calls it unrecoverable and every layer
+  gives up at once rather than spending its whole budget failing the same way.
+  (3) `synthesizeChunks` stops its siblings on the first failure: `Promise.all` rejects but cannot
+  cancel, and workers left running narrate the rest of a chapter nobody will keep, spending the quota
+  the *next* attempt needs.
+- **Restarting a failed narration resumes it; that is a property of the route, not the worker.** The
+  worker has always skipped READY chapters, but `POST /api/mobile/projects/:id/audiobook` used to
+  delete and recreate the `Audiobook` row every time, so the skip never had anything to skip. It now
+  reuses a FAILED row when the voice and `contentRevision` still match — any other change is a
+  different audiobook and starts clean. The dedupe key names the run being resumed, because reusing
+  the audiobook id alone would match the failed job's row and enqueue nothing at all.
 - **The app plays local files, not a URL, and draws one timeline over many of them.** Chapter audio
   is downloaded into `tomeza_audiobook/<projectId>/<audiobookId>/` because the media session keeps
   playing when the app is backgrounded, where a token refresh cannot be relied on. Every chapter has

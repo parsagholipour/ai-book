@@ -16,5 +16,9 @@ import UIKit
       .registrar(forPlugin: "VoiceCallAudioPlayer")?.messenger() {
       VoiceCallAudioPlayer.register(with: messenger)
     }
+    if let messenger = engineBridge.pluginRegistry
+      .registrar(forPlugin: "VoiceCallAudioEncoder")?.messenger() {
+      VoiceCallAudioEncoder.register(with: messenger)
+    }
   }
 }

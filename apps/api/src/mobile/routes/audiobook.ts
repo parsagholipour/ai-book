@@ -12,7 +12,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
 import { ensureVoiceSample } from "../audiobookSamples.js";
-import { serializeAudiobook, serializeNarratorVoices, type AudiobookWithChapters } from "../audiobookSerializer.js";
+import { serializeAudiobook, serializeNarratorVoices } from "../audiobookSerializer.js";
 import type { MobileAudiobookDto, MobileNarratorVoiceDto } from "../dto.js";
 import { hitAuthenticatedLimit, requireMobileAuth, sendInsufficientCredits, sendMobileError } from "../httpErrors.js";
 import type { MobileRouteContext } from "../routeContext.js";
@@ -164,22 +164,45 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
         });
         spend = reservation ? await commitReservedCredits(reservation.id) : null;
 
+        // A narration that died half way through keeps its row, and with it the
+        // chapters already on disk: the worker skips every READY chapter, so
+        // restarting picks up where it stopped instead of re-reading the first
+        // half. Only when it is the same book read by the same narrator — any
+        // other change is a different audiobook and starts clean.
+        const resumable =
+          existing?.status === "FAILED" &&
+          existing.voice === body.data.voice &&
+          existing.contentRevision === project.contentRevision
+            ? existing
+            : null;
+
         const created = await prisma.$transaction(async (tx) => {
           // Replacing drops the old chapters with it; the worker clears the
           // superseded files from disk once the new narration lands.
-          await tx.audiobook.deleteMany({ where: { projectId: id } });
-          const audiobook = await tx.audiobook.create({
-            data: {
-              projectId: id,
-              voice: body.data.voice,
-              status: "GENERATING",
-              contentRevision: project.contentRevision
-            }
-          });
+          if (!resumable) {
+            await tx.audiobook.deleteMany({ where: { projectId: id } });
+          }
+          const audiobook = resumable
+            ? await tx.audiobook.update({
+                where: { id: resumable.id },
+                data: { status: "GENERATING", error: null, contentRevision: project.contentRevision }
+              })
+            : await tx.audiobook.create({
+                data: {
+                  projectId: id,
+                  voice: body.data.voice,
+                  status: "GENERATING",
+                  contentRevision: project.contentRevision
+                }
+              });
           const job = await enqueueGenerationJob({
             projectId: id,
             type: "GENERATE_AUDIOBOOK",
-            dedupeKey: `generate-audiobook:${id}:${audiobook.id}`,
+            // A resume reuses the audiobook id, so that alone would match the
+            // failed run's job row and enqueue nothing at all. Naming the run
+            // being resumed makes the key new for each attempt; a double-submit
+            // is caught earlier, by the GENERATING check.
+            dedupeKey: `generate-audiobook:${id}:${audiobook.id}:${resumable?.generationJobId ?? "new"}`,
             transaction: tx,
             dispatch: false,
             payload: {
@@ -271,7 +294,13 @@ async function resolveReadyChapter(
   return { dir: join(audioStorageDir, audiobook.projectId, audiobook.id), index: params.data.index };
 }
 
-async function loadAudiobook(projectId: string): Promise<AudiobookWithChapters | null> {
+/**
+ * The whole row, not just what the serializer needs: the start route also reads
+ * the failed run's id to decide whether narration can resume. It stays
+ * assignable to `AudiobookWithChapters`, which is what keeps the mobile response
+ * narrow.
+ */
+async function loadAudiobook(projectId: string) {
   return prisma.audiobook.findUnique({
     where: { projectId },
     include: { chapters: { orderBy: { index: "asc" } } }

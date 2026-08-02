@@ -163,6 +163,8 @@ export type SpeechResult = {
   sampleRate: number;
   channels: number;
   durationMs: number;
+  /** Set when the provider refused the styled request and the text was read without direction. */
+  stylePromptDropped?: boolean | undefined;
 };
 
 export interface SpeechAdapter {

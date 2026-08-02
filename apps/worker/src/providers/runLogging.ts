@@ -1,7 +1,7 @@
 import type { Job } from "bullmq";
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { GenerateTextOptions, ImageAdapter } from "@book-maker/core";
+import { providerRetryAfterMs, type GenerateTextOptions, type ImageAdapter } from "@book-maker/core";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { safeJsonStringify, safePathPart, serializeError } from "../runtime/serialization.js";
 import { config } from "../runtime/config.js";
@@ -106,16 +106,22 @@ export function providerRetryOptions(
       delayMs: number;
       error: unknown;
     }) => {
+      const throttled = providerRetryAfterMs(error) !== undefined;
       await logger.append(`${operation}.retry`, {
         attempt,
         attempts,
         nextAttempt: attempt + 1,
         delayMs,
         recoverable: true,
+        ...(throttled ? { throttled: true } : {}),
         error: serializeError(error)
       });
       await updateJobProgress(generationJobId, {
-        message: `${providerOperationLabel(operation, purpose)} hit a network interruption; retrying (${attempt + 1}/${attempts}).`
+        // A quota wait is not a network fault, and it is long enough that saying
+        // so is the difference between "stuck" and "waiting its turn".
+        message: throttled
+          ? `${providerOperationLabel(operation, purpose)} is waiting on the provider's rate limit; resuming in ${Math.round(delayMs / 1000)}s (${attempt + 1}/${attempts}).`
+          : `${providerOperationLabel(operation, purpose)} hit a network interruption; retrying (${attempt + 1}/${attempts}).`
       });
     }
   };

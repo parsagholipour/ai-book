@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -8,6 +9,8 @@ import '../../../shared/api/api_error.dart';
 import '../../billing/data/billing_repository.dart';
 import '../data/gemini_live_socket.dart';
 import '../data/voice_call_audio.dart';
+import '../data/voice_call_recorder.dart';
+import '../data/voice_recording_encoder.dart';
 import '../data/voice_repository.dart';
 import '../domain/voice_models.dart';
 import '../domain/voice_transcript_queue.dart';
@@ -43,6 +46,8 @@ class VoiceCallController extends Notifier<VoiceCallState> {
 
   VoiceCallAudio? _audio;
   GeminiLiveSocket? _socket;
+  VoiceCallRecorder? _recorder;
+  VoiceCallRecorder? _recorderOverride;
   StreamSubscription<Uint8List>? _micSubscription;
   StreamSubscription<GeminiLiveEvent>? _socketSubscription;
   Timer? _ticker;
@@ -54,6 +59,13 @@ class VoiceCallController extends Notifier<VoiceCallState> {
   String _pendingCharacterCaption = '';
   DateTime? _connectedAt;
   int _elapsedBeforeReconnect = 0;
+
+  /// The same banked time as [_elapsedBeforeReconnect], kept in milliseconds.
+  ///
+  /// The meter reports whole seconds and the recording cannot: a chunk landing
+  /// 40 ms into a second has to be written 40 ms in, or a reconnect would nudge
+  /// the two halves of the conversation out of step with each other.
+  int _elapsedMsBeforeReconnect = 0;
   bool _disposed = false;
   bool _reconnecting = false;
   bool _hangingUp = false;
@@ -64,6 +76,9 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     ref.onDispose(() {
       _disposed = true;
       unawaited(_teardown());
+      // The recording outlives the call itself — the ended screen still offers
+      // it — but not the screen. Walking away takes it with them.
+      unawaited(_discardRecording());
     });
     return const VoiceCallState();
   }
@@ -75,6 +90,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     required VoiceCharacter character,
     int? pageIndex,
     VoiceCallAudio? audio,
+    VoiceCallRecorder? recorder,
   }) async {
     // A controller that has already carried a call can carry another: the
     // provider is auto-disposed, but not the instant the screen pops, so a
@@ -85,6 +101,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     _resetForNewCall();
     state = VoiceCallState(character: character, phase: VoiceCallPhase.ringing);
 
+    _recorderOverride = recorder;
     final io = audio ?? PlatformVoiceCallAudio();
     _audio = io;
     if (!await io.ensurePermission()) {
@@ -230,8 +247,69 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     _pendingCharacterCaption = '';
     _connectedAt = null;
     _elapsedBeforeReconnect = 0;
+    _elapsedMsBeforeReconnect = 0;
     _reconnecting = false;
     _hangingUp = false;
+    unawaited(_discardRecording());
+  }
+
+  /// Opens the spool for a call, once.
+  ///
+  /// Keyed on the call rather than the connection: a reconnect resumes the same
+  /// conversation, and restarting the recorder there would throw away the half
+  /// of it that happened before the line wobbled.
+  Future<void> _ensureRecorder(String callId) async {
+    if (_recorder != null) {
+      return;
+    }
+    final recorder =
+        _recorderOverride ?? VoiceCallRecorder(encoder: ref.read(voiceRecordingEncoderProvider));
+    // A device with no room to record still takes the call; the download just
+    // is not offered.
+    if (!await recorder.start(callId) || _disposed) {
+      await recorder.dispose();
+      return;
+    }
+    _recorder = recorder;
+    state = state.copyWith(recordingAvailable: true);
+  }
+
+  Future<void> _discardRecording() async {
+    final recorder = _recorder;
+    _recorder = null;
+    _recorderOverride = null;
+    await recorder?.dispose();
+  }
+
+  /// Encodes the call so far and returns the file to hand to the share sheet.
+  ///
+  /// Null when there is nothing recorded. Everything else — no room on the
+  /// device, an encoder that failed — throws, because the caller asked for this
+  /// one explicitly and deserves to be told it did not happen.
+  Future<File?> exportRecording() async {
+    final recorder = _recorder;
+    if (recorder == null || state.exportingRecording) {
+      return null;
+    }
+    // `copyWith` drops the error unless it is handed back, and a call that
+    // failed still has a recording worth keeping — downloading it must not
+    // replace "the call was disconnected" with the generic connect message.
+    state = state.copyWith(exportingRecording: true, error: state.error);
+    try {
+      final name = VoiceCallRecorder.safeSegment(state.character?.name ?? 'call');
+      return await recorder.export(
+        filename: '$name-call-${_recordingStamp(DateTime.now())}.m4a',
+      );
+    } finally {
+      if (!_disposed) {
+        state = state.copyWith(exportingRecording: false, error: state.error);
+      }
+    }
+  }
+
+  static String _recordingStamp(DateTime at) {
+    String pad(int value) => value.toString().padLeft(2, '0');
+    return '${at.year}-${pad(at.month)}-${pad(at.day)}-${pad(at.hour)}${pad(at.minute)}';
   }
 
   Future<VoiceCallSession> _startSession(
@@ -323,6 +401,8 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     _socket = socket;
     _socketSubscription = socket.events.listen((event) => _handleEvent(event, sequence));
 
+    await _ensureRecorder(session.callId);
+
     final mic = await audio.start(
       inputSampleRate: session.inputSampleRate,
       outputSampleRate: session.outputSampleRate,
@@ -331,6 +411,9 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     _micSubscription = mic.listen((chunk) {
       if (sequence == _connectionSequence && !_disposed) {
         socket.sendAudio(chunk, session.inputSampleRate);
+        // Downstream of the mute filter, so a muted stretch is recorded as the
+        // silence Gemini also heard rather than as words nobody sent.
+        _recorder?.writeCaller(chunk, _recordingOffsetMs());
       }
     });
 
@@ -348,12 +431,17 @@ class VoiceCallController extends Notifier<VoiceCallState> {
       case GeminiLiveAudio(:final pcm16):
         state = state.copyWith(characterSpeaking: true);
         unawaited(_audio?.play(pcm16));
+        _recorder?.writeCharacter(pcm16, _recordingOffsetMs());
       case GeminiLiveInterrupted():
         // The caller talked over the character. Everything queued answers
         // something they have moved past, so it is dropped rather than played
         // out over the top of what they just said.
         state = state.copyWith(characterSpeaking: false);
         unawaited(_audio?.flushPlayback());
+        // And dropped from the recording for the same reason: the speaker is
+        // throwing those words away at this exact moment, so keeping them would
+        // put a reply in the file that nobody in the call ever heard.
+        _recorder?.truncateAt(_recordingOffsetMs());
         _flushCaption(VoiceCallSpeaker.character);
       case GeminiLiveTranscript(:final speaker, :final text, :final finished):
         _appendCaption(
@@ -390,8 +478,11 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     if (_reconnecting || _disposed || state.phase == VoiceCallPhase.ended) return;
     _reconnecting = true;
     // Time already talked is banked, because the wall clock keeps running
-    // through a reconnect but the call does not.
+    // through a reconnect but the call does not. The recording banks the same
+    // moment, so the dead air is stitched out of the file rather than left in
+    // it as a silence the caller has to sit through.
     _elapsedBeforeReconnect = _elapsedSeconds();
+    _elapsedMsBeforeReconnect = _recordingOffsetMs();
     _connectedAt = null;
     state = state.copyWith(phase: VoiceCallPhase.reconnecting, characterSpeaking: false);
     await _closeConnection();
@@ -483,6 +574,18 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     final connectedAt = _connectedAt;
     if (connectedAt == null) return _elapsedBeforeReconnect;
     return _elapsedBeforeReconnect + DateTime.now().difference(connectedAt).inSeconds;
+  }
+
+  /// Where in the recording a chunk arriving now belongs.
+  ///
+  /// The same clock as [_elapsedSeconds] at millisecond resolution, so the
+  /// finished file is as long as the call the caller was charged for — and both
+  /// speakers land on one timeline even though their audio arrives down two
+  /// very different paths.
+  int _recordingOffsetMs() {
+    final connectedAt = _connectedAt;
+    if (connectedAt == null) return _elapsedMsBeforeReconnect;
+    return _elapsedMsBeforeReconnect + DateTime.now().difference(connectedAt).inMilliseconds;
   }
 
   void _appendCaption(VoiceCallSpeaker speaker, String text, bool finished) {
@@ -595,6 +698,8 @@ class VoiceCallState {
     this.creditsPerMinute = 0,
     this.maxCallSeconds = 0,
     this.outOfCredits = false,
+    this.recordingAvailable = false,
+    this.exportingRecording = false,
     this.endingReason,
     this.endedBecause,
     this.error,
@@ -614,6 +719,14 @@ class VoiceCallState {
   final int creditsPerMinute;
   final int maxCallSeconds;
   final bool outOfCredits;
+
+  /// Whether this call is being recorded on the device, and so whether there is
+  /// anything to offer the caller. False when the spool could not be opened.
+  final bool recordingAvailable;
+
+  /// True while the recording is being encoded, which takes a few seconds for a
+  /// long call.
+  final bool exportingRecording;
 
   /// What is about to end this call, while it is still running.
   final VoiceCallEndingReason? endingReason;
@@ -648,6 +761,8 @@ class VoiceCallState {
     int? creditsPerMinute,
     int? maxCallSeconds,
     bool? outOfCredits,
+    bool? recordingAvailable,
+    bool? exportingRecording,
     VoiceCallEndingReason? endingReason,
     VoiceCallEndingReason? endedBecause,
     String? error,
@@ -666,6 +781,8 @@ class VoiceCallState {
       creditsPerMinute: creditsPerMinute ?? this.creditsPerMinute,
       maxCallSeconds: maxCallSeconds ?? this.maxCallSeconds,
       outOfCredits: outOfCredits ?? this.outOfCredits,
+      recordingAvailable: recordingAvailable ?? this.recordingAvailable,
+      exportingRecording: exportingRecording ?? this.exportingRecording,
       endingReason: endingReason ?? this.endingReason,
       endedBecause: endedBecause ?? this.endedBecause,
       error: error,

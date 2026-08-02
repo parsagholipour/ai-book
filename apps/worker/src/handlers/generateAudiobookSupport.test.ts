@@ -4,6 +4,7 @@ import {
   audiobookChapterPlans,
   joinNarrationChunks,
   spokenChapterLabel,
+  synthesizeChunks,
   type AudiobookSourcePage
 } from "./generateAudiobookSupport.js";
 
@@ -105,6 +106,77 @@ describe("joinNarrationChunks", () => {
 
   it("returns nothing for a chapter that produced no audio", () => {
     expect(joinNarrationChunks([], narration).length).toBe(0);
+  });
+});
+
+describe("synthesizeChunks", () => {
+  const narration = buildChapterNarration({
+    chapterIndex: 1,
+    title: "",
+    language: "en",
+    // Twelve paragraphs, so there is plenty left to narrate after an early failure.
+    pages: [{ index: 1, markdown: Array.from({ length: 12 }, (_, i) => `Paragraph ${i}.`).join("\n\n") }]
+  });
+
+  function stubSpeech(onCall: (text: string) => void) {
+    return {
+      synthesize: async ({ text }: { text: string }) => {
+        onCall(text);
+        // Yield, so the sibling workers get a chance to pick up more chunks.
+        await Promise.resolve();
+        return {
+          provider: "stub",
+          model: "stub",
+          pcm: Buffer.alloc(DEFAULT_TTS_SAMPLE_RATE * 2),
+          sampleRate: DEFAULT_TTS_SAMPLE_RATE,
+          channels: 1,
+          durationMs: 1000
+        };
+      }
+    };
+  }
+
+  it("returns one chunk per narration chunk, in order", async () => {
+    const seen: string[] = [];
+    const results = await synthesizeChunks({
+      narration,
+      voice: "Kore",
+      stylePrompt: "Read warmly.",
+      speech: stubSpeech((text) => void seen.push(text))
+    });
+
+    expect(results).toHaveLength(narration.chunks.length);
+    expect(seen).toHaveLength(narration.chunks.length);
+  });
+
+  it("stops the other requests once one fails, instead of narrating a chapter nobody keeps", async () => {
+    let calls = 0;
+    const speech = stubSpeech(() => {
+      calls += 1;
+      if (calls === 2) {
+        throw new Error("Gemini TTS request failed (400)");
+      }
+    });
+
+    await expect(
+      synthesizeChunks({ narration, voice: "Kore", stylePrompt: "Read warmly.", speech })
+    ).rejects.toThrow(/400/);
+
+    // The in-flight siblings finish their own chunk; none of them start a new one.
+    expect(calls).toBeLessThanOrEqual(3);
+    expect(calls).toBeLessThan(narration.chunks.length);
+  });
+
+  it("reports the first failure, not whichever one landed last", async () => {
+    let calls = 0;
+    const speech = stubSpeech(() => {
+      calls += 1;
+      throw new Error(`failure ${calls}`);
+    });
+
+    await expect(
+      synthesizeChunks({ narration, voice: "Kore", stylePrompt: "Read warmly.", speech })
+    ).rejects.toThrow("failure 1");
   });
 });
 

@@ -57,3 +57,4 @@ export * from "./audiobook/timeline.js";
 export * from "./audiobook/mp3.js";
 export * from "./audiobook/voices.js";
 export * from "./jobSteps.js";
+export * from "./jobScope.js";

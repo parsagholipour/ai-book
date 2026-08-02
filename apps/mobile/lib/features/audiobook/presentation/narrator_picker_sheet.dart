@@ -12,6 +12,7 @@ import '../../projects/presentation/credit_cost_badge.dart';
 import '../data/audiobook_cache.dart';
 import '../data/audiobook_repository.dart';
 import '../domain/audiobook_models.dart';
+import 'narrator_preview_source.dart';
 
 /// Choosing a narrator.
 ///
@@ -101,7 +102,11 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
       if (!mounted || request != _previewRequest) {
         return;
       }
-      await _preview.setFilePath(sample.path);
+      // just_audio_background wraps every AudioPlayer in the app and rejects
+      // sources without a MediaItem tag before Android ever receives the file.
+      // The old setFilePath call omitted this, so the valid cached MP3 failed
+      // during loading and ExoPlayer never opened an audio track.
+      await _preview.setAudioSource(narratorPreviewSource(voice, sample.path));
       if (!mounted || request != _previewRequest) {
         return;
       }
@@ -110,7 +115,9 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
         _previewing = voice.voice;
       });
       await _preview.play();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Narrator preview failed for ${voice.voice}: $error');
+      debugPrintStack(stackTrace: stackTrace);
       if (mounted && request == _previewRequest) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()

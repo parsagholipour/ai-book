@@ -1,4 +1,5 @@
 import { pcm16ChunkFromInlineAudio, pcm16DurationMs } from "../audio/pcm.js";
+import { ProviderHttpError } from "./retry.js";
 import type { SpeechAdapter, SpeechRequest, SpeechResult } from "./types.js";
 
 /**
@@ -32,14 +33,33 @@ export class GeminiSpeechAdapter implements SpeechAdapter {
   }
 
   async synthesize(request: SpeechRequest): Promise<SpeechResult> {
-    const text = request.stylePrompt ? `${request.stylePrompt}\n\n${request.text}` : request.text;
+    if (!request.stylePrompt) {
+      return this.speak(request.text, request.voice);
+    }
+    try {
+      return await this.speak(`${request.stylePrompt}\n\n${request.text}`, request.voice);
+    } catch (error) {
+      if (!isInvalidArgument(error)) {
+        throw error;
+      }
+      // The model refuses a small number of otherwise ordinary passages when the
+      // performance direction is prefixed to them — a bare `INVALID_ARGUMENT`
+      // with no detail, reproducible for that exact pairing and fine for either
+      // half alone. Reading the passage plainly loses the direction for one
+      // chunk; throwing loses the whole audiobook.
+      const result = await this.speak(request.text, request.voice);
+      return { ...result, stylePromptDropped: true };
+    }
+  }
+
+  private async speak(text: string, voice: string): Promise<SpeechResult> {
     const response = await this.postGenerateContent({
       contents: [{ role: "user", parts: [{ text }] }],
       generationConfig: {
         responseModalities: ["AUDIO"],
         speechConfig: {
           voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: request.voice }
+            prebuiltVoiceConfig: { voiceName: voice }
           }
         }
       }
@@ -65,7 +85,13 @@ export class GeminiSpeechAdapter implements SpeechAdapter {
     });
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(`Gemini TTS request failed (${response.status}): ${text.slice(0, 500)}`);
+      // The status travels as a field, not just in the message: that is what lets
+      // a 429 be retried after the cooldown the response itself names.
+      const retryAfterMs = retryAfterMsFromResponse(response, text);
+      throw new ProviderHttpError(`Gemini TTS request failed (${response.status}): ${text.slice(0, 500)}`, {
+        status: response.status,
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs })
+      });
     }
     try {
       return JSON.parse(text) as unknown;
@@ -73,6 +99,25 @@ export class GeminiSpeechAdapter implements SpeechAdapter {
       throw new Error(`Gemini TTS returned a non-JSON response: ${text.slice(0, 300)}`);
     }
   }
+}
+
+/** A refusal of this particular text — retrying it unchanged will fail the same way. */
+function isInvalidArgument(error: unknown): boolean {
+  return error instanceof ProviderHttpError && error.status === 400;
+}
+
+/**
+ * Google names its own cooldown two ways: a `Retry-After` header, or a
+ * `retryDelay` inside the error details ("38.3s"). Either beats guessing.
+ */
+function retryAfterMsFromResponse(response: Response, body: string): number | undefined {
+  const header = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(header) && header > 0) {
+    return header * 1_000;
+  }
+  const match = /"retryDelay"\s*:\s*"([\d.]+)s"/.exec(body) ?? /retry in ([\d.]+)s/i.exec(body);
+  const seconds = match?.[1] ? Number(match[1]) : Number.NaN;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds * 1_000) : undefined;
 }
 
 function inlineAudioFromResponse(response: unknown, model: string): { data: string; mimeType?: string | undefined } {

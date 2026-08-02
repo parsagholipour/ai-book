@@ -8,6 +8,7 @@ import '../../../shared/ui/motion.dart';
 import '../domain/voice_models.dart';
 import 'voice_call_avatar.dart';
 import 'voice_call_controller.dart';
+import 'voice_call_menu.dart';
 
 /// The call itself.
 ///
@@ -78,9 +79,22 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
         body: SafeArea(
           child: Column(
             children: [
+              // Fixed height whether or not the menu is there, so a call that
+              // could not open a recording lays the avatar out identically to
+              // one that could.
+              const SizedBox(
+                height: 48,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: VoiceCallMenu(),
+                  ),
+                ),
+              ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 0),
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -407,10 +421,13 @@ class _CallFooter extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Required disclosure, and honest: this is a synthesised voice, not a
-          // recording of a person.
+          // recording of a person. The second half is the same kind of honesty
+          // about the other direction — the caller's own voice is being written
+          // to a file, and they should not have to open a menu to find that out.
           Text(
-            'AI voice',
+            state.recordingAvailable ? 'AI voice · recorded on this device' : 'AI voice',
             style: theme.textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
+            textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
           if (finished)
@@ -438,8 +455,15 @@ class _CallFooter extends StatelessWidget {
                   enabled: true,
                   onPressed: () async {
                     AppHaptics.commit();
+                    // A call with a recording lands on the ended screen instead
+                    // of popping. Hanging up is how most calls end, and popping
+                    // straight to the book would take the recording with it
+                    // before the caller was ever offered it.
+                    final keepScreen = state.recordingAvailable;
                     await controller.hangUp();
-                    if (context.mounted) Navigator.of(context).pop();
+                    if (!keepScreen && context.mounted) {
+                      Navigator.of(context).pop();
+                    }
                   },
                 ),
                 _CallControl(
@@ -488,6 +512,19 @@ class _FinishedCallActions extends StatelessWidget {
         if (explanation != null) ...[
           Text(
             explanation,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        // The menu is a small icon in the far corner, and this is the last
+        // moment the recording exists. Say where it is rather than leaving the
+        // caller to find it.
+        if (state.recordingAvailable) ...[
+          Text(
+            'The recording is under the menu, top right.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,

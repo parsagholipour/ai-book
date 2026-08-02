@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/voice/data/voice_call_audio.dart';
+import 'package:tomeza/features/voice/data/voice_call_recorder.dart';
 import 'package:tomeza/features/voice/domain/voice_models.dart';
 import 'package:tomeza/features/voice/presentation/voice_call_controller.dart';
 import 'package:tomeza/features/voice/presentation/voice_call_screen.dart';
@@ -23,6 +27,11 @@ class StubVoiceCallController extends VoiceCallController {
 
   final VoiceCallState _initial;
   int hangUpCalls = 0;
+  int exportCalls = 0;
+
+  /// What `exportRecording` hands back. Null stands in for "there was nothing
+  /// to export", which the screen has to survive without a share sheet.
+  File? exported;
 
   @override
   VoiceCallState build() => _initial;
@@ -32,8 +41,15 @@ class StubVoiceCallController extends VoiceCallController {
     required String projectId,
     required VoiceCharacter character,
     int? pageIndex,
-    Object? audio,
+    VoiceCallAudio? audio,
+    VoiceCallRecorder? recorder,
   }) async {}
+
+  @override
+  Future<File?> exportRecording() async {
+    exportCalls += 1;
+    return exported;
+  }
 
   @override
   Future<void> hangUp({String reason = 'ended'}) async {
@@ -294,5 +310,131 @@ void main() {
     await tester.pump();
 
     expect(controller.hangUpCalls, 1);
+  });
+
+  testWidgets('offers no menu when the call is not being recorded', (tester) async {
+    await pumpCall(
+      tester,
+      const VoiceCallState(character: marlow, phase: VoiceCallPhase.connected),
+    );
+
+    expect(find.byKey(const ValueKey('call-menu')), findsNothing);
+    // And the disclosure must not claim a recording that is not happening.
+    expect(find.text('AI voice'), findsOneWidget);
+  });
+
+  testWidgets('discloses the recording alongside the AI voice notice', (tester) async {
+    await pumpCall(
+      tester,
+      const VoiceCallState(
+        character: marlow,
+        phase: VoiceCallPhase.connected,
+        recordingAvailable: true,
+      ),
+    );
+
+    expect(find.byKey(const ValueKey('call-menu')), findsOneWidget);
+    expect(find.text('AI voice · recorded on this device'), findsOneWidget);
+  });
+
+  testWidgets('asks before it shares, and does nothing on cancel', (tester) async {
+    final controller = await pumpCall(
+      tester,
+      const VoiceCallState(
+        character: marlow,
+        phase: VoiceCallPhase.connected,
+        recordingAvailable: true,
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('call-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('call-menu-download')));
+    await tester.pumpAndSettle();
+
+    // The dialog names whose voices are in the file before the share sheet —
+    // a list of every app that will take audio — is anywhere near the screen.
+    expect(find.textContaining('your call with Marlow'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(controller.exportCalls, 0);
+  });
+
+  testWidgets('exports once the caller proceeds', (tester) async {
+    final controller = await pumpCall(
+      tester,
+      const VoiceCallState(
+        character: marlow,
+        phase: VoiceCallPhase.connected,
+        recordingAvailable: true,
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('call-menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('call-menu-download')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('call-recording-proceed')));
+    await tester.pumpAndSettle();
+
+    // Nothing to share, so the share sheet is never reached — which is what
+    // keeps this test off the platform channel.
+    expect(controller.exportCalls, 1);
+  });
+
+  testWidgets('keeps the recording reachable after the caller hangs up', (tester) async {
+    // Hanging up used to pop straight back to the book. With a recording on
+    // disk that would throw it away a beat before the caller was offered it.
+    final controller = await pumpCall(
+      tester,
+      const VoiceCallState(
+        character: marlow,
+        phase: VoiceCallPhase.ended,
+        elapsedSeconds: 65,
+        chargedCredits: 120,
+        recordingAvailable: true,
+      ),
+    );
+
+    expect(controller.hangUpCalls, 0);
+    expect(find.byKey(const ValueKey('call-menu')), findsOneWidget);
+    expect(find.text('The recording is under the menu, top right.'), findsOneWidget);
+    expect(find.text('Back to the book'), findsOneWidget);
+  });
+
+  testWidgets('keeps the failure reason on screen while exporting', (tester) async {
+    // `copyWith` drops the error unless it is handed back, so flipping the
+    // exporting flag on a failed call used to replace the real reason with the
+    // generic one — while the caller was looking at it.
+    await pumpCall(
+      tester,
+      const VoiceCallState(
+        character: marlow,
+        phase: VoiceCallPhase.failed,
+        error: 'The call was disconnected.',
+        recordingAvailable: true,
+        exportingRecording: true,
+      ),
+    );
+
+    expect(find.text('The call was disconnected.'), findsOneWidget);
+    // And the menu makes way for the progress indicator rather than sitting
+    // next to one.
+    expect(find.byKey(const ValueKey('call-menu')), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('says nothing about a recording that was never made', (tester) async {
+    await pumpCall(
+      tester,
+      const VoiceCallState(
+        character: marlow,
+        phase: VoiceCallPhase.ended,
+        elapsedSeconds: 65,
+      ),
+    );
+
+    expect(find.textContaining('recording'), findsNothing);
   });
 }
