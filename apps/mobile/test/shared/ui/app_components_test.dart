@@ -37,6 +37,32 @@ void main() {
     expect(find.text('No books yet'), findsOneWidget);
     expect(find.text('Projects unavailable'), findsOneWidget);
     expect(
+      tester
+          .widget<Padding>(
+            find
+                .descendant(
+                  of: find.byType(AppEmptyState),
+                  matching: find.byType(Padding),
+                )
+                .first,
+          )
+          .padding,
+      const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+    );
+    expect(
+      tester
+          .widget<Padding>(
+            find
+                .descendant(
+                  of: find.byType(AppErrorState),
+                  matching: find.byType(Padding),
+                )
+                .first,
+          )
+          .padding,
+      const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+    );
+    expect(
       tester.getSemantics(find.byType(AppLoadingState)).label,
       contains('Loading projects'),
     );
