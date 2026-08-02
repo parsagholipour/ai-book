@@ -28,7 +28,14 @@ class GenerationProgressOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final progress = status.progressPercent.clamp(0, 100).toInt();
-    final steps = status.generationProgress?.steps ?? status.steps;
+    // While the plan is being written the finer planning milestones are what
+    // the chat draws, and this card promises to agree with it. Only while
+    // planning: once a plan is approved those three steps are all done and the
+    // coarse pipeline is the honest answer until writing reports in.
+    final steps =
+        status.generationProgress?.steps ??
+        (status.status == 'planning' ? status.planningProgress?.steps : null) ??
+        status.steps;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),

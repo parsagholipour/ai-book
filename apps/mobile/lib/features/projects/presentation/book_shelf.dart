@@ -172,8 +172,9 @@ class _ShelfBook extends ConsumerWidget {
               onTap: () {
                 AppHaptics.tap();
                 Navigator.of(context).pop();
-                // A finished book opens in the reader; one still being written
-                // opens on its plan, where there is something to act on.
+                // A finished book opens in the reader; one still being made
+                // opens on its own page, which shows whichever of plan,
+                // progress and exports is true right now.
                 context.push(
                   project.exports.pdf.available
                       ? '/projects/${project.id}/read'

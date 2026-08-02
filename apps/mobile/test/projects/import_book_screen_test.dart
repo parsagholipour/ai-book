@@ -49,7 +49,7 @@ void main() {
 
     expect(repository.importedFilenames, ['novel.txt']);
     expect(repository.requestIds.single, isNotEmpty);
-    expect(find.text('handoff-screen'), findsOneWidget);
+    expect(find.text('book-screen'), findsOneWidget);
   });
 
   testWidgets('shows the paywall when the account has no subscription', (
@@ -80,7 +80,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(BillingPaywall), findsOneWidget);
-    expect(find.text('handoff-screen'), findsNothing);
+    expect(find.text('book-screen'), findsNothing);
   });
 
   testWidgets('blocks oversized manuscripts before any upload', (tester) async {
@@ -131,7 +131,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('No readable text was found in that file.'), findsOneWidget);
-    expect(find.text('handoff-screen'), findsNothing);
+    expect(find.text('book-screen'), findsNothing);
   });
 }
 
@@ -148,9 +148,8 @@ Widget _routerApp({
             ImportBookScreen(pickFileOverride: () async => pickedFile),
       ),
       GoRoute(
-        path: '/projects/:id/handoff',
-        builder: (context, state) =>
-            const Scaffold(body: Text('handoff-screen')),
+        path: '/projects/:id',
+        builder: (context, state) => const Scaffold(body: Text('book-screen')),
       ),
     ],
   );

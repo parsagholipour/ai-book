@@ -8,6 +8,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import { reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
+import { isPendingEditConfirmationMessage } from "./bookEditIntents.js";
 import {
   MockPrismaKnownRequestError,
   approvedPlanRecord,
@@ -478,4 +479,89 @@ describe("mobile pending edit recovery", () => {
     await app.close();
   });
 
+  // Regression: "Aranha and the Big Match". The user asked to add a character,
+  // was asked who it was, said "Just add", and was asked the same question
+  // again — a loop with no reply that could escape it, because a scope
+  // clarification whose scope is "none" can never be resolved.
+  it("acts on an insistent follow-up instead of asking the same question again", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: generatedPages()
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-kaka", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    // One question is still allowed, and it stores what was asked about.
+    const asked = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Add Kaka in the match" }
+    });
+    expect(asked.statusCode).toBe(200);
+    expect(asked.json().reply.metadata).toMatchObject({
+      intent: { kind: "clarify" },
+      pendingEdit: { request: "Add Kaka in the match", clarification: "scope" }
+    });
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Just add" }
+    });
+    const proposalBody = proposal.json();
+
+    expect(proposal.statusCode).toBe(200);
+    expect(proposalBody.reply.metadata.intent.kind).not.toBe("clarify");
+    expect(proposalBody.reply.metadata).toMatchObject({
+      charged: false,
+      editProposal: { kind: "page_rewrite", affectedPageIndexes: [1, 2] },
+      pendingEdit: { clarification: "confirm" }
+    });
+    // Both halves survive: the request the router acts on is the original ask
+    // plus the follow-up, never the bare fragment.
+    expect(proposalBody.reply.metadata.pendingEdit.request).toContain("Add Kaka in the match");
+    expect(proposalBody.reply.metadata.pendingEdit.request).toContain("Just add");
+    // A proposal is free; only Apply reserves credits.
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    const applied = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().operation).toMatchObject({ kind: "page_rewrite", affectedPageIndexes: [1, 2] });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "APPLY_BOOK_EDIT",
+        payload: expect.objectContaining({ request: expect.stringContaining("Add Kaka in the match") })
+      })
+    );
+    await app.close();
+  });
+
+  it("treats insistence as a confirmation without needing the exact word", async () => {
+    expect(isPendingEditConfirmationMessage("Just add")).toBe(true);
+    expect(isPendingEditConfirmationMessage("just do it")).toBe(true);
+    expect(isPendingEditConfirmationMessage("add it")).toBe(true);
+    expect(isPendingEditConfirmationMessage("do it anyway")).toBe(true);
+    expect(isPendingEditConfirmationMessage("you decide")).toBe(true);
+    expect(isPendingEditConfirmationMessage("up to you")).toBe(true);
+    // Bare verbs stay out: this also confirms a priced proposal.
+    expect(isPendingEditConfirmationMessage("change")).toBe(false);
+    expect(isPendingEditConfirmationMessage("fix")).toBe(false);
+    expect(isPendingEditConfirmationMessage("no")).toBe(false);
+    expect(isPendingEditConfirmationMessage("add a dragon to page 2")).toBe(false);
+  });
 });

@@ -172,6 +172,25 @@ tells you when a listed file has dropped under the default so the entry can be d
   credits buy and that failures are refunded. `stripCreditAnnouncement` in
   `apps/api/src/mobile/projectChat.ts` removes the old sentence from transcripts written before
   that, so a new priced reply that writes the price into its text would say it twice.
+- **The edit chat gets one clarifying question per request, and it is enforced three times.**
+  A second question is a loop the user cannot escape: a `scope` clarification whose scope is
+  `"none"` is satisfied by no reply, so "just add" is met with the same question forever. Once
+  `findPendingScopeClarification` reports an open `scope` clarification that the new message
+  neither answers nor cancels, `apps/api/src/mobile/routes/projectChat.ts` merges the stored
+  request with the follow-up (`messageWithFollowUp`) and sets `clarifyExhausted`. That flag drops
+  `clarify` from the router's action enum (`decideActionsFor`), *skips* the
+  `BOOK_EDIT_CONFIDENCE_THRESHOLD` demotion — which would otherwise turn the hesitant decision
+  straight back into the question — and finally `forcedDecision` coerces any surviving `clarify`
+  into a whole-book `page_rewrite`. All three are needed: the prompt covers the model, the
+  coercion covers a router timeout and the model-free heuristics, whose catch-all is a clarify.
+  Defaulting this aggressively is safe **only** because a completed book prices every edit as a
+  proposal card first — nothing is reserved or written until Apply, so a wrong guess is one Cancel
+  away. Every `clarify` records `clarification: "scope"` even when the model reports `"none"`
+  (`intentFromDecideAction`), because that is what makes `handleProjectChatIntent` store the
+  resumable `pendingEdit`; "fixing" that tautology strands the next turn with a bare fragment.
+  `bookEditIntent.ts` splits into `bookEditMessage.ts` (reading a message: pages, quotes, scope,
+  languages — a leaf) and `bookEditHeuristics.ts` (the model-free classifier), which is why those
+  import types back from it but never values.
 - **The Sources list at the end of a book is not page text.** `compileBookMarkdown` builds it from
   the project's `ResearchSource` rows on every export, so no page edit can remove it — routed as
   one it charges for rewriting pages that never held it and then recompiles the section straight

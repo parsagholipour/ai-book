@@ -110,7 +110,7 @@ class _ImportBookScreenState extends ConsumerState<ImportBookScreen> {
           );
       if (!mounted) return;
       context.go(
-        '/projects/${result.project.id}/handoff',
+        '/projects/${result.project.id}',
         extra: 'Importing your book…',
       );
     } on ApiException catch (error) {

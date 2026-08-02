@@ -330,10 +330,25 @@ export function scopeFromRecentUserMessages(messages: MobileProjectChatMessageRe
   return "none";
 }
 
+/**
+ * "Proceed with what you already have." The insistence forms matter as much as
+ * the polite ones: a user who has been asked a question they do not want to
+ * answer replies "just add" or "you decide", not "apply it".
+ */
 export function isPendingEditConfirmationMessage(message: string): boolean {
-  return /^(?:ok|okay|yes|yep|yeah|sure|do it|apply it|go ahead|please do|start|run it)$/i.test(
-    normalizeShortFollowUpMessage(message)
-  );
+  const normalized = normalizeShortFollowUpMessage(message);
+  // Deliberately no bare verbs ("change", "fix"): this also confirms a priced
+  // proposal, so the intent to proceed has to be explicit — a "just" prefix, an
+  // "it" object, or an adverb like "anyway".
+  return /^(?:ok|okay|yes|yep|yeah|sure|do it|apply it|go ahead|please do|start|run it)$/i.test(normalized) ||
+    /^just\s+(?:do|add|apply|go|run|make|write|change|fix)(?:\s+it)?(?:\s+(?:anyway|already|now|please))?$/i.test(
+      normalized
+    ) ||
+    /^(?:do|add|apply|run|make|write)\s+it(?:\s+(?:anyway|already|now|please))?$/i.test(normalized) ||
+    /^(?:do|add|apply|run|go)\s+(?:ahead|anyway|already|now)$/i.test(normalized) ||
+    /^(?:you\s+decide|whatever\s+you\s+think|whatever\s+you\s+want|up\s+to\s+you|your\s+choice|surprise\s+me|i\s+don'?t\s+(?:care|mind))$/i.test(
+      normalized
+    );
 }
 
 export function isPendingEditCancellationMessage(message: string): boolean {
@@ -382,8 +397,15 @@ export async function handleProjectChatIntent(options: {
   textModel?: TextModelAdapter | undefined;
   /** When true, a previously priced proposal is executed immediately. */
   executeProposal?: boolean | undefined;
+  /**
+   * What the user originally asked for, when `message` is that request merged
+   * with a follow-up. Stored as the resumable request so a clarification chain
+   * keeps pointing at the real ask instead of accumulating each follow-up.
+   */
+  pendingRequest?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
+  const pendingRequest = options.pendingRequest?.trim() || message;
   if (intent.kind === "answer" || intent.kind === "clarify") {
     const answer =
       intent.kind === "answer"
@@ -397,7 +419,7 @@ export async function handleProjectChatIntent(options: {
         intent,
         charged: false,
         ...(intent.kind === "clarify" && intent.clarification === "scope"
-          ? { pendingEdit: { request: message, clarification: "scope" } }
+          ? { pendingEdit: { request: pendingRequest, clarification: "scope" } }
           : {})
       }
     });
@@ -445,7 +467,7 @@ export async function handleProjectChatIntent(options: {
   if (options.executeProposal) {
     return queueChatBookEdit({ userId, project, userMessageId, message, intent });
   }
-  return proposeBookEdit({ project, userMessageId, message, intent });
+  return proposeBookEdit({ project, userMessageId, message, intent, pendingRequest });
 }
 
 /**
@@ -458,8 +480,11 @@ export async function proposeBookEdit(options: {
   userMessageId: string;
   message: string;
   intent: BookEditIntent;
+  /** The originally requested change when `message` also carries a follow-up. */
+  pendingRequest?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message, intent } = options;
+  const pendingRequest = options.pendingRequest?.trim() || message;
   const proposalId = randomUUID();
   if (intent.kind === "continue_book") {
     const newPageCount = continuationNewPageCount(intent, project);
@@ -538,7 +563,7 @@ export async function proposeBookEdit(options: {
           : "Which page or exact phrase should I edit?",
       metadata: {
         intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "scope" },
-        pendingEdit: { request: message, clarification: "scope" },
+        pendingEdit: { request: pendingRequest, clarification: "scope" },
         charged: false
       }
     });

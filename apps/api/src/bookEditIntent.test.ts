@@ -9,6 +9,7 @@ import {
   intentFromProposeEdit,
   continuationRequestFromMessage,
   isBookEditScopeOnlyMessage,
+  messageWithFollowUp,
   messageWithScope,
   type BookEditIntent,
   type BookEditPageContext
@@ -714,5 +715,161 @@ describe("continuation intent", () => {
       chapters
     );
     expect(intent.continuation).toEqual({ chapterCount: 3 });
+  });
+});
+
+describe("clarification budget", () => {
+  const clarifyPayload: DecideArgs = {
+    action: "clarify",
+    confidence: 0.5,
+    reasoning: "Who is Kaka and where should they appear?",
+    assistantMessage: "Could you tell me a bit more about who Kaka is?",
+    clarification: "scope",
+    pageIndexes: [],
+    chapterIndex: null,
+    targetLanguage: null
+  };
+
+  function capturingModel(result: ToolCallsResult): {
+    model: TextModelAdapter;
+    calls: GenerateWithToolsOptions[];
+  } {
+    const calls: GenerateWithToolsOptions[] = [];
+    const model = routerAdapter(async (options) => {
+      calls.push(options);
+      return result;
+    });
+    return { model, calls };
+  }
+
+  it("offers clarify to the router until the budget is spent", async () => {
+    const { model, calls } = capturingModel(decideDecision(clarifyPayload));
+
+    await classifyProjectChatMessage({ message: "Add Kaka in the match", stage: "complete", pages, textModel: model });
+    const openBudget = calls[0]!.tools.find((tool) => tool.name === "decide")!;
+    expect(openBudget.parameters.safeParse(clarifyPayload).success).toBe(true);
+
+    await classifyProjectChatMessage({
+      message: "Add Kaka in the match\n\nFollow-up from the user: Just add",
+      stage: "complete",
+      pages,
+      textModel: model,
+      clarifyExhausted: true
+    });
+    const spentBudget = calls[1]!.tools.find((tool) => tool.name === "decide")!;
+    // The model cannot return an action the schema does not contain.
+    expect(spentBudget.parameters.safeParse(clarifyPayload).success).toBe(false);
+    expect(
+      spentBudget.parameters.safeParse({ ...clarifyPayload, action: "propose_edit", editTarget: "whole_book" }).success
+    ).toBe(true);
+  });
+
+  it("tells the router it may not ask again once the budget is spent", async () => {
+    const { model, calls } = capturingModel(decideDecision(clarifyPayload));
+
+    await classifyProjectChatMessage({ message: "Add Kaka in the match", stage: "complete", pages, textModel: model });
+    await classifyProjectChatMessage({
+      message: "Add Kaka in the match\n\nFollow-up from the user: Just add",
+      stage: "complete",
+      pages,
+      textModel: model,
+      clarifyExhausted: true
+    });
+
+    const [firstPrompt, secondPrompt] = calls.map((call) => String(call.messages[0]!.content));
+    // The policy itself is always on: no questions about creative preferences,
+    // and any question has to carry the default it will fall back to.
+    for (const prompt of [firstPrompt!, secondPrompt!]) {
+      expect(prompt).toMatch(/at most once per request/i);
+      expect(prompt).toMatch(/never send a bare question/i);
+      expect(prompt).toMatch(/adding something new to the finished book/i);
+    }
+    expect(firstPrompt).not.toMatch(/already asked a clarifying question/i);
+    expect(secondPrompt).toMatch(/already asked a clarifying question/i);
+  });
+
+  it("keeps a hesitant decision actionable instead of demoting it back to a question", async () => {
+    const model = fakeDecideModel({
+      ...clarifyPayload,
+      action: "propose_edit",
+      // Below BOOK_EDIT_CONFIDENCE_THRESHOLD: the normal gate would turn this
+      // straight back into the clarification the user just refused to answer.
+      confidence: 0.5,
+      editTarget: "whole_book",
+      editStyle: "rewrite"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Add Kaka in the match\n\nFollow-up from the user: Just add",
+      stage: "complete",
+      pages,
+      textModel: model,
+      clarifyExhausted: true
+    });
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("all_pages");
+    expect(intent.confidence).toBeGreaterThanOrEqual(0.72);
+  });
+
+  it("forces a decision when the router asks a second question anyway", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Add Kaka in the match\n\nFollow-up from the user: Just add",
+      stage: "complete",
+      pages,
+      textModel: fakeDecideModel(clarifyPayload),
+      clarifyExhausted: true
+    });
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("all_pages");
+    expect(intent.clarification).toBe("none");
+  });
+
+  it("forces a decision when there is no router model at all", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Add Kaka in the match\n\nFollow-up from the user: Just add",
+      stage: "complete",
+      pages,
+      clarifyExhausted: true
+    });
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("all_pages");
+  });
+
+  it("forces a spent plan-stage clarification into a plan revision", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Add a dragon\n\nFollow-up from the user: Just add",
+      stage: "plan_ready",
+      pages,
+      textModel: fakeDecideModel(clarifyPayload),
+      clarifyExhausted: true
+    });
+
+    expect(intent.kind).toBe("plan_revision");
+    expect(intent.clarification).toBe("none");
+  });
+
+  it("still asks the first question when the budget is open", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Add Kaka in the match",
+      stage: "complete",
+      pages,
+      textModel: fakeDecideModel(clarifyPayload)
+    });
+
+    expect(intent.kind).toBe("clarify");
+    // Recorded as a scope clarification whatever the model reports, so the next
+    // turn has resumable state to recover the original request from.
+    expect(intent.clarification).toBe("scope");
+  });
+
+  it("carries the original request into the follow-up turn", () => {
+    expect(messageWithFollowUp("Add Kaka in the match", "Just add")).toBe(
+      "Add Kaka in the match\n\nFollow-up from the user: Just add"
+    );
+    expect(messageWithFollowUp("", "Just add")).toBe("Just add");
+    expect(messageWithFollowUp("Just add", "just add")).toBe("just add");
   });
 });

@@ -7,7 +7,7 @@ import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
-import 'package:tomeza/features/projects/presentation/generation_progress_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_screen.dart';
 
 void main() {
   testWidgets('detail polling runs while generating and stops once the '
@@ -129,7 +129,7 @@ Widget _app(_CountingProjectsRepository repository) {
       ),
     ],
     child: const MaterialApp(
-      home: GenerationProgressScreen(projectId: 'project-1'),
+      home: BookScreen(projectId: 'project-1'),
     ),
   );
 }

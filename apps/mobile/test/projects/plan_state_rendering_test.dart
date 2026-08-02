@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
-import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_plan_review.dart';
 
 void main() {
   testWidgets('plan review renders plan state and one question at a time', (

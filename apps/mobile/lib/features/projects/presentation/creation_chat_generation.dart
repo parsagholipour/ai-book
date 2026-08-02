@@ -213,7 +213,11 @@ class _GenerationProgressBubbleState
                   label: 'Book generation progress',
                   value: '$progress percent complete',
                   child: ExcludeSemantics(
-                    child: LinearProgressIndicator(value: animatedProgress),
+                    // Shell is surfaceContainerHighest; theme track matches it.
+                    child: LinearProgressIndicator(
+                      value: animatedProgress,
+                      backgroundColor: colors.surface,
+                    ),
                   ),
                 ),
               ),
@@ -352,7 +356,7 @@ class _GenerationProgressSkeleton extends StatelessWidget {
                 const SizedBox(height: 8),
                 bar(210, 11),
                 const SizedBox(height: 14),
-                const LinearProgressIndicator(),
+                LinearProgressIndicator(backgroundColor: colors.surface),
                 const SizedBox(height: 16),
                 for (var row = 0; row < 3; row++) ...[
                   bar(140 + row * 18, 11),
@@ -441,6 +445,7 @@ class _ReadBookButton extends StatelessWidget {
   }
 }
 
+/// Opens the book's own page — plan, progress and exports in one place.
 class _ViewProgressButton extends StatelessWidget {
   const _ViewProgressButton({required this.projectId});
 
@@ -449,7 +454,7 @@ class _ViewProgressButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TextButton.icon(
-      onPressed: () => context.push('/projects/$projectId/handoff'),
+      onPressed: () => context.push('/projects/$projectId'),
       icon: const Icon(Icons.menu_book_outlined),
       label: const Text('View progress'),
     );

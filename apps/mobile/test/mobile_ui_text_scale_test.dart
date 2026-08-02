@@ -16,8 +16,8 @@ import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
-import 'package:tomeza/features/projects/presentation/generation_progress_screen.dart';
-import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_plan_review.dart';
+import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
 
 void main() {
   testWidgets('key mobile surfaces render at increased text scale', (
@@ -69,7 +69,7 @@ void main() {
 
     await tester.pumpWidget(
       _scaledApp(
-        child: ProjectGenerationView(
+        child: BookScreenBody(
           status: _fakeStatus(),
           billing: _fakeBilling(),
           onRefresh: () async {},

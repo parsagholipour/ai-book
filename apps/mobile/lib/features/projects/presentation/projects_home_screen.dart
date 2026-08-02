@@ -669,7 +669,6 @@ class ProjectHomeAction {
     required this.icon,
     required this.buttonIcon,
     this.needsUserAction = false,
-    this.opensProgress = false,
     this.opensReader = false,
     this.showProgress = false,
   });
@@ -682,17 +681,13 @@ class ProjectHomeAction {
   final IconData icon;
   final IconData buttonIcon;
   final bool needsUserAction;
-  final bool opensProgress;
   final bool opensReader;
   final bool showProgress;
 
   String pathFor(MobileProjectSummary project) {
-    final suffix = opensReader
-        ? '/read'
-        : opensProgress
-        ? '/handoff'
-        : '';
-    return '/projects/${project.id}$suffix';
+    // Plan, progress and exports are one page now, so everything except the
+    // reader lands on the same route.
+    return '/projects/${project.id}${opensReader ? '/read' : ''}';
   }
 
   static ProjectHomeAction forProject(MobileProjectSummary project) {
@@ -708,7 +703,6 @@ class ProjectHomeAction {
         icon: Icons.error_outline,
         buttonIcon: Icons.replay_outlined,
         needsUserAction: true,
-        opensProgress: true,
         showProgress: true,
       );
     }
@@ -784,7 +778,6 @@ class ProjectHomeAction {
         buttonLabel: 'View progress',
         icon: Icons.hourglass_top_outlined,
         buttonIcon: Icons.arrow_forward,
-        opensProgress: true,
         showProgress: true,
       );
     }

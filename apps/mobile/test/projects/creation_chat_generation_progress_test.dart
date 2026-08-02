@@ -177,13 +177,13 @@ void main() {
     expect(find.text('Preparing your chapters'), findsOneWidget);
   });
 
-  testWidgets('View progress still opens the handoff screen', (tester) async {
+  testWidgets('View progress opens the book page', (tester) async {
     await _pumpChat(tester, status: _status());
 
     await tester.tap(find.text('View progress'));
     await _settleEnough(tester);
 
-    expect(find.text('Progress route project-1'), findsOneWidget);
+    expect(find.text('Book route project-1'), findsOneWidget);
   });
 }
 
@@ -213,9 +213,9 @@ Future<void> _pumpChat(
             CreationChatScreen(draftId: state.pathParameters['draftId']),
       ),
       GoRoute(
-        path: '/projects/:id/handoff',
+        path: '/projects/:id',
         builder: (context, state) => Scaffold(
-          body: Text('Progress route ${state.pathParameters['id']}'),
+          body: Text('Book route ${state.pathParameters['id']}'),
         ),
       ),
     ],

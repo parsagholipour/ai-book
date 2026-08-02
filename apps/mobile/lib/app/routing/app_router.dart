@@ -6,12 +6,11 @@ import '../../features/account/presentation/account_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
+import '../../features/projects/presentation/book_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
 import '../../features/projects/presentation/edit_changes_screen.dart';
-import '../../features/projects/presentation/generation_progress_screen.dart';
 import '../../features/projects/presentation/import_book_screen.dart';
 import '../../features/projects/presentation/project_chat_screen.dart';
-import '../../features/projects/presentation/project_detail_screen.dart';
 import '../../features/audiobook/presentation/audiobook_screen.dart';
 import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../shared/api/api_error.dart';
@@ -140,18 +139,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/projects/:id',
         pageBuilder: (context, state) => _appPage(
           state,
-          ProjectDetailScreen(projectId: state.pathParameters['id']!),
+          BookScreen(
+            projectId: state.pathParameters['id']!,
+            initialMessage: state.extra is String
+                ? state.extra as String
+                : null,
+          ),
         ),
       ),
       GoRoute(
+        // The plan and the progress screens were merged into `/projects/:id`.
+        // Kept as a redirect so links saved before that — and any client build
+        // still pushing it — land on the book instead of the error page.
         path: '/projects/:id/handoff',
-        pageBuilder: (context, state) => _appPage(
-          state,
-          GenerationProgressScreen(
-            projectId: state.pathParameters['id']!,
-            initialMessage: state.extra as String?,
-          ),
-        ),
+        redirect: (context, state) => '/projects/${state.pathParameters['id']}',
       ),
       GoRoute(
         path: '/projects/:id/read',

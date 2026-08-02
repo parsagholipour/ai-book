@@ -195,8 +195,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
             ),
           IconButton(
             tooltip: 'Book progress',
-            onPressed: () =>
-                context.push('/projects/${widget.projectId}/handoff'),
+            onPressed: () => context.push('/projects/${widget.projectId}'),
             icon: const Icon(Icons.menu_book_outlined),
           ),
           IconButton(

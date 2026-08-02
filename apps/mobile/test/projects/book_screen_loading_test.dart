@@ -7,10 +7,10 @@ import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
-import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_screen.dart';
 
 void main() {
-  testWidgets('project detail polling waits for an in-flight detail load', (
+  testWidgets('the book page keeps its content while a refetch is in flight', (
     tester,
   ) async {
     final repository = SlowPlanRepository();
@@ -21,9 +21,7 @@ void main() {
           projectsRepositoryProvider.overrideWithValue(repository),
           billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
         ],
-        child: const MaterialApp(
-          home: ProjectDetailScreen(projectId: 'project-1'),
-        ),
+        child: const MaterialApp(home: BookScreen(projectId: 'project-1')),
       ),
     );
     await tester.pump();

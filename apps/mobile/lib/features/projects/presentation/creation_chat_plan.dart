@@ -170,7 +170,7 @@ class _PlanBubbleState extends State<_PlanBubble> {
                               tone: AppNoticeTone.success,
                             ),
                             Text(
-                              'Tap to open plan page',
+                              'Tap to open your book',
                               style: Theme.of(context).textTheme.labelSmall
                                   ?.copyWith(color: colors.primary),
                             ),

@@ -991,9 +991,14 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('approved linked plan is compact and opens plan page', (
+  testWidgets('approved linked plan is compact and opens the book page', (
     tester,
   ) async {
+    // The book page is one scrolling list, and the default test viewport cuts
+    // it off above the plan summary — which a lazy ListView never builds.
+    await tester.binding.setSurfaceSize(const Size(1000, 2000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     final creation = ScriptedCreationRepository(
       sessions: [
         chatSession(
@@ -1026,24 +1031,31 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Book plan approved'), findsOneWidget);
-    expect(find.text('Tap to open plan page'), findsOneWidget);
+    expect(find.text('Tap to open your book'), findsOneWidget);
     expect(find.text('Approve and start writing'), findsNothing);
     expect(find.text('Premise'), findsNothing);
 
-    await tester.tap(find.text('Tap to open plan page'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tap to open your book'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
 
+    // One page per book: it opens on the writing, and the plan the reader
+    // already approved is folded into a summary rather than leading.
     expect(
-      find.descendant(
-        of: find.byType(AppBar),
-        matching: find.text('Book plan'),
-      ),
+      find.descendant(of: find.byType(AppBar), matching: find.text(planTitle)),
       findsOneWidget,
     );
-    expect(find.text('Premise'), findsOneWidget);
-    expect(find.text('Audience'), findsOneWidget);
+    expect(find.text('Generating your book'), findsOneWidget);
+    expect(find.text('Book plan'), findsOneWidget);
+    expect(find.text('Premise'), findsNothing);
+    expect(find.text('This plan is approved.'), findsNothing);
+
+    await tester.tap(find.text('Book plan'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     expect(find.text('Set the promise'), findsOneWidget);
-    expect(find.text('This plan is approved.'), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -1317,9 +1329,15 @@ void main() {
     expect(find.text('View progress'), findsOneWidget);
 
     await tester.tap(find.text('View progress'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('Progress route project-1'), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text(planTitle)),
+      findsOneWidget,
+    );
+    expect(find.text('Writing your book pages.'), findsWidgets);
 
     await tester.teardownScreen();
   });

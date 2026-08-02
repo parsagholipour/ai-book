@@ -11,7 +11,7 @@ import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
-import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_screen.dart';
 import 'package:tomeza/features/projects/presentation/projects_home_screen.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 
@@ -171,7 +171,7 @@ void main() {
         GoRoute(
           path: '/projects/:id',
           builder: (context, state) =>
-              ProjectDetailScreen(projectId: state.pathParameters['id']!),
+              BookScreen(projectId: state.pathParameters['id']!),
         ),
       ],
     );

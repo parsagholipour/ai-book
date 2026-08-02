@@ -2,19 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
-import 'package:tomeza/features/projects/presentation/generation_progress_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
 import 'package:tomeza/features/projects/presentation/project_export_panel.dart';
 
 void main() {
-  testWidgets('generation view renders progress, pages, visuals, and retry', (
+  testWidgets('the book page renders progress, pages, visuals, and retry', (
     tester,
   ) async {
     var retried = false;
+    // The page is one scrolling list — cover, progress, preview, exports — and
+    // the default 800pt test viewport cuts it off before the preview, which a
+    // lazy ListView then never builds.
+    await tester.binding.setSurfaceSize(const Size(1000, 2400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
 
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProjectGenerationView(
+          body: BookScreenBody(
             status: fakeStatus(
               progressPercent: 38,
               currentAction: 'Writing your book pages.',
@@ -70,7 +75,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProjectGenerationView(
+          body: BookScreenBody(
             status: status,
             onRefresh: () async {},
             onResume: () async => resumed = true,
@@ -164,7 +169,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: ProjectGenerationView(
+            body: BookScreenBody(
               status: fakeStatus(quality: quality),
               onRefresh: () async {},
               onOpen: (_) async {},

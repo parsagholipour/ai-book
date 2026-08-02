@@ -10,7 +10,7 @@ import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
-import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_screen.dart';
 
 // Shared scaffolding for the creation-chat suites: the widget under test,
 // its provider overrides, and the fixtures every case builds on.
@@ -72,15 +72,9 @@ Widget routerApp({
             CreationChatScreen(draftId: state.pathParameters['draftId']),
       ),
       GoRoute(
-        path: '/projects/:id/handoff',
-        builder: (context, state) => Scaffold(
-          body: Text('Progress route ${state.pathParameters['id']}'),
-        ),
-      ),
-      GoRoute(
         path: '/projects/:id',
         builder: (context, state) =>
-            ProjectDetailScreen(projectId: state.pathParameters['id']!),
+            BookScreen(projectId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/account',

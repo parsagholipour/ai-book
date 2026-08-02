@@ -5,8 +5,7 @@ import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/account/presentation/account_screen.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
-import 'package:tomeza/features/projects/presentation/generation_progress_screen.dart';
-import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
+import 'package:tomeza/features/projects/presentation/book_screen_body.dart';
 
 void main() {
   testWidgets('generated preview exposes AI disclosure and report actions', (
@@ -25,7 +24,7 @@ void main() {
         ],
         child: MaterialApp(
           home: Scaffold(
-            body: ProjectGenerationView(
+            body: BookScreenBody(
               status: fakeStatus(),
               project: fakeProjectWithVisuals(),
               onRefresh: () async {},
