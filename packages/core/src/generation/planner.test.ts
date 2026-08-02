@@ -75,6 +75,81 @@ describe("createPlanningPackage", () => {
 
     expect(phases).toEqual(["understand", "shape", "finalize"]);
   });
+
+  it("preserves the model's empty clarification decision for a clear prompt", async () => {
+    const input = testInput({
+      prompt: "A bedtime story for a 5-year-old about Spider-Man in Brazil"
+    });
+    const candidate: BookPlan = {
+      ...makeFallbackPlan(input),
+      questions: []
+    };
+    let systemPrompt = "";
+    const textModel: TextModelAdapter = {
+      async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        systemPrompt = options.messages.find((message) => message.role === "system")?.content ?? "";
+        return {
+          data: candidate as T,
+          text: JSON.stringify(candidate),
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    };
+
+    const plan = await createPlanningPackage({
+      input,
+      textModel,
+      research: { async search(query) { return { query: query.query, summary: "", sources: [] }; } }
+    });
+
+    expect(plan.questions).toEqual([]);
+    expect(systemPrompt).toContain("Set questions to [] for every coherent request");
+    expect(systemPrompt).toContain("Never ask for optional tone, mood, conflict, ending");
+  });
+
+  it("keeps at most one subject clarification for an incomplete prompt", async () => {
+    const input = testInput({ prompt: "Write a story" });
+    const candidate: BookPlan = {
+      ...makeFallbackPlan(input),
+      questions: [
+        { prompt: "What should the story be about?", options: ["A hero", "An animal"], allowCustom: true },
+        { prompt: "What mood should it have?", options: ["Cozy", "Funny"], allowCustom: true }
+      ]
+    };
+    const textModel: TextModelAdapter = {
+      async generateJson<T>(_options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        return {
+          data: candidate as T,
+          text: JSON.stringify(candidate),
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    };
+
+    const plan = await createPlanningPackage({
+      input,
+      textModel,
+      research: { async search(query) { return { query: query.query, summary: "", sources: [] }; } }
+    });
+
+    expect(plan.questions.map((question) => question.prompt)).toEqual(["What should the story be about?"]);
+  });
 });
 
 describe("revisePlanningPackage", () => {
@@ -139,7 +214,7 @@ describe("revisePlanningPackage", () => {
     expect(JSON.stringify(userPayload)).not.toContain("A".repeat(300));
   });
 
-  it("never re-asks answered or skipped questions, even when the model omits questions", async () => {
+  it("defaults omitted revision questions to none instead of restoring legacy questions", async () => {
     const input = testInput();
     const currentPlan: BookPlan = {
       ...makeFallbackPlan(input),
@@ -177,7 +252,54 @@ describe("revisePlanningPackage", () => {
       respondedQuestionPrompts: ["What tone should the story have?", "Should the turtle have a name?"]
     });
 
-    expect(revised.questions.map((question) => question.prompt)).toEqual(["How long should chapters be?"]);
+    expect(revised.questions).toEqual([]);
+  });
+
+  it("removes responded questions and keeps only the model's highest-priority remainder", async () => {
+    const input = testInput();
+    const answeredPrompt = "Which source should the revision use?";
+    const necessaryPrompt = "The instructions conflict. Should the race remain four pages?";
+    const currentPlan: BookPlan = {
+      ...makeFallbackPlan(input),
+      questions: [
+        { prompt: answeredPrompt, options: ["My notes"], allowCustom: true }
+      ]
+    };
+    const textModel: TextModelAdapter = {
+      async generateJson<T>(_options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        return {
+          data: {
+            title: "Revised Rabbit Race",
+            questions: [
+              { prompt: answeredPrompt, options: ["My notes"], allowCustom: true },
+              { prompt: necessaryPrompt, options: ["Keep four", "Use eight"], allowCustom: true },
+              { prompt: "What mood should it have?", options: ["Cozy"], allowCustom: true }
+            ]
+          } as T,
+          text: "{}",
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    };
+
+    const revised = await revisePlanningPackage({
+      currentPlan,
+      userMessage: "Use my notes, but keep the conflicting page-count instructions for me to resolve.",
+      textModel,
+      input,
+      targetPages: input.targetPages,
+      respondedQuestionPrompts: [answeredPrompt]
+    });
+
+    expect(revised.questions.map((question) => question.prompt)).toEqual([necessaryPrompt]);
   });
 });
 

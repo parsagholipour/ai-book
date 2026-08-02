@@ -100,80 +100,6 @@ describe("runCreationTurn", () => {
     expect(turn.assistantMessage.length).toBeGreaterThan(0);
   });
 
-  it("keeps Auto unresolved during creation chat", async () => {
-    const turn = await runCreationTurn(autoRequest);
-
-    expect(turn.detectedLane).toBe("auto");
-    expect(turn.brief.lane).toBe("auto");
-    expect(turn.presets.bookTypeChoice).toBe("auto");
-    expect(turn.readiness.canBuild).toBe(true);
-    // The audience ("5 year olds") is already in the idea, so the adaptive
-    // interviewer skips it and asks about the next real gap instead.
-    expect(turn.assistantMessage).toBe("Got it. What should the book feel like?");
-    expect(deterministicCreationTurn(autoRequest).detectedLane).toBe("auto");
-  });
-
-  it("keeps a rabbit and turtle race unresolved while book type is Auto", () => {
-    const turn = deterministicCreationTurn({
-      messages: [{ role: "user", content: "Make a 4 page book of rabbit and turtle race" }],
-      presets: {
-        bookType: "lead_magnet",
-        bookTypeChoice: "auto",
-        lengthPreset: "short",
-        qualityPreset: "balanced",
-        imagesEnabled: true
-      }
-    });
-
-    expect(turn.detectedLane).toBe("auto");
-    expect(turn.presets.bookType).toBe("lead_magnet");
-    expect(turn.presets.bookTypeChoice).toBe("auto");
-    expect(turn.assistantMessage).not.toContain("practical guide");
-    expect(turn.question?.prompt).toBe("Who is this book for?");
-  });
-
-  it("asks which discovery before audience for a vague scientific recent-discovery prompt", () => {
-    // Regression: "Make a scientific book about a recent discovering" used to get
-    // the canned auto-lane "Who is this book for?" even though the discovery
-    // itself was still unspecified.
-    const request: MobileCreationTurnRequest = {
-      messages: [{ role: "user", content: "Make a scientific book about a recent discovering" }]
-    };
-    const turn = deterministicCreationTurn(request);
-
-    expect(turn.detectedLane).toBe("auto");
-    expect(turn.question?.prompt).toBe("Which recent scientific discovery should the book explore?");
-    expect(turn.question?.options).toEqual(["Space", "Medicine", "Climate", "AI"]);
-    expect(turn.assistantMessage).toBe(
-      "Got it. Which recent scientific discovery should the book explore?"
-    );
-    expect(turn.assistantMessage).not.toContain("Who is this book for?");
-  });
-
-  it("rejects enrichment that only echoes the generic audience fallback", async () => {
-    const request: MobileCreationTurnRequest = {
-      messages: [{ role: "user", content: "Make a scientific book about a recent discovering" }]
-    };
-    let reported: unknown;
-    const turn = await runCreationTurn(request, {
-      enrich: async () => ({
-        assistantMessage: "Got it. Who is this book for?",
-        question: {
-          prompt: "Who is this book for?",
-          options: ["Young readers", "Clients or students", "General readers"],
-          allowCustom: true
-        }
-      }),
-      onEnrichError: (error) => {
-        reported = error;
-      }
-    });
-
-    expect(String(reported)).toMatch(/generic audience fallback/i);
-    expect(turn.question?.prompt).toBe("Which recent scientific discovery should the book explore?");
-    expect(turn.assistantMessage).toContain("Which recent scientific discovery");
-  });
-
   it("throws when enrichment exhausts without a usable finish_turn patch", async () => {
     const request: MobileCreationTurnRequest = {
       messages: [{ role: "user", content: "Make a scientific book about a recent discovering" }]
@@ -401,18 +327,18 @@ describe("runCreationTurn", () => {
   it("keeps a localized AI question and its readiness label together", async () => {
     const turn = await runCreationTurn(autoRequest, {
       enrich: async () => ({
-        assistantMessage: "Ótima ideia. Para quem é este livro?",
+        assistantMessage: "Ótima ideia. Sobre o que deve ser a história?",
         question: {
-          prompt: "Para quem é este livro?",
-          options: ["Jovens adultos", "Leitores de romance", "Público geral"],
+          prompt: "Sobre o que deve ser a história?",
+          options: ["Uma pessoa", "Um animal", "Uma aventura"],
           allowCustom: true
         }
       })
     });
 
-    expect(turn.question?.prompt).toBe("Para quem é este livro?");
+    expect(turn.question?.prompt).toBe("Sobre o que deve ser a história?");
     expect(turn.quickReplies).toEqual([]);
-    expect(turn.readiness.missing).toEqual(["Para quem é este livro"]);
+    expect(turn.readiness.missing).toEqual(["Sobre o que deve ser a história"]);
   });
 
   it("reports enrichment failures through onEnrichError", async () => {
@@ -438,10 +364,10 @@ describe("runCreationTurn", () => {
     const model = toolModel([
       {
         finish: {
-          assistantMessage: "A romance about Parsa and Natalia - lovely. Who is this story for?",
+          assistantMessage: "A bedtime story sounds lovely. What should the bedtime story be about?",
           question: {
-            prompt: "Who should read Parsa and Natalia's story?",
-            options: ["Romance readers", "Just the two of us"],
+            prompt: "What should the bedtime story be about?",
+            options: ["A hero", "An animal"],
             allowCustom: true
           },
           bookLanguage: "fa",
@@ -458,8 +384,8 @@ describe("runCreationTurn", () => {
       deterministicCreationTurn(autoRequest)
     );
 
-    expect(patch.assistantMessage).toContain("Parsa and Natalia");
-    expect(patch.question?.prompt).toBe("Who should read Parsa and Natalia's story?");
+    expect(patch.assistantMessage).toContain("bedtime story");
+    expect(patch.question?.prompt).toBe("What should the bedtime story be about?");
     expect(patch.language).toBe("fa");
     expect(patch.brief).toBeUndefined();
   });
@@ -989,8 +915,10 @@ describe("creation chat attachments", () => {
 
     expect(turn.assistantMessage).toContain("pricing-notes.pdf");
     expect(turn.assistantMessage).toContain("source material");
-    // The uploaded document counts as a real idea, so the interview starts.
-    expect(turn.question).not.toBeNull();
+    // The upload counts as usable input, but the deterministic fallback does
+    // not guess whether a semantic clarification is needed.
+    expect(turn.question).toBeNull();
+    expect(turn.readiness.canBuild).toBe(true);
   });
 
   it("acknowledges a photo differently from a document", () => {

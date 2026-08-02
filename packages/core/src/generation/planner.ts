@@ -75,9 +75,12 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             `The sum of chapter targetPages must equal exactly ${options.input.targetPages}.`,
             "Do not create more chapters than targetPages, because every chapter must contain at least one page.",
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",
-            "Preserve concrete user intent and ask only questions that materially improve the result.",
+            "Preserve concrete user intent. Treat the request as complete once the requested book and its subject are understandable, and make sensible creative decisions yourself.",
+            "Set questions to [] for every coherent request. Ask at most one question only when a missing subject, unclear reference, contradictory instruction, or unavailable required source makes the user's request impossible to understand.",
+            "Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other choices you can make while drafting the plan.",
+            "Any necessary question must be plain, self-contained, tied directly to words the user supplied, and must not mention an unexplained character or detail invented by the plan.",
             ...mobileAutoPlanningGuidance(options.input),
-            "For each question, include 2-4 concise premade answer options and allow a custom answer unless the question is informational only.",
+            "For the single necessary question, include 2-4 concise premade answer options and allow a custom answer unless the question is informational only.",
             "For every recurring character, include concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details suitable for a reusable character reference sheet.",
             "Illustration prompts must use exact recurring character names whenever those characters appear.",
             ...targetLanguageGenerationGuidance(options.input.language),
@@ -113,7 +116,13 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
       ...result.data,
       researchNotes: mergeResearchNotes(researchNotes, result.data.researchNotes)
     });
-    return normalizePlanPageTargets(plan, options.input.targetPages);
+    return normalizePlanPageTargets(
+      {
+        ...plan,
+        questions: plan.questions.slice(0, 1)
+      },
+      options.input.targetPages
+    );
   } catch (error) {
     throw new Error(`AI planner returned an invalid plan. No fallback plan was created. ${formatErrorMessage(error)}`);
   }
@@ -122,7 +131,9 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
 export async function revisePlanningPackage(options: RevisePlanOptions): Promise<BookPlan> {
   const targetPages = options.targetPages ?? sumChapterTargetPages(options.currentPlan.chapters);
   const toneProfile = options.toneProfile ?? "neutral";
-  const revisionSchema = bookPlanSchemaWithFallback(options.currentPlan);
+  // Questions are an explicit semantic decision on every revision. If the
+  // model omits them, default to none instead of restoring legacy questions.
+  const revisionSchema = bookPlanSchemaWithFallback({ ...options.currentPlan, questions: [] });
   try {
     const result = await generateJsonWithRetry(options.textModel, {
       purpose: "revise-plan",
@@ -134,7 +145,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
           role: "system",
           content:
             [
-              `Revise this book generation plan. Return a JSON object with revised plan fields at the JSON root, not nested under plan, data, or result. You may omit unchanged fields because the server preserves them from the current plan. Do not re-emit unchanged researchNotes; existing research notes are preserved server-side. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference: decide those details yourself and remove them from questions. Never re-ask a question the user already answered or skipped, even reworded.`,
+              `Revise this book generation plan. Return a JSON object with revised plan fields at the JSON root, not nested under plan, data, or result. You may omit unchanged fields because the server preserves them from the current plan. Do not re-emit unchanged researchNotes; existing research notes are preserved server-side. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference: decide those details yourself and remove them from questions. Never re-ask a question the user already answered or skipped, even reworded. Set questions to [] whenever the user's book and subject are understandable. Ask at most one plain, self-contained question only for a missing subject, unclear reference, contradictory instruction, or unavailable required source. Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other plan details you can decide yourself.`,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               ...targetLanguageGenerationGuidance(options.language),
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
@@ -164,10 +175,14 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
       ]
     });
     const revised = revisionSchema.parse(result.data);
+    const questions = removeRespondedQuestions(
+      revised.questions,
+      options.respondedQuestionPrompts
+    ).slice(0, 1);
     return normalizePlanPageTargets(
       {
         ...revised,
-        questions: removeRespondedQuestions(revised.questions, options.respondedQuestionPrompts),
+        questions,
         researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
       },
       targetPages
