@@ -65,8 +65,9 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
         const sample = await ensureVoiceSample(appConfig, voice);
         return reply
           .type("audio/mpeg")
-          // Samples never change once made, so they are worth holding on to.
-          .header("Cache-Control", "private, max-age=86400")
+          // The URL carries a version, so both HTTP clients and the app's local
+          // file cache can safely keep these bytes for a year.
+          .header("Cache-Control", "private, max-age=31536000, immutable")
           .send(sample);
       } catch {
         return sendMobileError(reply, 503, "VOICE_SAMPLE_UNAVAILABLE", "That preview could not be played right now.");

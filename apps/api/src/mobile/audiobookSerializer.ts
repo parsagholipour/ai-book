@@ -106,7 +106,9 @@ export function serializeNarratorVoices(): MobileNarratorVoiceDto[] {
     voice: narrator.voice,
     name: narrator.displayName,
     blurb: narrator.blurb,
-    sampleUrl: `/api/mobile/audiobook/voices/${narrator.voice}/sample`
+    // The version becomes part of the app's on-device cache key. Bump it when
+    // replacing the bundled recordings so existing installs fetch them again.
+    sampleUrl: `/api/mobile/audiobook/voices/${narrator.voice}/sample?v=1`
   }));
 }
 

@@ -102,11 +102,15 @@ class _BookShelfState extends ConsumerState<BookShelf> {
                 // knows about, and staggering them in on top of the drawer's
                 // own slide is what made them look like they were still
                 // loading.
-                itemBuilder: (context, index) => _ShelfBook(
-                  project: books[index],
-                  width: _coverWidth,
-                  credits: credits,
-                ),
+                itemBuilder: (context, index) {
+                  final project = books[index];
+                  return _ShelfBook(
+                    key: ValueKey(project.id),
+                    project: project,
+                    width: _coverWidth,
+                    credits: credits,
+                  );
+                },
               ),
             ),
             const SizedBox(height: 12),
@@ -131,8 +135,9 @@ List<MobileProjectSummary> _shelfBooks(List<MobileProjectSummary> projects) {
   return books;
 }
 
-class _ShelfBook extends ConsumerWidget {
+class _ShelfBook extends ConsumerStatefulWidget {
   const _ShelfBook({
+    super.key,
     required this.project,
     required this.width,
     required this.credits,
@@ -143,15 +148,52 @@ class _ShelfBook extends ConsumerWidget {
   final int? credits;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ShelfBook> createState() => _ShelfBookState();
+}
+
+class _ShelfBookState extends ConsumerState<_ShelfBook> {
+  bool _requestedSettledRefresh = false;
+
+  @override
+  void didUpdateWidget(covariant _ShelfBook oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.project.id != widget.project.id ||
+        (!_summaryIsLive(oldWidget.project) &&
+            _summaryIsLive(widget.project))) {
+      _requestedSettledRefresh = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final project = widget.project;
+    final liveStatus = _summaryIsLive(project)
+        ? ref.watch(projectStatusProvider(project.id)).asData?.value
+        : null;
+
+    // The status stream contains enough data to make the card current while
+    // the drawer stays open. Once it settles, refresh the full list once as
+    // well so fields the status payload does not carry (notably cover art) are
+    // brought into the long-lived shelf cache.
+    if (liveStatus != null && !liveStatus.isLive && !_requestedSettledRefresh) {
+      _requestedSettledRefresh = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.invalidate(projectsProvider);
+      });
+    }
+
+    final currentProject = liveStatus == null
+        ? project
+        : _projectWithStatus(project, liveStatus);
     final colors = Theme.of(context).colorScheme;
-    final status = _shelfStatus(project);
+    final status = _shelfStatus(currentProject);
 
     return SizedBox(
-      width: width,
+      width: widget.width,
       child: Semantics(
         button: true,
-        label: '${project.title}. ${status.label}',
+        label: '${currentProject.title}. ${status.label}',
         // Long press exposes chat and export actions that are otherwise several
         // screens deep.
         onLongPressHint: 'Show book options',
@@ -163,8 +205,8 @@ class _ShelfBook extends ConsumerWidget {
                 context: context,
                 ref: ref,
                 position: details.globalPosition,
-                project: project,
-                credits: credits,
+                project: currentProject,
+                credits: widget.credits,
               );
             },
             child: InkWell(
@@ -176,9 +218,9 @@ class _ShelfBook extends ConsumerWidget {
                 // opens on its own page, which shows whichever of plan,
                 // progress and exports is true right now.
                 context.push(
-                  project.exports.pdf.available
-                      ? '/projects/${project.id}/read'
-                      : '/projects/${project.id}',
+                  currentProject.exports.pdf.available
+                      ? '/projects/${currentProject.id}/read'
+                      : '/projects/${currentProject.id}',
                 );
               },
               child: Column(
@@ -188,11 +230,11 @@ class _ShelfBook extends ConsumerWidget {
                   Stack(
                     children: [
                       BookCover(
-                        title: project.title,
-                        seed: project.id,
-                        image: project.coverImage,
-                        authorName: project.authorName,
-                        width: width,
+                        title: currentProject.title,
+                        seed: currentProject.id,
+                        image: currentProject.coverImage,
+                        authorName: currentProject.authorName,
+                        width: widget.width,
                       ),
                       if (status.showDot)
                         Positioned(
@@ -215,7 +257,7 @@ class _ShelfBook extends ConsumerWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    project.title,
+                    currentProject.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -241,6 +283,48 @@ class _ShelfBook extends ConsumerWidget {
       ),
     );
   }
+}
+
+bool _summaryIsLive(MobileProjectSummary project) {
+  return switch (project.status.toLowerCase()) {
+    'planning' || 'generating' || 'editing' => true,
+    _ => false,
+  };
+}
+
+/// Applies the streamed fields to the cached summary used by the shelf card.
+///
+/// Keeping this merge local avoids making the whole project list refetch on
+/// every one-second status event, while menus and navigation still see the
+/// newly available exports as soon as generation finishes.
+MobileProjectSummary _projectWithStatus(
+  MobileProjectSummary project,
+  MobileProjectStatus status,
+) {
+  return MobileProjectSummary(
+    id: project.id,
+    title: project.title,
+    subtitle: project.subtitle,
+    authorName: project.authorName,
+    source: project.source,
+    coverImage: project.coverImage,
+    bookType: project.bookType,
+    lengthPreset: project.lengthPreset,
+    qualityPreset: project.qualityPreset,
+    imagesEnabled: project.imagesEnabled,
+    status: status.status,
+    statusLabel: status.statusLabel,
+    progressPercent: status.progressPercent,
+    currentAction: status.currentAction,
+    promptPreview: project.promptPreview,
+    targetPages: status.pageProgress.target,
+    pageCount: status.pageProgress.completed,
+    imageCount: status.imageCount,
+    hasPlan: project.hasPlan,
+    exports: status.exports,
+    createdAt: project.createdAt,
+    updatedAt: status.updatedAt,
+  );
 }
 
 class _ShelfStatus {
@@ -270,8 +354,8 @@ _ShelfStatus _shelfStatus(MobileProjectSummary project) {
   if (project.hasReadyExport) {
     return const _ShelfStatus(label: 'Ready', emphasize: true, showDot: true);
   }
-  if (project.status.toLowerCase() == 'generating') {
-    return _ShelfStatus(label: '${project.progressPercent}% written');
+  if (_summaryIsLive(project)) {
+    return _ShelfStatus(label: '${project.progressPercent}% complete');
   }
   if (project.status.toLowerCase() == 'plan_ready') {
     return const _ShelfStatus(

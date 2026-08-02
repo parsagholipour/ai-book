@@ -66,7 +66,8 @@ class FakeAudiobookPlayer implements AudiobookPlayer {
   }
 
   @override
-  Future<void> appendTracks(List<AudiobookTrack> next) async => tracks.addAll(next);
+  Future<void> appendTracks(List<AudiobookTrack> next) async =>
+      tracks.addAll(next);
 
   @override
   Future<void> play() async {
@@ -111,7 +112,12 @@ class FakeAudiobookRepository implements AudiobookRepository {
 
   @override
   Future<List<NarratorVoice>> listVoices() async => const [
-    NarratorVoice(voice: 'Zephyr', name: 'Zephyr', blurb: 'Bright and warm.', sampleUrl: '/s/Zephyr'),
+    NarratorVoice(
+      voice: 'Zephyr',
+      name: 'Zephyr',
+      blurb: 'Bright and warm.',
+      sampleUrl: '/s/Zephyr',
+    ),
   ];
 
   @override
@@ -141,7 +147,14 @@ class FakeAudiobookCache implements AudiobookCache {
   ApiClient get apiClient => throw UnimplementedError();
 
   @override
-  Future<Directory> audiobookDirectory(String projectId, String audiobookId) async => directory;
+  Future<Directory> audiobookDirectory(
+    String projectId,
+    String audiobookId,
+  ) async => directory;
+
+  @override
+  Future<File> ensureNarratorSample(NarratorVoice voice) async =>
+      File('${directory.path}/${voice.voice}.mp3');
 
   @override
   Future<void> clearProject(String projectId) async {}
@@ -177,7 +190,10 @@ class FakeAudiobookCache implements AudiobookCache {
   }) async => null;
 
   @override
-  Future<void> pruneOtherAudiobooks(String projectId, String keepAudiobookId) async {}
+  Future<void> pruneOtherAudiobooks(
+    String projectId,
+    String keepAudiobookId,
+  ) async {}
 }
 
 MobileAudiobook audiobookWith({
@@ -195,7 +211,8 @@ MobileAudiobook audiobookWith({
     totalEstimatedDurationMs: 9000,
     failureMessage: null,
     progress: null,
-    chapters: chapters ??
+    chapters:
+        chapters ??
         const [
           MobileAudiobookChapter(
             index: 1,
@@ -219,9 +236,33 @@ AudiobookChapterTimeline timelineFixture() {
     isRightToLeft: false,
     durationMs: 9000,
     segments: [
-      AudiobookSegment(index: 0, isTitle: true, paragraph: 0, pageIndex: 1, startMs: 0, endMs: 2000, text: 'Chapter 1. Low Tide'),
-      AudiobookSegment(index: 1, isTitle: false, paragraph: 1, pageIndex: 1, startMs: 3000, endMs: 5000, text: 'She waited.'),
-      AudiobookSegment(index: 2, isTitle: false, paragraph: 1, pageIndex: 1, startMs: 5000, endMs: 7000, text: 'He did not come.'),
+      AudiobookSegment(
+        index: 0,
+        isTitle: true,
+        paragraph: 0,
+        pageIndex: 1,
+        startMs: 0,
+        endMs: 2000,
+        text: 'Chapter 1. Low Tide',
+      ),
+      AudiobookSegment(
+        index: 1,
+        isTitle: false,
+        paragraph: 1,
+        pageIndex: 1,
+        startMs: 3000,
+        endMs: 5000,
+        text: 'She waited.',
+      ),
+      AudiobookSegment(
+        index: 2,
+        isTitle: false,
+        paragraph: 1,
+        pageIndex: 1,
+        startMs: 5000,
+        endMs: 7000,
+        text: 'He did not come.',
+      ),
     ],
   );
 }
@@ -254,7 +295,8 @@ void main() {
     tempDir = Directory.systemTemp.createTempSync('tomeza-audiobook-test');
     player = FakeAudiobookPlayer();
     repository = FakeAudiobookRepository(audiobook: audiobookWith());
-    cache = FakeAudiobookCache(tempDir)..timelinesByChapter[1] = timelineFixture();
+    cache = FakeAudiobookCache(tempDir)
+      ..timelinesByChapter[1] = timelineFixture();
   });
 
   tearDown(() {
@@ -289,11 +331,16 @@ void main() {
     expect(find.text('Choose a narrator'), findsOneWidget);
   });
 
-  testWidgets('downloads the finished chapter and shows its transcript', (tester) async {
+  testWidgets('downloads the finished chapter and shows its transcript', (
+    tester,
+  ) async {
     await pumpScreen(tester);
 
     expect(player.tracks, hasLength(1));
-    expect(find.textContaining('She waited.', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('She waited.', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.text('Narrated by Zephyr'), findsOneWidget);
   });
 
@@ -309,7 +356,9 @@ void main() {
     expect(player.playing, isFalse);
   });
 
-  testWidgets('skipping back asks the player to move by fifteen seconds', (tester) async {
+  testWidgets('skipping back asks the player to move by fifteen seconds', (
+    tester,
+  ) async {
     await pumpScreen(tester);
     player.emitPosition(const Duration(seconds: 8), index: 0);
     await settle(tester);
@@ -332,7 +381,9 @@ void main() {
     expect(player.speeds.last, 1.5);
   });
 
-  testWidgets('shows a preparing state until the first chapter lands', (tester) async {
+  testWidgets('shows a preparing state until the first chapter lands', (
+    tester,
+  ) async {
     repository.audiobook = audiobookWith(
       status: AudiobookStatus.generating,
       chapters: const [
@@ -366,7 +417,8 @@ void main() {
       isStale: false,
       totalDurationMs: null,
       totalEstimatedDurationMs: null,
-      failureMessage: 'Narration stopped before it finished. Your credits were refunded.',
+      failureMessage:
+          'Narration stopped before it finished. Your credits were refunded.',
       progress: null,
       chapters: const [],
     );
@@ -377,11 +429,17 @@ void main() {
 
   testWidgets('the transcript can be hidden', (tester) async {
     await pumpScreen(tester);
-    expect(find.textContaining('She waited.', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('She waited.', findRichText: true),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byIcon(Icons.subtitles));
     await settle(tester);
 
-    expect(find.textContaining('She waited.', findRichText: true), findsNothing);
+    expect(
+      find.textContaining('She waited.', findRichText: true),
+      findsNothing,
+    );
   });
 }

@@ -8,20 +8,23 @@ import {
 } from "@book-maker/core";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * Narrator previews.
  *
  * A sample is one short fixed passage per voice, shared by every book and every
- * user, so it is generated once and then read from disk forever. That is why
- * this is allowed to call a provider inline despite the API's usual rule: it is
- * a couple of seconds, exactly once per voice, and never again.
+ * user. Release builds ship pre-generated samples so opening this endpoint does
+ * not depend on provider credentials or a live TTS request. The generated-audio
+ * cache and provider fallback remain useful for local development and for a new
+ * voice accidentally deployed before its bundled sample.
  *
  * The in-flight map matters more than it looks — a picker opening cold would
  * otherwise fire one request per voice card at the same time.
  */
 
 const SAMPLE_TIMEOUT_MS = 15_000;
+const BUNDLED_SAMPLE_DIR = fileURLToPath(new URL("../../assets/audiobook-samples/", import.meta.url));
 
 const inFlight = new Map<string, Promise<Buffer>>();
 
@@ -32,6 +35,11 @@ export function voiceSampleDir(appConfig: { AUDIO_STORAGE_DIR: string }): string
 }
 
 export async function ensureVoiceSample(appConfig: AudiobookSampleConfig, voice: string): Promise<Buffer> {
+  const bundled = await readFile(join(BUNDLED_SAMPLE_DIR, `${voice}.mp3`)).catch(() => null);
+  if (bundled) {
+    return bundled;
+  }
+
   const path = join(voiceSampleDir(appConfig), `${voice}.mp3`);
   const cached = await readFile(path).catch(() => null);
   if (cached) {

@@ -2,15 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
-import '../../../app/config/app_config.dart';
 import '../../../app/theme/app_theme.dart';
-import '../../../shared/api/api_client.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../../projects/presentation/credit_cost_badge.dart';
+import '../data/audiobook_cache.dart';
 import '../data/audiobook_repository.dart';
 import '../domain/audiobook_models.dart';
 
@@ -55,7 +54,8 @@ class _NarratorPickerSheet extends ConsumerStatefulWidget {
   final Future<bool> Function(String voice) onConfirm;
 
   @override
-  ConsumerState<_NarratorPickerSheet> createState() => _NarratorPickerSheetState();
+  ConsumerState<_NarratorPickerSheet> createState() =>
+      _NarratorPickerSheetState();
 }
 
 class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
@@ -63,7 +63,9 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
   /// player, which owns the media session.
   final AudioPlayer _preview = AudioPlayer();
   String? _selected;
+  String? _loadingPreview;
   String? _previewing;
+  int _previewRequest = 0;
   bool _starting = false;
 
   @override
@@ -74,28 +76,58 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
 
   Future<void> _playSample(NarratorVoice voice) async {
     AppHaptics.selection();
-    if (_previewing == voice.voice) {
+    if (_previewing == voice.voice || _loadingPreview == voice.voice) {
+      _previewRequest += 1;
       await _preview.stop();
-      setState(() => _previewing = null);
+      if (mounted) {
+        setState(() {
+          _loadingPreview = null;
+          _previewing = null;
+        });
+      }
       return;
     }
-    setState(() => _previewing = voice.voice);
+
+    final request = ++_previewRequest;
+    setState(() {
+      _loadingPreview = voice.voice;
+      _previewing = null;
+    });
     try {
-      final base = ref.read(appConfigProvider).apiBaseUrl;
-      final headers = await ref.read(apiClientProvider).authHeaders();
-      await _preview.setAudioSource(
-        AudioSource.uri(base.resolve(voice.sampleUrl), headers: headers),
-      );
+      await _preview.stop();
+      final sample = await ref
+          .read(audiobookCacheProvider)
+          .ensureNarratorSample(voice);
+      if (!mounted || request != _previewRequest) {
+        return;
+      }
+      await _preview.setFilePath(sample.path);
+      if (!mounted || request != _previewRequest) {
+        return;
+      }
+      setState(() {
+        _loadingPreview = null;
+        _previewing = voice.voice;
+      });
       await _preview.play();
-      await _preview.processingStateStream.firstWhere(
-        (state) => state == ProcessingState.completed,
-      );
     } catch (_) {
-      // A preview that will not play is not worth an error dialog; the card
-      // simply stops showing itself as playing.
+      if (mounted && request == _previewRequest) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                "${voice.name}'s preview could not be played. Please try again.",
+              ),
+            ),
+          );
+      }
     }
-    if (mounted && _previewing == voice.voice) {
-      setState(() => _previewing = null);
+    if (mounted && request == _previewRequest) {
+      setState(() {
+        _loadingPreview = null;
+        _previewing = null;
+      });
     }
   }
 
@@ -104,7 +136,12 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
     if (voice == null || _starting) {
       return;
     }
-    setState(() => _starting = true);
+    _previewRequest += 1;
+    setState(() {
+      _starting = true;
+      _loadingPreview = null;
+      _previewing = null;
+    });
     await _preview.stop();
     final started = await widget.onConfirm(voice);
     if (!mounted) {
@@ -124,7 +161,10 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
     final colors = theme.colorScheme;
     final voices = ref.watch(narratorVoicesProvider);
     final billing = ref.watch(billingProvider).asData?.value;
-    final credits = _priceFor(billing?.creditCosts ?? const {}, widget.pageCount);
+    final credits = _priceFor(
+      billing?.creditCosts ?? const {},
+      widget.pageCount,
+    );
     final available = billing?.credits.available ?? 0;
     final canAfford = available >= credits;
 
@@ -163,6 +203,7 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
                               child: _NarratorCard(
                                 voice: voice,
                                 selected: _selected == voice.voice,
+                                loading: _loadingPreview == voice.voice,
                                 playing: _previewing == voice.voice,
                                 onSelect: () {
                                   AppHaptics.selection();
@@ -242,21 +283,27 @@ class _PickerHero extends StatelessWidget {
             height: 46,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
-              gradient: LinearGradient(colors: [colors.primary, colors.tertiary]),
+              gradient: LinearGradient(
+                colors: [colors.primary, colors.tertiary],
+              ),
             ),
             child: Icon(Icons.graphic_eq, color: colors.onPrimary),
           ),
           const SizedBox(height: 14),
           Text(
             replacing ? 'Choose a new narrator' : 'Choose your narrator',
-            style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             replacing
                 ? 'This replaces the current audiobook. Tap a voice to hear it first — previews are free.'
                 : 'Tap a voice to hear it read a few lines. Previews are free; you only pay when you start.',
-            style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
           ),
         ],
       ),
@@ -268,6 +315,7 @@ class _NarratorCard extends StatelessWidget {
   const _NarratorCard({
     required this.voice,
     required this.selected,
+    required this.loading,
     required this.playing,
     required this.onSelect,
     required this.onPreview,
@@ -275,6 +323,7 @@ class _NarratorCard extends StatelessWidget {
 
   final NarratorVoice voice;
   final bool selected;
+  final bool loading;
   final bool playing;
   final VoidCallback onSelect;
   final VoidCallback onPreview;
@@ -284,7 +333,9 @@ class _NarratorCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Material(
-      color: selected ? colors.primaryContainer.withValues(alpha: 0.55) : colors.surfaceContainerLowest,
+      color: selected
+          ? colors.primaryContainer.withValues(alpha: 0.55)
+          : colors.surfaceContainerLowest,
       borderRadius: BorderRadius.circular(TomezaRadii.card),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -300,7 +351,11 @@ class _NarratorCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _PreviewButton(playing: playing, onPressed: onPreview),
+              _PreviewButton(
+                loading: loading,
+                playing: playing,
+                onPressed: onPreview,
+              ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -308,12 +363,16 @@ class _NarratorCard extends StatelessWidget {
                   children: [
                     Text(
                       voice.name,
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       voice.blurb,
-                      style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),
@@ -332,8 +391,13 @@ class _NarratorCard extends StatelessWidget {
 }
 
 class _PreviewButton extends StatelessWidget {
-  const _PreviewButton({required this.playing, required this.onPressed});
+  const _PreviewButton({
+    required this.loading,
+    required this.playing,
+    required this.onPressed,
+  });
 
+  final bool loading;
   final bool playing;
   final VoidCallback onPressed;
 
@@ -342,7 +406,11 @@ class _PreviewButton extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Semantics(
       button: true,
-      label: playing ? 'Stop preview' : 'Play preview',
+      label: loading
+          ? 'Cancel preview loading'
+          : playing
+          ? 'Stop preview'
+          : 'Play preview',
       child: ExcludeSemantics(
         child: Material(
           color: colors.primary.withValues(alpha: playing ? 0.24 : 0.10),
@@ -353,10 +421,18 @@ class _PreviewButton extends StatelessWidget {
             child: SizedBox(
               width: 46,
               height: 46,
-              child: Icon(
-                playing ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                color: colors.primary,
-              ),
+              child: loading
+                  ? Padding(
+                      padding: const EdgeInsets.all(13),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: colors.primary,
+                      ),
+                    )
+                  : Icon(
+                      playing ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                      color: colors.primary,
+                    ),
             ),
           ),
         ),
@@ -390,7 +466,12 @@ class _PickerFooter extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: backgroundColor,
-      padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + MediaQuery.viewPaddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        18,
+        12,
+        18,
+        18 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

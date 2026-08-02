@@ -16,6 +16,7 @@
     "lint:fix": "oxlint --fix",
     "check:sizes": "node scripts/check-file-sizes.mjs",
     "check": "pnpm typecheck && pnpm lint && pnpm check:sizes && pnpm test",
+    "audiobook:samples": "tsx scripts/generate-audiobook-samples.ts",
     "db:generate": "pnpm --filter @book-maker/db prisma generate",
     "db:migrate": "pnpm --filter @book-maker/db prisma migrate dev",
     "db:deploy": "pnpm --filter @book-maker/db prisma migrate deploy",

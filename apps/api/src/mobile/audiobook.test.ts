@@ -104,6 +104,21 @@ describe("mobile audiobook routes", () => {
       await app.close();
     });
 
+    it("serves a pre-generated MP3 sample without provider credentials", async () => {
+      const app = await buildMobileApp();
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/mobile/audiobook/voices/Zephyr/sample?v=1",
+        headers: bearer("token-a")
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("audio/mpeg");
+      expect(response.headers["cache-control"]).toContain("immutable");
+      expect(response.rawPayload.byteLength).toBeGreaterThan(10_000);
+      await app.close();
+    });
+
     it("refuses to synthesize a sample for a voice that is not offered", async () => {
       const app = await buildMobileApp();
       const response = await app.inject({

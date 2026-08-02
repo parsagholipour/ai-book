@@ -37,7 +37,10 @@ class AudiobookCache {
     return _resolved ??= await getApplicationDocumentsDirectory();
   }
 
-  Future<Directory> audiobookDirectory(String projectId, String audiobookId) async {
+  Future<Directory> audiobookDirectory(
+    String projectId,
+    String audiobookId,
+  ) async {
     final root = await _root();
     final directory = Directory(
       '${root.path}/$directoryName/${safeSegment(projectId)}/${safeSegment(audiobookId)}',
@@ -46,6 +49,29 @@ class AudiobookCache {
       await directory.create(recursive: true);
     }
     return directory;
+  }
+
+  /// Downloads a narrator preview once and then plays it from local storage.
+  ///
+  /// The API includes a version in [NarratorVoice.sampleUrl], so replacing a
+  /// recording produces a new filename while unchanged samples stay available
+  /// across app launches and temporary network loss.
+  Future<File> ensureNarratorSample(NarratorVoice voice) async {
+    final root = await _root();
+    final directory = Directory('${root.path}/$directoryName/samples');
+    if (!await directory.exists()) {
+      await directory.create(recursive: true);
+    }
+    final version = Uri.tryParse(voice.sampleUrl)?.queryParameters['v'];
+    final cacheKey = version == null || version.isEmpty
+        ? safeSegment(voice.voice)
+        : '${safeSegment(voice.voice)}-v${safeSegment(version)}';
+    final file = File('${directory.path}/$cacheKey.mp3');
+    if (await file.exists() && await file.length() > 0) {
+      return file;
+    }
+    await _download(voice.sampleUrl, file);
+    return file;
   }
 
   /// The chapter's audio file, downloading it if this is the first listen.
@@ -66,10 +92,16 @@ class AudiobookCache {
     final directory = await audiobookDirectory(projectId, audiobookId);
     final file = File('${directory.path}/chapter-${chapter.index}.mp3');
     final expected = chapter.byteSize;
-    if (await file.exists() && (expected == null || await file.length() == expected)) {
+    if (await file.exists() &&
+        (expected == null || await file.length() == expected)) {
       return file;
     }
-    await _download(url, file, onProgress: onProgress, cancelToken: cancelToken);
+    await _download(
+      url,
+      file,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
     return file;
   }
 
@@ -84,7 +116,9 @@ class AudiobookCache {
       throw StateError('Chapter ${chapter.index} has no transcript yet.');
     }
     final directory = await audiobookDirectory(projectId, audiobookId);
-    final file = File('${directory.path}/chapter-${chapter.index}.timeline.json');
+    final file = File(
+      '${directory.path}/chapter-${chapter.index}.timeline.json',
+    );
 
     if (!await file.exists()) {
       await _download(url, file, cancelToken: cancelToken);
@@ -128,7 +162,10 @@ class AudiobookCache {
   }
 
   /// Drops every narration for a project except [keepAudiobookId].
-  Future<void> pruneOtherAudiobooks(String projectId, String keepAudiobookId) async {
+  Future<void> pruneOtherAudiobooks(
+    String projectId,
+    String keepAudiobookId,
+  ) async {
     final root = await _root();
     final projectDir = Directory(
       '${root.path}/$directoryName/${safeSegment(projectId)}',
@@ -137,7 +174,8 @@ class AudiobookCache {
       return;
     }
     await for (final entry in projectDir.list()) {
-      if (entry is Directory && entry.path.split('/').last != safeSegment(keepAudiobookId)) {
+      if (entry is Directory &&
+          entry.path.split('/').last != safeSegment(keepAudiobookId)) {
         await entry.delete(recursive: true).catchError((_) => entry);
       }
     }

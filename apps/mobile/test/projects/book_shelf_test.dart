@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -38,7 +40,7 @@ void main() {
     expect(find.text('Your books'), findsOneWidget);
     expect(find.byType(BookCover), findsNWidgets(2));
     expect(find.text('Ready'), findsOneWidget);
-    expect(find.text('40% written'), findsOneWidget);
+    expect(find.text('40% complete'), findsOneWidget);
 
     // A book still being written is not pushed behind the finished one: the
     // shelf is ordered by what was touched last.
@@ -46,6 +48,67 @@ void main() {
     expect(covers.first.title, 'Half Written');
     expect(covers.last.title, 'Finished Book');
   });
+
+  testWidgets(
+    'shelf follows live progress and refreshes when the book settles',
+    (tester) async {
+      final statuses = StreamController<MobileProjectStatus>();
+      addTearDown(statuses.close);
+      final repository = _LiveShelfRepository(
+        project: shelfProject(
+          id: 'writing',
+          title: 'Almost There',
+          status: 'generating',
+          hasPlan: true,
+          progressPercent: 80,
+          pageCount: 18,
+        ),
+        statuses: statuses.stream,
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            projectsRepositoryProvider.overrideWithValue(repository),
+            billingProvider.overrideWith((ref) async => billingWith(900)),
+          ],
+          child: const MaterialApp(
+            home: Scaffold(body: SizedBox(width: 400, child: BookShelf())),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('80% complete'), findsOneWidget);
+
+      statuses.add(projectStatus(progressPercent: 89));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('89% complete'), findsOneWidget);
+
+      repository.project = shelfProject(
+        id: 'writing',
+        title: 'Almost There',
+        status: 'complete',
+        hasPlan: true,
+        exportsReady: true,
+        progressPercent: 100,
+        pageCount: 18,
+      );
+      statuses.add(
+        projectStatus(
+          status: 'complete',
+          progressPercent: 100,
+          exportsReady: true,
+        ),
+      );
+      await tester.pump();
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ready'), findsOneWidget);
+      expect(repository.listCalls, greaterThan(1));
+    },
+  );
 
   testWidgets('ideas without a plan are not shelved as books', (tester) async {
     await tester.pumpWidget(
@@ -165,6 +228,9 @@ void main() {
                 progressPercent: 40,
               ),
             ],
+          ),
+          projectStatusProvider.overrideWith(
+            (ref, id) => const Stream<MobileProjectStatus>.empty(),
           ),
           billingProvider.overrideWith((ref) async => billingWith(900)),
         ],
@@ -330,15 +396,64 @@ class _CountingProjectsRepository implements ProjectsRepository {
   }
 }
 
+class _LiveShelfRepository implements ProjectsRepository {
+  _LiveShelfRepository({required this.project, required this.statuses});
+
+  MobileProjectSummary project;
+  final Stream<MobileProjectStatus> statuses;
+  int listCalls = 0;
+
+  @override
+  Future<List<MobileProjectSummary>> listProjects() async {
+    listCalls += 1;
+    return [project];
+  }
+
+  @override
+  Stream<MobileProjectStatus> watchProjectStatus(String id) => statuses;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    return super.noSuchMethod(invocation);
+  }
+}
+
 Widget shelfTestApp(List<MobileProjectSummary> projects, {int credits = 900}) {
   return ProviderScope(
     overrides: [
       projectsProvider.overrideWith((ref) async => projects),
+      projectStatusProvider.overrideWith(
+        (ref, id) => const Stream<MobileProjectStatus>.empty(),
+      ),
       billingProvider.overrideWith((ref) async => billingWith(credits)),
     ],
     child: const MaterialApp(
       home: Scaffold(body: SizedBox(width: 400, child: BookShelf())),
     ),
+  );
+}
+
+MobileProjectStatus projectStatus({
+  String status = 'generating',
+  required int progressPercent,
+  bool exportsReady = false,
+}) {
+  return MobileProjectStatus(
+    projectId: 'writing',
+    status: status,
+    statusLabel: status == 'complete'
+        ? 'Ready to export'
+        : 'Generating your book',
+    progressPercent: progressPercent,
+    currentAction: status == 'complete'
+        ? 'Ready to download.'
+        : 'Creating your illustrations.',
+    retryAvailable: false,
+    steps: const [],
+    pageProgress: const MobilePageProgress(completed: 18, target: 18),
+    imageCount: exportsReady ? 6 : 3,
+    exports: shelfExports(ready: exportsReady, epubReady: exportsReady),
+    updatedAt: DateTime.utc(2026, 6, 21),
   );
 }
 
