@@ -664,7 +664,10 @@ class _ChatOperationProgressCardState extends State<ChatOperationProgressCard> {
           ),
           if (steps.isNotEmpty) ...[
             const SizedBox(height: 10),
-            for (final step in steps) ProgressStepRow(step: step),
+            // With the detail line: an edit's steps carry counts ("3 of 7
+            // pages") that are the only thing moving while one long step runs.
+            for (final step in steps)
+              ProgressStepRow(step: step, showDetail: true),
           ],
           if (showPages) ...[
             const SizedBox(height: 8),

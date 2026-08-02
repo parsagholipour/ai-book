@@ -46,9 +46,11 @@ class ProgressStepRow extends StatelessWidget {
         ? colors.error
         : colors.outline;
     // Two label shapes, both pinned by widget tests: the chat rows end in a
-    // period, the card rows join their detail line with one.
+    // period, the card rows join their detail line with one. A drawn detail
+    // joins either of them — a count on screen that is missing from the label
+    // is progress a screen reader cannot hear.
     final semanticLabel = dense
-        ? '${step.label}. $stateLabel.'
+        ? '${[step.label, stateLabel, ?detail].join('. ')}.'
         : [step.label, stateLabel, ?detail].join('. ');
     final iconSize = dense ? 18.0 : 20.0;
 

@@ -194,6 +194,37 @@ void main() {
     expect(scrollPosition(tester).pixels, scrollPosition(tester).maxScrollExtent);
   });
 
+  testWidgets('the running step says how far through it is', (tester) async {
+    // Rewriting is the long step of an edit. The headline names the page, and
+    // the step's own count is what keeps reading as progress across the pages
+    // either side of it — without it the card holds still for minutes.
+    final repository = _ScriptedProjectsRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    repository.emitStatus(
+      status: 'editing',
+      progressPercent: 58,
+      action: 'Reading back page 8',
+      editProgress: _editProgress(
+        58,
+        active: 'Making your changes',
+        activeDetail: '1 of 3 pages',
+      ),
+    );
+    for (var frame = 0; frame < 4; frame++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+
+    expect(find.text('Reading back page 8'), findsOneWidget);
+    expect(find.text('1 of 3 pages'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel('Making your changes. In progress. 1 of 3 pages.'),
+      findsOneWidget,
+      reason: 'a count drawn on screen has to be in the label too',
+    );
+  });
+
   testWidgets('a settled book that was never live does not refetch', (
     tester,
   ) async {
@@ -419,6 +450,62 @@ void main() {
         )
         .dy;
     expect(applied, greaterThan(proposal));
+  });
+
+  testWidgets('the composer closes while the book is being rebuilt', (
+    tester,
+  ) async {
+    // A book mid-rebuild cannot take another request — the API parks anything
+    // that arrives until the job settles — so an open field was a chat that
+    // looked like it was listening and then quietly ignored you.
+    final repository = _ScriptedProjectsRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Also make it funnier');
+    repository.emitStatus(
+      status: 'editing',
+      progressPercent: 30,
+      action: 'Rewriting page 3',
+    );
+    // Not pumpAndSettle: the progress card spins for as long as the work runs.
+    await tester.pump();
+    await tester.pump();
+
+    final composer = tester.widget<TextField>(find.byType(TextField));
+    expect(composer.enabled, isFalse);
+    expect(composer.decoration?.hintText, 'Regenerating your book…');
+    // The half-written thought survives the lock instead of being thrown away.
+    expect(composer.controller?.text, 'Also make it funnier');
+    // The edit pencil goes with it: an edited message is another chat turn.
+    expect(find.byTooltip('Edit message'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pump();
+    expect(repository.sentMessages, isEmpty);
+  });
+
+  testWidgets('the composer reopens the moment the rebuild finishes', (
+    tester,
+  ) async {
+    final repository = _ScriptedProjectsRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    repository.emitStatus(status: 'editing', progressPercent: 30);
+    await tester.pump();
+    await tester.pump();
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isFalse);
+
+    repository.emitStatus(status: 'complete', progressPercent: 100);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+    await tester.enterText(find.byType(TextField), 'Now make it funnier');
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pumpAndSettle();
+
+    expect(repository.sentMessages, ['Now make it funnier']);
   });
 
   testWidgets('a failed inline edit keeps the edited text in the editor', (
@@ -742,7 +829,11 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
 }
 
 /// The four milestones the server reports while an edit is being applied.
-MobileGenerationProgress _editProgress(int percent, {required String active}) {
+MobileGenerationProgress _editProgress(
+  int percent, {
+  required String active,
+  String? activeDetail,
+}) {
   const labels = [
     'Reading your book',
     'Saving a version to undo',
@@ -762,6 +853,7 @@ MobileGenerationProgress _editProgress(int percent, {required String active}) {
               : index == activeIndex
               ? 'active'
               : 'pending',
+          detail: index == activeIndex ? activeDetail : null,
         ),
     ],
   );

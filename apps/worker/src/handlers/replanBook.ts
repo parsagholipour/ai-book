@@ -239,6 +239,12 @@ export async function rewritePageForUserRequest(options: {
   providers: ProviderSet;
   request: string;
   generationJobId?: string | undefined;
+  /**
+   * Called as the page moves between writing and reading back, so the caller
+   * can report which of the two the reader is waiting on. Rewriting a page is
+   * two long model calls, and one label over both of them reads as a stall.
+   */
+  onPhase?: ((phase: "draft" | "review") => Promise<void>) | undefined;
 }): Promise<PageDraft & { qualityReport: PageQualityReport }> {
   const previousPages = await prisma.page.findMany({
     where: { projectId: options.projectId, index: { lt: options.page.index }, status: "COMPLETED" },
@@ -294,6 +300,7 @@ export async function rewritePageForUserRequest(options: {
       textModel: options.providers.text
     }
   });
+  await options.onPhase?.("review");
   const qualityReport = await options.strategy.reviewPageDraft({
     input: options.input,
     plan: options.plan,

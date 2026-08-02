@@ -265,7 +265,8 @@ function imagePhrase(job: StatusJob): string | null {
   }
 }
 
-function compilePhrase(stepKey: string | undefined): string | null {
+/** Shared with `editProgress`: an edit ends in the same compile job. */
+export function compilePhrase(stepKey: string | undefined): string | null {
   switch (stepKey) {
     case "qa":
       return "Doing a final read-through";

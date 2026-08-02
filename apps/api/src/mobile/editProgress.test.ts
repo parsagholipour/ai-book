@@ -54,13 +54,31 @@ function editJob(overrides: Overrides = {}) {
   };
 }
 
-function steps(activeKey: string, template = ["prepare", "snapshot", "apply", "export"]) {
+function steps(
+  activeKey: string,
+  template = ["prepare", "snapshot", "apply", "export"],
+  counters: Overrides = {}
+) {
   const activeIndex = template.indexOf(activeKey);
   return template.map((key, index) => ({
     key,
     label: key,
-    status: index < activeIndex ? "done" : index === activeIndex ? "active" : "pending"
+    status: index < activeIndex ? "done" : index === activeIndex ? "active" : "pending",
+    ...(index === activeIndex ? counters : {})
   }));
+}
+
+function compileJob(overrides: Overrides = {}) {
+  return {
+    id: "job-compile",
+    type: "COMPILE_EXPORT",
+    status: "ACTIVE",
+    error: null,
+    progress: 0,
+    steps: [],
+    payload: {},
+    ...overrides
+  };
 }
 
 async function readStatus(record: unknown) {
@@ -171,6 +189,124 @@ describe("mobile edit progress", () => {
       "Rebuilding your book"
     ]);
     expect(status.editProgress.detail).toBe("Writing the new pages");
+  });
+
+  it("names the page being rewritten and what is being done to it", async () => {
+    // The long step is the rewrite, and one phrase over all of it reads as a
+    // stall. The page number is the worker's own, never inverted out of the bar.
+    const phrases: string[] = [];
+    for (const phase of ["draft", "review", "save"]) {
+      const status = await readStatus(
+        editingStatus({
+          project: {
+            jobs: [
+              editJob({
+                progress: 52,
+                steps: steps("apply", undefined, { done: 1, total: 3, phase, pageIndex: 8 })
+              })
+            ]
+          }
+        })
+      );
+      phrases.push(status.currentAction);
+      expect(status.editProgress.steps[2].detail).toBe("1 of 3 pages");
+    }
+
+    expect(phrases).toEqual(["Rewriting page 8", "Reading back page 8", "Saving page 8"]);
+  });
+
+  it("counts the new pages a continuation has written", async () => {
+    const status = await readStatus(
+      editingStatus({
+        project: {
+          jobs: [
+            editJob({
+              type: "CONTINUE_BOOK",
+              progress: 45,
+              payload: {},
+              steps: steps("draft", ["outline", "draft", "save", "export"], {
+                done: 2,
+                total: 6,
+                pageIndex: 15
+              })
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.currentAction).toBe("Writing page 15");
+    expect(status.editProgress.steps[1].detail).toBe("2 of 6 new pages");
+  });
+
+  it("draws the milestones before the worker has claimed the job", async () => {
+    // A queued job carries no steps — they are stamped on when it starts — and
+    // a card that opens as a bare bar says nothing about what is coming.
+    const status = await readStatus(
+      editingStatus({ project: { jobs: [editJob({ status: "QUEUED", progress: 0, steps: [] })] } })
+    );
+
+    expect(status.editProgress.steps.map((step: any) => step.status)).toEqual([
+      "active",
+      "pending",
+      "pending",
+      "pending"
+    ]);
+    expect(status.currentAction).toBe("Getting your edit ready");
+  });
+
+  it("keeps reporting through the rebuild the edit hands off to", async () => {
+    // apply-book-edit finishes by queueing the compile, and the project stays
+    // EDITING until that lands. Without this the card dropped its step list and
+    // froze at a flat 92 for the slowest part of the whole edit.
+    const rebuilding = (progress: number, activeCompileStep: string) =>
+      editingStatus({
+        project: {
+          jobs: [
+            compileJob({ progress, steps: steps(activeCompileStep, ["qa", "compile", "write", "pdf", "epub"]) }),
+            editJob({ status: "COMPLETED", progress: 85, steps: steps("export") })
+          ]
+        }
+      });
+
+    const early = await readStatus(rebuilding(20, "compile"));
+    expect(early.editProgress.steps.map((step: any) => step.status)).toEqual(["done", "done", "done", "active"]);
+    expect(early.editProgress.steps[3].label).toBe("Rebuilding your book");
+    expect(early.currentAction).toBe("Putting the chapters together");
+
+    const late = await readStatus(rebuilding(80, "pdf"));
+    expect(late.currentAction).toBe("Making your PDF");
+    // Never backwards over the handover: the rebuild's band starts above where
+    // the edit job's own bar tops out.
+    expect(late.progressPercent).toBeGreaterThan(early.progressPercent);
+    expect(early.progressPercent).toBeGreaterThan(92);
+    expect(late.progressPercent).toBeLessThan(100);
+  });
+
+  it("reports a rebuild the reader started themselves", async () => {
+    // A manual edit, an undo, or dropping the sources list queues only the
+    // recompile. It sat at a flat 92 with nothing on screen for the whole of it.
+    const status = await readStatus(
+      editingStatus({
+        project: {
+          jobs: [
+            compileJob({
+              progress: 60,
+              payload: { skipFinalReview: true },
+              steps: steps("pdf", ["qa", "compile", "write", "pdf", "epub"])
+            }),
+            // An older edit's history: not this rebuild's steps.
+            editJob({ status: "COMPLETED", progress: 85, steps: steps("export") })
+          ]
+        }
+      })
+    );
+
+    expect(status.editProgress.steps).toEqual([
+      { key: "export", label: "Rebuilding your book", status: "active", detail: null }
+    ]);
+    expect(status.currentAction).toBe("Making your PDF");
+    expect(status.progressPercent).toBeGreaterThan(92);
   });
 
   it("reports nothing for a book that is not being edited", async () => {

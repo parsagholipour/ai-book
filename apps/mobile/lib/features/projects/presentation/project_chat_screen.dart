@@ -15,6 +15,7 @@ import 'chat_thinking_bubble.dart';
 import 'plan_revision_retry.dart';
 import 'project_chat_bubbles.dart';
 import 'project_chat_composer.dart';
+import 'project_chat_operations.dart';
 import 'project_route_error.dart';
 
 /// What a screen wants the book chat to do when it opens.
@@ -99,8 +100,41 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     // After the first frame so the transcript, and the optimistic bubble the
     // send adds to it, have somewhere to appear.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) unawaited(_sendMessage(message));
+      if (!mounted) return;
+      // The reader can hand a passage over while the book is mid-rebuild. The
+      // composer is closed then, so park the text in it rather than send into
+      // work that cannot take it — it is sendable the moment the job settles.
+      if (_bookIsBusy) {
+        setState(() {
+          _controller.text = message;
+          _controller.selection = TextSelection.collapsed(
+            offset: message.length,
+          );
+        });
+        return;
+      }
+      unawaited(_sendMessage(message));
     });
+  }
+
+  /// Whether the worker is currently rebuilding this book.
+  ///
+  /// Read rather than watched: the guards using it run from callbacks, where
+  /// the composer's disabled state was already decided by the last build.
+  bool get _bookIsBusy =>
+      ref.read(projectStatusProvider(widget.projectId)).asData?.value.isLive ??
+      false;
+
+  /// The hint the composer shows while it is closed, or null while it is open.
+  ///
+  /// A book being rewritten cannot take a second request — the API refuses one
+  /// until the current job settles — so the chat says so rather than accepting
+  /// messages that would only be parked.
+  String? _composerLockLabel(MobileProjectStatus? liveStatus) {
+    if (liveStatus == null) return null;
+    return liveStatus.status == 'planning'
+        ? 'Revising your plan…'
+        : 'Regenerating your book…';
   }
 
   /// Whether to draw the assistant-side "thinking" bubble.
@@ -257,14 +291,17 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                               chat,
                               message,
                             ),
-                            sending: _sending || _editing,
+                            // A live job closes the proposal card's Apply for
+                            // the same reason it closes the composer: it would
+                            // queue a second edit the API has to refuse.
+                            sending: _sending || _editing || liveStatus != null,
                             // While the edit runs it has no card yet, so the
                             // reply itself carries the charge; once the card
                             // appears it owns the number.
                             showCreditCost: operations
                                 .anchoredTo(message.id)
                                 .isEmpty,
-                            onStartEdit: message.isUser
+                            onStartEdit: message.isUser && liveStatus == null
                                 ? () => _startEdit(message)
                                 : null,
                             onCancelEdit: _cancelEdit,
@@ -336,6 +373,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                 controller: _controller,
                 sending: _sending || _editing,
                 onSend: _send,
+                lockedLabel: _composerLockLabel(liveStatus),
               ),
             ],
           );
@@ -364,64 +402,23 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     ref.invalidate(projectStatusProvider(widget.projectId));
   }
 
-  /// Splits the operations worth showing into the ones that belong under a
-  /// visible message and the ones with nowhere else to go.
-  ///
-  /// Every applied and failed edit appears, each under the turn that produced
-  /// it, so the transcript reads as the book's history. Rendering them at the
-  /// end of the list instead put "Edit applied" and its credit charge underneath
-  /// whatever the user asked most recently — including a proposal still waiting
-  /// on Apply, which read as if that proposal had gone through and been billed.
-  _TranscriptOperations _transcriptOperations(MobileProjectChat chat) {
-    final visibleIds = _visibleMessages(
-      chat,
-    ).map((message) => message.id).toSet();
-    final anchored = <String, List<MobileBookEditOperation>>{};
-    final unanchored = <MobileBookEditOperation>[];
-    for (final operation in chat.operations) {
-      if (!operation.isFailed && !operation.isApplied) {
-        continue;
-      }
-      final anchor = operation.anchorMessageId;
-      if (anchor != null && visibleIds.contains(anchor)) {
-        (anchored[anchor] ??= []).add(operation);
-        continue;
-      }
-      // Nowhere to sit in the transcript. Only the most recent couple are worth
-      // stacking at the end; older ones would be history without its context.
-      if (unanchored.length < 2) {
-        unanchored.add(operation);
-      }
-    }
-    return _TranscriptOperations(anchored: anchored, unanchored: unanchored);
+  TranscriptOperations _transcriptOperations(MobileProjectChat chat) {
+    return splitTranscriptOperations(
+      operations: chat.operations,
+      visibleMessageIds: _visibleMessages(
+        chat,
+      ).map((message) => message.id).toSet(),
+    );
   }
 
   Widget _operationBubble(MobileBookEditOperation operation) {
-    final openAtPage = operation.affectedPageIndexes.isEmpty
-        ? null
-        : operation.affectedPageIndexes.reduce((a, b) => a < b ? a : b);
-    return OperationBubble(
+    return ProjectChatOperationBubble(
+      projectId: widget.projectId,
       operation: operation,
       retrying: _retryingOperationId == operation.id,
       undoing: _undoing,
-      onRetry: operation.isFailed ? () => _retryOperation(operation) : null,
-      onUndo: operation.canUndo ? () => unawaited(_undoLastEdit()) : null,
-      onViewPlan: operation.isPlanRevision
-          ? () => context.push('/projects/${widget.projectId}')
-          : null,
-      onOpenBook: operation.isApplied
-          ? () => context.push(
-              '/projects/${widget.projectId}/read'
-              '${openAtPage == null ? '' : '?page=$openAtPage'}',
-            )
-          : null,
-      // A failed edit keeps whatever snapshots it managed to write, but its card
-      // is for getting the book back on track — Retry, not a diff.
-      onSeeChanges: operation.isApplied && operation.changesAvailable
-          ? () => context.push(
-              '/projects/${widget.projectId}/changes/${operation.id}',
-            )
-          : null,
+      onRetry: () => _retryOperation(operation),
+      onUndo: () => unawaited(_undoLastEdit()),
     );
   }
 
@@ -451,14 +448,14 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
 
   Future<void> _send() async {
     final message = _controller.text.trim();
-    if (message.isEmpty || _sending) return;
+    if (message.isEmpty || _sending || _bookIsBusy) return;
     _controller.clear();
     await _sendMessage(message);
   }
 
   Future<void> _retryPendingEcho() async {
     final echo = _pendingEcho;
-    if (echo == null || _sending) return;
+    if (echo == null || _sending || _bookIsBusy) return;
     await _sendMessage(echo.text);
   }
 
@@ -540,7 +537,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   }
 
   void _startEdit(MobileProjectChatMessage message) {
-    if (_sending || _editing) return;
+    if (_sending || _editing || _bookIsBusy) return;
     setState(() {
       _pendingEditRequestId = null;
       _pendingEditMessage = null;
@@ -564,7 +561,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   Future<void> _submitEdit() async {
     final messageId = _editingMessageId;
     final message = _editController.text.trim();
-    if (messageId == null || message.isEmpty || _editing) return;
+    if (messageId == null || message.isEmpty || _editing || _bookIsBusy) return;
     setState(() => _editing = true);
     if (_pendingEditMessage != message) {
       _pendingEditRequestId = _newRequestId('edit');
@@ -682,7 +679,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   }
 
   Future<void> _applyProposal(String proposalId) async {
-    if (_sending) return;
+    if (_sending || _bookIsBusy) return;
     if (proposalId.isEmpty) {
       await _sendMessage('apply it');
       return;
@@ -869,19 +866,4 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
-}
-
-/// Operation bubbles placed against the transcript: [anchored] renders under the
-/// message that produced it, [unanchored] falls back to the end of the list.
-class _TranscriptOperations {
-  const _TranscriptOperations({
-    required this.anchored,
-    required this.unanchored,
-  });
-
-  final Map<String, List<MobileBookEditOperation>> anchored;
-  final List<MobileBookEditOperation> unanchored;
-
-  List<MobileBookEditOperation> anchoredTo(String messageId) =>
-      anchored[messageId] ?? const [];
 }

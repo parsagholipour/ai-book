@@ -19,9 +19,17 @@ class _ProjectChatFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final hintText = projectStatus == 'complete'
+    // A book being rewritten cannot take another request — the API parks
+    // anything that arrives until the job settles — so the composer closes
+    // instead of looking like it is listening. The first build is a different
+    // moment: nothing is being replaced yet, so questions stay welcome.
+    final rebuilding = projectStatus == 'editing';
+    final open = enabled && !rebuilding;
+    final hintText = rebuilding
+        ? 'Regenerating your book…'
+        : projectStatus == 'complete'
         ? 'Ask for an edit to this book…'
-        : projectStatus == 'generating' || projectStatus == 'editing'
+        : projectStatus == 'generating'
         ? 'Ask about this book…'
         : 'Ask for a change…';
     return Material(
@@ -37,7 +45,7 @@ class _ProjectChatFooter extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
-                  enabled: enabled,
+                  enabled: open,
                   minLines: 1,
                   maxLines: 5,
                   textInputAction: TextInputAction.newline,
@@ -60,7 +68,7 @@ class _ProjectChatFooter extends StatelessWidget {
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: controller,
                 builder: (context, value, _) {
-                  final canSend = enabled && value.text.trim().isNotEmpty;
+                  final canSend = open && value.text.trim().isNotEmpty;
                   return IconButton.filled(
                     tooltip: 'Send',
                     onPressed: canSend ? () => onSend(controller.text) : null,

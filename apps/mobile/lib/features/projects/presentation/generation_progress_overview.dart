@@ -7,9 +7,9 @@ import 'progress_step_row.dart';
 
 /// The live "what is happening to my book right now" card on /handoff.
 ///
-/// It draws the same milestone list as the creation chat's progress bubble —
-/// `generationProgress.steps` when the server sends it, the coarse pipeline
-/// steps otherwise — so the two surfaces never disagree about the same book.
+/// It draws the same milestone list as the chat's progress bubble — whichever
+/// of the live step lists the server is sending, the coarse pipeline steps
+/// otherwise — so the two surfaces never disagree about the same book.
 class GenerationProgressOverviewCard extends StatelessWidget {
   const GenerationProgressOverviewCard({
     required this.status,
@@ -31,9 +31,12 @@ class GenerationProgressOverviewCard extends StatelessWidget {
     // While the plan is being written the finer planning milestones are what
     // the chat draws, and this card promises to agree with it. Only while
     // planning: once a plan is approved those three steps are all done and the
-    // coarse pipeline is the honest answer until writing reports in.
+    // coarse pipeline is the honest answer until writing reports in. An edit
+    // sends its own list and no generation one — without it this card fell back
+    // to the whole book's pipeline, which says nothing about the edit running.
     final steps =
         status.generationProgress?.steps ??
+        status.editProgress?.steps ??
         (status.status == 'planning' ? status.planningProgress?.steps : null) ??
         status.steps;
     return Card(

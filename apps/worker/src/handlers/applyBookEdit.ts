@@ -4,7 +4,7 @@ import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
-import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
 import { bookPlanSchema, createProviders } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -13,6 +13,16 @@ import { Job } from "bullmq";
 /**
  * `apply-book-edit` job: apply a user-approved edit to saved pages.
  */
+
+/** Where in the `apply` step's own band each page's phases sit. */
+const PAGE_PHASE_SHARE = { draft: 0.05, review: 0.6, save: 0.9 } as const;
+
+type EditPagePhase = keyof typeof PAGE_PHASE_SHARE;
+
+/** The `apply` step owns 40–75 of the job's progress column. */
+function applyStepProgress(pagesDone: number, total: number): number {
+  return 40 + Math.round((pagesDone / Math.max(total, 1)) * 35);
+}
 
 export async function applyBookEdit(job: Job) {
   const {
@@ -64,7 +74,10 @@ export async function applyBookEdit(job: Job) {
     throw new Error("No matching pages found for this edit");
   }
 
-  await advanceJobStep(generationJobId, "snapshot", 35, `Snapshotting ${pages.length} page edit target(s)`);
+  await advanceJobStep(generationJobId, "snapshot", 35, `Snapshotting ${pages.length} page edit target(s)`, {
+    done: 0,
+    total: pages.length
+  });
   const snapshots = new Map<number, string>();
   for (const page of pages) {
     const snapshot = await prisma.pageEditSnapshot.create({
@@ -83,11 +96,21 @@ export async function applyBookEdit(job: Job) {
   }
 
   const updatedPageIndexes: number[] = [];
+  // Rewriting is the long step, and one flat "applying" for the whole of it is
+  // what made a multi-page edit look stalled. Each page reports itself three
+  // times so both the bar and the phrase above it keep moving; the API turns
+  // these counters into the words, this file never does.
+  const reportPage = (page: { index: number }, offset: number, phase: EditPagePhase) =>
+    advanceJobStep(
+      generationJobId,
+      "apply",
+      applyStepProgress(offset + PAGE_PHASE_SHARE[phase], pages.length),
+      `Applying edit to page ${page.index}`,
+      { done: offset, total: pages.length, phase, pageIndex: page.index }
+    );
+
   for (const [offset, page] of pages.entries()) {
-    await updateJobProgress(generationJobId, {
-      progress: 40 + Math.round((offset / Math.max(pages.length, 1)) * 35),
-      message: `Applying edit to page ${page.index}`
-    });
+    await reportPage(page, offset, "draft");
     const updated = exactReplacement && page.markdown.includes(exactReplacement.from)
       ? locallyPatchedPage(page, exactReplacement)
       : await rewritePageForUserRequest({
@@ -98,8 +121,10 @@ export async function applyBookEdit(job: Job) {
           strategy,
           providers,
           request,
-          generationJobId
+          generationJobId,
+          onPhase: (phase) => reportPage(page, offset, phase)
         });
+    await reportPage(page, offset, "save");
 
     const saved = await prisma.page.update({
       where: { id: page.id },

@@ -22,7 +22,7 @@ import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
-import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { bookPlanSchema, createProviders, generateJsonWithRetry, type BookPlan, type TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
@@ -146,7 +146,10 @@ export async function continueBook(job: Job) {
   });
 
   try {
-    await advanceJobStep(generationJobId, "draft", 30, "Writing new pages");
+    await advanceJobStep(generationJobId, "draft", 30, "Writing new pages", {
+      done: 0,
+      total: newPageIndexes.length
+    });
     const continuityNotes = await loadContinuityNotes(projectId);
     const earlierSummaries = await prisma.page.findMany({
       where: { projectId, index: { lte: lastPageIndex }, status: "COMPLETED" },
@@ -163,10 +166,13 @@ export async function continueBook(job: Job) {
       });
       for (let offset = 0; offset < chapterPlan.targetPages; offset += 1) {
         const pageIndex = newPageIndexes[drafted]!;
-        await updateJobProgress(generationJobId, {
-          progress: 30 + Math.round((drafted / Math.max(newPageIndexes.length, 1)) * 45),
-          message: `Writing page ${pageIndex}`
-        });
+        await advanceJobStep(
+          generationJobId,
+          "draft",
+          30 + Math.round((drafted / Math.max(newPageIndexes.length, 1)) * 45),
+          `Writing page ${pageIndex}`,
+          { done: drafted, total: newPageIndexes.length, pageIndex }
+        );
         const draft = await strategy.generatePageDraft({
           input,
           plan: extendedPlan,

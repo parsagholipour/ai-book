@@ -143,11 +143,46 @@ export async function updateJobProgress(
   });
 }
 
+/**
+ * Countable facts about the step being worked on, for the API to narrate.
+ *
+ * Deliberately numbers and tokens rather than sentences: `GenerationJob.message`
+ * is internal text the mobile serializers must never forward, so anything the
+ * reader is meant to see has to arrive as data they can phrase themselves.
+ */
+export type JobStepCounters = {
+  done?: number;
+  total?: number;
+  phase?: string;
+  pageIndex?: number;
+};
+
+function withCounters(step: JobStep, counters: JobStepCounters | undefined): JobStep {
+  if (!counters) {
+    return step;
+  }
+  return {
+    ...step,
+    ...(typeof counters.done === "number" ? { done: counters.done } : {}),
+    ...(typeof counters.total === "number" ? { total: counters.total } : {}),
+    ...(counters.phase ? { phase: counters.phase } : {}),
+    ...(typeof counters.pageIndex === "number" ? { pageIndex: counters.pageIndex } : {})
+  };
+}
+
+/**
+ * Marks `activeKey` as the step being worked on, optionally with counters.
+ *
+ * Re-calling it for the step that is already active is the supported way to
+ * report movement inside a long step — which page of an edit is being rewritten
+ * and what is being done to it — because it is the same single write either way.
+ */
 export async function advanceJobStep(
   generationJobId: string | undefined,
   activeKey: string,
   progress?: number,
-  message?: string
+  message?: string,
+  counters?: JobStepCounters
 ) {
   if (!generationJobId) {
     return;
@@ -165,7 +200,7 @@ export async function advanceJobStep(
   const nextSteps = steps.map((step) => {
     if (step.key === activeKey) {
       foundActive = true;
-      return { ...step, status: "active" as const };
+      return withCounters({ ...step, status: "active" as const }, counters);
     }
     if (!foundActive) {
       return { ...step, status: "done" as const };

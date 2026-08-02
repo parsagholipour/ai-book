@@ -823,6 +823,29 @@ export function projectSourceFromMediaSettings(mediaSettings: unknown): "importe
   return Object.keys(jsonRecord(mobile.import)).length > 0 ? "imported" : "generated";
 }
 
+/**
+ * Which pages an edit is about, said the way the reader would say it.
+ *
+ * "Selected pages" was true of every rewrite and told no one anything; the
+ * indexes are on the row, and they are the same numbers the live progress card
+ * counts down, so the two never describe the same job differently.
+ */
+function describeEditPages(indexes: number[]): string {
+  const pages = [...new Set(indexes.filter((index) => Number.isInteger(index) && index > 0))].sort(
+    (left, right) => left - right
+  );
+  if (pages.length === 0) {
+    return "the selected pages";
+  }
+  if (pages.length === 1) {
+    return `page ${pages[0]}`;
+  }
+  if (pages.length === 2) {
+    return `pages ${pages[0]} and ${pages[1]}`;
+  }
+  return `${pages.length} pages`;
+}
+
 export function currentActionForEditOperation(operation: MobileBookEditOperationRecord): string {
   if (operation.status === "FAILED") {
     if (operation.kind === "PLAN_REVISION") {
@@ -837,7 +860,7 @@ export function currentActionForEditOperation(operation: MobileBookEditOperation
     return "Rebuilding a new copy.";
   }
   if (operation.kind === "PAGE_REWRITE") {
-    return "Rewriting selected pages.";
+    return `Rewriting ${describeEditPages(operation.affectedPageIndexes)}.`;
   }
   if (operation.kind === "CHAPTER_REGENERATE") {
     return "Rewriting the chapter.";

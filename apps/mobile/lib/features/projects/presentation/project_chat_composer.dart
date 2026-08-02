@@ -65,6 +65,7 @@ class ProjectChatComposer extends StatelessWidget {
     required this.controller,
     required this.sending,
     required this.onSend,
+    this.lockedLabel,
     super.key,
   });
 
@@ -72,9 +73,17 @@ class ProjectChatComposer extends StatelessWidget {
   final bool sending;
   final VoidCallback onSend;
 
+  /// Why the composer is closed, or null while it is open.
+  ///
+  /// Set while the worker is rebuilding the book: nothing new can start until
+  /// that settles, so the field says what it is waiting on instead of taking
+  /// text that has nowhere to go. Whatever is already typed stays put.
+  final String? lockedLabel;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final locked = lockedLabel != null;
     return SafeArea(
       top: false,
       child: DecoratedBox(
@@ -90,18 +99,19 @@ class ProjectChatComposer extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
+                  enabled: !locked,
                   minLines: 1,
                   maxLines: 5,
                   textInputAction: TextInputAction.newline,
-                  decoration: const InputDecoration(
-                    hintText: 'Ask or request an edit…',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    hintText: lockedLabel ?? 'Ask or request an edit…',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: sending ? null : onSend,
+                onPressed: sending || locked ? null : onSend,
                 child: sending
                     ? const SizedBox.square(
                         dimension: 18,
