@@ -28,6 +28,7 @@ import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
 import 'chat_media_preview.dart';
+import 'chat_thinking_bubble.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
 import 'credit_cost_badge.dart';
@@ -37,6 +38,7 @@ import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'progress_step_row.dart';
+import 'project_chat_bubbles.dart';
 import 'project_export_actions.dart';
 import 'saved_export_card.dart';
 
@@ -50,6 +52,7 @@ part 'creation_chat_transcript.dart';
 part 'creation_chat_bubbles.dart';
 part 'creation_chat_composer.dart';
 part 'creation_chat_sheets.dart';
+part 'creation_chat_output_send.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({super.key, this.startFresh = false, this.draftId});
@@ -61,7 +64,9 @@ class CreationChatScreen extends ConsumerStatefulWidget {
   ConsumerState<CreationChatScreen> createState() => _CreationChatScreenState();
 }
 
-class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
+class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
+    with _OutputChatSend {
+  @override
   final _composerController = TextEditingController();
   final _revisionController = TextEditingController();
   final _scrollController = ScrollController();
@@ -76,13 +81,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   Timer? _stickScrollTimer;
   Object? _lastScrollTrigger;
   bool _stickToBottom = true;
-  bool _projectChatSending = false;
   bool _projectChatBranchSwitching = false;
-  String? _editingProjectMessageId;
   String? _editingCreationMessageId;
-  String? _pendingProjectRequestId;
-  String? _pendingProjectRequestText;
-  String? _pendingProjectEditMessageId;
   final Set<String> _requestedReplanCopyOutputSyncs = <String>{};
 
   // Plan question tracking
@@ -335,6 +335,15 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
                             planBusyAction: _planBusyAction,
                             activeProjectId: activeProjectId,
                             switchingProjectBranch: _projectChatBranchSwitching,
+                            pendingProjectEcho: _pendingProjectEcho,
+                            projectChatSending: _projectChatSending,
+                            onRetryPendingProjectEcho: activeProjectId == null
+                                ? null
+                                : () => unawaited(
+                                    _retryPendingProjectEcho(activeProjectId),
+                                  ),
+                            onDismissPendingProjectEcho:
+                                _dismissPendingProjectEcho,
                             onSwitchProjectBranch: _switchProjectBranch,
                             onEditProjectMessage: _startProjectMessageEdit,
                             onOpenReplanCopy: _openReplanCopy,
@@ -603,6 +612,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     controller.selectOutput(projectId);
   }
 
+  @override
   void _refreshOutput(String projectId, {bool refreshStatus = true}) {
     ref.invalidate(projectDetailProvider(projectId));
     ref.invalidate(projectChatProvider(projectId));
@@ -711,6 +721,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
   /// Re-engages follow-the-conversation scrolling. Submitting the composer is
   /// an explicit signal to watch the reply, even after scrolling up (which is
   /// how every message edit starts).
+  @override
   void _resumeStickToBottom() {
     _stickToBottom = true;
     _scheduleStickyScroll(delay: const Duration(milliseconds: 16));
@@ -1007,174 +1018,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<MobileProjectChatSendResult?> _sendProjectMessage({
-    required String projectId,
-    required String message,
-  }) async {
-    final trimmed = message.trim();
-    if (trimmed.isEmpty || _projectChatSending) return null;
-    final editingMessageId = _editingProjectMessageId;
-    final samePendingRequest =
-        _pendingProjectRequestText == trimmed &&
-        _pendingProjectEditMessageId == editingMessageId;
-    if (!samePendingRequest) {
-      _pendingProjectRequestText = trimmed;
-      _pendingProjectEditMessageId = editingMessageId;
-      _pendingProjectRequestId =
-          'project-chat-${DateTime.now().microsecondsSinceEpoch}';
-    }
-    final requestId = _pendingProjectRequestId!;
-    final shouldRestoreComposer = _composerController.text.trim() == trimmed;
-    if (shouldRestoreComposer) {
-      _composerController.clear();
-    }
-    setState(() => _projectChatSending = true);
-    _resumeStickToBottom();
-    try {
-      final repository = ref.read(projectsRepositoryProvider);
-      final result = editingMessageId != null
-          ? await repository.editProjectChatMessage(
-              projectId: projectId,
-              messageId: editingMessageId,
-              message: trimmed,
-              requestId: requestId,
-            )
-          : await repository.sendProjectChatMessage(
-              projectId: projectId,
-              message: trimmed,
-              requestId: requestId,
-            );
-      _pendingProjectRequestId = null;
-      _pendingProjectRequestText = null;
-      _pendingProjectEditMessageId = null;
-      _refreshOutput(projectId);
-      ref.invalidate(projectsProvider);
-      ref.invalidate(billingProvider);
-      if (!mounted) return result;
-      setState(() {
-        _projectChatSending = false;
-        _editingProjectMessageId = null;
-      });
-      if (result.operation != null) {
-        _startPlanPoll();
-        // Plan revision already surfaces in the transcript and plan footer;
-        // a toast would just duplicate that.
-        if (!result.operation!.isPlanRevision) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(result.operation!.displayAction)),
-          );
-        }
-      }
-      return result;
-    } catch (error) {
-      if (!mounted) return null;
-      setState(() => _projectChatSending = false);
-      // Always preserve the submitted text. Do not overwrite anything the user
-      // typed while the network request was in flight.
-      if (_composerController.text.trim().isEmpty) {
-        _composerController.text = trimmed;
-        _composerController.selection = TextSelection.collapsed(
-          offset: trimmed.length,
-        );
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-      return null;
-    }
-  }
-
-  Future<void> _applyProjectEditProposal({
-    required String projectId,
-    required String proposalId,
-  }) async {
-    if (_projectChatSending) return;
-    if (proposalId.isEmpty) {
-      await _sendProjectMessage(projectId: projectId, message: 'apply it');
-      return;
-    }
-    final requestId =
-        'project-proposal-apply-${DateTime.now().microsecondsSinceEpoch}';
-    setState(() => _projectChatSending = true);
-    try {
-      final result = await ref
-          .read(projectsRepositoryProvider)
-          .applyEditProposal(
-            projectId: projectId,
-            proposalId: proposalId,
-            requestId: requestId,
-          );
-      _refreshOutput(projectId);
-      ref.invalidate(billingProvider);
-      if (!mounted) return;
-      setState(() => _projectChatSending = false);
-      if (result.operation != null) {
-        _startPlanPoll();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result.operation!.displayAction)),
-        );
-      }
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _projectChatSending = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  Future<void> _cancelProjectEditProposal({
-    required String projectId,
-    required String proposalId,
-  }) async {
-    if (_projectChatSending) return;
-    if (proposalId.isEmpty) {
-      await _sendProjectMessage(projectId: projectId, message: 'cancel');
-      return;
-    }
-    final requestId =
-        'project-proposal-cancel-${DateTime.now().microsecondsSinceEpoch}';
-    setState(() => _projectChatSending = true);
-    try {
-      await ref
-          .read(projectsRepositoryProvider)
-          .cancelEditProposal(
-            projectId: projectId,
-            proposalId: proposalId,
-            requestId: requestId,
-          );
-      _refreshOutput(projectId);
-      if (!mounted) return;
-      setState(() => _projectChatSending = false);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _projectChatSending = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  Future<void> _undoProjectEdit({required String projectId}) async {
-    if (_projectChatSending) return;
-    final requestId = 'project-undo-${DateTime.now().microsecondsSinceEpoch}';
-    setState(() => _projectChatSending = true);
-    try {
-      await ref
-          .read(projectsRepositoryProvider)
-          .undoLastBookEdit(projectId: projectId, requestId: requestId);
-      _refreshOutput(projectId);
-      if (!mounted) return;
-      setState(() => _projectChatSending = false);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _projectChatSending = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
   void _startProjectMessageEdit(MobileProjectChatMessage message) {
     if (_projectChatSending) return;
     setState(() {
@@ -1407,6 +1250,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen> {
     _planQuestionAnswers = {};
   }
 
+  @override
   void _startPlanPoll() {
     _planRefreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
       final id = _activeProjectId(ref.read(creationChatControllerProvider));

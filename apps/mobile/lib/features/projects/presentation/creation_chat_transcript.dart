@@ -13,6 +13,10 @@ class _Transcript extends StatelessWidget {
     this.planBusyAction,
     this.activeProjectId,
     this.switchingProjectBranch = false,
+    this.pendingProjectEcho,
+    this.projectChatSending = false,
+    this.onRetryPendingProjectEcho,
+    this.onDismissPendingProjectEcho,
     this.onSwitchProjectBranch,
     this.onEditProjectMessage,
     this.onOpenReplanCopy,
@@ -35,6 +39,14 @@ class _Transcript extends StatelessWidget {
   final String? planBusyAction;
   final String? activeProjectId;
   final bool switchingProjectBranch;
+
+  /// The output-stage message still in flight, or the one that failed.
+  final PendingEcho? pendingProjectEcho;
+
+  /// Whether a request about the finished book is waiting on the server.
+  final bool projectChatSending;
+  final VoidCallback? onRetryPendingProjectEcho;
+  final VoidCallback? onDismissPendingProjectEcho;
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchProjectBranch;
   final void Function(MobileProjectChatMessage message)? onEditProjectMessage;
@@ -64,11 +76,21 @@ class _Transcript extends StatelessWidget {
         planValue != null &&
         _showsLivePlanBubble(planValue!, projectChat, planBusyAction);
     final hasTyping = state.assistantTyping && !hasLivePlanBubble;
+    final hasProjectEcho = pendingProjectEcho != null;
+    // Same rule the creation side uses: one busy affordance at a time. Once the
+    // worker has the job, the generation bubble is the better signal.
+    final hasOutputThinking =
+        projectChatSending &&
+        !hasTyping &&
+        !hasLivePlanBubble &&
+        !(generationStatusValue?.asData?.value.isLive ?? false);
     final itemCount =
         state.messages.length +
         (hasTyping ? 1 : 0) +
         (hasLivePlanBubble ? 1 : 0) +
-        projectItems.length;
+        projectItems.length +
+        (hasProjectEcho ? 1 : 0) +
+        (hasOutputThinking ? 1 : 0);
 
     return ListView.builder(
       controller: controller,
@@ -85,6 +107,8 @@ class _Transcript extends StatelessWidget {
           showGenerationForCurrentPlan: showGenerationForCurrentPlan,
           hasLivePlanBubble: hasLivePlanBubble,
           hasTyping: hasTyping,
+          hasProjectEcho: hasProjectEcho,
+          hasOutputThinking: hasOutputThinking,
         );
         // Only the newest entry animates in. Wrapping every row would replay
         // the entrance whenever an old row scrolled back into view, which
@@ -109,6 +133,8 @@ class _Transcript extends StatelessWidget {
     required bool showGenerationForCurrentPlan,
     required bool hasLivePlanBubble,
     required bool hasTyping,
+    required bool hasProjectEcho,
+    required bool hasOutputThinking,
   }) {
     var cursor = state.messages.length;
     if (index >= cursor && index < cursor + projectItems.length) {
@@ -175,7 +201,24 @@ class _Transcript extends StatelessWidget {
     }
     if (hasLivePlanBubble) cursor++;
     if (hasTyping && index == cursor) {
-      return const _TypingBubble();
+      return const ChatThinkingBubble();
+    }
+    if (hasTyping) cursor++;
+    // The just-sent message about the finished book, and the assistant working
+    // on it. Last in the list because they are the newest thing that happened.
+    if (hasProjectEcho && index == cursor) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: PendingEchoBubble(
+          echo: pendingProjectEcho!,
+          onRetry: onRetryPendingProjectEcho ?? () {},
+          onDismiss: onDismissPendingProjectEcho ?? () {},
+        ),
+      );
+    }
+    if (hasProjectEcho) cursor++;
+    if (hasOutputThinking && index == cursor) {
+      return const ChatThinkingBubble(stages: bookChatThinkingStages);
     }
     return _MessageBubble(
       message: state.messages[index],

@@ -5,34 +5,29 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
-import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
-import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
+import 'package:tomeza/features/projects/presentation/chat_thinking_bubble.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/pending_chat_sessions.dart';
-import 'package:tomeza/features/projects/presentation/project_detail_screen.dart';
-
-const _greeting = 'Tell me about the book you want to make.';
-const _reply = 'Great, that is enough for a solid first plan.';
-const _planTitle = 'Launch Course Workbook';
+import 'creation_chat_fakes.dart';
+import 'creation_chat_harness.dart';
 
 void main() {
   testWidgets('greeting and quick replies render; build is gated until ready', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
     expect(find.text('New book'), findsOneWidget);
-    expect(find.text(_greeting), findsOneWidget);
+    expect(find.text(greeting), findsOneWidget);
     expect(find.text('A kids book'), findsOneWidget);
     expect(creation.startedMessages, isEmpty);
 
@@ -45,14 +40,14 @@ void main() {
   testWidgets('quick reply chips scroll; only an edge swipe opens the drawer', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository()
+    final creation = ScriptedCreationRepository()
       ..greetingQuickReplies = const [
         'Bedtime story for 5 year olds',
         'Lead magnet about pricing',
         'Workbook for new coaches',
         'Short story about a garden mystery',
       ];
-    await tester.pumpWidget(_app(creation: creation));
+    await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
     // A horizontal drag on the chip row scrolls the chips instead of being
@@ -76,8 +71,8 @@ void main() {
   });
 
   testWidgets('replying enables build and records the message', (tester) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
@@ -85,7 +80,7 @@ void main() {
 
     expect(creation.startedMessages, contains('A kids book'));
     expect(creation.sentMessages, contains('A kids book'));
-    expect(find.text(_reply), findsOneWidget);
+    expect(find.text(reply), findsOneWidget);
 
     final buildFinder = find.widgetWithText(FilledButton, 'Build the plan');
     expect(tester.widget<FilledButton>(buildFinder).onPressed, isNotNull);
@@ -94,11 +89,11 @@ void main() {
   });
 
   testWidgets('holding a message shows a copy option', (tester) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
-    await tester.longPress(find.text(_greeting));
+    await tester.longPress(find.text(greeting));
     await tester.pumpAndSettle();
 
     expect(find.text('Copy'), findsOneWidget);
@@ -126,7 +121,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
     await tester.pump();
 
-    expect(copiedText, _greeting);
+    expect(copiedText, greeting);
     expect(find.text('Message copied'), findsOneWidget);
 
     await tester.teardownScreen();
@@ -135,9 +130,9 @@ void main() {
   testWidgets('grounded creation answers render tappable web sources', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(draftId: 'research-chat', title: 'Research chat'),
+        chatSession(draftId: 'research-chat', title: 'Research chat'),
       ],
     );
     creation.resumeMessages['research-chat'] = const [
@@ -161,7 +156,7 @@ void main() {
         },
       },
     ];
-    await tester.pumpWidget(_app(creation: creation, draftId: 'research-chat'));
+    await tester.pumpWidget(app(creation: creation, draftId: 'research-chat'));
     await tester.pumpAndSettle();
 
     expect(find.text('Sources'), findsOneWidget);
@@ -226,8 +221,8 @@ void main() {
   testWidgets('editing a sent message forks a branch with arrows', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
@@ -235,7 +230,7 @@ void main() {
 
     // Long-press the sent user bubble and pick Edit. (The session title also
     // echoes the message, so scope the lookup to the transcript list.)
-    await tester.longPress(_bubbleText('A kids book'));
+    await tester.longPress(bubbleText('A kids book'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
@@ -253,8 +248,8 @@ void main() {
     expect(creation.editRequests, ['user-current']);
     expect(creation.sentMessages.last, 'A space adventure');
     expect(find.text('Editing message'), findsNothing);
-    expect(_bubbleText('A space adventure'), findsOneWidget);
-    expect(_bubbleText('A kids book'), findsNothing);
+    expect(bubbleText('A space adventure'), findsOneWidget);
+    expect(bubbleText('A kids book'), findsNothing);
     expect(find.text('2/2'), findsOneWidget);
 
     await tester.teardownScreen();
@@ -263,13 +258,13 @@ void main() {
   testWidgets('branch arrows switch back to the previous thread', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
-    await tester.longPress(_bubbleText('A kids book'));
+    await tester.longPress(bubbleText('A kids book'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
@@ -284,8 +279,8 @@ void main() {
     expect(creation.branchSwitches.single.messageId, 'user-current');
     expect(creation.branchSwitches.single.direction, 'previous');
     // The original thread is visible again with its branch position.
-    expect(_bubbleText('A kids book'), findsOneWidget);
-    expect(_bubbleText('A space adventure'), findsNothing);
+    expect(bubbleText('A kids book'), findsOneWidget);
+    expect(bubbleText('A space adventure'), findsNothing);
     expect(find.text('1/2'), findsOneWidget);
 
     await tester.teardownScreen();
@@ -294,13 +289,13 @@ void main() {
   testWidgets('cancelling an edit restores the normal composer', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
-    await tester.longPress(_bubbleText('A kids book'));
+    await tester.longPress(bubbleText('A kids book'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();
@@ -320,8 +315,8 @@ void main() {
   testWidgets(
     'advanced sheet overrides the book type with a Your choice badge',
     (tester) async {
-      final creation = _ScriptedCreationRepository();
-      await tester.pumpWidget(_app(creation: creation));
+      final creation = ScriptedCreationRepository();
+      await tester.pumpWidget(app(creation: creation));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Advanced settings'));
@@ -348,8 +343,8 @@ void main() {
   testWidgets(
     'advanced sheet defaults pages to Auto and accepts Custom pages',
     (tester) async {
-      final creation = _ScriptedCreationRepository();
-      await tester.pumpWidget(_app(creation: creation));
+      final creation = ScriptedCreationRepository();
+      await tester.pumpWidget(app(creation: creation));
       await tester.pumpAndSettle();
 
       await tester.tap(find.byTooltip('Advanced settings'));
@@ -398,11 +393,11 @@ void main() {
   testWidgets('build asks for pages when preflight requires a page count', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       preflightRequiresPageCount: true,
     );
     await tester.pumpWidget(
-      _app(creation: creation, projects: _PlanProjectsRepository()),
+      app(creation: creation, projects: PlanProjectsRepository()),
     );
     await tester.pumpAndSettle();
 
@@ -451,9 +446,9 @@ void main() {
   });
 
   testWidgets('building shows the generated plan in-chat', (tester) async {
-    final creation = _ScriptedCreationRepository();
+    final creation = ScriptedCreationRepository();
     await tester.pumpWidget(
-      _app(creation: creation, projects: _PlanProjectsRepository()),
+      app(creation: creation, projects: PlanProjectsRepository()),
     );
     await tester.pumpAndSettle();
 
@@ -473,7 +468,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text(_planTitle), findsOneWidget);
+    expect(find.text(planTitle), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -481,11 +476,11 @@ void main() {
   testWidgets(
     'answering plan questions keeps revision loading instead of restarting',
     (tester) async {
-      final creation = _ScriptedCreationRepository();
-      final projects = _PlanProjectsRepository(
-        project: _plannedProject(plan: _questionPlan()),
+      final creation = ScriptedCreationRepository();
+      final projects = PlanProjectsRepository(
+        project: plannedProject(plan: questionPlan()),
       );
-      await tester.pumpWidget(_app(creation: creation, projects: projects));
+      await tester.pumpWidget(app(creation: creation, projects: projects));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('A kids book'));
@@ -533,11 +528,11 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(360, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final creation = _ScriptedCreationRepository();
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(plan: _longQuestionPlan()),
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(plan: longQuestionPlan()),
     );
-    await tester.pumpWidget(_app(creation: creation, projects: projects));
+    await tester.pumpWidget(app(creation: creation, projects: projects));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
@@ -564,11 +559,11 @@ void main() {
   testWidgets('plan questions scroll separately from revision controls', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(plan: _longQuestionPlan()),
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(plan: longQuestionPlan()),
     );
-    await tester.pumpWidget(_app(creation: creation, projects: projects));
+    await tester.pumpWidget(app(creation: creation, projects: projects));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
@@ -652,11 +647,11 @@ void main() {
   testWidgets(
     'failed plan revision clears spinner and keeps old plan visible',
     (tester) async {
-      final creation = _ScriptedCreationRepository();
-      final projects = _PlanProjectsRepository(
-        project: _plannedProject(plan: _questionPlan()),
+      final creation = ScriptedCreationRepository();
+      final projects = PlanProjectsRepository(
+        project: plannedProject(plan: questionPlan()),
       );
-      await tester.pumpWidget(_app(creation: creation, projects: projects));
+      await tester.pumpWidget(app(creation: creation, projects: projects));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('A kids book'));
@@ -685,21 +680,21 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Revising your book plan'), findsNothing);
-      expect(find.text(_planTitle), findsOneWidget);
+      expect(find.text(planTitle), findsOneWidget);
 
       await tester.teardownScreen();
     },
   );
 
   testWidgets('changing draftId reloads the selected chat', (tester) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation, draftId: 'draft-a'));
     await tester.pumpAndSettle();
 
     expect(find.text('Title for draft-a'), findsOneWidget);
     expect(find.text('Selected chat draft-a'), findsOneWidget);
 
-    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+    await tester.pumpWidget(app(creation: creation, draftId: 'draft-b'));
     await tester.pumpAndSettle();
 
     expect(creation.resumedDraftIds, ['draft-a', 'draft-b']);
@@ -714,20 +709,20 @@ void main() {
   testWidgets(
     'returning to an opened chat renders cached content immediately',
     (tester) async {
-      final creation = _ScriptedCreationRepository();
-      await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+      final creation = ScriptedCreationRepository();
+      await tester.pumpWidget(app(creation: creation, draftId: 'draft-a'));
       await tester.pumpAndSettle();
 
       expect(find.text('Selected chat draft-a'), findsOneWidget);
 
-      await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+      await tester.pumpWidget(app(creation: creation, draftId: 'draft-b'));
       await tester.pumpAndSettle();
 
       final refreshGate = Completer<void>();
       creation.resumeByIdGate = refreshGate.future;
       creation.resumeAssistantMessages['draft-a'] = 'Refreshed chat draft-a';
 
-      await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+      await tester.pumpWidget(app(creation: creation, draftId: 'draft-a'));
       await tester.pump();
       await tester.pump();
 
@@ -747,11 +742,11 @@ void main() {
 
   testWidgets('selected chat title shows before messages load', (tester) async {
     final resumeGate = Completer<void>();
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       resumeByIdGate: resumeGate.future,
-      sessions: [_chatSession(draftId: 'draft-a', title: 'Title for draft-a')],
+      sessions: [chatSession(draftId: 'draft-a', title: 'Title for draft-a')],
     );
-    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+    await tester.pumpWidget(app(creation: creation, draftId: 'draft-a'));
     await tester.pump();
     await tester.pump();
 
@@ -767,13 +762,13 @@ void main() {
   });
 
   testWidgets('drawer marks the selected chat as active', (tester) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(draftId: 'draft-a', title: 'Title for draft-a'),
-        _chatSession(draftId: 'draft-b', title: 'Title for draft-b'),
+        chatSession(draftId: 'draft-a', title: 'Title for draft-a'),
+        chatSession(draftId: 'draft-b', title: 'Title for draft-b'),
       ],
     );
-    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-a'));
+    await tester.pumpWidget(app(creation: creation, draftId: 'draft-a'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Open navigation menu'));
@@ -794,10 +789,10 @@ void main() {
   testWidgets('completed drawer chat opens chat history with the plan', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(draftId: 'draft-a', title: 'Active idea'),
-        _chatSession(
+        chatSession(draftId: 'draft-a', title: 'Active idea'),
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -809,9 +804,9 @@ void main() {
         'Original completed chat transcript';
 
     await tester.pumpWidget(
-      _routerApp(
+      routerApp(
         creation: creation,
-        projects: _PlanProjectsRepository(),
+        projects: PlanProjectsRepository(),
         initialLocation: '/books/chat/draft-a',
       ),
     );
@@ -825,7 +820,7 @@ void main() {
     expect(creation.resumedDraftIds, contains('draft-done'));
     expect(find.text('Completed idea'), findsOneWidget);
     expect(find.text('Original completed chat transcript'), findsOneWidget);
-    expect(find.text(_planTitle), findsOneWidget);
+    expect(find.text(planTitle), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
     expect(find.text('Approve and start writing'), findsOneWidget);
 
@@ -835,9 +830,9 @@ void main() {
   testWidgets('resuming a completed chat loads its linked plan in-chat', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -847,10 +842,10 @@ void main() {
     );
     creation.resumeAssistantMessages['draft-done'] =
         'Original completed chat transcript';
-    final projects = _PlanProjectsRepository();
+    final projects = PlanProjectsRepository();
 
     await tester.pumpWidget(
-      _app(creation: creation, projects: projects, draftId: 'draft-done'),
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
     );
     await tester.pumpAndSettle();
 
@@ -858,7 +853,7 @@ void main() {
     expect(projects.requestedProjectIds, ['project-1']);
     expect(find.text('Completed idea'), findsOneWidget);
     expect(find.text('Original completed chat transcript'), findsOneWidget);
-    expect(find.text(_planTitle), findsOneWidget);
+    expect(find.text(planTitle), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
     expect(find.text('Approve and start writing'), findsOneWidget);
 
@@ -866,9 +861,9 @@ void main() {
   });
 
   testWidgets('completed chat keeps composer for plan edits', (tester) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -878,10 +873,10 @@ void main() {
     );
     creation.resumeAssistantMessages['draft-done'] =
         'Original completed chat transcript';
-    final projects = _PlanProjectsRepository();
+    final projects = PlanProjectsRepository();
 
     await tester.pumpWidget(
-      _app(creation: creation, projects: projects, draftId: 'draft-done'),
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
     );
     await tester.pumpAndSettle();
 
@@ -904,10 +899,10 @@ void main() {
   testWidgets('plan questions reply in chat without revision loading', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    final projects = _PlanProjectsRepository();
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository();
 
-    await tester.pumpWidget(_app(creation: creation, projects: projects));
+    await tester.pumpWidget(app(creation: creation, projects: projects));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
@@ -948,12 +943,12 @@ void main() {
   });
 
   testWidgets('revised plan appears as a new chat item', (tester) async {
-    final creation = _ScriptedCreationRepository();
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(plan: _plan(title: 'Original launch plan')),
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(plan: plan(title: 'Original launch plan')),
     );
 
-    await tester.pumpWidget(_app(creation: creation, projects: projects));
+    await tester.pumpWidget(app(creation: creation, projects: projects));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('A kids book'));
@@ -999,9 +994,9 @@ void main() {
   testWidgets('approved linked plan is compact and opens plan page', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -1011,16 +1006,16 @@ void main() {
     );
     creation.resumeAssistantMessages['draft-done'] =
         'Original completed chat transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
         status: 'generating',
         currentAction: 'Writing your book.',
-        plan: _approvedPlan(),
+        plan: approvedPlan(),
       ),
     );
 
     await tester.pumpWidget(
-      _routerApp(
+      routerApp(
         creation: creation,
         projects: projects,
         initialLocation: '/books/chat/draft-done',
@@ -1056,9 +1051,9 @@ void main() {
   testWidgets('planning shows trustworthy live progress in chat', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -1068,13 +1063,13 @@ void main() {
     );
     creation.resumeAssistantMessages['draft-done'] =
         'Original completed chat transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
         status: 'planning',
         currentAction: 'Creating your book plan.',
         withoutPlan: true,
       ),
-      status: _projectStatus(
+      status: projectStatus(
         status: 'planning',
         statusLabel: 'Creating your book plan',
         progressPercent: 10,
@@ -1105,7 +1100,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _routerApp(
+      routerApp(
         creation: creation,
         projects: projects,
         initialLocation: '/books/chat/draft-done',
@@ -1153,9 +1148,9 @@ void main() {
   testWidgets('completed planning progress hands off without regressing', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -1164,13 +1159,13 @@ void main() {
       ],
     );
     creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
         status: 'planning',
         currentAction: 'Finalizing your plan',
         withoutPlan: true,
       ),
-      status: _projectStatus(
+      status: projectStatus(
         status: 'plan_ready',
         statusLabel: 'Review your book plan',
         progressPercent: 20,
@@ -1201,7 +1196,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _routerApp(
+      routerApp(
         creation: creation,
         projects: projects,
         initialLocation: '/books/chat/draft-done',
@@ -1229,9 +1224,9 @@ void main() {
   testWidgets('planning without live fields keeps useful milestone feedback', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -1240,13 +1235,13 @@ void main() {
       ],
     );
     creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
         status: 'planning',
         currentAction: 'Creating your book plan.',
         withoutPlan: true,
       ),
-      status: _projectStatus(
+      status: projectStatus(
         status: 'planning',
         currentAction: 'Creating your book plan.',
         completedPages: 0,
@@ -1255,7 +1250,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _routerApp(
+      routerApp(
         creation: creation,
         projects: projects,
         initialLocation: '/books/chat/draft-done',
@@ -1275,9 +1270,9 @@ void main() {
   testWidgets('approved generating plan shows compact progress in chat', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -1287,13 +1282,13 @@ void main() {
     );
     creation.resumeAssistantMessages['draft-done'] =
         'Original completed chat transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
         status: 'generating',
         currentAction: 'Writing your book.',
-        plan: _approvedPlan(),
+        plan: approvedPlan(),
       ),
-      status: _projectStatus(
+      status: projectStatus(
         progressPercent: 38,
         currentAction: 'Writing your book pages.',
         completedPages: 3,
@@ -1303,7 +1298,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _routerApp(
+      routerApp(
         creation: creation,
         projects: projects,
         initialLocation: '/books/chat/draft-done',
@@ -1332,9 +1327,9 @@ void main() {
   testWidgets('completed generation downloads an unlocked export in chat', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed idea',
           status: 'COMPLETED',
@@ -1344,25 +1339,25 @@ void main() {
     );
     creation.resumeAssistantMessages['draft-done'] =
         'Original completed chat transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
         status: 'complete',
         currentAction: 'Ready to download.',
-        plan: _approvedPlan(),
+        plan: approvedPlan(),
       ),
-      status: _projectStatus(
+      status: projectStatus(
         status: 'complete',
         progressPercent: 100,
         currentAction: 'Ready to download.',
         completedPages: 28,
         targetPages: 28,
         imageCount: 1,
-        exports: _unlockedExports,
+        exports: unlockedExports,
       ),
     );
 
     await tester.pumpWidget(
-      _routerApp(
+      routerApp(
         creation: creation,
         projects: projects,
         initialLocation: '/books/chat/draft-done',
@@ -1386,9 +1381,9 @@ void main() {
   testWidgets(
     'failed generation keeps approved plan and shows attention copy',
     (tester) async {
-      final creation = _ScriptedCreationRepository(
+      final creation = ScriptedCreationRepository(
         sessions: [
-          _chatSession(
+          chatSession(
             draftId: 'draft-done',
             title: 'Completed idea',
             status: 'COMPLETED',
@@ -1398,13 +1393,13 @@ void main() {
       );
       creation.resumeAssistantMessages['draft-done'] =
           'Original completed chat transcript';
-      final projects = _PlanProjectsRepository(
-        project: _plannedProject(
+      final projects = PlanProjectsRepository(
+        project: plannedProject(
           status: 'failed',
           currentAction: 'Needs attention.',
-          plan: _approvedPlan(),
+          plan: approvedPlan(),
         ),
-        status: _projectStatus(
+        status: projectStatus(
           status: 'failed',
           statusLabel: 'Needs attention',
           progressPercent: 42,
@@ -1418,7 +1413,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        _routerApp(
+        routerApp(
           creation: creation,
           projects: projects,
           initialLocation: '/books/chat/draft-done',
@@ -1427,7 +1422,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Book plan approved'), findsOneWidget);
-      expect(find.text(_planTitle), findsOneWidget);
+      expect(find.text(planTitle), findsOneWidget);
       expect(find.text('Needs attention'), findsOneWidget);
       expect(
         find.text('We hit a problem while writing page 4.'),
@@ -1442,9 +1437,9 @@ void main() {
   testWidgets('completed book chat sends edits without leaving the chat', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed book',
           status: 'COMPLETED',
@@ -1453,12 +1448,12 @@ void main() {
       ],
     );
     creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(status: 'complete', plan: _approvedPlan()),
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'complete', plan: approvedPlan()),
     );
 
     await tester.pumpWidget(
-      _app(creation: creation, projects: projects, draftId: 'draft-done'),
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
     );
     await tester.pumpAndSettle();
 
@@ -1481,12 +1476,114 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('a book edit stays on screen while the assistant works on it', (
+    tester,
+  ) async {
+    // The composer clears the moment you send. Without an echo and a thinking
+    // bubble the message simply vanished for as long as the server took, and
+    // the only sign of life was a disabled button.
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed book',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'complete', plan: approvedPlan()),
+    );
+    final gate = Completer<void>();
+    projects.sendGate = gate;
+
+    await tester.pumpWidget(
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'Rewrite page 1 to sound warmer',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+
+    expect(find.text('Rewrite page 1 to sound warmer'), findsOneWidget);
+    expect(find.byType(ChatThinkingBubble), findsOneWidget);
+    expect(find.text('Reading your message…'), findsOneWidget);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    // Exactly once: the echo hands over to the real transcript, not beside it.
+    expect(find.text('Rewrite page 1 to sound warmer'), findsOneWidget);
+    expect(find.byType(ChatThinkingBubble), findsNothing);
+    expect(find.text('I can help edit this book.'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('a failed book edit keeps the message with retry rather than '
+      'dropping it back in the composer', (tester) async {
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed book',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'complete', plan: approvedPlan()),
+    );
+    projects.sendFailure = Exception('offline');
+
+    await tester.pumpWidget(
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'Rewrite page 1 to sound warmer',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rewrite page 1 to sound warmer'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Dismiss'), findsOneWidget);
+    expect(find.byType(ChatThinkingBubble), findsNothing);
+
+    // Retrying sends the same text again rather than making the user retype it.
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    expect(
+      projects.revisionMessages
+          .where((message) => message == 'Rewrite page 1 to sound warmer')
+          .length,
+      2,
+    );
+    expect(find.text('I can help edit this book.'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets(
     'editing a brainstorm message after build forks a creation branch',
     (tester) async {
-      final creation = _ScriptedCreationRepository(
+      final creation = ScriptedCreationRepository(
         sessions: [
-          _chatSession(
+          chatSession(
             draftId: 'draft-done',
             title: 'Completed book',
             status: 'COMPLETED',
@@ -1498,19 +1595,19 @@ void main() {
         {'id': 'c0', 'role': 'assistant', 'content': 'Book transcript'},
         {'id': 'c1', 'role': 'user', 'content': 'Original brainstorm idea'},
       ];
-      final projects = _PlanProjectsRepository(
-        project: _plannedProject(status: 'complete', plan: _approvedPlan()),
+      final projects = PlanProjectsRepository(
+        project: plannedProject(status: 'complete', plan: approvedPlan()),
       );
 
       await tester.pumpWidget(
-        _app(creation: creation, projects: projects, draftId: 'draft-done'),
+        app(creation: creation, projects: projects, draftId: 'draft-done'),
       );
       await tester.pumpAndSettle();
 
       // The built plan renders below the brainstorm before the edit.
-      expect(find.text(_planTitle), findsOneWidget);
+      expect(find.text(planTitle), findsOneWidget);
 
-      await tester.longPress(_bubbleText('Original brainstorm idea'));
+      await tester.longPress(bubbleText('Original brainstorm idea'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
@@ -1531,11 +1628,11 @@ void main() {
       expect(creation.editRequests, ['c1']);
       expect(projects.chatMessages, isEmpty);
       expect(find.text('Editing message'), findsNothing);
-      expect(_bubbleText('A better brainstorm'), findsOneWidget);
+      expect(bubbleText('A better brainstorm'), findsOneWidget);
       expect(find.text('2/2'), findsOneWidget);
       // The old branch's plan left the view and the chat is back in the
       // pre-build stage, ready to build a new output from the fork.
-      expect(find.text(_planTitle), findsNothing);
+      expect(find.text(planTitle), findsNothing);
       expect(
         find.widgetWithText(FilledButton, 'Build the plan'),
         findsOneWidget,
@@ -1548,9 +1645,9 @@ void main() {
   testWidgets(
     'a chat build request starts the build without tapping the button',
     (tester) async {
-      final creation = _ScriptedCreationRepository(replyWithBuildRequest: true);
+      final creation = ScriptedCreationRepository(replyWithBuildRequest: true);
       await tester.pumpWidget(
-        _app(creation: creation, projects: _PlanProjectsRepository()),
+        app(creation: creation, projects: PlanProjectsRepository()),
       );
       await tester.pumpAndSettle();
 
@@ -1564,7 +1661,7 @@ void main() {
 
       expect(creation.buildCount, 1);
       expect(creation.buildDraftId, 'draft-1');
-      expect(find.text(_planTitle), findsOneWidget);
+      expect(find.text(planTitle), findsOneWidget);
 
       await tester.teardownScreen();
     },
@@ -1573,9 +1670,9 @@ void main() {
   testWidgets('assistant content cards render book content in the chat', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed book',
           status: 'COMPLETED',
@@ -1584,8 +1681,8 @@ void main() {
       ],
     );
     creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(status: 'complete', plan: _approvedPlan()),
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'complete', plan: approvedPlan()),
     );
     projects.chatMessages.add(
       MobileProjectChatMessage(
@@ -1610,7 +1707,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _app(creation: creation, projects: projects, draftId: 'draft-done'),
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
     );
     await tester.pumpAndSettle();
 
@@ -1628,19 +1725,19 @@ void main() {
   testWidgets('replan copy reference switches to the copied output', (
     tester,
   ) async {
-    final originalOutput = _creationOutput(
+    final originalOutput = creationOutput(
       projectId: 'project-1',
       title: 'Original book',
       sequence: 1,
     );
-    final englishOutput = _creationOutput(
+    final englishOutput = creationOutput(
       projectId: 'project-2',
       title: 'English book',
       sequence: 2,
     );
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: [
-        _chatSession(
+        chatSession(
           draftId: 'draft-done',
           title: 'Completed book',
           status: 'COMPLETED',
@@ -1655,8 +1752,8 @@ void main() {
       originalOutput,
       englishOutput,
     ];
-    final projects = _PlanProjectsRepository(
-      project: _plannedProject(status: 'complete', plan: _approvedPlan()),
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'complete', plan: approvedPlan()),
     );
     projects.chatMessages.add(
       MobileProjectChatMessage(
@@ -1676,7 +1773,7 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _app(creation: creation, projects: projects, draftId: 'draft-done'),
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
     );
     await tester.pumpAndSettle();
 
@@ -1705,9 +1802,9 @@ void main() {
   testWidgets('one chat can build multiple outputs and selects the latest', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
+    final creation = ScriptedCreationRepository();
     await tester.pumpWidget(
-      _app(creation: creation, projects: _PlanProjectsRepository()),
+      app(creation: creation, projects: PlanProjectsRepository()),
     );
     await tester.pumpAndSettle();
 
@@ -1727,7 +1824,7 @@ void main() {
     expect(creation.buildCount, 2);
     expect(chips, hasLength(2));
     expect(chips.last.selected, isTrue);
-    expect(find.text(_planTitle), findsWidgets);
+    expect(find.text(planTitle), findsWidgets);
 
     await tester.teardownScreen();
   });
@@ -1735,8 +1832,8 @@ void main() {
   testWidgets('fresh new chat is saved only after the first message', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Tell me about the book'), findsOneWidget);
@@ -1751,7 +1848,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(creation.startedMessages, ['A workbook for new coaches']);
-    expect(find.text(_reply), findsOneWidget);
+    expect(find.text(reply), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -1759,8 +1856,8 @@ void main() {
   testWidgets(
     'composer hint only mentions answering when a question is active',
     (tester) async {
-      final creation = _ScriptedCreationRepository(replyWithQuestion: true);
-      await tester.pumpWidget(_app(creation: creation, startFresh: true));
+      final creation = ScriptedCreationRepository(replyWithQuestion: true);
+      await tester.pumpWidget(app(creation: creation, startFresh: true));
       await tester.pumpAndSettle();
 
       TextField composer() =>
@@ -1784,8 +1881,8 @@ void main() {
   );
 
   testWidgets('question drawer can be minimized and expanded', (tester) async {
-    final creation = _ScriptedCreationRepository(replyWithQuestion: true);
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    final creation = ScriptedCreationRepository(replyWithQuestion: true);
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     await tester.enterText(
@@ -1831,8 +1928,8 @@ void main() {
     'typing with a question active keeps the composer above the keyboard '
     'and collapses the options',
     (tester) async {
-      final creation = _ScriptedCreationRepository(replyWithQuestion: true);
-      await tester.pumpWidget(_app(creation: creation, startFresh: true));
+      final creation = ScriptedCreationRepository(replyWithQuestion: true);
+      await tester.pumpWidget(app(creation: creation, startFresh: true));
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -1902,8 +1999,8 @@ void main() {
 
   testWidgets('attaching a document shows a ready chip and sends it with the '
       'message', (tester) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     final controller = ProviderScope.containerOf(
@@ -1936,13 +2033,13 @@ void main() {
   testWidgets('a photo can be sent without any text, like a real chat', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
+    final creation = ScriptedCreationRepository();
     // The transcript photo falls back to the server copy, which needs asset
     // headers; the scripted projects repository keeps that request offline.
     await tester.pumpWidget(
-      _app(
+      app(
         creation: creation,
-        projects: _PlanProjectsRepository(),
+        projects: PlanProjectsRepository(),
         startFresh: true,
       ),
     );
@@ -1998,9 +2095,9 @@ void main() {
   });
 
   testWidgets('failed uploads offer retry and removal', (tester) async {
-    final creation = _ScriptedCreationRepository()
+    final creation = ScriptedCreationRepository()
       ..uploadError = Exception('network down');
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     final controller = ProviderScope.containerOf(
@@ -2042,9 +2139,9 @@ void main() {
   testWidgets('failed sends keep the message with retry and dismiss', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository()
+    final creation = ScriptedCreationRepository()
       ..sendError = Exception('offline');
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'Hello book');
@@ -2060,16 +2157,16 @@ void main() {
     await tester.tap(find.text('Retry'));
     await tester.pumpAndSettle();
 
-    expect(find.text(_reply), findsOneWidget);
+    expect(find.text(reply), findsOneWidget);
     expect(find.text('Retry'), findsNothing);
 
     await tester.teardownScreen();
   });
 
   testWidgets('server warnings render above the transcript', (tester) async {
-    final creation = _ScriptedCreationRepository()
+    final creation = ScriptedCreationRepository()
       ..replyWarnings = const ['Keep the tone gentle for young readers.'];
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'A bedtime story');
@@ -2088,8 +2185,8 @@ void main() {
   testWidgets('attach menu offers photos, documents, and pasted notes', (
     tester,
   ) async {
-    final creation = _ScriptedCreationRepository();
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     await tester.tap(find.byTooltip('Attach a photo, document, or notes'));
@@ -2112,8 +2209,8 @@ void main() {
     tester,
   ) async {
     final sendGate = Completer<void>();
-    final creation = _ScriptedCreationRepository()..sendGate = sendGate.future;
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    final creation = ScriptedCreationRepository()..sendGate = sendGate.future;
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'My new book idea');
@@ -2122,7 +2219,7 @@ void main() {
     await tester.pump();
 
     // Switch to another chat while the first send is still running.
-    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+    await tester.pumpWidget(app(creation: creation, draftId: 'draft-b'));
     await tester.pumpAndSettle();
     expect(find.text('Selected chat draft-b'), findsOneWidget);
 
@@ -2144,7 +2241,7 @@ void main() {
     expect(creation.listSessionsCalls, greaterThan(callsBefore));
     // The chat the user switched to is untouched by the stale response.
     expect(find.text('Selected chat draft-b'), findsOneWidget);
-    expect(find.text(_reply), findsNothing);
+    expect(find.text(reply), findsNothing);
 
     await tester.teardownScreen();
   });
@@ -2153,10 +2250,10 @@ void main() {
     tester,
   ) async {
     final sendGate = Completer<void>();
-    final creation = _ScriptedCreationRepository(
+    final creation = ScriptedCreationRepository(
       sessions: <MobileChatSession>[],
     )..sendGate = sendGate.future;
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'My new book idea');
@@ -2197,7 +2294,7 @@ void main() {
     // Once the send finishes and the refreshed list contains the chat, the
     // real tile takes over.
     creation.sessions.add(
-      _chatSession(draftId: 'draft-1', title: 'My new book idea'),
+      chatSession(draftId: 'draft-1', title: 'My new book idea'),
     );
     sendGate.complete();
     await tester.pumpAndSettle();
@@ -2212,8 +2309,8 @@ void main() {
   testWidgets('a failed send after switching chats does not touch the open '
       'chat', (tester) async {
     final sendGate = Completer<void>();
-    final creation = _ScriptedCreationRepository()..sendGate = sendGate.future;
-    await tester.pumpWidget(_app(creation: creation, startFresh: true));
+    final creation = ScriptedCreationRepository()..sendGate = sendGate.future;
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextField).first, 'My new book idea');
@@ -2221,7 +2318,7 @@ void main() {
     await tester.tap(find.byTooltip('Send'));
     await tester.pump();
 
-    await tester.pumpWidget(_app(creation: creation, draftId: 'draft-b'));
+    await tester.pumpWidget(app(creation: creation, draftId: 'draft-b'));
     await tester.pumpAndSettle();
 
     final container = ProviderScope.containerOf(
@@ -2245,12 +2342,12 @@ void main() {
     tester,
   ) async {
     final sendGate = Completer<void>();
-    final creation = _ScriptedCreationRepository()..sendGate = sendGate.future;
+    final creation = ScriptedCreationRepository()..sendGate = sendGate.future;
 
     Widget shell(Widget home) => ProviderScope(
       overrides: [
         creationRepositoryProvider.overrideWithValue(creation),
-        billingRepositoryProvider.overrideWithValue(_FakeBillingRepository()),
+        billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
       ],
       child: MaterialApp(theme: buildTomezaLightTheme(), home: home),
     );
@@ -2286,1178 +2383,3 @@ void main() {
     await tester.teardownScreen();
   });
 }
-
-extension on WidgetTester {
-  /// Tears down the screen so its polling timer and tickers are cancelled.
-  Future<void> teardownScreen() async {
-    await pumpWidget(const SizedBox());
-    await pump();
-  }
-}
-
-/// Text inside the transcript list (excludes app bar title and footer chips).
-Finder _bubbleText(String text) =>
-    find.descendant(of: find.byType(ListView), matching: find.text(text));
-
-Widget _app({
-  required _ScriptedCreationRepository creation,
-  ProjectsRepository? projects,
-  String? draftId,
-  bool startFresh = false,
-}) {
-  return ProviderScope(
-    overrides: [
-      creationRepositoryProvider.overrideWithValue(creation),
-      if (projects != null)
-        projectsRepositoryProvider.overrideWithValue(projects),
-      billingRepositoryProvider.overrideWithValue(_FakeBillingRepository()),
-    ],
-    child: MaterialApp(
-      theme: buildTomezaLightTheme(),
-      home: CreationChatScreen(draftId: draftId, startFresh: startFresh),
-    ),
-  );
-}
-
-Widget _routerApp({
-  required _ScriptedCreationRepository creation,
-  required ProjectsRepository projects,
-  required String initialLocation,
-}) {
-  final router = GoRouter(
-    initialLocation: initialLocation,
-    routes: [
-      GoRoute(
-        path: '/books/new',
-        builder: (context, state) =>
-            const Scaffold(body: Text('New book route')),
-      ),
-      GoRoute(
-        path: '/books/chat/:draftId',
-        builder: (context, state) =>
-            CreationChatScreen(draftId: state.pathParameters['draftId']),
-      ),
-      GoRoute(
-        path: '/projects/:id/handoff',
-        builder: (context, state) => Scaffold(
-          body: Text('Progress route ${state.pathParameters['id']}'),
-        ),
-      ),
-      GoRoute(
-        path: '/projects/:id',
-        builder: (context, state) =>
-            ProjectDetailScreen(projectId: state.pathParameters['id']!),
-      ),
-      GoRoute(
-        path: '/account',
-        builder: (context, state) => const Scaffold(body: Text('Account')),
-      ),
-    ],
-  );
-
-  return ProviderScope(
-    overrides: [
-      creationRepositoryProvider.overrideWithValue(creation),
-      projectsRepositoryProvider.overrideWithValue(projects),
-      billingRepositoryProvider.overrideWithValue(_FakeBillingRepository()),
-    ],
-    child: MaterialApp.router(
-      theme: buildTomezaLightTheme(),
-      routerConfig: router,
-    ),
-  );
-}
-
-Map<String, dynamic> _turnJson({
-  required String assistantMessage,
-  required bool canBuild,
-  List<String> quickReplies = const [],
-  Map<String, dynamic>? question,
-  int? targetPages,
-  bool buildRequested = false,
-  List<String> warnings = const [],
-}) {
-  return {
-    'assistantMessage': assistantMessage,
-    'brief': {'lane': 'auto'},
-    'presets': {
-      'bookType': 'lead_magnet',
-      'bookTypeChoice': 'auto',
-      'lengthPreset': 'short',
-      'qualityPreset': 'balanced',
-      'imagesEnabled': true,
-      'pageCountMode': targetPages == null ? 'auto' : 'custom',
-      'targetPages': ?targetPages,
-      'pageCountSource': ?(targetPages == null ? null : 'chat'),
-    },
-    'detectedLane': 'auto',
-    'quickReplies': quickReplies,
-    'question': question,
-    'readiness': {
-      'score': canBuild ? 80 : 10,
-      'canBuild': canBuild,
-      'missing': <dynamic>[],
-    },
-    'titleSuggestions': <dynamic>[],
-    'shapePreview': ['Intro'],
-    'warnings': warnings,
-    'buildRequested': buildRequested,
-  };
-}
-
-MobileChatSession _chatSession({
-  required String draftId,
-  required String title,
-  String status = 'ACTIVE',
-  String? createdProjectId,
-  String? activeProjectId,
-  List<MobileCreationOutput> outputs = const [],
-}) {
-  final now = DateTime.utc(2026, 6, 15);
-  return MobileChatSession(
-    draftId: draftId,
-    title: title,
-    preview: 'Latest message',
-    messageCount: 2,
-    status: status,
-    createdProjectId: createdProjectId,
-    activeProjectId: activeProjectId ?? createdProjectId,
-    outputs: outputs,
-    createdAt: now,
-    updatedAt: now,
-  );
-}
-
-MobileCreationOutput _creationOutput({
-  required String projectId,
-  required String title,
-  required int sequence,
-}) {
-  final now = DateTime.utc(2026, 6, 15, 12, sequence);
-  return MobileCreationOutput(
-    id: 'output-$sequence',
-    draftId: 'draft-done',
-    projectId: projectId,
-    title: title,
-    sequence: sequence,
-    createdAt: now,
-    updatedAt: now,
-  );
-}
-
-class _ScriptedCreationRepository implements CreationRepository {
-  _ScriptedCreationRepository({
-    this.replyWithQuestion = false,
-    this.replyWithBuildRequest = false,
-    this.preflightRequiresPageCount = false,
-    this.resumeByIdGate,
-    List<MobileChatSession>? sessions,
-  }) : sessions = sessions ?? const <MobileChatSession>[];
-
-  final bool replyWithQuestion;
-  final bool replyWithBuildRequest;
-  final bool preflightRequiresPageCount;
-  final List<MobilePageCountRecommendation> preflightRecommendations = const [
-    MobilePageCountRecommendation(
-      targetPages: 8,
-      label: '8 pages',
-      description: 'Recommended for a compact book.',
-    ),
-    MobilePageCountRecommendation(
-      targetPages: 12,
-      label: '12 pages',
-      description: 'More room for detail.',
-    ),
-  ];
-  Future<void>? resumeByIdGate;
-
-  /// When set, message sends (including the one starting a new chat) wait on
-  /// this before responding; completing it with an error fails the send.
-  Future<void>? sendGate;
-  int listSessionsCalls = 0;
-  final List<MobileChatSession> sessions;
-  final sentMessages = <String>[];
-  final sentAttachmentIds = <List<String>>[];
-  final startedMessages = <String>[];
-  final editRequests = <String>[];
-  final branchSwitches = <({String messageId, String direction})>[];
-  final uploadedAttachments = <String, MobileCreationAttachment>{};
-  final deletedAttachmentIds = <String>[];
-  Object? uploadError;
-  Object? sendError;
-  List<String> replyWarnings = const [];
-  List<String> greetingQuickReplies = const ['A kids book', 'A workbook'];
-  int uploadCount = 0;
-  final resumedDraftIds = <String>[];
-  final resumeAssistantMessages = <String, String>{};
-  final resumeMessages = <String, List<Map<String, dynamic>>>{};
-  final resumeSyncedOutputs = <String, List<MobileCreationOutput>>{};
-  MobileCreationPresets? buildPresets;
-  String? buildDraftId;
-  int buildCount = 0;
-
-  @override
-  Future<List<MobileChatSession>> listSessions() async {
-    listSessionsCalls++;
-    return List.of(sessions);
-  }
-
-  @override
-  Future<void> renameSession({
-    required String draftId,
-    required String title,
-    int? expectedRevision,
-  }) async {}
-
-  @override
-  Future<void> deleteSession(String draftId) async {}
-
-  @override
-  Future<MobileCreationConversationResponse> resumeConversation() async {
-    return MobileCreationConversationResponse.fromJson({
-      'turn': _turnJson(
-        assistantMessage: _greeting,
-        canBuild: false,
-        quickReplies: greetingQuickReplies,
-      ),
-    });
-  }
-
-  @override
-  Future<MobileCreationConversationResponse> resumeConversationById(
-    String draftId,
-  ) async {
-    resumedDraftIds.add(draftId);
-    await resumeByIdGate;
-    final session = _sessionFor(draftId);
-    final resumeCount = resumedDraftIds.where((id) => id == draftId).length;
-    final sessionOutputs = session?.outputs ?? const <MobileCreationOutput>[];
-    final outputs = resumeCount > 1
-        ? resumeSyncedOutputs[draftId] ?? sessionOutputs
-        : sessionOutputs;
-    final assistantMessage =
-        resumeAssistantMessages[draftId] ?? 'Selected chat $draftId';
-    return MobileCreationConversationResponse.fromJson({
-      'session': {
-        'draftId': draftId,
-        'title': session?.title ?? 'Title for $draftId',
-        'status': session?.status ?? 'ACTIVE',
-        'messages':
-            resumeMessages[draftId] ??
-            [
-              {'role': 'assistant', 'content': assistantMessage},
-            ],
-        'createdProjectId': session?.createdProjectId,
-        'activeProjectId': session?.activeProjectId,
-        'outputs': [
-          for (final output in outputs)
-            {
-              'id': output.id,
-              'draftId': output.draftId,
-              'projectId': output.projectId,
-              'title': output.title,
-              'sequence': output.sequence,
-              'createdAt': output.createdAt.toIso8601String(),
-              'updatedAt': output.updatedAt.toIso8601String(),
-            },
-        ],
-        'updatedAt': '2026-06-15T00:00:00.000Z',
-      },
-      'turn': _turnJson(
-        assistantMessage: assistantMessage,
-        canBuild: false,
-        quickReplies: const [],
-      ),
-    });
-  }
-
-  MobileChatSession? _sessionFor(String draftId) {
-    for (final session in sessions) {
-      if (session.draftId == draftId) {
-        return session;
-      }
-    }
-    return null;
-  }
-
-  @override
-  Future<MobileCreationConversationResponse> startConversation({
-    String? message,
-    MobileCreationPresets? presets,
-    String? sourceNotes,
-    MobileCreationOptionalDetails? optionalDetails,
-    String? requestId,
-  }) async {
-    if (message != null) {
-      startedMessages.add(message);
-      return sendConversationMessage(draftId: 'draft-1', message: message);
-    }
-    return MobileCreationConversationResponse.fromJson({
-      'session': {
-        'draftId': 'draft-1',
-        'title': 'New book',
-        'status': 'ACTIVE',
-        'messages': [
-          {'role': 'assistant', 'content': _greeting},
-        ],
-        'createdProjectId': null,
-        'updatedAt': '2026-06-15T00:00:00.000Z',
-      },
-      'turn': _turnJson(
-        assistantMessage: _greeting,
-        canBuild: false,
-        quickReplies: greetingQuickReplies,
-      ),
-    });
-  }
-
-  @override
-  Future<MobileCreationConversationResponse> sendConversationMessage({
-    required String draftId,
-    required String message,
-    List<String>? attachmentIds,
-    MobileCreationPresets? presets,
-    String? sourceNotes,
-    MobileCreationOptionalDetails? optionalDetails,
-    String? editMessageId,
-    String? requestId,
-    int? expectedRevision,
-  }) async {
-    await sendGate;
-    final error = sendError;
-    if (error != null) {
-      throw error;
-    }
-    if (editMessageId != null) {
-      // An edit forks a branch: remember the replaced text for switch-back.
-      editRequests.add(editMessageId);
-      _originalUserContent ??= sentMessages.isEmpty ? null : sentMessages.last;
-    }
-    sentMessages.add(message);
-    sentAttachmentIds.add(attachmentIds ?? const <String>[]);
-    return MobileCreationConversationResponse.fromJson({
-      'session': {
-        'draftId': 'draft-1',
-        'title': message,
-        'status': 'ACTIVE',
-        'messages': [
-          {
-            'id': 'assistant-greeting',
-            'role': 'assistant',
-            'content': _greeting,
-          },
-          {
-            'id': 'user-current',
-            'role': 'user',
-            'content': message,
-            if (editMessageId != null)
-              'branch': {
-                'index': 2,
-                'total': 2,
-                'canGoPrevious': true,
-                'canGoNext': false,
-              },
-            if (attachmentIds != null && attachmentIds.isNotEmpty)
-              'attachments': [
-                for (final id in attachmentIds)
-                  {
-                    'id': id,
-                    'kind': uploadedAttachments[id]?.kind ?? 'document',
-                    'name': uploadedAttachments[id]?.name ?? 'file',
-                  },
-              ],
-          },
-          {'id': 'assistant-reply', 'role': 'assistant', 'content': _reply},
-        ],
-        'createdProjectId': null,
-        'updatedAt': '2026-06-15T00:00:00.000Z',
-      },
-      'turn': _turnJson(
-        assistantMessage: _reply,
-        canBuild: !replyWithQuestion,
-        quickReplies: replyWithQuestion ? const [] : const ['Make it shorter'],
-        question: replyWithQuestion
-            ? const {
-                'prompt': 'Who is this book for?',
-                'options': ['New managers', 'Team leads'],
-                'allowCustom': true,
-              }
-            : null,
-        buildRequested: replyWithBuildRequest,
-        warnings: replyWarnings,
-      ),
-    });
-  }
-
-  /// Text of the user turn that was replaced by the most recent edit.
-  String? _originalUserContent;
-
-  @override
-  Future<MobileCreationConversationResponse> switchConversationBranch({
-    required String draftId,
-    required String messageId,
-    required String direction,
-    int? expectedRevision,
-  }) async {
-    branchSwitches.add((messageId: messageId, direction: direction));
-    final showOriginal = direction == 'previous';
-    final content = showOriginal
-        ? (_originalUserContent ?? 'Original message')
-        : (sentMessages.isEmpty ? 'Edited message' : sentMessages.last);
-    return MobileCreationConversationResponse.fromJson({
-      'session': {
-        'draftId': 'draft-1',
-        'title': content,
-        'status': 'ACTIVE',
-        'messages': [
-          {
-            'id': 'assistant-greeting',
-            'role': 'assistant',
-            'content': _greeting,
-          },
-          {
-            'id': 'user-current',
-            'role': 'user',
-            'content': content,
-            'branch': {
-              'index': showOriginal ? 1 : 2,
-              'total': 2,
-              'canGoPrevious': !showOriginal,
-              'canGoNext': showOriginal,
-            },
-          },
-          {'id': 'assistant-reply', 'role': 'assistant', 'content': _reply},
-        ],
-        'createdProjectId': null,
-        'updatedAt': '2026-06-15T00:00:00.000Z',
-      },
-      'turn': _turnJson(
-        assistantMessage: '',
-        canBuild: true,
-        quickReplies: const [],
-      ),
-    });
-  }
-
-  @override
-  Future<MobileCreationFinalizeResponse> buildConversation({
-    required String draftId,
-    MobileCreationPresets? presets,
-    String? sourceNotes,
-    MobileCreationOptionalDetails? optionalDetails,
-    String? language,
-    String? requestId,
-    int? expectedRevision,
-  }) async {
-    buildDraftId = draftId;
-    buildPresets = presets;
-    buildCount += 1;
-    final projectId = 'project-$buildCount';
-    final project = _plannedProject(id: projectId);
-    return MobileCreationFinalizeResponse(
-      project: project,
-      output: MobileCreationOutput(
-        id: 'output-$buildCount',
-        draftId: draftId,
-        projectId: projectId,
-        title: project.title,
-        sequence: buildCount,
-        createdAt: DateTime.utc(2026, 6, 15, 12, buildCount),
-        updatedAt: DateTime.utc(2026, 6, 15, 12, buildCount),
-      ),
-      operation: MobilePlanOperation(
-        projectId: projectId,
-        planId: 'plan-1',
-        status: 'planning_queued',
-        currentAction: 'Building your plan.',
-        job: const MobileQueuedJob(
-          id: 'job-1',
-          status: 'queued',
-          currentAction: 'Building your plan.',
-        ),
-      ),
-    );
-  }
-
-  @override
-  Future<MobileCreationBuildPreflight> preflightBuildConversation({
-    required String draftId,
-    MobileCreationPresets? presets,
-    String? sourceNotes,
-    MobileCreationOptionalDetails? optionalDetails,
-    String? language,
-  }) async {
-    return MobileCreationBuildPreflight(
-      requiresPageCount: preflightRequiresPageCount,
-      recommendations: preflightRecommendations,
-      detectedPageCount: preflightRequiresPageCount
-          ? null
-          : const MobileDetectedPageCount(targetPages: 8, source: 'chat'),
-    );
-  }
-
-  @override
-  Future<MobileCreationDraft?> getActiveDraft() async => null;
-
-  @override
-  Future<MobileCreationDraft> createDraft(MobileCreationDraftPayload payload) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MobileCreationDraft> updateDraft({
-    required String id,
-    required MobileCreationDraftPayload payload,
-  }) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MobileBookAdvisorResponse> adviseBook(
-    MobileCreationDraftPayload payload,
-  ) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MobileCreationFinalizeResponse> finalizeDraft(String id) {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MobileCreationAttachment> uploadAttachment({
-    required String draftId,
-    required List<int> bytes,
-    required String filename,
-    String? mimeType,
-    void Function(int sent, int total)? onProgress,
-    int? expectedRevision,
-  }) async {
-    final error = uploadError;
-    if (error != null) {
-      uploadError = null;
-      throw error;
-    }
-    uploadCount += 1;
-    final attachment = MobileCreationAttachment(
-      id: 'att-$uploadCount',
-      kind: (mimeType ?? '').startsWith('image/') ? 'photo' : 'document',
-      name: filename,
-      sizeBytes: bytes.length,
-      summary: 'Summary of $filename',
-      url:
-          '/api/mobile/creation-sessions/$draftId/attachments/att-$uploadCount/file',
-    );
-    uploadedAttachments[attachment.id] = attachment;
-    return attachment;
-  }
-
-  @override
-  Future<int?> deleteAttachment({
-    required String draftId,
-    required String attachmentId,
-    int? expectedRevision,
-  }) async {
-    deletedAttachmentIds.add(attachmentId);
-    return expectedRevision;
-  }
-}
-
-class _PlanProjectsRepository implements ProjectsRepository {
-  _PlanProjectsRepository({MobileProjectDetail? project, this.status})
-    : project = project ?? _plannedProject() {
-    final plan = this.project.plan;
-    if (plan != null) {
-      planSnapshots.add(plan);
-    }
-  }
-
-  MobileProjectDetail project;
-  MobileProjectStatus? status;
-  final revisionMessages = <String>[];
-  final requestedProjectIds = <String>[];
-  final chatMessages = <MobileProjectChatMessage>[];
-  final planSnapshots = <MobilePlan>[];
-  final chatOperations = <MobileBookEditOperation>[];
-  final downloadedFormats = <String>[];
-  final openedFormats = <String>[];
-
-  @override
-  Future<MobileProjectDetail> getProject(String id) async {
-    requestedProjectIds.add(id);
-    return project.id == id ? project : _plannedProject(id: id);
-  }
-
-  @override
-  Future<MobileProjectStatus> getProjectStatus(String id) async {
-    return status ??
-        _projectStatusFromProject(
-          project.id == id ? project : _plannedProject(id: id),
-        );
-  }
-
-  @override
-  Stream<MobileProjectStatus> watchProjectStatus(String id) async* {
-    yield await getProjectStatus(id);
-  }
-
-  @override
-  Future<MobilePlanOperation> approvePlan(
-    String planId, {
-    String? requestId,
-  }) async {
-    final plan = project.plan;
-    MobilePlan? approvedPlan;
-    if (plan != null) {
-      approvedPlan = _copyPlan(plan, status: 'approved');
-      final index = planSnapshots.indexWhere(
-        (snapshot) => snapshot.id == plan.id,
-      );
-      if (index >= 0) {
-        planSnapshots[index] = approvedPlan;
-      } else {
-        planSnapshots.add(approvedPlan);
-      }
-    }
-    project = _plannedProject(
-      status: 'generating',
-      currentAction: 'Writing your book.',
-      plan: approvedPlan,
-    );
-    status ??= _projectStatusFromProject(project);
-    return MobilePlanOperation(
-      projectId: project.id,
-      planId: planId,
-      status: 'generation_queued',
-      currentAction: 'Writing your book.',
-      job: const MobileQueuedJob(
-        id: 'job-generate',
-        status: 'queued',
-        currentAction: 'Writing your book.',
-      ),
-    );
-  }
-
-  @override
-  Future<MobilePlanOperation> revisePlan({
-    required String planId,
-    required String message,
-    String? requestId,
-  }) async {
-    revisionMessages.add(message);
-    project = _plannedProject(
-      status: 'planning',
-      currentAction: 'Revising your book plan.',
-      plan: project.plan,
-    );
-    return MobilePlanOperation(
-      projectId: project.id,
-      planId: planId,
-      status: 'revision_queued',
-      currentAction: 'Revising your book plan.',
-      job: const MobileQueuedJob(
-        id: 'job-revise',
-        status: 'queued',
-        currentAction: 'Revising your book plan.',
-      ),
-    );
-  }
-
-  @override
-  Future<MobileProjectChat> getProjectChat(
-    String id, {
-    String? beforeMessageId,
-    int limit = 150,
-  }) async {
-    return MobileProjectChat(
-      messages: List.unmodifiable(chatMessages),
-      plans: List.unmodifiable(planSnapshots),
-      operations: List.unmodifiable(chatOperations),
-    );
-  }
-
-  void failLatestPlanRevision() {
-    final index = chatOperations.lastIndexWhere(
-      (operation) => operation.isPlanRevision,
-    );
-    if (index < 0) return;
-    final operation = chatOperations[index];
-    chatOperations[index] = MobileBookEditOperation(
-      id: operation.id,
-      projectId: operation.projectId,
-      kind: operation.kind,
-      status: 'failed',
-      affectedPageIndexes: operation.affectedPageIndexes,
-      creditsCharged: operation.creditsCharged,
-      currentAction: 'Plan revision failed.',
-      error: 'AI plan revision failed.',
-      job: const MobileQueuedJob(
-        id: 'job-revise',
-        status: 'failed',
-        currentAction: 'Plan revision failed.',
-      ),
-      createdAt: operation.createdAt,
-      appliedAt: operation.appliedAt,
-    );
-    project = _plannedProject(
-      status: 'plan_ready',
-      currentAction: 'Ready for review.',
-      plan: project.plan,
-    );
-  }
-
-  void completeLatestPlanRevision({required String title}) {
-    final current = project.plan;
-    if (current == null) return;
-    final completedAt = DateTime.utc(2026, 6, 15, 12, chatMessages.length + 2);
-    final currentIndex = planSnapshots.indexWhere(
-      (plan) => plan.id == current.id,
-    );
-    final superseded = _copyPlan(
-      current,
-      status: 'superseded',
-      updatedAt: completedAt,
-    );
-    if (currentIndex >= 0) {
-      planSnapshots[currentIndex] = superseded;
-    }
-    final revised = _copyPlan(
-      current,
-      id: 'plan-${current.version + 1}',
-      version: current.version + 1,
-      status: 'draft',
-      title: title,
-      questions: const [],
-      createdAt: completedAt,
-      updatedAt: completedAt,
-    );
-    planSnapshots.add(revised);
-    project = _plannedProject(
-      status: 'plan_ready',
-      currentAction: 'Ready for review.',
-      plan: revised,
-    );
-  }
-
-  @override
-  Future<MobileProjectChatSendResult> sendProjectChatMessage({
-    required String projectId,
-    required String message,
-    String? requestId,
-  }) async {
-    revisionMessages.add(message);
-    final isPlanQuestion =
-        !(project.plan?.isApproved ?? false) && message.trim().endsWith('?');
-    final userMessage = MobileProjectChatMessage(
-      id: 'chat-user-${chatMessages.length + 1}',
-      projectId: projectId,
-      role: 'user',
-      content: message,
-      metadata: const {},
-      createdAt: DateTime.utc(2026, 6, 15, 12, chatMessages.length),
-    );
-    final assistantMessage = MobileProjectChatMessage(
-      id: 'chat-assistant-${chatMessages.length + 2}',
-      projectId: projectId,
-      role: 'assistant',
-      content: isPlanQuestion
-          ? 'Here’s the current plan.'
-          : (project.plan?.isApproved ?? false)
-          ? 'I can help edit this book.'
-          : 'I’ll revise the plan now.',
-      metadata: const {},
-      createdAt: DateTime.utc(2026, 6, 15, 12, chatMessages.length + 1),
-    );
-    chatMessages.addAll([userMessage, assistantMessage]);
-    MobileBookEditOperation? operation;
-    if (!(project.plan?.isApproved ?? false) && !isPlanQuestion) {
-      project = _plannedProject(
-        status: 'planning',
-        currentAction: 'Revising your book plan.',
-        plan: project.plan,
-      );
-      operation = MobileBookEditOperation(
-        id: 'operation-${chatOperations.length + 1}',
-        projectId: projectId,
-        kind: 'plan_revision',
-        status: 'queued',
-        affectedPageIndexes: const [],
-        creditsCharged: 100,
-        currentAction: 'Revising the plan.',
-        createdAt: DateTime.utc(2026, 6, 15),
-      );
-      chatOperations.add(operation);
-    }
-    return MobileProjectChatSendResult(
-      messages: List.unmodifiable(chatMessages),
-      plans: List.unmodifiable(planSnapshots),
-      operations: List.unmodifiable(chatOperations),
-      reply: assistantMessage,
-      operation: operation,
-    );
-  }
-
-  @override
-  Future<MobileProjectChatSendResult> editProjectChatMessage({
-    required String projectId,
-    required String messageId,
-    required String message,
-    String? requestId,
-  }) {
-    return sendProjectChatMessage(projectId: projectId, message: message);
-  }
-
-  @override
-  Future<MobileProjectChatSendResult> applyEditProposal({
-    required String projectId,
-    required String proposalId,
-    String? requestId,
-  }) async {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MobileProjectChatSendResult> cancelEditProposal({
-    required String projectId,
-    required String proposalId,
-    String? requestId,
-  }) async {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MobileProjectChatSendResult> undoLastBookEdit({
-    required String projectId,
-    String? requestId,
-  }) async {
-    throw UnimplementedError();
-  }
-
-  @override
-  Future<MobileProjectChat> switchProjectChatBranch({
-    required String projectId,
-    required String messageId,
-    required String direction,
-  }) {
-    return getProjectChat(projectId);
-  }
-
-  @override
-  Future<List<MobileProjectSummary>> listProjects() async => const [];
-
-  @override
-  Future<ProjectExportFile> downloadExport({
-    required String projectId,
-    required MobileExportAvailability export,
-  }) async {
-    downloadedFormats.add(export.format);
-    return ProjectExportFile(
-      format: export.format,
-      filename: export.filename,
-      path: '/tmp/${export.filename}',
-    );
-  }
-
-  @override
-  Future<ExportOpenOutcome> openExport({
-    required String projectId,
-    required MobileExportAvailability export,
-  }) async {
-    openedFormats.add(export.format);
-    return ExportOpenOutcome.opened;
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) {
-    throw UnimplementedError('Not used in this test.');
-  }
-}
-
-class _FakeBillingRepository implements BillingRepository {
-  @override
-  Future<MobileBilling> getBilling() async => _billing();
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) {
-    throw UnimplementedError('Not used in this test.');
-  }
-}
-
-MobileProjectDetail _plannedProject({
-  String id = 'project-1',
-  String status = 'plan_ready',
-  String currentAction = 'Ready for review.',
-  MobilePlan? plan,
-  bool withoutPlan = false,
-}) {
-  return MobileProjectDetail(
-    id: id,
-    title: _planTitle,
-    bookType: 'workbook',
-    lengthPreset: 'standard',
-    qualityPreset: 'balanced',
-    imagesEnabled: true,
-    status: status,
-    statusLabel: 'Review your book plan',
-    progressPercent: 20,
-    currentAction: currentAction,
-    promptPreview: 'Create a workbook for teachers launching a course.',
-    targetPages: 28,
-    pageCount: 0,
-    imageCount: 0,
-    hasPlan: !withoutPlan,
-    exports: _exports,
-    createdAt: DateTime.utc(2026, 6, 15),
-    updatedAt: DateTime.utc(2026, 6, 15),
-    prompt: 'Create a workbook for teachers launching a course.',
-    language: 'en',
-    plan: withoutPlan ? null : (plan ?? _plan(projectId: id)),
-    pages: const [],
-  );
-}
-
-MobileProjectStatus _projectStatusFromProject(MobileProjectDetail project) {
-  return _projectStatus(
-    projectId: project.id,
-    status: project.status,
-    statusLabel: _statusLabelForProjectStatus(project.status),
-    progressPercent: project.progressPercent,
-    currentAction: project.currentAction,
-    completedPages: project.pageCount,
-    targetPages: project.targetPages,
-    imageCount: project.imageCount,
-    failureMessage: project.status == 'failed' ? 'Generation failed.' : null,
-  );
-}
-
-MobileProjectStatus _projectStatus({
-  String projectId = 'project-1',
-  String status = 'generating',
-  String? statusLabel,
-  int progressPercent = 38,
-  String currentAction = 'Writing your book pages.',
-  String? failureMessage,
-  bool retryAvailable = false,
-  int completedPages = 3,
-  int targetPages = 28,
-  int imageCount = 1,
-  MobilePlanningProgress? planningProgress,
-  MobileGenerationProgress? generationProgress,
-  MobileExportSet exports = _exports,
-}) {
-  final complete = status == 'complete';
-  final failed = status == 'failed';
-  return MobileProjectStatus(
-    projectId: projectId,
-    status: status,
-    statusLabel: statusLabel ?? _statusLabelForProjectStatus(status),
-    progressPercent: progressPercent,
-    currentAction: currentAction,
-    planningProgress: planningProgress,
-    generationProgress: generationProgress,
-    failureMessage: failureMessage,
-    retryAvailable: retryAvailable,
-    steps: [
-      const MobileProjectStatusStep(key: 'plan', label: 'Plan', status: 'done'),
-      MobileProjectStatusStep(
-        key: 'write',
-        label: 'Write',
-        status: failed
-            ? 'failed'
-            : complete
-            ? 'done'
-            : 'active',
-        detail: '$completedPages/$targetPages pages',
-      ),
-      MobileProjectStatusStep(
-        key: 'visuals',
-        label: 'Visuals',
-        status: complete ? 'done' : 'pending',
-        detail: imageCount == 1 ? '1 visual' : '$imageCount visuals',
-      ),
-      MobileProjectStatusStep(
-        key: 'export',
-        label: 'Export',
-        status: complete ? 'done' : 'pending',
-      ),
-    ],
-    pageProgress: MobilePageProgress(
-      completed: completedPages,
-      target: targetPages,
-    ),
-    imageCount: imageCount,
-    exports: exports,
-    updatedAt: DateTime.utc(2026, 6, 15),
-  );
-}
-
-String _statusLabelForProjectStatus(String status) {
-  return switch (status) {
-    'generating' => 'Generating your book',
-    'editing' => 'Editing your book',
-    'complete' => 'Ready to export',
-    'failed' => 'Needs attention',
-    'planning' => 'Building your outline',
-    _ => 'Review your book plan',
-  };
-}
-
-MobilePlan _plan({
-  String id = 'plan-1',
-  String projectId = 'project-1',
-  int version = 1,
-  String status = 'draft',
-  String title = _planTitle,
-  List<MobilePlanQuestion> questions = const [],
-}) {
-  return MobilePlan(
-    id: id,
-    projectId: projectId,
-    version: version,
-    status: status,
-    title: title,
-    premise: 'A practical workbook for a simple paid launch.',
-    audience: 'Independent teachers and coaches.',
-    questions: questions,
-    chapters: const [
-      MobilePlanChapter(
-        index: 1,
-        title: 'Set the promise',
-        summary: 'Define the result the student should get.',
-        targetPages: 8,
-      ),
-    ],
-    createdAt: DateTime.utc(2026, 6, 15),
-    updatedAt: DateTime.utc(2026, 6, 15),
-  );
-}
-
-MobilePlan _copyPlan(
-  MobilePlan plan, {
-  String? id,
-  int? version,
-  String? status,
-  String? title,
-  List<MobilePlanQuestion>? questions,
-  DateTime? createdAt,
-  DateTime? updatedAt,
-}) {
-  return MobilePlan(
-    id: id ?? plan.id,
-    projectId: plan.projectId,
-    version: version ?? plan.version,
-    status: status ?? plan.status,
-    title: title ?? plan.title,
-    subtitle: plan.subtitle,
-    premise: plan.premise,
-    audience: plan.audience,
-    questions: questions ?? plan.questions,
-    chapters: plan.chapters,
-    createdAt: createdAt ?? plan.createdAt,
-    updatedAt: updatedAt ?? plan.updatedAt,
-    approvedAt: plan.approvedAt,
-  );
-}
-
-MobilePlan _approvedPlan() {
-  return _plan(status: 'approved');
-}
-
-MobilePlan _longQuestionPlan() {
-  return _plan(
-    questions: const [
-      MobilePlanQuestion(
-        prompt:
-            'Which audience should the examples, exercises, explanations, and practical recommendations serve most directly?',
-        options: [
-          'Busy solo teachers launching their first live course',
-          'New coaches building a detailed recorded program',
-          'Small training teams adapting material for several audiences',
-          'Independent experts creating a premium hybrid workshop',
-          'Consultants turning an existing service into group learning',
-          'Community leaders preparing an accessible beginner curriculum',
-        ],
-        allowCustom: true,
-      ),
-    ],
-  );
-}
-
-MobilePlan _questionPlan() {
-  return _plan(
-    questions: const [
-      MobilePlanQuestion(
-        prompt: 'Who is the primary reader?',
-        options: ['Busy solo teachers', 'New coaches'],
-        allowCustom: true,
-      ),
-      MobilePlanQuestion(
-        prompt: 'Should examples focus on live classes or recorded lessons?',
-        options: ['Live classes', 'Recorded lessons'],
-        allowCustom: true,
-      ),
-    ],
-  );
-}
-
-MobileBilling _billing() {
-  return const MobileBilling(
-    credits: CreditBalance(
-      available: 1200,
-      reserved: 0,
-      lifetimeGranted: 1200,
-      lifetimeSpent: 0,
-    ),
-    entitlements: [],
-    products: [],
-    creditCosts: {
-      'fullBookBase': 350,
-      'fullBookPerPage': 8,
-      'imageGeneration': 45,
-      'premiumReview': 200,
-      'exportUnlock': 150,
-    },
-  );
-}
-
-const _exports = MobileExportSet(
-  pdf: MobileExportAvailability(
-    format: 'pdf',
-    available: false,
-    unlocked: false,
-    creditsRequired: 150,
-    downloadUrl: '/api/mobile/projects/project-1/export/pdf',
-    filename: 'book.pdf',
-    contentType: 'application/pdf',
-  ),
-  epub: MobileExportAvailability(
-    format: 'epub',
-    available: false,
-    unlocked: false,
-    creditsRequired: 150,
-    downloadUrl: '/api/mobile/projects/project-1/export/epub',
-    filename: 'book.epub',
-    contentType: 'application/epub+zip',
-  ),
-);
-
-const _unlockedExports = MobileExportSet(
-  pdf: MobileExportAvailability(
-    format: 'pdf',
-    available: true,
-    unlocked: true,
-    creditsRequired: 0,
-    downloadUrl: '/api/mobile/projects/project-1/export/pdf',
-    filename: 'book.pdf',
-    contentType: 'application/pdf',
-  ),
-  epub: MobileExportAvailability(
-    format: 'epub',
-    available: true,
-    unlocked: true,
-    creditsRequired: 0,
-    downloadUrl: '/api/mobile/projects/project-1/export/epub',
-    filename: 'book.epub',
-    contentType: 'application/epub+zip',
-  ),
-);

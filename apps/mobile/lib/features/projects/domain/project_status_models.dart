@@ -12,6 +12,7 @@ class MobileProjectStatus {
     required this.currentAction,
     this.planningProgress,
     this.generationProgress,
+    this.editProgress,
     required this.retryAvailable,
     required this.steps,
     required this.pageProgress,
@@ -33,6 +34,11 @@ class MobileProjectStatus {
   final String currentAction;
   final MobilePlanningProgress? planningProgress;
   final MobileGenerationProgress? generationProgress;
+
+  /// Milestones for an edit to a finished book. Same shape as
+  /// [generationProgress] but a separate field: editing and writing are
+  /// different stories, and only one of them is ever running.
+  final MobileGenerationProgress? editProgress;
   final String? failureMessage;
   final bool retryAvailable;
   final String? operationId;
@@ -85,6 +91,11 @@ class MobileProjectStatus {
       generationProgress: json['generationProgress'] is Map
           ? MobileGenerationProgress.fromJson(
               (json['generationProgress'] as Map).cast<String, dynamic>(),
+            )
+          : null,
+      editProgress: json['editProgress'] is Map
+          ? MobileGenerationProgress.fromJson(
+              (json['editProgress'] as Map).cast<String, dynamic>(),
             )
           : null,
       failureMessage: json['failureMessage'] as String?,

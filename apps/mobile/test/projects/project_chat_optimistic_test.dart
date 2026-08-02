@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/features/projects/presentation/chat_thinking_bubble.dart';
 import 'package:tomeza/features/projects/presentation/credit_cost_badge.dart';
 import 'package:tomeza/features/projects/presentation/project_chat_screen.dart';
 import 'package:tomeza/shared/api/api_error.dart';
@@ -31,6 +32,68 @@ void main() {
     // Now part of the refreshed transcript, exactly once.
     expect(find.text('Make chapter two warmer'), findsOneWidget);
     expect(find.text('Reply about Make chapter two warmer'), findsOneWidget);
+  });
+
+  testWidgets('the assistant says it is working, and stops once the work is '
+      'really running', (tester) async {
+    // Routing a message takes a model call or two. Without an assistant-side
+    // bubble the wait was silent: only the send button changed.
+    final repository = _ScriptedProjectsRepository();
+    final gate = Completer<void>();
+    repository.sendGates.add(gate);
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'Make chapter two warmer');
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pump();
+
+    expect(find.byType(ChatThinkingBubble), findsOneWidget);
+    expect(find.text('Reading your message…'), findsOneWidget);
+
+    // Long waits say something new rather than repeating one word.
+    await tester.pump(const Duration(seconds: 5));
+    expect(find.text('Looking through your book…'), findsOneWidget);
+
+    // Once the worker has the job, the progress card is the better signal and
+    // two spinners would read as two jobs.
+    repository.emitStatus(
+      status: 'editing',
+      progressPercent: 20,
+      action: 'Reading your book',
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(ChatThinkingBubble), findsNothing);
+
+    // Not pumpAndSettle: the progress card spins for as long as the work runs.
+    gate.complete();
+    for (var frame = 0; frame < 4; frame++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    expect(find.byType(ChatThinkingBubble), findsNothing);
+    expect(find.text('Reply about Make chapter two warmer'), findsOneWidget);
+  });
+
+  testWidgets('an edit that finishes between status ticks still lands on its '
+      'own', (tester) async {
+    // The falling edge is what pulls the finished result in. A short edit can
+    // start and finish without the client ever seeing a live tick, which used
+    // to strand the result behind a manual pull-to-refresh.
+    final repository = _ScriptedProjectsRepository()
+      ..sendOperation = _queuedOperation();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+    final fetchesBefore = repository.chatFetches.length;
+
+    await tester.enterText(find.byType(TextField), 'Make chapter two warmer');
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pumpAndSettle();
+
+    repository.emitStatus(status: 'complete', progressPercent: 100);
+    await tester.pumpAndSettle();
+
+    expect(repository.chatFetches.length, greaterThan(fetchesBefore + 1));
   });
 
   testWidgets('a message handed in on open is sent without the caller waiting', (
@@ -100,6 +163,7 @@ void main() {
       status: 'editing',
       progressPercent: 40,
       action: 'Rewriting page 3',
+      editProgress: _editProgress(40, active: 'Making your changes'),
     );
     // Not pumpAndSettle: the progress card spins for as long as the work runs.
     // The follow-scroll needs a couple of frames — the card sizes itself in the
@@ -109,7 +173,15 @@ void main() {
     }
 
     expect(find.text('Rewriting page 3'), findsOneWidget);
-    expect(find.text('3 of 12 pages'), findsOneWidget);
+    // The steps say which part of the edit is running, so the card keeps
+    // reading as progress even when the headline holds still.
+    expect(find.text('Making your changes'), findsOneWidget);
+    expect(find.text('Rebuilding your book'), findsOneWidget);
+    expect(
+      find.text('3 of 12 pages'),
+      findsNothing,
+      reason: 'that is the whole book, not the pages this edit touches',
+    );
     expect(scrollPosition(tester).pixels, scrollPosition(tester).maxScrollExtent,
         reason: 'progress must be in view, not above the fold');
 
@@ -415,8 +487,16 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
   final statusController = StreamController<MobileProjectStatus>.broadcast();
   MobileProjectChatSendResult Function()? applyResult;
 
+  /// The operation a send comes back with, when the message queued real work.
+  MobileBookEditOperation? sendOperation;
+
   /// Pushes a status the screen's live tracker will react to.
-  void emitStatus({required String status, int progressPercent = 0, String action = ''}) {
+  void emitStatus({
+    required String status,
+    int progressPercent = 0,
+    String action = '',
+    MobileGenerationProgress? editProgress,
+  }) {
     statusController.add(
       MobileProjectStatus(
         projectId: 'project-1',
@@ -424,6 +504,7 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
         statusLabel: status,
         progressPercent: progressPercent,
         currentAction: action,
+        editProgress: editProgress,
         retryAvailable: false,
         steps: const [],
         pageProgress: const MobilePageProgress(completed: 3, target: 12),
@@ -576,6 +657,7 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
       messages: chat.messages,
       operations: chat.operations,
       reply: chat.messages.last,
+      operation: sendOperation,
     );
   }
 
@@ -657,4 +739,46 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
   dynamic noSuchMethod(Invocation invocation) {
     throw UnimplementedError('Not used in this test.');
   }
+}
+
+/// The four milestones the server reports while an edit is being applied.
+MobileGenerationProgress _editProgress(int percent, {required String active}) {
+  const labels = [
+    'Reading your book',
+    'Saving a version to undo',
+    'Making your changes',
+    'Rebuilding your book',
+  ];
+  final activeIndex = labels.indexOf(active);
+  return MobileGenerationProgress(
+    percent: percent,
+    steps: [
+      for (final (index, label) in labels.indexed)
+        MobileProjectStatusStep(
+          key: 'step-$index',
+          label: label,
+          status: index < activeIndex
+              ? 'done'
+              : index == activeIndex
+              ? 'active'
+              : 'pending',
+        ),
+    ],
+  );
+}
+
+/// What a send comes back with once the message has queued real work.
+MobileBookEditOperation _queuedOperation() {
+  return MobileBookEditOperation(
+    id: 'op-queued',
+    projectId: 'project-1',
+    kind: 'page_rewrite',
+    status: 'queued',
+    affectedPageIndexes: const [3],
+    creditsCharged: 80,
+    currentAction: 'Rewriting selected pages.',
+    createdAt: DateTime.utc(2026, 6, 15, 2),
+    canUndo: false,
+    changesAvailable: false,
+  );
 }

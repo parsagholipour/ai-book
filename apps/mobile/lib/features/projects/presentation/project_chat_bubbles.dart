@@ -9,6 +9,7 @@ import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
 import 'message_hold_feedback.dart';
+import 'progress_step_row.dart';
 import 'project_chat_composer.dart';
 import 'saved_export_card.dart';
 
@@ -551,18 +552,64 @@ class StandaloneContentCard extends StatelessWidget {
 /// Without this the chat went quiet: a message appeared and nothing moved
 /// again until the user thought to pull-to-refresh. This card is driven by the
 /// project status stream, so it advances on its own and says what is happening.
-class ChatOperationProgressCard extends StatelessWidget {
+class ChatOperationProgressCard extends StatefulWidget {
   const ChatOperationProgressCard({required this.status, super.key});
 
   final MobileProjectStatus status;
 
   @override
+  State<ChatOperationProgressCard> createState() =>
+      _ChatOperationProgressCardState();
+}
+
+class _ChatOperationProgressCardState extends State<ChatOperationProgressCard> {
+  /// The highest percent this card has drawn for the current piece of work.
+  ///
+  /// The server's number climbs on its own, but a reconnecting status stream
+  /// can deliver a stale tick, and a bar that animates backwards reads as work
+  /// being undone. Reset when the project changes phase, because each phase
+  /// numbers itself from its own start — an edit that follows a finished book
+  /// begins near zero again. Held outside setState: it is resolved in build.
+  int _shownPercent = 0;
+  String? _shownStatus;
+
+  int _monotonicPercent(String phase, int next) {
+    if (phase != _shownStatus) {
+      _shownStatus = phase;
+      _shownPercent = next;
+      return _shownPercent;
+    }
+    if (next > _shownPercent) {
+      _shownPercent = next;
+    }
+    return _shownPercent;
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final status = widget.status;
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final progress = status.progressPercent.clamp(0, 100);
+    // The step list's own number when there is one: it is what the bar sits
+    // next to, and the two must never read differently.
+    final steps = _liveSteps(status);
+    final progress = _monotonicPercent(
+      status.status,
+      (status.editProgress?.percent ??
+              status.generationProgress?.percent ??
+              status.planningProgress?.percent ??
+              status.progressPercent)
+          .clamp(0, 100)
+          .toInt(),
+    );
     final pages = status.pageProgress;
-    final showPages = pages.target > 0 && pages.completed <= pages.target;
+    // During an edit that count is the whole book's, which says nothing about
+    // the handful of pages being rewritten and reads as though the edit is
+    // rewriting everything.
+    final showPages =
+        status.status != 'editing' &&
+        pages.target > 0 &&
+        pages.completed <= pages.target;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -586,11 +633,14 @@ class ChatOperationProgressCard extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  status.currentAction,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colors.onPrimaryContainer,
-                    fontWeight: FontWeight.w600,
+                child: AppSwitcher(
+                  child: Text(
+                    status.currentAction,
+                    key: ValueKey(status.currentAction),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),
@@ -612,6 +662,10 @@ class ChatOperationProgressCard extends StatelessWidget {
               semanticLabel: status.currentAction,
             ),
           ),
+          if (steps.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            for (final step in steps) ProgressStepRow(step: step),
+          ],
           if (showPages) ...[
             const SizedBox(height: 8),
             Text(
@@ -625,4 +679,17 @@ class ChatOperationProgressCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The milestones for whatever the book is doing right now.
+///
+/// One list rather than three branches: an edit, a plan revision and a
+/// continuation all reach this card, they are never live at the same time, and
+/// they all arrive as the same step shape.
+List<MobileProjectStatusStep> _liveSteps(MobileProjectStatus status) {
+  final steps =
+      status.editProgress?.steps ??
+      status.generationProgress?.steps ??
+      status.planningProgress?.steps;
+  return steps ?? const <MobileProjectStatusStep>[];
 }

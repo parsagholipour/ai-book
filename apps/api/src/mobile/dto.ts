@@ -419,6 +419,22 @@ export type MobileProjectStatusDto = {
       detail: string | null;
     }>;
   } | null;
+  /**
+   * Live milestones for an edit to a finished book. Shaped like
+   * `generationProgress` but kept separate: editing a book and writing one are
+   * different stories with different steps, and widening that key union would
+   * hand the writing UI keys it does not know how to draw.
+   */
+  editProgress: {
+    percent: number;
+    detail: string | null;
+    steps: Array<{
+      key: "prepare" | "snapshot" | "apply" | "export" | "outline" | "draft" | "save";
+      label: string;
+      status: "pending" | "active" | "done" | "failed";
+      detail: string | null;
+    }>;
+  } | null;
   failureMessage: string | null;
   retryAvailable: boolean;
   steps: Array<{

@@ -5,6 +5,7 @@ import {
   mobileTargetPagesSchema
 } from "../mobileCreation.js";
 import { buildProjectStatus, normalizeProjectQuality, type PipelineStep } from "../projectStatus.js";
+import { serializeEditProgress } from "./editProgress.js";
 import { serializeGenerationProgress } from "./generationProgress.js";
 import { type GenerationJobType } from "../queue.js";
 import { projectExportAvailability, type ProjectExportFormat } from "../routes/projects.js";
@@ -260,7 +261,8 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   const generationProgress = serializeGenerationProgress(status, {
     imagesEnabled: mobile?.imagesEnabled ?? imagesEnabledFromMediaSettings(project.mediaSettings)
   });
-  const progressPercent = statusProgressPercent(status, generationProgress);
+  const editProgress = serializeEditProgress(status);
+  const progressPercent = statusProgressPercent(status, generationProgress, editProgress);
   const planningProgress = serializePlanningProgress(status);
 
   return {
@@ -272,9 +274,11 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
     // payload that says what is happening right now rather than what stage it is.
     currentAction: planningProgress?.steps.find((step) => step.status === "active")?.label ??
       generationProgress?.detail ??
+      editProgress?.detail ??
       currentActionFromSteps(project.status, steps, progressPercent),
     planningProgress,
     generationProgress,
+    editProgress,
     failureMessage: failedJob ? failureMessageForJob(failedJob.type as GenerationJobType, failedJob.error) : null,
     retryAvailable: status.progress.resumableFailedJobs > 0,
     steps,
@@ -409,7 +413,8 @@ export function mobileStepFromPipeline(step: PipelineStep): MobileProjectStatusD
 
 export function statusProgressPercent(
   status: ProjectStatusResult,
-  generationProgress?: MobileProjectStatusDto["generationProgress"]
+  generationProgress?: MobileProjectStatusDto["generationProgress"],
+  editProgress?: MobileProjectStatusDto["editProgress"]
 ): number {
   const projectStatus = status.project.status;
   if (projectStatus === "COMPLETE" || projectStatus === "REVIEW_REQUIRED") {
@@ -425,7 +430,9 @@ export function statusProgressPercent(
     return 20;
   }
   if (projectStatus === "EDITING") {
-    return 92;
+    // The flat 92 is the fallback for the window between enqueueing an edit and
+    // the worker picking it up, when there is no job progress to report yet.
+    return editProgress?.percent ?? 92;
   }
   // One number, one source: the bar the app draws and the bar inside the step
   // list must never disagree about the same book.

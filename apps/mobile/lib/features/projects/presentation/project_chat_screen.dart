@@ -11,6 +11,7 @@ import '../../billing/presentation/billing_paywall.dart';
 import '../../voice/presentation/character_cast_sheet.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'chat_thinking_bubble.dart';
 import 'plan_revision_retry.dart';
 import 'project_chat_bubbles.dart';
 import 'project_chat_composer.dart';
@@ -100,6 +101,29 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_sendMessage(message));
     });
+  }
+
+  /// Whether to draw the assistant-side "thinking" bubble.
+  ///
+  /// Every one of these flags is a request the user is waiting on a reply to.
+  /// Hidden once the work is live, because the progress card says the same
+  /// thing with real numbers and two busy indicators read as two jobs.
+  bool _showThinking(MobileProjectStatus? liveStatus) {
+    if (liveStatus != null) return false;
+    return _sending || _editing || _undoing || _retryingOperationId != null;
+  }
+
+  /// Remembers that work was handed to the worker.
+  ///
+  /// The falling edge below is what pulls a finished edit into the transcript,
+  /// and it only fires if the client saw the work live first. A short edit can
+  /// start and finish between two status ticks, which used to strand the
+  /// result behind a manual pull-to-refresh. A queued operation in the response
+  /// is proof the work exists, so arm the edge from that too.
+  void _armFallingEdge(MobileBookEditOperation? operation) {
+    if (operation != null && operation.isRunning) {
+      _wasLive = true;
+    }
   }
 
   /// Reacts to the book starting and finishing a piece of work.
@@ -281,6 +305,17 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                           echo: _pendingEcho!,
                           onRetry: _retryPendingEcho,
                           onDismiss: _dismissPendingEcho,
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      // Reading the message and working out what it asks for
+                      // takes a model call or two, and until this the wait was
+                      // silent. Suppressed once the work is live: the progress
+                      // card below says the same thing with real numbers, and
+                      // two busy indicators read as two things happening.
+                      if (_showThinking(liveStatus)) ...[
+                        const ChatThinkingBubble(
+                          stages: bookChatThinkingStages,
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -469,6 +504,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
           );
       _pendingSendRequestId = null;
       _pendingSendMessage = null;
+      _armFallingEdge(result.operation);
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectDetailProvider(widget.projectId));
       ref.invalidate(projectStatusProvider(widget.projectId));
@@ -657,7 +693,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     // Move to where the progress will appear before the request even returns.
     _scrollToBottomSoon();
     try {
-      await ref
+      final result = await ref
           .read(projectsRepositoryProvider)
           .applyEditProposal(
             projectId: widget.projectId,
@@ -665,6 +701,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
             requestId: requestId,
           );
       if (!mounted) return;
+      _armFallingEdge(result.operation);
       setState(() => _sending = false);
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectStatusProvider(widget.projectId));
@@ -713,10 +750,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     final requestId = _newRequestId('undo');
     setState(() => _undoing = true);
     try {
-      await ref
+      final result = await ref
           .read(projectsRepositoryProvider)
           .undoLastBookEdit(projectId: widget.projectId, requestId: requestId);
       if (!mounted) return;
+      _armFallingEdge(result.operation);
       setState(() => _undoing = false);
       _refresh();
       _scrollToBottomSoon();
