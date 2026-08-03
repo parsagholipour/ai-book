@@ -2303,6 +2303,61 @@ figcaption {
   font-size: 0.83rem;
 }
 
+/* Cost breakdown: an operation row and the model rows it opens onto */
+
+.cost-expander {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.cost-expander:hover .cost-name {
+  color: #23665d;
+}
+
+.cost-name {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Model rows are a continuation of the row above, so they recede rather than
+   competing with it — same grid, quieter surface, one indent. */
+.admin-subrow > td {
+  background: #f6f4ef;
+  border-bottom-color: #e5e0d5;
+}
+
+.cost-indent {
+  padding-left: 21px;
+}
+
+/* A caveat that belongs to one operation, spanning the row it qualifies. Never
+   a tooltip: a margin that cannot be read at face value has to say so in place. */
+.operation-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: #8e3c2f;
+}
+
+.cost-kind {
+  display: inline-block;
+  margin-right: 7px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #ece7dc;
+  color: #52514e;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* Fact lists, inspector, moderation */
 
 .fact-list {

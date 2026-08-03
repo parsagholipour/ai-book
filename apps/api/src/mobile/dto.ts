@@ -717,6 +717,49 @@ export type MobileBillingDto = {
   }>;
 };
 
+/**
+ * What a ledger row meant to the reader, not what it meant to the ledger.
+ * `spend` covers every charge; the rest say where credits came from or why they
+ * left without being spent.
+ */
+export type MobileCreditLogKind =
+  | "purchase"
+  | "subscription"
+  | "monthly"
+  | "bonus"
+  | "spend"
+  | "refund"
+  | "expired";
+
+export type MobileCreditLogEntryDto = {
+  id: string;
+  createdAt: string;
+  /** `in` added credits, `out` took them. */
+  direction: "in" | "out";
+  /** Whole credits moved, always positive — the sign is `direction`. */
+  credits: number;
+  kind: MobileCreditLogKind;
+  /**
+   * Already in the reader's words. Built here rather than in the app so a new
+   * `CreditOperation` reads correctly without a client release — and because the
+   * stored `description` can carry raw provider errors, which never ship.
+   */
+  title: string;
+  /** Held against work still running: charged, but not yet settled. */
+  pending: boolean;
+  /** The charge came back. The row is history, not a movement. */
+  refunded: boolean;
+  projectId: string | null;
+  /** The book this touched, when it still exists. */
+  projectTitle: string | null;
+};
+
+export type MobileCreditLogDto = {
+  entries: MobileCreditLogEntryDto[];
+  /** Send back as `cursor` for the next page. Null at the end of the history. */
+  nextCursor: string | null;
+};
+
 export type MobileGooglePlayVerificationResponseDto = {
   purchase: {
     id: string;

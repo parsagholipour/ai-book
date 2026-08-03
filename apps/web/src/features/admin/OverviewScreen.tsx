@@ -61,6 +61,13 @@ function OverviewBody(props: { data: AdminOverview; days: number }) {
           {usd(money.creditsDeliveredUsd)} of credits delivered against {usd(money.providerSpendUsd)} of provider
           spend — {percent(money.unitMarginPercent)} margin on the work actually done.
         </p>
+        {money.creditsRefunded > 0 ? (
+          <p className="hero-caveat">
+            <AlertTriangle size={14} aria-hidden />
+            {count(money.creditsRefunded)} more credits ({usd(money.creditsRefundedUsd)}) were charged and refunded.
+            They are not delivered revenue; the provider spend they caused is still in the figure above.
+          </p>
+        ) : null}
         {money.unpricedCalls > 0 ? (
           <p className="hero-caveat">
             <AlertTriangle size={14} aria-hidden />

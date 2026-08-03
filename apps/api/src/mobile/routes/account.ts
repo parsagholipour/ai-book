@@ -1,8 +1,9 @@
 import { GooglePlayBillingConfigError, GooglePlayVerificationError } from "../../googlePlayBilling.js";
-import { type MobileGooglePlayVerificationResponseDto } from "../dto.js";
+import { type MobileCreditLogDto, type MobileGooglePlayVerificationResponseDto } from "../dto.js";
 import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import { serializeMobileBilling } from "../billingSerializer.js";
-import { mobileAuthError, mobileGooglePlayVerificationBodySchema } from "../schemas.js";
+import { serializeMobileCreditLog } from "../creditLog.js";
+import { creditLogQuerySchema, mobileAuthError, mobileGooglePlayVerificationBodySchema } from "../schemas.js";
 import { prisma } from "@book-maker/db";
 import { recordVerifiedGooglePlayPurchase } from "@book-maker/db/billing";
 import type { FastifyInstance } from "fastify";
@@ -36,6 +37,26 @@ export async function registerMobileAccountRoutes(fastify: FastifyInstance, cont
         return;
       }
       return { billing: await serializeMobileBilling(auth.user.id) };
+    }
+  );
+
+  // Every credit that arrived or left, newest first. Paged by entry id so a
+  // grant landing mid-scroll cannot shift the page under the reader.
+  fastify.get(
+    "/api/mobile/billing/credit-log",
+    { schema: { tags: ["mobile"], response: { 401: mobileAuthError } } },
+    async (request, reply) => {
+      const auth = await requireMobileAuth(request, reply);
+      if (!auth) {
+        return;
+      }
+      const query = creditLogQuerySchema.safeParse(request.query ?? {});
+      if (!query.success) {
+        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Ask for a valid page of credit history.");
+      }
+      return {
+        log: await serializeMobileCreditLog(auth.user.id, query.data)
+      } satisfies { log: MobileCreditLogDto };
     }
   );
 

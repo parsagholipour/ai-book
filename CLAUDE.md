@@ -230,6 +230,24 @@ tells you when a listed file has dropped under the default so the entry can be d
   aggregate it. Rows the rate card could not price are counted separately rather than dropped, so
   the total is never quietly short. `calculateProjectCostSummary` still recomputes per project,
   because it also folds in image costs from `ImageAsset` when the log side is thin.
+- **Nothing joins a provider call to the charge that paid for it, so the Operations tab derives it
+  three ways.** `apps/api/src/admin/operationEconomics.ts` reads the charge off the job's *payload*
+  (`billingLedgerEntryId`) — not `CreditLedgerEntry.generationJobId`, which is set on a minority of
+  entries and loses most of the spend — then walks `planId` to reach the fan-out children a run
+  charged for, then falls back to a `JobType → CreditOperation` map **gated on operations the
+  project was actually charged for**. That gating is the whole safety property: an operator-console
+  book has no charge, so its jobs stay unbilled instead of inventing revenue. Whatever is left is
+  reported as unbilled spend split by reason, never netted into a margin and never dropped — the
+  two must add up to the Costs tab's total. `VOICE_CALL_MINUTE` shows 100% margin honestly and
+  wrongly, because the app holds its own socket to Gemini; that is what `OPERATION_NOTES` is for.
+- **A costless call has four different causes and the Costs tab splits all four.**
+  `apps/api/src/admin/costBreakdown.ts` partitions every logged call into priced + failed +
+  in-flight + estimated + unrated, because only `unratedCalls` — settled on real tokens that no rate
+  card could price — means the dashboard is *understating* real spend; the other three are
+  nothing to fix. Usage is summed over priced calls only, so tokens and dollars always describe the
+  same set of calls and a missing rate card cannot flatter the tokens-per-dollar figures. Unrated is
+  a text-only signal by construction: `recordProviderImageCost` and `recordProviderAudioCost` return
+  early rather than write a row they cannot price, so an unpriced image model leaves no trace at all.
 - **"Revenue" is two different numbers and the dashboard shows both.** Cash collected
   (`PurchaseRecord.amountMicros`) is money banked in the window; credits delivered × the credit
   rate is the value of work actually done. They diverge because a reader buys on one day and spends

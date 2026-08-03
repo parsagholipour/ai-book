@@ -11,7 +11,9 @@
  *
  * The quantities come from what was actually charged, not from what exists: a
  * book counts when a `FULL_BOOK_GENERATION` entry was written for it in the
- * window, so drafts nobody paid for never inflate the projection.
+ * window, so drafts nobody paid for never inflate the projection. A charge that
+ * was later refunded does not count either — it is still a `SPEND`/`SETTLED`
+ * row, which is why every query here goes through `CHARGE_KEPT`.
  *
  * `coverage` is the honesty check. Re-pricing the drivers at the *current* list
  * should reproduce what was really charged; when it doesn't, the model is
@@ -29,7 +31,7 @@ import {
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { inputSnapshotFromProject } from "../mobile/projectSerializers.js";
-import { round2, type AdminWindow } from "./metrics.js";
+import { CHARGE_KEPT, round2, type AdminWindow } from "./metrics.js";
 
 /** Quantities only for the keys that are prices — see `PLAN_ALLOWANCE_KEYS`. */
 export type PricingDrivers = Record<CreditPriceKey, number>;
@@ -105,7 +107,9 @@ export async function loadPricingDrivers(
   currentPricing: CreditPricing
 ): Promise<PricingDriverReport> {
   const inWindow = { gte: window.since, lte: window.until };
-  const spend = { entryType: "SPEND", status: "SETTLED", createdAt: inWindow } as const;
+  // A refunded charge earned nothing, so it must not become a driver quantity
+  // either — projecting revenue from it would price against work we gave away.
+  const spend = { ...CHARGE_KEPT, createdAt: inWindow };
 
   const [bookCharges, replanCharges, flatCounts, chargedTotal, providerTotal, voiceCalls, edits, audiobookCharges] = await Promise.all([
     prisma.creditLedgerEntry.groupBy({

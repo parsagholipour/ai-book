@@ -7,6 +7,7 @@ import '../../../shared/ui/motion.dart';
 import 'billing_controller.dart';
 import 'billing_plan_tiles.dart';
 import 'billing_tier_style.dart';
+import 'credit_log_screen.dart';
 
 /// Plans first, top-ups underneath.
 ///
@@ -323,11 +324,27 @@ class _PaywallFooter extends StatelessWidget {
   final bool restoring;
   final VoidCallback onRestore;
 
+  /// Pushed over the sheet rather than replacing it: someone checking where
+  /// their credits went is usually about to decide how many to buy, and closing
+  /// the paywall to answer that would make them open it again.
+  void _openCreditLog(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (context) => const CreditLogScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Column(
       children: [
+        OutlinedButton.icon(
+          key: const ValueKey('paywall-credit-log'),
+          onPressed: () => _openCreditLog(context),
+          icon: const Icon(Icons.receipt_long_outlined, size: 18),
+          label: const Text('See credit logs'),
+        ),
+        const SizedBox(height: 16),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,

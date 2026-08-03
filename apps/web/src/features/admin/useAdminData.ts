@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { apiGet, apiPatch } from "../../api.js";
 import { readError } from "../shared/formatters.js";
 import type {
+  AdminCostBreakdown,
+  AdminOperationEconomics,
   AdminOverview,
   AdminProjectDetail,
   AdminUserDetail,
@@ -48,6 +50,14 @@ function useResource<T>(path: string | null) {
 
 export function useAdminOverview(days: number) {
   return useResource<AdminOverview>(`/api/admin/overview?days=${days}`);
+}
+
+export function useAdminCosts(days: number) {
+  return useResource<AdminCostBreakdown>(`/api/admin/costs?days=${days}`);
+}
+
+export function useAdminOperations(days: number) {
+  return useResource<AdminOperationEconomics>(`/api/admin/operations?days=${days}`);
 }
 
 export function useAdminUsers(options: { query: string; sort: AdminUserSort; limit: number; offset: number }) {

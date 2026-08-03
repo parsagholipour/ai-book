@@ -19,6 +19,9 @@ export type AdminOverview = {
     cashMarginPercent: number | null;
     creditsDelivered: number;
     creditsDeliveredUsd: number;
+    /** Charged in the window, then given back. Not counted in the above. */
+    creditsRefunded: number;
+    creditsRefundedUsd: number;
     unitMarginUsd: number;
     unitMarginPercent: number | null;
     creditsOutstanding: number;
@@ -50,6 +53,74 @@ export type AdminOverview = {
   spendByProvider: NamedTotal[];
   projectsByStatus: NamedTotal[];
   jobsByType: NamedTotal[];
+};
+
+/** Mirrors `apps/api/src/admin/costBreakdown.ts` — read its header before using these. */
+export type CostKind = "text" | "image" | "audio";
+
+export type CostUsage = {
+  calls: number;
+  pricedCalls: number;
+  failedCalls: number;
+  inFlightCalls: number;
+  estimatedCalls: number;
+  unratedCalls: number;
+  usd: number;
+  promptTokens: number;
+  cachedPromptTokens: number;
+  outputTokens: number;
+  images: number;
+  audioSeconds: number;
+};
+
+export type ModelCost = CostUsage & { key: string; provider: string; model: string; kind: CostKind };
+
+export type OperationCost = CostUsage & { key: string; label: string; kind: CostKind; models: ModelCost[] };
+
+export type AdminCostBreakdown = {
+  window: { days: number; since: string; until: string };
+  totals: CostUsage;
+  byKind: Array<CostUsage & { kind: CostKind }>;
+  operations: OperationCost[];
+  models: ModelCost[];
+};
+
+/** Mirrors `apps/api/src/admin/operationEconomics.ts` — read its header on attribution. */
+export type OperationEconomics = CostUsage & {
+  key: string;
+  label: string;
+  runs: number;
+  credits: number;
+  refundedRuns: number;
+  refundedCredits: number;
+  revenueUsd: number;
+  providerUsd: number;
+  marginUsd: number;
+  marginPercent: number | null;
+  costPerRunUsd: number | null;
+  creditsPerRun: number | null;
+  note: string | null;
+  models: ModelCost[];
+};
+
+export type UnbilledSpend = CostUsage & { key: string; label: string; description: string; models: ModelCost[] };
+
+export type AdminOperationEconomics = {
+  window: { days: number; since: string; until: string };
+  creditUsdValue: number;
+  totals: {
+    runs: number;
+    credits: number;
+    refundedRuns: number;
+    refundedCredits: number;
+    revenueUsd: number;
+    providerUsd: number;
+    marginUsd: number;
+    marginPercent: number | null;
+    unbilledUsd: number;
+  };
+  operations: OperationEconomics[];
+  unbilled: UnbilledSpend[];
 };
 
 export type AdminUserRow = {

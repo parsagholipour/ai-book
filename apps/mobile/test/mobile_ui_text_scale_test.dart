@@ -8,9 +8,11 @@ import 'package:tomeza/features/auth/data/auth_repository.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/features/auth/presentation/auth_screen.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/billing/data/credit_log_repository.dart';
 import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
+import 'package:tomeza/features/billing/presentation/credit_log_screen.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
@@ -96,6 +98,18 @@ void main() {
     expect(find.text('Upgrade your plan'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    // The credit log puts an amount hard against the right edge of every row,
+    // which is where a larger typeface runs out of room first.
+    await tester.pumpWidget(
+      _withProviders(
+        child: const CreditLogScreen(),
+        creditLogRepository: _FakeCreditLogRepository(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Credits purchased'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
     await tester.pumpWidget(
       _scaledApp(
         child: SingleChildScrollView(
@@ -118,11 +132,14 @@ Widget _withProviders({
   CreationRepository? creationRepository,
   ProjectsRepository? projectsRepository,
   BillingRepository? billingRepository,
+  CreditLogRepository? creditLogRepository,
   StoreBillingClient? storeBillingClient,
 }) {
   return ProviderScope(
     key: UniqueKey(),
     overrides: [
+      if (creditLogRepository != null)
+        creditLogRepositoryProvider.overrideWithValue(creditLogRepository),
       if (authRepository != null)
         authRepositoryProvider.overrideWithValue(authRepository),
       if (creationRepository != null)
@@ -375,6 +392,33 @@ class _FakeBillingRepository implements BillingRepository {
         creditsGranted: 1000,
       ),
       billing: _fakeBilling(),
+    );
+  }
+}
+
+class _FakeCreditLogRepository implements CreditLogRepository {
+  @override
+  Future<CreditLogPage> getCreditLog({String? cursor, int limit = 30}) async {
+    return CreditLogPage(
+      entries: [
+        CreditLogEntry(
+          id: 'purchase',
+          createdAt: DateTime.now(),
+          addsCredits: true,
+          credits: 12000,
+          kind: CreditLogKind.purchase,
+          title: 'Credits purchased',
+        ),
+        CreditLogEntry(
+          id: 'spend',
+          createdAt: DateTime.now().subtract(const Duration(hours: 3)),
+          addsCredits: false,
+          credits: 1430,
+          kind: CreditLogKind.spend,
+          title: 'Book generation',
+          projectTitle: 'A Lantern for the Long Night',
+        ),
+      ],
     );
   }
 }

@@ -23,7 +23,7 @@ export const mockPrisma = ({
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   bookEditOperation: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
   generationJob: { count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
-  creditLedgerEntry: { update: vi.fn() },
+  creditLedgerEntry: { findMany: vi.fn(), update: vi.fn() },
   subscriptionState: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
   imageAsset: { findFirst: vi.fn(), findMany: vi.fn() },

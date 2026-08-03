@@ -4,7 +4,9 @@ import { AuthShell } from "./features/auth/AuthShell.js";
 import { LoginScreen } from "./features/auth/LoginScreen.js";
 import { useAuth } from "./features/auth/useAuth.js";
 import { AdminLayout } from "./features/admin/AdminLayout.js";
+import { CostsScreen } from "./features/admin/CostsScreen.js";
 import { ModerationScreen } from "./features/admin/ModerationScreen.js";
+import { OperationsScreen } from "./features/admin/OperationsScreen.js";
 import { OverviewScreen } from "./features/admin/OverviewScreen.js";
 import { UsersScreen } from "./features/admin/UsersScreen.js";
 import { ConsoleScreen } from "./features/console/ConsoleScreen.js";
@@ -49,6 +51,8 @@ export function App() {
       <Route path="/projects/:projectId" element={<ConsoleScreen auth={auth} />} />
       <Route path={ADMIN_PATH} element={<AdminLayout />}>
         <Route index element={<OverviewScreen />} />
+        <Route path="operations" element={<OperationsScreen />} />
+        <Route path="costs" element={<CostsScreen />} />
         <Route path="users" element={<UsersScreen />} />
         <Route path="moderation" element={<ModerationScreen />} />
         <Route path="pricing" element={<PricingScreen />} />

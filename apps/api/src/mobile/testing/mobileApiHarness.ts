@@ -134,6 +134,7 @@ export function resetMobileHarness(): void {
   mockPrisma.generationJob.findUnique.mockResolvedValue(null);
   mockPrisma.mobileCreationDraft.findUnique.mockResolvedValue({ revision: 3 });
   mockPrisma.mobileCreationDraft.update.mockResolvedValue(creationDraftRecord({ revision: 2 }));
+  mockPrisma.creditLedgerEntry.findMany.mockResolvedValue([]);
   mockPrisma.creditLedgerEntry.update.mockResolvedValue({});
   mockPrisma.project.update.mockResolvedValue({ contentRevision: 1 });
   mockPrisma.project.delete.mockResolvedValue({});

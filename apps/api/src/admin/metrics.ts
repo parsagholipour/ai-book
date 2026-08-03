@@ -17,12 +17,43 @@
  * which is what actually pairs against provider spend for unit economics.
  * They diverge because a reader buys credits on one day and spends them on
  * another; reporting either alone would misstate a margin.
+ *
+ * **A refunded charge is still a `SPEND`/`SETTLED` row.** Refunding a settled
+ * charge writes a *second, positive* entry pointing back at it through
+ * `reversesEntryId` and leaves the original untouched, so filtering on
+ * `entryType: "SPEND", status: "SETTLED"` alone counts money that was handed
+ * straight back — that is what once reported 816 credits of narration revenue
+ * against 368 actually charged. Every credit figure here therefore goes through
+ * `CHARGE_KEPT`, and what was given back is reported next to it rather than
+ * silently dropped.
  */
 
 import { CREDIT_USD_VALUE } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 
 export type AdminWindow = { days: number; since: Date; until: Date };
+
+/**
+ * A settled charge that stuck — the only thing that should be read as revenue.
+ * `reversedByEntry` is the back-relation of the unique `reversesEntryId`, so
+ * this is an index probe rather than a scan.
+ */
+export const CHARGE_KEPT = {
+  entryType: "SPEND",
+  status: "SETTLED",
+  reversedByEntry: null
+} satisfies Prisma.CreditLedgerEntryWhereInput;
+
+/**
+ * The same charges, reversed. Reported alongside the kept ones because
+ * kept + reversed reconciles to the gross sum an operator gets from the ledger
+ * by hand; netting without saying so turns a run count into a mystery.
+ */
+export const CHARGE_REVERSED = {
+  entryType: "SPEND",
+  status: "SETTLED",
+  reversedByEntry: { isNot: null }
+} satisfies Prisma.CreditLedgerEntryWhereInput;
 
 export type MoneySeriesPoint = {
   date: string;
@@ -45,6 +76,9 @@ export type AdminOverview = {
     cashMarginPercent: number | null;
     creditsDelivered: number;
     creditsDeliveredUsd: number;
+    /** Charges made in the window that were later given back. Not in the above. */
+    creditsRefunded: number;
+    creditsRefundedUsd: number;
     unitMarginUsd: number;
     unitMarginPercent: number | null;
     /** Credits bought but not yet spent — an obligation, not income. */
@@ -117,7 +151,7 @@ export async function loadAdminOverview(window: AdminWindow): Promise<AdminOverv
 
 async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
   const inWindow = { gte: window.since, lte: window.until };
-  const [cash, provider, unpriced, delivered, accounts] = await Promise.all([
+  const [cash, provider, unpriced, delivered, refunded, accounts] = await Promise.all([
     prisma.purchaseRecord.aggregate({
       _sum: { amountMicros: true },
       where: { status: { in: ["VERIFIED", "GRANTED"] }, createdAt: inWindow }
@@ -129,7 +163,11 @@ async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
     prisma.providerCallLog.count({ where: { costHint: null, createdAt: inWindow } }),
     prisma.creditLedgerEntry.aggregate({
       _sum: { amountCredits: true },
-      where: { entryType: "SPEND", status: "SETTLED", createdAt: inWindow }
+      where: { ...CHARGE_KEPT, createdAt: inWindow }
+    }),
+    prisma.creditLedgerEntry.aggregate({
+      _sum: { amountCredits: true },
+      where: { ...CHARGE_REVERSED, createdAt: inWindow }
     }),
     prisma.userCreditAccount.aggregate({ _sum: { availableCredits: true, reservedCredits: true } })
   ]);
@@ -139,6 +177,10 @@ async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
   // SPEND entries are stored negative; the magnitude is what was delivered.
   const creditsDelivered = Math.abs(delivered._sum.amountCredits ?? 0);
   const creditsDeliveredUsd = round2(creditsDelivered * CREDIT_USD_VALUE);
+  // Charges from this window that a refund has since reversed. Their provider
+  // calls are still real spend, which is why the unit margin below reads them
+  // as cost with no revenue behind them rather than netting both away.
+  const creditsRefunded = Math.abs(refunded._sum.amountCredits ?? 0);
   const creditsOutstanding = (accounts._sum.availableCredits ?? 0) + (accounts._sum.reservedCredits ?? 0);
 
   return {
@@ -148,6 +190,8 @@ async function loadMoney(window: AdminWindow): Promise<AdminOverview["money"]> {
     cashMarginPercent: percentOf(cashCollectedUsd - providerSpendUsd, cashCollectedUsd),
     creditsDelivered,
     creditsDeliveredUsd,
+    creditsRefunded,
+    creditsRefundedUsd: round2(creditsRefunded * CREDIT_USD_VALUE),
     unitMarginUsd: round2(creditsDeliveredUsd - providerSpendUsd),
     unitMarginPercent: percentOf(creditsDeliveredUsd - providerSpendUsd, creditsDeliveredUsd),
     creditsOutstanding,
@@ -246,8 +290,11 @@ async function loadSeries(window: AdminWindow): Promise<MoneySeriesPoint[]> {
         WHERE p.status IN ('VERIFIED','GRANTED') AND date_trunc('day', p."createdAt") = days.day) AS cash_micros,
       (SELECT SUM(l."costHint") FROM "ProviderCallLog" l
         WHERE l."costHint" IS NOT NULL AND date_trunc('day', l."createdAt") = days.day) AS provider_usd,
+      -- CHARGE_KEPT, hand-written: a refunded charge keeps its SPEND/SETTLED row,
+      -- so the anti-join is what stops the line counting money already given back.
       (SELECT SUM(ABS(e."amountCredits")) FROM "CreditLedgerEntry" e
         WHERE e."entryType" = 'SPEND' AND e.status = 'SETTLED'
+          AND NOT EXISTS (SELECT 1 FROM "CreditLedgerEntry" r WHERE r."reversesEntryId" = e.id)
           AND date_trunc('day', e."createdAt") = days.day) AS credits_spent,
       (SELECT COUNT(*) FROM "User" u WHERE date_trunc('day', u."createdAt") = days.day) AS new_users,
       (SELECT COUNT(*) FROM "Project" pr
@@ -274,7 +321,7 @@ async function loadCreditsByOperation(inWindow: Prisma.DateTimeFilter): Promise<
     by: ["operation"],
     _sum: { amountCredits: true },
     _count: { _all: true },
-    where: { entryType: "SPEND", status: "SETTLED", createdAt: inWindow }
+    where: { ...CHARGE_KEPT, createdAt: inWindow }
   });
   return groups
     .map((group) => ({

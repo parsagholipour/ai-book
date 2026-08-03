@@ -11,8 +11,10 @@
 import { type FastifyPluginAsync, type FastifyReply } from "fastify";
 import { z } from "zod";
 import { markOperatorRequest } from "../requestAuth.js";
+import { loadAdminCostBreakdown } from "../admin/costBreakdown.js";
 import { loadAdminProjectDetail, loadAdminUserDetail, listAdminUsers } from "../admin/inspection.js";
 import { loadAdminOverview, resolveWindow } from "../admin/metrics.js";
+import { loadOperationEconomics } from "../admin/operationEconomics.js";
 
 const windowQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
@@ -51,6 +53,32 @@ export const adminAnalyticsRoutes: FastifyPluginAsync = async (fastify) => {
         return sendInvalid(reply, parsed.error);
       }
       return loadAdminOverview(resolveWindow(parsed.data.days));
+    }
+  );
+
+  fastify.get(
+    "/api/admin/costs",
+    { attachValidation: true, schema: { tags: ["admin"], querystring: windowQueryOpenApi } },
+    async (request, reply) => {
+      await markOperatorRequest(request);
+      const parsed = windowQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendInvalid(reply, parsed.error);
+      }
+      return loadAdminCostBreakdown(resolveWindow(parsed.data.days));
+    }
+  );
+
+  fastify.get(
+    "/api/admin/operations",
+    { attachValidation: true, schema: { tags: ["admin"], querystring: windowQueryOpenApi } },
+    async (request, reply) => {
+      await markOperatorRequest(request);
+      const parsed = windowQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return sendInvalid(reply, parsed.error);
+      }
+      return loadOperationEconomics(resolveWindow(parsed.data.days));
     }
   );
 

@@ -14,8 +14,33 @@ export function usdShort(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+/**
+ * Money small enough that two decimals would print `$0.00`.
+ *
+ * One page of a book costs a few thousandths of a cent, so a per-model row on
+ * the cost breakdown needs the extra digits or it reads as free. Anything a
+ * dollar or over goes back through {@link usd} so the page keeps one money
+ * format wherever the numbers are big enough for it.
+ */
+export function usdFine(value: number): string {
+  const magnitude = Math.abs(value);
+  if (magnitude === 0) return "$0";
+  if (magnitude < 0.01) return `$${value.toFixed(5)}`;
+  if (magnitude < 1) return `$${value.toFixed(3)}`;
+  return usd(value);
+}
+
 export function count(value: number): string {
   return value.toLocaleString();
+}
+
+/** Token counts, where the digits past the first two are noise. */
+export function compactCount(value: number): string {
+  const magnitude = Math.abs(value);
+  if (magnitude >= 1_000_000) return `${(value / 1_000_000).toFixed(magnitude >= 10_000_000 ? 0 : 1)}M`;
+  if (magnitude >= 10_000) return `${Math.round(value / 1000)}k`;
+  if (magnitude >= 1_000) return `${(value / 1000).toFixed(1)}k`;
+  return count(value);
 }
 
 export function percent(value: number | null): string {
@@ -51,7 +76,10 @@ export function duration(ms: number | null): string {
   if (ms === null || ms < 0) return "—";
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+  // Hours matter once this is asked about a book's worth of narration; "482m"
+  // is technically the same answer and useless at a glance.
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+  return `${Math.floor(ms / 3_600_000)}h ${Math.round((ms % 3_600_000) / 60_000)}m`;
 }
 
 export function titleCase(value: string): string {

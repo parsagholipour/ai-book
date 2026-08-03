@@ -1,9 +1,11 @@
-import { ArrowLeft, BarChart3, Coins, ShieldAlert, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, Coins, Receipt, ShieldAlert, Users, Workflow } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router";
 import { AppLogo } from "../shared/AppLogo.js";
 
 export const ADMIN_TABS = [
   { to: "/admin", label: "Overview", icon: BarChart3, end: true },
+  { to: "/admin/operations", label: "Operations", icon: Workflow, end: false },
+  { to: "/admin/costs", label: "Costs", icon: Receipt, end: false },
   { to: "/admin/users", label: "Users", icon: Users, end: false },
   { to: "/admin/moderation", label: "Moderation", icon: ShieldAlert, end: false },
   { to: "/admin/pricing", label: "Pricing", icon: Coins, end: false }

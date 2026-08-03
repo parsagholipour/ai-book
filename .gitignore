@@ -16,6 +16,7 @@ storage/images/**
 storage/voice/**
 storage/audio/**
 storage/attachments/**
+output/imagegen/
 apps/worker/storage/books/**
 apps/worker/storage/images/**
 !storage/books/.gitkeep

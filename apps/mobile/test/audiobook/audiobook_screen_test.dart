@@ -726,6 +726,36 @@ void main() {
     );
   });
 
+  testWidgets('the button works while the transcript is still flinging', (
+    tester,
+  ) async {
+    cache.timelinesByChapter[1] = longTimelineFixture();
+    await pumpScreen(tester);
+
+    // Settle on the sentence being spoken, deep in the chapter.
+    player.emitPosition(const Duration(milliseconds: 55400), index: 0);
+    await settle(tester);
+    expect(
+      find.textContaining('Sentence 55.', findRichText: true),
+      findsOneWidget,
+    );
+
+    // Then throw the transcript back towards the start and press the button one
+    // frame later, while it is still coasting. A flung list has no finger on it,
+    // and hands off from the drag without an end notification — so "the reader
+    // is scrolling" has to stop being true when they let go, not when the list
+    // stops, or the tap is refused and the momentum carries them further away.
+    await tester.fling(find.byType(ListView), const Offset(0, 400), 2400);
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.tap(find.byIcon(Icons.vertical_align_center));
+    await settle(tester);
+
+    expect(
+      find.textContaining('Sentence 55.', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('follows the voice into a paragraph it has not built yet', (
     tester,
   ) async {

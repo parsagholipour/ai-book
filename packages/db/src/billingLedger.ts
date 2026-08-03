@@ -103,6 +103,12 @@ export async function reserveCredits(options: LedgerContext & {
       where: { idempotencyKey: options.idempotencyKey },
       select: ledgerSelect
     });
+    // An idempotency key is a promise that this charge happens *once ever*, not
+    // once per attempt: refunding leaves the entry SETTLED and never releases
+    // the key, so a caller that reuses one after a refund gets the reversed row
+    // back and `commitReservedCredits` short-circuits on it — the work is then
+    // done for free. Any priced operation a user can retry has to vary its key
+    // per attempt (see the audiobook route, which names the run it supersedes).
     if (existing) {
       return existing;
     }

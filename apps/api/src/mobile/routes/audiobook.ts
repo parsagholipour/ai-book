@@ -154,9 +154,18 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
           projectId: id,
           operation: "AUDIOBOOK_GENERATION",
           amountCredits: estimate.totalCredits,
+          // Naming the run being superseded is what makes each real attempt a
+          // new charge. A refund leaves its entry SETTLED and does not release
+          // the key, so a key stable across attempts meant `reserveCredits`
+          // handed back the refunded row and `commitReservedCredits`
+          // short-circuited on it — every retry and every replacement narrated
+          // a whole book for free. Two concurrent submits still see the same
+          // `existing` and so still pay once; `generationJobId` is null only in
+          // the window before it is written back below, where the audiobook's
+          // own id is just as distinct.
           idempotencyKey: body.data.requestId
             ? `mobile:audiobook:${id}:${body.data.requestId}`
-            : `mobile:audiobook:${id}:${project.contentRevision}:${body.data.voice}`,
+            : `mobile:audiobook:${id}:${project.contentRevision}:${body.data.voice}:${existing?.generationJobId ?? existing?.id ?? "new"}`,
           description: "Mobile audiobook narration",
           // The per-page half of the price is only recoverable from here, which
           // is what the pricing dashboard's drivers report reads back.

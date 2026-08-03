@@ -305,6 +305,7 @@ describe("mobile audiobook routes", () => {
           operation: "AUDIOBOOK_GENERATION",
           // 80 base + 60 pages × 12.
           amountCredits: 800,
+          idempotencyKey: "mobile:audiobook:project-1:3:Zephyr:new",
           metadata: expect.objectContaining({ pageCount: 60, voice: "Zephyr" })
         })
       );
@@ -455,6 +456,48 @@ describe("mobile audiobook routes", () => {
           dedupeKey: "generate-audiobook:project-1:audiobook-1:job-1",
           payload: expect.objectContaining({ audiobookId: "audiobook-1" })
         })
+      );
+      await app.close();
+    });
+
+    it("charges again for a resumed narration, because the failed one was refunded", async () => {
+      mockPrisma.audiobook.findUnique.mockResolvedValue(audiobookRecord({ status: "FAILED" }));
+      mockPrisma.audiobook.update.mockResolvedValue({ id: "audiobook-1" });
+      const app = await buildMobileApp();
+
+      await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Zephyr" }
+      });
+
+      // A key stable across attempts would find the first attempt's refunded
+      // entry, and committing an already-settled row is a no-op — so the retry
+      // narrated the whole book for nothing. Naming the run being superseded is
+      // what makes this a second charge.
+      expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amountCredits: 800,
+          idempotencyKey: "mobile:audiobook:project-1:3:Zephyr:job-1"
+        })
+      );
+      await app.close();
+    });
+
+    it("charges again when a finished audiobook is replaced with the same narrator", async () => {
+      mockPrisma.audiobook.findUnique.mockResolvedValue(audiobookRecord());
+      const app = await buildMobileApp();
+
+      await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Zephyr", replace: true }
+      });
+
+      expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
+        expect.objectContaining({ idempotencyKey: "mobile:audiobook:project-1:3:Zephyr:job-1" })
       );
       await app.close();
     });

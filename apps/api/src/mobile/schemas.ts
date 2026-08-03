@@ -32,6 +32,12 @@ export const projectChatQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(150).default(150)
 });
 
+export const creditLogQuerySchema = z.object({
+  /** The id of the last entry already shown; the page resumes after it. */
+  cursor: z.string().trim().min(1).max(128).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30)
+});
+
 export const assetParamsSchema = z.object({ id: z.string().min(1), assetId: z.string().min(1) });
 
 export const operationParamsSchema = z.object({ id: z.string().min(1), operationId: z.string().min(1) });

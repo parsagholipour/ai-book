@@ -43,6 +43,10 @@ class _TranscriptPaneState extends ConsumerState<_TranscriptPane> {
   final Map<int, int> _rowOfSegment = {};
 
   bool _following = true;
+
+  /// A finger is on the list *right now* — which is not the same as the list
+  /// moving. A fling coasts long after the hand has left, and refusing to
+  /// follow during it is refusing the reader who just asked.
   bool _userDragging = false;
   int? _lastFollowedSegment;
 
@@ -226,10 +230,17 @@ class _TranscriptPaneState extends ConsumerState<_TranscriptPane> {
 
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
-        if (notification is ScrollStartNotification &&
-            notification.dragDetails != null) {
-          _userDragging = true;
-          setState(() => _following = false);
+        if (notification is ScrollStartNotification) {
+          if (notification.dragDetails != null) {
+            _userDragging = true;
+            setState(() => _following = false);
+          }
+        } else if (notification is ScrollUpdateNotification) {
+          // Only a drag carries details, and a drag handing off to a fling
+          // dispatches no end notification — both activities count as
+          // scrolling — so this is the one place the finger lifting is
+          // reported at all.
+          _userDragging = notification.dragDetails != null;
         } else if (notification is ScrollEndNotification) {
           _userDragging = false;
         }
@@ -282,6 +293,11 @@ class _TranscriptPaneState extends ConsumerState<_TranscriptPane> {
                 foregroundColor: colors.onPrimary,
                 onPressed: () {
                   AppHaptics.tap();
+                  // Whatever the list is doing, this tap is the newer
+                  // instruction — including a second finger still dragging it.
+                  // The first hop's jump takes the scroll off any momentum it
+                  // still had.
+                  _userDragging = false;
                   setState(() {
                     _following = true;
                     _lastFollowedSegment = null;

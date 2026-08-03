@@ -10,7 +10,7 @@
 import { CREDIT_USD_VALUE } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { getImageQuota, resolvePlanTier } from "@book-maker/db/billing";
-import { round2, titleCase } from "./metrics.js";
+import { CHARGE_KEPT, round2, titleCase } from "./metrics.js";
 
 export type AdminUserRow = {
   id: string;
@@ -222,7 +222,7 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
     prisma.creditLedgerEntry.groupBy({
       by: ["operation"],
       _sum: { amountCredits: true },
-      where: { userId, entryType: "SPEND", status: "SETTLED" }
+      where: { ...CHARGE_KEPT, userId }
     }),
     prisma.purchaseRecord.findMany({
       where: { userId },
@@ -286,7 +286,7 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
       ? prisma.creditLedgerEntry.groupBy({
           by: ["projectId"],
           _sum: { amountCredits: true },
-          where: { projectId: { in: projectIds }, entryType: "SPEND", status: "SETTLED" }
+          where: { ...CHARGE_KEPT, projectId: { in: projectIds } }
         })
       : Promise.resolve([])
   ]);
@@ -467,10 +467,12 @@ export async function loadAdminProjectDetail(projectId: string): Promise<AdminPr
     }),
     prisma.creditLedgerEntry.aggregate({
       _sum: { amountCredits: true },
-      where: { projectId, entryType: "SPEND", status: "SETTLED" }
+      where: { ...CHARGE_KEPT, projectId }
     })
   ]);
 
+  // Charges that stuck. The full ledger above still lists the refunded ones, so
+  // a reader can see the difference rather than wonder where the money went.
   const creditsCharged = Math.abs(creditTotal._sum.amountCredits ?? 0);
   const revenueUsd = round2(creditsCharged * CREDIT_USD_VALUE);
   const providerUsd = round2(providerTotal._sum.costHint ?? 0);

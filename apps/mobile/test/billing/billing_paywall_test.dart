@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/billing/data/credit_log_repository.dart';
 import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
 import 'package:tomeza/features/billing/presentation/billing_controller.dart';
+import 'package:tomeza/features/billing/presentation/credit_log_screen.dart';
 
 void main() {
   testWidgets('paywall queries products and verifies a completed purchase', (
@@ -142,6 +144,36 @@ void main() {
     expect(billingController.state.message, 'Purchase canceled.');
   });
 
+  testWidgets('the credit log opens over the sheet rather than closing it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testPaywall(
+        store: FakeStoreBillingClient(),
+        repository: FakeBillingRepository(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('paywall-credit-log')),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.byKey(const ValueKey('paywall-credit-log')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('paywall-credit-log')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CreditLogScreen), findsOneWidget);
+    // Someone checking where their credits went is usually about to buy more,
+    // so the paywall is still underneath when they come back.
+    expect(
+      find.byType(BillingPaywall, skipOffstage: false),
+      findsOneWidget,
+    );
+  });
+
   test('local app config uses the debug billing store client', () {
     final container = ProviderContainer(
       overrides: [appConfigProvider.overrideWithValue(testConfig)],
@@ -192,6 +224,9 @@ Widget testPaywall({
     overrides: [
       storeBillingClientProvider.overrideWithValue(store),
       billingRepositoryProvider.overrideWithValue(repository),
+      creditLogRepositoryProvider.overrideWithValue(
+        EmptyCreditLogRepository(),
+      ),
     ],
     child: const MaterialApp(
       home: Scaffold(body: BillingPaywall(projectId: 'project-1')),
@@ -238,6 +273,15 @@ class FakeBillingRepository implements BillingRepository {
       ),
       billing: billing,
     );
+  }
+}
+
+/// The paywall only has to reach the log; what it lists is covered by
+/// credit_log_test.dart.
+class EmptyCreditLogRepository implements CreditLogRepository {
+  @override
+  Future<CreditLogPage> getCreditLog({String? cursor, int limit = 30}) async {
+    return const CreditLogPage(entries: []);
   }
 }
 
