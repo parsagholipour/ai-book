@@ -13,6 +13,10 @@ import 'package:just_audio_background/just_audio_background.dart';
 abstract interface class AudiobookPlayer {
   Stream<Duration> get positionStream;
   Stream<int?> get currentIndexStream;
+
+  /// Whether audio is actually running — not whether play was pressed.
+  ///
+  /// The two differ at the end of the queue, and the play button renders this.
   Stream<bool> get playingStream;
 
   /// True while buffering or connecting — used to show a spinner on the button.
@@ -71,8 +75,15 @@ class JustAudioAudiobookPlayer implements AudiobookPlayer {
   @override
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
 
+  /// Deliberately not `_player.playingStream`: just_audio's `playing` means
+  /// "the play button is engaged", and it stays true once the queue reaches its
+  /// end — a finished player reports itself as playing. Folding the processing
+  /// state in here is what keeps the button's icon and the sound in agreement,
+  /// including when a seek back into the book resumes playback on its own
+  /// without `playing` ever having changed.
   @override
-  Stream<bool> get playingStream => _player.playingStream;
+  Stream<bool> get playingStream =>
+      _player.playerStateStream.map(_isPlaying).distinct();
 
   @override
   Stream<bool> get busyStream => _player.playerStateStream.map(
@@ -86,7 +97,10 @@ class JustAudioAudiobookPlayer implements AudiobookPlayer {
       .where((state) => state.processingState == ProcessingState.completed);
 
   @override
-  bool get playing => _player.playing;
+  bool get playing => _isPlaying(_player.playerState);
+
+  static bool _isPlaying(PlayerState state) =>
+      state.playing && state.processingState != ProcessingState.completed;
 
   @override
   Duration get position => _player.position;

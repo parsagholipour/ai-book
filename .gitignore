@@ -9,10 +9,13 @@ test-results
 .env.local
 .env
 
-# Generated books, images, and run logs may contain prompt history/results.
+# Generated books, images, audio, attachments, and run logs may contain
+# prompt history/results or user uploads — keep the dirs, ignore contents.
 storage/books/**
 storage/images/**
 storage/voice/**
+storage/audio/**
+storage/attachments/**
 apps/worker/storage/books/**
 apps/worker/storage/images/**
 !storage/books/.gitkeep

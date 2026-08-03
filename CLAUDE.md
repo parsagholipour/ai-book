@@ -320,6 +320,15 @@ tells you when a listed file has dropped under the default so the entry can be d
   `durationMs` after — which is what lets the seek bar show the whole book while the back half is
   still being made. Lock-screen artwork must be a `file://` URI: the media session fetches it
   outside the Dio client and without the bearer token.
+- **just_audio's `playing` means the play button is engaged, not that sound is coming out.** It
+  stays true when the queue reaches the end of the chapters that exist, so `AudiobookPlayer.playing`
+  and `playingStream` fold `ProcessingState.completed` back out — that derived value is what the
+  play button renders. Papering over it in the controller instead (forcing `playing: false` when
+  `completedStream` fires) desynchronises the two: seeking back into narrated audio resumes the
+  player on its own, and because its own `playing` never changed it has nothing to announce, so the
+  button sits on Play over audible narration. For the same reason Play cannot mean `play()` when
+  the queue has finished — that is a no-op on silence — so `togglePlay` moves to the next chapter
+  that has been downloaded since, and `caughtUp` says why playback stopped where it did.
 - Docker bind-mounts the repo, so `node_modules` uses anonymous volumes. After changing
   `pnpm-lock.yaml`, rebuild images or run `make deps`, or the containers keep a stale install.
 - **`make up` and `pnpm dev` are the same queue.** A host worker defaults to

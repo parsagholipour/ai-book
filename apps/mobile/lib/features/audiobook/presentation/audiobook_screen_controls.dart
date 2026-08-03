@@ -170,11 +170,20 @@ class _PlayerControls extends ConsumerWidget {
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
+                // Why playback stopped, when it stopped on its own: the
+                // listener reached the end of what exists rather than the end
+                // of the book, and nothing else on screen says so.
                 if (playable < total)
-                  Text(
-                    'still narrating',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colors.primary,
+                  Flexible(
+                    child: Text(
+                      state.caughtUp
+                          ? 'waiting for the next chapter'
+                          : 'still narrating',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colors.primary,
+                      ),
                     ),
                   ),
                 Text(

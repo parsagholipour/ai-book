@@ -92,6 +92,18 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
       return const AppLoadingState(message: 'Looking for your audiobook');
     }
     if (!state.hasAudiobook) {
+      // A failed load must not masquerade as "never narrated" — that offers to
+      // sell a narration the server cannot even read back.
+      final error = state.error;
+      if (error != null) {
+        return AppErrorState(
+          title: 'Narration unavailable',
+          message: error,
+          onRetry: () => ref
+              .read(audiobookControllerProvider(widget.projectId).notifier)
+              .retry(),
+        );
+      }
       return _NotNarratedYet(
         onStart: () => _openPicker(detail, replacing: false),
         busy: state.starting,

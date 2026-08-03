@@ -37,6 +37,10 @@ class AudiobookController extends Notifier<AudiobookState> {
   bool _downloading = false;
   bool _disposed = false;
 
+  /// True while the queue is parked on a finished last chapter. Playing from
+  /// there makes no sound, so the play button has to mean something else.
+  bool _atEndOfQueue = false;
+
   @override
   AudiobookState build() {
     ref.onDispose(_teardown);
@@ -55,7 +59,15 @@ class AudiobookController extends Notifier<AudiobookState> {
         return;
       }
       if (audiobook == null) {
-        state = state.copyWith(loading: false, audiobook: null, clearAudiobook: true);
+        // clearError matters here: "never narrated" is the state a retry after a
+        // failed load lands in, and a stale error would keep the screen on the
+        // error page with no way back to the picker.
+        state = state.copyWith(
+          loading: false,
+          audiobook: null,
+          clearAudiobook: true,
+          clearError: true,
+        );
         _stopPolling();
         return;
       }
@@ -108,9 +120,13 @@ class AudiobookController extends Notifier<AudiobookState> {
 
   // ---------------------------------------------------------------- narration
 
-  /// Starts (or replaces) a narration. Returns false when it could not start,
-  /// with the reason in [AudiobookState.error].
-  Future<bool> narrate({required String voice, bool replace = false}) async {
+  /// Starts (or replaces) a narration. Returns null once it is under way, or
+  /// the reason it could not start.
+  ///
+  /// The reason is returned rather than stored in [AudiobookState.error]: the
+  /// picker sheet is covering the screen, so it reports this itself, and that
+  /// leaves `error` meaning only "the narration could not be loaded".
+  Future<String?> narrate({required String voice, bool replace = false}) async {
     state = state.copyWith(starting: true, clearError: true);
     try {
       final audiobook = await ref
@@ -118,7 +134,7 @@ class AudiobookController extends Notifier<AudiobookState> {
           .start(projectId: projectId, voice: voice, replace: replace);
       ref.invalidate(billingProvider);
       if (_disposed) {
-        return true;
+        return null;
       }
       // A replacement has a new id, so anything cached for the old one is dead
       // weight on the device.
@@ -136,12 +152,14 @@ class AudiobookController extends Notifier<AudiobookState> {
       _queuedChapters.clear();
       _startPolling();
       unawaited(_refresh());
-      return true;
-    } on ApiException catch (error) {
+      return null;
+    } catch (error) {
+      // Deliberately not just ApiException: anything that escapes here leaves
+      // the confirm button spinning on "Starting…" with no way back.
       if (!_disposed) {
-        state = state.copyWith(starting: false, error: userFacingError(error));
+        state = state.copyWith(starting: false);
       }
-      return false;
+      return userFacingError(error);
     }
   }
 
@@ -226,9 +244,18 @@ class AudiobookController extends Notifier<AudiobookState> {
       player.positionStream.listen((position) => _onPosition(position.inMilliseconds)),
     );
     _subscriptions.add(player.playingStream.listen((playing) {
-      if (!_disposed) {
-        state = state.copyWith(playing: playing);
+      if (_disposed) {
+        return;
       }
+      // Sound means the queue moved off its end, whichever way it got there —
+      // a seek back into the book resumes without anyone asking it to.
+      if (playing) {
+        _atEndOfQueue = false;
+      }
+      state = state.copyWith(
+        playing: playing,
+        caughtUp: playing ? false : state.caughtUp,
+      );
     }));
     _subscriptions.add(player.busyStream.listen((busy) {
       if (!_disposed) {
@@ -238,7 +265,15 @@ class AudiobookController extends Notifier<AudiobookState> {
     _subscriptions.add(player.currentIndexStream.listen((_) => _onPosition(player.position.inMilliseconds)));
     _subscriptions.add(player.completedStream.listen((_) {
       if (!_disposed) {
-        state = state.copyWith(playing: false, caughtUp: !(state.timeline?.isFullyPlayable ?? true));
+        // Deliberately no `playing: false`: the player reports that itself from
+        // the same state change. Forcing it here is what once left the button
+        // showing Play over audible narration — the player never stopped
+        // considering itself playing, so it had nothing left to announce when a
+        // seek back into the book resumed it.
+        _atEndOfQueue = true;
+        state = state.copyWith(
+          caughtUp: !(state.timeline?.isFullyPlayable ?? true),
+        );
       }
     }));
   }
@@ -292,9 +327,35 @@ class AudiobookController extends Notifier<AudiobookState> {
     }
     if (player.playing) {
       await player.pause();
-    } else {
-      await player.play();
+      return;
     }
+    // Playing a queue that already finished makes no sound — the position is
+    // sitting at the end of the last chapter. If a later chapter has landed
+    // since, Play means "carry on into it".
+    if (_atEndOfQueue && await _playNextQueuedChapter()) {
+      return;
+    }
+    await player.play();
+  }
+
+  /// Moves onto the chapter after the one the queue stopped on, if it has been
+  /// downloaded since. False when there is nothing new to play.
+  Future<bool> _playNextQueuedChapter() async {
+    final player = _player;
+    final timeline = state.timeline;
+    if (player == null || timeline == null) {
+      return false;
+    }
+    final queued = timeline.chapters
+        .where((chapter) => _queuedChapters.contains(chapter.index))
+        .length;
+    final next = (player.currentIndex ?? 0) + 1;
+    if (next >= queued) {
+      return false;
+    }
+    await player.seek(Duration.zero, index: next);
+    await player.play();
+    return true;
   }
 
   Future<void> skip(Duration offset) async {
@@ -322,6 +383,7 @@ class AudiobookController extends Notifier<AudiobookState> {
     if (queueIndex < 0) {
       return;
     }
+    _atEndOfQueue = false;
     await player.seek(Duration(milliseconds: resolved.chapterPosition), index: queueIndex);
   }
 

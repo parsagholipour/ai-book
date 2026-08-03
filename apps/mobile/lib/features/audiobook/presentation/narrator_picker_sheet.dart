@@ -20,12 +20,16 @@ import 'narrator_preview_source.dart';
 /// any credits are spent — the samples are free and shared across all books.
 /// The price sits on the confirm button as the same tappable badge used
 /// everywhere else, rather than being spelled out in prose.
+///
+/// [onConfirm] returns null once the narration is under way, or the reason it
+/// could not start — the sheet is covering the listening screen, so it has to
+/// deliver that message itself.
 Future<bool> showNarratorPickerSheet(
   BuildContext context, {
   required String projectId,
   required int pageCount,
   required bool replacing,
-  required Future<bool> Function(String voice) onConfirm,
+  required Future<String?> Function(String voice) onConfirm,
 }) async {
   final started = await showModalBottomSheet<bool>(
     context: context,
@@ -52,7 +56,7 @@ class _NarratorPickerSheet extends ConsumerStatefulWidget {
   final String projectId;
   final int pageCount;
   final bool replacing;
-  final Future<bool> Function(String voice) onConfirm;
+  final Future<String?> Function(String voice) onConfirm;
 
   @override
   ConsumerState<_NarratorPickerSheet> createState() =>
@@ -150,16 +154,21 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
       _previewing = null;
     });
     await _preview.stop();
-    final started = await widget.onConfirm(voice);
+    final failure = await widget.onConfirm(voice);
     if (!mounted) {
       return;
     }
-    if (started) {
+    if (failure == null) {
       AppHaptics.success();
       Navigator.of(context).pop(true);
-    } else {
-      setState(() => _starting = false);
+      return;
     }
+    // Silence here reads as the button doing nothing at all: the sheet stays
+    // up, so the screen behind can never deliver the reason.
+    setState(() => _starting = false);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(failure)));
   }
 
   @override
