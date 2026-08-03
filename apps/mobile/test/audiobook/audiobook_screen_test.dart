@@ -354,6 +354,30 @@ AudiobookChapterTimeline timelineFixture() {
   );
 }
 
+/// A chapter long enough that most of its paragraphs are nowhere near the
+/// viewport — which is the only way to exercise scrolling to one the lazy list
+/// has never built.
+AudiobookChapterTimeline longTimelineFixture({int paragraphs = 60}) {
+  return AudiobookChapterTimeline(
+    chapterIndex: 1,
+    title: 'Low Tide',
+    isRightToLeft: false,
+    durationMs: paragraphs * 1000,
+    segments: [
+      for (var index = 0; index < paragraphs; index += 1)
+        AudiobookSegment(
+          index: index,
+          isTitle: index == 0,
+          paragraph: index,
+          pageIndex: 1,
+          startMs: index * 1000,
+          endMs: index * 1000 + 900,
+          text: 'Sentence $index.',
+        ),
+    ],
+  );
+}
+
 /// Enough credits that the picker offers to start rather than to top up.
 MobileBilling affordableBilling() {
   return const MobileBilling(
@@ -669,6 +693,55 @@ void main() {
     await pumpScreen(tester);
 
     expect(find.textContaining('refunded'), findsOneWidget);
+  });
+
+  testWidgets('returns to the line being read after a jump across the book', (
+    tester,
+  ) async {
+    cache.timelinesByChapter[1] = longTimelineFixture();
+    await pumpScreen(tester);
+
+    // Scrolling away by hand is what puts the button on screen: following only
+    // stops when the reader takes over.
+    await tester.drag(find.byType(ListView), const Offset(0, -240));
+    await settle(tester);
+    expect(find.byIcon(Icons.vertical_align_center), findsOneWidget);
+
+    // Now the audio moves somewhere else entirely. The sentence being spoken is
+    // thousands of pixels down a list that has never built that far, so it is
+    // not in the tree at all.
+    player.emitPosition(const Duration(milliseconds: 55400), index: 0);
+    await settle(tester);
+    expect(
+      find.textContaining('Sentence 55.', findRichText: true),
+      findsNothing,
+    );
+
+    await tester.tap(find.byIcon(Icons.vertical_align_center));
+    await settle(tester);
+
+    expect(
+      find.textContaining('Sentence 55.', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('follows the voice into a paragraph it has not built yet', (
+    tester,
+  ) async {
+    cache.timelinesByChapter[1] = longTimelineFixture();
+    await pumpScreen(tester);
+
+    // No hand-scrolling here: a seek alone leaves the transcript parked on the
+    // old paragraph, and following is supposed to carry it across.
+    player.emitPosition(const Duration(milliseconds: 48200), index: 0);
+    await settle(tester);
+
+    expect(
+      find.textContaining('Sentence 48.', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Sentence 0.', findRichText: true), findsNothing);
   });
 
   testWidgets('the transcript can be hidden', (tester) async {
