@@ -1,0 +1,131 @@
+/**
+ * The one definition of what an exact replacement does.
+ *
+ * A book edit that is a literal find/replace needs no model: the result is
+ * computable, so it can be previewed before the user approves it and applied
+ * without a provider call. That only holds if the preview and the apply agree
+ * exactly, and they run in different processes — the API quotes the edit, the
+ * worker performs it. Hence one shared implementation here, in the leaf package
+ * both can import, and hence `preserveCase` travelling *inside* the replacement
+ * rather than beside it: the flag cannot get separated from the terms whose
+ * meaning it changes.
+ *
+ * Plain string scanning, deliberately: no regex, no word boundaries. What the
+ * preview shows is exactly what lands.
+ */
+
+export type ExactReplacement = {
+  from: string;
+  to: string;
+  /**
+   * Match without regard to case, and carry each occurrence's capitalization
+   * over to the replacement.
+   *
+   * Off by default, so the ordinary path stays a byte-for-byte literal swap. It
+   * is turned on only when the literal text appears nowhere but a
+   * case-insensitive match does — a user who types "replace rabbit with fly"
+   * about a book that writes "Rabbit" means that book, and the alternative is
+   * silently falling back to regenerating every page.
+   */
+  preserveCase?: boolean | undefined;
+};
+
+export function applyExactReplacement(text: string, replacement: ExactReplacement): string {
+  if (!replacement.from) {
+    return text;
+  }
+  if (!replacement.preserveCase) {
+    return text.split(replacement.from).join(replacement.to);
+  }
+  return mapOccurrences(text, replacement.from, (match) => matchCase(match, replacement.to)).text;
+}
+
+export function countExactMatches(text: string, replacement: ExactReplacement): number {
+  if (!replacement.from) {
+    return 0;
+  }
+  if (!replacement.preserveCase) {
+    return text.split(replacement.from).length - 1;
+  }
+  return mapOccurrences(text, replacement.from, (match) => match).count;
+}
+
+export function hasExactMatch(text: string, replacement: ExactReplacement): boolean {
+  return countExactMatches(text, replacement) > 0;
+}
+
+/**
+ * The lines an exact replacement would change, as before/after pairs.
+ *
+ * Only lines that actually differ are returned, so a whole-book replacement of
+ * one name yields the handful of lines that mention it rather than the book.
+ * `limit` caps the result; the caller reports the true match count separately.
+ */
+export function exactReplacementLineDiff(
+  text: string,
+  replacement: ExactReplacement,
+  limit = Number.POSITIVE_INFINITY
+): Array<{ before: string; after: string }> {
+  if (!replacement.from) {
+    return [];
+  }
+  const changed: Array<{ before: string; after: string }> = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (changed.length >= limit) {
+      break;
+    }
+    const after = applyExactReplacement(line, replacement);
+    if (after !== line) {
+      changed.push({ before: line, after });
+    }
+  }
+  return changed;
+}
+
+/** Walks case-insensitive occurrences of `needle`, rewriting each through `render`. */
+function mapOccurrences(
+  text: string,
+  needle: string,
+  render: (match: string) => string
+): { text: string; count: number } {
+  const haystack = text.toLowerCase();
+  const target = needle.toLowerCase();
+  let out = "";
+  let cursor = 0;
+  let count = 0;
+  for (;;) {
+    const found = haystack.indexOf(target, cursor);
+    if (found === -1) {
+      break;
+    }
+    // Slice out of `text`, not `haystack`: lowercasing can change a string's
+    // length for some scripts, so the original is the only safe source.
+    out += text.slice(cursor, found) + render(text.slice(found, found + needle.length));
+    cursor = found + needle.length;
+    count += 1;
+  }
+  return { text: out + text.slice(cursor), count };
+}
+
+/**
+ * Carries the capitalization of the replaced text onto its replacement, the way
+ * a "preserve case" replace does in an editor: RABBIT → FLY, Rabbit → Fly,
+ * rabbit → fly.
+ */
+function matchCase(match: string, replacement: string): string {
+  if (!replacement) {
+    return replacement;
+  }
+  const letters = [...match].filter((character) => character.toLowerCase() !== character.toUpperCase());
+  if (letters.length > 1 && letters.every((character) => character === character.toUpperCase())) {
+    return replacement.toUpperCase();
+  }
+  const first = letters[0];
+  if (first && first === first.toUpperCase()) {
+    return replacement[0]!.toUpperCase() + replacement.slice(1);
+  }
+  if (first && first === first.toLowerCase()) {
+    return replacement[0]!.toLowerCase() + replacement.slice(1);
+  }
+  return replacement;
+}

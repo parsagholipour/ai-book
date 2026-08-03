@@ -17,11 +17,13 @@ import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { cleanTargetLanguage } from "../runtime/serialization.js";
 import {
+  applyExactReplacement,
   bookPlanSchema,
   createProviders,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
+  type ExactReplacement,
   type PageDraft,
   type PageQualityReport,
   type ProviderSet
@@ -194,13 +196,13 @@ export async function replaceProjectPlanReferenceRecords(
 
 export function locallyPatchedPage(
   page: { title: string; markdown: string; summary: string; imagePrompt: string | null; qualityReport: unknown },
-  replacement: { from: string; to: string }
+  replacement: ExactReplacement
 ): PageDraft & { qualityReport: PageQualityReport } {
-  const markdown = page.markdown.split(replacement.from).join(replacement.to);
+  const markdown = applyExactReplacement(page.markdown, replacement);
   return {
-    title: page.title.split(replacement.from).join(replacement.to),
+    title: applyExactReplacement(page.title, replacement),
     markdown,
-    summary: page.summary.split(replacement.from).join(replacement.to),
+    summary: applyExactReplacement(page.summary, replacement),
     imagePrompt: page.imagePrompt ?? undefined,
     continuityNotes: [],
     qualityReport: {

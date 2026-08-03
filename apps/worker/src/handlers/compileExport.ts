@@ -30,6 +30,8 @@ import {
   createReaderChaptersForExport,
   generateBookEpub,
   generateJsonWithRetry,
+  chapterHeadingLabelPreference,
+  chapterHeadingStylePreference,
   includeSourcesPreference,
   publicAssetUrl,
   resolvePublicImageUrl,
@@ -215,9 +217,11 @@ export async function compileExport(job: Job) {
       summary: source.summary
     })),
     // From the project row rather than `input`, whose mediaSettings come from
-    // the plan's frozen snapshot: dropping the Sources list is a live reader
-    // preference that only queues a recompile.
-    includeSources: includeSourcesPreference(project.mediaSettings)
+    // the plan's frozen snapshot: dropping the Sources list or restyling the
+    // chapter headings is a live reader preference that only queues a recompile.
+    includeSources: includeSourcesPreference(project.mediaSettings),
+    chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
+    chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
   });
   assertBookLikeMarkdown(markdown);
   await advanceJobStep(generationJobId, "write", 80);

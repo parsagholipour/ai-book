@@ -89,6 +89,16 @@ export function createLoggedProviders(
   };
 }
 
+export function createLoggedSpeechAdapter(job: Job, speech: SpeechAdapter): SpeechAdapter {
+  const logger = createRunLogger(job);
+  return new LoggingSpeechAdapter(
+    speech,
+    logger,
+    job.data.generationJobId as string | undefined,
+    job.data.projectId as string | undefined
+  );
+}
+
 /**
  * Premium-tier covers render once per book, so they use the strongest image
  * model. Explicit operator image selections are respected as-is.
@@ -552,6 +562,7 @@ class LoggingSpeechAdapter implements SpeechAdapter {
     await this.logger.append("tts.synthesize.request", {
       callId,
       voice: request.voice,
+      narrator: request.narrator,
       textLength: request.text.length,
       textPreview: request.text.slice(0, 300)
     });
@@ -583,7 +594,11 @@ class LoggingSpeechAdapter implements SpeechAdapter {
         costHint: estimateSpeechCostUsd({ provider: result.provider, audioMs: result.durationMs }),
         durationMs,
         audioMs: result.durationMs,
-        metadata: { voice: request.voice, textLength: request.text.length }
+        metadata: {
+          narrator: request.narrator,
+          providerVoice: request.voice,
+          textLength: request.text.length
+        }
       });
       await assertJobNotStopped(this.generationJobId);
       return result;

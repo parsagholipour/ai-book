@@ -13,12 +13,27 @@ import { type BookEditIntentKind } from "../bookEditIntent.js";
 import { type ProjectForChat } from "./projectChat.js";
 import { inputSnapshotFromProject } from "./projectSerializers.js";
 
-export function bookEditCreditCost(kind: BookEditIntentKind, affectedPageCount: number, project: ProjectForChat): number {
+export function bookEditCreditCost(
+  kind: BookEditIntentKind,
+  affectedPageCount: number,
+  project: ProjectForChat,
+  options: {
+    /**
+     * Set when every page in scope was verified to contain the literal text, so
+     * the whole edit is a string replacement the worker performs without a
+     * single provider call. There is nothing to bill for, and charging anyway is
+     * what made a rename feel like a regeneration.
+     */
+    deterministic?: boolean;
+  } = {}
+): number {
   // One snapshot for the whole quote. Reading the live prices twice could
   // straddle an operator's save and produce a total that no price list explains.
   const pricing = creditPricing();
   if (kind === "local_patch") {
-    return pricing.bookTextEditBase + Math.max(1, affectedPageCount) * pricing.bookTextEditPerPage;
+    return options.deterministic
+      ? 0
+      : pricing.bookTextEditBase + Math.max(1, affectedPageCount) * pricing.bookTextEditPerPage;
   }
   // Chapter regeneration is priced like a multi-page rewrite of that chapter;
   // continuation is priced like regenerating the pages it will append.

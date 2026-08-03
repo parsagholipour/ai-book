@@ -9,6 +9,7 @@ import { OpenAICompatibleTextAdapter } from "./openaiCompatible.js";
 import { FakeEmbeddingAdapter, FakeImageAdapter, FakeResearchAdapter, FakeSpeechAdapter, FakeTextModelAdapter } from "./fake.js";
 import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, GeminiTextAdapter } from "./gemini.js";
 import { GeminiSpeechAdapter } from "./geminiSpeech.js";
+import { OpenAISpeechAdapter } from "./openaiSpeech.js";
 import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, SpeechAdapter, TextModelAdapter } from "./types.js";
 import { modelTierImageSelection, modelTierTextFallbackSelection, modelTierTextSelections } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
@@ -28,6 +29,9 @@ export type ProviderSet = {
   embedding: EmbeddingAdapter;
   speech: SpeechAdapter;
 };
+
+export type SpeechProviderId = "gemini_tts" | "openai_tts";
+export type SpeechModelSelection = { provider: SpeechProviderId; model: string };
 
 export type TextModelOption = TextModelSelection & {
   label: string;
@@ -242,13 +246,22 @@ export function createProviders(config: AppConfig, input?: CreateProjectInput): 
   };
 }
 
-export function createSpeechAdapter(config: AppConfig): SpeechAdapter {
+export function createSpeechAdapter(
+  config: AppConfig,
+  selection: SpeechModelSelection = { provider: "gemini_tts", model: config.GEMINI_TTS_MODEL }
+): SpeechAdapter {
   if (config.MOCK_AI) {
     return new FakeSpeechAdapter();
   }
+  if (selection.provider === "openai_tts") {
+    return new OpenAISpeechAdapter({
+      apiKey: config.OPENAI_API_KEY,
+      model: selection.model
+    });
+  }
   return new GeminiSpeechAdapter({
     apiKey: config.GEMINI_API_KEY,
-    model: config.GEMINI_TTS_MODEL
+    model: selection.model
   });
 }
 

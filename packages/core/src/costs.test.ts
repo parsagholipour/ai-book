@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   calculateImageGenerationCost,
   calculateProjectCostSummary,
+  estimateSpeechCostUsd,
   calculateTextGenerationCost
 } from "./costs.js";
 
 describe("provider cost calculation", () => {
+  it("accounts for OpenAI narration at $0.00025 per audio second", () => {
+    expect(estimateSpeechCostUsd({ provider: "openai_tts", audioMs: 60_000 })).toBe(0.015);
+  });
   it("calculates DeepSeek text cost with cache-hit pricing", () => {
     const cost = calculateTextGenerationCost({
       provider: "deepseek",

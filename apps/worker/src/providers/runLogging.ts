@@ -69,7 +69,12 @@ export function providerConfigSnapshot() {
       apiKeySet: Boolean(config.GEMINI_API_KEY),
       textModel: config.GEMINI_TEXT_MODEL,
       imageModel: config.GEMINI_IMAGE_MODEL,
-      embeddingModel: config.GEMINI_EMBEDDING_MODEL
+      embeddingModel: config.GEMINI_EMBEDDING_MODEL,
+      ttsModel: config.GEMINI_TTS_MODEL
+    },
+    openai: {
+      apiKeySet: Boolean(config.OPENAI_API_KEY),
+      ttsModel: config.OPENAI_TTS_MODEL
     },
     alibaba: {
       apiKeySet: Boolean(config.ALIBABA_API_KEY),

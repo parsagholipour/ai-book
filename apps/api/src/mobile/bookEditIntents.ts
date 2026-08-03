@@ -9,6 +9,13 @@ import {
 } from "../bookEditIntent.js";
 import { withTimeout } from "../withTimeout.js";
 import { applyBackMatterEdit } from "./backMatterEdits.js";
+import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
+import {
+  affectedPagesForIntent,
+  continuationNewPageCount,
+  exactReplacementFromMessage
+} from "./bookEditScope.js";
+import { exactReplacementPreviewCard, planExactReplacement } from "./exactReplacementPreview.js";
 import {
   type MobileBookEditOperationRecord,
   type MobileProjectChatMessageRecord,
@@ -454,6 +461,11 @@ export async function handleProjectChatIntent(options: {
     return { reply, operation: null };
   }
 
+  if (intent.kind === "chapter_heading" && ["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
+    const reply = await applyChapterHeadingEdit(project, intent, userMessageId);
+    return { reply, operation: null };
+  }
+
   if (!["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
@@ -552,7 +564,7 @@ export async function proposeBookEdit(options: {
     return { reply, operation: null };
   }
 
-  const affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
+  let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
   if (affectedPageIndexes.length === 0) {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
@@ -570,7 +582,19 @@ export async function proposeBookEdit(options: {
     return { reply, operation: null };
   }
 
-  const cost = bookEditCreditCost(intent.kind, affectedPageIndexes.length, project);
+  // A literal find/replace is computable here, so it is quoted as what it is:
+  // a known diff at no charge, rather than a per-page estimate for a rewrite
+  // the worker was never going to run.
+  const patch =
+    intent.kind === "local_patch"
+      ? await planExactReplacement(project.id, exactReplacementFromMessage(message), affectedPageIndexes)
+      : null;
+  if (patch) {
+    affectedPageIndexes = patch.pageIndexes;
+  }
+  const cost = bookEditCreditCost(intent.kind, affectedPageIndexes.length, project, {
+    deterministic: Boolean(patch)
+  });
   const proposalIntent: BookEditIntent = {
     ...intent,
     affectedPageIndexes,
@@ -606,7 +630,8 @@ export async function proposeBookEdit(options: {
         ...(proposalIntent.affectedChapterIndex ? { affectedChapterIndex: proposalIntent.affectedChapterIndex } : {}),
         ...(proposalIntent.targetLanguage ? { targetLanguage: proposalIntent.targetLanguage } : {}),
         credits: cost,
-        summary: editProposalSummary(intent.kind, affectedPageIndexes, proposalIntent)
+        summary: editProposalSummary(intent.kind, affectedPageIndexes, proposalIntent),
+        ...(patch ? { preview: exactReplacementPreviewCard(patch) } : {})
       }
     }
   });
@@ -917,116 +942,21 @@ export async function contentCardForTarget(
   };
 }
 
-export function planSummaryForClassifier(planVersion: { planningPackage: unknown }): string {
-  const parsed = bookPlanSchema.safeParse(planVersion.planningPackage);
-  if (!parsed.success) {
-    return "";
-  }
-  return [
-    parsed.data.title,
-    parsed.data.premise,
-    parsed.data.audience,
-    ...parsed.data.chapters.slice(0, 8).map((chapter) => `${chapter.index}. ${chapter.title}: ${chapter.summary}`)
-  ]
-    .filter(Boolean)
-    .join("\n")
-    .slice(0, 3000);
-}
-
-export async function affectedPagesForIntent(
-  intent: BookEditIntent,
-  message: string,
-  project: Pick<ProjectForChat, "id" | "pages">
-): Promise<number[]> {
-  const pages = project.pages;
-  const available = new Set(pages.map((page) => page.index));
-  if (intent.kind === "chapter_regenerate" && intent.affectedChapterIndex) {
-    return pages
-      .filter((page) => page.chapter?.index === intent.affectedChapterIndex)
-      .map((page) => page.index)
-      .sort((a, b) => a - b);
-  }
-  const explicit = intent.affectedPageIndexes.filter((index) => available.has(index));
-  if (explicit.length > 0) {
-    return [...new Set(explicit)].sort((a, b) => a - b);
-  }
-  if (intent.kind === "book_replan") {
-    return [];
-  }
-  if (intent.scope === "all_pages") {
-    return pages.map((page) => page.index).sort((a, b) => a - b);
-  }
-  if (intent.scope === "matching_pages") {
-    return pagesMatchingEditText(message, project.id);
-  }
-  const quotedMatches = await pagesMatchingQuotedText(message, project.id);
-  if (quotedMatches.length > 0) {
-    return quotedMatches;
-  }
-  return [];
-}
-
 /** Per-attempt budget for the grounded-answer model call; overruns fall back to the intent's canned reply. */
 export const GROUNDED_ANSWER_CALL_BUDGET_MS = 25_000;
 
-/**
- * Pages a continuation will append: requested chapter count × the median
- * size of the book's existing chapters (clamped 3-15). Deterministic, so the
- * proposal price and the queued job always agree.
- */
-export function continuationNewPageCount(intent: BookEditIntent, project: Pick<ProjectForChat, "pages">): number {
-  const chapterCount = Math.min(8, Math.max(1, intent.continuation?.chapterCount ?? 1));
-  const chapterSizes = new Map<number, number>();
-  for (const page of project.pages) {
-    const chapterIndex = page.chapter?.index;
-    if (typeof chapterIndex === "number") {
-      chapterSizes.set(chapterIndex, (chapterSizes.get(chapterIndex) ?? 0) + 1);
-    }
-  }
-  const sizes = [...chapterSizes.values()].sort((a, b) => a - b);
-  const median = sizes.length > 0 ? sizes[Math.floor(sizes.length / 2)]! : 5;
-  return chapterCount * Math.min(15, Math.max(3, median));
-}
-
-export function exactReplacementFromMessage(message: string): { from: string; to: string } | null {
-  return replacementTermsFromMessage(message);
-}
-
-export async function pagesMatchingEditText(message: string, projectId: string): Promise<number[]> {
-  const replacement = replacementTermsFromMessage(message);
-  if (replacement) {
-    return pagesMatchingNeedle(replacement.from, projectId);
-  }
-  return pagesMatchingQuotedText(message, projectId);
-}
-
-export async function pagesMatchingQuotedText(message: string, projectId: string): Promise<number[]> {
-  const quotes = quotedTexts(message);
-  if (quotes.length === 0) {
-    return [];
-  }
-  return pagesMatchingNeedle(quotes[0]!, projectId);
-}
-
-/** Full-text needle matching runs in the database so chat never loads every page's markdown. */
-export async function pagesMatchingNeedle(needleSource: string, projectId: string): Promise<number[]> {
-  const needle = needleSource.trim();
-  if (!needle) {
-    return [];
-  }
-  const matches = await prisma.page.findMany({
-    where: {
-      projectId,
-      OR: [
-        { markdown: { contains: needle, mode: "insensitive" } },
-        { title: { contains: needle, mode: "insensitive" } },
-        { summary: { contains: needle, mode: "insensitive" } }
-      ]
-    },
-    select: { index: true }
-  });
-  return matches.map((match) => match.index).sort((a, b) => a - b);
-}
+// Scope resolution lives in bookEditScope.ts. Re-exported here because these
+// names are the module's public surface for routes, tests and the worker-facing
+// helpers, and narrowing them would break callers that never move.
+export {
+  affectedPagesForIntent,
+  continuationNewPageCount,
+  exactReplacementFromMessage,
+  pagesMatchingEditText,
+  pagesMatchingNeedle,
+  pagesMatchingQuotedText,
+  planSummaryForClassifier
+} from "./bookEditScope.js";
 
 /**
  * The "work is queued" reply. Like {@link editProposalMessage} it stays silent

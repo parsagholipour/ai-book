@@ -76,8 +76,8 @@ class AudiobookCache {
 
   /// The chapter's audio file, downloading it if this is the first listen.
   ///
-  /// A chapter's bytes never change — a re-narration gets a new audiobook id —
-  /// so a file that exists at the expected size is always current.
+  /// Runtime provider fallback can replace a chapter under the same audiobook
+  /// id, so the render version in its URL is part of the on-device filename.
   Future<File> ensureChapterAudio({
     required String projectId,
     required String audiobookId,
@@ -90,7 +90,10 @@ class AudiobookCache {
       throw StateError('Chapter ${chapter.index} is not ready to download.');
     }
     final directory = await audiobookDirectory(projectId, audiobookId);
-    final file = File('${directory.path}/chapter-${chapter.index}.mp3');
+    final version = _renderVersion(url);
+    final file = File(
+      '${directory.path}/chapter-${chapter.index}-v${safeSegment(version)}.mp3',
+    );
     final expected = chapter.byteSize;
     if (await file.exists() &&
         (expected == null || await file.length() == expected)) {
@@ -101,6 +104,12 @@ class AudiobookCache {
       file,
       onProgress: onProgress,
       cancelToken: cancelToken,
+    );
+    await _pruneChapterVersions(
+      directory: directory,
+      chapterIndex: chapter.index,
+      keepName: file.path.split(Platform.pathSeparator).last,
+      suffix: '.mp3',
     );
     return file;
   }
@@ -116,21 +125,67 @@ class AudiobookCache {
       throw StateError('Chapter ${chapter.index} has no transcript yet.');
     }
     final directory = await audiobookDirectory(projectId, audiobookId);
+    final version = _renderVersion(url);
     final file = File(
-      '${directory.path}/chapter-${chapter.index}.timeline.json',
+      '${directory.path}/chapter-${chapter.index}-v${safeSegment(version)}.timeline.json',
     );
 
     if (!await file.exists()) {
       await _download(url, file, cancelToken: cancelToken);
     }
     try {
-      return AudiobookChapterTimeline.parse(await file.readAsString());
+      final timeline = AudiobookChapterTimeline.parse(
+        await file.readAsString(),
+      );
+      await _pruneChapterVersions(
+        directory: directory,
+        chapterIndex: chapter.index,
+        keepName: file.path.split(Platform.pathSeparator).last,
+        suffix: '.timeline.json',
+      );
+      return timeline;
     } on FormatException {
       // A truncated write is recoverable: fetch it again rather than leaving
       // the transcript permanently broken for this chapter.
       await file.delete().catchError((_) => file);
       await _download(url, file, cancelToken: cancelToken);
-      return AudiobookChapterTimeline.parse(await file.readAsString());
+      final timeline = AudiobookChapterTimeline.parse(
+        await file.readAsString(),
+      );
+      await _pruneChapterVersions(
+        directory: directory,
+        chapterIndex: chapter.index,
+        keepName: file.path.split(Platform.pathSeparator).last,
+        suffix: '.timeline.json',
+      );
+      return timeline;
+    }
+  }
+
+  static String _renderVersion(String url) {
+    final version = Uri.tryParse(url)?.queryParameters['v'];
+    return version == null || version.isEmpty ? '1' : version;
+  }
+
+  Future<void> _pruneChapterVersions({
+    required Directory directory,
+    required int chapterIndex,
+    required String keepName,
+    required String suffix,
+  }) async {
+    final legacyName = 'chapter-$chapterIndex$suffix';
+    final versionedPrefix = 'chapter-$chapterIndex-v';
+    await for (final entry in directory.list()) {
+      if (entry is! File) {
+        continue;
+      }
+      final name = entry.path.split(Platform.pathSeparator).last;
+      final isChapterVersion =
+          name == legacyName ||
+          (name.startsWith(versionedPrefix) && name.endsWith(suffix));
+      if (isChapterVersion && name != keepName) {
+        await entry.delete().catchError((_) => entry);
+      }
     }
   }
 

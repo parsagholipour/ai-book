@@ -6,7 +6,7 @@ import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
-import { bookPlanSchema, createProviders } from "@book-maker/core";
+import { bookPlanSchema, createProviders, hasExactMatch, type ExactReplacement } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
@@ -31,14 +31,22 @@ export async function applyBookEdit(job: Job) {
     request,
     affectedPageIndexes,
     planId,
-    exactReplacement
+    exactReplacement,
+    mode
   } = job.data as {
     projectId: string;
     operationId: string;
     request: string;
     affectedPageIndexes: number[];
     planId?: string;
-    exactReplacement?: { from: string; to: string };
+    exactReplacement?: ExactReplacement;
+    /**
+     * `"exact"` means the API verified every page in scope contains the literal
+     * text and quoted the edit at no charge on that basis. Falling back to a
+     * model rewrite here would spend a book's worth of tokens on an edit nobody
+     * paid for, so a page that no longer matches is skipped instead.
+     */
+    mode?: "exact";
   };
   const generationJobId = job.data.generationJobId as string | undefined;
   const operation = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
@@ -109,9 +117,20 @@ export async function applyBookEdit(job: Job) {
       { done: offset, total: pages.length, phase, pageIndex: page.index }
     );
 
+  const skippedPageIndexes: number[] = [];
   for (const [offset, page] of pages.entries()) {
     await reportPage(page, offset, "draft");
-    const updated = exactReplacement && page.markdown.includes(exactReplacement.from)
+    // Through the shared matcher, not `includes`: the pages were chosen with a
+    // case-insensitive search, so a literal check here disagreed with the search
+    // that selected them and sent those pages to the model instead.
+    const patchable = Boolean(exactReplacement && hasExactMatch(page.markdown, exactReplacement));
+    if (mode === "exact" && !patchable) {
+      // The page changed between the quote and the apply. Nothing to replace,
+      // and rewriting it is not what was approved.
+      skippedPageIndexes.push(page.index);
+      continue;
+    }
+    const updated = exactReplacement && patchable
       ? locallyPatchedPage(page, exactReplacement)
       : await rewritePageForUserRequest({
           projectId,
@@ -164,6 +183,15 @@ export async function applyBookEdit(job: Job) {
     updatedPageIndexes.push(page.index);
   }
 
+  if (skippedPageIndexes.length > 0) {
+    // Undo restores every snapshot it finds and names those pages in its reply,
+    // so a snapshot for a page that was never touched would report a page as
+    // rolled back that never moved.
+    await prisma.pageEditSnapshot.deleteMany({
+      where: { operationId, pageIndex: { in: skippedPageIndexes } }
+    });
+  }
+
   await advanceJobStep(generationJobId, "export", 85, "Refreshing exports");
   await invalidateProjectExports(projectId);
   await prisma.bookEditOperation.update({
@@ -178,5 +206,8 @@ export async function applyBookEdit(job: Job) {
     where: { id: projectId },
     data: { contentRevision: { increment: 1 } }
   });
-  await maybeEnqueueCompile(projectId, effectivePlanVersion.id);
+  // A mechanical edit changed only the strings the user approved, so the
+  // compile's QA repair pass has nothing to fix and no business rewriting pages
+  // around them — the same reasoning as a manual Edit Mode save.
+  await maybeEnqueueCompile(projectId, effectivePlanVersion.id, { skipFinalReview: mode === "exact" });
 }

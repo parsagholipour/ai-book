@@ -35,6 +35,8 @@ function audiobookRecord(overrides: Record<string, unknown> = {}) {
     status: "COMPLETE",
     contentRevision: 3,
     totalDurationMs: 600_000,
+    fallbackReason: null,
+    renderVersion: 1,
     generationJobId: "job-1",
     error: null,
     chapters: [
@@ -146,14 +148,42 @@ describe("mobile audiobook routes", () => {
 
       expect(response.statusCode).toBe(200);
       const { audiobook } = response.json();
-      expect(audiobook).toMatchObject({ status: "complete", voice: "Zephyr", isStale: false });
+      expect(audiobook).toMatchObject({
+        status: "complete",
+        voice: "Zephyr",
+        isStale: false,
+        backupNarrationUsed: false
+      });
       expect(audiobook.chapters[0]).toMatchObject({
         status: "ready",
-        audioUrl: "/api/mobile/projects/project-1/audiobook/chapters/1/audio",
-        timelineUrl: "/api/mobile/projects/project-1/audiobook/chapters/1/timeline"
+        audioUrl: "/api/mobile/projects/project-1/audiobook/chapters/1/audio?v=1",
+        timelineUrl: "/api/mobile/projects/project-1/audiobook/chapters/1/timeline?v=1"
       });
       // A chapter that is not narrated yet must not advertise a download.
       expect(audiobook.chapters[1]).toMatchObject({ status: "pending", audioUrl: null, timelineUrl: null });
+      await app.close();
+    });
+
+    it("discloses backup narration and versions replacement media URLs", async () => {
+      mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", contentRevision: 3 });
+      mockPrisma.audiobook.findUnique.mockResolvedValue(
+        audiobookRecord({ fallbackReason: "gemini_rate_limit", renderVersion: 2 })
+      );
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a")
+      });
+
+      const audiobook = response.json().audiobook;
+      expect(audiobook).toMatchObject({ backupNarrationUsed: true });
+      expect(audiobook.chapters[0]).toMatchObject({
+        audioUrl: "/api/mobile/projects/project-1/audiobook/chapters/1/audio?v=2",
+        timelineUrl: "/api/mobile/projects/project-1/audiobook/chapters/1/timeline?v=2"
+      });
+      expect(JSON.stringify(response.json())).not.toContain("gemini_rate_limit");
       await app.close();
     });
 

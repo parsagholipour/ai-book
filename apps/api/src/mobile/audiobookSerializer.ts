@@ -33,13 +33,15 @@ export type AudiobookWithChapters = {
   status: AudiobookStatus;
   contentRevision: number | null;
   totalDurationMs: number | null;
+  fallbackReason?: string | null | undefined;
+  renderVersion?: number | undefined;
   chapters: AudiobookChapterRecord[];
 };
 
 export function serializeAudiobook(audiobook: AudiobookWithChapters, projectContentRevision: number): MobileAudiobookDto {
   const chapters = [...audiobook.chapters]
     .sort((left, right) => left.index - right.index)
-    .map((chapter) => serializeAudiobookChapter(audiobook.projectId, chapter));
+    .map((chapter) => serializeAudiobookChapter(audiobook.projectId, chapter, audiobook.renderVersion ?? 1));
   const chaptersReady = chapters.filter((chapter) => chapter.status === "ready").length;
   const narrator = audiobookNarrator(audiobook.voice);
 
@@ -49,6 +51,7 @@ export function serializeAudiobook(audiobook: AudiobookWithChapters, projectCont
     status: audiobookStatus(audiobook.status),
     voice: audiobook.voice,
     narratorName: narrator?.displayName ?? audiobook.voice,
+    backupNarrationUsed: Boolean(audiobook.fallbackReason),
     isStale: audiobook.contentRevision !== null && audiobook.contentRevision !== projectContentRevision,
     totalDurationMs: audiobook.totalDurationMs,
     totalEstimatedDurationMs: totalEstimatedDurationMs(chapters),
@@ -58,7 +61,11 @@ export function serializeAudiobook(audiobook: AudiobookWithChapters, projectCont
   };
 }
 
-function serializeAudiobookChapter(projectId: string, chapter: AudiobookChapterRecord): MobileAudiobookChapterDto {
+function serializeAudiobookChapter(
+  projectId: string,
+  chapter: AudiobookChapterRecord,
+  renderVersion: number
+): MobileAudiobookChapterDto {
   const ready = chapter.status === "READY";
   const base = `/api/mobile/projects/${projectId}/audiobook/chapters/${chapter.index}`;
   return {
@@ -69,8 +76,8 @@ function serializeAudiobookChapter(projectId: string, chapter: AudiobookChapterR
     estimatedDurationMs: chapter.estimatedDurationMs,
     byteSize: chapter.byteSize,
     segmentCount: chapter.segmentCount,
-    audioUrl: ready ? `${base}/audio` : null,
-    timelineUrl: ready ? `${base}/timeline` : null
+    audioUrl: ready ? `${base}/audio?v=${renderVersion}` : null,
+    timelineUrl: ready ? `${base}/timeline?v=${renderVersion}` : null
   };
 }
 

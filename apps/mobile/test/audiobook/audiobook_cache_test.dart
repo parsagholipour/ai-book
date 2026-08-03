@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -23,7 +24,19 @@ class _FakeApiClient implements ApiClient {
       await File(savePath).writeAsString('partial');
       throw failure;
     }
-    await File(savePath).writeAsString('mp3-$path');
+    if (path.contains('/timeline')) {
+      await File(savePath).writeAsString(
+        jsonEncode({
+          'chapterIndex': 1,
+          'title': 'One',
+          'direction': 'ltr',
+          'durationMs': 1000,
+          'segments': <Object>[],
+        }),
+      );
+    } else {
+      await File(savePath).writeAsString('mp3-$path');
+    }
   }
 
   @override
@@ -36,6 +49,21 @@ NarratorVoice voice({String version = '1'}) => NarratorVoice(
   blurb: 'Bright and warm.',
   sampleUrl: '/api/mobile/audiobook/voices/Zephyr/sample?v=$version',
 );
+
+MobileAudiobookChapter chapter({String? version = '1'}) {
+  final query = version == null ? '' : '?v=$version';
+  return MobileAudiobookChapter(
+    index: 1,
+    title: 'One',
+    status: AudiobookChapterStatus.ready,
+    durationMs: 1000,
+    estimatedDurationMs: 1000,
+    byteSize: null,
+    segmentCount: 1,
+    audioUrl: '/api/mobile/projects/p/audiobook/chapters/1/audio$query',
+    timelineUrl: '/api/mobile/projects/p/audiobook/chapters/1/timeline$query',
+  );
+}
 
 void main() {
   late Directory root;
@@ -82,4 +110,74 @@ void main() {
     );
     expect(sampleDir.listSync(), isEmpty);
   });
+
+  test(
+    'chapter audio and timeline cache keys include the render version',
+    () async {
+      final audio = await cache.ensureChapterAudio(
+        projectId: 'p',
+        audiobookId: 'a',
+        chapter: chapter(version: '2'),
+      );
+      await cache.ensureChapterTimeline(
+        projectId: 'p',
+        audiobookId: 'a',
+        chapter: chapter(version: '2'),
+      );
+
+      expect(audio.path, endsWith('chapter-1-v2.mp3'));
+      final names = audio.parent.listSync().map((entry) => entry.path).toList();
+      expect(names, contains(endsWith('chapter-1-v2.timeline.json')));
+    },
+  );
+
+  test(
+    'unversioned chapter URLs are version 1 and version 2 prunes both old caches',
+    () async {
+      final legacy = await cache.ensureChapterAudio(
+        projectId: 'p',
+        audiobookId: 'a',
+        chapter: chapter(version: null),
+      );
+      await cache.ensureChapterTimeline(
+        projectId: 'p',
+        audiobookId: 'a',
+        chapter: chapter(version: null),
+      );
+      expect(legacy.path, endsWith('chapter-1-v1.mp3'));
+
+      final current = await cache.ensureChapterAudio(
+        projectId: 'p',
+        audiobookId: 'a',
+        chapter: chapter(version: '2'),
+      );
+      await cache.ensureChapterTimeline(
+        projectId: 'p',
+        audiobookId: 'a',
+        chapter: chapter(version: '2'),
+      );
+
+      final names = current.parent
+          .listSync()
+          .map((entry) => entry.path)
+          .toList();
+      expect(names, isNot(contains(endsWith('chapter-1-v1.mp3'))));
+      expect(names, isNot(contains(endsWith('chapter-1-v1.timeline.json'))));
+      expect(names, contains(endsWith('chapter-1-v2.mp3')));
+      expect(names, contains(endsWith('chapter-1-v2.timeline.json')));
+    },
+  );
+
+  test(
+    'older audiobook payloads default backup narration disclosure to false',
+    () {
+      expect(MobileAudiobook.fromJson(const {}).backupNarrationUsed, isFalse);
+      expect(
+        MobileAudiobook.fromJson(const {
+          'backupNarrationUsed': true,
+        }).backupNarrationUsed,
+        isTrue,
+      );
+    },
+  );
 }

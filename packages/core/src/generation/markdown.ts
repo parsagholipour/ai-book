@@ -36,7 +36,81 @@ export type CompileMarkdownInput = {
    * the automatic decision in {@link shouldRenderSources} alone.
    */
   includeSources?: boolean | undefined;
+  /**
+   * Reader preference for how a chapter heading is worded. `undefined` keeps
+   * the canonical `Chapter N: Title`.
+   */
+  chapterHeadingStyle?: ChapterHeadingStyle | undefined;
+  /** Replaces the word "Chapter" — "Part", "Episode". `undefined` keeps the localized default. */
+  chapterHeadingLabel?: string | undefined;
 };
+
+/**
+ * How a chapter heading is worded.
+ *
+ * - `label_number_title` — `Chapter 1: The Web Spins` (the default)
+ * - `number_title` — `1. The Web Spins`
+ * - `title_only` — `The Web Spins`
+ */
+export type ChapterHeadingStyle = "label_number_title" | "number_title" | "title_only";
+
+export const CHAPTER_HEADING_STYLES: readonly ChapterHeadingStyle[] = [
+  "label_number_title",
+  "number_title",
+  "title_only"
+];
+
+export const DEFAULT_CHAPTER_HEADING_STYLE: ChapterHeadingStyle = "label_number_title";
+
+/** Longer than this stops being a label and starts being a sentence in the heading. */
+export const CHAPTER_HEADING_LABEL_MAX_LENGTH = 24;
+
+/**
+ * Normalizes a custom chapter label, or returns `undefined` when it cannot be
+ * used.
+ *
+ * "Page" is rejected outright: `assertBookLikeMarkdown` treats a
+ * `## Page 1` heading as a generation artifact and throws, so accepting it here
+ * would fail *every* export of that book rather than render badly. `#` and
+ * newlines are rejected for the same reason one level down — they would break
+ * out of the heading they are interpolated into.
+ */
+export function sanitizeChapterHeadingLabel(raw: unknown): string | undefined {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const clean = raw.replace(/\s+/g, " ").trim();
+  if (!clean || clean.length > CHAPTER_HEADING_LABEL_MAX_LENGTH) {
+    return undefined;
+  }
+  if (/[#<>[\]]/.test(clean) || /^page$/i.test(clean)) {
+    return undefined;
+  }
+  return clean;
+}
+
+/**
+ * Reads {@link CompileMarkdownInput.chapterHeadingStyle} out of a project's
+ * stored `mediaSettings`. Live project preference, same rule as
+ * {@link includeSourcesPreference}: read it from the project row, never from a
+ * plan version's frozen `inputSnapshot`, or restyling a heading would need a
+ * replan to take effect.
+ */
+export function chapterHeadingStylePreference(mediaSettings: unknown): ChapterHeadingStyle | undefined {
+  const candidate = mediaSettingsRecord(mediaSettings).chapterHeadingStyle;
+  return CHAPTER_HEADING_STYLES.find((style) => style === candidate);
+}
+
+/** The custom label, read from the same place and under the same rule. */
+export function chapterHeadingLabelPreference(mediaSettings: unknown): string | undefined {
+  return sanitizeChapterHeadingLabel(mediaSettingsRecord(mediaSettings).chapterHeadingLabel);
+}
+
+function mediaSettingsRecord(mediaSettings: unknown): Record<string, unknown> {
+  return mediaSettings && typeof mediaSettings === "object" && !Array.isArray(mediaSettings)
+    ? (mediaSettings as Record<string, unknown>)
+    : {};
+}
 
 /**
  * Reads {@link CompileMarkdownInput.includeSources} out of a project's stored
@@ -46,10 +120,7 @@ export type CompileMarkdownInput = {
  * replanning.
  */
 export function includeSourcesPreference(mediaSettings: unknown): boolean | undefined {
-  const settings =
-    mediaSettings && typeof mediaSettings === "object" && !Array.isArray(mediaSettings)
-      ? (mediaSettings as Record<string, unknown>)
-      : {};
+  const settings = mediaSettingsRecord(mediaSettings);
   return typeof settings.includeSources === "boolean" ? settings.includeSources : undefined;
 }
 
@@ -199,7 +270,8 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
   const readerChapterStarts = readerChapterStartsForPages(input.readerChapters, pages);
   const chapterStarts = readerChapterStarts.length > 0 ? readerChapterStarts : chapterStartsForPages(input.plan, pages);
   const chapterByStartPage = new Map(chapterStarts.map((start) => [start.pageIndex, start.chapter]));
-  const contents = chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels) : "";
+  const heading = chapterHeadingFormat(input, labels);
+  const contents = chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels, heading) : "";
   const research = formatReaderFacingSources(input, pages);
   const coverImagePath = input.cover?.imagePath;
 
@@ -212,9 +284,9 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
     ...pages.map((page) => {
       const chapter = chapterByStartPage.get(page.index);
       return [
-        chapter ? `<a id="${chapterAnchorId(chapter)}"></a>\n\n## ${formatChapterHeading(chapter, labels)}` : "",
+        chapter ? `<a id="${chapterAnchorId(chapter)}"></a>\n\n## ${formatChapterHeading(chapter, heading)}` : "",
         page.imagePath ? `\n![${sanitizeImageAlt(page.index, page.imageAlt, labels)}](${page.imagePath})\n` : "",
-        sanitizePageMarkdown(page, chapter, labels),
+        sanitizePageMarkdown(page, chapter, labels, heading),
         ""
       ]
         .filter(Boolean)
@@ -350,16 +422,44 @@ function looksLikePageLevelReaderChapters(chapters: ReaderChapter[], pageCount: 
 
 type DisplayChapter = Pick<ChapterPlan, "index" | "title" | "summary">;
 
-function formatChapterHeading(chapter: DisplayChapter, labels: MarkdownLabels): string {
-  const clean = cleanChapterTitle(chapter);
-  return clean ? `${labels.chapter} ${chapter.index}: ${clean}` : `${labels.chapter} ${chapter.index}`;
+/** The heading wording in force for one compile: a style plus the word to use for "Chapter". */
+type ChapterHeadingFormat = { style: ChapterHeadingStyle; word: string };
+
+function chapterHeadingFormat(input: CompileMarkdownInput, labels: MarkdownLabels): ChapterHeadingFormat {
+  return {
+    style: input.chapterHeadingStyle ?? DEFAULT_CHAPTER_HEADING_STYLE,
+    word: sanitizeChapterHeadingLabel(input.chapterHeadingLabel) ?? labels.chapter
+  };
+}
+
+/**
+ * Never returns an empty string. A chapter with no usable title falls back to
+ * the numbered form even under `title_only`, because a bare `## ` is not a
+ * heading to anything downstream: `splitIntoChapters` in `epub.ts` matches
+ * `^##\s+(.+)$`, so an empty one would silently fold that chapter into the
+ * previous one rather than render badly.
+ */
+function formatChapterHeading(chapter: DisplayChapter, heading: ChapterHeadingFormat): string {
+  const clean = cleanChapterTitle(chapter, heading);
+  const numbered = `${heading.word} ${chapter.index}`;
+  if (!clean) {
+    return numbered;
+  }
+  if (heading.style === "title_only") {
+    return clean;
+  }
+  if (heading.style === "number_title") {
+    return `${chapter.index}. ${clean}`;
+  }
+  return `${numbered}: ${clean}`;
 }
 
 function formatContentsSection(
   chapterStarts: Array<{ pageIndex: number; chapter: DisplayChapter }>,
-  labels: MarkdownLabels
+  labels: MarkdownLabels,
+  heading: ChapterHeadingFormat
 ): string {
-  const items = chapterStarts.map((item) => formatContentsItem(item, labels)).join("\n");
+  const items = chapterStarts.map((item) => formatContentsItem(item, heading)).join("\n");
   const densityClass =
     chapterStarts.length > 14 ? " book-contents--dense" : chapterStarts.length > 8 ? " book-contents--compact" : "";
   return [
@@ -376,16 +476,25 @@ function formatContentsSection(
 
 function formatContentsItem(
   { pageIndex, chapter }: { pageIndex: number; chapter: DisplayChapter },
-  labels: MarkdownLabels
+  heading: ChapterHeadingFormat
 ): string {
-  const label = escapeHtml(`${labels.chapter} ${chapter.index}`);
-  const title = escapeHtml(cleanChapterTitle(chapter) || "Untitled");
+  // The eyebrow carries whatever numbering the heading style kept, and is
+  // dropped entirely under `title_only`. Every sibling span sets its own
+  // `grid-column` in the PDF stylesheet, so removing this one loses the line
+  // without reflowing the title, leader and page number.
+  const label =
+    heading.style === "title_only"
+      ? ""
+      : heading.style === "number_title"
+        ? escapeHtml(String(chapter.index))
+        : escapeHtml(`${heading.word} ${chapter.index}`);
+  const title = escapeHtml(cleanChapterTitle(chapter, heading) || "Untitled");
   const page = escapeHtml(String(pageIndex));
   const href = `#${chapterAnchorId(chapter)}`;
   return [
     '    <li class="book-contents__item">',
     `      <a class="book-contents__link" href="${href}">`,
-    `        <span class="book-contents__chapter">${label}</span>`,
+    ...(label ? [`        <span class="book-contents__chapter">${label}</span>`] : []),
     `        <span class="book-contents__name">${title}</span>`,
     '        <span class="book-contents__leader" aria-hidden="true"></span>',
     `        <span class="book-contents__page">${page}</span>`,
@@ -394,13 +503,29 @@ function formatContentsItem(
   ].join("\n");
 }
 
-function cleanChapterTitle(chapter: DisplayChapter): string {
+/**
+ * Strips a label prefix the stored title already carries, so a heading is never
+ * doubled.
+ *
+ * Both the English "chapter" and the label actually in force are stripped: the
+ * former because model-written titles arrive as "Chapter 3: ..." regardless of
+ * language, the latter so switching to "Part" does not render "Part 1: Part 1: X".
+ */
+function cleanChapterTitle(chapter: DisplayChapter, heading?: ChapterHeadingFormat): string {
   let clean = chapter.title.trim().replace(/^#+\s*/, "").replace(/\s+/g, " ");
-  const duplicatePrefix = new RegExp(`^(?:chapter\\s+${chapter.index}\\s*[:\\-]?\\s*)+`, "i");
+  const words = [...new Set(["chapter", ...(heading ? [heading.word.toLowerCase()] : [])])];
+  const duplicatePrefix = new RegExp(
+    `^(?:(?:${words.map(escapeRegExp).join("|")})\\s+${chapter.index}\\s*[:\\-]?\\s*)+`,
+    "i"
+  );
   while (duplicatePrefix.test(clean)) {
     clean = clean.replace(duplicatePrefix, "").trim();
   }
   return clean;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function chapterAnchorId(chapter: DisplayChapter): string {
@@ -420,7 +545,12 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function sanitizePageMarkdown(page: MarkdownPage, chapter: DisplayChapter | undefined, labels: MarkdownLabels): string {
+function sanitizePageMarkdown(
+  page: MarkdownPage,
+  chapter: DisplayChapter | undefined,
+  labels: MarkdownLabels,
+  headingFormat: ChapterHeadingFormat
+): string {
   const markdown = unwrapWholePageMarkdownFence(page.markdown);
   const lines = markdown.split(/\r?\n/);
   const firstLine = lines[0];
@@ -429,7 +559,7 @@ function sanitizePageMarkdown(page: MarkdownPage, chapter: DisplayChapter | unde
     return markdown;
   }
 
-  if (!shouldStripLeadingHeading(heading[1] ?? "", page, chapter, labels)) {
+  if (!shouldStripLeadingHeading(heading[1] ?? "", page, chapter, labels, headingFormat)) {
     return markdown;
   }
 
@@ -450,7 +580,8 @@ function shouldStripLeadingHeading(
   heading: string,
   page: MarkdownPage,
   chapter: DisplayChapter | undefined,
-  labels: MarkdownLabels
+  labels: MarkdownLabels,
+  headingFormat: ChapterHeadingFormat
 ): boolean {
   const normalizedHeading = normalizeHeadingText(heading);
   const normalizedPageTitle = normalizeHeadingText(sanitizePageTitle(page.index, page.title));
@@ -467,9 +598,15 @@ function shouldStripLeadingHeading(
     return false;
   }
 
-  return (
-    normalizedHeading === normalizeHeadingText(formatChapterHeading(chapter, labels)) ||
-    normalizedHeading === normalizeHeadingText(chapter.title)
+  // The page's own heading was written when some *other* wording was canonical,
+  // so match every form this chapter could have been headed with — not just the
+  // one in force now. Otherwise switching the style leaves the old heading
+  // sitting in the prose directly under the new one.
+  const words = [...new Set([headingFormat.word, labels.chapter, "Chapter"])];
+  return words.some((word) =>
+    CHAPTER_HEADING_STYLES.some(
+      (style) => normalizedHeading === normalizeHeadingText(formatChapterHeading(chapter, { style, word }))
+    )
   );
 }
 

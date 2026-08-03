@@ -148,6 +148,8 @@ export interface EmbeddingAdapter {
 export type SpeechRequest = {
   text: string;
   voice: string;
+  /** Provider-neutral narrator persona selected by the listener. */
+  narrator?: string | undefined;
   /** Human-readable language name, used as pronunciation guidance. */
   language?: string | undefined;
   /** Performance direction — how to read, never what to read. */

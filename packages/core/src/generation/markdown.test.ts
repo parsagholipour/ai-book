@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assertBookLikeMarkdown,
+  chapterHeadingLabelPreference,
+  chapterHeadingStylePreference,
   compileBookMarkdown,
   findBookLikeMarkdownIssues,
   includeSourcesPreference
@@ -449,6 +451,105 @@ describe("compileBookMarkdown", () => {
     expect(includeSourcesPreference(null)).toBeUndefined();
   });
 
+  it("drops the chapter label from headings and contents when the reader asks for titles only", () => {
+    const markdown = compileBookMarkdown({
+      plan: withTwoOnePageChapters(storyPlan()),
+      pages: [
+        { index: 1, title: "First", markdown: "The first page." },
+        { index: 2, title: "Second", markdown: "The second page." }
+      ],
+      chapterHeadingStyle: "title_only"
+    });
+
+    expect(markdown).toContain("## Opening Move");
+    expect(markdown).toContain("## Second Movement");
+    expect(markdown).not.toContain("Chapter 1");
+    expect(markdown).not.toContain("Chapter 2");
+    // The eyebrow is dropped rather than emptied; the title still names the chapter.
+    expect(markdown).not.toContain('<span class="book-contents__chapter">');
+    expect(markdown).toContain('<span class="book-contents__name">Opening Move</span>');
+    expect(findBookLikeMarkdownIssues(markdown)).toEqual([]);
+  });
+
+  it("keeps numbering without the label when the reader asks for numbered titles", () => {
+    const markdown = compileBookMarkdown({
+      plan: withTwoOnePageChapters(storyPlan()),
+      pages: [
+        { index: 1, title: "First", markdown: "The first page." },
+        { index: 2, title: "Second", markdown: "The second page." }
+      ],
+      chapterHeadingStyle: "number_title"
+    });
+
+    expect(markdown).toContain("## 1. Opening Move");
+    expect(markdown).toContain("## 2. Second Movement");
+    expect(markdown).not.toContain("Chapter 1");
+    expect(markdown).toContain('<span class="book-contents__chapter">1</span>');
+  });
+
+  it("swaps in a custom chapter label without doubling a title that already carries it", () => {
+    const plan = withTwoOnePageChapters(storyPlan());
+    const markdown = compileBookMarkdown({
+      // The stored title is "Chapter 1: Opening Move"; under a custom label the
+      // English prefix still has to come off or the heading reads twice.
+      plan: { ...plan, chapters: [{ ...plan.chapters[0]!, title: "Part 1: Opening Move" }, plan.chapters[1]!] },
+      pages: [
+        { index: 1, title: "First", markdown: "The first page." },
+        { index: 2, title: "Second", markdown: "The second page." }
+      ],
+      chapterHeadingLabel: "Part"
+    });
+
+    expect(markdown).toContain("## Part 1: Opening Move");
+    expect(markdown).not.toContain("Part 1: Part 1:");
+    expect(markdown).toContain('<span class="book-contents__chapter">Part 1</span>');
+  });
+
+  it("never emits an empty heading when a titleless chapter is set to titles only", () => {
+    const plan = withTwoOnePageChapters(storyPlan());
+    const markdown = compileBookMarkdown({
+      plan: { ...plan, chapters: [{ ...plan.chapters[0]!, title: "   " }, plan.chapters[1]!] },
+      pages: [
+        { index: 1, title: "First", markdown: "The first page." },
+        { index: 2, title: "Second", markdown: "The second page." }
+      ],
+      chapterHeadingStyle: "title_only"
+    });
+
+    // A bare "## " would fold this chapter into the previous one in the EPUB.
+    expect(markdown).not.toMatch(/^##\s*$/m);
+    expect(markdown).toContain("## Chapter 1");
+  });
+
+  it("still strips a page's own heading after the chapter style changes", () => {
+    const markdown = compileBookMarkdown({
+      plan: withTwoOnePageChapters(storyPlan()),
+      pages: [
+        // Written when "Chapter 1: ..." was canonical. It must not survive as a
+        // duplicate underneath the newly styled heading.
+        { index: 1, title: "First", markdown: "# Chapter 1: Opening Move\n\nThe first page." },
+        { index: 2, title: "Second", markdown: "The second page." }
+      ],
+      chapterHeadingStyle: "title_only"
+    });
+
+    expect(markdown).toContain("## Opening Move");
+    expect(markdown).not.toContain("# Chapter 1: Opening Move");
+    expect(markdown).toContain("The first page.");
+  });
+
+  it("reads the chapter heading preferences off a project's media settings", () => {
+    expect(chapterHeadingStylePreference({ chapterHeadingStyle: "title_only" })).toBe("title_only");
+    expect(chapterHeadingStylePreference({ chapterHeadingStyle: "nonsense" })).toBeUndefined();
+    expect(chapterHeadingStylePreference(null)).toBeUndefined();
+    expect(chapterHeadingLabelPreference({ chapterHeadingLabel: "Part" })).toBe("Part");
+    // "Page" would make assertBookLikeMarkdown throw on every export.
+    expect(chapterHeadingLabelPreference({ chapterHeadingLabel: "page" })).toBeUndefined();
+    expect(chapterHeadingLabelPreference({ chapterHeadingLabel: "#Part" })).toBeUndefined();
+    expect(chapterHeadingLabelPreference({ chapterHeadingLabel: "x".repeat(40) })).toBeUndefined();
+    expect(chapterHeadingLabelPreference({})).toBeUndefined();
+  });
+
   it("omits source citations for fictional kid stories even when source rows exist", () => {
     const plan = makeFallbackPlan({
       prompt: "A bedtime story about a rabbit who learns to listen to the rain.",
@@ -656,6 +757,25 @@ describe("compileBookMarkdown", () => {
     expect(() => assertBookLikeMarkdown(badMarkdown)).toThrow(/reader-facing generation artifacts/);
   });
 });
+
+function storyPlan(): ReturnType<typeof makeFallbackPlan> {
+  return makeFallbackPlan({
+    prompt: "A story about a careful clockmaker.",
+    category: "STORY",
+    targetPages: 2,
+    complexity: 5,
+    temperature: 0.8,
+    language: "en",
+    mediaSettings: {
+      fullIllustrations: true,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      toneProfile: "neutral" as const
+    }
+  });
+}
 
 function withTwoOnePageChapters(plan: ReturnType<typeof makeFallbackPlan>): ReturnType<typeof makeFallbackPlan> {
   return {

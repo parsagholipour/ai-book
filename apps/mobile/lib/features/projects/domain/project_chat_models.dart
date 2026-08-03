@@ -178,6 +178,41 @@ class MobileChatContentCard {
   }
 }
 
+/// One line an exact replacement will change, as it reads now and after.
+class MobileEditPreviewSample {
+  const MobileEditPreviewSample({required this.before, required this.after});
+
+  final String before;
+  final String after;
+
+  factory MobileEditPreviewSample.fromJson(Map<String, dynamic> json) {
+    return MobileEditPreviewSample(
+      before: json['before'] as String? ?? '',
+      after: json['after'] as String? ?? '',
+    );
+  }
+}
+
+/// The exact result of a deterministic edit, computed before anything is
+/// charged. Only literal find/replace edits can carry one — everything else is
+/// a model rewrite whose output does not exist yet.
+class MobileEditPreview {
+  const MobileEditPreview({required this.samples});
+
+  final List<MobileEditPreviewSample> samples;
+
+  static MobileEditPreview? fromJson(Map<String, dynamic>? json) {
+    if (json == null || json['kind'] != 'exact_replace') return null;
+    final raw = json['samples'] as List<dynamic>? ?? const [];
+    final samples = raw
+        .whereType<Map<String, dynamic>>()
+        .map(MobileEditPreviewSample.fromJson)
+        .where((sample) => sample.before.isNotEmpty || sample.after.isNotEmpty)
+        .toList(growable: false);
+    return samples.isEmpty ? null : MobileEditPreview(samples: samples);
+  }
+}
+
 /// A charged book edit the server priced but has not started yet.
 class MobileEditProposal {
   const MobileEditProposal({
@@ -189,6 +224,7 @@ class MobileEditProposal {
     required this.summary,
     this.affectedChapterIndex,
     this.targetLanguage,
+    this.preview,
   });
 
   final String id;
@@ -199,6 +235,7 @@ class MobileEditProposal {
   final String summary;
   final int? affectedChapterIndex;
   final String? targetLanguage;
+  final MobileEditPreview? preview;
 
   factory MobileEditProposal.fromJson(Map<String, dynamic> json) {
     final pages = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
@@ -213,6 +250,7 @@ class MobileEditProposal {
           : 'Apply this edit',
       affectedChapterIndex: json['affectedChapterIndex'] as int?,
       targetLanguage: json['targetLanguage'] as String?,
+      preview: MobileEditPreview.fromJson(json['preview'] as Map<String, dynamic>?),
     );
   }
 

@@ -273,7 +273,11 @@ export async function hasOpenGeneratePageJob(projectId: string, pageId: string):
   return openJobs.some((job) => jsonPayloadToRecord(job.payload).pageId === pageId);
 }
 
-export async function maybeEnqueueCompile(projectId: string, planId: string) {
+export async function maybeEnqueueCompile(
+  projectId: string,
+  planId: string,
+  options: { skipFinalReview?: boolean } = {}
+) {
   const [project, planVersion] = await Promise.all([
     prisma.project.findUnique({ where: { id: projectId } }),
     prisma.planVersion.findUnique({ where: { id: planId } })
@@ -330,7 +334,7 @@ export async function maybeEnqueueCompile(projectId: string, planId: string) {
       projectId,
       type: "COMPILE_EXPORT",
       name: "compile-export",
-      payload: { planId, contentRevision },
+      payload: { planId, contentRevision, ...(options.skipFinalReview ? { skipFinalReview: true } : {}) },
       dedupeKey: `compile-export:${projectId}:${planId}:${contentFingerprint}`,
       contentRevision
     });

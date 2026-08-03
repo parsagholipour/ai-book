@@ -972,6 +972,7 @@ model ProviderCallLog {
   generationJob GenerationJob? @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
 
   @@index([generationJobId])
+  @@index([provider, model, purpose, createdAt])
 }
 
 /// One metered realtime call between a user and a book character.
@@ -1072,6 +1073,11 @@ model Audiobook {
   status          AudiobookStatus @default(GENERATING)
   contentRevision Int?
   totalDurationMs Int?
+  speechProvider  String?
+  speechModel     String?
+  speechVoice     String?
+  fallbackReason  String?
+  renderVersion   Int             @default(1)
   generationJobId String?
   error           String?
   createdAt       DateTime        @default(now())

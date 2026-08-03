@@ -8,6 +8,7 @@ import {
   operationQueuedMessage
 } from "./bookEditIntents.js";
 import { billingOperationForIntent, bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
+import { planExactReplacement } from "./exactReplacementPreview.js";
 import {
   type MobileBookEditOperationRecord,
   type MobileProjectChatMessageRecord,
@@ -266,7 +267,7 @@ export async function queueChatBookEdit(options: {
     return queueChatContinueBook({ userId, project, userMessageId, message, intent });
   }
 
-  const affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
+  let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
   if (affectedPageIndexes.length === 0) {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
@@ -284,7 +285,19 @@ export async function queueChatBookEdit(options: {
     return { reply, operation: null };
   }
 
-  const cost = bookEditCreditCost(intent.kind, affectedPageIndexes.length, project);
+  // Recomputed rather than read off the proposal: this is the number that gets
+  // charged, so it has to be derived from the pages as they are now, and the
+  // same scoping the quote used has to be applied or the two disagree.
+  const patch =
+    intent.kind === "local_patch"
+      ? await planExactReplacement(project.id, exactReplacementFromMessage(message), affectedPageIndexes)
+      : null;
+  if (patch) {
+    affectedPageIndexes = patch.pageIndexes;
+  }
+  const cost = bookEditCreditCost(intent.kind, affectedPageIndexes.length, project, {
+    deterministic: Boolean(patch)
+  });
   const operationKind = operationKindForIntent(intent.kind);
   const billingOperation = billingOperationForIntent(intent.kind);
   const operation = await createOpenBookEditOperation({
@@ -327,7 +340,15 @@ export async function queueChatBookEdit(options: {
         intentKind: intent.kind,
         ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
         ...(spend ? { billingLedgerEntryId: spend.id } : {}),
-        ...(exactReplacementFromMessage(message) ? { exactReplacement: exactReplacementFromMessage(message) } : {})
+        // `mode: "exact"` is a promise, not a hint: every page here was verified
+        // to contain the literal text, so the worker must not fall back to a
+        // model rewrite for any of them. That fallback is what silently turned
+        // a patch-priced edit into a per-page regeneration.
+        ...(patch
+          ? { exactReplacement: patch.replacement, mode: "exact" as const }
+          : exactReplacementFromMessage(message)
+            ? { exactReplacement: exactReplacementFromMessage(message) }
+            : {})
       }
     });
     const updated = await prisma.bookEditOperation.update({

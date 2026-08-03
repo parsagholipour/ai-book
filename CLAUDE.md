@@ -199,6 +199,31 @@ tells you when a listed file has dropped under the default so the entry can be d
   edit target): free, it sets `mediaSettings.includeSources` on the project and queues the same
   recompile undo uses. Read that flag with `includeSourcesPreference` from the **project row**,
   never from a plan version's `inputSnapshot`, or toggling it would need a replan to take effect.
+- **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.**
+  `formatChapterHeading` (`packages/core/src/generation/markdown.ts`) synthesizes `Chapter N: Title`
+  at export time from a label table, and its sibling `cleanChapterTitle` *strips* that prefix back
+  off a stored title so it cannot be doubled — so the word is in no `Page.markdown` and not even in
+  `Chapter.title`. "Don't say Chapter, just the title" is a `chapter_heading` intent
+  (`apps/api/src/bookEditChapterHeading.ts`, matching router edit target): free, it sets
+  `mediaSettings.chapterHeadingStyle`/`chapterHeadingLabel` and queues the same recompile. Both
+  recognisers return **before** `normalizeIntentForStage`, which is load-bearing — `forcedDecision`
+  turns any unresolved request into a whole-book `page_rewrite`, and that is what once quoted 960
+  credits to rewrite twelve pages that would have recompiled the identical heading.
+  `applyPresentationPreference` (`apps/api/src/mobile/presentationEdits.ts`) is the shared mechanism
+  for both: one `mediaSettings` field plus a recompile, no `BookEditOperation`, no ledger entry.
+- **A verified exact replacement is free, and the verification is what makes it safe.**
+  `locallyPatchedPage` was always model-free, but the choice between it and a two-model-call page
+  rewrite was made per page *at apply time* and never reached pricing, so a `local_patch` was billed
+  `25 + 10/page` either way. `planExactReplacement` (`apps/api/src/mobile/exactReplacementPreview.ts`)
+  now computes the result up front: pages that do not contain the text are dropped from the
+  operation, the real before/after lines ride on `editProposal.preview`, and the quote is 0. The job
+  then carries `mode: "exact"`, which forbids the model fallback — a page that stopped matching is
+  skipped, never rewritten, because nothing was charged for rewriting it. Matching goes through
+  `hasExactMatch` in `packages/core/src/generation/exactReplacement.ts`, never `String.includes`:
+  candidate pages are selected case-insensitively in SQL, so a literal check disagreed with the
+  search that chose them. When the literal text appears on no page, the replacement falls back to
+  `preserveCase` rather than to a rewrite ("replace rabbit with fly" about a book that writes
+  "Rabbit").
 - **A non-null `ProviderCallLog.costHint` *is* a settled, priced call.** Provisional, in-flight and
   failed rows all write `null` (`apps/worker/src/providers/usageAccounting.ts`), so real provider
   spend is `SUM("costHint")` — do not replay the rate cards in `packages/core/src/costs.ts` to

@@ -64,6 +64,10 @@ class EditProposalCard extends StatelessWidget {
               color: colors.onSurfaceVariant,
             ),
           ),
+          if (proposal.preview != null) ...[
+            const SizedBox(height: 10),
+            _EditPreview(preview: proposal.preview!),
+          ],
           if (onApply != null || onCancel != null) ...[
             const SizedBox(height: 12),
             Row(
@@ -85,6 +89,87 @@ class EditProposalCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// The exact before/after lines a deterministic edit will produce.
+///
+/// Only shown for literal find/replace edits, where the server computed the
+/// result without a model: what is drawn here is the change itself, not a
+/// description of one, which is what makes approving it safe.
+class _EditPreview extends StatelessWidget {
+  const _EditPreview({required this.preview});
+
+  final MobileEditPreview preview;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final lineStyle = textTheme.bodySmall?.copyWith(height: 1.35);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final (index, sample) in preview.samples.indexed) ...[
+            if (index > 0) const SizedBox(height: 8),
+            _PreviewLine(
+              marker: '-',
+              text: sample.before,
+              color: colors.error,
+              style: lineStyle,
+            ),
+            const SizedBox(height: 2),
+            _PreviewLine(
+              marker: '+',
+              text: sample.after,
+              color: colors.primary,
+              style: lineStyle,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviewLine extends StatelessWidget {
+  const _PreviewLine({
+    required this.marker,
+    required this.text,
+    required this.color,
+    required this.style,
+  });
+
+  final String marker;
+  final String text;
+  final Color color;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          marker,
+          style: style?.copyWith(
+            color: color,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(child: Text(text, style: style?.copyWith(color: color))),
+      ],
     );
   }
 }

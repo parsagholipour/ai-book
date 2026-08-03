@@ -3,6 +3,8 @@ import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   generateBookEpub,
   getBookGenerationStrategy,
+  chapterHeadingLabelPreference,
+  chapterHeadingStylePreference,
   includeSourcesPreference,
   mediaSettingsSchema,
   resolvePublicImageUrl,
@@ -193,7 +195,9 @@ export async function compileProjectMarkdown(
       url: source.url ?? undefined,
       summary: source.summary
     })),
-    includeSources: includeSourcesPreference(project.mediaSettings)
+    includeSources: includeSourcesPreference(project.mediaSettings),
+    chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
+    chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
   });
   assertBookLikeMarkdown(markdown);
   return markdown;

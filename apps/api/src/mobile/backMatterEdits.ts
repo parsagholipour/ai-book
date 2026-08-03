@@ -1,10 +1,8 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
-import { queueUserEditExportRecompile } from "./manualEdits.js";
+import { applyPresentationPreference } from "./presentationEdits.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
-import { jsonInputValue, jsonRecord } from "./support.js";
 import { includeSourcesPreference } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
 
 /**
  * Applies a `back_matter` intent: the reader-facing Sources list at the end of
@@ -46,15 +44,7 @@ export async function applyBackMatterEdit(
     return reply("I can change that once this book has finished generating.");
   }
 
-  await prisma.project.update({
-    where: { id: project.id },
-    data: { mediaSettings: jsonInputValue({ ...jsonRecord(project.mediaSettings), includeSources }) }
-  });
-  await queueUserEditExportRecompile(
-    project.id,
-    project.currentPlanId,
-    project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE"
-  );
+  await applyPresentationPreference({ ...project, currentPlanId: project.currentPlanId }, { includeSources });
 
   return reply(
     includeSources

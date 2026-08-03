@@ -12,6 +12,7 @@ class MobileAudiobook {
     required this.status,
     required this.voice,
     required this.narratorName,
+    this.backupNarrationUsed = false,
     required this.isStale,
     required this.totalDurationMs,
     required this.totalEstimatedDurationMs,
@@ -25,6 +26,7 @@ class MobileAudiobook {
   final AudiobookStatus status;
   final String voice;
   final String narratorName;
+  final bool backupNarrationUsed;
 
   /// True when the book was edited after this narration was made.
   final bool isStale;
@@ -51,6 +53,7 @@ class MobileAudiobook {
       status: _statusFrom(json['status'] as String?),
       voice: json['voice'] as String? ?? '',
       narratorName: json['narratorName'] as String? ?? '',
+      backupNarrationUsed: json['backupNarrationUsed'] as bool? ?? false,
       isStale: json['isStale'] as bool? ?? false,
       totalDurationMs: (json['totalDurationMs'] as num?)?.round(),
       totalEstimatedDurationMs: (json['totalEstimatedDurationMs'] as num?)
@@ -61,11 +64,10 @@ class MobileAudiobook {
           : AudiobookProgress.fromJson(
               json['progress'] as Map<String, dynamic>,
             ),
-      chapters:
-          (json['chapters'] as List<dynamic>? ?? const [])
-              .whereType<Map<String, dynamic>>()
-              .map(MobileAudiobookChapter.fromJson)
-              .toList(growable: false),
+      chapters: (json['chapters'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(MobileAudiobookChapter.fromJson)
+          .toList(growable: false),
     );
   }
 
@@ -193,11 +195,10 @@ class AudiobookChapterTimeline {
       title: json['title'] as String? ?? '',
       isRightToLeft: json['direction'] == 'rtl',
       durationMs: (json['durationMs'] as num?)?.round() ?? 0,
-      segments:
-          (json['segments'] as List<dynamic>? ?? const [])
-              .whereType<Map<String, dynamic>>()
-              .map(AudiobookSegment.fromJson)
-              .toList(growable: false),
+      segments: (json['segments'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(AudiobookSegment.fromJson)
+          .toList(growable: false),
     );
   }
 }

@@ -2,13 +2,18 @@ import {
   AUDIOBOOK_MP3_KBPS,
   buildChapterNarration,
   buildAudiobookTimeline,
+  createSpeechAdapter,
   encodePcm16ToMp3,
+  isSpeechProviderFallbackError,
   languageLabel,
   narrationStylePrompt,
   pcm16DurationMs,
+  ProviderHttpError,
+  resolveAudiobookNarratorVoice,
   serializeAudiobookTimeline,
   type ChapterNarration,
   type SpeechAdapter,
+  type SpeechModelSelection,
   type SynthesizedChunkTiming
 } from "@book-maker/core";
 import {
@@ -22,10 +27,14 @@ import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createProviders } from "@book-maker/core";
-import { createLoggedProviders } from "../providers/loggedAdapters.js";
+import { createLoggedSpeechAdapter } from "../providers/loggedAdapters.js";
+import { createRunLogger } from "../providers/runLogging.js";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import {
+  selectAudiobookSpeechProvider,
+  type SelectedAudiobookSpeechProvider
+} from "./audiobookProviderPolicy.js";
 
 /**
  * `generate-audiobook` job: narrate a finished book, one chapter at a time.
@@ -89,54 +98,348 @@ export async function generateAudiobook(job: Job) {
   await removeSupersededAudiobookDirs(projectId, audiobookId);
   await syncChapterRows(audiobookId, narrations, plans);
 
-  const readyIndexes = new Set(
+  let readyIndexes = new Set(
     audiobook.chapters.filter((chapter) => chapter.status === "READY").map((chapter) => chapter.index)
   );
-  const providers = createLoggedProviders(job, createProviders(config));
   const stylePrompt = narrationStylePrompt({ language: languageLabel(project.language) });
+  const logger = createRunLogger(job);
+  const plannedChunks = narrations.reduce((total, narration) => total + narration.chunks.length, 0);
+  const selection = await selectInitialSpeechProvider({ audiobook, plannedChunks });
+  let fallback:
+    | {
+        reason: string;
+        discardedChapterCount: number;
+        renderVersion: number;
+        primaryModel: string;
+        fallbackModel: string;
+      }
+    | undefined;
+
+  if (selection.provider === "openai_tts" && audiobook.speechProvider !== "openai_tts") {
+    const reason = selection.fallbackReason ?? "gemini_quota_preflight";
+    const discardedChapterCount = readyIndexes.size;
+    const renderVersion = await persistOpenAISelection({
+      audiobookId,
+      audioDir,
+      reason,
+      resetRender: discardedChapterCount > 0
+    });
+    if (discardedChapterCount > 0) {
+      readyIndexes = new Set();
+    }
+    fallback = {
+      reason,
+      discardedChapterCount,
+      renderVersion,
+      primaryModel: geminiModelForAudiobook(audiobook),
+      fallbackModel: selection.model
+    };
+    await logger.append("tts.fallback.start", fallbackLogPayload(fallback, selection));
+  } else if (selection.provider === "openai_tts") {
+    const reason = selection.fallbackReason ?? audiobook.fallbackReason ?? "gemini_provider_unavailable";
+    fallback = {
+      reason,
+      discardedChapterCount: 0,
+      renderVersion: audiobook.renderVersion,
+      primaryModel: config.GEMINI_TTS_MODEL,
+      fallbackModel: selection.model
+    };
+    await persistSpeechSelection(audiobookId, audiobook.voice, selection);
+    await logger.append("tts.fallback.start", {
+      ...fallbackLogPayload(fallback, selection),
+      resumed: true
+    });
+  } else {
+    await persistSpeechSelection(audiobookId, audiobook.voice, selection);
+  }
 
   await advanceJobStep(generationJobId, "synthesize", 12, `Narrating ${narrations.length} chapters`);
-  let completed = readyIndexes.size;
-  for (const narration of narrations) {
-    if (readyIndexes.has(narration.chapterIndex)) {
+  try {
+    try {
+      await narrateAllChapters({
+        job,
+        generationJobId,
+        narrations,
+        audiobookId,
+        audioDir,
+        narrator: audiobook.voice,
+        selection,
+        stylePrompt,
+        readyIndexes
+      });
+    } catch (error) {
+      if (
+        selection.provider !== "gemini_tts" ||
+        !backupProviderAvailable() ||
+        !isSpeechProviderFallbackError(error)
+      ) {
+        throw error;
+      }
+
+      const reason = speechFallbackReason(error);
+      const discardedChapterCount = await prisma.audiobookChapter.count({
+        where: { audiobookId, status: "READY" }
+      });
+      const fallbackSelection: SelectedAudiobookSpeechProvider = {
+        provider: "openai_tts",
+        model: config.OPENAI_TTS_MODEL,
+        fallbackReason: reason
+      };
+      const renderVersion = await persistOpenAISelection({
+        audiobookId,
+        audioDir,
+        reason,
+        resetRender: true
+      });
+      fallback = {
+        reason,
+        discardedChapterCount,
+        renderVersion,
+        primaryModel: selection.model,
+        fallbackModel: fallbackSelection.model
+      };
+      await logger.append("tts.fallback.start", fallbackLogPayload(fallback, fallbackSelection));
+      await updateJobProgress(generationJobId, {
+        progress: 12,
+        message: "Switching to backup narration and restarting the audiobook"
+      });
+
+      await narrateAllChapters({
+        job,
+        generationJobId,
+        narrations,
+        audiobookId,
+        audioDir,
+        narrator: audiobook.voice,
+        selection: fallbackSelection,
+        stylePrompt,
+        readyIndexes: new Set()
+      });
+    }
+
+    await advanceJobStep(generationJobId, "finalize", 95, "Finishing audiobook");
+    const finishedChapters = await prisma.audiobookChapter.findMany({
+      where: { audiobookId, status: "READY" },
+      select: { durationMs: true }
+    });
+    if (finishedChapters.length !== narrations.length) {
+      throw new Error(`Narration finished ${finishedChapters.length} of ${narrations.length} chapters.`);
+    }
+    await prisma.audiobook.update({
+      where: { id: audiobookId },
+      data: {
+        status: "COMPLETE",
+        error: null,
+        contentRevision: project.contentRevision,
+        totalDurationMs: finishedChapters.reduce((total, chapter) => total + (chapter.durationMs ?? 0), 0)
+      }
+    });
+    await removeSupersededAudiobookDirs(projectId, audiobookId);
+    if (fallback) {
+      await logger.append("tts.fallback.success", {
+        ...fallbackLogPayload(fallback, { provider: "openai_tts", model: fallback.fallbackModel }),
+        ...(await providerSpendSummary(generationJobId))
+      });
+    }
+  } catch (error) {
+    if (fallback) {
+      await logger.append("tts.fallback.error", {
+        ...fallbackLogPayload(fallback, { provider: "openai_tts", model: fallback.fallbackModel }),
+        ...(await providerSpendSummary(generationJobId)),
+        error: error instanceof Error ? { name: error.name, message: error.message } : String(error)
+      });
+    }
+    throw error;
+  }
+}
+
+async function selectInitialSpeechProvider(options: {
+  audiobook: {
+    speechProvider: string | null;
+    speechModel: string | null;
+    fallbackReason: string | null;
+  };
+  plannedChunks: number;
+}): Promise<SelectedAudiobookSpeechProvider> {
+  const fallbackAvailable = backupProviderAvailable();
+  const geminiModel = geminiModelForAudiobook(options.audiobook);
+  const recentGeminiCalls =
+    fallbackAvailable && options.audiobook.speechProvider !== "openai_tts"
+      ? await prisma.providerCallLog.count({
+          where: {
+            provider: "gemini_tts",
+            model: geminiModel,
+            purpose: "tts.synthesize",
+            createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1_000) }
+          }
+        })
+      : 0;
+  return selectAudiobookSpeechProvider({
+    persistedProvider: options.audiobook.speechProvider,
+    persistedModel: options.audiobook.speechModel,
+    persistedFallbackReason: options.audiobook.fallbackReason,
+    recentGeminiCalls,
+    plannedChunks: options.plannedChunks,
+    safeGeminiBudget: config.GEMINI_TTS_SAFE_RPD_BUDGET,
+    fallbackAvailable,
+    geminiModel,
+    openAIModel: config.OPENAI_TTS_MODEL
+  });
+}
+
+function geminiModelForAudiobook(audiobook: { speechProvider: string | null; speechModel: string | null }): string {
+  return audiobook.speechProvider === "gemini_tts" && audiobook.speechModel
+    ? audiobook.speechModel
+    : config.GEMINI_TTS_MODEL;
+}
+
+function backupProviderAvailable(): boolean {
+  return config.AUDIOBOOK_OPENAI_FALLBACK_ENABLED && (config.MOCK_AI || Boolean(config.OPENAI_API_KEY));
+}
+
+async function persistSpeechSelection(
+  audiobookId: string,
+  narrator: string,
+  selection: SpeechModelSelection
+): Promise<void> {
+  await prisma.audiobook.update({
+    where: { id: audiobookId },
+    data: {
+      speechProvider: selection.provider,
+      speechModel: selection.model,
+      speechVoice: resolveAudiobookNarratorVoice(narrator, selection.provider)
+    }
+  });
+}
+
+async function persistOpenAISelection(options: {
+  audiobookId: string;
+  audioDir: string;
+  reason: string;
+  resetRender: boolean;
+}): Promise<number> {
+  const updated = await prisma.$transaction(async (tx) => {
+    const audiobook = await tx.audiobook.findUniqueOrThrow({
+      where: { id: options.audiobookId },
+      select: { voice: true }
+    });
+    const selected = await tx.audiobook.update({
+      where: { id: options.audiobookId },
+      data: {
+        speechProvider: "openai_tts",
+        speechModel: config.OPENAI_TTS_MODEL,
+        speechVoice: resolveAudiobookNarratorVoice(audiobook.voice, "openai_tts"),
+        fallbackReason: options.reason,
+        totalDurationMs: null,
+        ...(options.resetRender ? { renderVersion: { increment: 1 } } : {})
+      },
+      select: { renderVersion: true }
+    });
+    if (options.resetRender) {
+      await tx.audiobookChapter.updateMany({
+        where: { audiobookId: options.audiobookId },
+        data: { status: "PENDING", durationMs: null, byteSize: null, segmentCount: null }
+      });
+    }
+    return selected;
+  });
+  if (options.resetRender) {
+    await rm(options.audioDir, { recursive: true, force: true });
+    await mkdir(options.audioDir, { recursive: true });
+  }
+  return updated.renderVersion;
+}
+
+async function narrateAllChapters(options: {
+  job: Job;
+  generationJobId: string | undefined;
+  narrations: ChapterNarration[];
+  audiobookId: string;
+  audioDir: string;
+  narrator: string;
+  selection: SpeechModelSelection;
+  stylePrompt: string;
+  readyIndexes: Set<number>;
+}): Promise<void> {
+  const speech = createLoggedSpeechAdapter(options.job, createSpeechAdapter(config, options.selection));
+  const voice = resolveAudiobookNarratorVoice(options.narrator, options.selection.provider);
+  let completed = options.readyIndexes.size;
+  for (const narration of options.narrations) {
+    if (options.readyIndexes.has(narration.chapterIndex)) {
       continue;
     }
     await narrateChapter({
       narration,
-      audiobookId,
-      audioDir,
-      voice: audiobook.voice,
-      stylePrompt,
-      speech: providers.speech
+      audiobookId: options.audiobookId,
+      audioDir: options.audioDir,
+      narrator: options.narrator,
+      voice,
+      stylePrompt: options.stylePrompt,
+      speech
     });
     completed += 1;
-    await updateJobProgress(generationJobId, {
-      progress: 12 + Math.round((completed / narrations.length) * 80),
-      message: `Narrated chapter ${completed} of ${narrations.length}`
+    await updateJobProgress(options.generationJobId, {
+      progress: 12 + Math.round((completed / options.narrations.length) * 80),
+      message: `Narrated chapter ${completed} of ${options.narrations.length}`
     });
   }
+}
 
-  await advanceJobStep(generationJobId, "finalize", 95, "Finishing audiobook");
-  const finishedChapters = await prisma.audiobookChapter.findMany({
-    where: { audiobookId, status: "READY" },
-    select: { durationMs: true }
+function speechFallbackReason(error: unknown): string {
+  if (error instanceof ProviderHttpError) {
+    if (error.status === 429) return "gemini_rate_limit";
+    if (error.status === 408) return "gemini_timeout";
+    if (error.status >= 500) return "gemini_unavailable";
+  }
+  return "gemini_network_failure";
+}
+
+function fallbackLogPayload(
+  fallback: {
+    reason: string;
+    discardedChapterCount: number;
+    renderVersion: number;
+    primaryModel: string;
+  },
+  selection: Pick<SpeechModelSelection, "provider" | "model">
+) {
+  return {
+    primaryProvider: "gemini_tts",
+    primaryModel: fallback.primaryModel,
+    fallbackProvider: selection.provider,
+    fallbackModel: selection.model,
+    reason: fallback.reason,
+    discardedChapterCount: fallback.discardedChapterCount,
+    renderVersion: fallback.renderVersion
+  };
+}
+
+async function providerSpendUsd(generationJobId: string | undefined, provider: string): Promise<number> {
+  if (!generationJobId) return 0;
+  const result = await prisma.providerCallLog.aggregate({
+    where: { generationJobId, provider },
+    _sum: { costHint: true }
   });
-  await prisma.audiobook.update({
-    where: { id: audiobookId },
-    data: {
-      status: "COMPLETE",
-      error: null,
-      contentRevision: project.contentRevision,
-      totalDurationMs: finishedChapters.reduce((total, chapter) => total + (chapter.durationMs ?? 0), 0)
-    }
-  });
-  await removeSupersededAudiobookDirs(projectId, audiobookId);
+  return result._sum.costHint ?? 0;
+}
+
+async function providerSpendSummary(generationJobId: string | undefined) {
+  const [primaryProviderSpendUsd, fallbackProviderSpendUsd] = await Promise.all([
+    providerSpendUsd(generationJobId, "gemini_tts"),
+    providerSpendUsd(generationJobId, "openai_tts")
+  ]);
+  return {
+    primaryProviderSpendUsd,
+    fallbackProviderSpendUsd,
+    actualProviderSpendUsd: primaryProviderSpendUsd + fallbackProviderSpendUsd
+  };
 }
 
 async function narrateChapter(options: {
   narration: ChapterNarration;
   audiobookId: string;
   audioDir: string;
+  narrator: string;
   voice: string;
   stylePrompt: string;
   speech: SpeechAdapter;

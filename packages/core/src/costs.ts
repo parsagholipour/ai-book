@@ -338,6 +338,7 @@ const ALIBABA_IMAGE_COSTS_USD = new Map<string, number>([
  */
 const SPEECH_COSTS_USD_PER_AUDIO_SECOND = new Map<string, number>([
   ["gemini_tts", 0.00025],
+  ["openai_tts", 0.00025],
   ["gemini", 0.00025]
 ]);
 

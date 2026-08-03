@@ -199,6 +199,7 @@ class FakeAudiobookCache implements AudiobookCache {
 MobileAudiobook audiobookWith({
   AudiobookStatus status = AudiobookStatus.complete,
   List<MobileAudiobookChapter>? chapters,
+  bool backupNarrationUsed = false,
 }) {
   return MobileAudiobook(
     id: 'audiobook-1',
@@ -206,6 +207,7 @@ MobileAudiobook audiobookWith({
     status: status,
     voice: 'Zephyr',
     narratorName: 'Zephyr',
+    backupNarrationUsed: backupNarrationUsed,
     isStale: false,
     totalDurationMs: 9000,
     totalEstimatedDurationMs: 9000,
@@ -386,6 +388,7 @@ void main() {
   ) async {
     repository.audiobook = audiobookWith(
       status: AudiobookStatus.generating,
+      backupNarrationUsed: true,
       chapters: const [
         MobileAudiobookChapter(
           index: 1,
@@ -403,8 +406,18 @@ void main() {
     await pumpScreen(tester);
 
     expect(find.text('Zephyr is warming up'), findsOneWidget);
+    expect(find.text('Generated with backup narration'), findsOneWidget);
     expect(player.tracks, isEmpty);
     disposeActive();
+  });
+
+  testWidgets('shows the backup narration note during playback', (
+    tester,
+  ) async {
+    repository.audiobook = audiobookWith(backupNarrationUsed: true);
+    await pumpScreen(tester);
+
+    expect(find.text('Generated with backup narration'), findsOneWidget);
   });
 
   testWidgets('a failed narration says the credits came back', (tester) async {

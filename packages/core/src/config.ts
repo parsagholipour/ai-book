@@ -32,6 +32,13 @@ const envSchema = z.object({
   GEMINI_IMAGE_MODEL: z.string().optional().transform(normalizeGeminiImageModel),
   GEMINI_EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
   GEMINI_TTS_MODEL: z.string().default("gemini-3.1-flash-tts-preview"),
+  OPENAI_TTS_MODEL: z.string().default("gpt-4o-mini-tts-2025-12-15"),
+  AUDIOBOOK_OPENAI_FALLBACK_ENABLED: z
+    .string()
+    .optional()
+    .transform((value) => value !== "false")
+    .default(true),
+  GEMINI_TTS_SAFE_RPD_BUDGET: z.coerce.number().int().min(0).default(90),
   VOICE_CHAT_PROVIDER: z.enum(["openai_realtime", "gemini_live"]).default("gemini_live"),
   OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2"),
   OPENAI_REALTIME_VOICE: z.string().default("alloy"),

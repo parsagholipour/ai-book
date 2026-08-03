@@ -90,6 +90,7 @@ function bookPage(page: AudiobookSourcePage) {
 export async function synthesizeChunks(options: {
   narration: ChapterNarration;
   voice: string;
+  narrator?: string | undefined;
   stylePrompt: string;
   speech: SpeechAdapter;
 }): Promise<Pcm16AudioChunk[]> {
@@ -110,6 +111,7 @@ export async function synthesizeChunks(options: {
         const result = await options.speech.synthesize({
           text: chunk.text,
           voice: options.voice,
+          narrator: options.narrator,
           stylePrompt: options.stylePrompt,
           language: options.narration.language
         });

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { TextGenerationFallbackError } from "./textFallback.js";
-import { ProviderHttpError, isRecoverableNetworkError, withRecoverableNetworkRetry } from "./retry.js";
+import {
+  ProviderHttpError,
+  isRecoverableNetworkError,
+  isSpeechProviderFallbackError,
+  withRecoverableNetworkRetry
+} from "./retry.js";
 
 describe("isRecoverableNetworkError", () => {
   it("recognizes terminated transport failures", () => {
@@ -81,6 +86,22 @@ describe("isRecoverableNetworkError", () => {
     // matches none of the message patterns and would never be retried.
     expect(isRecoverableNetworkError(new Error("Gemini TTS request failed (503): unavailable"))).toBe(false);
     expect(isRecoverableNetworkError(new ProviderHttpError("failed (503)", { status: 503 }))).toBe(true);
+  });
+});
+
+describe("isSpeechProviderFallbackError", () => {
+  it.each([408, 429, 500, 502, 503])("allows an availability fallback for HTTP %s", (status) => {
+    expect(isSpeechProviderFallbackError(new ProviderHttpError("provider unavailable", { status }))).toBe(true);
+  });
+
+  it.each([400, 401, 403])("does not hide HTTP %s input or credential failures", (status) => {
+    expect(isSpeechProviderFallbackError(new ProviderHttpError("request rejected", { status }))).toBe(false);
+  });
+
+  it("allows transport failure fallback but never cancellation", () => {
+    expect(isSpeechProviderFallbackError(Object.assign(new TypeError("fetch failed"), { code: "ECONNRESET" }))).toBe(true);
+    expect(isSpeechProviderFallbackError(Object.assign(new Error("request aborted"), { name: "AbortError" }))).toBe(false);
+    expect(isSpeechProviderFallbackError(Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" }))).toBe(false);
   });
 });
 

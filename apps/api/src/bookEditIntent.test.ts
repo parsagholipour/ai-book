@@ -838,6 +838,26 @@ describe("clarification budget", () => {
     expect(intent.scope).toBe("all_pages");
   });
 
+  it("keeps a chapter-heading request free even when the clarification budget is spent", async () => {
+    // forcedDecision turns any unresolved request into a whole-book page_rewrite,
+    // which for this one would charge for every page and then recompile the same
+    // heading straight back. The recogniser runs before normalizeIntentForStage
+    // precisely so this cannot happen.
+    const intent = await classifyProjectChatMessage({
+      message:
+        'I don\'t like that we have "Chapter x" We should simply mention the Title\n\nFollow-up from the user: just do it',
+      stage: "complete",
+      pages,
+      textModel: fakeDecideModel(clarifyPayload),
+      clarifyExhausted: true
+    });
+
+    expect(intent.kind).toBe("chapter_heading");
+    expect(intent.chapterHeading).toEqual({ style: "title_only" });
+    expect(intent.scope).toBe("none");
+    expect(intent.affectedPageIndexes).toEqual([]);
+  });
+
   it("forces a spent plan-stage clarification into a plan revision", async () => {
     const intent = await classifyProjectChatMessage({
       message: "Add a dragon\n\nFollow-up from the user: Just add",

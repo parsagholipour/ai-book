@@ -37,7 +37,10 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(audiobookControllerProvider(widget.projectId));
-    final detail = ref.watch(projectDetailProvider(widget.projectId)).asData?.value;
+    final detail = ref
+        .watch(projectDetailProvider(widget.projectId))
+        .asData
+        ?.value;
 
     // The lock-screen notification needs a title and cover; the controller has
     // neither until the project detail lands.
@@ -46,7 +49,10 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
         if (mounted) {
           ref
               .read(audiobookControllerProvider(widget.projectId).notifier)
-              .attachBookDetails(title: detail.title, coverUrl: detail.coverImage?.url);
+              .attachBookDetails(
+                title: detail.title,
+                coverUrl: detail.coverImage?.url,
+              );
         }
       });
     }
@@ -64,7 +70,9 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
                 setState(() => _showTranscript = !_showTranscript);
               },
               icon: Icon(
-                _showTranscript ? Icons.subtitles : Icons.subtitles_off_outlined,
+                _showTranscript
+                    ? Icons.subtitles
+                    : Icons.subtitles_off_outlined,
               ),
             ),
           if (state.hasAudiobook)
@@ -94,7 +102,8 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
     if (audiobook.hasFailed) {
       return AppErrorState(
         title: 'Narration stopped',
-        message: audiobook.failureMessage ??
+        message:
+            audiobook.failureMessage ??
             'The narration did not finish. Your credits were refunded.',
         actionLabel: 'Try again',
         onRetry: () => _openPicker(detail, replacing: true),
@@ -127,14 +136,20 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
     );
   }
 
-  Future<void> _openPicker(MobileProjectDetail? detail, {required bool replacing}) async {
-    final controller = ref.read(audiobookControllerProvider(widget.projectId).notifier);
+  Future<void> _openPicker(
+    MobileProjectDetail? detail, {
+    required bool replacing,
+  }) async {
+    final controller = ref.read(
+      audiobookControllerProvider(widget.projectId).notifier,
+    );
     await showNarratorPickerSheet(
       context,
       projectId: widget.projectId,
       pageCount: detail?.pageCount ?? detail?.targetPages ?? 0,
       replacing: replacing,
-      onConfirm: (voice) => controller.narrate(voice: voice, replace: replacing),
+      onConfirm: (voice) =>
+          controller.narrate(voice: voice, replace: replacing),
     );
   }
 }
@@ -190,15 +205,29 @@ class _PreparingNarration extends StatelessWidget {
             const SizedBox(height: 24),
             Text(
               '${audiobook.narratorName} is warming up',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               progress?.currentAction ?? 'Preparing narration',
-              style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
+            if (audiobook.backupNarrationUsed) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Generated with backup narration',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
             const SizedBox(height: 20),
             AppAnimatedProgressBar(
               value: progress == null || progress.chapterCount == 0
@@ -209,7 +238,9 @@ class _PreparingNarration extends StatelessWidget {
             const SizedBox(height: 14),
             Text(
               'You can leave this screen — we will keep narrating.',
-              style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
           ],

@@ -314,8 +314,7 @@ async function sendChapterFile(reply: FastifyReply, path: string, contentType: s
   }
   return reply
     .type(contentType)
-    // A chapter's bytes never change: a re-narration writes a new audiobook id
-    // and therefore a new URL.
+    // Runtime fallback rewrites the bytes under a new render-version query key.
     .header("Cache-Control", "private, max-age=86400, immutable")
     .send(bytes);
 }

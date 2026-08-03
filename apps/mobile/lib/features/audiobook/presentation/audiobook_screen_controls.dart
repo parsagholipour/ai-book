@@ -31,7 +31,10 @@ class _NowPlayingHeader extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [colors.primary, Color.lerp(colors.primary, colors.tertiary, 0.55)!],
+          colors: [
+            colors.primary,
+            Color.lerp(colors.primary, colors.tertiary, 0.55)!,
+          ],
         ),
         boxShadow: compact
             ? null
@@ -52,7 +55,9 @@ class _NowPlayingHeader extends StatelessWidget {
     );
 
     final labels = Column(
-      crossAxisAlignment: compact ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      crossAxisAlignment: compact
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
@@ -60,8 +65,11 @@ class _NowPlayingHeader extends StatelessWidget {
           maxLines: compact ? 1 : 2,
           overflow: TextOverflow.ellipsis,
           textAlign: compact ? TextAlign.start : TextAlign.center,
-          style: (compact ? theme.textTheme.titleSmall : theme.textTheme.titleLarge)
-              ?.copyWith(fontWeight: FontWeight.w800),
+          style:
+              (compact
+                      ? theme.textTheme.titleSmall
+                      : theme.textTheme.titleLarge)
+                  ?.copyWith(fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 4),
         Row(
@@ -74,16 +82,33 @@ class _NowPlayingHeader extends StatelessWidget {
                 'Narrated by ${audiobook.narratorName}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ),
           ],
         ),
+        if (audiobook.backupNarrationUsed) ...[
+          const SizedBox(height: 3),
+          Text(
+            'Generated with backup narration',
+            textAlign: compact ? TextAlign.start : TextAlign.center,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ],
       ],
     );
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, compact ? 12 : 24, 20, compact ? 12 : 20),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        compact ? 12 : 24,
+        20,
+        compact ? 12 : 20,
+      ),
       child: compact
           ? Row(
               children: [
@@ -107,12 +132,19 @@ class _PlayerControls extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final controller = ref.read(audiobookControllerProvider(projectId).notifier);
+    final controller = ref.read(
+      audiobookControllerProvider(projectId).notifier,
+    );
     final total = state.totalDurationMs;
     final playable = state.playableUntilMs;
 
     return Container(
-      padding: EdgeInsets.fromLTRB(20, 12, 20, 16 + MediaQuery.viewPaddingOf(context).bottom),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        12,
+        20,
+        16 + MediaQuery.viewPaddingOf(context).bottom,
+      ),
       decoration: BoxDecoration(
         color: colors.surfaceContainerLowest,
         border: Border(top: BorderSide(color: colors.outlineVariant)),
@@ -141,7 +173,9 @@ class _PlayerControls extends ConsumerWidget {
                 if (playable < total)
                   Text(
                     'still narrating',
-                    style: theme.textTheme.labelSmall?.copyWith(color: colors.primary),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colors.primary,
+                    ),
                   ),
                 Text(
                   formatAudiobookDuration(total),
@@ -228,7 +262,10 @@ class _BookScrubberState extends State<_BookScrubber> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final total = widget.totalMs <= 0 ? 1 : widget.totalMs;
-    final value = (_dragValue ?? widget.positionMs.toDouble()).clamp(0, total.toDouble());
+    final value = (_dragValue ?? widget.positionMs.toDouble()).clamp(
+      0,
+      total.toDouble(),
+    );
 
     return Stack(
       alignment: Alignment.center,
@@ -242,7 +279,9 @@ class _BookScrubberState extends State<_BookScrubber> {
               value: (widget.playableMs / total).clamp(0.0, 1.0),
               minHeight: 4,
               backgroundColor: colors.outlineVariant.withValues(alpha: 0.5),
-              valueColor: AlwaysStoppedAnimation(colors.primary.withValues(alpha: 0.28)),
+              valueColor: AlwaysStoppedAnimation(
+                colors.primary.withValues(alpha: 0.28),
+              ),
             ),
           ),
         ),
@@ -269,7 +308,11 @@ class _BookScrubberState extends State<_BookScrubber> {
 }
 
 class _PlayButton extends StatelessWidget {
-  const _PlayButton({required this.playing, required this.busy, required this.onPressed});
+  const _PlayButton({
+    required this.playing,
+    required this.busy,
+    required this.onPressed,
+  });
 
   final bool playing;
   final bool busy;
@@ -294,7 +337,10 @@ class _PlayButton extends StatelessWidget {
               child: busy
                   ? Padding(
                       padding: const EdgeInsets.all(22),
-                      child: CircularProgressIndicator(strokeWidth: 2.5, color: colors.onPrimary),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: colors.onPrimary,
+                      ),
                     )
                   : Icon(
                       playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
@@ -337,7 +383,10 @@ class _SkipButton extends StatelessWidget {
           icon: Stack(
             alignment: Alignment.center,
             children: [
-              Transform.scale(scaleX: mirrored ? -1 : 1, child: Icon(icon, size: 30)),
+              Transform.scale(
+                scaleX: mirrored ? -1 : 1,
+                child: Icon(icon, size: 30),
+              ),
               Padding(
                 padding: const EdgeInsets.only(top: 2),
                 child: Text(
@@ -388,7 +437,9 @@ class _SpeedButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
         child: Text(
           _label(speed),
-          style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+          style: theme.textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );

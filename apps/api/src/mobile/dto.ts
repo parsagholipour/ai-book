@@ -506,6 +506,8 @@ export type MobileAudiobookDto = {
   status: MobileAudiobookStatus;
   voice: string;
   narratorName: string;
+  /** True when narration moved to the operational backup voice. */
+  backupNarrationUsed: boolean;
   /** True when the book was edited after this narration was made. */
   isStale: boolean;
   totalDurationMs: number | null;

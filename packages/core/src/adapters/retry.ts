@@ -122,6 +122,34 @@ export function isRecoverableNetworkError(error: unknown): boolean {
   });
 }
 
+/** Errors that can justify restarting an audiobook with its backup provider. */
+export function isSpeechProviderFallbackError(error: unknown): boolean {
+  if (isStopOrAbortError(error)) {
+    return false;
+  }
+  return collectErrorDescriptors(error).some((descriptor) => {
+    if (descriptor.status !== undefined) {
+      return descriptor.status === 408 || descriptor.status === 429 || descriptor.status >= 500;
+    }
+    if (descriptor.code && RECOVERABLE_NETWORK_CODES.has(descriptor.code.toUpperCase())) {
+      return true;
+    }
+    return descriptor.messages.some((message) =>
+      /(?:fetch failed|network|connection (?:closed|reset|terminated|timed out)|socket hang up|timeout|timed out)/i.test(
+        message
+      )
+    );
+  });
+}
+
+function isStopOrAbortError(error: unknown): boolean {
+  return collectErrorDescriptors(error).some((descriptor) =>
+    descriptor.messages.some((message) =>
+      /(?:AbortError|StopRequestedError|stop requested|stopped by user|request aborted)/i.test(message)
+    )
+  );
+}
+
 /**
  * Exponential backoff, unless the provider named its own cooldown — then wait at
  * least that long. Retrying inside a quota window the provider already told us

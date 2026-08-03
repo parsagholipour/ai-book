@@ -1,6 +1,12 @@
 import { runToolLoop, withRecoverableNetworkRetry, type TextModelAdapter, type ToolLoopTool } from "@book-maker/core";
 import { z } from "zod";
 import { backMatterIntent, backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
+import {
+  chapterHeadingEditFromDecision,
+  chapterHeadingIntent,
+  chapterHeadingIntentFromMessage,
+  type ChapterHeadingEdit
+} from "./bookEditChapterHeading.js";
 import { classifyWithDegradedHeuristics, classifyWithHeuristics } from "./bookEditHeuristics.js";
 import {
   chapterRegenerateFromMessage,
@@ -45,7 +51,8 @@ export type BookEditIntentKind =
   | "show_content"
   | "book_replan"
   | "continue_book"
-  | "back_matter";
+  | "back_matter"
+  | "chapter_heading";
 
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
 export type BookEditScope = "none" | "explicit_pages" | "matching_pages" | "all_pages";
@@ -96,6 +103,8 @@ export type BookEditIntent = {
   continuation?: { chapterCount: number } | null;
   /** Set for back_matter intents: whether the Sources list should be printed. */
   backMatter?: BackMatterEdit | null;
+  /** Set for chapter_heading intents: how a chapter heading should read. */
+  chapterHeading?: ChapterHeadingEdit | null;
 };
 
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
@@ -151,11 +160,25 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       clarification: z.enum(["none", "scope"]).default("none"),
       /** Required when action is propose_edit. */
       editTarget: z
-        .enum(["pages", "matching", "whole_book", "chapter", "structural", "language_copy", "continuation", "back_matter"])
+        .enum([
+          "pages",
+          "matching",
+          "whole_book",
+          "chapter",
+          "structural",
+          "language_copy",
+          "continuation",
+          "back_matter",
+          "chapter_heading"
+        ])
         .optional(),
       editStyle: z.enum(["exact_replace", "rewrite"]).optional(),
       /** Whether the Sources list should be printed, when editTarget is back_matter. */
       backMatterSources: z.boolean().nullish(),
+      /** How a chapter heading should read, when editTarget is chapter_heading. */
+      chapterHeadingStyle: z.enum(["label_number_title", "number_title", "title_only"]).nullish(),
+      /** A word to use in place of "Chapter", when editTarget is chapter_heading. */
+      chapterHeadingLabel: z.string().trim().min(1).max(24).nullish(),
       pageIndexes: z.array(z.number().int().positive()).max(100).default([]),
       chapterIndex: z.number().int().positive().nullable().default(null),
       /** How many chapters to append when editTarget is continuation. */
@@ -253,6 +276,15 @@ export async function classifyProjectChatMessage(options: {
   const backMatter = options.stage === "complete" ? backMatterIntentFromMessage(message) : null;
   if (backMatter) {
     return backMatter;
+  }
+  // Chapter headings are synthesized at export time too, so the same reasoning
+  // applies. Returning here also puts this request out of reach of
+  // forcedDecision below, which would otherwise answer a spent clarification
+  // with a whole-book page_rewrite — the other route to charging for every page
+  // in the book and changing nothing.
+  const chapterHeading = options.stage === "complete" ? chapterHeadingIntentFromMessage(message) : null;
+  if (chapterHeading) {
+    return chapterHeading;
   }
   const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters);
   // Only ultra-high-precision read/undo shortcuts skip the model; everything
@@ -495,6 +527,13 @@ export function intentFromProposeEdit(
     return backMatterIntent({ includeSources: decision.backMatterSources ?? false }, decision);
   }
 
+  if (target === "chapter_heading") {
+    return chapterHeadingIntent(
+      chapterHeadingEditFromDecision(decision.chapterHeadingStyle, decision.chapterHeadingLabel),
+      decision
+    );
+  }
+
   if (target === "language_copy" || target === "structural") {
     return {
       kind: "book_replan",
@@ -614,6 +653,7 @@ function routerSystemPrompt(
           "Adding something new to the finished book — a character, a scene, an object, a mention — is propose_edit, not clarify. Set editTarget to pages for the scenes where it belongs, or whole_book when it should run through the story. Reserve structural for replacing the book's premise or main character, because it regenerates the entire book.",
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
+          "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
           "Set pageIndexes or chapterIndex when known. Set targetLanguage for language_copy.",
           "Never invent credit prices or internal pricing tiers; the server prices propose_edit."
         ]
