@@ -57,6 +57,30 @@ List<ReaderOutlineEntry> namedReaderOutline(
   ];
 }
 
+/// The chapter heading at or before [page], or null when the outline cannot say.
+///
+/// Only depth-0 entries count. The compiler turns chapter *and* page headings
+/// into bookmarks, so a flat scan would report the last sub-heading crossed
+/// rather than the chapter the reader is in.
+ReaderOutlineEntry? outlineEntryForPage(
+  List<ReaderOutlineEntry> entries,
+  int page,
+) {
+  ReaderOutlineEntry? current;
+  for (final entry in entries) {
+    final entryPage = entry.pageNumber;
+    if (entry.depth != 0 || entryPage == null || entryPage > page) {
+      continue;
+    }
+    // The outline is authored in reading order, but a recovered one is only
+    // sorted by page — take the latest heading rather than the last listed.
+    if (current == null || entryPage >= current.pageNumber!) {
+      current = entry;
+    }
+  }
+  return current;
+}
+
 /// Recovers a table of contents from the compiled Contents page.
 ///
 /// The Contents section links each chapter to its anchor, and those become PDF

@@ -39,4 +39,38 @@ void main() {
       expect(namedReaderOutline(const [], const ['A']), isEmpty);
     });
   });
+
+  group('outlineEntryForPage', () {
+    const outline = [
+      ReaderOutlineEntry(title: 'The Harbour', depth: 0, pageNumber: 4),
+      ReaderOutlineEntry(title: 'A morning walk', depth: 1, pageNumber: 6),
+      ReaderOutlineEntry(title: 'The Lighthouse', depth: 0, pageNumber: 11),
+    ];
+
+    test('names the chapter the reader is in', () {
+      expect(outlineEntryForPage(outline, 4)?.title, 'The Harbour');
+      expect(outlineEntryForPage(outline, 9)?.title, 'The Harbour');
+      expect(outlineEntryForPage(outline, 11)?.title, 'The Lighthouse');
+      expect(outlineEntryForPage(outline, 40)?.title, 'The Lighthouse');
+    });
+
+    test('ignores the page headings between chapters', () {
+      // The compiler bookmarks chapter *and* page headings, so a flat scan
+      // would report "A morning walk" as the chapter from page 6 on.
+      expect(outlineEntryForPage(outline, 7)?.title, 'The Harbour');
+    });
+
+    test('says nothing before the first chapter or without an outline', () {
+      // The cover and the contents page are in no chapter, and books compiled
+      // before bookmarks were emitted have no outline at all.
+      expect(outlineEntryForPage(outline, 2), isNull);
+      expect(outlineEntryForPage(const [], 5), isNull);
+      expect(
+        outlineEntryForPage(const [
+          ReaderOutlineEntry(title: 'Unplaceable', depth: 0),
+        ], 5),
+        isNull,
+      );
+    });
+  });
 }

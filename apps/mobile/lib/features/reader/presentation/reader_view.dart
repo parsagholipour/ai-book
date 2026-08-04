@@ -23,17 +23,17 @@ import 'reader_annotation_controller.dart';
 import 'reader_annotation_overlays.dart';
 import 'reader_annotation_painter.dart';
 import 'reader_app_bar.dart';
+import 'reader_bottom_bar.dart';
 import 'reader_departures.dart';
 import 'reader_document_loader.dart';
 import 'reader_ink_layer.dart';
 import 'reader_markup_actions.dart';
 import 'reader_markup_bar.dart';
-import 'reader_markup_toolbar.dart';
 import 'reader_menu.dart';
 import 'reader_outline.dart';
 import 'reader_overlays.dart';
-import 'reader_page_slider.dart';
 import 'reader_places.dart';
+import 'reader_scroll_handle.dart';
 import 'reader_search_bar.dart';
 import 'reader_selection_actions.dart';
 import 'reader_selection_menu.dart';
@@ -654,6 +654,13 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                   _state.lastPage,
                 ),
                 ReaderDimOverlay(level: _annotations.settings.dimLevel),
+                ReaderScrollHandle(
+                  controller: _controller,
+                  chapterFor: _chapterFor,
+                  // Panning is off while drawing, so the handle is then the
+                  // only way to reach another page and must not fade away.
+                  alwaysVisible: _annotations.isMarkingUp,
+                ),
                 if (_menuSelection != null && _menuAnchor != null)
                   ReaderSelectionOverlay(
                     anchor: _menuAnchor!,
@@ -674,44 +681,20 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   Widget _bottomBar() {
-    final slider = ReaderPageSlider(
+    return ReaderBottomChrome(
+      annotations: _annotations,
+      palette: _markupPalette,
       currentPage: _state.lastPage,
       pageCount: _pageCount,
-      onChanged: (page) => unawaited(_goToPage(page)),
-    );
-    if (!_annotations.isMarkingUp) {
-      return slider;
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // The slider stays reachable while marking up — panning is off during
-        // drawing, so this is how the reader gets to another page — but its own
-        // safe-area padding belongs to the toolbar below it now.
-        MediaQuery.removePadding(
-          context: context,
-          removeBottom: true,
-          child: slider,
-        ),
-        ReaderMarkupToolbar(
-          tool: _annotations.tool,
-          settings: _annotations.settings,
-          palette: _markupPalette,
-          canUndo: _annotations.canUndo,
-          pendingMoveLabel: _annotations.pendingMoveId == null
-              ? null
-              : 'Tap the page where it should go.',
-          onToolChanged: _annotations.setTool,
-          onColorChanged: _annotations.setActiveColor,
-          onWidthChanged: (width) => _annotations.updateSettings(
-            _annotations.settings.copyWith(inkWidth: width),
-          ),
-          onUndo: _annotations.undo,
-          onDone: _annotations.closeMarkup,
-        ),
-      ],
+      chapterTitle: _chapterFor(_state.lastPage),
+      bookmarked: _state.hasBookmarkOn(_state.lastPage),
+      onContents: () => _onMenuAction(ReaderMenuAction.contents),
+      onToggleBookmark: () => _onMenuAction(ReaderMenuAction.toggleBookmark),
+      onListen: () => _onMenuAction(ReaderMenuAction.listen),
     );
   }
+
+  String? _chapterFor(int page) => outlineEntryForPage(_outline, page)?.title;
 
   Widget _loadingBody(ReaderDocumentLoader loader) {
     final error = loader.error;

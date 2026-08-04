@@ -15,6 +15,7 @@ import 'package:tomeza/features/reader/domain/reader_settings.dart';
 import 'package:tomeza/features/reader/presentation/book_reader_screen.dart';
 import 'package:tomeza/features/reader/presentation/reader_document_loader.dart';
 import 'package:tomeza/features/reader/presentation/reader_app_bar.dart';
+import 'package:tomeza/features/reader/presentation/reader_bottom_bar.dart';
 import 'package:tomeza/features/reader/presentation/reader_markup_bar.dart';
 import 'package:tomeza/features/reader/presentation/reader_markup_toolbar.dart';
 import 'package:tomeza/features/reader/presentation/reader_selection_menu.dart';
@@ -585,8 +586,25 @@ void main() {
     expect(find.byTooltip('Search this book'), findsOneWidget);
     expect(find.byTooltip('Mark up this book'), findsOneWidget);
     expect(find.byTooltip('More'), findsOneWidget);
-    expect(find.byTooltip('Contents'), findsNothing);
-    expect(find.byTooltip('Saved places'), findsNothing);
+    // Contents and Bookmark live in the bottom bar now, within reach of a
+    // thumb; the top bar must not grow a second copy of either.
+    for (final tooltip in const ['Contents', 'Bookmark', 'Saved places']) {
+      expect(
+        find.descendant(
+          of: find.byType(ReaderAppBar),
+          matching: find.byTooltip(tooltip),
+        ),
+        findsNothing,
+        reason: '"$tooltip" belongs below, not in the top bar',
+      );
+    }
+    expect(
+      find.descendant(
+        of: find.byType(ReaderBottomChrome),
+        matching: find.byTooltip('Contents'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byTooltip('More'));
     await tester.pumpAndSettle();
