@@ -18,10 +18,14 @@ import 'credit_log_screen.dart';
 /// tier's image limit", because in both cases the best answer is a plan and the
 /// second-best is a one-off purchase — so it leads with the ladder and keeps the
 /// packs available below rather than making them the whole offer.
+///
+/// [title] and [message] are the *reason* this sheet opened, so pass
+/// `title: null` where there is nothing to explain — the masthead then shrinks
+/// to the close button instead of restating what credits are.
 Future<void> showBillingPaywall(
   BuildContext context, {
   String? projectId,
-  String title = 'Upgrade your plan',
+  String? title = 'Upgrade your plan',
   String? message,
 }) {
   return showModalBottomSheet<void>(
@@ -42,7 +46,7 @@ class BillingPaywall extends ConsumerWidget {
   });
 
   final String? projectId;
-  final String title;
+  final String? title;
   final String? message;
 
   @override
@@ -201,7 +205,7 @@ class _PaywallHero extends StatelessWidget {
     this.message,
   });
 
-  final String title;
+  final String? title;
   final String? message;
   final VoidCallback onClose;
 
@@ -209,6 +213,21 @@ class _PaywallHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final title = this.title;
+    final message = this.message;
+
+    // Nothing to say: whoever opened this already knows why — an emblem over a
+    // sentence explaining what credits are for would only push the plans down.
+    if (title == null && message == null) {
+      return Align(
+        alignment: Alignment.centerRight,
+        child: IconButton(
+          tooltip: 'Close',
+          onPressed: onClose,
+          icon: const Icon(Icons.close),
+        ),
+      );
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -263,16 +282,17 @@ class _PaywallHero extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: text.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (message != null) ...[
-                  const SizedBox(height: 6),
+                if (title != null)
                   Text(
-                    message!,
+                    title,
+                    style: text.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                if (message != null) ...[
+                  if (title != null) const SizedBox(height: 6),
+                  Text(
+                    message,
                     style: text.bodyMedium?.copyWith(
                       color: colors.onSurfaceVariant,
                     ),

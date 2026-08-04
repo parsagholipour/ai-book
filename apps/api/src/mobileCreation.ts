@@ -1483,9 +1483,14 @@ function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<MobileC
       : patch.question !== undefined || patch.assistantMessage !== undefined
         ? []
         : base.quickReplies;
+  // An open question never blocks the build: every clarification the model asks
+  // is optional by policy, so the app keeps offering "Skip and build the plan"
+  // and lists the prompt under "Helpful to add". Only a chat with nothing to
+  // build from — the greeting, before any usable idea — stays unbuildable,
+  // which is what the deterministic base already decided.
   const readiness = {
     ...base.readiness,
-    canBuild: buildRequested || question === null,
+    canBuild: base.readiness.canBuild || buildRequested,
     missing: question ? [stripTrailingPunctuation(question.prompt)] : []
   };
   // The base message embeds the base question's wording; if the patch swaps

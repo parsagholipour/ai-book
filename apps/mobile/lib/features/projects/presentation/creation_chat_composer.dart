@@ -280,6 +280,7 @@ class _ConversationFooterState extends State<_ConversationFooter> {
               _BuildButton(
                 canBuild: widget.state.canBuild,
                 building: widget.state.building,
+                skipsQuestion: question != null,
                 onBuild: widget.onBuild,
               ),
             ],
@@ -823,11 +824,16 @@ class _BuildButton extends StatelessWidget {
   const _BuildButton({
     required this.canBuild,
     required this.building,
+    required this.skipsQuestion,
     required this.onBuild,
   });
 
   final bool canBuild;
   final bool building;
+
+  /// A question is on screen. Answering it is optional, so the button says so
+  /// rather than looking like the wrong way out of the card.
+  final bool skipsQuestion;
   final Future<void> Function() onBuild;
 
   @override
@@ -843,7 +849,13 @@ class _BuildButton extends StatelessWidget {
               ),
             )
           : const Icon(Icons.auto_awesome_outlined),
-      label: Text(building ? 'Building the plan' : 'Build the plan'),
+      label: Text(
+        building
+            ? 'Building the plan'
+            : skipsQuestion
+            ? 'Skip and build the plan'
+            : 'Build the plan',
+      ),
     );
   }
 }

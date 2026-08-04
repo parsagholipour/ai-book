@@ -57,13 +57,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     );
   }
 
+  /// No masthead: this sheet is reached from the plan and credit cards, so the
+  /// reader is already looking at their balance and needs the plans, not a
+  /// heading telling them what credits are for.
   Future<void> _openBillingPaywall() async {
-    await showBillingPaywall(
-      context,
-      title: 'Plans and credits',
-      message:
-          'Credits are used when you approve a full book or unlock finished exports.',
-    );
+    await showBillingPaywall(context, title: null);
     if (mounted) {
       ref.invalidate(billingProvider);
     }

@@ -238,7 +238,9 @@ class ScriptedCreationRepository implements CreationRepository {
       },
       'turn': turnJson(
         assistantMessage: reply,
-        canBuild: !replyWithQuestion,
+        // A question never blocks the build: the API keeps canBuild true and
+        // the app offers "Skip and build the plan".
+        canBuild: true,
         quickReplies: replyWithQuestion ? const [] : const ['Make it shorter'],
         question: replyWithQuestion
             ? const {

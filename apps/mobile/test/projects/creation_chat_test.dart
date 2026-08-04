@@ -1910,6 +1910,49 @@ void main() {
     },
   );
 
+  testWidgets('a question offers a skip that still builds the plan', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository(replyWithQuestion: true);
+    await tester.pumpWidget(
+      app(
+        creation: creation,
+        projects: PlanProjectsRepository(),
+        startFresh: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'A practical guide for new managers',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Who is this book for?'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
+
+    // Answering is optional, so the button stays enabled and says what
+    // tapping it does to the question on screen.
+    final skipFinder = find.widgetWithText(
+      FilledButton,
+      'Skip and build the plan',
+    );
+    expect(tester.widget<FilledButton>(skipFinder).onPressed, isNotNull);
+
+    await tester.tap(skipFinder);
+    await tester.continuePastVisualsPrompt();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(creation.buildCount, 1);
+    expect(find.text(planTitle), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('question drawer can be minimized and expanded', (tester) async {
     final creation = ScriptedCreationRepository(replyWithQuestion: true);
     await tester.pumpWidget(app(creation: creation, startFresh: true));
@@ -1979,7 +2022,10 @@ void main() {
         matching: find.byType(Scrollable),
       );
       final composer = find.byType(TextField).last;
-      final buildButton = find.widgetWithText(FilledButton, 'Build the plan');
+      final buildButton = find.widgetWithText(
+        FilledButton,
+        'Skip and build the plan',
+      );
       expect(contextScrollable, findsOneWidget);
       expect(
         find.descendant(of: contextScroll, matching: composer),

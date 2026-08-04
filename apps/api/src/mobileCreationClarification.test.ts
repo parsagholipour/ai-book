@@ -21,7 +21,7 @@ describe("creation chat clarification policy", () => {
     expect(turn.quickReplies).toContain("Build the plan");
   });
 
-  it("preserves the model's structured clarification for an incomplete idea", async () => {
+  it("preserves the model's structured clarification but still allows skipping it", async () => {
     const request: MobileCreationTurnRequest = {
       messages: [{ role: "user", content: "Write a story" }]
     };
@@ -41,7 +41,9 @@ describe("creation chat clarification policy", () => {
       options: ["A person or hero", "An animal", "A magical adventure"],
       allowCustom: true
     });
-    expect(turn.readiness.canBuild).toBe(false);
+    // The question is optional: the app offers "Skip and build the plan".
+    expect(turn.readiness.canBuild).toBe(true);
+    expect(turn.readiness.missing).toEqual(["What should the story be about"]);
   });
 
   it("accepts the model's null decision when the subject is concrete", async () => {
@@ -77,7 +79,7 @@ describe("creation chat clarification policy", () => {
     });
 
     expect(turn.question?.prompt).toBe("داستان درباره چه چیزی باشد؟");
-    expect(turn.readiness.canBuild).toBe(false);
+    expect(turn.readiness.canBuild).toBe(true);
   });
 
   it("passes full context and the strict clarification contract to the model", () => {
