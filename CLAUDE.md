@@ -362,6 +362,21 @@ tells you when a listed file has dropped under the default so the entry can be d
   `durationMs` after — which is what lets the seek bar show the whole book while the back half is
   still being made. Lock-screen artwork must be a `file://` URI: the media session fetches it
   outside the Dio client and without the bearer token.
+- **The listening position is device-local, book-global, and stamped with the narration it belongs
+  to.** `AudiobookProgressStore` writes `tomeza_audiobook/<projectId>/progress.json` — beside the
+  audio rather than inside one narration's directory, so `pruneOtherAudiobooks` (directories only)
+  leaves it and `clearProject` takes it. It stores a position in the *whole book*, never a chapter
+  offset, because the chapter a position falls in shifts as later chapters are narrated. The
+  `audiobookId` is the reset: `_restorePlace` deletes a position saved against any other narration
+  instead of using it, since re-narrating replaces the audio and the old number would land somewhere
+  plausible and wrong — `narrate()` also clears it outright. It is saved every 5s while playing and
+  forced on pause and teardown, because the ordinary end of a session is the OS killing a
+  backgrounded app, where nothing gets to run. Restoring is *silent and deferred*: chapters download
+  in book order, so `_applyResumeIfReady` waits for the one holding the position and seeks then —
+  and `togglePlay`/`seekGlobal` drop the pending resume, because a play button that moves you
+  somewhere else a moment later is worse than not resuming at all. `narrate()` must also
+  `_resetPlayback()`: the queue is read positionally against the manifest, so appending a new
+  narration's chapters to the old queue plays the wrong chapter rather than failing.
 - **just_audio's `playing` means the play button is engaged, not that sound is coming out.** It
   stays true when the queue reaches the end of the chapters that exist, so `AudiobookPlayer.playing`
   and `playingStream` fold `ProcessingState.completed` back out — that derived value is what the

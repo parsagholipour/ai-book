@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../../billing/data/billing_repository.dart';
 import '../data/audiobook_cache.dart';
+import '../data/audiobook_progress_store.dart';
 import '../data/audiobook_repository.dart';
 import '../domain/audiobook_models.dart';
 import '../domain/audiobook_timeline.dart';
@@ -28,12 +29,21 @@ class AudiobookController extends Notifier<AudiobookState> {
   static const skipInterval = Duration(seconds: 15);
   static const speedOptions = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
 
+  /// How often the listening position is written down while playing.
+  static const _saveInterval = Duration(seconds: 5);
+
+  /// A saved position this close to the end of the book is treated as having
+  /// finished it. Resuming a second from the end is a play button that makes
+  /// no sound; starting again is what someone who reached the end meant.
+  static const _finishedSlackMs = 5000;
+
   AudiobookPlayer? _player;
   Timer? _pollTimer;
   Timer? _sleepTimer;
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   final Map<int, AudiobookChapterTimeline> _timelines = {};
   final Set<int> _queuedChapters = {};
+  late AudiobookProgressStore _progressStore;
   bool _downloading = false;
   bool _disposed = false;
 
@@ -41,8 +51,21 @@ class AudiobookController extends Notifier<AudiobookState> {
   /// there makes no sound, so the play button has to mean something else.
   bool _atEndOfQueue = false;
 
+  /// Where the last session left off, until the chapter holding it has been
+  /// downloaded and the player can be put there. Null once it has been used,
+  /// or as soon as the listener does anything themselves.
+  int? _pendingResumeMs;
+  bool _placeRestored = false;
+
+  /// The position worth writing down, kept out of [state] so it can still be
+  /// saved while the provider is being torn down.
+  String? _placeAudiobookId;
+  int _placeMs = 0;
+  DateTime? _lastSaveAt;
+
   @override
   AudiobookState build() {
+    _progressStore = ref.read(audiobookProgressStoreProvider);
     ref.onDispose(_teardown);
     scheduleMicrotask(_refresh);
     return const AudiobookState();
@@ -89,6 +112,10 @@ class AudiobookController extends Notifier<AudiobookState> {
         ref.invalidate(billingProvider);
         return;
       }
+      await _restorePlace(audiobook);
+      if (_disposed) {
+        return;
+      }
       unawaited(_syncDownloads());
     } on ApiException catch (error) {
       if (!_disposed) {
@@ -108,6 +135,7 @@ class AudiobookController extends Notifier<AudiobookState> {
 
   void _teardown() {
     _disposed = true;
+    _rememberPlace(force: true);
     _stopPolling();
     _sleepTimer?.cancel();
     for (final subscription in _subscriptions) {
@@ -116,6 +144,100 @@ class AudiobookController extends Notifier<AudiobookState> {
     _subscriptions.clear();
     unawaited(_player?.dispose() ?? Future<void>.value());
     _player = null;
+  }
+
+  // -------------------------------------------------------------- saved place
+
+  /// Reads back where this narration was last left off. Runs once per screen.
+  ///
+  /// A position saved against a *different* narration is deleted rather than
+  /// used: re-narrating a book replaces the audio, so the old number would land
+  /// somewhere plausible and wrong.
+  Future<void> _restorePlace(MobileAudiobook audiobook) async {
+    if (_placeRestored) {
+      return;
+    }
+    _placeRestored = true;
+    try {
+      final saved = await _progressStore.load(projectId);
+      if (_disposed || saved == null) {
+        return;
+      }
+      final total = state.timeline?.totalDurationMs ?? 0;
+      final finished = total > 0 && saved.positionMs >= total - _finishedSlackMs;
+      if (saved.audiobookId != audiobook.id || finished) {
+        await _progressStore.clear(projectId);
+        return;
+      }
+      _pendingResumeMs = saved.positionMs;
+      _placeAudiobookId = saved.audiobookId;
+      _placeMs = saved.positionMs;
+    } catch (_) {
+      // Device storage is a convenience here. Failing to read it means starting
+      // the book from the top, never failing to open it.
+    }
+  }
+
+  /// Writes the listening position down: at most every [_saveInterval] while
+  /// playing, and always when playback stops or the screen goes away.
+  ///
+  /// Saving on a timer rather than only on the way out is what makes this
+  /// survive the ordinary end of a listening session — the app is swiped away
+  /// or killed in the background, and nothing gets a chance to run.
+  void _rememberPlace({bool force = false}) {
+    final audiobookId = _placeAudiobookId;
+    if (audiobookId == null || _placeMs <= 0) {
+      return;
+    }
+    final now = DateTime.now();
+    final last = _lastSaveAt;
+    if (!force && last != null && now.difference(last) < _saveInterval) {
+      return;
+    }
+    _lastSaveAt = now;
+    unawaited(
+      _progressStore
+          .save(
+            projectId,
+            AudiobookListeningPosition(
+              audiobookId: audiobookId,
+              positionMs: _placeMs,
+              updatedAt: now,
+            ),
+          )
+          .catchError((Object _) {
+            // Losing a place is never worth interrupting playback over.
+          }),
+    );
+  }
+
+  /// Forgets the position, on the device and in memory. Used when the narration
+  /// this position pointed into stops being the book's narration.
+  void _forgetPlace() {
+    _pendingResumeMs = null;
+    _placeAudiobookId = null;
+    _placeMs = 0;
+    _lastSaveAt = null;
+    unawaited(_progressStore.clear(projectId).catchError((Object _) {}));
+  }
+
+  /// Puts the player back where the listener left off, as soon as the chapter
+  /// holding that position is on the device.
+  ///
+  /// Chapters download in book order, so a position deep in the book waits for
+  /// the ones in front of it. Nothing is playing while it waits, which is what
+  /// makes the reposition silent when it finally happens.
+  Future<void> _applyResumeIfReady() async {
+    final target = _pendingResumeMs;
+    final timeline = state.timeline;
+    if (target == null || timeline == null || _player == null) {
+      return;
+    }
+    if (!_queuedChapters.contains(timeline.resolve(target).chapterIndex)) {
+      return;
+    }
+    _pendingResumeMs = null;
+    await seekGlobal(target);
   }
 
   // ---------------------------------------------------------------- narration
@@ -143,13 +265,23 @@ class AudiobookController extends Notifier<AudiobookState> {
           ref.read(audiobookCacheProvider).pruneOtherAudiobooks(projectId, audiobook.id),
         );
       }
+      // Different audio for the same book: the old queue, the old transcript
+      // and the old position all point into a narration that is gone.
+      await _resetPlayback();
+      _forgetPlace();
       state = state.copyWith(
         starting: false,
         audiobook: audiobook,
         timeline: audiobook == null ? null : AudiobookGlobalTimeline(audiobook.chapters),
+        downloadedChapters: const {},
+        globalPositionMs: 0,
+        chapterIndex: 0,
+        chapterPositionMs: 0,
+        playing: false,
+        caughtUp: false,
+        clearActiveTimeline: true,
+        clearActiveSegment: true,
       );
-      _timelines.clear();
-      _queuedChapters.clear();
       _startPolling();
       unawaited(_refresh());
       return null;
@@ -224,6 +356,7 @@ class AudiobookController extends Notifier<AudiobookState> {
           activeTimeline: isFirstChapterReady ? timeline : null,
           chapterIndex: isFirstChapterReady ? chapter.index : null,
         );
+        await _applyResumeIfReady();
       }
     } catch (error) {
       if (!_disposed) {
@@ -232,6 +365,26 @@ class AudiobookController extends Notifier<AudiobookState> {
     } finally {
       _downloading = false;
     }
+  }
+
+  /// Drops the queue and everything derived from it, so the next chapter to
+  /// land builds a fresh player.
+  ///
+  /// A new narration is different audio for the same book. Appending its
+  /// chapters to the old queue would leave the player holding tracks that are
+  /// no longer in the manifest, and the position mapping reads that queue
+  /// positionally — it would not fail, it would play the wrong chapter.
+  Future<void> _resetPlayback() async {
+    for (final subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _subscriptions.clear();
+    final player = _player;
+    _player = null;
+    _timelines.clear();
+    _queuedChapters.clear();
+    _atEndOfQueue = false;
+    await player?.dispose();
   }
 
   Future<void> _startPlayer(List<AudiobookTrack> tracks) async {
@@ -251,6 +404,10 @@ class AudiobookController extends Notifier<AudiobookState> {
       // a seek back into the book resumes without anyone asking it to.
       if (playing) {
         _atEndOfQueue = false;
+      } else {
+        // Stopping is the moment a place is most likely to be wanted back, and
+        // the one moment the throttle must not swallow.
+        _rememberPlace(force: true);
       }
       state = state.copyWith(
         playing: playing,
@@ -306,18 +463,23 @@ class AudiobookController extends Notifier<AudiobookState> {
     final chapter = chapters[listPosition];
     final chapterTimeline = _timelines[chapter.index];
     final segment = chapterTimeline == null ? null : segmentAt(chapterTimeline, chapterPositionMs);
+    final globalPositionMs = timeline.toGlobal(
+      chapterIndex: chapter.index,
+      chapterPositionMs: chapterPositionMs,
+    );
 
     state = state.copyWith(
-      globalPositionMs: timeline.toGlobal(
-        chapterIndex: chapter.index,
-        chapterPositionMs: chapterPositionMs,
-      ),
+      globalPositionMs: globalPositionMs,
       chapterIndex: chapter.index,
       chapterPositionMs: chapterPositionMs,
       activeTimeline: chapterTimeline,
       activeSegmentIndex: segment?.index,
       clearActiveSegment: segment == null,
     );
+
+    _placeAudiobookId = state.audiobook?.id;
+    _placeMs = globalPositionMs;
+    _rememberPlace();
   }
 
   Future<void> togglePlay() async {
@@ -325,6 +487,9 @@ class AudiobookController extends Notifier<AudiobookState> {
     if (player == null) {
       return;
     }
+    // Play means "from here". A resume that has not landed yet would otherwise
+    // pull the listener somewhere else moments later.
+    _pendingResumeMs = null;
     if (player.playing) {
       await player.pause();
       return;
@@ -370,6 +535,9 @@ class AudiobookController extends Notifier<AudiobookState> {
   Future<void> seekGlobal(int positionMs) async {
     final player = _player;
     final timeline = state.timeline;
+    // Whoever asked for this position owns it now, including when that is
+    // _applyResumeIfReady handing over its own target.
+    _pendingResumeMs = null;
     if (player == null || timeline == null) {
       return;
     }
@@ -492,6 +660,7 @@ class AudiobookState {
     bool clearAudiobook = false,
     AudiobookGlobalTimeline? timeline,
     AudiobookChapterTimeline? activeTimeline,
+    bool clearActiveTimeline = false,
     int? activeSegmentIndex,
     bool clearActiveSegment = false,
     int? globalPositionMs,
@@ -514,7 +683,7 @@ class AudiobookState {
       starting: starting ?? this.starting,
       audiobook: clearAudiobook ? null : (audiobook ?? this.audiobook),
       timeline: timeline ?? this.timeline,
-      activeTimeline: activeTimeline ?? this.activeTimeline,
+      activeTimeline: clearActiveTimeline ? null : (activeTimeline ?? this.activeTimeline),
       activeSegmentIndex: clearActiveSegment ? null : (activeSegmentIndex ?? this.activeSegmentIndex),
       globalPositionMs: globalPositionMs ?? this.globalPositionMs,
       chapterIndex: chapterIndex ?? this.chapterIndex,
