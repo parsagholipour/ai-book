@@ -46,7 +46,12 @@ export type PlanSummary = {
   tier: PlanTier;
   source: "free" | "google_play";
   status: string | null;
+  /** When the plan renews. Null once it has been cancelled — see `endsAt`. */
   renewsAt: Date | null;
+  /** True while a cancelled plan is still running out its paid period. */
+  cancelAtPeriodEnd: boolean;
+  /** When a cancelled plan drops to free. Null while it is still renewing. */
+  endsAt: Date | null;
   productSku: string | null;
 };
 
@@ -212,18 +217,29 @@ export async function grantSubscriptionPlanPeriod(options: {
 export async function getPlanSummary(userId: string, now: Date = new Date()): Promise<PlanSummary> {
   const tier = await resolvePlanTier(userId, now);
   if (tier === "free") {
-    return { tier, source: "free", status: null, renewsAt: null, productSku: null };
+    return { tier, source: "free", status: null, renewsAt: null, cancelAtPeriodEnd: false, endsAt: null, productSku: null };
   }
   const subscription = await prisma.subscriptionState.findFirst({
     where: { userId, status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED"] } },
     orderBy: { currentPeriodEnd: "desc" },
-    select: { status: true, currentPeriodEnd: true, product: { select: { sku: true } } }
+    select: {
+      status: true,
+      currentPeriodEnd: true,
+      autoRenewing: true,
+      product: { select: { sku: true } }
+    }
   });
+  // Play moves a cancelled subscription to CANCELED, but reports auto-renew off
+  // first, so either answer means the same thing: this period is the last one.
+  const cancelAtPeriodEnd = subscription?.status === "CANCELED" || subscription?.autoRenewing === false;
+  const periodEnd = subscription?.currentPeriodEnd ?? null;
   return {
     tier,
     source: "google_play",
     status: subscription?.status ?? null,
-    renewsAt: subscription?.currentPeriodEnd ?? null,
+    renewsAt: cancelAtPeriodEnd ? null : periodEnd,
+    cancelAtPeriodEnd,
+    endsAt: cancelAtPeriodEnd ? periodEnd : null,
     productSku: subscription?.product?.sku ?? null
   };
 }
@@ -331,6 +347,14 @@ const accountSelect = {
  * a support question about vanished credits has an answer. The grant's
  * idempotency key is the period, which is what makes concurrent API instances —
  * and a renewal sweep racing the app's own verification — harmless.
+ *
+ * A period whose grant already happened is still *adopted* when the account is
+ * sitting on a different one. That is the case a cancellation makes reachable:
+ * someone who took their free month on the 1st, subscribed on the 5th and
+ * cancelled on the 20th already owns this month's free key, and returning early
+ * would leave them holding the subscription's allowance on the free tier. The
+ * allowance is not granted twice — they move onto the period with nothing left
+ * of it, which is exactly what "you already had your free month" means.
  */
 async function applyPlanPeriodTx(
   tx: BillingTx,
@@ -351,11 +375,15 @@ async function applyPlanPeriodTx(
     where: { idempotencyKey: options.idempotencyKey },
     select: ledgerSelect
   });
-  if (existing) {
+  // Granted *and* already on the period: a duplicate call, or the losing side of
+  // a race the winner has finished. Writing here would forfeit the allowance the
+  // winner just deposited.
+  if (existing && options.account.planPeriodKey === options.period.key) {
     return { account: options.account, entry: existing };
   }
 
   const allowance = Math.max(0, Math.floor(options.allowance));
+  const granted = existing ? 0 : allowance;
   const forfeited = Math.max(0, options.account.planCredits);
   if (forfeited > 0) {
     await tx.creditLedgerEntry.create({
@@ -367,7 +395,11 @@ async function applyPlanPeriodTx(
         amountCredits: -forfeited,
         planCreditsDelta: -forfeited,
         balanceAfterCredits: options.account.availableCredits,
-        idempotencyKey: `${options.idempotencyKey}:expired`,
+        // The outgoing period names the adopting write, because the grant's own
+        // `:expired` key may already have been spent when it ran for real.
+        idempotencyKey: existing
+          ? `${options.idempotencyKey}:adopted:${options.account.planPeriodKey ?? "none"}`
+          : `${options.idempotencyKey}:expired`,
         description: "Unused monthly allowance expired",
         metadata: jsonInput({
           expiredPlanPeriodKey: options.account.planPeriodKey,
@@ -381,19 +413,21 @@ async function applyPlanPeriodTx(
   const account = await tx.userCreditAccount.update({
     where: { userId: options.userId },
     data: {
-      planCredits: allowance,
+      planCredits: granted,
+      // The period's size, not what is left of it: an adopted period reads as
+      // "0 of 1,000 monthly credits left" rather than as having no allowance.
       planCreditsPerPeriod: allowance,
       planPeriodStart: options.period.start,
       planPeriodEnd: options.period.end,
       planPeriodKey: options.period.key,
-      lifetimeCreditsGranted: { increment: allowance }
+      lifetimeCreditsGranted: { increment: granted }
     },
     select: accountSelect
   });
 
   const entry =
-    allowance <= 0
-      ? null
+    granted <= 0
+      ? existing
       : await tx.creditLedgerEntry.create({
           data: {
             userId: options.userId,
@@ -402,9 +436,9 @@ async function applyPlanPeriodTx(
             entryType: "GRANT",
             status: "SETTLED",
             operation: options.operation,
-            amountCredits: allowance,
-            planCreditsDelta: allowance,
-            balanceAfterCredits: account.availableCredits + allowance,
+            amountCredits: granted,
+            planCreditsDelta: granted,
+            balanceAfterCredits: account.availableCredits + granted,
             idempotencyKey: options.idempotencyKey,
             description: options.description,
             metadata: jsonInput(options.metadata)

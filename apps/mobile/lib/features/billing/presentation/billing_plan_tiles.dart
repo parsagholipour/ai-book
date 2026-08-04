@@ -102,6 +102,21 @@ class BillingPlanBanner extends StatelessWidget {
               ),
             ),
           ),
+          // What the tier *grants*, not what is left of it. The progress line
+          // below only ever counted down; on free nothing said the month starts
+          // over with this much, and on a cancelled plan nothing said when.
+          // Held back until the plan is known, so a subscriber never reads a
+          // line about the free tier on the way in.
+          if (billing != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              tier == 'free'
+                  ? 'Free includes ${formatCredits(billing!.freeTier.monthlyCredits)} credits '
+                        'and ${billing!.freeTier.illustratedBooksPerMonth} illustrated books each month'
+                  : _paidPlanLine(plan),
+              style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ],
           if (allowance != null && allowance.monthlyCredits > 0) ...[
             const SizedBox(height: 16),
             AppAnimatedProgressBar(
@@ -293,7 +308,7 @@ class BillingPlanCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                     for (final benefit in planBenefits(product)) ...[
-                      _BenefitRow(label: benefit, accent: accent),
+                      BillingBenefitRow(label: benefit, accent: accent),
                       const SizedBox(height: 8),
                     ],
                     const SizedBox(height: 8),
@@ -562,8 +577,9 @@ class _CardRibbon extends StatelessWidget {
   }
 }
 
-class _BenefitRow extends StatelessWidget {
-  const _BenefitRow({required this.label, required this.accent});
+/// One ticked line of what a plan includes. Shared with the free rung.
+class BillingBenefitRow extends StatelessWidget {
+  const BillingBenefitRow({required this.label, required this.accent, super.key});
 
   final String label;
   final Color accent;
@@ -686,6 +702,22 @@ String formatCredits(int value) {
     buffer.write(digits[index]);
   }
   return buffer.toString();
+}
+
+/// A paid plan in one line: when it renews, or when it stops.
+String _paidPlanLine(MobileSubscriptionPlan? plan) {
+  if (plan == null) {
+    return 'Unlimited illustrated books';
+  }
+  final endsAt = plan.periodEndsAt;
+  if (endsAt == null) {
+    return 'Unlimited illustrated books';
+  }
+  final local = endsAt.toLocal();
+  final date = '${local.day}/${local.month}/${local.year}';
+  return plan.cancelAtPeriodEnd
+      ? 'Ends $date · then Free'
+      : 'Renews $date';
 }
 
 String _resetSuffix(DateTime? resetsAt) {

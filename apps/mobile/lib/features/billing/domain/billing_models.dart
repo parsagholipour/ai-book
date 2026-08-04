@@ -10,6 +10,7 @@ class MobileBilling {
     this.plan,
     this.allowance,
     this.imageQuota,
+    this.freeTier = const MobileFreeTier(),
   });
 
   final CreditBalance credits;
@@ -22,6 +23,11 @@ class MobileBilling {
   final MobileSubscriptionPlan? plan;
   final MobileAllowance? allowance;
 
+  /// What the free tier grants every month, whoever is asking. This describes
+  /// the tier rather than counting down a reader's remainder, which is what the
+  /// paywall's free rung and the cancel sheet need.
+  final MobileFreeTier freeTier;
+
   /// Null means this plan has no image limit at all. Only meaningful on free.
   final MobileImageQuota? imageQuota;
 
@@ -31,6 +37,7 @@ class MobileBilling {
     final plan = json['plan'];
     final allowance = json['allowance'];
     final imageQuota = json['imageQuota'];
+    final freeTier = json['freeTier'];
     return MobileBilling(
       credits: CreditBalance.fromJson(json['credits'] as Map<String, dynamic>),
       entitlements: entitlements
@@ -56,6 +63,9 @@ class MobileBilling {
       imageQuota: imageQuota is Map<String, dynamic>
           ? MobileImageQuota.fromJson(imageQuota)
           : null,
+      freeTier: freeTier is Map<String, dynamic>
+          ? MobileFreeTier.fromJson(freeTier)
+          : const MobileFreeTier(),
     );
   }
 
@@ -87,31 +97,72 @@ class MobileBilling {
   bool get isImageQuotaExhausted => imageQuota?.isExhausted ?? false;
 }
 
+/// The free tier's monthly grant. Defaults match the shipped prices so a server
+/// that predates the field still describes free correctly.
+class MobileFreeTier {
+  const MobileFreeTier({
+    this.monthlyCredits = 1000,
+    this.illustratedBooksPerMonth = 3,
+  });
+
+  final int monthlyCredits;
+  final int illustratedBooksPerMonth;
+
+  factory MobileFreeTier.fromJson(Map<String, dynamic> json) {
+    return MobileFreeTier(
+      monthlyCredits: json['monthlyCredits'] as int? ?? 1000,
+      illustratedBooksPerMonth: json['illustratedBooksPerMonth'] as int? ?? 3,
+    );
+  }
+}
+
 class MobileSubscriptionPlan {
   const MobileSubscriptionPlan({
     required this.tier,
     required this.source,
     this.status,
     this.renewsAt,
+    this.cancelAtPeriodEnd = false,
+    this.endsAt,
+    this.canCancelInApp = false,
     this.productSku,
   });
 
   final String tier;
   final String source;
   final String? status;
+
+  /// Null once the plan has been cancelled — read [endsAt] instead.
   final DateTime? renewsAt;
+
+  /// The plan is running out its last paid period and then drops to free.
+  final bool cancelAtPeriodEnd;
+
+  /// When that drop happens. Null while the plan is still renewing.
+  final DateTime? endsAt;
+
+  /// Whether this backend can end the subscription itself. It cannot against
+  /// real Google Play, where cancelling happens in the Play subscription centre.
+  final bool canCancelInApp;
   final String? productSku;
 
   factory MobileSubscriptionPlan.fromJson(Map<String, dynamic> json) {
     final renewsAt = json['renewsAt'];
+    final endsAt = json['endsAt'];
     return MobileSubscriptionPlan(
       tier: json['tier'] as String? ?? 'free',
       source: json['source'] as String? ?? 'free',
       status: json['status'] as String?,
       renewsAt: renewsAt is String ? DateTime.tryParse(renewsAt) : null,
+      cancelAtPeriodEnd: json['cancelAtPeriodEnd'] as bool? ?? false,
+      endsAt: endsAt is String ? DateTime.tryParse(endsAt) : null,
+      canCancelInApp: json['canCancelInApp'] as bool? ?? false,
       productSku: json['productSku'] as String?,
     );
   }
+
+  /// The day the plan next changes hands, whichever direction it is going.
+  DateTime? get periodEndsAt => endsAt ?? renewsAt;
 
   String get label => switch (tier) {
     'creator' => 'Creator',

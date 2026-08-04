@@ -13,6 +13,17 @@ abstract interface class BillingRepository {
     String? purchaseStatus,
     String? projectId,
   });
+
+  /// Ask the server to re-check the subscription with Google.
+  ///
+  /// Cancelling happens in the Play subscription centre, outside the app, and
+  /// the server's renewal sweep would not notice until the period ended — so a
+  /// reader coming back from Play needs this to see the new state.
+  Future<MobileBilling> refreshSubscription();
+
+  /// End the subscription now. Only backends running the mock Play verifier
+  /// accept this; against real Play the app deep-links to Play instead.
+  Future<MobileBilling> cancelSubscription();
 }
 
 class MobileBillingRepository implements BillingRepository {
@@ -55,6 +66,22 @@ class MobileBillingRepository implements BillingRepository {
     return GooglePlayVerificationResult.fromJson(
       response.data as Map<String, dynamic>,
     );
+  }
+
+  @override
+  Future<MobileBilling> refreshSubscription() {
+    return _postBilling('/api/mobile/billing/subscription/refresh');
+  }
+
+  @override
+  Future<MobileBilling> cancelSubscription() {
+    return _postBilling('/api/mobile/billing/subscription/cancel');
+  }
+
+  Future<MobileBilling> _postBilling(String path) async {
+    final response = await apiClient.postJson(path);
+    final data = response.data as Map<String, dynamic>;
+    return MobileBilling.fromJson(data['billing'] as Map<String, dynamic>);
   }
 }
 

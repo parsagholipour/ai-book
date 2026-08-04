@@ -15,7 +15,10 @@ import {
  * Like those, it is the API contract — widen it deliberately.
  */
 
-export async function serializeMobileBilling(userId: string): Promise<MobileBillingDto> {
+export async function serializeMobileBilling(
+  userId: string,
+  options: { canCancelInApp: boolean }
+): Promise<MobileBillingDto> {
   // `getCreditBalance` rolls the plan period forward first, so simply opening
   // the app is enough to be granted the month's allowance.
   const [balance, entitlements, plan, imageQuota] = await Promise.all([
@@ -24,6 +27,9 @@ export async function serializeMobileBilling(userId: string): Promise<MobileBill
     getPlanSummary(userId),
     getImageQuota(userId)
   ]);
+  // Read once: an operator edit landing between the plan block and `creditCosts`
+  // would otherwise describe the free tier two different ways in one payload.
+  const pricing = creditPricing();
   return {
     credits: {
       available: balance.availableCredits,
@@ -37,7 +43,15 @@ export async function serializeMobileBilling(userId: string): Promise<MobileBill
       source: plan.source,
       status: plan.status,
       renewsAt: plan.renewsAt?.toISOString() ?? null,
+      cancelAtPeriodEnd: plan.cancelAtPeriodEnd,
+      endsAt: plan.endsAt?.toISOString() ?? null,
+      // Nothing to cancel on the free tier, whatever this backend can do.
+      canCancelInApp: options.canCancelInApp && plan.tier !== "free",
       productSku: plan.productSku
+    },
+    freeTier: {
+      monthlyCredits: pricing.freeMonthlyCredits,
+      illustratedBooksPerMonth: pricing.freeIllustratedBooksPerMonth
     },
     allowance: {
       monthlyCredits: balance.planCreditsPerPeriod,
@@ -63,7 +77,7 @@ export async function serializeMobileBilling(userId: string): Promise<MobileBill
     })),
     // The live prices, so an operator's change reaches the app without a client
     // release. The Flutter side reads this map with per-key fallbacks.
-    creditCosts: creditPricing(),
+    creditCosts: pricing,
     products: DEFAULT_BILLING_PRODUCTS.map((product) => ({
       sku: product.sku,
       title: product.title,

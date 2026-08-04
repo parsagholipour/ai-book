@@ -106,9 +106,44 @@ describe("Google Play billing verifier", () => {
       subscription: {
         status: "ACTIVE",
         currentPeriodStart: new Date("2026-06-15T00:00:00Z"),
-        currentPeriodEnd: new Date("2099-07-15T00:00:00Z")
+        currentPeriodEnd: new Date("2099-07-15T00:00:00Z"),
+        autoRenewing: true
       }
     });
+  });
+
+  it("reads auto-renew off as a plan that ends rather than one that renews", async () => {
+    // Play reports this well before it moves the subscription to CANCELED, and
+    // the benefits run to the expiry either way — so it still grants.
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        latestOrderId: "GPA.5555-6666-7777-88888",
+        startTime: "2026-06-15T00:00:00Z",
+        subscriptionState: "SUBSCRIPTION_STATE_ACTIVE",
+        lineItems: [
+          {
+            productId: "tomeza.creator_monthly",
+            expiryTime: "2099-07-15T00:00:00Z",
+            autoRenewingPlan: { autoRenewEnabled: false }
+          }
+        ]
+      })
+    );
+    const verifier = createGooglePlayVerifier({
+      packageName: "com.tomeza.tomeza",
+      accessToken: "test-access-token",
+      fetchImpl: fetchMock as typeof fetch
+    });
+
+    const result = await verifier.verifyPurchase({
+      packageName: "com.tomeza.tomeza",
+      productId: "tomeza.creator_monthly",
+      productType: "SUBSCRIPTION",
+      purchaseToken: "subscription-token"
+    });
+
+    expect(result.grantable).toBe(true);
+    expect(result.subscription).toMatchObject({ status: "ACTIVE", autoRenewing: false });
   });
 
   it("requires Google Play configuration before verification", async () => {

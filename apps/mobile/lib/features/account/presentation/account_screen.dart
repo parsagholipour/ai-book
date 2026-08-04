@@ -8,7 +8,9 @@ import '../../../shared/ui/app_components.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
+import '../../billing/presentation/billing_cancel_sheet.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../../billing/presentation/play_subscriptions_link.dart';
 import '../data/account_repository.dart';
 
 class AccountScreen extends ConsumerStatefulWidget {
@@ -32,7 +34,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
           AccountPlanCard(
             billing: billing,
             onUpgrade: _openBillingPaywall,
-            onManageSubscription: _openPlaySubscriptions,
+            onManageSubscription: (sku) =>
+                ref.read(playSubscriptionsLauncherProvider)(sku),
+            onCancelSubscription: _openCancelSheet,
           ),
           const SizedBox(height: 12),
           _AccountCreditsCard(
@@ -65,17 +69,11 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     }
   }
 
-  /// Cancelling and changing a subscription happens in Play, not here — Google
-  /// requires it, and it is where the payment method already lives.
-  Future<void> _openPlaySubscriptions(String? sku) async {
-    final query = <String>[
-      if (sku != null) 'sku=$sku',
-      'package=$androidPackageName',
-    ].join('&');
-    await launchUrl(
-      Uri.parse('https://play.google.com/store/account/subscriptions?$query'),
-      mode: LaunchMode.externalApplication,
-    );
+  Future<void> _openCancelSheet(MobileBilling value) async {
+    await showCancelSubscriptionSheet(context, billing: value);
+    if (mounted) {
+      ref.invalidate(billingProvider);
+    }
   }
 
   Future<void> _requestAccountDeletion() async {
@@ -125,12 +123,14 @@ class AccountPlanCard extends StatelessWidget {
     required this.billing,
     required this.onUpgrade,
     required this.onManageSubscription,
+    required this.onCancelSubscription,
     super.key,
   });
 
   final AsyncValue<MobileBilling> billing;
   final VoidCallback onUpgrade;
   final void Function(String? sku) onManageSubscription;
+  final void Function(MobileBilling billing) onCancelSubscription;
 
   @override
   Widget build(BuildContext context) {
@@ -140,6 +140,7 @@ class AccountPlanCard extends StatelessWidget {
     final allowance = value?.allowance;
     final quota = value?.imageQuota;
     final paid = value?.isPaidPlan ?? false;
+    final cancelling = plan?.cancelAtPeriodEnd ?? false;
 
     return Card(
       key: const ValueKey('account-plan-card'),
@@ -184,6 +185,16 @@ class AccountPlanCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (!paid && value != null) ...[
+              const SizedBox(height: 4),
+              // What free grants each month, so the card describes the plan and
+              // not only what is left of it.
+              Text(
+                'Free includes ${value.freeTier.monthlyCredits} credits and '
+                '${value.freeTier.illustratedBooksPerMonth} illustrated books each month',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+            ],
             if (paid && plan?.renewsAt != null) ...[
               const SizedBox(height: 4),
               Text(
@@ -191,20 +202,49 @@ class AccountPlanCard extends StatelessWidget {
                 style: TextStyle(color: colors.onSurfaceVariant),
               ),
             ],
+            if (paid && cancelling && plan?.endsAt != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Ends ${_formatDate(plan!.endsAt!)} · you move to Free then',
+                style: TextStyle(color: colors.onSurfaceVariant),
+              ),
+            ],
             const SizedBox(height: 12),
-            paid
-                ? OutlinedButton.icon(
+            if (paid)
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  OutlinedButton.icon(
                     key: const ValueKey('account-manage-subscription'),
                     onPressed: () => onManageSubscription(plan?.productSku),
                     icon: const Icon(Icons.open_in_new),
                     label: const Text('Manage subscription'),
-                  )
-                : FilledButton.icon(
-                    key: const ValueKey('account-upgrade-plan'),
-                    onPressed: onUpgrade,
-                    icon: const Icon(Icons.arrow_upward),
-                    label: const Text('Upgrade'),
                   ),
+                  // Already cancelling: the only thing left to do in Play is
+                  // change your mind, so the button says that instead.
+                  if (cancelling)
+                    TextButton(
+                      key: const ValueKey('account-resume-subscription'),
+                      onPressed: () => onManageSubscription(plan?.productSku),
+                      child: const Text('Resume in Play'),
+                    )
+                  else if (value != null)
+                    TextButton(
+                      key: const ValueKey('account-cancel-subscription'),
+                      onPressed: () => onCancelSubscription(value),
+                      child: const Text('Cancel subscription'),
+                    ),
+                ],
+              )
+            else
+              FilledButton.icon(
+                key: const ValueKey('account-upgrade-plan'),
+                onPressed: onUpgrade,
+                icon: const Icon(Icons.arrow_upward),
+                label: const Text('Upgrade'),
+              ),
           ],
         ),
       ),

@@ -267,7 +267,11 @@ function mapSubscriptionPurchase(
     subscription: {
       status,
       currentPeriodStart: dateValue(purchase.startTime),
-      currentPeriodEnd: dateValue(matchingLineItem?.expiryTime)
+      currentPeriodEnd: dateValue(matchingLineItem?.expiryTime),
+      // Promoted out of the metadata below because it is the difference between
+      // "renews on the 12th" and "ends on the 12th". Google reports it before it
+      // ever moves the subscription to CANCELED.
+      autoRenewing: matchingLineItem?.autoRenewingPlan?.autoRenewEnabled ?? null
     },
     metadata: {
       acknowledgementState: purchase.acknowledgementState ?? null,

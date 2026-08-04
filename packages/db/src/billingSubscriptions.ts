@@ -8,15 +8,16 @@
  */
 import {
   DEFAULT_BILLING_PRODUCTS,
+  PLAN_ENTITLEMENT_TYPES,
   type BillingOperation,
   type PlanEntitlementType,
   planEntitlementTypeForSubscriptionSku
 } from "@book-maker/core";
 import { createHash } from "node:crypto";
 import { prisma } from "./client.ts";
-import { jsonInput } from "./billingInternals.ts";
+import { jsonInput, runSerializable } from "./billingInternals.ts";
 import { grantCredits } from "./billingLedger.ts";
-import { grantSubscriptionPlanPeriod } from "./planPeriods.ts";
+import { ensureCurrentPlanPeriodTx, grantSubscriptionPlanPeriod } from "./planPeriods.ts";
 
 export type GooglePlayPurchaseKind = "one_time" | "subscription";
 
@@ -41,6 +42,8 @@ export type VerifiedGooglePlayPurchase = {
     status: GooglePlaySubscriptionGrantState;
     currentPeriodStart?: Date | null | undefined;
     currentPeriodEnd?: Date | null | undefined;
+    /** False once the reader has cancelled. Null when the provider did not say. */
+    autoRenewing?: boolean | null | undefined;
   } | null | undefined;
   metadata?: Record<string, unknown> | undefined;
 };
@@ -165,6 +168,7 @@ export async function recordVerifiedGooglePlayPurchase(options: {
       creditsPerPeriod: product.creditAmount,
       currentPeriodStart: verification.subscription.currentPeriodStart ?? null,
       currentPeriodEnd: verification.subscription.currentPeriodEnd ?? null,
+      autoRenewing: verification.subscription.autoRenewing ?? null,
       metadata: verificationMetadata(verification, tokenHash)
     });
   }
@@ -260,6 +264,69 @@ export async function recordVerifiedGooglePlayPurchase(options: {
   };
 }
 
+export type EndSubscriptionResult = {
+  ended: boolean;
+  endedSubscriptionIds: string[];
+};
+
+/**
+ * End a subscription now rather than at its period end, and land the account on
+ * the free tier in the same transaction.
+ *
+ * Google owns cancellation for a real purchase — the app deep-links to the Play
+ * subscription centre and the next verification tells us what happened. This is
+ * for the mock verifier, which always answers ACTIVE: without it a dev account
+ * that ever bought a plan can never see the free tier again.
+ *
+ * Three things hold a paid tier up and all three have to come down together:
+ * the entitlement row `resolvePlanTier` reads, the plan period that stops
+ * `ensureCurrentPlanPeriod` granting a free month, and the stored purchase
+ * token — leaving that would let the very next refresh or renewal sweep
+ * re-verify it and put the plan straight back.
+ */
+export async function endSubscriptionNow(userId: string, now: Date = new Date()): Promise<EndSubscriptionResult> {
+  return runSerializable(async (tx) => {
+    const subscriptions = await tx.subscriptionState.findMany({
+      where: { userId, status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED", "PAUSED"] } },
+      select: { id: true, canceledAt: true }
+    });
+    const entitlements = await tx.userEntitlement.findMany({
+      where: { userId, status: "ACTIVE", type: { in: PLAN_ENTITLEMENT_TYPES } },
+      select: { id: true }
+    });
+    if (subscriptions.length === 0 && entitlements.length === 0) {
+      return { ended: false, endedSubscriptionIds: [] };
+    }
+
+    for (const subscription of subscriptions) {
+      await tx.subscriptionState.update({
+        where: { id: subscription.id },
+        data: {
+          status: "EXPIRED",
+          canceledAt: subscription.canceledAt ?? now,
+          currentPeriodEnd: now,
+          nextCreditGrantAt: null,
+          autoRenewing: false,
+          purchaseToken: null
+        }
+      });
+    }
+    await tx.userEntitlement.updateMany({
+      where: { userId, status: "ACTIVE", type: { in: PLAN_ENTITLEMENT_TYPES } },
+      data: { status: "EXPIRED", expiresAt: now }
+    });
+    // Cut the paid period short before asking for the free one: the free grant
+    // is skipped while a live period is still owned by whoever granted it.
+    await tx.userCreditAccount.updateMany({
+      where: { userId },
+      data: { planPeriodEnd: now, planPeriodKey: null }
+    });
+    await ensureCurrentPlanPeriodTx(tx, userId, now);
+
+    return { ended: true, endedSubscriptionIds: subscriptions.map((subscription) => subscription.id) };
+  });
+}
+
 export function hashPurchaseToken(purchaseToken: string): string {
   return createHash("sha256").update(purchaseToken, "utf8").digest("hex");
 }
@@ -298,6 +365,7 @@ async function upsertSubscriptionState(options: {
   creditsPerPeriod: number;
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
+  autoRenewing: boolean | null;
   metadata: Record<string, unknown>;
 }): Promise<void> {
   const existing = await prisma.subscriptionState.findFirst({
@@ -305,8 +373,9 @@ async function upsertSubscriptionState(options: {
       provider: "GOOGLE_PLAY",
       externalSubscriptionId: options.tokenHash
     },
-    select: { id: true }
+    select: { id: true, canceledAt: true }
   });
+  const cancelling = options.status === "CANCELED" || options.autoRenewing === false;
   const data = {
     userId: options.userId,
     productId: options.productId,
@@ -319,9 +388,13 @@ async function upsertSubscriptionState(options: {
     creditsPerPeriod: options.creditsPerPeriod,
     currentPeriodStart: options.currentPeriodStart,
     currentPeriodEnd: options.currentPeriodEnd,
+    autoRenewing: options.autoRenewing,
     // Null once Google says it is over: the sweep polls on this column, and a
     // dead subscription with a past date would be re-checked forever.
     nextCreditGrantAt: options.status === "EXPIRED" ? null : options.currentPeriodEnd,
+    // When it was first seen to be ending, not when we last looked: the sweep
+    // re-verifies a cancelled subscription every hour until it expires.
+    canceledAt: cancelling ? (existing?.canceledAt ?? new Date()) : null,
     metadata: jsonInput(options.metadata)
   };
   if (existing) {

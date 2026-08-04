@@ -497,6 +497,9 @@ model SubscriptionState {
   currentPeriodStart     DateTime?
   currentPeriodEnd       DateTime?
   nextCreditGrantAt      DateTime?
+  /// What Google last said about renewal. False means the reader has cancelled
+  /// and the plan runs to `currentPeriodEnd` — which is not the same as expired.
+  autoRenewing           Boolean?
   canceledAt             DateTime?
   metadata               Json
   createdAt              DateTime           @default(now())

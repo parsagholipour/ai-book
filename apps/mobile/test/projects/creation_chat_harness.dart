@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/projects/data/creation_prefs_store.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
@@ -27,6 +28,23 @@ extension CreationChatTester on WidgetTester {
     await pumpWidget(const SizedBox());
     await pump();
   }
+
+  /// Steps through the illustrations confirmation, which now stands between
+  /// "Build the plan" and the build request.
+  ///
+  /// Plain pumps rather than `pumpAndSettle`: a second build happens while the
+  /// plan poll is running, and settling would never return.
+  Future<void> continuePastVisualsPrompt() async {
+    await pump();
+    await pump(const Duration(milliseconds: 400));
+    final continueButton = find.widgetWithText(FilledButton, 'Continue');
+    if (continueButton.evaluate().isEmpty) {
+      return;
+    }
+    await tap(continueButton);
+    await pump();
+    await pump(const Duration(milliseconds: 400));
+  }
 }
 
 /// Text inside the transcript list (excludes app bar title and footer chips).
@@ -38,6 +56,7 @@ Widget app({
   ProjectsRepository? projects,
   String? draftId,
   bool startFresh = false,
+  CreationPrefsStore? prefs,
 }) {
   return ProviderScope(
     overrides: [
@@ -45,6 +64,11 @@ Widget app({
       if (projects != null)
         projectsRepositoryProvider.overrideWithValue(projects),
       billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
+      // Always overridden: the file-backed store calls path_provider, which has
+      // no implementation under `flutter test`.
+      creationPrefsStoreProvider.overrideWithValue(
+        prefs ?? MemoryCreationPrefsStore(),
+      ),
     ],
     child: MaterialApp(
       theme: buildTomezaLightTheme(),
@@ -57,6 +81,7 @@ Widget routerApp({
   required CreationRepository creation,
   required ProjectsRepository projects,
   required String initialLocation,
+  CreationPrefsStore? prefs,
 }) {
   final router = GoRouter(
     initialLocation: initialLocation,
@@ -88,6 +113,9 @@ Widget routerApp({
       creationRepositoryProvider.overrideWithValue(creation),
       projectsRepositoryProvider.overrideWithValue(projects),
       billingRepositoryProvider.overrideWithValue(FakeBillingRepository()),
+      creationPrefsStoreProvider.overrideWithValue(
+        prefs ?? MemoryCreationPrefsStore(),
+      ),
     ],
     child: MaterialApp.router(
       theme: buildTomezaLightTheme(),

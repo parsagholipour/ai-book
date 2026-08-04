@@ -380,6 +380,7 @@ void main() {
       await tester.tap(find.text('A kids book'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+      await tester.continuePastVisualsPrompt();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
@@ -435,6 +436,7 @@ void main() {
     );
 
     await tester.tap(find.text('8 pages'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
@@ -456,6 +458,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
@@ -487,6 +490,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+      await tester.continuePastVisualsPrompt();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       await tester.pump(const Duration(milliseconds: 50));
@@ -538,6 +542,7 @@ void main() {
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
@@ -569,6 +574,7 @@ void main() {
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
@@ -658,6 +664,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+      await tester.continuePastVisualsPrompt();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       await tester.pump(const Duration(milliseconds: 50));
@@ -909,6 +916,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
@@ -955,6 +963,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
@@ -1672,6 +1681,7 @@ void main() {
       await tester.enterText(find.byType(TextField).last, 'Ok, build it');
       await tester.pump();
       await tester.tap(find.byTooltip('Send'));
+      await tester.continuePastVisualsPrompt();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
       await tester.pump(const Duration(milliseconds: 50));
@@ -1829,12 +1839,14 @@ void main() {
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
     await tester.tap(find.byTooltip('New output in this chat'));
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 

@@ -595,7 +595,7 @@ int estimateProjectCredits({
   final imageGeneration = _intCost(creditCosts, 'imageGeneration', 45);
   final premiumReview = _intCost(creditCosts, 'premiumReview', 200);
   final exportUnlock = _intCost(creditCosts, 'exportUnlock', 150);
-  final imageCount = _estimatedInteriorImages(
+  final imageCount = estimatedInteriorImageCount(
     bookType: bookType,
     imagesEnabled: imagesEnabled,
     targetPages: targetPages,
@@ -608,7 +608,12 @@ int estimateProjectCredits({
       exportUnlock;
 }
 
-int _estimatedInteriorImages({
+/// How many interior illustrations a book of this shape is quoted for.
+///
+/// Mirrors `estimateInteriorImageCount` in `packages/core/src/billing.ts`, which
+/// is what the server actually charges against, so the two must move together.
+/// The cover is not counted here because it is not charged either.
+int estimatedInteriorImageCount({
   required String bookType,
   required bool imagesEnabled,
   required int targetPages,

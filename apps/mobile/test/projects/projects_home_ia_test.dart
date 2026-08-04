@@ -552,6 +552,13 @@ class FakeBillingRepository implements BillingRepository {
   Future<MobileBilling> getBilling() async => fakeBilling();
 
   @override
+  Future<MobileBilling> refreshSubscription() async => fakeBilling();
+
+  @override
+  Future<MobileBilling> cancelSubscription() async => fakeBilling();
+
+
+  @override
   Future<GooglePlayVerificationResult> verifyGooglePlayPurchase({
     required String productId,
     required String purchaseToken,

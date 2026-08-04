@@ -95,6 +95,8 @@ export type Subscription = {
   currentPeriodStart: Date | null;
   currentPeriodEnd: Date | null;
   nextCreditGrantAt: Date | null;
+  autoRenewing: boolean | null;
+  canceledAt: Date | null;
   metadata: unknown;
 };
 
@@ -347,6 +349,9 @@ export function createBillingTestDb() {
       }),
       findMany: vi.fn(async ({ where, take }: any) => {
         const rows = [...state.subscriptions.values()].filter((candidate) => {
+          if (where?.userId !== undefined && candidate.userId !== where.userId) {
+            return false;
+          }
           if (where?.status?.in && !where.status.in.includes(candidate.status)) {
             return false;
           }
@@ -380,6 +385,8 @@ export function createBillingTestDb() {
           currentPeriodStart: data.currentPeriodStart ?? null,
           currentPeriodEnd: data.currentPeriodEnd ?? null,
           nextCreditGrantAt: data.nextCreditGrantAt ?? null,
+          autoRenewing: data.autoRenewing ?? null,
+          canceledAt: data.canceledAt ?? null,
           metadata: data.metadata
         };
         state.subscriptions.set(row.id, row);

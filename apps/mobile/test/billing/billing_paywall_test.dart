@@ -237,6 +237,9 @@ Widget testPaywall({
 class FakeBillingRepository implements BillingRepository {
   MobileBilling billing = fakeBilling(availableCredits: 100);
   final verifications = <VerificationCall>[];
+  var refreshCalls = 0;
+  var cancelCalls = 0;
+  Object? cancelError;
 
   @override
   Future<MobileBilling> getBilling() async => billing;
@@ -273,6 +276,22 @@ class FakeBillingRepository implements BillingRepository {
       ),
       billing: billing,
     );
+  }
+
+  @override
+  Future<MobileBilling> refreshSubscription() async {
+    refreshCalls += 1;
+    return billing;
+  }
+
+  @override
+  Future<MobileBilling> cancelSubscription() async {
+    cancelCalls += 1;
+    if (cancelError != null) {
+      throw cancelError!;
+    }
+    billing = fakeBilling(availableCredits: billing.credits.available);
+    return billing;
   }
 }
 

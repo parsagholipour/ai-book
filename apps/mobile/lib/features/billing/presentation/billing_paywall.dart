@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
+import '../domain/billing_models.dart';
+import 'billing_cancel_sheet.dart';
 import 'billing_controller.dart';
+import 'billing_free_plan_card.dart';
 import 'billing_plan_tiles.dart';
 import 'billing_tier_style.dart';
 import 'credit_log_screen.dart';
@@ -111,6 +114,21 @@ class BillingPaywall extends ConsumerWidget {
                     const SizedBox(height: 14),
                   ],
                 ],
+                // Free is not a product, so it gets its own rung — and on a paid
+                // plan it is the only place that says what cancelling lands you on.
+                BillingFreePlanCard(
+                  key: const ValueKey('paywall-plan-free'),
+                  freeTier: state.billing?.freeTier ?? const MobileFreeTier(),
+                  isCurrentPlan: currentTier == 'free',
+                  onSwitchToFree: state.billing == null || state.subscriptionBusy
+                      ? null
+                      : () => showCancelSubscriptionSheet(
+                          context,
+                          billing: state.billing!,
+                          projectId: projectId,
+                        ),
+                ),
+                const SizedBox(height: 14),
                 if (controller.topUps.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   const _SectionRule(label: 'OR TOP UP'),

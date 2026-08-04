@@ -679,8 +679,28 @@ export type MobileBillingDto = {
     source: "free" | "google_play";
     /** Google Play subscription status, or null on the free tier. */
     status: string | null;
+    /** Null once the plan has been cancelled — read `endsAt` instead. */
     renewsAt: string | null;
+    /** The plan is running out its last paid period and then drops to free. */
+    cancelAtPeriodEnd: boolean;
+    /** When that drop happens. Null while the plan is still renewing. */
+    endsAt: string | null;
+    /**
+     * Whether this backend can end the subscription itself. Only the mock Play
+     * verifier can; against real Play the app has to send the reader to the Play
+     * subscription centre, because that is where Google requires it to happen.
+     */
+    canCancelInApp: boolean;
     productSku: string | null;
+  };
+  /**
+   * What the free tier grants every month, whether or not the reader is on it.
+   * Sent so the app can *describe* free — "1,000 credits and 3 illustrated books
+   * a month" — rather than only counting down what a free user has left.
+   */
+  freeTier: {
+    monthlyCredits: number;
+    illustratedBooksPerMonth: number;
   };
   allowance: {
     /** What this plan grants each period. */
@@ -758,6 +778,10 @@ export type MobileCreditLogDto = {
   entries: MobileCreditLogEntryDto[];
   /** Send back as `cursor` for the next page. Null at the end of the history. */
   nextCursor: string | null;
+};
+
+export type MobileBillingResponseDto = {
+  billing: MobileBillingDto;
 };
 
 export type MobileGooglePlayVerificationResponseDto = {

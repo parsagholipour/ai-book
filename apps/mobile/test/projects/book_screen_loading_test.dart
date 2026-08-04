@@ -360,6 +360,12 @@ class FakeBillingRepository implements BillingRepository {
       billing: await getBilling(),
     );
   }
+
+  @override
+  Future<MobileBilling> refreshSubscription() => getBilling();
+
+  @override
+  Future<MobileBilling> cancelSubscription() => getBilling();
 }
 
 MobileProjectDetail draftProject({String id = 'project-1'}) {

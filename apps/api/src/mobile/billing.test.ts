@@ -6,6 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import {
+  endSubscriptionNow,
   getCreditBalance,
   getImageQuota,
   getPlanSummary,
@@ -104,6 +105,10 @@ describe("mobile billing and Google Play", () => {
       source: "free",
       status: null,
       renewsAt: null,
+      cancelAtPeriodEnd: false,
+      endsAt: null,
+      // Nothing to cancel on free, even though this backend runs the mock verifier.
+      canCancelInApp: false,
       productSku: null
     });
     expect(body.billing.allowance).toEqual({
@@ -111,6 +116,9 @@ describe("mobile billing and Google Play", () => {
       planCredits: 900,
       resetsAt: "2026-07-01T00:00:00.000Z"
     });
+    // What free *grants*, not what is left of it: the app describes the tier
+    // from this whether or not the reader is on it.
+    expect(body.billing.freeTier).toEqual({ monthlyCredits: 1000, illustratedBooksPerMonth: 3 });
     expect(body.billing.imageQuota).toEqual({ used: 2, limit: 3, resetsAt: "2026-07-01T00:00:00.000Z" });
     // The app reads `available` as everything spendable, allowance included.
     expect(body.billing.credits).toMatchObject({ available: 1400, purchased: 500 });
@@ -138,6 +146,8 @@ describe("mobile billing and Google Play", () => {
       source: "google_play",
       status: "ACTIVE",
       renewsAt: new Date("2026-07-15T00:00:00.000Z"),
+      cancelAtPeriodEnd: false,
+      endsAt: null,
       productSku: "tomeza.pro_monthly"
     });
     const paid = (
@@ -145,7 +155,38 @@ describe("mobile billing and Google Play", () => {
     ).json();
 
     expect(paid.billing.imageQuota).toBeNull();
-    expect(paid.billing.plan).toMatchObject({ tier: "pro", renewsAt: "2026-07-15T00:00:00.000Z" });
+    expect(paid.billing.plan).toMatchObject({ tier: "pro", renewsAt: "2026-07-15T00:00:00.000Z", endsAt: null });
+    // The limit still ships on a paid plan — the paywall's free rung describes
+    // what cancelling would drop you to.
+    expect(paid.billing.freeTier).toEqual({ monthlyCredits: 1000, illustratedBooksPerMonth: 3 });
+    await app.close();
+  });
+
+  it("says when a cancelled plan ends instead of when it renews", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(getCreditBalance).mockResolvedValue(creditBalance({ availableCredits: 6000 }));
+    vi.mocked(listActiveUserEntitlements).mockResolvedValue([]);
+    vi.mocked(getPlanSummary).mockResolvedValue({
+      tier: "creator",
+      source: "google_play",
+      status: "CANCELED",
+      renewsAt: null,
+      cancelAtPeriodEnd: true,
+      endsAt: new Date("2026-09-12T00:00:00.000Z"),
+      productSku: "tomeza.creator_monthly"
+    });
+    const app = await buildMobileApp();
+
+    const body = (
+      await app.inject({ method: "GET", url: "/api/mobile/billing", headers: bearer("token-a") })
+    ).json();
+
+    expect(body.billing.plan).toMatchObject({
+      tier: "creator",
+      renewsAt: null,
+      cancelAtPeriodEnd: true,
+      endsAt: "2026-09-12T00:00:00.000Z"
+    });
     await app.close();
   });
 
@@ -336,4 +377,132 @@ describe("mobile billing and Google Play", () => {
     await app.close();
   });
 
+  it("re-verifies the stored subscription token so a cancellation shows up at once", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.subscriptionState.findFirst.mockResolvedValueOnce({
+      purchaseToken: "google-sub-token",
+      product: { sku: "tomeza.creator_monthly", productType: "SUBSCRIPTION" }
+    });
+    vi.mocked(getCreditBalance).mockResolvedValue(creditBalance({ availableCredits: 6000 }));
+    vi.mocked(listActiveUserEntitlements).mockResolvedValue([]);
+    vi.mocked(getPlanSummary).mockResolvedValue({
+      tier: "creator",
+      source: "google_play",
+      status: "CANCELED",
+      renewsAt: null,
+      cancelAtPeriodEnd: true,
+      endsAt: new Date("2026-09-12T00:00:00.000Z"),
+      productSku: "tomeza.creator_monthly"
+    });
+    const verifier = {
+      verifyPurchase: vi.fn(async () => ({
+        productSku: "tomeza.creator_monthly",
+        purchaseToken: "google-sub-token",
+        kind: "subscription" as const,
+        grantable: true,
+        providerStatus: "SUBSCRIPTION_STATE_CANCELED",
+        subscription: {
+          status: "CANCELED" as const,
+          currentPeriodEnd: new Date("2026-09-12T00:00:00.000Z"),
+          autoRenewing: false
+        }
+      }))
+    };
+    const app = await buildMobileApp({ googlePlayVerifier: verifier });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/subscription/refresh",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(verifier.verifyPurchase).toHaveBeenCalledWith({
+      packageName: "",
+      productId: "tomeza.creator_monthly",
+      productType: "SUBSCRIPTION",
+      purchaseToken: "google-sub-token"
+    });
+    expect(response.json().billing.plan).toMatchObject({ cancelAtPeriodEnd: true, endsAt: "2026-09-12T00:00:00.000Z" });
+    expect(JSON.stringify(response.json())).not.toMatch(/google-sub-token/);
+    await app.close();
+  });
+
+  it("refuses to refresh when no subscription token is stored", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.subscriptionState.findFirst.mockResolvedValueOnce(null);
+    const verifier = { verifyPurchase: vi.fn() };
+    const app = await buildMobileApp({ googlePlayVerifier: verifier });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/subscription/refresh",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("NO_ACTIVE_SUBSCRIPTION");
+    expect(verifier.verifyPurchase).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("ends the subscription in place when the backend runs the mock Play verifier", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(getCreditBalance).mockResolvedValue(creditBalance({ availableCredits: 1000, planCredits: 1000 }));
+    vi.mocked(listActiveUserEntitlements).mockResolvedValue([]);
+    vi.mocked(getImageQuota).mockResolvedValue({
+      used: 0,
+      limit: 3,
+      periodKey: "2026-06",
+      resetsAt: new Date("2026-07-01T00:00:00.000Z")
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/subscription/cancel",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(vi.mocked(endSubscriptionNow)).toHaveBeenCalledWith("user-a");
+    // Back on free: the plan says so and the illustrated-book budget is back.
+    expect(response.json().billing.plan).toMatchObject({ tier: "free", canCancelInApp: false });
+    expect(response.json().billing.imageQuota).toMatchObject({ limit: 3 });
+    await app.close();
+  });
+
+  it("sends real Google Play subscribers to Play to cancel", async () => {
+    process.env.MOCK_GOOGLE_PLAY_BILLING = "false";
+    mockAccessTokens({ "token-a": "user-a" });
+    const app = await buildMobileApp({ googlePlayVerifier: { verifyPurchase: vi.fn() } });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/subscription/cancel",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("CANCEL_IN_PLAY");
+    expect(vi.mocked(endSubscriptionNow)).not.toHaveBeenCalled();
+    delete process.env.MOCK_GOOGLE_PLAY_BILLING;
+    await app.close();
+  });
+
+  it("reports nothing to cancel rather than pretending it worked", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    vi.mocked(endSubscriptionNow).mockResolvedValueOnce({ ended: false, endedSubscriptionIds: [] });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/billing/subscription/cancel",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("NO_ACTIVE_SUBSCRIPTION");
+    await app.close();
+  });
 });

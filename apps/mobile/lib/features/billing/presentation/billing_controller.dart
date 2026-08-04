@@ -18,6 +18,7 @@ class BillingPurchaseState {
     this.loading = true,
     this.storeAvailable = false,
     this.restoring = false,
+    this.subscriptionBusy = false,
     this.message,
     this.error,
   });
@@ -29,6 +30,9 @@ class BillingPurchaseState {
   final bool loading;
   final bool storeAvailable;
   final bool restoring;
+
+  /// A cancel or a subscription re-check is in flight.
+  final bool subscriptionBusy;
   final String? message;
   final String? error;
 
@@ -40,6 +44,7 @@ class BillingPurchaseState {
     bool? loading,
     bool? storeAvailable,
     bool? restoring,
+    bool? subscriptionBusy,
     String? message,
     String? error,
     bool clearMessage = false,
@@ -53,6 +58,7 @@ class BillingPurchaseState {
       loading: loading ?? this.loading,
       storeAvailable: storeAvailable ?? this.storeAvailable,
       restoring: restoring ?? this.restoring,
+      subscriptionBusy: subscriptionBusy ?? this.subscriptionBusy,
       message: clearMessage ? null : message ?? this.message,
       error: clearError ? null : error ?? this.error,
     );
@@ -201,6 +207,62 @@ class BillingController extends ChangeNotifier {
       _setState(
         _state.copyWith(restoring: false, error: userFacingError(error)),
       );
+    }
+  }
+
+  /// End the subscription now, on backends that can. Returns false and leaves an
+  /// error on the state when the server says cancelling belongs in Play.
+  Future<bool> cancelSubscription() {
+    return _runSubscriptionAction(
+      () => _billingRepository.cancelSubscription(),
+      'Your plan has been cancelled. You are on the free plan now.',
+    );
+  }
+
+  /// Re-check the subscription with Google, for the reader who has just come
+  /// back from cancelling in the Play subscription centre.
+  Future<bool> refreshSubscription() {
+    return _runSubscriptionAction(
+      () => _billingRepository.refreshSubscription(),
+      'Your plan is up to date.',
+    );
+  }
+
+  Future<bool> _runSubscriptionAction(
+    Future<MobileBilling> Function() action,
+    String successMessage,
+  ) async {
+    if (_state.subscriptionBusy) {
+      return false;
+    }
+    _setState(
+      _state.copyWith(
+        subscriptionBusy: true,
+        clearError: true,
+        clearMessage: true,
+      ),
+    );
+    try {
+      final billing = await action();
+      _setState(
+        _state.copyWith(
+          billing: billing,
+          subscriptionBusy: false,
+          message: successMessage,
+          clearError: true,
+        ),
+      );
+      _onBillingChanged();
+      return true;
+    } catch (error) {
+      AppHaptics.error();
+      _setState(
+        _state.copyWith(
+          subscriptionBusy: false,
+          error: userFacingError(error),
+        ),
+      );
+      return false;
     }
   }
 

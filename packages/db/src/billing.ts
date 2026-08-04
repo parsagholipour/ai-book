@@ -53,10 +53,12 @@ export {
 } from "./planPeriods.ts";
 
 export {
+  type EndSubscriptionResult,
   type GooglePlayPurchaseKind,
   type GooglePlayPurchaseRecordResult,
   type GooglePlaySubscriptionGrantState,
   type VerifiedGooglePlayPurchase,
+  endSubscriptionNow,
   ensureDefaultProductCatalog,
   hashPurchaseToken,
   recordVerifiedGooglePlayPurchase

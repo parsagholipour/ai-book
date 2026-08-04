@@ -69,6 +69,7 @@ export const mockBilling = (() => {
     hasActiveProjectEntitlement: vi.fn(),
     ensureProjectExportEntitlementOrSpend: vi.fn(),
     recordVerifiedGooglePlayPurchase: vi.fn(),
+    endSubscriptionNow: vi.fn(async () => ({ ended: true, endedSubscriptionIds: ["sub-1"] })),
     hasActiveSubscriptionEntitlement: vi.fn(async () => false),
     ensureCurrentPlanPeriod: vi.fn(),
     resolvePlanTier: vi.fn(async () => "free"),
@@ -77,6 +78,8 @@ export const mockBilling = (() => {
       source: "free",
       status: null,
       renewsAt: null,
+      cancelAtPeriodEnd: false,
+      endsAt: null,
       productSku: null
     })),
     // Null is "no limit on this plan". Suites that want the free tier's limit

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/account/presentation/account_screen.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/billing/presentation/billing_free_plan_card.dart';
 import 'package:tomeza/features/billing/presentation/billing_plan_tiles.dart';
 import 'package:tomeza/features/billing/presentation/billing_tier_style.dart';
 
@@ -36,6 +37,7 @@ MobileBilling _billing({
   int planCredits = 600,
   int monthlyCredits = 1000,
   MobileImageQuota? imageQuota,
+  bool cancelAtPeriodEnd = false,
 }) {
   return MobileBilling(
     credits: CreditBalance(
@@ -51,8 +53,12 @@ MobileBilling _billing({
     plan: MobileSubscriptionPlan(
       tier: tier,
       source: tier == 'free' ? 'free' : 'google_play',
-      status: tier == 'free' ? null : 'ACTIVE',
-      renewsAt: tier == 'free' ? null : DateTime.utc(2026, 7, 15),
+      status: tier == 'free' ? null : (cancelAtPeriodEnd ? 'CANCELED' : 'ACTIVE'),
+      renewsAt: tier == 'free' || cancelAtPeriodEnd
+          ? null
+          : DateTime.utc(2026, 7, 15),
+      cancelAtPeriodEnd: cancelAtPeriodEnd,
+      endsAt: cancelAtPeriodEnd ? DateTime.utc(2026, 7, 15) : null,
       productSku: productSku,
     ),
     allowance: MobileAllowance(
@@ -274,6 +280,38 @@ void main() {
       expect(find.text('credits available'), findsOneWidget);
       expect(find.textContaining('600 of 1,000 monthly credits left'), findsOneWidget);
       expect(find.textContaining('2 of 3 illustrated books left'), findsOneWidget);
+      // And what free grants, so the reader is not left inferring the month's
+      // size from what happens to be left of it.
+      expect(
+        find.text(
+          'Free includes 1,000 credits and 3 illustrated books each month',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a cancelled plan says when it ends, not when it renews', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          BillingPlanBanner(
+            billing: _billing(
+              tier: 'creator',
+              productSku: 'tomeza.creator_monthly',
+              planCredits: 4200,
+              monthlyCredits: 6000,
+              cancelAtPeriodEnd: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The date is formatted in the device's timezone, so only the shape of the
+      // line is asserted here.
+      expect(find.textContaining('then Free'), findsOneWidget);
+      expect(find.textContaining('Renews'), findsNothing);
     });
 
     testWidgets('says plainly when the image budget is gone', (tester) async {
@@ -312,6 +350,7 @@ void main() {
             ),
             onUpgrade: () {},
             onManageSubscription: (_) {},
+            onCancelSubscription: (_) {},
           ),
         ),
       );
@@ -319,8 +358,16 @@ void main() {
 
       expect(find.text('Free plan'), findsOneWidget);
       expect(find.text('3 of 3 illustrated books used this month'), findsOneWidget);
+      expect(
+        find.text(
+          'Free includes 1000 credits and 3 illustrated books each month',
+        ),
+        findsOneWidget,
+      );
       expect(find.byKey(const ValueKey('account-upgrade-plan')), findsOneWidget);
       expect(find.byKey(const ValueKey('account-manage-subscription')), findsNothing);
+      // Nothing to cancel on free.
+      expect(find.byKey(const ValueKey('account-cancel-subscription')), findsNothing);
     });
 
     testWidgets('a subscriber gets the renewal date and a way out', (
@@ -339,6 +386,7 @@ void main() {
             ),
             onUpgrade: () {},
             onManageSubscription: (_) {},
+            onCancelSubscription: (_) {},
           ),
         ),
       );
@@ -351,6 +399,84 @@ void main() {
       // pretending the app can do it.
       expect(find.byKey(const ValueKey('account-manage-subscription')), findsOneWidget);
       expect(find.byKey(const ValueKey('account-upgrade-plan')), findsNothing);
+      expect(find.byKey(const ValueKey('account-cancel-subscription')), findsOneWidget);
+    });
+
+    testWidgets('a cancelled subscriber is told when they drop to free', (
+      tester,
+    ) async {
+      var cancelTaps = 0;
+      await tester.pumpWidget(
+        _wrap(
+          AccountPlanCard(
+            billing: AsyncData(
+              _billing(
+                tier: 'creator',
+                productSku: 'tomeza.creator_monthly',
+                planCredits: 4200,
+                monthlyCredits: 6000,
+                cancelAtPeriodEnd: true,
+              ),
+            ),
+            onUpgrade: () {},
+            onManageSubscription: (_) {},
+            onCancelSubscription: (_) => cancelTaps += 1,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('you move to Free then'), findsOneWidget);
+      expect(find.textContaining('Renews'), findsNothing);
+      // Cancelling twice is not a thing; the way back is the only thing left.
+      expect(find.byKey(const ValueKey('account-cancel-subscription')), findsNothing);
+      expect(find.byKey(const ValueKey('account-resume-subscription')), findsOneWidget);
+      expect(cancelTaps, 0);
+    });
+  });
+
+  group('free plan card', () {
+    testWidgets('states what free grants rather than what is left', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _wrap(
+          const BillingFreePlanCard(
+            freeTier: MobileFreeTier(),
+            isCurrentPlan: true,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('1,000 credits every month'), findsOneWidget);
+      expect(find.text('3 illustrated books a month'), findsOneWidget);
+      expect(find.text('YOUR PLAN'), findsOneWidget);
+      // No way down from the bottom rung.
+      expect(find.byKey(const ValueKey('paywall-switch-to-free')), findsNothing);
+    });
+
+    testWidgets('is the way down from a paid plan', (tester) async {
+      var taps = 0;
+      await tester.pumpWidget(
+        _wrap(
+          BillingFreePlanCard(
+            freeTier: const MobileFreeTier(
+              monthlyCredits: 1500,
+              illustratedBooksPerMonth: 2,
+            ),
+            isCurrentPlan: false,
+            onSwitchToFree: () => taps += 1,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The operator's numbers, not the client's defaults.
+      expect(find.text('1,500 credits every month'), findsOneWidget);
+      expect(find.text('2 illustrated books a month'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('paywall-switch-to-free')));
+      expect(taps, 1);
     });
   });
 

@@ -160,6 +160,30 @@ tells you when a listed file has dropped under the default so the entry can be d
   clobbering a subscription's allowance. Subscription periods are granted only by the Google Play
   verify path and the hourly renewal sweep in `apps/api/src/subscriptionRenewal.ts`, which is why
   `SubscriptionState.purchaseToken` keeps the raw token.
+- **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.**
+  A real subscription can only be cancelled in the Play subscription centre, so
+  `billing_cancel_sheet.dart` states what the reader keeps and what free grants, hands over via
+  `playSubscriptionsLauncherProvider`, and then offers `POST /api/mobile/billing/subscription/refresh`
+  — which re-verifies the stored `purchaseToken` on demand. Without that the app would keep saying
+  "renews" for weeks, because the hourly sweep only re-verifies when `nextCreditGrantAt <= now`,
+  i.e. at period end. `plan.cancelAtPeriodEnd` is `status === "CANCELED" || autoRenewing === false`
+  — Play reports auto-renew off well before it moves the subscription — and when it is true
+  `renewsAt` is null and `endsAt` carries the date, so no surface can call an ending plan renewing.
+  `POST /api/mobile/billing/subscription/cancel` really cancels, but **only** under
+  `MOCK_GOOGLE_PLAY_BILLING` (`plan.canCancelInApp` tells the app which button to draw): the mock
+  verifier always answers ACTIVE, so a dev account that ever bought a plan could otherwise never
+  see the free tier again. `endSubscriptionNow` nulls `purchaseToken` for that reason — leaving it
+  would let the next refresh or sweep resubscribe you. Restore purchases in a debug build is how
+  you get back to Creator for the next run.
+- **A plan period cut short is *adopted*, not re-granted.** `applyPlanPeriodTx` used to return early
+  on a duplicate idempotency key, which is right for the concurrent-grant race but wrong for a
+  cancellation: someone who took their free month on the 1st, subscribed on the 5th and cancelled on
+  the 20th already owns `plan-period:{userId}:free:{month}`, and returning early left them holding
+  the *subscription's* allowance on the free tier. It now moves the account onto the period with a
+  granted amount of 0 whenever `account.planPeriodKey !== period.key` — that guard is the safety
+  property, because the race it must not disturb runs under `runSerializable` and re-reads the
+  winner's key. `planCreditsPerPeriod` still gets the period's full size, so the app reads
+  "0 of 1,000 monthly credits left" rather than a plan with no allowance at all.
 - **The free tier's illustrated-book limit is enforced in exactly one place.**
   `POST /api/mobile/plans/:id/approve` is the only mobile route that starts an image-producing
   generation, so that is where the `UsageCounter` slot is claimed (403 `IMAGE_LIMIT_REACHED` when

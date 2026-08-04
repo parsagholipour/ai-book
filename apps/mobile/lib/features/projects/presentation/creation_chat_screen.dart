@@ -22,6 +22,7 @@ import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../data/creation_prefs_store.dart';
 import '../data/creation_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/creation_models.dart';
@@ -52,6 +53,7 @@ part 'creation_chat_transcript.dart';
 part 'creation_chat_bubbles.dart';
 part 'creation_chat_composer.dart';
 part 'creation_chat_sheets.dart';
+part 'creation_chat_visuals_prompt.dart';
 part 'creation_chat_output_send.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
@@ -1067,8 +1069,9 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       final controller = ref.read(creationChatControllerProvider.notifier);
       final preflight = await controller.preflightBuildPlan();
       if (!mounted) return;
+      _PageCountSelection? selection;
       if (preflight.requiresPageCount) {
-        final selection = await _showPageCountSheet(preflight);
+        selection = await _showPageCountSheet(preflight);
         if (selection == null) {
           return;
         }
@@ -1076,6 +1079,20 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
           selection.targetPages,
           source: selection.source,
         );
+      }
+      // The page count the illustration quote is priced against. When the sheet
+      // ran it is the answer just given; otherwise the server resolved one from
+      // the chat, and `detectedPageCount` is null exactly when the sheet ran.
+      final targetPages =
+          selection?.targetPages ??
+          preflight.detectedPageCount?.targetPages ??
+          ref.read(creationChatControllerProvider).presets.targetPages;
+      if (targetPages != null) {
+        final presets = ref.read(creationChatControllerProvider).presets;
+        if (!await confirmVisuals(presets, targetPages)) {
+          return;
+        }
+        if (!mounted) return;
       }
       final result = await controller.buildPlan();
       ref.invalidate(projectsProvider);
