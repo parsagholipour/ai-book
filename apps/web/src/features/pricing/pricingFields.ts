@@ -25,7 +25,11 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
     fields: [
       { key: "fullBookBase", label: "Full book base", help: "Flat charge for generating any book." },
       { key: "fullBookPerPage", label: "Per page", help: "Multiplied by the target page count." },
-      { key: "imageGeneration", label: "Interior image", help: "Per illustration; the count is capped by book type." },
+      {
+        key: "imageGeneration",
+        label: "Generated image",
+        help: "Per initial cover or interior illustration; the interior count is capped by book type."
+      },
       { key: "premiumReview", label: "Premium review", help: "Added for premium-preset or best-of-drafted books." },
       { key: "coverRegeneration", label: "Cover regeneration", help: "Redrawing a cover on its own." },
       { key: "planGeneration", label: "Plan generation", help: "Drafting the plan. Free today." },

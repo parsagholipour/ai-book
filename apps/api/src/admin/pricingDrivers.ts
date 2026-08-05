@@ -152,7 +152,9 @@ export async function loadPricingDrivers(
       const input = createProjectSchema.parse(inputSnapshotFromProject(project));
       bookShapes.set(project.id, {
         pages: input.targetPages,
-        images: estimateInteriorImageCount(input),
+        // Initial covers share the image-generation price. Cover regeneration
+        // remains a separate, standalone operation counted from its own ledger rows.
+        images: estimateInteriorImageCount(input) + (input.mediaSettings.includeCover === true ? 1 : 0),
         premium: isPremiumProject(input) ? 1 : 0
       });
     } catch {

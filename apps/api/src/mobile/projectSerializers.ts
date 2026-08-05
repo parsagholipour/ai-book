@@ -7,6 +7,7 @@ import {
 import { buildProjectStatus, normalizeProjectQuality, type PipelineStep } from "../projectStatus.js";
 import { serializeEditProgress } from "./editProgress.js";
 import { serializeGenerationProgress } from "./generationProgress.js";
+import { imageSettingsFromMediaSettings } from "./imageSettings.js";
 import { type GenerationJobType } from "../queue.js";
 import { projectExportAvailability, type ProjectExportFormat } from "../routes/projects.js";
 import {
@@ -63,6 +64,7 @@ export async function serializeProjectSummary(
   const imageCount = project._count?.images ?? 0;
   const progressPercent = projectProgressPercent(project.status, pageCount, project.targetPages);
   const hasExistingPlan = Boolean(project.currentPlanId || project.currentPlan);
+  const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
 
   return {
     id: project.id,
@@ -72,7 +74,9 @@ export async function serializeProjectSummary(
     bookType: mobile?.bookType ?? inferBookType(project.category, project.subcategory),
     lengthPreset: mobile?.lengthPreset ?? "custom",
     qualityPreset: mobile?.qualityPreset ?? "custom",
-    imagesEnabled: mobile?.imagesEnabled ?? imagesEnabledFromMediaSettings(project.mediaSettings),
+    coverEnabled: imageSettings.coverEnabled,
+    illustrationsEnabled: imageSettings.illustrationsEnabled,
+    imagesEnabled: imageSettings.imagesEnabled,
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
@@ -263,10 +267,8 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   const failedJob = project.jobs.find(
     (job) => job.status === "FAILED" && generationJobControlsProjectStatus(job.type)
   );
-  const mobile = mobileMetadataFromMediaSettings(project.mediaSettings);
-  const generationProgress = serializeGenerationProgress(status, {
-    imagesEnabled: mobile?.imagesEnabled ?? imagesEnabledFromMediaSettings(project.mediaSettings)
-  });
+  const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
+  const generationProgress = serializeGenerationProgress(status, imageSettings);
   const editProgress = serializeEditProgress(status);
   const progressPercent = statusProgressPercent(status, generationProgress, editProgress);
   const planningProgress = serializePlanningProgress(status);
@@ -276,6 +278,9 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
+    coverEnabled: imageSettings.coverEnabled,
+    illustrationsEnabled: imageSettings.illustrationsEnabled,
+    imagesEnabled: imageSettings.imagesEnabled,
     // The live phrase leads whenever there is one: it is the only part of this
     // payload that says what is happening right now rather than what stage it is.
     currentAction: planningProgress?.steps.find((step) => step.status === "active")?.label ??
@@ -625,6 +630,7 @@ export function hasPlannerPendingMobileTitle(mediaSettings: unknown): boolean {
 
 export function mobileMetadataFromMediaSettings(mediaSettings: unknown): MobileMediaMetadata | null {
   const metadata = jsonRecord(jsonRecord(mediaSettings).mobile);
+  const imageSettings = imageSettingsFromMediaSettings(mediaSettings);
   const bookType = z.union([mobileBookTypeSchema, z.literal("custom")]).safeParse(metadata.bookType);
   const bookTypeChoice = mobileBookTypeChoiceSchema.optional().safeParse(metadata.bookTypeChoice);
   const lengthPreset = z.union([mobileLengthPresetSchema, z.literal("custom")]).safeParse(metadata.lengthPreset);
@@ -638,8 +644,7 @@ export function mobileMetadataFromMediaSettings(mediaSettings: unknown): MobileM
     !lengthPreset.success ||
     !qualityPreset.success ||
     !pageCountMode.success ||
-    !pageCountSource.success ||
-    typeof metadata.imagesEnabled !== "boolean"
+    !pageCountSource.success
   ) {
     return null;
   }
@@ -648,7 +653,9 @@ export function mobileMetadataFromMediaSettings(mediaSettings: unknown): MobileM
     bookTypeChoice: bookTypeChoice.data ?? (bookType.data === "custom" ? "auto" : bookType.data),
     lengthPreset: lengthPreset.data,
     qualityPreset: qualityPreset.data,
-    imagesEnabled: metadata.imagesEnabled,
+    coverEnabled: imageSettings.coverEnabled,
+    illustrationsEnabled: imageSettings.illustrationsEnabled,
+    imagesEnabled: imageSettings.imagesEnabled,
     pageCountMode: pageCountMode.data,
     targetPages: targetPages.success ? targetPages.data : 0,
     pageCountSource: pageCountSource.data
@@ -666,11 +673,6 @@ export function inferBookType(category: string, subcategory: string | null): Mob
     return "short_story";
   }
   return "custom";
-}
-
-export function imagesEnabledFromMediaSettings(mediaSettings: unknown): boolean {
-  const parsed = mediaSettingsSchema.safeParse(mediaSettings);
-  return parsed.success ? parsed.data.fullIllustrations || parsed.data.includeCover : true;
 }
 
 export function normalizeProjectStatus(status: string): string {

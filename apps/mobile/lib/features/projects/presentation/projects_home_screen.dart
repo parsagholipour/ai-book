@@ -819,7 +819,10 @@ List<String> projectMeta(MobileProjectSummary project) {
   return [
     project.bookTypeLabel,
     project.lengthPresetLabel,
-    if (project.imagesEnabled) 'Visuals included',
+    generatedImagesLabel(
+      coverEnabled: project.coverEnabled,
+      illustrationsEnabled: project.illustrationsEnabled,
+    ),
     if (project.hasReadyExport)
       'Exports ready'
     else if (project.pageCount > 0)

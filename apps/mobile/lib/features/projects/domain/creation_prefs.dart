@@ -7,11 +7,11 @@
 class CreationPrefs {
   const CreationPrefs({this.visualsPromptSuppressed = false});
 
-  /// Whether the user ticked "Don't ask again" on the illustrations dialog.
+  /// Whether the user ticked "Don't ask again" on the book-images dialog.
   ///
   /// Only the suppression is remembered, never the answer — a later build uses
-  /// whatever the presets already say, which is what the Visuals switch in
-  /// Advanced settings edits.
+  /// whatever the presets already say; the independent cover and illustration
+  /// switches in Advanced settings remain authoritative.
   final bool visualsPromptSuppressed;
 
   CreationPrefs copyWith({bool? visualsPromptSuppressed}) {

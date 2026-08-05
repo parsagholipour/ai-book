@@ -125,8 +125,12 @@ class _BriefDetails extends StatelessWidget {
               value: qualityLabel(presets.qualityPreset),
             ),
             AppMetricChip(
-              label: 'Visuals',
-              value: presets.imagesEnabled ? 'Included' : 'Text-first',
+              label: 'Cover',
+              value: presets.coverEnabled ? 'Included' : 'Not included',
+            ),
+            AppMetricChip(
+              label: 'Illustrations',
+              value: presets.illustrationsEnabled ? 'Included' : 'Not included',
             ),
             if (state.language != 'en')
               AppMetricChip(

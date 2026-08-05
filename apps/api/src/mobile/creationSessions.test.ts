@@ -448,6 +448,66 @@ describe("mobile creation sessions", () => {
     await app.close();
   });
 
+  it("preserves a stored cover-only choice when an old client echoes the unchanged image aggregate", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "A short bread guide",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "A short bread guide" }
+      ],
+      selectedPresets: {
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true,
+        coverEnabled: true,
+        illustrationsEnabled: false
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "session-draft", payload })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload: data.payload, lastTurn: data.lastTurn })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/messages",
+      headers: bearer("token-a"),
+      payload: {
+        message: "Add a chapter about shaping the loaf",
+        presets: {
+          bookType: "lead_magnet",
+          bookTypeChoice: "auto",
+          lengthPreset: "short",
+          qualityPreset: "balanced",
+          imagesEnabled: true
+        }
+      }
+    });
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: Record<string, any> };
+    };
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().turn.presets).toMatchObject({
+      imagesEnabled: true,
+      coverEnabled: true,
+      illustrationsEnabled: false
+    });
+    expect(updateCall.data.payload.selectedPresets).toMatchObject({
+      imagesEnabled: true,
+      coverEnabled: true,
+      illustrationsEnabled: false
+    });
+    await app.close();
+  });
+
   it("appends messages to a completed creation session so another output can be shaped", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(

@@ -131,9 +131,10 @@ class _GenerationProgressBubbleState
         // An older API build sends no generationProgress, and an edit in
         // flight deliberately sends none: both fall through to the compact
         // bar-and-counters layout this bubble has always had.
-        final steps =
+        final rawSteps =
             status.generationProgress?.steps ??
             (isGenerating ? _fallbackGenerationSteps() : const []);
+        final steps = imageAwareGenerationSteps(rawSteps, status);
         final title = reviewRequired
             ? 'Review required before export'
             : status.isComplete
@@ -317,7 +318,7 @@ List<MobileProjectStatusStep> _fallbackGenerationSteps() => const [
   ),
   MobileProjectStatusStep(
     key: 'illustrate',
-    label: 'Creating your illustrations',
+    label: 'Creating your book images',
     status: 'pending',
   ),
   MobileProjectStatusStep(

@@ -4,10 +4,11 @@ import {
   mobileCreationBriefSchema,
   mobileCreationDraftPayloadSchema,
   mobileCreationOptionalDetailsSchema,
-  mobileCreationPresetsSchema,
+  mobileCreationPresetsInputSchema,
   mobilePageCountModeSchema,
   mobilePageCountSourceSchema,
-  mobileTargetPagesSchema
+  mobileTargetPagesSchema,
+  resolveMobileImageSettings
 } from "../mobileCreation.js";
 import { type GenerationJobType } from "../queue.js";
 import { type MobileBookType, type MobileLengthPreset, type MobileQualityPreset } from "./dto.js";
@@ -100,25 +101,33 @@ export const MOBILE_TITLE_SOURCE_PLANNER_PENDING = "planner_pending";
  */
 const MOBILE_TYPED_PROMPT_MAX = 5000;
 
+const mobileProjectCreateFields = {
+  bookType: mobileBookTypeSchema,
+  bookTypeChoice: mobileBookTypeChoiceSchema.optional(),
+  title: z.string().trim().min(2).max(160).optional(),
+  authorName: z.string().trim().min(1).max(120).optional(),
+  lengthPreset: mobileLengthPresetSchema.default("standard"),
+  qualityPreset: mobileQualityPresetSchema.default("balanced"),
+  /** @deprecated Send coverEnabled and illustrationsEnabled instead. */
+  imagesEnabled: z.boolean().optional(),
+  coverEnabled: z.boolean().optional(),
+  illustrationsEnabled: z.boolean().optional(),
+  pageCountMode: mobilePageCountModeSchema.default("auto"),
+  targetPages: mobileTargetPagesSchema.optional(),
+  pageCountSource: mobilePageCountSourceSchema.optional(),
+  language: z.string().trim().min(2).max(40).default("en"),
+  creationBrief: mobileCreationBriefSchema.optional(),
+  creationPayload: mobileCreationDraftPayloadSchema.optional(),
+  advisor: mobileBookAdvisorResponseSchema.optional()
+} as const;
+
 export const mobileProjectCreateBodySchema = z
   .object({
-    bookType: mobileBookTypeSchema,
-    bookTypeChoice: mobileBookTypeChoiceSchema.optional(),
-    title: z.string().trim().min(2).max(160).optional(),
-    authorName: z.string().trim().min(1).max(120).optional(),
-    prompt: z.string().trim().min(10).max(MOBILE_TYPED_PROMPT_MAX),
-    lengthPreset: mobileLengthPresetSchema.default("standard"),
-    qualityPreset: mobileQualityPresetSchema.default("balanced"),
-    imagesEnabled: z.boolean().default(true),
-    pageCountMode: mobilePageCountModeSchema.default("auto"),
-    targetPages: mobileTargetPagesSchema.optional(),
-    pageCountSource: mobilePageCountSourceSchema.optional(),
-    language: z.string().trim().min(2).max(40).default("en"),
-    creationBrief: mobileCreationBriefSchema.optional(),
-    creationPayload: mobileCreationDraftPayloadSchema.optional(),
-    advisor: mobileBookAdvisorResponseSchema.optional()
+    ...mobileProjectCreateFields,
+    prompt: z.string().trim().min(10).max(MOBILE_TYPED_PROMPT_MAX)
   })
-  .strict();
+  .strict()
+  .transform((input) => ({ ...input, ...resolveMobileImageSettings(input) }));
 
 /**
  * The same shape, but for a prompt the server composed rather than one a
@@ -128,9 +137,13 @@ export const mobileProjectCreateBodySchema = z
  * cap threw a ZodError out of the build route as a 500. The untrusted body is
  * still checked against the stricter schema at the route, before this runs.
  */
-export const mobileComposedProjectCreateSchema = mobileProjectCreateBodySchema.extend({
-  prompt: z.string().trim().min(10).max(PROJECT_PROMPT_MAX_LENGTH)
-});
+export const mobileComposedProjectCreateSchema = z
+  .object({
+    ...mobileProjectCreateFields,
+    prompt: z.string().trim().min(10).max(PROJECT_PROMPT_MAX_LENGTH)
+  })
+  .strict()
+  .transform((input) => ({ ...input, ...resolveMobileImageSettings(input) }));
 
 export const mobilePlanRevisionBodySchema = z
   .object({
@@ -215,7 +228,7 @@ export const mobileCreationMessageBodySchema = z
     // Empty text is allowed when the message carries attachments.
     message: z.string().trim().max(4000).default(""),
     attachmentIds: z.array(z.string().trim().min(1).max(64)).max(6).optional(),
-    presets: mobileCreationPresetsSchema.optional(),
+    presets: mobileCreationPresetsInputSchema.optional(),
     sourceNotes: z.string().trim().max(12000).optional(),
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
     requestId: requestIdSchema.optional(),
@@ -231,7 +244,7 @@ export const mobileCreationMessageBodySchema = z
 export const mobileCreationSessionStartBodySchema = z
   .object({
     message: z.string().trim().min(1).max(4000).optional(),
-    presets: mobileCreationPresetsSchema.optional(),
+    presets: mobileCreationPresetsInputSchema.optional(),
     sourceNotes: z.string().trim().max(12000).optional(),
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
     requestId: requestIdSchema.optional()
@@ -241,7 +254,7 @@ export const mobileCreationSessionStartBodySchema = z
 
 export const mobileCreationBuildBodySchema = z
   .object({
-    presets: mobileCreationPresetsSchema.optional(),
+    presets: mobileCreationPresetsInputSchema.optional(),
     sourceNotes: z.string().trim().max(12000).optional(),
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
     language: z.string().trim().min(2).max(40).optional(),
@@ -396,7 +409,14 @@ export const mobileProjectCreateOpenApiBody = {
     prompt: { type: "string", minLength: 10, maxLength: 5000 },
     lengthPreset: { type: "string", enum: mobileLengthPresetSchema.options, default: "standard" },
     qualityPreset: { type: "string", enum: mobileQualityPresetSchema.options, default: "balanced" },
-    imagesEnabled: { type: "boolean", default: true },
+    imagesEnabled: {
+      type: "boolean",
+      default: true,
+      deprecated: true,
+      description: "Compatibility aggregate. Prefer coverEnabled and illustrationsEnabled."
+    },
+    coverEnabled: { type: "boolean", default: true },
+    illustrationsEnabled: { type: "boolean", default: true },
     pageCountMode: { type: "string", enum: mobilePageCountModeSchema.options, default: "auto" },
     targetPages: { type: "integer", minimum: 1, maximum: 600 },
     pageCountSource: { type: "string", enum: mobilePageCountSourceSchema.options },

@@ -161,7 +161,7 @@ function PreviewPanel(props: { preview: PricingPreview | null; creditUsdValue: n
       </p>
       <ul className="pricing-lines">
         {props.preview.lineItems.map((item) => (
-          <li key={item.code}>
+          <li key={`${item.code}:${item.label}`}>
             <span>{item.label}</span>
             <span className="muted">
               {item.quantity > 0 ? `${item.quantity} × ${item.unitCredits} → ` : ""}

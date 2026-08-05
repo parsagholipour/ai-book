@@ -41,6 +41,8 @@ void main() {
     expect(find.text('Question 1 of 2'), findsOneWidget);
     expect(find.text('Busy solo teachers'), findsOneWidget);
     expect(find.text('Question 2 of 2'), findsNothing);
+    expect(find.text('Cover: Included'), findsOneWidget);
+    expect(find.text('Illustrations: Not included'), findsOneWidget);
 
     await tester.pumpWidget(
       MaterialApp(
@@ -81,7 +83,8 @@ MobileProjectDetail fakeProjectWithPlan() {
     bookType: 'workbook',
     lengthPreset: 'standard',
     qualityPreset: 'balanced',
-    imagesEnabled: true,
+    coverEnabled: true,
+    illustrationsEnabled: false,
     status: 'plan_ready',
     statusLabel: 'Review your book plan',
     progressPercent: 20,

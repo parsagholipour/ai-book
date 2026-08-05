@@ -18,6 +18,10 @@ class MobileProjectStatus {
     required this.pageProgress,
     required this.imageCount,
     required this.exports,
+    bool? coverEnabled,
+    bool? illustrationsEnabled,
+    @Deprecated('Use coverEnabled and illustrationsEnabled.')
+    bool? imagesEnabled,
     this.quality = const MobileProjectQuality.pending(),
     required this.updatedAt,
     this.failureMessage,
@@ -25,7 +29,12 @@ class MobileProjectStatus {
     this.nextRetryAt,
     this.retryState,
     this.retryMessage,
-  });
+  }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
+       illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
+       imageSettingsReported =
+           coverEnabled != null ||
+           illustrationsEnabled != null ||
+           imagesEnabled != null;
 
   final String projectId;
   final String status;
@@ -49,6 +58,16 @@ class MobileProjectStatus {
   final MobilePageProgress pageProgress;
   final int imageCount;
   final MobileExportSet exports;
+  final bool coverEnabled;
+  final bool illustrationsEnabled;
+
+  /// Whether this status payload actually carried any image-setting field.
+  /// Used to avoid letting an older status response overwrite exact settings
+  /// already present on a project summary.
+  final bool imageSettingsReported;
+
+  @Deprecated('Use coverEnabled and illustrationsEnabled.')
+  bool get imagesEnabled => coverEnabled || illustrationsEnabled;
   final MobileProjectQuality quality;
   final DateTime updatedAt;
 
@@ -77,6 +96,7 @@ class MobileProjectStatus {
     final steps = json['steps'] as List<dynamic>? ?? const [];
     final retry = (json['retry'] as Map?)?.cast<String, dynamic>();
     final nextRetryAt = json['nextRetryAt'] ?? retry?['nextRetryAt'];
+    final legacyImagesEnabled = json['imagesEnabled'] as bool?;
     return MobileProjectStatus(
       projectId: json['projectId'] as String,
       status: json['status'] as String,
@@ -123,6 +143,9 @@ class MobileProjectStatus {
       exports: MobileExportSet.fromJson(
         json['exports'] as Map<String, dynamic>,
       ),
+      coverEnabled: json['coverEnabled'] as bool?,
+      illustrationsEnabled: json['illustrationsEnabled'] as bool?,
+      imagesEnabled: legacyImagesEnabled,
       quality: MobileProjectQuality.fromJson(
         (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
@@ -299,6 +322,43 @@ class MobileProjectStatusStep {
   bool get isActive => status == 'active';
 
   bool get isFailed => status == 'failed';
+}
+
+/// Keeps the long-lived `illustrate` step key while naming the exact assets
+/// requested by this project. Older APIs omit the flags, which resolves to the
+/// safe aggregate wording rather than incorrectly calling cover art an in-book
+/// illustration.
+List<MobileProjectStatusStep> imageAwareGenerationSteps(
+  List<MobileProjectStatusStep> steps,
+  MobileProjectStatus status,
+) {
+  if (!status.coverEnabled && !status.illustrationsEnabled) {
+    return [
+      for (final step in steps)
+        if (step.key != 'illustrate') step,
+    ];
+  }
+  final imageLabel = switch ((
+    status.coverEnabled,
+    status.illustrationsEnabled,
+  )) {
+    (true, true) => 'Creating your book images',
+    (true, false) => 'Creating your cover',
+    (false, true) => 'Creating your illustrations',
+    (false, false) => 'Creating your book images',
+  };
+  return [
+    for (final step in steps)
+      if (step.key == 'illustrate')
+        MobileProjectStatusStep(
+          key: step.key,
+          label: imageLabel,
+          status: step.status,
+          detail: step.detail,
+        )
+      else
+        step,
+  ];
 }
 
 class MobilePageProgress {

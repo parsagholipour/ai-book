@@ -13,6 +13,7 @@ import {
   releaseIllustratedBookUse,
   reserveCredits
 } from "@book-maker/db/billing";
+import { DEFAULT_CREDIT_COSTS } from "@book-maker/core";
 
 import { enqueueGenerationJob, requeueGenerationJob } from "../queue.js";
 import {
@@ -269,7 +270,13 @@ describe("free tier illustrated book limit", () => {
   it("lets a text-only book through once the image budget is gone", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const textOnly = projectRecord({ id: "project-1" });
-    (textOnly.mediaSettings.mobile as { imagesEnabled: boolean }).imagesEnabled = false;
+    textOnly.mediaSettings.fullIllustrations = false;
+    textOnly.mediaSettings.includeCover = false;
+    Object.assign(textOnly.mediaSettings.mobile, {
+      imagesEnabled: false,
+      coverEnabled: false,
+      illustrationsEnabled: false
+    });
     draftPlanForApproval(textOnly);
     vi.mocked(getImageQuota).mockResolvedValue(freeQuota(3));
     vi.mocked(reserveCredits).mockResolvedValueOnce({
@@ -294,6 +301,57 @@ describe("free tier illustrated book limit", () => {
 
     expect(response.statusCode).toBe(202);
     expect(consumeIllustratedBookUse).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("charges one generated image for a cover-only book without consuming the illustrated-book quota", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const coverOnly = projectRecord({ id: "project-1" });
+    coverOnly.mediaSettings.fullIllustrations = false;
+    coverOnly.mediaSettings.includeCover = true;
+    coverOnly.mediaSettings.illustrationCadence = "manual";
+    Object.assign(coverOnly.mediaSettings.mobile, {
+      imagesEnabled: true,
+      coverEnabled: true,
+      illustrationsEnabled: false
+    });
+    draftPlanForApproval(coverOnly);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-1/approve",
+      headers: bearer("token-a")
+    });
+    const expectedCredits =
+      DEFAULT_CREDIT_COSTS.fullBookBase +
+      coverOnly.targetPages * DEFAULT_CREDIT_COSTS.fullBookPerPage +
+      DEFAULT_CREDIT_COSTS.imageGeneration +
+      DEFAULT_CREDIT_COSTS.exportUnlock;
+
+    expect(response.statusCode).toBe(202);
+    expect(getImageQuota).not.toHaveBeenCalled();
+    expect(consumeIllustratedBookUse).not.toHaveBeenCalled();
+    expect(reserveCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amountCredits: expectedCredits,
+        metadata: expect.objectContaining({
+          creditEstimate: expect.objectContaining({
+            totalCredits: expectedCredits,
+            assumptions: expect.objectContaining({ includesCover: true, estimatedInteriorImages: 0 }),
+            lineItems: expect.arrayContaining([
+              expect.objectContaining({
+                code: "IMAGE_GENERATION",
+                label: "Cover image generation",
+                quantity: 1,
+                credits: DEFAULT_CREDIT_COSTS.imageGeneration
+              }),
+              expect.objectContaining({ label: "Interior image generation", quantity: 0, credits: 0 })
+            ])
+          })
+        })
+      })
+    );
     await app.close();
   });
 

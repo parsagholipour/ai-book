@@ -41,7 +41,10 @@ export type MobileProjectCreateRequestDto = {
   prompt: string;
   lengthPreset?: MobileLengthPreset | undefined;
   qualityPreset?: MobileQualityPreset | undefined;
+  /** @deprecated Use coverEnabled and illustrationsEnabled. */
   imagesEnabled?: boolean | undefined;
+  coverEnabled?: boolean | undefined;
+  illustrationsEnabled?: boolean | undefined;
   pageCountMode?: MobilePageCountMode | undefined;
   targetPages?: number | undefined;
   pageCountSource?: MobilePageCountSource | undefined;
@@ -59,7 +62,10 @@ export type MobileProjectSummaryDto = {
   bookType: MobileBookType | "custom";
   lengthPreset: MobileLengthPreset | "custom";
   qualityPreset: MobileQualityPreset | "custom";
+  /** Compatibility aggregate: coverEnabled || illustrationsEnabled. */
   imagesEnabled: boolean;
+  coverEnabled: boolean;
+  illustrationsEnabled: boolean;
   status: string;
   statusLabel: string;
   progressPercent: number;
@@ -392,6 +398,10 @@ export type MobileQueuedJobDto = {
 
 export type MobileProjectStatusDto = {
   projectId: string;
+  /** Compatibility aggregate: coverEnabled || illustrationsEnabled. */
+  imagesEnabled: boolean;
+  coverEnabled: boolean;
+  illustrationsEnabled: boolean;
   status: string;
   statusLabel: string;
   progressPercent: number;
@@ -530,7 +540,10 @@ export type MobileMediaMetadata = {
   bookTypeChoice: MobileBookTypeChoice;
   lengthPreset: MobileLengthPreset | "custom";
   qualityPreset: MobileQualityPreset;
+  /** Compatibility aggregate: coverEnabled || illustrationsEnabled. */
   imagesEnabled: boolean;
+  coverEnabled: boolean;
+  illustrationsEnabled: boolean;
   pageCountMode: MobilePageCountMode;
   targetPages: number;
   pageCountSource: MobilePageCountSource;

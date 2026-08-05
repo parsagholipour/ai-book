@@ -70,8 +70,12 @@ class ProjectPlanReview extends StatelessWidget {
               value: '${project.targetPages} pages',
             ),
             AppMetricChip(
-              label: 'Visuals',
-              value: project.imagesEnabled ? 'Included' : 'Text-first',
+              label: 'Cover',
+              value: project.coverEnabled ? 'Included' : 'Not included',
+            ),
+            AppMetricChip(
+              label: 'Illustrations',
+              value: project.illustrationsEnabled ? 'Included' : 'Not included',
             ),
           ],
         ),
@@ -179,10 +183,7 @@ class PlanSummaryCard extends StatelessWidget {
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           expandedCrossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              plan.premise,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+            Text(plan.premise, style: Theme.of(context).textTheme.bodyMedium),
             const SizedBox(height: 6),
             Text(
               'For ${plan.audience}',

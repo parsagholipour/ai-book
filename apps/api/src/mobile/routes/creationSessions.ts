@@ -14,7 +14,9 @@ import {
 } from "../../creationChatTree.js";
 import {
   greetingCreationTurn,
+  mergeMobileCreationPresets,
   mobileCreationDraftPayloadSchema,
+  mobileCreationPresetsSchema,
   runCreationTurn,
   type MobileCreationDraftPayload,
   type MobileCreationMessage,
@@ -226,7 +228,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         ].slice(-60);
         const turnRequest: MobileCreationTurnRequest = {
           messages: nextMessages,
-          presets: parsedBody.data.presets,
+          presets: parsedBody.data.presets ? mobileCreationPresetsSchema.parse(parsedBody.data.presets) : undefined,
           sourceNotes: parsedBody.data.sourceNotes,
           optionalDetails: parsedBody.data.optionalDetails
         };
@@ -251,7 +253,13 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           messages
         });
       } else {
-        payload = mobileCreationDraftPayloadSchema.parse({ payloadVersion: 3, messages });
+        payload = mobileCreationDraftPayloadSchema.parse({
+          payloadVersion: 3,
+          messages,
+          ...(parsedBody.data.presets
+            ? { selectedPresets: mobileCreationPresetsSchema.parse(parsedBody.data.presets) }
+            : {})
+        });
       }
       payload = { ...payload, lastMessageAt: new Date().toISOString() };
       const draft = await prisma.mobileCreationDraft.create({
@@ -346,7 +354,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       const turnRequest: MobileCreationTurnRequest = {
         messages: linearizeCreationMessages(incoming.messages).active,
         brief: parsedPayload.data.recipe,
-        presets: parsedBody.data.presets ?? persistedPresetsForTurn(parsedPayload.data),
+        presets: parsedBody.data.presets
+          ? mergeMobileCreationPresets(persistedPresetsForTurn(parsedPayload.data), parsedBody.data.presets)
+          : persistedPresetsForTurn(parsedPayload.data),
         sourceNotes: parsedBody.data.sourceNotes ?? parsedPayload.data.sourceNotes,
         optionalDetails: parsedBody.data.optionalDetails ?? parsedPayload.data.optionalDetails,
         attachments: attachmentPool,

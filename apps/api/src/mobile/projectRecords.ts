@@ -72,6 +72,8 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     lengthPreset: exactTargetPages ? "custom" : parsed.lengthPreset,
     qualityPreset: parsed.qualityPreset,
     imagesEnabled: parsed.imagesEnabled,
+    coverEnabled: parsed.coverEnabled,
+    illustrationsEnabled: parsed.illustrationsEnabled,
     pageCountMode,
     targetPages,
     pageCountSource
@@ -95,6 +97,8 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
           lengthPreset: parsed.lengthPreset,
           qualityPreset: parsed.qualityPreset,
           imagesEnabled: parsed.imagesEnabled,
+          coverEnabled: parsed.coverEnabled,
+          illustrationsEnabled: parsed.illustrationsEnabled,
           pageCountMode,
           targetPages,
           pageCountSource
@@ -126,9 +130,9 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     mobileMetadata.titleSource = MOBILE_TITLE_SOURCE_PLANNER_PENDING;
   }
   const baseMediaSettings = mediaSettingsSchema.parse({
-    fullIllustrations: parsed.imagesEnabled,
-    illustrationCadence: parsed.imagesEnabled ? "template-driven" : "manual",
-    includeCover: parsed.imagesEnabled,
+    fullIllustrations: parsed.illustrationsEnabled,
+    illustrationCadence: parsed.illustrationsEnabled ? "template-driven" : "manual",
+    includeCover: parsed.coverEnabled,
     coverTemplate: bookType.coverTemplate,
     finalReview: quality.finalReview,
     toneProfile: bookType.toneProfile,

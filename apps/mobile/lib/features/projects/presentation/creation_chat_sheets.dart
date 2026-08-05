@@ -276,8 +276,8 @@ class _AdvancedSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(creationChatControllerProvider);
     final presets = state.presets;
-    // Watched (not read) so the page-cost estimate reacts to Finish/Visuals
-    // changes made in this same sheet.
+    // Watched (not read) so the page-cost estimate reacts to Finish and
+    // in-book illustration changes made in this same sheet.
     final creditCosts =
         ref.watch(billingProvider).asData?.value.creditCosts ??
         const <String, dynamic>{};
@@ -323,7 +323,8 @@ class _AdvancedSheet extends ConsumerWidget {
               estimateCredits: (pages) => estimateProjectCredits(
                 bookType: presets.bookType,
                 qualityPreset: presets.qualityPreset,
-                imagesEnabled: presets.imagesEnabled,
+                coverEnabled: presets.coverEnabled,
+                illustrationsEnabled: presets.illustrationsEnabled,
                 targetPages: pages,
                 creditCosts: creditCosts,
               ),
@@ -339,13 +340,30 @@ class _AdvancedSheet extends ConsumerWidget {
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              value: presets.imagesEnabled,
-              onChanged: controller.setImagesEnabled,
+              value: presets.coverEnabled,
+              onChanged: controller.setCoverEnabled,
+              secondary: const Icon(Icons.auto_stories_outlined),
+              title: Row(
+                children: [
+                  const Expanded(child: Text('Cover image')),
+                  if (state.userChoices.contains(CreationChoice.cover))
+                    const AppStatusBadge(
+                      label: 'Your choice',
+                      icon: Icons.tune_outlined,
+                    ),
+                ],
+              ),
+              subtitle: Text(_coverSubtitle(presets.coverEnabled)),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: presets.illustrationsEnabled,
+              onChanged: controller.setIllustrationsEnabled,
               secondary: const Icon(Icons.image_outlined),
               title: Row(
                 children: [
-                  const Expanded(child: Text('Visuals')),
-                  if (state.userChoices.contains(CreationChoice.visuals))
+                  const Expanded(child: Text('In-book illustrations')),
+                  if (state.userChoices.contains(CreationChoice.illustrations))
                     const AppStatusBadge(
                       label: 'Your choice',
                       icon: Icons.tune_outlined,
@@ -353,8 +371,8 @@ class _AdvancedSheet extends ConsumerWidget {
                 ],
               ),
               subtitle: Text(
-                _visualsSubtitle(
-                  presets.imagesEnabled,
+                _illustrationsSubtitle(
+                  presets.illustrationsEnabled,
                   presets.bookType,
                   ref.watch(billingProvider).asData?.value.imageQuota,
                 ),
@@ -409,18 +427,22 @@ PaywallCreditsNeeded? _paywallCreditsNeededForError(ApiException error) {
   );
 }
 
-/// Says what visuals will cost against the month's budget, when there is one.
+String _coverSubtitle(bool enabled) {
+  return enabled ? 'One generated cover image.' : 'No generated cover image.';
+}
+
+/// Says what illustrations will cost against the month's budget, when there is
+/// one.
 /// A null quota is a plan with no image limit, so it says nothing extra.
-String _visualsSubtitle(
+String _illustrationsSubtitle(
   bool enabled,
   String bookType,
   MobileImageQuota? quota,
 ) {
   if (!enabled) {
-    return 'Text-first project with no planned visuals.';
+    return 'No generated images inside the book.';
   }
-  final base =
-      'Cover plus up to ${visualLimitFor(bookType)} supporting visuals.';
+  final base = 'Up to ${visualLimitFor(bookType)} in-book illustrations.';
   if (quota == null) {
     return base;
   }

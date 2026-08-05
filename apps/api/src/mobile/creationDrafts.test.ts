@@ -111,6 +111,42 @@ describe("mobile creation drafts and advisor", () => {
     await app.close();
   });
 
+  it("preserves split image settings when a legacy draft client echoes the unchanged aggregate", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const storedPayload = creationPayload({
+      selectedPresets: {
+        imagesEnabled: true,
+        coverEnabled: true,
+        illustrationsEnabled: false
+      }
+    });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({ id: "draft-cover-only", payload: storedPayload })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "draft-cover-only", payload: data.payload })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/api/mobile/creation-drafts/draft-cover-only",
+      headers: bearer("token-a"),
+      payload: creationPayload({ selectedPresets: { imagesEnabled: true } })
+    });
+    const updateCall = mockPrisma.mobileCreationDraft.update.mock.calls.at(0)?.[0] as {
+      data: { payload: Record<string, any> };
+    };
+
+    expect(response.statusCode).toBe(200);
+    expect(updateCall.data.payload.selectedPresets).toMatchObject({
+      imagesEnabled: true,
+      coverEnabled: true,
+      illustrationsEnabled: false
+    });
+    await app.close();
+  });
+
   it("returns deterministic mobile book advisor fallback without spending credits", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const app = await buildMobileApp({

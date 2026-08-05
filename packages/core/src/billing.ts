@@ -183,6 +183,7 @@ export type CreditCostEstimate = {
   assumptions: {
     creditUsdValue: number;
     estimatedInteriorImages: number;
+    includesCover: boolean;
     includesExportUnlock: boolean;
     includesPremiumReview: boolean;
   };
@@ -256,8 +257,10 @@ export function estimateFullBookCreditCost(
   pricing: CreditPricing = creditPricing()
 ): CreditCostEstimate {
   const estimatedInteriorImages = estimateInteriorImageCount(input);
+  const includesCover = input.mediaSettings.includeCover === true;
   const fullBookCredits = pricing.fullBookBase + input.targetPages * pricing.fullBookPerPage;
-  const imageCredits = estimatedInteriorImages * pricing.imageGeneration;
+  const interiorImageCredits = estimatedInteriorImages * pricing.imageGeneration;
+  const coverCredits = includesCover ? pricing.imageGeneration : 0;
   const includesPremiumReview = isPremiumProject(input);
   const premiumCredits = includesPremiumReview ? pricing.premiumReview : 0;
   const lineItems: CreditLineItem[] = [
@@ -273,7 +276,14 @@ export function estimateFullBookCreditCost(
       label: "Interior image generation",
       quantity: estimatedInteriorImages,
       unitCredits: pricing.imageGeneration,
-      credits: imageCredits
+      credits: interiorImageCredits
+    },
+    {
+      code: "IMAGE_GENERATION",
+      label: "Cover image generation",
+      quantity: includesCover ? 1 : 0,
+      unitCredits: pricing.imageGeneration,
+      credits: coverCredits
     },
     {
       code: "PREMIUM_REVIEW",
@@ -297,6 +307,7 @@ export function estimateFullBookCreditCost(
     assumptions: {
       creditUsdValue: CREDIT_USD_VALUE,
       estimatedInteriorImages,
+      includesCover,
       includesExportUnlock: true,
       includesPremiumReview
     }
@@ -330,6 +341,7 @@ export function estimateAudiobookCreditCost(
     assumptions: {
       creditUsdValue: CREDIT_USD_VALUE,
       estimatedInteriorImages: 0,
+      includesCover: false,
       includesExportUnlock: false,
       includesPremiumReview: false
     }
@@ -390,9 +402,6 @@ export function estimateInteriorImageCount(input: CreateProjectInput): number {
     return 0;
   }
   const mobile = mobileMetadata(input.mediaSettings);
-  if (mobile?.imagesEnabled === false) {
-    return 0;
-  }
   const bookType = mobile?.bookType ?? inferMobileBookType(input.category, input.subcategory);
   const launchCap =
     bookType === "workbook"

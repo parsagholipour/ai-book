@@ -59,10 +59,6 @@ class ReaderScrollHandle extends StatefulWidget {
   static const handleWidth = 34.0;
   static const grabbedWidth = 40.0;
 
-  /// Gap between the pill and the edge of the screen, on top of whatever strip
-  /// the platform reserves for its own edge gestures.
-  static const edgeInset = 4.0;
-
   /// How solid the pill is. It is furniture over someone's book, so it stays
   /// short of opaque and only firms up while held.
   static const restingOpacity = 0.45;
@@ -166,16 +162,6 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
     final width = _dragging
         ? ReaderScrollHandle.grabbedWidth
         : ReaderScrollHandle.handleWidth;
-    // Android's back gesture owns a strip along the screen edge, and touches
-    // that land in it are the system's before they are ours. A pill pressed
-    // against the edge therefore has a dead outer side, which is what makes
-    // the handle feel like it only answers on part of itself. Sit just inside
-    // the strip; the inset is zero wherever the platform claims nothing, so
-    // this costs nothing on iOS, on desktop or under `flutter test`.
-    final edge =
-        ReaderScrollHandle.edgeInset +
-        MediaQuery.systemGestureInsetsOf(context).right;
-
     // Filling the viewer costs nothing: a `Stack` hit-tests its children and
     // then reports a miss, so everywhere the pill is not stays page. The only
     // opaque box in here is the pill itself.
@@ -192,7 +178,7 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
             // leaving the handle stuck in its grabbed state.
             Positioned(
               key: _pillKey,
-              right: edge,
+              right: 0,
               top: metrics.top,
               width: width,
               height: ReaderScrollHandle.handleHeight,
@@ -218,7 +204,7 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
             ),
             if (_dragging)
               Positioned(
-                right: edge + width + 8,
+                right: width + 8,
                 top: metrics.top,
                 height: ReaderScrollHandle.handleHeight,
                 child: Center(child: IgnorePointer(child: _bubble(context))),

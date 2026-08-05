@@ -145,28 +145,44 @@ class MobileCreationPresets {
     this.bookTypeChoice = 'auto',
     required this.lengthPreset,
     required this.qualityPreset,
-    required this.imagesEnabled,
+    bool? coverEnabled,
+    bool? illustrationsEnabled,
+    @Deprecated('Use coverEnabled and illustrationsEnabled.')
+    bool? imagesEnabled,
     this.pageCountMode = 'auto',
     this.targetPages,
     this.pageCountSource,
-  });
+  }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
+       illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true;
 
   final String bookType;
   final String bookTypeChoice;
   final String lengthPreset;
   final String qualityPreset;
-  final bool imagesEnabled;
+  final bool coverEnabled;
+  final bool illustrationsEnabled;
+
+  /// Compatibility aggregate for older clients and stored draft payloads.
+  ///
+  /// Product decisions must use [coverEnabled] or [illustrationsEnabled]
+  /// directly: a cover-only book still has generated imagery, but does not
+  /// consume illustration credits or quota.
+  @Deprecated('Use coverEnabled and illustrationsEnabled.')
+  bool get imagesEnabled => coverEnabled || illustrationsEnabled;
   final String pageCountMode;
   final int? targetPages;
   final String? pageCountSource;
 
   factory MobileCreationPresets.fromJson(Map<String, dynamic> json) {
+    final legacyImagesEnabled = json['imagesEnabled'] as bool?;
     return MobileCreationPresets(
       bookType: json['bookType'] as String,
       bookTypeChoice: json['bookTypeChoice'] as String? ?? 'auto',
       lengthPreset: json['lengthPreset'] as String,
       qualityPreset: json['qualityPreset'] as String,
-      imagesEnabled: json['imagesEnabled'] as bool,
+      coverEnabled: json['coverEnabled'] as bool?,
+      illustrationsEnabled: json['illustrationsEnabled'] as bool?,
+      imagesEnabled: legacyImagesEnabled,
       pageCountMode: json['pageCountMode'] as String? ?? 'auto',
       targetPages: json['targetPages'] as int?,
       pageCountSource: json['pageCountSource'] as String?,
@@ -179,6 +195,8 @@ class MobileCreationPresets {
       'bookTypeChoice': bookTypeChoice,
       'lengthPreset': lengthPreset,
       'qualityPreset': qualityPreset,
+      'coverEnabled': coverEnabled,
+      'illustrationsEnabled': illustrationsEnabled,
       'imagesEnabled': imagesEnabled,
       'pageCountMode': pageCountMode,
       if (targetPages != null) 'targetPages': targetPages,
@@ -191,6 +209,9 @@ class MobileCreationPresets {
     String? bookTypeChoice,
     String? lengthPreset,
     String? qualityPreset,
+    bool? coverEnabled,
+    bool? illustrationsEnabled,
+    @Deprecated('Use coverEnabled and illustrationsEnabled.')
     bool? imagesEnabled,
     String? pageCountMode,
     Object? targetPages = _sentinel,
@@ -201,7 +222,9 @@ class MobileCreationPresets {
       bookTypeChoice: bookTypeChoice ?? this.bookTypeChoice,
       lengthPreset: lengthPreset ?? this.lengthPreset,
       qualityPreset: qualityPreset ?? this.qualityPreset,
-      imagesEnabled: imagesEnabled ?? this.imagesEnabled,
+      coverEnabled: coverEnabled ?? imagesEnabled ?? this.coverEnabled,
+      illustrationsEnabled:
+          illustrationsEnabled ?? imagesEnabled ?? this.illustrationsEnabled,
       pageCountMode: pageCountMode ?? this.pageCountMode,
       targetPages: targetPages == _sentinel
           ? this.targetPages

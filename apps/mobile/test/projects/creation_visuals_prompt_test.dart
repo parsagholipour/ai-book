@@ -7,17 +7,19 @@ import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
 
-// The illustrations confirmation that sits between "Build the plan" and the
-// build request. Illustrations are the most expensive line item in a book and
-// they default to on, so this is the one place the price of that default is put
-// in front of someone before the plan exists.
+// The generated-image confirmation that sits between "Build the plan" and the
+// build request. It prices the cover and interior art independently.
 
 /// The quote the fakes produce: 8 pages, `lead_magnet`, `balanced`, and the
 /// empty `creditCosts` the fake billing repository returns.
-int _estimate({required bool imagesEnabled}) => estimateProjectCredits(
+int _estimate({
+  required bool coverEnabled,
+  required bool illustrationsEnabled,
+}) => estimateProjectCredits(
   bookType: 'lead_magnet',
   qualityPreset: 'balanced',
-  imagesEnabled: imagesEnabled,
+  coverEnabled: coverEnabled,
+  illustrationsEnabled: illustrationsEnabled,
   targetPages: 8,
   creditCosts: const {},
 );
@@ -38,24 +40,39 @@ Future<void> _openPrompt(
 }
 
 void main() {
-  testWidgets('the build asks about illustrations and prices them separately', (
+  testWidgets('the build separates cover and illustration choices and price', (
     tester,
   ) async {
     final creation = ScriptedCreationRepository();
     await _openPrompt(tester, creation);
 
-    expect(find.text('Add illustrations?'), findsOneWidget);
+    expect(find.text('Choose book images'), findsOneWidget);
+    expect(find.widgetWithText(SwitchListTile, 'Cover image'), findsOneWidget);
+    expect(
+      find.widgetWithText(SwitchListTile, 'In-book illustrations'),
+      findsOneWidget,
+    );
+    expect(find.text('One generated cover image.'), findsOneWidget);
     // Nothing was requested yet — the dialog stands in front of the build.
     expect(creation.buildCount, 0);
 
-    final withImages = _estimate(imagesEnabled: true);
-    final withoutImages = _estimate(imagesEnabled: false);
-    expect(withImages, greaterThan(withoutImages));
+    final base = _estimate(coverEnabled: false, illustrationsEnabled: false);
+    final coverOnly = _estimate(
+      coverEnabled: true,
+      illustrationsEnabled: false,
+    );
+    final withImages = _estimate(
+      coverEnabled: true,
+      illustrationsEnabled: true,
+    );
+    expect(coverOnly - base, 45);
+    expect(withImages, greaterThan(coverOnly));
 
-    // The illustrations are called out as their own number rather than being
-    // folded into a total nobody can take apart.
-    expect(find.text('+${withImages - withoutImages} credits'), findsOneWidget);
-    expect(find.text('$withoutImages credits'), findsOneWidget);
+    // Both generated-image lines are called out rather than folded into a total
+    // nobody can take apart.
+    expect(find.text('+${coverOnly - base} credits'), findsOneWidget);
+    expect(find.text('+${withImages - coverOnly} credits'), findsOneWidget);
+    expect(find.text('$base credits'), findsOneWidget);
     expect(find.text('≈ $withImages credits'), findsOneWidget);
     expect(
       find.text(
@@ -73,23 +90,27 @@ void main() {
     final creation = ScriptedCreationRepository();
     await _openPrompt(tester, creation);
 
-    await tester.tap(find.widgetWithText(SwitchListTile, 'Illustrations'));
+    await tester.tap(
+      find.widgetWithText(SwitchListTile, 'In-book illustrations'),
+    );
     await tester.pump();
 
-    final withoutImages = _estimate(imagesEnabled: false);
-    expect(find.text('≈ $withoutImages credits'), findsOneWidget);
-    expect(find.text('Not included'), findsOneWidget);
-    expect(
-      find.text('Text-first project with no planned visuals.'),
-      findsOneWidget,
+    final coverOnly = _estimate(
+      coverEnabled: true,
+      illustrationsEnabled: false,
     );
+    expect(find.text('≈ $coverOnly credits'), findsOneWidget);
+    expect(find.text('Not included'), findsOneWidget);
+    expect(find.text('No generated images inside the book.'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(creation.buildCount, 1);
-    expect(creation.buildPresets?.imagesEnabled, isFalse);
+    expect(creation.buildPresets?.coverEnabled, isTrue);
+    expect(creation.buildPresets?.illustrationsEnabled, isFalse);
+    expect(creation.buildPresets?.imagesEnabled, isTrue);
 
     await tester.teardownScreen();
   });
@@ -102,7 +123,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('Add illustrations?'), findsNothing);
+    expect(find.text('Choose book images'), findsNothing);
     expect(creation.buildCount, 0);
     // Back in the pre-build stage, free to try again.
     expect(find.widgetWithText(FilledButton, 'Build the plan'), findsOneWidget);
@@ -121,9 +142,12 @@ void main() {
 
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
-    final visuals = find.widgetWithText(SwitchListTile, 'Visuals');
-    await tester.ensureVisible(visuals);
-    await tester.tap(visuals);
+    final illustrations = find.widgetWithText(
+      SwitchListTile,
+      'In-book illustrations',
+    );
+    await tester.ensureVisible(illustrations);
+    await tester.tap(illustrations);
     await tester.pumpAndSettle();
     final doneButton = find.widgetWithText(FilledButton, 'Done');
     await tester.ensureVisible(doneButton);
@@ -137,9 +161,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     // Off is a deliberate answer — asking again would argue with it.
-    expect(find.text('Add illustrations?'), findsNothing);
+    expect(find.text('Choose book images'), findsNothing);
     expect(creation.buildCount, 1);
-    expect(creation.buildPresets?.imagesEnabled, isFalse);
+    expect(creation.buildPresets?.coverEnabled, isTrue);
+    expect(creation.buildPresets?.illustrationsEnabled, isFalse);
 
     await tester.teardownScreen();
   });
@@ -159,7 +184,12 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    await tester.tap(find.widgetWithText(CheckboxListTile, "Don't ask again"));
+    final suppression = find.widgetWithText(
+      CheckboxListTile,
+      "Don't ask again",
+    );
+    await tester.ensureVisible(suppression);
+    await tester.tap(suppression);
     await tester.pump();
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
     await tester.pump();
@@ -173,7 +203,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('Add illustrations?'), findsNothing);
+    expect(find.text('Choose book images'), findsNothing);
     expect(creation.buildCount, 2);
     // Only the asking was suppressed, never the answer: saying yes to the
     // default records no override at all, so the build still carries the
@@ -201,7 +231,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    expect(find.text('Add illustrations?'), findsNothing);
+    expect(find.text('Choose book images'), findsNothing);
     expect(creation.buildCount, 1);
 
     await tester.teardownScreen();
@@ -216,7 +246,63 @@ void main() {
     await _openPrompt(tester, creation);
 
     expect(find.text('How many pages?'), findsNothing);
-    expect(find.text('Add illustrations?'), findsOneWidget);
+    expect(find.text('Choose book images'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('all four image combinations show the matching total', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await _openPrompt(tester, creation);
+
+    final illustratedTotal = _estimate(
+      coverEnabled: true,
+      illustrationsEnabled: true,
+    );
+    final illustrationsOnly = _estimate(
+      coverEnabled: false,
+      illustrationsEnabled: true,
+    );
+    final noImages = _estimate(
+      coverEnabled: false,
+      illustrationsEnabled: false,
+    );
+    final coverOnly = _estimate(
+      coverEnabled: true,
+      illustrationsEnabled: false,
+    );
+    expect(find.text('≈ $illustratedTotal credits'), findsOneWidget);
+
+    final coverSwitch = find.widgetWithText(SwitchListTile, 'Cover image');
+    final illustrationSwitch = find.widgetWithText(
+      SwitchListTile,
+      'In-book illustrations',
+    );
+
+    await tester.tap(coverSwitch);
+    await tester.pump();
+
+    expect(illustratedTotal - illustrationsOnly, 45);
+    expect(find.text('≈ $illustrationsOnly credits'), findsOneWidget);
+    expect(find.text('No generated cover image.'), findsOneWidget);
+
+    await tester.tap(illustrationSwitch);
+    await tester.pump();
+    expect(find.text('≈ $noImages credits'), findsOneWidget);
+
+    await tester.tap(coverSwitch);
+    await tester.pump();
+    expect(find.text('≈ $coverOnly credits'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(creation.buildPresets?.coverEnabled, isTrue);
+    expect(creation.buildPresets?.illustrationsEnabled, isFalse);
+    expect(creation.buildPresets?.imagesEnabled, isTrue);
 
     await tester.teardownScreen();
   });

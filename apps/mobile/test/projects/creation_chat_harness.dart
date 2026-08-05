@@ -207,6 +207,8 @@ MobileProjectDetail plannedProject({
   String currentAction = 'Ready for review.',
   MobilePlan? plan,
   bool withoutPlan = false,
+  bool coverEnabled = true,
+  bool illustrationsEnabled = true,
 }) {
   return MobileProjectDetail(
     id: id,
@@ -214,7 +216,8 @@ MobileProjectDetail plannedProject({
     bookType: 'workbook',
     lengthPreset: 'standard',
     qualityPreset: 'balanced',
-    imagesEnabled: true,
+    coverEnabled: coverEnabled,
+    illustrationsEnabled: illustrationsEnabled,
     status: status,
     statusLabel: 'Review your book plan',
     progressPercent: 20,
@@ -247,6 +250,8 @@ MobileProjectStatus projectStatusFromProject(MobileProjectDetail project) {
     completedPages: project.pageCount,
     targetPages: project.targetPages,
     imageCount: project.imageCount,
+    coverEnabled: project.coverEnabled,
+    illustrationsEnabled: project.illustrationsEnabled,
     failureMessage: project.status == 'failed' ? 'Generation failed.' : null,
   );
 }
@@ -262,6 +267,8 @@ MobileProjectStatus projectStatus({
   int completedPages = 3,
   int targetPages = 28,
   int imageCount = 1,
+  bool? coverEnabled,
+  bool? illustrationsEnabled,
   MobilePlanningProgress? planningProgress,
   MobileGenerationProgress? generationProgress,
   MobileExportSet exports = _exports,
@@ -308,6 +315,8 @@ MobileProjectStatus projectStatus({
     ),
     imageCount: imageCount,
     exports: exports,
+    coverEnabled: coverEnabled,
+    illustrationsEnabled: illustrationsEnabled,
     updatedAt: DateTime.utc(2026, 6, 15),
   );
 }

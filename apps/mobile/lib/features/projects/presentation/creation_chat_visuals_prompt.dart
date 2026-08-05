@@ -1,24 +1,21 @@
 part of 'creation_chat_screen.dart';
 
-// The illustrations confirmation shown just before a plan is built.
+// The generated-image confirmation shown just before a plan is built.
 //
-// Illustrations are the single most expensive line item in a book — the quote
-// carries one `imageGeneration` charge per estimated interior image, and on the
-// free tier an illustrated book also spends one of the month's slots — yet they
-// are on by default and the only switch for them sits inside Advanced settings.
-// This dialog puts the choice and its price in front of the user once, on the
-// way to the plan, and lets them opt out of being asked again.
+// Cover and interior art are independent choices, each charged at the current
+// `imageGeneration` rate. Only interiors consume a monthly illustrated-book
+// slot. This dialog keeps those costs visibly separate.
 
 /// The screen's opener, next to the dialog it presents — same arrangement as
 /// `_CreationChatSheets`.
 extension _CreationChatVisualsPrompt on _CreationChatScreenState {
-  /// Asks about illustrations unless the user turned them off already or asked
-  /// not to be asked. Returns false when the build should be abandoned.
+  /// Asks about generated images unless the user already turned illustrations
+  /// off or asked not to be asked. Returns false when the build is abandoned.
   Future<bool> confirmVisuals(
     MobileCreationPresets presets,
     int targetPages,
   ) async {
-    if (!presets.imagesEnabled) {
+    if (!presets.illustrationsEnabled) {
       // Off is always a deliberate answer — set in Advanced settings, or asked
       // for in the chat. Re-opening the question would argue with it.
       return true;
@@ -37,13 +34,14 @@ extension _CreationChatVisualsPrompt on _CreationChatScreenState {
     if (choice == null) {
       return false;
     }
-    if (choice.imagesEnabled != presets.imagesEnabled) {
-      // Only on a real change: the setter also records CreationChoice.visuals,
-      // which pins the value against later server merges. That is right when
-      // someone turns illustrations off, and noise when they just say yes.
-      ref
-          .read(creationChatControllerProvider.notifier)
-          .setImagesEnabled(choice.imagesEnabled);
+    final controller = ref.read(creationChatControllerProvider.notifier);
+    if (choice.coverEnabled != presets.coverEnabled) {
+      controller.setCoverEnabled(choice.coverEnabled);
+    }
+    if (choice.illustrationsEnabled != presets.illustrationsEnabled) {
+      // Only on a real change: the setter records the independent sticky
+      // choice, which is useful when someone opts out and noise otherwise.
+      controller.setIllustrationsEnabled(choice.illustrationsEnabled);
     }
     if (choice.dontShowAgain) {
       await store.save(prefs.copyWith(visualsPromptSuppressed: true));
@@ -54,11 +52,13 @@ extension _CreationChatVisualsPrompt on _CreationChatScreenState {
 
 class _VisualsPromptResult {
   const _VisualsPromptResult({
-    required this.imagesEnabled,
+    required this.coverEnabled,
+    required this.illustrationsEnabled,
     required this.dontShowAgain,
   });
 
-  final bool imagesEnabled;
+  final bool coverEnabled;
+  final bool illustrationsEnabled;
   final bool dontShowAgain;
 }
 
@@ -77,7 +77,8 @@ class _VisualsPromptDialog extends ConsumerStatefulWidget {
 }
 
 class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
-  late bool _imagesEnabled = widget.presets.imagesEnabled;
+  late bool _coverEnabled = widget.presets.coverEnabled;
+  late bool _illustrationsEnabled = widget.presets.illustrationsEnabled;
   bool _dontShowAgain = false;
 
   @override
@@ -89,25 +90,33 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
     // matches the one that sheet quoted and the one approval will ask for.
     final creditCosts = billing?.creditCosts ?? const <String, dynamic>{};
 
-    int estimate(bool withImages) => estimateProjectCredits(
-      bookType: widget.presets.bookType,
-      qualityPreset: widget.presets.qualityPreset,
-      imagesEnabled: withImages,
-      targetPages: widget.targetPages,
-      creditCosts: creditCosts,
-    );
+    int estimate({required bool withCover, required bool withIllustrations}) =>
+        estimateProjectCredits(
+          bookType: widget.presets.bookType,
+          qualityPreset: widget.presets.qualityPreset,
+          coverEnabled: withCover,
+          illustrationsEnabled: withIllustrations,
+          targetPages: widget.targetPages,
+          creditCosts: creditCosts,
+        );
 
-    final illustratedTotal = estimate(true);
-    final textOnlyTotal = estimate(false);
-    final addedCredits = illustratedTotal - textOnlyTotal;
+    final baseTotal = estimate(withCover: false, withIllustrations: false);
+    final coverCredits =
+        estimate(withCover: true, withIllustrations: false) - baseTotal;
+    final illustrationCredits =
+        estimate(withCover: false, withIllustrations: true) - baseTotal;
+    final selectedTotal = estimate(
+      withCover: _coverEnabled,
+      withIllustrations: _illustrationsEnabled,
+    );
     final imageCount = estimatedInteriorImageCount(
       bookType: widget.presets.bookType,
-      imagesEnabled: true,
+      illustrationsEnabled: true,
       targetPages: widget.targetPages,
     );
 
     return AlertDialog(
-      title: const Text('Add illustrations?'),
+      title: const Text('Choose book images'),
       content: SizedBox(
         width: double.maxFinite,
         child: SingleChildScrollView(
@@ -116,8 +125,8 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Illustrations are the most expensive part of a book. A '
-                'text-first book costs less and is quicker to make.',
+                'Cover art and in-book illustrations are priced separately. '
+                'Choose exactly which images this book needs.',
                 style: text.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -125,13 +134,22 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
               const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                value: _imagesEnabled,
-                onChanged: (value) => setState(() => _imagesEnabled = value),
+                value: _coverEnabled,
+                onChanged: (value) => setState(() => _coverEnabled = value),
+                secondary: const Icon(Icons.auto_stories_outlined),
+                title: const Text('Cover image'),
+                subtitle: Text(_coverSubtitle(_coverEnabled)),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _illustrationsEnabled,
+                onChanged: (value) =>
+                    setState(() => _illustrationsEnabled = value),
                 secondary: const Icon(Icons.image_outlined),
-                title: const Text('Illustrations'),
+                title: const Text('In-book illustrations'),
                 subtitle: Text(
-                  _visualsSubtitle(
-                    _imagesEnabled,
+                  _illustrationsSubtitle(
+                    _illustrationsEnabled,
                     widget.presets.bookType,
                     billing?.imageQuota,
                   ),
@@ -151,25 +169,32 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _VisualsCostRow(
+                      label: 'Cover image',
+                      value: _coverEnabled
+                          ? '+$coverCredits credits'
+                          : 'Not included',
+                      muted: !_coverEnabled,
+                    ),
+                    const SizedBox(height: 6),
+                    _VisualsCostRow(
                       label: imageCount == 1
                           ? '1 illustration'
                           : '$imageCount illustrations',
-                      value: _imagesEnabled
-                          ? '+$addedCredits credits'
+                      value: _illustrationsEnabled
+                          ? '+$illustrationCredits credits'
                           : 'Not included',
-                      muted: !_imagesEnabled,
+                      muted: !_illustrationsEnabled,
                     ),
                     const SizedBox(height: 6),
                     _VisualsCostRow(
                       label: '${widget.targetPages} pages, everything else',
-                      value: '$textOnlyTotal credits',
+                      value: '$baseTotal credits',
                       muted: true,
                     ),
                     const Divider(height: 18),
                     _VisualsCostRow(
                       label: 'Estimated total',
-                      value:
-                          '≈ ${_imagesEnabled ? illustratedTotal : textOnlyTotal} credits',
+                      value: '≈ $selectedTotal credits',
                       emphasised: true,
                     ),
                   ],
@@ -204,7 +229,8 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
         FilledButton(
           onPressed: () => Navigator.of(context).pop(
             _VisualsPromptResult(
-              imagesEnabled: _imagesEnabled,
+              coverEnabled: _coverEnabled,
+              illustrationsEnabled: _illustrationsEnabled,
               dontShowAgain: _dontShowAgain,
             ),
           ),

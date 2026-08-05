@@ -34,11 +34,12 @@ class GenerationProgressOverviewCard extends StatelessWidget {
     // coarse pipeline is the honest answer until writing reports in. An edit
     // sends its own list and no generation one — without it this card fell back
     // to the whole book's pipeline, which says nothing about the edit running.
-    final steps =
+    final rawSteps =
         status.generationProgress?.steps ??
         status.editProgress?.steps ??
         (status.status == 'planning' ? status.planningProgress?.steps : null) ??
         status.steps;
+    final steps = imageAwareGenerationSteps(rawSteps, status);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),

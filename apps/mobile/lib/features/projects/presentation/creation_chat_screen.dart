@@ -1154,7 +1154,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     int estimateCredits(int pages) => estimateProjectCredits(
       bookType: presets.bookType,
       qualityPreset: presets.qualityPreset,
-      imagesEnabled: presets.imagesEnabled,
+      coverEnabled: presets.coverEnabled,
+      illustrationsEnabled: presets.illustrationsEnabled,
       targetPages: pages,
       creditCosts: creditCosts,
     );

@@ -142,8 +142,16 @@ describe("GET /api/admin/pricing", () => {
     expect(body.limits.fullBookPerPage).toBe(CREDIT_PRICING_LIMITS.fullBookPerPage);
     expect(body.version).toBe(0);
     // The same estimator production charges through, so the dashboard cannot drift.
-    expect(body.preview.totalCredits).toBe(994);
-    expect(body.preview.estimatedUsd).toBeCloseTo(9.94, 2);
+    expect(body.preview.totalCredits).toBe(1_039);
+    expect(body.preview.estimatedUsd).toBeCloseTo(10.39, 2);
+    expect(body.preview.lineItems).toContainEqual(
+      expect.objectContaining({
+        code: "IMAGE_GENERATION",
+        label: "Cover image generation",
+        quantity: 1,
+        credits: DEFAULT_CREDIT_COSTS.imageGeneration
+      })
+    );
   });
 });
 
@@ -277,7 +285,7 @@ describe("POST /api/admin/pricing/preview", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().totalCredits).toBe(994 + 250);
+    expect(response.json().totalCredits).toBe(1_039 + 250);
     // The prices everyone else is being charged have not moved.
     expect(creditPricing().exportUnlock).toBe(DEFAULT_CREDIT_COSTS.exportUnlock);
   });
@@ -326,8 +334,63 @@ describe("GET /api/admin/pricing/drivers", () => {
     expect(body.drivers.voiceCallPerMinute).toBe(2);
     expect(body.drivers.bookTextEditBase).toBe(1);
     expect(body.drivers.bookTextEditPerPage).toBe(2);
+    // Five interiors plus one initial cover, for each of two generations.
+    expect(body.drivers.imageGeneration).toBe(12);
     expect(body.providerUsd).toBe(4.5);
     expect(body.coverage.chargedCredits).toBe(9000);
+  });
+
+  it("counts initial covers for full generations and replans under image generation", async () => {
+    mockDb.prisma.creditLedgerEntry.groupBy.mockImplementation(async ({ where }: { where: { operation?: string } }) => {
+      if (where.operation === "FULL_BOOK_GENERATION") {
+        return [
+          { projectId: "project-cover", _count: { _all: 1 } },
+          { projectId: "project-no-cover", _count: { _all: 1 } }
+        ];
+      }
+      if (where.operation === "BOOK_REPLAN") {
+        return [{ projectId: "project-replan", _count: { _all: 1 } }];
+      }
+      return [];
+    });
+    const projectShape = {
+      title: "Text-first guide",
+      subtitle: null,
+      authorName: null,
+      coverTagline: null,
+      prompt: "Create a text-first practical guide for new managers.",
+      category: "BUSINESS",
+      subcategory: "Lead Magnet Ebook",
+      targetPages: 8,
+      complexity: 5,
+      temperature: 0.65,
+      language: "en"
+    };
+    mockDb.prisma.project.findMany.mockResolvedValue([
+      {
+        ...projectShape,
+        id: "project-cover",
+        mediaSettings: { fullIllustrations: false, includeCover: true }
+      },
+      {
+        ...projectShape,
+        id: "project-no-cover",
+        mediaSettings: { fullIllustrations: false, includeCover: false }
+      },
+      {
+        ...projectShape,
+        id: "project-replan",
+        mediaSettings: { fullIllustrations: false, includeCover: true }
+      }
+    ]);
+    app = await buildApp();
+
+    const body = (await app.inject({ method: "GET", url: "/api/admin/pricing/drivers" })).json();
+
+    expect(body.drivers.fullBookBase).toBe(3);
+    expect(body.drivers.bookReplanBase).toBe(1);
+    expect(body.drivers.imageGeneration).toBe(2);
+    expect(body.drivers.coverRegeneration).toBe(0);
   });
 
   it("reports how faithfully the model reproduces the ledger", async () => {

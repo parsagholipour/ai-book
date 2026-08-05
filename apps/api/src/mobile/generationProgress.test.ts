@@ -92,6 +92,11 @@ describe("mobile generation progress", () => {
       status: "active",
       detail: "3 of 10 pages"
     });
+    expect(status.generationProgress.steps[2]).toMatchObject({
+      key: "illustrate",
+      label: "Creating your book images"
+    });
+    expect(status).toMatchObject({ coverEnabled: true, illustrationsEnabled: true, imagesEnabled: true });
     expect(status.generationProgress.detail).toBe("Writing page 4");
     expect(status.currentAction).toBe("Writing page 4");
     expect(JSON.stringify(status)).not.toMatch(/tokens|provider|model|cost|queue|jobs/i);
@@ -138,6 +143,7 @@ describe("mobile generation progress", () => {
 
     expect(status.generationProgress.steps.map((step: any) => step.key)).toEqual(["prepare", "write", "finish"]);
     expect(status.generationProgress.percent).toBe(86);
+    expect(status).toMatchObject({ coverEnabled: false, illustrationsEnabled: false, imagesEnabled: false });
   });
 
   it("keeps the percent moving forward as pages land", async () => {
@@ -212,7 +218,12 @@ describe("mobile generation progress", () => {
     );
 
     expect(status.generationProgress.detail).toBe("Making your PDF");
-    expect(status.generationProgress.steps[2]).toMatchObject({ status: "done", detail: "4 illustrations" });
+    expect(status.generationProgress.steps[2]).toMatchObject({
+      key: "illustrate",
+      label: "Creating your book images",
+      status: "done",
+      detail: "4 book images"
+    });
     expect(status.generationProgress.steps[3]).toMatchObject({ label: "Building your book", status: "active" });
     expect(status.generationProgress.percent).toBeGreaterThanOrEqual(92);
     expect(status.generationProgress.percent).toBeLessThan(100);
@@ -222,6 +233,7 @@ describe("mobile generation progress", () => {
     const status = await readStatus(
       generatingStatus({
         project: {
+          mediaSettings: { fullIllustrations: true, includeCover: false },
           jobs: [
             job({
               id: "job-image",
@@ -245,7 +257,69 @@ describe("mobile generation progress", () => {
     );
 
     expect(status.generationProgress.detail).toBe("Drawing your illustration");
-    expect(status.generationProgress.steps[2]).toMatchObject({ status: "active", detail: "2 of 5 illustrations" });
+    expect(status.generationProgress.steps[2]).toMatchObject({
+      key: "illustrate",
+      label: "Creating your illustrations",
+      status: "active",
+      detail: "2 of 5 illustrations"
+    });
+    expect(status).toMatchObject({ coverEnabled: false, illustrationsEnabled: true, imagesEnabled: true });
+  });
+
+  it("keeps the public illustration step key but gives a cover-only book cover-specific wording", async () => {
+    const status = await readStatus(
+      generatingStatus({
+        project: {
+          mediaSettings: { fullIllustrations: false, includeCover: true },
+          jobs: [
+            job({
+              id: "job-cover",
+              type: "GENERATE_IMAGE",
+              payload: { assetType: "COVER" },
+              steps: [{ key: "render", label: "Render cover", status: "active" }]
+            })
+          ]
+        },
+        progress: {
+          pages: { complete: 10, target: 10 },
+          images: 0,
+          openImageJobs: 1,
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done" },
+            { key: "pages", label: "Pages", status: "done", detail: "10/10 pages" },
+            { key: "images", label: "Images", status: "active", detail: "1 in queue" },
+            { key: "export", label: "Export", status: "pending" }
+          ]
+        }
+      })
+    );
+
+    expect(status.generationProgress.detail).toBe("Painting your cover");
+    expect(status.generationProgress.steps[2]).toMatchObject({
+      key: "illustrate",
+      label: "Creating your cover",
+      status: "active",
+      detail: "Cover in progress"
+    });
+    expect(status).toMatchObject({ coverEnabled: true, illustrationsEnabled: false, imagesEnabled: true });
+
+    const settled = await readStatus(
+      generatingStatus({
+        project: {
+          status: "COMPLETE",
+          mediaSettings: { fullIllustrations: false, includeCover: true },
+          jobs: []
+        },
+        progress: { pages: { complete: 10, target: 10 }, images: 1 }
+      })
+    );
+    expect(settled.generationProgress.steps[2]).toMatchObject({
+      key: "illustrate",
+      label: "Creating your cover",
+      status: "done",
+      detail: "Cover ready"
+    });
+    expect(JSON.stringify(settled.generationProgress)).not.toMatch(/illustration/i);
   });
 
   it("shows a safe preparing state in the window right after approval", async () => {

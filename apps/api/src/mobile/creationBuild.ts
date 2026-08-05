@@ -3,6 +3,7 @@ import {
   authorForMobilePayload,
   briefForMobilePayload,
   composeMobileProjectPrompt,
+  mergeMobileCreationPresets,
   mobileBookAdvisorResponseSchema,
   mobileCreationDraftPayloadSchema,
   titleForMobilePayload,
@@ -96,9 +97,12 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       };
     }
 
+    const mergedPresets = overrides.presets
+      ? mergeMobileCreationPresets(parsedPayload.data.selectedPresets, overrides.presets)
+      : parsedPayload.data.selectedPresets;
     const mergedPayload: MobileCreationDraftPayload = {
       ...parsedPayload.data,
-      ...(overrides.presets ? { selectedPresets: overrides.presets } : {}),
+      ...(mergedPresets ? { selectedPresets: mergedPresets } : {}),
       ...(overrides.sourceNotes !== undefined ? { sourceNotes: overrides.sourceNotes } : {}),
       ...(overrides.optionalDetails ? { optionalDetails: overrides.optionalDetails } : {})
     };
@@ -194,6 +198,8 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       lengthPreset: selectedPresets.lengthPreset,
       qualityPreset: selectedPresets.qualityPreset,
       imagesEnabled: selectedPresets.imagesEnabled,
+      coverEnabled: selectedPresets.coverEnabled,
+      illustrationsEnabled: selectedPresets.illustrationsEnabled,
       pageCountMode: selectedPresets.pageCountMode,
       targetPages: selectedPresets.targetPages,
       pageCountSource: selectedPresets.pageCountSource,

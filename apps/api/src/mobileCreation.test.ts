@@ -90,7 +90,9 @@ describe("runCreationTurn", () => {
       bookTypeChoice: "children_story",
       lengthPreset: "short",
       qualityPreset: "balanced",
-      imagesEnabled: true
+      imagesEnabled: true,
+      coverEnabled: true,
+      illustrationsEnabled: true
     }
   };
 
@@ -150,7 +152,9 @@ describe("runCreationTurn", () => {
         bookTypeChoice: "auto",
         lengthPreset: "short",
         qualityPreset: "balanced",
-        imagesEnabled: true
+        imagesEnabled: true,
+        coverEnabled: true,
+        illustrationsEnabled: true
       }
     });
 
@@ -170,7 +174,9 @@ describe("runCreationTurn", () => {
         bookTypeChoice: "auto",
         lengthPreset: "short",
         qualityPreset: "balanced",
-        imagesEnabled: true
+        imagesEnabled: true,
+        coverEnabled: true,
+        illustrationsEnabled: true
       }
     });
 
@@ -185,7 +191,9 @@ describe("runCreationTurn", () => {
         bookTypeChoice: "client_tool",
         lengthPreset: "standard",
         qualityPreset: "balanced",
-        imagesEnabled: true
+        imagesEnabled: true,
+        coverEnabled: true,
+        illustrationsEnabled: true
       }
     });
 
@@ -217,26 +225,6 @@ describe("runCreationTurn", () => {
     expect(isBuildRequestMessage("what will you build?")).toBe(false);
   });
 
-  it("applies chat settings changes like disabling images with an acknowledgement", () => {
-    const turn = deterministicCreationTurn({
-      messages: [
-        { role: "user", content: "A guide to sourdough baking for beginners" },
-        { role: "assistant", content: "Got it." },
-        { role: "user", content: "No images please" }
-      ],
-      presets: {
-        bookType: "lead_magnet",
-        bookTypeChoice: "auto",
-        lengthPreset: "short",
-        qualityPreset: "balanced",
-        imagesEnabled: true
-      }
-    });
-
-    expect(turn.presets.imagesEnabled).toBe(false);
-    expect(turn.assistantMessage).toMatch(/text-first|no images/i);
-  });
-
   it("detects the message language and carries it on the turn", () => {
     expect(detectMessageLanguage("یک کتاب داستان برای کودکان درباره دوستی")).toBe("fa");
     expect(detectMessageLanguage("Сказка на ночь для детей")).toBe("ru");
@@ -249,7 +237,6 @@ describe("runCreationTurn", () => {
     expect(turn.language).toBe("fa");
   });
 
-  // An English chat about a foreign-language subject is still an English book.
   it("does not set a book language from a topic that names one", () => {
     expect(detectMessageLanguage("Just write a book about aliens in Chinese media")).toBeUndefined();
     expect(chatSettingChangesFromMessage("Just write a book about aliens in Chinese media").language)
@@ -507,6 +494,37 @@ describe("creation chat web search", () => {
     });
     expect(patch.assistantMessage).toContain("visuals off");
     expect(patch.buildRequested).toBe(false);
+  });
+
+  it("applies exact cover-only settings from the model tool", async () => {
+    const model = toolModel([
+      {
+        toolCalls: [
+          {
+            name: "update_settings",
+            arguments: { coverEnabled: true, illustrationsEnabled: false }
+          }
+        ]
+      },
+      {
+        finish: {
+          assistantMessage: "Got it — the cover stays and in-book illustrations are off.",
+          question: null
+        }
+      }
+    ]);
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: neverSearchAdapter() },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.presets).toMatchObject({
+      imagesEnabled: true,
+      coverEnabled: true,
+      illustrationsEnabled: false
+    });
   });
 
   it("sets buildRequested only when request_build is called", async () => {
@@ -1070,7 +1088,12 @@ describe("composed project prompt budget", () => {
 
     // The build route hands this straight to buildMobileCreateProjectInput, so
     // a prompt over the cap threw a ZodError and reached the app as a 500.
-    expect(mobileComposedProjectCreateSchema.shape.prompt.safeParse(prompt).success).toBe(true);
+    expect(
+      mobileComposedProjectCreateSchema.safeParse({
+        bookType: "lead_magnet",
+        prompt
+      }).success
+    ).toBe(true);
     expect(prompt.length).toBeLessThanOrEqual(COMPOSED_PROJECT_PROMPT_MAX);
     // Headroom has to survive for the worker's source-material injection.
     expect(COMPOSED_PROJECT_PROMPT_MAX).toBeLessThan(PROJECT_PROMPT_MAX_LENGTH);

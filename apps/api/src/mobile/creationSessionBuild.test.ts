@@ -281,12 +281,14 @@ describe("mobile creation session project build", () => {
       [
         "authorName",
         "bookType",
+        "coverEnabled",
         "coverImage",
         "createdAt",
         "currentAction",
         "exports",
         "hasPlan",
         "id",
+        "illustrationsEnabled",
         "imageCount",
         "imagesEnabled",
         "language",
@@ -373,6 +375,39 @@ describe("mobile creation session project build", () => {
     });
     // Mobile inputs carry a tier name, never a concrete provider/model selection.
     expect(JSON.stringify({ fast, balanced, premium })).not.toMatch(/provider|textModel|imageModel/);
+  });
+
+  it("maps all four cover and in-book illustration combinations independently", async () => {
+    const { buildMobileCreateProjectInput } = await import("../mobileProjects.js");
+    const combinations = [
+      { coverEnabled: true, illustrationsEnabled: true },
+      { coverEnabled: true, illustrationsEnabled: false },
+      { coverEnabled: false, illustrationsEnabled: true },
+      { coverEnabled: false, illustrationsEnabled: false }
+    ];
+
+    for (const choice of combinations) {
+      const input = buildMobileCreateProjectInput({
+        bookType: "lead_magnet",
+        prompt: "Create a practical guide to independent book image settings.",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        // Contradictory legacy input proves the exact fields have precedence.
+        imagesEnabled: !choice.coverEnabled && !choice.illustrationsEnabled,
+        ...choice
+      });
+
+      expect(input.mediaSettings).toMatchObject({
+        includeCover: choice.coverEnabled,
+        fullIllustrations: choice.illustrationsEnabled,
+        illustrationCadence: choice.illustrationsEnabled ? "template-driven" : "manual",
+        mobile: {
+          coverEnabled: choice.coverEnabled,
+          illustrationsEnabled: choice.illustrationsEnabled,
+          imagesEnabled: choice.coverEnabled || choice.illustrationsEnabled
+        }
+      });
+    }
   });
 
 });

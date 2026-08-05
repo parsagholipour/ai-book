@@ -30,7 +30,10 @@ class MobileProjectSummary {
     required this.bookType,
     required this.lengthPreset,
     required this.qualityPreset,
-    required this.imagesEnabled,
+    bool? coverEnabled,
+    bool? illustrationsEnabled,
+    @Deprecated('Use coverEnabled and illustrationsEnabled.')
+    bool? imagesEnabled,
     required this.status,
     required this.statusLabel,
     required this.progressPercent,
@@ -47,7 +50,8 @@ class MobileProjectSummary {
     this.authorName,
     this.source = 'generated',
     this.coverImage,
-  });
+  }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
+       illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true;
 
   final String id;
   final String title;
@@ -62,7 +66,13 @@ class MobileProjectSummary {
   final String bookType;
   final String lengthPreset;
   final String qualityPreset;
-  final bool imagesEnabled;
+  final bool coverEnabled;
+  final bool illustrationsEnabled;
+
+  /// Deprecated wire compatibility aggregate. Never use this for pricing or
+  /// illustrated-book quota checks.
+  @Deprecated('Use coverEnabled and illustrationsEnabled.')
+  bool get imagesEnabled => coverEnabled || illustrationsEnabled;
   final String status;
   final String statusLabel;
   final int progressPercent;
@@ -77,6 +87,7 @@ class MobileProjectSummary {
   final DateTime updatedAt;
 
   factory MobileProjectSummary.fromJson(Map<String, dynamic> json) {
+    final legacyImagesEnabled = json['imagesEnabled'] as bool?;
     return MobileProjectSummary(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -85,7 +96,9 @@ class MobileProjectSummary {
       bookType: json['bookType'] as String,
       lengthPreset: json['lengthPreset'] as String,
       qualityPreset: json['qualityPreset'] as String,
-      imagesEnabled: json['imagesEnabled'] as bool,
+      coverEnabled: json['coverEnabled'] as bool?,
+      illustrationsEnabled: json['illustrationsEnabled'] as bool?,
+      imagesEnabled: legacyImagesEnabled,
       status: json['status'] as String,
       statusLabel: json['statusLabel'] as String,
       progressPercent: json['progressPercent'] as int,
@@ -144,7 +157,9 @@ class MobileProjectDetail extends MobileProjectSummary {
     required super.bookType,
     required super.lengthPreset,
     required super.qualityPreset,
-    required super.imagesEnabled,
+    super.coverEnabled,
+    super.illustrationsEnabled,
+    super.imagesEnabled,
     required super.status,
     required super.statusLabel,
     required super.progressPercent,
@@ -177,6 +192,7 @@ class MobileProjectDetail extends MobileProjectSummary {
   factory MobileProjectDetail.fromJson(Map<String, dynamic> json) {
     final pages = json['pages'] as List<dynamic>;
     final plan = json['plan'];
+    final legacyImagesEnabled = json['imagesEnabled'] as bool?;
     return MobileProjectDetail(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -185,7 +201,9 @@ class MobileProjectDetail extends MobileProjectSummary {
       bookType: json['bookType'] as String,
       lengthPreset: json['lengthPreset'] as String,
       qualityPreset: json['qualityPreset'] as String,
-      imagesEnabled: json['imagesEnabled'] as bool,
+      coverEnabled: json['coverEnabled'] as bool?,
+      illustrationsEnabled: json['illustrationsEnabled'] as bool?,
+      imagesEnabled: legacyImagesEnabled,
       status: json['status'] as String,
       statusLabel: json['statusLabel'] as String,
       progressPercent: json['progressPercent'] as int,
@@ -428,16 +446,24 @@ class MobileProjectCreateRequest {
     required this.prompt,
     required this.lengthPreset,
     required this.qualityPreset,
-    required this.imagesEnabled,
+    bool? coverEnabled,
+    bool? illustrationsEnabled,
+    @Deprecated('Use coverEnabled and illustrationsEnabled.')
+    bool? imagesEnabled,
     this.title,
-  });
+  }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
+       illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true;
 
   final String bookType;
   final String? title;
   final String prompt;
   final String lengthPreset;
   final String qualityPreset;
-  final bool imagesEnabled;
+  final bool coverEnabled;
+  final bool illustrationsEnabled;
+
+  @Deprecated('Use coverEnabled and illustrationsEnabled.')
+  bool get imagesEnabled => coverEnabled || illustrationsEnabled;
 
   Map<String, dynamic> toJson() {
     return {
@@ -446,6 +472,8 @@ class MobileProjectCreateRequest {
       'prompt': prompt.trim(),
       'lengthPreset': lengthPreset,
       'qualityPreset': qualityPreset,
+      'coverEnabled': coverEnabled,
+      'illustrationsEnabled': illustrationsEnabled,
       'imagesEnabled': imagesEnabled,
     };
   }
@@ -496,7 +524,6 @@ class MobileQueuedJob {
     );
   }
 }
-
 
 class MobileProjectRecovery {
   const MobileProjectRecovery({
@@ -577,7 +604,8 @@ int estimateApprovalCredits(
   return estimateProjectCredits(
     bookType: project.bookType,
     qualityPreset: project.qualityPreset,
-    imagesEnabled: project.imagesEnabled,
+    coverEnabled: project.coverEnabled,
+    illustrationsEnabled: project.illustrationsEnabled,
     targetPages: project.targetPages,
     creditCosts: creditCosts,
   );
@@ -586,10 +614,14 @@ int estimateApprovalCredits(
 int estimateProjectCredits({
   required String bookType,
   required String qualityPreset,
-  required bool imagesEnabled,
+  bool? coverEnabled,
+  bool? illustrationsEnabled,
+  @Deprecated('Use coverEnabled and illustrationsEnabled.') bool? imagesEnabled,
   required int targetPages,
   required Map<String, dynamic> creditCosts,
 }) {
+  final includeCover = coverEnabled ?? imagesEnabled ?? true;
+  final includeIllustrations = illustrationsEnabled ?? imagesEnabled ?? true;
   final fullBookBase = _intCost(creditCosts, 'fullBookBase', 350);
   final fullBookPerPage = _intCost(creditCosts, 'fullBookPerPage', 8);
   final imageGeneration = _intCost(creditCosts, 'imageGeneration', 45);
@@ -597,12 +629,13 @@ int estimateProjectCredits({
   final exportUnlock = _intCost(creditCosts, 'exportUnlock', 150);
   final imageCount = estimatedInteriorImageCount(
     bookType: bookType,
-    imagesEnabled: imagesEnabled,
+    illustrationsEnabled: includeIllustrations,
     targetPages: targetPages,
   );
   final premiumCredits = qualityPreset == 'premium' ? premiumReview : 0;
   return fullBookBase +
       targetPages * fullBookPerPage +
+      (includeCover ? imageGeneration : 0) +
       imageCount * imageGeneration +
       premiumCredits +
       exportUnlock;
@@ -612,13 +645,16 @@ int estimateProjectCredits({
 ///
 /// Mirrors `estimateInteriorImageCount` in `packages/core/src/billing.ts`, which
 /// is what the server actually charges against, so the two must move together.
-/// The cover is not counted here because it is not charged either.
+/// The cover is excluded here because [estimateProjectCredits] prices it
+/// separately as exactly one image-generation unit.
 int estimatedInteriorImageCount({
   required String bookType,
-  required bool imagesEnabled,
+  bool? illustrationsEnabled,
+  @Deprecated('Use illustrationsEnabled.') bool? imagesEnabled,
   required int targetPages,
 }) {
-  if (!imagesEnabled) {
+  final includeIllustrations = illustrationsEnabled ?? imagesEnabled ?? true;
+  if (!includeIllustrations) {
     return 0;
   }
   final customCap = (targetPages / 8).ceil();
@@ -632,6 +668,19 @@ int estimatedInteriorImageCount({
     return 0;
   }
   return estimated > launchCap ? launchCap : estimated;
+}
+
+/// Compact copy for places that summarize generated imagery in one phrase.
+String generatedImagesLabel({
+  required bool coverEnabled,
+  required bool illustrationsEnabled,
+}) {
+  return switch ((coverEnabled, illustrationsEnabled)) {
+    (true, true) => 'Cover + illustrations',
+    (true, false) => 'Cover only',
+    (false, true) => 'Illustrations only',
+    (false, false) => 'No generated images',
+  };
 }
 
 int _intCost(Map<String, dynamic> creditCosts, String key, int fallback) {

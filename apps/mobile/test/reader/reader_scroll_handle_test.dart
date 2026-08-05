@@ -289,6 +289,11 @@ void main() {
 
     final pill = tester.getRect(find.byType(AnimatedOpacity));
     expect(pill.width, ReaderScrollHandle.handleWidth);
+    expect(
+      pill.right,
+      tester.getRect(find.byType(Scaffold)).right,
+      reason: 'the handle must sit flush with the viewer edge',
+    );
 
     // Just left of the pill, and level with it.
     await tester.tapAt(Offset(pill.left - 8, pill.center.dy));

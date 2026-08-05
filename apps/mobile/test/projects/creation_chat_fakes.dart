@@ -496,6 +496,8 @@ class PlanProjectsRepository implements ProjectsRepository {
       status: 'generating',
       currentAction: 'Writing your book.',
       plan: approvedPlan,
+      coverEnabled: project.coverEnabled,
+      illustrationsEnabled: project.illustrationsEnabled,
     );
     status ??= projectStatusFromProject(project);
     return MobilePlanOperation(

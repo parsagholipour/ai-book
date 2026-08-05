@@ -18,11 +18,11 @@ type GenerationStep = GenerationProgressDto["steps"][number];
 type GenerationStepKey = GenerationStep["key"];
 type StepStatus = GenerationStep["status"];
 type StatusJob = ProjectStatusResult["project"]["jobs"][number];
+type GenerationImageMode = "cover" | "illustrations" | "book_images";
 
-const STEP_LABELS: Record<GenerationStepKey, string> = {
+const STEP_LABELS: Omit<Record<GenerationStepKey, string>, "illustrate"> = {
   prepare: "Preparing your chapters",
   write: "Writing your pages",
-  illustrate: "Creating your illustrations",
   finish: "Building your book"
 };
 
@@ -44,7 +44,7 @@ const ILLUSTRATE_BAND = { start: 80, end: 92 } as const;
 
 export function serializeGenerationProgress(
   status: ProjectStatusResult,
-  options: { imagesEnabled: boolean }
+  options: { coverEnabled: boolean; illustrationsEnabled: boolean }
 ): MobileProjectStatusDto["generationProgress"] {
   const projectStatus = status.project.status;
   // Planning has its own reporting, and an edit is a different story than
@@ -53,7 +53,8 @@ export function serializeGenerationProgress(
     return null;
   }
 
-  const keys: GenerationStepKey[] = options.imagesEnabled
+  const imageMode = generationImageMode(options);
+  const keys: GenerationStepKey[] = imageMode
     ? ["prepare", "write", "illustrate", "finish"]
     : ["prepare", "write", "finish"];
   const settled = projectStatus === "COMPLETE" || projectStatus === "REVIEW_REQUIRED";
@@ -61,20 +62,25 @@ export function serializeGenerationProgress(
     return {
       percent: 100,
       detail: null,
-      steps: keys.map((key) => ({ key, label: STEP_LABELS[key], status: "done", detail: settledDetail(key, status) }))
+      steps: keys.map((key) => ({
+        key,
+        label: stepLabel(key, imageMode),
+        status: "done",
+        detail: settledDetail(key, status, imageMode)
+      }))
     };
   }
 
   const phase = readPhase(status);
   const steps = keys.map((key) => ({
     key,
-    label: STEP_LABELS[key],
+    label: stepLabel(key, imageMode),
     status: stepStatus(key, phase),
-    detail: stepDetail(key, status, phase)
+    detail: stepDetail(key, status, phase, imageMode)
   }));
 
   return {
-    percent: generationProgressPercent(status, phase, options.imagesEnabled),
+    percent: generationProgressPercent(status, phase, imageMode !== null),
     detail: liveDetail(status, phase),
     steps
   };
@@ -152,7 +158,12 @@ function stepStatus(key: GenerationStepKey, phase: GenerationPhase): StepStatus 
   }
 }
 
-function stepDetail(key: GenerationStepKey, status: ProjectStatusResult, phase: GenerationPhase): string | null {
+function stepDetail(
+  key: GenerationStepKey,
+  status: ProjectStatusResult,
+  phase: GenerationPhase,
+  imageMode: GenerationImageMode | null
+): string | null {
   const pages = status.progress.pages;
   switch (key) {
     case "prepare": {
@@ -164,17 +175,22 @@ function stepDetail(key: GenerationStepKey, status: ProjectStatusResult, phase: 
     case "illustrate": {
       const done = status.progress.images;
       const outstanding = openImageJobCount(status);
+      if (!imageMode) return null;
       if (phase.imagesDone || outstanding === 0) {
-        return done > 0 ? `${done} ${done === 1 ? "illustration" : "illustrations"}` : null;
+        return settledImageDetail(done, imageMode);
       }
-      return `${done} of ${done + outstanding} illustrations`;
+      return activeImageDetail(done, outstanding, imageMode);
     }
     case "finish":
       return null;
   }
 }
 
-function settledDetail(key: GenerationStepKey, status: ProjectStatusResult): string | null {
+function settledDetail(
+  key: GenerationStepKey,
+  status: ProjectStatusResult,
+  imageMode: GenerationImageMode | null
+): string | null {
   const pages = status.progress.pages;
   switch (key) {
     case "prepare": {
@@ -185,11 +201,42 @@ function settledDetail(key: GenerationStepKey, status: ProjectStatusResult): str
       return pages.complete > 0 ? `${pages.complete} ${pages.complete === 1 ? "page" : "pages"}` : null;
     case "illustrate": {
       const done = status.progress.images;
-      return done > 0 ? `${done} ${done === 1 ? "illustration" : "illustrations"}` : null;
+      return imageMode ? settledImageDetail(done, imageMode) : null;
     }
     case "finish":
       return "PDF and EPUB ready";
   }
+}
+
+function generationImageMode(options: {
+  coverEnabled: boolean;
+  illustrationsEnabled: boolean;
+}): GenerationImageMode | null {
+  if (options.coverEnabled && options.illustrationsEnabled) return "book_images";
+  if (options.coverEnabled) return "cover";
+  if (options.illustrationsEnabled) return "illustrations";
+  return null;
+}
+
+function stepLabel(key: GenerationStepKey, imageMode: GenerationImageMode | null): string {
+  if (key !== "illustrate") return STEP_LABELS[key];
+  if (imageMode === "cover") return "Creating your cover";
+  if (imageMode === "illustrations") return "Creating your illustrations";
+  return "Creating your book images";
+}
+
+function settledImageDetail(done: number, imageMode: GenerationImageMode): string | null {
+  if (done <= 0) return null;
+  if (imageMode === "cover") return "Cover ready";
+  if (imageMode === "illustrations") return `${done} ${done === 1 ? "illustration" : "illustrations"}`;
+  return `${done} ${done === 1 ? "book image" : "book images"}`;
+}
+
+function activeImageDetail(done: number, outstanding: number, imageMode: GenerationImageMode): string | null {
+  if (imageMode === "cover") return done > 0 ? "Cover ready" : "Cover in progress";
+  const total = done + outstanding;
+  const noun = imageMode === "illustrations" ? "illustrations" : "book images";
+  return `${done} of ${total} ${noun}`;
 }
 
 /**

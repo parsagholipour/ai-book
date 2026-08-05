@@ -311,7 +311,12 @@ MobileProjectSummary _projectWithStatus(
     bookType: project.bookType,
     lengthPreset: project.lengthPreset,
     qualityPreset: project.qualityPreset,
-    imagesEnabled: project.imagesEnabled,
+    coverEnabled: status.imageSettingsReported
+        ? status.coverEnabled
+        : project.coverEnabled,
+    illustrationsEnabled: status.imageSettingsReported
+        ? status.illustrationsEnabled
+        : project.illustrationsEnabled,
     status: status.status,
     statusLabel: status.statusLabel,
     progressPercent: status.progressPercent,

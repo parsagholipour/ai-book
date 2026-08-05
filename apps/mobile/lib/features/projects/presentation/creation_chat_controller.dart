@@ -6,6 +6,7 @@ import '../data/creation_repository.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 import 'creation_labels.dart';
+import 'creation_preset_merge.dart';
 import 'pending_chat_sessions.dart';
 
 const _defaultPresets = MobileCreationPresets(
@@ -13,7 +14,8 @@ const _defaultPresets = MobileCreationPresets(
   bookTypeChoice: 'auto',
   lengthPreset: 'short',
   qualityPreset: 'balanced',
-  imagesEnabled: true,
+  coverEnabled: true,
+  illustrationsEnabled: true,
 );
 
 const _emptyReadiness = MobileCreationReadiness(
@@ -43,7 +45,15 @@ const _localGreetingTurn = MobileCreationTurn(
 );
 
 /// Keys tracked for "Your choice" badges in the live brief / advanced sheet.
-enum CreationChoice { bookType, length, finish, visuals, language, tone }
+enum CreationChoice {
+  bookType,
+  length,
+  finish,
+  cover,
+  illustrations,
+  language,
+  tone,
+}
 
 enum PendingAttachmentStatus { uploading, ready, failed }
 
@@ -1063,10 +1073,34 @@ class CreationChatController extends Notifier<CreationChatState> {
     );
   }
 
+  void setCoverEnabled(bool value) {
+    state = state.copyWith(
+      presets: state.presets.copyWith(coverEnabled: value),
+      userChoices: {...state.userChoices, CreationChoice.cover},
+    );
+  }
+
+  void setIllustrationsEnabled(bool value) {
+    state = state.copyWith(
+      presets: state.presets.copyWith(illustrationsEnabled: value),
+      userChoices: {...state.userChoices, CreationChoice.illustrations},
+    );
+  }
+
+  /// Compatibility helper for code that still treats all generated images as
+  /// one choice. New UI controls must call the independent setters above.
+  @Deprecated('Use setCoverEnabled and setIllustrationsEnabled.')
   void setImagesEnabled(bool value) {
     state = state.copyWith(
-      presets: state.presets.copyWith(imagesEnabled: value),
-      userChoices: {...state.userChoices, CreationChoice.visuals},
+      presets: state.presets.copyWith(
+        coverEnabled: value,
+        illustrationsEnabled: value,
+      ),
+      userChoices: {
+        ...state.userChoices,
+        CreationChoice.cover,
+        CreationChoice.illustrations,
+      },
     );
   }
 
@@ -1389,7 +1423,18 @@ class CreationChatController extends Notifier<CreationChatState> {
       messages: messages,
       createdProjectId: session?.createdProjectId,
       brief: turn.brief,
-      presets: _mergeUserPresets(turn.presets),
+      presets: mergeStickyCreationPresets(
+        incoming: turn.presets,
+        current: state.presets,
+        synced: _lastSyncedPresets,
+        bookTypeChosen: state.userChoices.contains(CreationChoice.bookType),
+        lengthChosen: state.userChoices.contains(CreationChoice.length),
+        finishChosen: state.userChoices.contains(CreationChoice.finish),
+        coverChosen: state.userChoices.contains(CreationChoice.cover),
+        illustrationsChosen: state.userChoices.contains(
+          CreationChoice.illustrations,
+        ),
+      ),
       detectedLane: turn.detectedLane,
       quickReplies: turn.quickReplies,
       question: turn.question,
@@ -1445,52 +1490,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     ];
   }
 
-  /// Presets from the previous server turn; used to tell chat-driven setting
-  /// changes apart from the server echoing our own sticky selections back.
   MobileCreationPresets? _lastSyncedPresets;
-
-  /// Keeps manual advanced-sheet selections sticky across AI turns, while
-  /// accepting changes the user made from chat (the server only alters a
-  /// field we sent when the chat asked for it).
-  MobileCreationPresets _mergeUserPresets(MobileCreationPresets incoming) {
-    final choices = state.userChoices;
-    if (choices.isEmpty) {
-      return incoming;
-    }
-    final current = state.presets;
-    final synced = _lastSyncedPresets;
-    bool serverChanged<T>(T Function(MobileCreationPresets presets) select) {
-      return synced != null && select(incoming) != select(synced);
-    }
-
-    final keepBookType =
-        choices.contains(CreationChoice.bookType) &&
-        !serverChanged((presets) => presets.bookTypeChoice);
-    final keepLength =
-        choices.contains(CreationChoice.length) &&
-        !serverChanged(
-          (presets) =>
-              '${presets.lengthPreset}|${presets.pageCountMode}|${presets.targetPages}',
-        );
-    final keepFinish =
-        choices.contains(CreationChoice.finish) &&
-        !serverChanged((presets) => presets.qualityPreset);
-    final keepVisuals =
-        choices.contains(CreationChoice.visuals) &&
-        !serverChanged((presets) => presets.imagesEnabled);
-    return incoming.copyWith(
-      bookType: keepBookType ? current.bookType : null,
-      bookTypeChoice: keepBookType ? current.bookTypeChoice : null,
-      lengthPreset: keepLength ? current.lengthPreset : null,
-      pageCountMode: keepLength ? current.pageCountMode : null,
-      targetPages: keepLength ? current.targetPages : incoming.targetPages,
-      pageCountSource: keepLength
-          ? current.pageCountSource
-          : incoming.pageCountSource,
-      qualityPreset: keepFinish ? current.qualityPreset : null,
-      imagesEnabled: keepVisuals ? current.imagesEnabled : null,
-    );
-  }
 }
 
 final creationChatControllerProvider =

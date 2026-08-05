@@ -57,7 +57,7 @@ void main() {
     expect(find.text('46%'), findsOneWidget);
     expect(find.text('Preparing your chapters'), findsOneWidget);
     expect(find.text('Writing your pages'), findsOneWidget);
-    expect(find.text('Creating your illustrations'), findsOneWidget);
+    expect(find.text('Creating your book images'), findsOneWidget);
     expect(find.text('Building your book'), findsOneWidget);
     expect(
       find.text('You can leave this chat — we’ll keep working.'),
@@ -110,6 +110,32 @@ void main() {
     );
 
     expect(find.text('Writing your pages'), findsOneWidget);
+    expect(find.text('Creating your illustrations'), findsNothing);
+  });
+
+  testWidgets('a cover-only book names the image step as the cover', (
+    tester,
+  ) async {
+    await _pumpChat(
+      tester,
+      status: _status(
+        coverEnabled: true,
+        illustrationsEnabled: false,
+        generationProgress: const MobileGenerationProgress(
+          percent: 70,
+          steps: [
+            MobileProjectStatusStep(
+              key: 'illustrate',
+              // Even a stale server label is made exact from the flags.
+              label: 'Creating your illustrations',
+              status: 'active',
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.text('Creating your cover'), findsOneWidget);
     expect(find.text('Creating your illustrations'), findsNothing);
   });
 
@@ -214,9 +240,8 @@ Future<void> _pumpChat(
       ),
       GoRoute(
         path: '/projects/:id',
-        builder: (context, state) => Scaffold(
-          body: Text('Book route ${state.pathParameters['id']}'),
-        ),
+        builder: (context, state) =>
+            Scaffold(body: Text('Book route ${state.pathParameters['id']}')),
       ),
     ],
   );
@@ -224,9 +249,7 @@ Future<void> _pumpChat(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        creationRepositoryProvider.overrideWithValue(
-          _StubCreationRepository(),
-        ),
+        creationRepositoryProvider.overrideWithValue(_StubCreationRepository()),
         projectsRepositoryProvider.overrideWithValue(projects),
         billingRepositoryProvider.overrideWithValue(_StubBillingRepository()),
       ],
@@ -245,6 +268,8 @@ MobileProjectStatus _status({
   int progressPercent = 38,
   String currentAction = 'Writing your book pages.',
   MobileGenerationProgress? generationProgress,
+  bool coverEnabled = true,
+  bool illustrationsEnabled = true,
 }) {
   return MobileProjectStatus(
     projectId: 'project-1',
@@ -258,6 +283,8 @@ MobileProjectStatus _status({
     pageProgress: const MobilePageProgress(completed: 3, target: 28),
     imageCount: 1,
     exports: _exports,
+    coverEnabled: coverEnabled,
+    illustrationsEnabled: illustrationsEnabled,
     updatedAt: DateTime.utc(2026, 6, 15),
   );
 }

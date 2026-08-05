@@ -49,6 +49,62 @@ describe("mobile project listing, detail and status", () => {
     await app.close();
   });
 
+  it("derives the exact cover and illustration choices from authoritative media settings", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const recordWithImages = (
+      id: string,
+      coverEnabled: boolean,
+      illustrationsEnabled: boolean,
+      staleAggregate: boolean
+    ) =>
+      projectRecord({
+        id,
+        mediaSettings: {
+          fullIllustrations: illustrationsEnabled,
+          illustrationCadence: illustrationsEnabled ? "template-driven" : "manual",
+          includeCover: coverEnabled,
+          coverTemplate: "business",
+          finalReview: true,
+          toneProfile: "neutral",
+          mobile: {
+            bookType: "lead_magnet",
+            lengthPreset: "short",
+            qualityPreset: "balanced",
+            imagesEnabled: staleAggregate
+          }
+        }
+      });
+    mockPrisma.project.findMany.mockResolvedValueOnce([
+      recordWithImages("both", true, true, false),
+      recordWithImages("cover-only", true, false, false),
+      recordWithImages("illustrations-only", false, true, false),
+      recordWithImages("neither", false, false, true)
+    ]);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(
+      response.json().projects.map((project: any) => ({
+        id: project.id,
+        coverEnabled: project.coverEnabled,
+        illustrationsEnabled: project.illustrationsEnabled,
+        imagesEnabled: project.imagesEnabled
+      }))
+    ).toEqual([
+      { id: "both", coverEnabled: true, illustrationsEnabled: true, imagesEnabled: true },
+      { id: "cover-only", coverEnabled: true, illustrationsEnabled: false, imagesEnabled: true },
+      { id: "illustrations-only", coverEnabled: false, illustrationsEnabled: true, imagesEnabled: true },
+      { id: "neither", coverEnabled: false, illustrationsEnabled: false, imagesEnabled: false }
+    ]);
+    await app.close();
+  });
+
   it("includes cover art on listed projects so the library can show a shelf", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findMany.mockResolvedValueOnce([

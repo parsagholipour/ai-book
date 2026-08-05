@@ -183,8 +183,8 @@ describe("mobile project chat book replan", () => {
     expect(proposalBody.reply.metadata.editProposal).toMatchObject({
       kind: "book_replan",
       summary: "Rebuild as a new 3-page copy without illustrations",
-      // The 12-page illustrated book quotes 851; this is the book asked for.
-      credits: 644
+      // The 12-page illustrated book quotes 896; this is the book asked for.
+      credits: 689
     });
 
     const confirm = await app.inject({
@@ -197,7 +197,7 @@ describe("mobile project chat book replan", () => {
     expect(confirm.statusCode).toBe(200);
     // Charged what was quoted: the settings have to survive the round trip
     // through the stored proposal, or Apply prices the old book again.
-    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 644 }));
+    expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 689 }));
     expect(mockPrisma.project.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

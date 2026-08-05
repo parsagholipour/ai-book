@@ -82,6 +82,10 @@ void main() {
     expect(creation.startedMessages, contains('A kids book'));
     expect(creation.sentMessages, contains('A kids book'));
     expect(find.text(reply), findsOneWidget);
+    await tester.tap(find.text('Book brief'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cover: Included'), findsOneWidget);
+    expect(find.text('Illustrations: Included'), findsOneWidget);
 
     final buildFinder = find.widgetWithText(FilledButton, 'Build the plan');
     expect(tester.widget<FilledButton>(buildFinder).onPressed, isNotNull);
@@ -132,9 +136,7 @@ void main() {
     tester,
   ) async {
     final creation = ScriptedCreationRepository(
-      sessions: [
-        chatSession(draftId: 'research-chat', title: 'Research chat'),
-      ],
+      sessions: [chatSession(draftId: 'research-chat', title: 'Research chat')],
     );
     creation.resumeMessages['research-chat'] = const [
       {
@@ -364,7 +366,8 @@ void main() {
       final expected14 = estimateProjectCredits(
         bookType: 'lead_magnet',
         qualityPreset: 'balanced',
-        imagesEnabled: true,
+        coverEnabled: true,
+        illustrationsEnabled: true,
         targetPages: 14,
         creditCosts: const {},
       );
@@ -416,7 +419,8 @@ void main() {
     int expectedCredits(int pages) => estimateProjectCredits(
       bookType: 'lead_magnet',
       qualityPreset: 'balanced',
-      imagesEnabled: true,
+      coverEnabled: true,
+      illustrationsEnabled: true,
       targetPages: pages,
       creditCosts: const {},
     );
@@ -444,6 +448,56 @@ void main() {
 
     expect(creation.buildPresets?.targetPages, 8);
     expect(creation.buildPresets?.pageCountSource, 'recommended');
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('cover and illustration choices stay independent across chat', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Advanced settings'));
+    await tester.pumpAndSettle();
+
+    final cover = find.widgetWithText(SwitchListTile, 'Cover image');
+    final illustrations = find.widgetWithText(
+      SwitchListTile,
+      'In-book illustrations',
+    );
+    expect(cover, findsOneWidget);
+    expect(illustrations, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(cover).value, isTrue);
+    expect(tester.widget<SwitchListTile>(illustrations).value, isTrue);
+
+    await tester.ensureVisible(cover);
+    await tester.tap(cover);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(cover).value, isFalse);
+    expect(tester.widget<SwitchListTile>(illustrations).value, isTrue);
+
+    final doneButton = find.widgetWithText(FilledButton, 'Done');
+    await tester.ensureVisible(doneButton);
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    // The fake server replies with the legacy all-images=true field. The
+    // manually chosen cover value must remain sticky without pinning the
+    // separate illustration setting.
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Advanced settings'));
+    await tester.pumpAndSettle();
+
+    final stickyCover = find.widgetWithText(SwitchListTile, 'Cover image');
+    final stickyIllustrations = find.widgetWithText(
+      SwitchListTile,
+      'In-book illustrations',
+    );
+    expect(tester.widget<SwitchListTile>(stickyCover).value, isFalse);
+    expect(tester.widget<SwitchListTile>(stickyIllustrations).value, isTrue);
 
     await tester.teardownScreen();
   });
@@ -548,8 +602,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
 
-    const longOption =
-        'Busy solo teachers launching their first live course';
+    const longOption = 'Busy solo teachers launching their first live course';
     final optionText = find.text(longOption);
     expect(optionText, findsOneWidget);
     expect(find.text('1.'), findsOneWidget);
@@ -2327,9 +2380,8 @@ void main() {
     tester,
   ) async {
     final sendGate = Completer<void>();
-    final creation = ScriptedCreationRepository(
-      sessions: <MobileChatSession>[],
-    )..sendGate = sendGate.future;
+    final creation = ScriptedCreationRepository(sessions: <MobileChatSession>[])
+      ..sendGate = sendGate.future;
     await tester.pumpWidget(app(creation: creation, startFresh: true));
     await tester.pumpAndSettle();
 

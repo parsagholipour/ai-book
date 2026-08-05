@@ -1,4 +1,10 @@
-import { adviseMobileBook, mobileBookAdvisorBodySchema, mobileCreationDraftPayloadSchema } from "../../mobileCreation.js";
+import {
+  adviseMobileBook,
+  mergeMobileCreationPresets,
+  mobileBookAdvisorBodySchema,
+  mobileCreationDraftPayloadSchema,
+  type MobileCreationPresetsInput
+} from "../../mobileCreation.js";
 import { serializeCreationDraft } from "../creationSessions.js";
 import { type MobileBookAdvisorResponseDto, type MobileCreationDraftResponseDto } from "../dto.js";
 import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
@@ -84,9 +90,21 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (existing.status !== "ACTIVE") {
         return sendMobileError(reply, 409, "DRAFT_NOT_ACTIVE", "This creation draft is no longer active.");
       }
+      const existingPayload = mobileCreationDraftPayloadSchema.safeParse(existing.payload);
+      const rawSelectedPresets = (request.body as { selectedPresets?: unknown } | null)?.selectedPresets;
+      const payload =
+        existingPayload.success && rawSelectedPresets && typeof rawSelectedPresets === "object" && !Array.isArray(rawSelectedPresets)
+          ? mobileCreationDraftPayloadSchema.parse({
+              ...parsed.data,
+              selectedPresets: mergeMobileCreationPresets(
+                existingPayload.data.selectedPresets,
+                rawSelectedPresets as MobileCreationPresetsInput
+              )
+            })
+          : parsed.data;
       const draft = await prisma.mobileCreationDraft.update({
         where: { id },
-        data: { payload: jsonInputValue(parsed.data) }
+        data: { payload: jsonInputValue(payload) }
       });
       return { draft: serializeCreationDraft(draft) } satisfies MobileCreationDraftResponseDto;
     }
