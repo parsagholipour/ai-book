@@ -43,12 +43,23 @@ class ReaderScrollHandle extends StatefulWidget {
   /// would strand them on the page they started on.
   final bool alwaysVisible;
 
-  /// Height of the grabbable strip. The visible pill is shorter.
+  /// Height of the pill.
+  ///
+  /// Constant on purpose: the travel below is measured against it, so a height
+  /// that grew on grab would move the track under the finger and make the book
+  /// jump at the moment the reader took hold of it.
   static const handleHeight = 48.0;
 
-  /// Width of the grabbable strip — the 44pt touch minimum, most of which is
-  /// transparent padding around the pill.
-  static const handleWidth = 44.0;
+  /// Width of the pill at rest, and while it is being held.
+  ///
+  /// The pill *is* the target — there is no transparent padding around it, so
+  /// the rest of the right edge stays page and keeps taking taps and pans.
+  /// That is why it has to be a real width rather than a hairline.
+  static const handleWidth = 16.0;
+  static const grabbedWidth = 22.0;
+
+  /// Gap between the pill and the edge of the screen.
+  static const edgeInset = 4.0;
 
   /// How long the handle stays up after the book stops moving.
   static const idleTimeout = Duration(milliseconds: 1500);
@@ -58,13 +69,20 @@ class ReaderScrollHandle extends StatefulWidget {
 }
 
 class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
+  /// Pins the pill to its own element across the bubble coming and going.
+  final _pillKey = GlobalKey();
+
   Timer? _idle;
   bool _visible = false;
   bool _dragging = false;
 
-  /// Offset between the finger and the top of the thumb when the drag started,
-  /// so the thumb does not jump to centre itself under the touch.
-  double _grabOffset = 0;
+  /// Track position minus the finger's local position when the drag started.
+  ///
+  /// Pointer events keep reporting from the gesture's original hit-test
+  /// transform even though the thumb moves between frames. Holding this origin
+  /// fixed makes each update reflect the finger's total displacement once,
+  /// instead of adding it again to the thumb's already-updated position.
+  double _dragTrackOrigin = 0;
 
   /// The page the bubble last announced, so a haptic fires once per page
   /// crossed rather than once per frame.
@@ -138,25 +156,54 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
     final duration = AppMotion.reducedMotion(context)
         ? Duration.zero
         : AppMotion.fast;
+    final width = _dragging
+        ? ReaderScrollHandle.grabbedWidth
+        : ReaderScrollHandle.handleWidth;
 
-    return Positioned(
-      right: 0,
-      top: metrics.top,
-      width: ReaderScrollHandle.handleWidth,
-      height: ReaderScrollHandle.handleHeight,
+    // Filling the viewer costs nothing: a `Stack` hit-tests its children and
+    // then reports a miss, so everywhere the pill is not stays page. The only
+    // opaque box in here is the pill itself.
+    return Positioned.fill(
       child: IgnorePointer(
         ignoring: !visible,
-        child: AnimatedOpacity(
-          opacity: visible ? 1 : 0,
-          duration: duration,
-          curve: AppMotion.standard,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onVerticalDragStart: (details) => _onDragStart(details, metrics),
-            onVerticalDragUpdate: (details) => _onDragUpdate(details, metrics),
-            onVerticalDragEnd: (_) => _onDragEnd(),
-            child: _pill(context),
-          ),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // The pill is first and keyed so that the bubble appearing beside
+            // it cannot take its slot. Without that, taking hold of the handle
+            // rebuilds the gesture detector from scratch, its recognizer is
+            // disposed mid-drag, and the end of the drag is never reported —
+            // leaving the handle stuck in its grabbed state.
+            Positioned(
+              key: _pillKey,
+              right: ReaderScrollHandle.edgeInset,
+              top: metrics.top,
+              width: width,
+              height: ReaderScrollHandle.handleHeight,
+              child: AnimatedOpacity(
+                opacity: visible ? 1 : 0,
+                duration: duration,
+                curve: AppMotion.standard,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragStart: (details) =>
+                      _onDragStart(details, metrics),
+                  onVerticalDragUpdate: (details) =>
+                      _onDragUpdate(details, metrics),
+                  onVerticalDragEnd: (_) => _onDragEnd(),
+                  onVerticalDragCancel: _releaseDrag,
+                  child: _pill(context),
+                ),
+              ),
+            ),
+            if (_dragging)
+              Positioned(
+                right: ReaderScrollHandle.edgeInset + width + 8,
+                top: metrics.top,
+                height: ReaderScrollHandle.handleHeight,
+                child: Center(child: IgnorePointer(child: _bubble(context))),
+              ),
+          ],
         ),
       ),
     );
@@ -166,31 +213,25 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
     final colors = Theme.of(context).colorScheme;
     return Semantics(
       label: 'Scroll through the book',
-      value: 'Page ${widget.controller.pageNumber ?? 1} of '
+      value:
+          'Page ${widget.controller.pageNumber ?? 1} of '
           '${widget.controller.pageCount}',
       slider: true,
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.centerRight,
-        children: [
-          if (_dragging) _bubble(context),
-          Padding(
-            padding: const EdgeInsets.only(right: 3),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Container(
-                width: _dragging ? 7 : 5,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _dragging
-                      ? colors.primary
-                      : colors.onSurfaceVariant.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(TomezaRadii.chip),
-                ),
-              ),
-            ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: _dragging
+              ? colors.primary
+              : colors.onSurfaceVariant.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(TomezaRadii.chip),
+          border: Border.all(color: colors.surface.withValues(alpha: 0.7)),
+        ),
+        child: Center(
+          child: Icon(
+            Icons.drag_indicator,
+            size: 14,
+            color: _dragging ? colors.onPrimary : colors.surface,
           ),
-        ],
+        ),
       ),
     );
   }
@@ -204,38 +245,35 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
     final colors = theme.colorScheme;
     final page = widget.controller.pageNumber ?? 1;
     final chapter = widget.chapterFor(page);
-    return Positioned(
-      right: ReaderScrollHandle.handleWidth - 4,
-      child: Material(
-        color: colors.inverseSurface,
-        elevation: 3,
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (chapter != null)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 200),
-                  child: Text(
-                    chapter,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: colors.onInverseSurface,
-                    ),
+    return Material(
+      color: colors.inverseSurface,
+      elevation: 3,
+      borderRadius: BorderRadius.circular(TomezaRadii.control),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (chapter != null)
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 200),
+                child: Text(
+                  chapter,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onInverseSurface,
                   ),
                 ),
-              Text(
-                'Page $page of ${widget.controller.pageCount}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: colors.onInverseSurface.withValues(alpha: 0.75),
-                ),
               ),
-            ],
-          ),
+            Text(
+              'Page $page of ${widget.controller.pageCount}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colors.onInverseSurface.withValues(alpha: 0.75),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -244,7 +282,9 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
   // ------------------------------------------------------------------ gesture
 
   void _onDragStart(DragStartDetails details, _HandleMetrics metrics) {
-    _grabOffset = details.localPosition.dy;
+    // Keep one fixed origin for the whole gesture. The pill's height does not
+    // change on grab, so taking hold also leaves the track under the finger.
+    _dragTrackOrigin = metrics.top - details.localPosition.dy;
     _announcedPage = widget.controller.pageNumber;
     setState(() => _dragging = true);
     _show();
@@ -252,9 +292,7 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
   }
 
   void _onDragUpdate(DragUpdateDetails details, _HandleMetrics metrics) {
-    // localPosition is relative to the thumb, which has already moved to follow
-    // the last frame — adding the top back gives a position in the track.
-    final trackY = metrics.top + details.localPosition.dy - _grabOffset;
+    final trackY = _dragTrackOrigin + details.localPosition.dy;
     _scrollTo(trackY / metrics.travel, metrics);
     _show();
 
@@ -266,9 +304,15 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
   }
 
   void _onDragEnd() {
+    _releaseDrag();
+    AppHaptics.selection();
+  }
+
+  /// Lets go without the confirming tick, for a drag the arena took away.
+  void _releaseDrag() {
+    if (!_dragging) return;
     setState(() => _dragging = false);
     _show();
-    AppHaptics.selection();
   }
 
   void _scrollTo(double fraction, _HandleMetrics metrics) {

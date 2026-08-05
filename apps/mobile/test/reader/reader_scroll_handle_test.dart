@@ -75,13 +75,20 @@ Future<void> pumpHandle(
   FakeViewerController controller, {
   bool alwaysVisible = false,
   String? Function(int page)? chapterFor,
+  VoidCallback? onPageTap,
 }) {
   return tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
         body: Stack(
           children: [
-            const SizedBox.expand(),
+            // Stands in for the viewer: everything the handle does not claim
+            // has to reach it.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onPageTap ?? () {},
+              child: const SizedBox.expand(),
+            ),
             ReaderScrollHandle(
               controller: controller,
               chapterFor: chapterFor ?? (_) => null,
@@ -99,6 +106,33 @@ double _opacity(WidgetTester tester) =>
 
 double _top(WidgetTester tester) =>
     tester.getTopLeft(find.byType(AnimatedOpacity)).dy;
+
+Future<TestGesture> _startRecognizedDrag(WidgetTester tester) async {
+  final gesture = await tester.startGesture(
+    tester.getCenter(find.byType(AnimatedOpacity)),
+  );
+  // Cross touch slop first so subsequent update counts can be compared without
+  // gesture recognition changing between the single- and multi-event cases.
+  await gesture.moveBy(const Offset(0, 25));
+  await tester.pump();
+  return gesture;
+}
+
+Future<double> _dragInSteps(
+  WidgetTester tester,
+  FakeViewerController controller,
+  List<double> steps,
+) async {
+  await pumpHandle(tester, controller, alwaysVisible: true);
+  final gesture = await _startRecognizedDrag(tester);
+  for (final step in steps) {
+    await gesture.moveBy(Offset(0, step));
+    await tester.pump();
+  }
+  await gesture.up();
+  await tester.pumpAndSettle();
+  return controller.value.y;
+}
 
 void main() {
   testWidgets('draws nothing until the viewer is ready', (tester) async {
@@ -139,6 +173,125 @@ void main() {
 
     // 100px down a 552px track is 18% of a 2400px scroll range.
     expect(controller.value.y, closeTo(-435, 25));
+  });
+
+  testWidgets('multi-event drag stays linear from a nonzero position', (
+    tester,
+  ) async {
+    final controller = FakeViewerController();
+    controller.value = Matrix4.identity()..y = -600;
+    await pumpHandle(tester, controller, alwaysVisible: true);
+
+    final gesture = await _startRecognizedDrag(tester);
+    // The 25px touch-slop crossing is itself a drag update, moving the handle
+    // from its 138px starting point to 163px.
+    const startTop = 163.0;
+    expect(_top(tester), closeTo(startTop, 1));
+
+    for (var step = 1; step <= 5; step++) {
+      await gesture.moveBy(const Offset(0, 20));
+      await tester.pump();
+      expect(_top(tester), closeTo(startTop + step * 20, 1));
+    }
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    // The recognized 25px plus five 20px updates advance 125 / 552 of the
+    // 2400px scroll range from the initial 600px document offset.
+    expect(controller.value.y, closeTo(-1143.48, 1));
+  });
+
+  testWidgets('drag result depends on distance, not update count', (
+    tester,
+  ) async {
+    final singleUpdate = FakeViewerController();
+    singleUpdate.value = Matrix4.identity()..y = -600;
+    final singleResult = await _dragInSteps(tester, singleUpdate, const [100]);
+
+    final manyUpdates = FakeViewerController();
+    manyUpdates.value = Matrix4.identity()..y = -600;
+    final segmentedResult = await _dragInSteps(tester, manyUpdates, const [
+      20,
+      20,
+      20,
+      20,
+      20,
+    ]);
+
+    expect(segmentedResult, closeTo(singleResult, 0.01));
+    expect(segmentedResult, closeTo(-1143.48, 1));
+  });
+
+  testWidgets('drag clamps at the beginning and end of the book', (
+    tester,
+  ) async {
+    final towardStart = FakeViewerController();
+    towardStart.value = Matrix4.identity()..y = -600;
+    expect(
+      await _dragInSteps(tester, towardStart, const [-1000]),
+      closeTo(0, 0.01),
+    );
+
+    final towardEnd = FakeViewerController();
+    towardEnd.value = Matrix4.identity()..y = -600;
+    expect(
+      await _dragInSteps(tester, towardEnd, const [1000]),
+      closeTo(-2400, 0.01),
+    );
+  });
+
+  testWidgets('claims the pill and nothing else on the right edge', (
+    tester,
+  ) async {
+    // The pill used to sit inside a 44px transparent strip that swallowed
+    // every tap and pan landing near it. Only the pill may be grabbable.
+    final controller = FakeViewerController();
+    var pageTaps = 0;
+    await pumpHandle(
+      tester,
+      controller,
+      alwaysVisible: true,
+      onPageTap: () => pageTaps++,
+    );
+
+    final pill = tester.getRect(find.byType(AnimatedOpacity));
+    expect(pill.width, ReaderScrollHandle.handleWidth);
+
+    // Just left of the pill, and level with it.
+    await tester.tapAt(Offset(pill.left - 8, pill.center.dy));
+    // Below it, where the pill is not.
+    await tester.tapAt(Offset(pill.center.dx, pill.bottom + 60));
+    await tester.pumpAndSettle();
+
+    expect(pageTaps, 2);
+    expect(controller.value.y, 0, reason: 'neither tap moved the book');
+  });
+
+  testWidgets('thickens while it is held', (tester) async {
+    final controller = FakeViewerController();
+    await pumpHandle(tester, controller, alwaysVisible: true);
+    expect(
+      tester.getSize(find.byType(AnimatedOpacity)).width,
+      ReaderScrollHandle.handleWidth,
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(AnimatedOpacity)),
+    );
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump();
+
+    expect(
+      tester.getSize(find.byType(AnimatedOpacity)).width,
+      ReaderScrollHandle.grabbedWidth,
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(AnimatedOpacity)).width,
+      ReaderScrollHandle.handleWidth,
+    );
   });
 
   testWidgets('stays out of the way until the book moves', (tester) async {

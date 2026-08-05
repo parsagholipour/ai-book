@@ -4,6 +4,7 @@ import {
   adviseMobileBook,
   attachmentContextForTurn,
   briefForMobilePayload,
+  chatSettingChangesFromMessage,
   composeMobileProjectPrompt,
   detectMessageLanguage,
   deterministicAdvisor,
@@ -238,11 +239,25 @@ describe("runCreationTurn", () => {
     expect(detectMessageLanguage("یک کتاب داستان برای کودکان درباره دوستی")).toBe("fa");
     expect(detectMessageLanguage("Сказка на ночь для детей")).toBe("ru");
     expect(detectMessageLanguage("A bedtime story about a fox")).toBeUndefined();
+    expect(detectMessageLanguage("write the book in Persian please")).toBe("fa");
 
     const turn = deterministicCreationTurn({
       messages: [{ role: "user", content: "یک کتاب داستان برای کودکان درباره دوستی و مهربانی" }]
     });
     expect(turn.language).toBe("fa");
+  });
+
+  // An English chat about a foreign-language subject is still an English book.
+  it("does not set a book language from a topic that names one", () => {
+    expect(detectMessageLanguage("Just write a book about aliens in Chinese media")).toBeUndefined();
+    expect(chatSettingChangesFromMessage("Just write a book about aliens in Chinese media").language)
+      .toBeUndefined();
+
+    const turn = deterministicCreationTurn({
+      messages: [{ role: "user", content: "Just write a book about aliens in Chinese media" }]
+    });
+    expect(turn.language).toBeUndefined();
+    expect(turn.assistantMessage).not.toMatch(/in Chinese/i);
   });
 
   it("answers capability questions without derailing the brief", () => {

@@ -1,4 +1,9 @@
-import { normalizeProjectLanguage } from "@book-maker/core";
+import {
+  LANGUAGE_CLAUSE_END_GUARD,
+  LANGUAGE_NAME_CODES,
+  languageNamePattern,
+  normalizeProjectLanguage
+} from "@book-maker/core";
 import type {
   BookEditPageContext,
   BookEditReplacement,
@@ -160,51 +165,25 @@ export function pageIndexesMatchingText(text: string, pages: BookEditPageContext
     .sort((a, b) => a - b);
 }
 
-const targetLanguageAliases: Record<string, string> = {
-  english: "en",
-  spanish: "es",
-  french: "fr",
-  german: "de",
-  italian: "it",
-  portuguese: "pt",
-  dutch: "nl",
-  turkish: "tr",
-  russian: "ru",
-  arabic: "ar",
-  farsi: "fa",
-  persian: "fa",
-  hindi: "hi",
-  chinese: "zh",
-  mandarin: "zh",
-  japanese: "ja",
-  korean: "ko",
-  hebrew: "he",
-  greek: "el",
-  thai: "th",
-  swedish: "sv",
-  norwegian: "no",
-  danish: "da",
-  polish: "pl",
-  ukrainian: "uk"
-};
-
-const targetLanguageNamePattern = Object.keys(targetLanguageAliases)
-  .sort((a, b) => b.length - a.length)
-  .map(escapeRegExp)
-  .join("|");
+const targetLanguageNamePattern = languageNamePattern();
 
 export function targetLanguageFromLanguageVersionRequest(message: string): string | null {
+  // Patterns that end on a bare "<verb> ... in <Lang>" carry the clause-end
+  // guard, or they read a topic as a language: "make chapter 2 about how aliens
+  // are portrayed in Chinese media" would otherwise replan the book in Chinese.
+  // The others already require "version/copy/edition/translation" or the literal
+  // word "language", so they are precise on their own.
   const patterns = [
     new RegExp(
       `\\b(?:generate|create|make|regenerate|rewrite|translate|convert|build|produce)\\b.{0,100}\\b(${targetLanguageNamePattern})\\s+(?:version|copy|edition|translation)\\b`,
       "iu"
     ),
     new RegExp(
-      `\\b(?:generate|create|make|regenerate|rewrite|translate|convert|build|produce)\\b.{0,100}\\b(?:in|to|into)\\s+(${targetLanguageNamePattern})\\b`,
+      `\\b(?:generate|create|make|regenerate|rewrite|translate|convert|build|produce)\\b.{0,100}\\b(?:in|to|into)\\s+(${targetLanguageNamePattern})${LANGUAGE_CLAUSE_END_GUARD}`,
       "iu"
     ),
     new RegExp(
-      `\\b(?:translate|convert|rewrite|regenerate)\\b.{0,100}\\b(?:to|into|in)\\s+(${targetLanguageNamePattern})\\b`,
+      `\\b(?:translate|convert|rewrite|regenerate)\\b.{0,100}\\b(?:to|into|in)\\s+(${targetLanguageNamePattern})${LANGUAGE_CLAUSE_END_GUARD}`,
       "iu"
     ),
     new RegExp(
@@ -220,7 +199,7 @@ export function targetLanguageFromLanguageVersionRequest(message: string): strin
   for (const pattern of patterns) {
     const match = message.match(pattern);
     const rawLanguage = match?.[1]?.toLowerCase();
-    const alias = rawLanguage ? targetLanguageAliases[rawLanguage] : undefined;
+    const alias = rawLanguage ? LANGUAGE_NAME_CODES[rawLanguage] : undefined;
     if (alias) {
       return normalizeProjectLanguage(alias);
     }
@@ -230,10 +209,6 @@ export function targetLanguageFromLanguageVersionRequest(message: string): strin
 
 export function languageDisplayName(language: string | null): string {
   return language === "en" ? "English" : language ?? "translated";
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
