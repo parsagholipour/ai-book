@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../projects/presentation/project_chat_screen.dart';
 import '../domain/reader_models.dart';
@@ -72,7 +73,9 @@ Future<void> runReaderSelectionAction({
     case ReaderSelectionAction.copy:
       await Clipboard.setData(ClipboardData(text: selection.text));
       AppHaptics.tap();
-      messenger.showSnackBar(const SnackBar(content: Text('Passage copied.')));
+      messenger.showAppSnackBar(
+        const SnackBar(content: Text('Passage copied.')),
+      );
 
     case ReaderSelectionAction.share:
       await SharePlus.instance.share(ShareParams(text: selection.text));

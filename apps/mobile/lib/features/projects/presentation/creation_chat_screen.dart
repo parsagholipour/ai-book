@@ -17,6 +17,7 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/easy_drawer_open.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
@@ -169,7 +170,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(error)));
+      ).showAppSnackBar(SnackBar(content: Text(error)));
       ref.read(creationChatControllerProvider.notifier).clearError();
     });
     // "Ok, build it" from chat starts the same preflight/build flow as the
@@ -506,7 +507,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       }
       _refreshOutput(operation.projectId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showAppSnackBar(
         SnackBar(
           content: Text(
             submittedText == null || submittedText.isEmpty
@@ -541,7 +542,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       setState(() => _planBusyAction = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -606,7 +607,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         if (!mounted) return;
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+        ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
         return;
       }
       if (!mounted) return;
@@ -936,7 +937,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
           );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showAppSnackBar(
         SnackBar(
           content: Text(
             source == ImageSource.camera
@@ -1022,7 +1023,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ).showAppSnackBar(SnackBar(content: Text(message)));
   }
 
   void _startProjectMessageEdit(MobileProjectChatMessage message) {
@@ -1066,7 +1067,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       setState(() => _projectChatBranchSwitching = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -1129,12 +1130,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      ).showAppSnackBar(SnackBar(content: Text(error.message)));
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+        ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
       }
     }
   }
@@ -1192,7 +1193,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       setState(() => _planBusyAction = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -1220,7 +1221,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     ref.invalidate(billingProvider);
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(operation.currentAction)));
+    ).showAppSnackBar(SnackBar(content: Text(operation.currentAction)));
   }
 
   void _onPlanQuestionSelect(

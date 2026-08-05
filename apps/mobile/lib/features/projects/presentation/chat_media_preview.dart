@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_client.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../data/projects_repository.dart';
 
 /// Fullscreen photo preview with pinch-zoom and a close control.
@@ -57,7 +58,7 @@ Future<void> openChatAttachment({
       remoteUrl: remoteUrl,
     );
     if (path == null) {
-      messenger.showSnackBar(
+      messenger.showAppSnackBar(
         const SnackBar(content: Text('This file is no longer available.')),
       );
       return;
@@ -71,7 +72,7 @@ Future<void> openChatAttachment({
       ),
     );
   } catch (error) {
-    messenger.showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
   }
 }
 

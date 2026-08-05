@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../shared/ui/feedback/app_snack_bar.dart';
+
 enum _MessageAction { copy, edit }
 
 Future<void> showMessageActionsMenu({
@@ -56,5 +58,5 @@ Future<void> showMessageActionsMenu({
 
   ScaffoldMessenger.of(
     context,
-  ).showSnackBar(const SnackBar(content: Text('Message copied')));
+  ).showAppSnackBar(const SnackBar(content: Text('Message copied')));
 }

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
@@ -376,7 +377,7 @@ class _PendingChatTile extends StatelessWidget {
     if (draftId == null) {
       // The session does not exist server-side until the first turn finishes,
       // so there is nothing to navigate to yet.
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showAppSnackBar(
         const SnackBar(
           content: Text(
             'Still creating this chat — it will be ready in a moment.',
@@ -549,7 +550,7 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
       ref.invalidate(chatSessionsProvider);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showAppSnackBar(
           const SnackBar(content: Text('Could not rename the chat.')),
         );
       }
@@ -592,7 +593,7 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
       ref.invalidate(chatSessionsProvider);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showAppSnackBar(
           const SnackBar(content: Text('Could not delete the chat.')),
         );
       }

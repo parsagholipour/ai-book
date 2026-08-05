@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import 'auth_controller.dart';
 
 enum AuthScreenMode { signIn, signUp }
@@ -45,7 +46,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       if (error != null && mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+        ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
       }
     });
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../data/reader_pdf_page_text.dart';
 import '../domain/reader_annotation.dart';
@@ -201,7 +202,8 @@ class ReaderMarkupActions {
       annotation: annotation,
       palette: palette,
       editingEnabled: editingEnabled,
-      onColorChanged: (index) => controller.replace(annotation.recolored(index)),
+      onColorChanged: (index) =>
+          controller.replace(annotation.recolored(index)),
     );
     if (command == null || !isMounted()) return;
 
@@ -342,6 +344,6 @@ class ReaderMarkupActions {
     if (!isMounted()) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(message), action: action));
+    ).showAppSnackBar(SnackBar(content: Text(message), action: action));
   }
 }

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../../voice/presentation/character_cast_sheet.dart';
@@ -523,7 +524,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       if (result.operation != null && !result.operation!.isPlanRevision) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showAppSnackBar(
           SnackBar(content: Text(result.operation!.currentAction)),
         );
       }
@@ -596,7 +597,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       });
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       if (result.operation != null && !result.operation!.isPlanRevision) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showAppSnackBar(
           SnackBar(content: Text(result.operation!.currentAction)),
         );
       }
@@ -605,7 +606,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       setState(() => _editing = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -631,7 +632,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       setState(() => _switchingBranch = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -649,7 +650,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
           );
         });
       }
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showAppSnackBar(
         SnackBar(
           content: Text(
             submittedText == null || submittedText.isEmpty
@@ -678,7 +679,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       setState(() => _retryingOperationId = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -712,7 +713,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       setState(() => _sending = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -741,7 +742,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       setState(() => _sending = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -763,7 +764,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       setState(() => _undoing = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -873,7 +874,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       setState(() => _loadingEarlier = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 }

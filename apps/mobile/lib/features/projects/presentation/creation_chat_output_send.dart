@@ -89,7 +89,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
         // Plan revision already surfaces in the transcript and plan footer;
         // a toast would just duplicate that.
         if (!result.operation!.isPlanRevision) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          ScaffoldMessenger.of(context).showAppSnackBar(
             SnackBar(content: Text(result.operation!.displayAction)),
           );
         }
@@ -168,7 +168,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       setState(() => _projectChatSending = false);
       if (result.operation != null) {
         _startPlanPoll();
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showAppSnackBar(
           SnackBar(content: Text(result.operation!.displayAction)),
         );
       }
@@ -177,7 +177,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       setState(() => _projectChatSending = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -209,7 +209,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       setState(() => _projectChatSending = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -230,7 +230,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       setState(() => _projectChatSending = false);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 }

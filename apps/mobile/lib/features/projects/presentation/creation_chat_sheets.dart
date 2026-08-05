@@ -18,7 +18,7 @@ extension _CreationChatSheets on _CreationChatScreenState {
     if (saved != null) {
       ref.read(creationChatControllerProvider.notifier).setSourceNotes(saved);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context).showAppSnackBar(
           SnackBar(
             content: Text(
               saved.trim().isEmpty
@@ -419,7 +419,8 @@ String _visualsSubtitle(
   if (!enabled) {
     return 'Text-first project with no planned visuals.';
   }
-  final base = 'Cover plus up to ${visualLimitFor(bookType)} supporting visuals.';
+  final base =
+      'Cover plus up to ${visualLimitFor(bookType)} supporting visuals.';
   if (quota == null) {
     return base;
   }

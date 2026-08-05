@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
@@ -91,7 +92,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showAppSnackBar(
         SnackBar(
           content: Text(
             receipt.status == 'pending'
@@ -106,7 +107,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     } finally {
       if (mounted) {
         setState(() => _requestingDeletion = false);
@@ -623,7 +624,7 @@ class _SettingsRow extends StatelessWidget {
     if (!opened && context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Could not open $value.')));
+      ).showAppSnackBar(SnackBar(content: Text('Could not open $value.')));
     }
   }
 }

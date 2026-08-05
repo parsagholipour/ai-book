@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../billing/data/billing_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
@@ -142,7 +143,7 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
     if (edits.any(
       (edit) => edit.title.isEmpty || edit.markdown.trim().isEmpty,
     )) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showAppSnackBar(
         const SnackBar(
           content: Text('Every edited page needs a title and some text.'),
         ),
@@ -181,7 +182,7 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
       ref.invalidate(billingProvider);
       if (!mounted) return;
       Navigator.of(context).pop(true);
-      messenger.showSnackBar(
+      messenger.showAppSnackBar(
         const SnackBar(
           content: Text('Saved. The exports are refreshing with your changes.'),
         ),
@@ -195,7 +196,9 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
         await _showConflictDialog();
         return;
       }
-      messenger.showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      messenger.showAppSnackBar(
+        SnackBar(content: Text(userFacingError(error))),
+      );
     }
   }
 

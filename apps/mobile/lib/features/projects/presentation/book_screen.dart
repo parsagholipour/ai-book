@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
@@ -160,7 +161,9 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       onEditFailedRequest: failedRevision?.submittedText == null
           ? null
           : () => _restoreFailedRevision(failedRevision!),
-      onDeleteProject: project == null ? null : () => _confirmAndDelete(project),
+      onDeleteProject: project == null
+          ? null
+          : () => _confirmAndDelete(project),
       onOpen: _exportAndOpen,
       onDownload: _exportAndDownload,
       onOpenPaywall: _openExportPaywall,
@@ -325,7 +328,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       _watchNewWork();
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(operation.currentAction)));
+      ).showAppSnackBar(SnackBar(content: Text(operation.currentAction)));
     } catch (error) {
       if (!mounted) {
         return;
@@ -333,7 +336,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       setState(() => _busyAction = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -361,7 +364,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
     _watchNewWork();
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(operation.currentAction)));
+    ).showAppSnackBar(SnackBar(content: Text(operation.currentAction)));
   }
 
   Future<void> _resumeGeneration() async {
@@ -377,7 +380,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       setState(() => _busyAction = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(recovery.currentAction)));
+      ).showAppSnackBar(SnackBar(content: Text(recovery.currentAction)));
     } catch (error) {
       if (!mounted) {
         return;
@@ -385,7 +388,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       setState(() => _busyAction = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -418,7 +421,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       context.go('/home');
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Deleted ${project.title}.')));
+      ).showAppSnackBar(SnackBar(content: Text('Deleted ${project.title}.')));
     } catch (error) {
       if (!mounted) {
         return;
@@ -426,7 +429,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       setState(() => _busyAction = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 
@@ -523,9 +526,9 @@ class _BookScreenState extends ConsumerState<BookScreen> {
         return;
       }
       setState(() => _busyAction = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Report sent for review.')));
+      ScaffoldMessenger.of(context).showAppSnackBar(
+        const SnackBar(content: Text('Report sent for review.')),
+      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -533,7 +536,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       setState(() => _busyAction = null);
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(userFacingError(error))));
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
     }
   }
 }

@@ -4,6 +4,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
@@ -125,7 +126,7 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
       if (mounted && request == _previewRequest) {
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
-          ..showSnackBar(
+          ..showAppSnackBar(
             SnackBar(
               content: Text(
                 "${voice.name}'s preview could not be played. Please try again.",
@@ -168,7 +169,7 @@ class _NarratorPickerSheetState extends ConsumerState<_NarratorPickerSheet> {
     setState(() => _starting = false);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(failure)));
+      ..showAppSnackBar(SnackBar(content: Text(failure)));
   }
 
   @override

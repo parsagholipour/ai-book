@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import 'voice_call_controller.dart';
 
@@ -105,7 +106,9 @@ Future<void> downloadCallRecording({
   }
 
   try {
-    final file = await ref.read(voiceCallControllerProvider.notifier).exportRecording();
+    final file = await ref
+        .read(voiceCallControllerProvider.notifier)
+        .exportRecording();
     if (file == null) {
       return;
     }
@@ -123,6 +126,6 @@ Future<void> downloadCallRecording({
     AppHaptics.success();
   } catch (error) {
     AppHaptics.error();
-    messenger.showSnackBar(SnackBar(content: Text(userFacingError(error))));
+    messenger.showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
   }
 }
