@@ -14,6 +14,7 @@ import {
   pageIndexesMatchingText,
   quotedTexts,
   replacementTermsFromMessage,
+  replanSettingsFromEditMessage,
   showContentTargetFromMessage,
   targetLanguageFromLanguageVersionRequest
 } from "./bookEditMessage.js";
@@ -141,7 +142,13 @@ export function classifyWithDegradedHeuristics(
   const contentTarget = showContentTargetFromMessage(message);
   const undoRequest = isUndoRequestMessage(message);
   const chapterRegen = chapterRegenerateFromMessage(message);
+  // A new length or a decision about pictures can only be honoured by replanning
+  // — a page rewrite cannot change how many pages there are — so naming either
+  // one is structural on its own, whatever verb the request used.
+  const replanSettings = replanSettingsFromEditMessage(message);
   const structural =
+    replanSettings?.targetPages !== undefined ||
+    replanSettings?.fullIllustrations !== undefined ||
     /\b(add|remove|delete|new)\s+(a\s+)?(chapter|section|page)\b/i.test(message) ||
     /\b(change|switch|replace|swap|turn|make|move|reorder|restructure)\b.{0,80}\b(audience|premise|book type|length|structure|outline|plan|ending|title|cover|visual identity|illustration style)\b/i.test(
       message
@@ -332,7 +339,8 @@ export function classifyWithDegradedHeuristics(
       scope: "all_pages",
       impact: "structural_replan",
       clarification: "none",
-      targetLanguage
+      targetLanguage,
+      ...(replanSettings ? { replanSettings } : {})
     };
   }
 
@@ -345,7 +353,8 @@ export function classifyWithDegradedHeuristics(
       assistantMessage: "I’ll rebuild the plan and regenerate the book around that change.",
       scope: broadScope ? "all_pages" : explicitScope,
       impact: "structural_replan",
-      clarification: "none"
+      clarification: "none",
+      ...(replanSettings ? { replanSettings } : {})
     };
   }
 
@@ -408,7 +417,8 @@ export function classifyWithDegradedHeuristics(
         assistantMessage: "I’ll rebuild the plan and regenerate the book around that change.",
         scope: broadScope ? "all_pages" : explicitScope,
         impact: "structural_replan",
-        clarification: "none"
+        clarification: "none",
+        ...(replanSettings ? { replanSettings } : {})
       };
     }
     if (broadScope) {

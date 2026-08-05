@@ -597,6 +597,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _planQuestionAnswers = {};
   }
 
+  @override
   Future<void> _openReplanCopy(String projectId) async {
     final controller = ref.read(creationChatControllerProvider.notifier);
     var state = ref.read(creationChatControllerProvider);

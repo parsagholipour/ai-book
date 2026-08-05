@@ -708,6 +708,13 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
       ref.invalidate(projectStatusProvider(widget.projectId));
       ref.invalidate(billingProvider);
       _scrollToBottomSoon();
+      // A replan builds the rebuilt book somewhere else and leaves this one
+      // untouched. Staying here shows the unchanged book, which reads as the
+      // edit having done nothing at all.
+      final replanCopyId = result.reply.replanCopyTargetProjectId;
+      if (replanCopyId != null && replanCopyId != widget.projectId) {
+        context.push('/projects/$replanCopyId/chat');
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() => _sending = false);

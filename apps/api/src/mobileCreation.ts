@@ -3,6 +3,7 @@ import {
   creationAttachmentKindSchema,
   creationAttachmentSchema,
   explicitLanguageRequest,
+  explicitTargetPagesFromText,
   generateJsonWithRetry,
   LANGUAGE_NAME_CODES,
   runToolLoop,
@@ -334,20 +335,7 @@ export function deterministicAdvisor(payload: MobileCreationDraftPayload): Mobil
 }
 
 export function explicitTargetPagesForMobilePayload(payload: MobileCreationDraftPayload): number | undefined {
-  const normalized = normalizePayload(payload);
-  const searchText = pageCountSearchText(normalized);
-  const matches = [
-    ...capturePageCounts(searchText, /\b(\d{1,3})\s*[- ]?\s*(?:page|pages|pg|pgs)\s*(?:book|ebook|story|guide|workbook|project|plan)?\b/gi),
-    ...capturePageCounts(searchText, /\b(?:make|create|write|build|draft|set|keep|turn)\s+(?:it|this|the\s+book|the\s+story|the\s+guide)?\s*(?:to|at|as)?\s*(\d{1,3})\s*(?:page|pages|pg|pgs)\b/gi),
-    ...capturePageCounts(searchText, /\b(?:page|pages|pg|pgs)\s*(?:count|length)?\s*(?:is|=|:|to|should\s+be)?\s*(\d{1,3})\b/gi)
-  ];
-  for (const value of matches.reverse()) {
-    const parsed = mobileTargetPagesSchema.safeParse(value);
-    if (parsed.success) {
-      return parsed.data;
-    }
-  }
-  return undefined;
+  return explicitTargetPagesFromText(pageCountSearchText(normalizePayload(payload)));
 }
 
 export async function enrichAdvisorWithAi(
@@ -2158,17 +2146,6 @@ function pageCountSearchText(payload: MobileCreationDraftPayload): string {
     .filter(Boolean)
     .join("\n")
     .slice(-6000);
-}
-
-function capturePageCounts(text: string, pattern: RegExp): number[] {
-  const matches: number[] = [];
-  for (const match of text.matchAll(pattern)) {
-    const value = Number.parseInt(match[1] ?? "", 10);
-    if (Number.isFinite(value)) {
-      matches.push(value);
-    }
-  }
-  return matches;
 }
 
 function audienceFor(rawIdea: string, lane: MobileCreationLane): string {

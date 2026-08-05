@@ -1,8 +1,11 @@
 import {
+  explicitTargetPagesFromText,
   LANGUAGE_CLAUSE_END_GUARD,
   LANGUAGE_NAME_CODES,
   languageNamePattern,
-  normalizeProjectLanguage
+  normalizeProjectLanguage,
+  replanSettingsFromMessage,
+  type ReplanSettings
 } from "@book-maker/core";
 import type {
   BookEditPageContext,
@@ -276,6 +279,50 @@ export function chapterRegenerateFromMessage(message: string): number | null {
   }
   const index = Number(match[1]);
   return Number.isInteger(index) && index > 0 ? index : null;
+}
+
+/**
+ * The book length a replan request asks for.
+ *
+ * Guarded against page *references*: "rewrite pages 3-5" and "make it 3 pages"
+ * overlap on the bare form `pages 3`, and reading a reference as a length would
+ * resize the whole book to the page someone wanted edited. A reference puts the
+ * word before the number, a length puts it after, so a message containing the
+ * former names no length at all.
+ */
+export function replanTargetPagesFromMessage(message: string): number | undefined {
+  if (/\bpages?\s+\d{1,3}\b/i.test(message)) {
+    return undefined;
+  }
+  return explicitTargetPagesFromText(message);
+}
+
+/**
+ * The generation settings a replan request named, from the router's structured
+ * answer where it gave one and from the message otherwise.
+ *
+ * Both classifiers read it through here so a router timeout resolves the same
+ * settings the model would have, and so the quote the user approves and the
+ * charge that follows can never be computed from different readings.
+ *
+ * The message can only turn pictures *off* — there is no positive regex — but an
+ * explicit `illustrations` from the model carries either direction, which is
+ * safe because the resolved settings are what gets priced on the proposal card
+ * before anything is reserved.
+ */
+export function replanSettingsFromEditMessage(
+  message: string,
+  reported: { targetPages?: number | null | undefined; illustrations?: boolean | null | undefined } = {}
+): ReplanSettings | undefined {
+  const targetPages = reported.targetPages ?? replanTargetPagesFromMessage(message);
+  const settings: ReplanSettings = {
+    ...replanSettingsFromMessage(message),
+    ...(reported.illustrations === undefined || reported.illustrations === null
+      ? {}
+      : { fullIllustrations: reported.illustrations }),
+    ...(targetPages === undefined || targetPages === null ? {} : { targetPages })
+  };
+  return Object.keys(settings).length > 0 ? settings : undefined;
 }
 
 export function pageIndexesFromMessage(message: string, pages: BookEditPageContext[]): number[] {

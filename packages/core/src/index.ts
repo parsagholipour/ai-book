@@ -43,6 +43,7 @@ export * from "./generation/characterReferences.js";
 export * from "./generation/voiceCharacters.js";
 export * from "./generation/readerChapters.js";
 export * from "./generation/exactReplacement.js";
+export * from "./generation/replanSettings.js";
 export * from "./generation/manuscriptQuality.js";
 export * from "./generation/cover.js";
 export * from "./generation/imageOptimization.js";

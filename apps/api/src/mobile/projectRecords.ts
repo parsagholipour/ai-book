@@ -36,7 +36,9 @@ import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   createProjectSchema,
   creditCostForOperation,
-  mediaSettingsSchema
+  mediaSettingsSchema,
+  mediaSettingsWithReplanSettings,
+  type ReplanSettings
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { commitReservedCredits, refundCreditLedgerEntry, reserveCredits, type CreditLedgerEntryRecord } from "@book-maker/db/billing";
@@ -280,10 +282,18 @@ export async function createReplanProjectCopy(options: {
   request: string;
   operationId: string;
   targetLanguage?: string | null;
+  /**
+   * The generation settings the request named, already priced. They have to land
+   * on the copy rather than on the plan alone: `mobile.targetPages` is what the
+   * app's settings sheet reads, so a copy that keeps the source's number
+   * describes itself as the length nobody asked for.
+   */
+  settings?: ReplanSettings | null;
 }): Promise<MobileProjectRecord> {
   const source = options.sourceProject;
   const targetLanguage = cleanTargetLanguage(options.targetLanguage);
-  const sourceMediaSettings = mediaSettingsSchema.parse(source.mediaSettings);
+  const settings = options.settings ?? {};
+  const sourceMediaSettings = mediaSettingsWithReplanSettings(mediaSettingsSchema.parse(source.mediaSettings), settings);
   const mobileMetadata = jsonRecord(sourceMediaSettings.mobile);
   const copyMediaSettings = mediaSettingsSchema.parse({
     ...sourceMediaSettings,
@@ -306,7 +316,7 @@ export async function createReplanProjectCopy(options: {
       prompt: source.prompt,
       category: source.category,
       ...(source.subcategory ? { subcategory: source.subcategory } : {}),
-      targetPages: source.targetPages,
+      targetPages: settings.targetPages ?? source.targetPages,
       complexity: source.complexity,
       temperature: source.temperature,
       language: targetLanguage ?? source.language,

@@ -1,7 +1,9 @@
 import {
   PROJECT_PROMPT_MAX_LENGTH,
   createProjectSchema,
+  inputWithReplanSettings,
   mediaSettingsSchema,
+  replanSettingsFromMessage,
   type CreateProjectInput
 } from "@book-maker/core";
 
@@ -46,55 +48,15 @@ export function inputFromSnapshot(snapshot: unknown): CreateProjectInput | null 
   return result.success ? result.data : null;
 }
 
+/**
+ * Backstop for jobs whose payload carries no resolved settings — the API now
+ * resolves "no pictures" before it quotes the edit, so by the time a replan
+ * reaches here the copy already has the right flags. Kept because it costs
+ * nothing and covers jobs queued before that, and the direct operator API,
+ * which has no chat to resolve anything.
+ */
 export function inputWithMessageMediaPreferences(input: CreateProjectInput, message: string): CreateProjectInput {
-  const preference = negativeMediaPreferenceFromMessage(message);
-  if (!preference) {
-    return input;
-  }
-
-  const fullIllustrations = preference.disableIllustrations ? false : input.mediaSettings.fullIllustrations;
-  const includeCover = preference.disableCover ? false : input.mediaSettings.includeCover;
-  const illustrationCadence = !fullIllustrations ? "manual" : input.mediaSettings.illustrationCadence;
-  const mobile = jsonRecord(input.mediaSettings.mobile);
-  const nextMediaSettings = mediaSettingsSchema.parse({
-    ...input.mediaSettings,
-    fullIllustrations,
-    illustrationCadence,
-    includeCover,
-    ...(input.mediaSettings.mobile !== undefined
-      ? {
-          mobile: {
-            ...mobile,
-            imagesEnabled: fullIllustrations || includeCover
-          }
-        }
-      : {})
-  });
-
-  return {
-    ...input,
-    mediaSettings: nextMediaSettings
-  };
-}
-
-function negativeMediaPreferenceFromMessage(
-  message: string
-): { disableIllustrations: boolean; disableCover: boolean } | null {
-  const normalized = message.replace(/\s+/g, " ").trim();
-  const negativeMedia = /\b(?:i\s+(?:do\s+not|don't|dont)\s+want|no|without|skip|remove|disable|turn\s+off)\b.{0,80}\b(?:images?|covers?|visuals?|illustrations?|artwork|pictures?)\b/i.test(
-    normalized
-  );
-  if (!negativeMedia) {
-    return null;
-  }
-
-  const cover = /\bcovers?\b/i.test(normalized);
-  const broadImages = /\b(?:images?|visuals?|artwork|pictures?)\b/i.test(normalized);
-  const illustrations = /\billustrations?\b/i.test(normalized);
-  return {
-    disableIllustrations: broadImages || illustrations,
-    disableCover: cover || broadImages
-  };
+  return inputWithReplanSettings(input, replanSettingsFromMessage(message));
 }
 
 function jsonRecord(value: unknown): Record<string, unknown> {

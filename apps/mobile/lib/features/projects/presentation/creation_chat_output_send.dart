@@ -31,6 +31,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   void _refreshOutput(String projectId);
   void _startPlanPoll();
   void _resumeStickToBottom();
+  Future<void> _openReplanCopy(String projectId);
 
   Future<MobileProjectChatSendResult?> _sendProjectMessage({
     required String projectId,
@@ -171,6 +172,12 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
         ScaffoldMessenger.of(context).showAppSnackBar(
           SnackBar(content: Text(result.operation!.displayAction)),
         );
+      }
+      // A replan builds the rebuilt book as a separate output and leaves this
+      // one untouched, so staying put shows the unchanged book.
+      final replanCopyId = result.reply.replanCopyTargetProjectId;
+      if (replanCopyId != null && replanCopyId != projectId) {
+        await _openReplanCopy(replanCopyId);
       }
     } catch (error) {
       if (!mounted) return;

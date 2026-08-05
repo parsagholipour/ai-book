@@ -144,7 +144,10 @@ export async function queueChatBookReplanCopy(options: {
   intent: BookEditIntent;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
-  const cost = bookEditCreditCost(intent.kind, 0, project);
+  // Same settings the proposal was quoted from, or the user approves one price
+  // and is charged another.
+  const replanSettings = intent.replanSettings ?? null;
+  const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings });
   const targetLanguage = cleanTargetLanguage(intent.targetLanguage);
   const operation = await createOpenBookEditOperation({
     projectId: project.id,
@@ -184,7 +187,8 @@ export async function queueChatBookReplanCopy(options: {
       sourceProject: project,
       request: message,
       operationId: operation.id,
-      targetLanguage
+      targetLanguage,
+      settings: replanSettings
     });
     spend = reservation ? await commitReservedCredits(reservation.id) : null;
     const job = await enqueueGenerationJob({
@@ -199,6 +203,10 @@ export async function queueChatBookReplanCopy(options: {
         affectedPageIndexes: [],
         intentKind: intent.kind,
         ...(targetLanguage ? { targetLanguage } : {}),
+        // Explicit, because the worker plans from the *source* plan's input
+        // snapshot: without a number here it would size the rebuilt book to the
+        // book being replaced, whatever the copy row says.
+        ...(replanSettings?.targetPages === undefined ? {} : { targetPages: replanSettings.targetPages }),
         ...(spend ? { billingLedgerEntryId: spend.id } : {})
       }
     });

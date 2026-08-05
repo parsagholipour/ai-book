@@ -39,7 +39,7 @@ import {
 } from "./projectChat.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { clipText, isPrismaUniqueConflict, jsonRecord, languageDisplayName } from "./support.js";
-import { bookPlanSchema, withRecoverableNetworkRetry, type TextModelAdapter } from "@book-maker/core";
+import { bookPlanSchema, withRecoverableNetworkRetry, type ReplanSettings, type TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
@@ -305,6 +305,10 @@ export function pendingEditProposalFromMetadata(
       : typeof card.targetLanguage === "string"
         ? { targetLanguage: card.targetLanguage }
         : {}),
+    // The settings the request named are what the shown quote was computed from,
+    // so dropping them here would charge the quoted price and then build the old
+    // book — the shape of bug this field exists to close.
+    ...(kind === "book_replan" ? replanSettingsFromMetadata(intentSource.replanSettings ?? card.replanSettings) : {}),
     ...(kind === "continue_book"
       ? {
           continuation: {
@@ -322,6 +326,19 @@ export function pendingEditProposalFromMetadata(
     ...(credits !== undefined ? { credits } : {}),
     ...(proposalId ? { proposalId } : {})
   };
+}
+
+/** Reads a stored `replanSettings` blob back, dropping anything malformed. */
+function replanSettingsFromMetadata(value: unknown): { replanSettings?: ReplanSettings } {
+  const stored = jsonRecord(value);
+  const settings: ReplanSettings = {
+    ...(typeof stored.targetPages === "number" && Number.isInteger(stored.targetPages) && stored.targetPages > 0
+      ? { targetPages: stored.targetPages }
+      : {}),
+    ...(typeof stored.fullIllustrations === "boolean" ? { fullIllustrations: stored.fullIllustrations } : {}),
+    ...(typeof stored.includeCover === "boolean" ? { includeCover: stored.includeCover } : {})
+  };
+  return Object.keys(settings).length > 0 ? { replanSettings: settings } : {};
 }
 
 export function scopeFromRecentUserMessages(messages: MobileProjectChatMessageRecord[]): BookEditScope {
@@ -531,7 +548,7 @@ export async function proposeBookEdit(options: {
     return { reply, operation: null };
   }
   if (intent.kind === "book_replan") {
-    const cost = bookEditCreditCost(intent.kind, 0, project);
+    const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings: intent.replanSettings });
     const proposalIntent = { ...intent, clarification: "none" as const };
     const reply = await createAssistantChatMessage({
       projectId: project.id,
@@ -677,9 +694,7 @@ export function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexe
       : "Write the next chapter of your book";
   }
   if (kind === "book_replan") {
-    return intent.targetLanguage
-      ? `Create a new ${languageDisplayName(intent.targetLanguage)} copy and regenerate it`
-      : "Rebuild the plan and regenerate the book as a new copy";
+    return replanProposalSummary(intent);
   }
   if (kind === "chapter_regenerate") {
     return intent.affectedChapterIndex
@@ -700,6 +715,28 @@ export function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexe
       : `Edit pages ${affectedPageIndexes.join(", ")}`;
   }
   return kind === "page_rewrite" ? "Rewrite matching pages" : "Edit matching pages";
+}
+
+/**
+ * Names the settings the rebuild will use, because the card is the last thing
+ * shown before the charge. "Rebuild the plan and regenerate the book" reads the
+ * same whether the request was understood or dropped — and when it was dropped,
+ * the copy arrives at the old length with no sign anything was missed.
+ */
+function replanProposalSummary(intent: BookEditIntent): string {
+  const language = intent.targetLanguage ? ` ${languageDisplayName(intent.targetLanguage)}` : "";
+  const targetPages = intent.replanSettings?.targetPages;
+  const length = targetPages === undefined ? "" : ` ${targetPages}-page`;
+  const illustrations =
+    intent.replanSettings?.fullIllustrations === false
+      ? " without illustrations"
+      : intent.replanSettings?.fullIllustrations === true
+        ? " with illustrations"
+        : "";
+  if (!language && !length && !illustrations) {
+    return "Rebuild the plan and regenerate the book as a new copy";
+  }
+  return `Rebuild as a new${language}${length} copy${illustrations}`;
 }
 
 /**

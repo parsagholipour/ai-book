@@ -36,15 +36,17 @@ import { Job } from "bullmq";
  */
 
 export async function replanBook(job: Job) {
-  const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId, targetLanguage } = job.data as {
-    projectId: string;
-    operationId: string;
-    request: string;
-    planId?: string;
-    sourceProjectId?: string;
-    sourcePlanId?: string | null;
-    targetLanguage?: string | null;
-  };
+  const { projectId, operationId, request, planId, sourceProjectId, sourcePlanId, targetLanguage, targetPages } =
+    job.data as {
+      projectId: string;
+      operationId: string;
+      request: string;
+      planId?: string;
+      sourceProjectId?: string;
+      sourcePlanId?: string | null;
+      targetLanguage?: string | null;
+      targetPages?: number | null;
+    };
   const generationJobId = job.data.generationJobId as string | undefined;
   await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
@@ -63,8 +65,22 @@ export async function replanBook(job: Job) {
     throw new Error("Current plan not found");
   }
   const requestedLanguage = cleanTargetLanguage(targetLanguage);
+  // The plan is revised from the *source* book's input snapshot, so a replan
+  // that resizes the book has to say so here: left to the snapshot the planner
+  // is told to hit the old length, and normalizePlanPageTargets then pads the
+  // revised chapters back up to it even when the model wrote fewer.
+  //
+  // Only an explicit count overrides it: for an in-place replan the project row
+  // holds the length the book actually came out at, which is not what this plan
+  // was written against.
+  const requestedPages =
+    typeof targetPages === "number" && Number.isInteger(targetPages) && targetPages > 0 ? targetPages : null;
   const sourceInput = inputWithMessageMediaPreferences(inputForPlanVersion(sourceProject, planVersion.inputSnapshot), request);
-  const input = requestedLanguage ? { ...sourceInput, language: requestedLanguage } : sourceInput;
+  const input = {
+    ...sourceInput,
+    ...(requestedPages === null ? {} : { targetPages: requestedPages }),
+    ...(requestedLanguage ? { language: requestedLanguage } : {})
+  };
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
@@ -115,6 +131,9 @@ export async function replanBook(job: Job) {
         status: "GENERATING",
         title: revised.title,
         language: input.language,
+        // Written alongside the snapshot the plan was made from, so the row a
+        // later edit prices and replans off cannot drift from the book on disk.
+        targetPages: input.targetPages,
         mediaSettings: planMediaSettingsSnapshot(input)
       }
     });

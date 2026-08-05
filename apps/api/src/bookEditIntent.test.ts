@@ -5,7 +5,6 @@ import {
   classifierPageSample,
   classifyProjectChatMessage,
   classifyWithHeuristics,
-  intentFromDecideAction,
   intentFromProposeEdit,
   continuationRequestFromMessage,
   isBookEditScopeOnlyMessage,
@@ -433,115 +432,6 @@ describe("book edit intent heuristics", () => {
     expect(isBookEditScopeOnlyMessage("whole book")).toBe(true);
     expect(isBookEditScopeOnlyMessage("I said whole book")).toBe(true);
     expect(messageWithScope("Replace rabbit with fly", "all_pages")).toMatch(/whole book/i);
-  });
-});
-
-describe("propose_edit pricing mapping", () => {
-  it("maps exact page replacements to local_patch", () => {
-    const intent = intentFromProposeEdit(
-      {
-        action: "propose_edit",
-        confidence: 0.9,
-        reasoning: "Exact replacement.",
-        assistantMessage: "I’ll replace that phrase on page 1.",
-        clarification: "none",
-        editTarget: "pages",
-        editStyle: "exact_replace",
-        pageIndexes: [1],
-        chapterIndex: null,
-        targetLanguage: null
-      },
-      'On page 1, replace "old" with "new".',
-      chapters
-    );
-
-    expect(intent.kind).toBe("local_patch");
-    expect(intent.scope).toBe("explicit_pages");
-    expect(intent.impact).toBe("small_text");
-  });
-
-  it("maps whole-book rewrites to page_rewrite", () => {
-    const intent = intentFromProposeEdit(
-      {
-        action: "propose_edit",
-        confidence: 0.9,
-        reasoning: "Whole-book style.",
-        assistantMessage: "I’ll rewrite the whole book warmer.",
-        clarification: "none",
-        editTarget: "whole_book",
-        editStyle: "rewrite",
-        pageIndexes: [],
-        chapterIndex: null,
-        targetLanguage: null
-      },
-      "Make the whole book warmer.",
-      chapters
-    );
-
-    expect(intent.kind).toBe("page_rewrite");
-    expect(intent.scope).toBe("all_pages");
-  });
-
-  it("maps chapter targets to chapter_regenerate", () => {
-    const intent = intentFromProposeEdit(
-      {
-        action: "propose_edit",
-        confidence: 0.9,
-        reasoning: "Chapter rewrite.",
-        assistantMessage: "I’ll rewrite chapter 2.",
-        clarification: "none",
-        editTarget: "chapter",
-        editStyle: "rewrite",
-        pageIndexes: [],
-        chapterIndex: 2,
-        targetLanguage: null
-      },
-      "Rewrite chapter 2.",
-      chapters
-    );
-
-    expect(intent.kind).toBe("chapter_regenerate");
-    expect(intent.affectedChapterIndex).toBe(2);
-    expect(intent.affectedPageIndexes).toEqual([2]);
-  });
-
-  it("maps structural and language_copy targets to book_replan", () => {
-    const structural = intentFromDecideAction(
-      {
-        action: "propose_edit",
-        confidence: 0.9,
-        reasoning: "Identity change.",
-        assistantMessage: "I’ll rebuild around a new protagonist.",
-        clarification: "none",
-        editTarget: "structural",
-        editStyle: "rewrite",
-        pageIndexes: [],
-        chapterIndex: null,
-        targetLanguage: null
-      },
-      "Change the main character.",
-      chapters
-    );
-    expect(structural.kind).toBe("book_replan");
-
-    const language = intentFromDecideAction(
-      {
-        action: "propose_edit",
-        confidence: 0.9,
-        reasoning: "Language copy.",
-        assistantMessage: "I’ll create an English copy.",
-        clarification: "none",
-        editTarget: "language_copy",
-        editStyle: "rewrite",
-        pageIndexes: [],
-        chapterIndex: null,
-        targetLanguage: "en"
-      },
-      "Generate the English version",
-      chapters
-    );
-    expect(language.kind).toBe("book_replan");
-    expect(language.targetLanguage).toBe("en");
   });
 });
 

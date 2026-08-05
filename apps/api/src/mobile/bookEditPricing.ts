@@ -8,7 +8,14 @@
  * price) and the execute path (which charges one).
  */
 
-import { createProjectSchema, creditCostForOperation, creditPricing, estimateFullBookCreditCost } from "@book-maker/core";
+import {
+  createProjectSchema,
+  creditCostForOperation,
+  creditPricing,
+  estimateFullBookCreditCost,
+  inputWithReplanSettings,
+  type ReplanSettings
+} from "@book-maker/core";
 import { type BookEditIntentKind } from "../bookEditIntent.js";
 import { type ProjectForChat } from "./projectChat.js";
 import { inputSnapshotFromProject } from "./projectSerializers.js";
@@ -25,6 +32,14 @@ export function bookEditCreditCost(
      * what made a rename feel like a regeneration.
      */
     deterministic?: boolean;
+    /**
+     * The generation settings a `book_replan` request named. A replan is priced
+     * as a whole book, so "make it 3 pages without illustrations" has to be
+     * quoted against the book being asked for — read off the project row alone
+     * it was billed at the old book's length and image count, both of which the
+     * rebuilt book then did not have.
+     */
+    replanSettings?: ReplanSettings | null | undefined;
   } = {}
 ): number {
   // One snapshot for the whole quote. Reading the live prices twice could
@@ -41,8 +56,9 @@ export function bookEditCreditCost(
     return Math.max(1, affectedPageCount) * pricing.pageRegenerationPerPage;
   }
   if (kind === "book_replan") {
-    const input = createProjectSchema.parse(inputSnapshotFromProject(project));
-    return pricing.bookReplanBase + estimateFullBookCreditCost(input, pricing).totalCredits;
+    const current = createProjectSchema.parse(inputSnapshotFromProject(project));
+    const requested = inputWithReplanSettings(current, options.replanSettings);
+    return pricing.bookReplanBase + estimateFullBookCreditCost(requested, pricing).totalCredits;
   }
   return creditCostForOperation("PLAN_REVISION", pricing);
 }

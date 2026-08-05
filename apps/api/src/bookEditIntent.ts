@@ -1,4 +1,10 @@
-import { runToolLoop, withRecoverableNetworkRetry, type TextModelAdapter, type ToolLoopTool } from "@book-maker/core";
+import {
+  runToolLoop,
+  withRecoverableNetworkRetry,
+  type ReplanSettings,
+  type TextModelAdapter,
+  type ToolLoopTool
+} from "@book-maker/core";
 import { z } from "zod";
 import { backMatterIntent, backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
 import {
@@ -12,6 +18,7 @@ import {
   chapterRegenerateFromMessage,
   continuationRequestFromMessage,
   pageIndexesFromMessage,
+  replanSettingsFromEditMessage,
   showContentTargetFromMessage,
   targetLanguageFromLanguageVersionRequest
 } from "./bookEditMessage.js";
@@ -33,6 +40,8 @@ export {
   pageIndexesMatchingSubject,
   quotedTexts,
   replacementTermsFromMessage,
+  replanSettingsFromEditMessage,
+  replanTargetPagesFromMessage,
   showContentTargetFromMessage,
   type BookEditDislikePreference
 } from "./bookEditMessage.js";
@@ -105,6 +114,14 @@ export type BookEditIntent = {
   backMatter?: BackMatterEdit | null;
   /** Set for chapter_heading intents: how a chapter heading should read. */
   chapterHeading?: ChapterHeadingEdit | null;
+  /**
+   * Set for book_replan intents: the generation settings the request named.
+   *
+   * Load-bearing for pricing. A replan is quoted as a whole book, so a request
+   * that shrinks the book or drops its pictures has to reach the quote — read
+   * off the source row it was billed at the old size and then planned at it too.
+   */
+  replanSettings?: ReplanSettings | null;
 };
 
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
@@ -183,6 +200,10 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       chapterIndex: z.number().int().positive().nullable().default(null),
       /** How many chapters to append when editTarget is continuation. */
       newChapterCount: z.number().int().min(1).max(8).nullish(),
+      /** The whole book's new length in pages, when editTarget is structural. */
+      newTargetPages: z.number().int().min(1).max(600).nullish(),
+      /** Whether the rebuilt book should have interior illustrations, when editTarget is structural. */
+      illustrationsEnabled: z.boolean().nullish(),
       targetLanguage: z.string().trim().min(2).max(40).nullable().default(null),
       replacementFrom: z.string().trim().min(1).max(500).optional(),
       replacementTo: z.string().trim().min(1).max(500).optional()
@@ -535,6 +556,10 @@ export function intentFromProposeEdit(
   }
 
   if (target === "language_copy" || target === "structural") {
+    const replanSettings = replanSettingsFromEditMessage(message, {
+      targetPages: decision.newTargetPages,
+      illustrations: decision.illustrationsEnabled
+    });
     return {
       kind: "book_replan",
       confidence: decision.confidence,
@@ -544,7 +569,8 @@ export function intentFromProposeEdit(
       scope: "all_pages",
       impact: "structural_replan",
       clarification: "none",
-      ...(targetLanguage ? { targetLanguage } : {})
+      ...(targetLanguage ? { targetLanguage } : {}),
+      ...(replanSettings ? { replanSettings } : {})
     };
   }
 
@@ -654,6 +680,7 @@ function routerSystemPrompt(
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
+          "A request that changes how long the book is or whether it has pictures is structural, because both are decided when the book is planned. Set newTargetPages whenever the user names a length (\"make it 3 pages\", \"half as long\" — resolve it to a number), and illustrationsEnabled false when they want it without illustrations (true to add them). Report them even when the message also asks for other changes; the server prices the book you describe, so leaving them out quotes the old book's size.",
           "Set pageIndexes or chapterIndex when known. Set targetLanguage for language_copy.",
           "Never invent credit prices or internal pricing tiers; the server prices propose_edit."
         ]
