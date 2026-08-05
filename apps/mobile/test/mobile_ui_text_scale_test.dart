@@ -11,6 +11,7 @@ import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/data/credit_log_repository.dart';
 import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/billing/presentation/billing_buy_credits_sheet.dart';
 import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
 import 'package:tomeza/features/billing/presentation/credit_log_screen.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
@@ -118,6 +119,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Credits needed'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // The buy sheet is a number field, a row of chips and a priced panel, all
+    // of which grow sideways.
+    final buyStore = DebugStoreBillingClient();
+    addTearDown(buyStore.dispose);
+    await tester.pumpWidget(
+      _withProviders(
+        child: const BuyCreditsSheet(projectId: 'project-1', shortfall: 900),
+        billingRepository: _FakeBillingRepository(),
+        storeBillingClient: buyStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Buy credits'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     // The credit log puts an amount hard against the right edge of every row,

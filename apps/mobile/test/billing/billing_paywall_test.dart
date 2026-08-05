@@ -8,6 +8,7 @@ import 'package:tomeza/features/billing/data/billing_repository.dart';
 import 'package:tomeza/features/billing/data/credit_log_repository.dart';
 import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
+import 'package:tomeza/features/billing/presentation/billing_buy_credits_sheet.dart';
 import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
 import 'package:tomeza/features/billing/presentation/billing_controller.dart';
 import 'package:tomeza/features/billing/presentation/credit_log_screen.dart';
@@ -144,7 +145,7 @@ void main() {
     expect(billingController.state.message, 'Purchase canceled.');
   });
 
-  testWidgets('a shortfall leads the sheet, and both buttons reach a ladder', (
+  testWidgets('a shortfall leads the sheet with the two ways out of it', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -165,21 +166,78 @@ void main() {
     // The masthead the sheet opens with otherwise stays out of the way.
     expect(find.text('Upgrade your plan'), findsNothing);
 
-    // The packs are two screens down, so a lazy list has not built them —
-    // which is the distance "Buy credits" exists to cover.
-    expect(find.text('OR TOP UP'), findsNothing);
+    // Buying is its own question — how many credits, and what does that cost —
+    // so the button opens the sheet that can answer it.
     await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
     await tester.pumpAndSettle();
-    expectInViewport(tester, find.text('OR TOP UP'));
+    expect(find.byType(BuyCreditsSheet), findsOneWidget);
+    // Opened on the number the reader is actually short.
+    expect(_amountField(tester).controller?.text, '400');
+  });
 
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('paywall-upgrade-plan')),
-      -200,
-      scrollable: find.byType(Scrollable).first,
+  testWidgets('upgrade goes to the next rung, not the top of the ladder', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testPaywall(
+        store: FakeStoreBillingClient(),
+        repository: FakeBillingRepository(planTier: 'creator'),
+        creditsNeeded: const PaywallCreditsNeeded(credits: 500),
+      ),
     );
+    await tester.pumpAndSettle();
+
+    // On Creator, "upgrade" means Pro — and says so.
+    expect(find.text('Upgrade to Pro monthly'), findsOneWidget);
+    expect(find.text('Pro monthly'), findsNothing);
+
     await tester.tap(find.byKey(const ValueKey('paywall-upgrade-plan')));
     await tester.pumpAndSettle();
-    expectInViewport(tester, find.text('Choose a plan'));
+
+    expectInViewport(
+      tester,
+      find.byKey(const ValueKey('paywall-plan-tomeza.pro_monthly')),
+    );
+  });
+
+  testWidgets('the buy sheet prices a custom amount and buys the pack', (
+    tester,
+  ) async {
+    final store = FakeStoreBillingClient();
+    await tester.pumpWidget(
+      testPaywall(
+        store: store,
+        repository: FakeBillingRepository(),
+        creditsNeeded: const PaywallCreditsNeeded(credits: 500),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
+    await tester.pumpAndSettle();
+
+    // 400 credits: the small pack covers it, with change.
+    expect(find.text('One extra credit'), findsWidgets);
+    expect(find.textContaining('600 to spare'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, r'Buy — $7.99'), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('buy-credits-amount')),
+      '2500',
+    );
+    await tester.pumpAndSettle();
+
+    // Past the largest pack: the sheet says what it would really take, and
+    // that the ladder is cheaper than taking it.
+    expect(find.textContaining('2,500 credits is about'), findsOneWidget);
+    expect(find.text('Two extra credits × 2'), findsOneWidget);
+    expect(find.textContaining('2 purchases'), findsOneWidget);
+    expect(find.text('Creator monthly costs less than this'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('buy-credits-buy')));
+    await tester.pump();
+
+    expect(store.buyCalls.single.product.id, 'tomeza.credit_pack_2');
+    expect(store.buyCalls.single.consumable, isTrue);
   });
 
   testWidgets('the shortfall settles once a purchase covers it', (
@@ -312,6 +370,10 @@ Widget testPaywall({
   );
 }
 
+/// The amount the buy sheet opened on, read off the field itself.
+TextField _amountField(WidgetTester tester) =>
+    tester.widget<TextField>(find.byKey(const ValueKey('buy-credits-amount')));
+
 /// Scrolled *to* a section means on screen. A lazy list will happily mount a
 /// row a few hundred pixels below the fold, so finding it is not the assertion.
 void expectInViewport(WidgetTester tester, Finder finder) {
@@ -322,7 +384,15 @@ void expectInViewport(WidgetTester tester, Finder finder) {
 }
 
 class FakeBillingRepository implements BillingRepository {
-  MobileBilling billing = fakeBilling(availableCredits: 100);
+  FakeBillingRepository({this.planTier}) {
+    billing = fakeBilling(availableCredits: 100, planTier: planTier);
+  }
+
+  /// The tier this account is already on, which is what "upgrade" is measured
+  /// against. Null is the free tier.
+  final String? planTier;
+
+  late MobileBilling billing;
   final verifications = <VerificationCall>[];
   var refreshCalls = 0;
   var cancelCalls = 0;
@@ -352,6 +422,7 @@ class FakeBillingRepository implements BillingRepository {
     final granted = isSubscription ? 3000 : 1000;
     billing = fakeBilling(
       availableCredits: billing.credits.available + granted,
+      planTier: planTier,
     );
     return GooglePlayVerificationResult(
       purchase: VerifiedPurchase(
@@ -415,9 +486,17 @@ class FakeStoreBillingClient implements StoreBillingClient {
             price: switch (id) {
               'tomeza.one_book_export' => r'$9.99',
               'tomeza.creator_monthly' => r'$19.99',
+              'tomeza.pro_monthly' => r'$39.99',
+              'tomeza.credit_pack_2' => r'$14.99',
               _ => r'$7.99',
             },
-            rawPrice: 9.99,
+            rawPrice: switch (id) {
+              'tomeza.one_book_export' => 9.99,
+              'tomeza.creator_monthly' => 19.99,
+              'tomeza.pro_monthly' => 39.99,
+              'tomeza.credit_pack_2' => 14.99,
+              _ => 7.99,
+            },
             currencyCode: 'USD',
           ),
       ],
@@ -483,7 +562,7 @@ class VerificationCall {
   final String? projectId;
 }
 
-MobileBilling fakeBilling({required int availableCredits}) {
+MobileBilling fakeBilling({required int availableCredits, String? planTier}) {
   return MobileBilling(
     credits: CreditBalance(
       available: availableCredits,
@@ -492,6 +571,14 @@ MobileBilling fakeBilling({required int availableCredits}) {
       lifetimeSpent: 0,
     ),
     entitlements: const [],
+    plan: planTier == null
+        ? null
+        : MobileSubscriptionPlan(
+            tier: planTier,
+            source: 'google_play',
+            status: 'active',
+            productSku: 'tomeza.${planTier}_monthly',
+          ),
     products: const [
       MobileBillingProduct(
         sku: 'tomeza.one_book_export',
@@ -512,12 +599,30 @@ MobileBilling fakeBilling({required int availableCredits}) {
         currency: 'USD',
       ),
       MobileBillingProduct(
+        sku: 'tomeza.pro_monthly',
+        title: 'Pro monthly',
+        description: 'Nine standard export credits monthly.',
+        productType: 'SUBSCRIPTION',
+        creditAmount: 9000,
+        priceMicros: 39990000,
+        currency: 'USD',
+      ),
+      MobileBillingProduct(
         sku: 'tomeza.credit_pack_1',
         title: 'One extra credit',
         description: 'One extra standard export credit.',
         productType: 'CREDIT_PACK',
         creditAmount: 1000,
         priceMicros: 7990000,
+        currency: 'USD',
+      ),
+      MobileBillingProduct(
+        sku: 'tomeza.credit_pack_2',
+        title: 'Two extra credits',
+        description: 'Two extra standard export credits.',
+        productType: 'CREDIT_PACK',
+        creditAmount: 2000,
+        priceMicros: 14990000,
         currency: 'USD',
       ),
     ],

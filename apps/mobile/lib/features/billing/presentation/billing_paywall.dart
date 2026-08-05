@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/billing_models.dart';
+import 'billing_buy_credits_sheet.dart';
 import 'billing_cancel_sheet.dart';
 import 'billing_controller.dart';
 import 'billing_credits_needed.dart';
@@ -70,28 +73,31 @@ class BillingPaywall extends ConsumerStatefulWidget {
 }
 
 class _BillingPaywallState extends ConsumerState<BillingPaywall> {
-  /// What the credits-needed card's two buttons scroll to. The sheet already
-  /// holds both ladders, so neither button opens anything.
-  final _plansAnchor = GlobalKey();
-  final _topUpsAnchor = GlobalKey();
+  /// One anchor per plan card, so "Upgrade" can land on the rung it names
+  /// rather than on the top of a ladder the reader is already halfway up.
+  final _planAnchors = <String, GlobalKey>{};
 
-  /// How many hops [_revealSection] will take before giving up.
-  static const _maxRevealHops = 4;
+  /// Where the ladder starts, for a reader on the top tier with no rung above.
+  final _plansAnchor = GlobalKey();
+
+  /// How many hops [_revealSection] will take before giving up. Four screens
+  /// is further than this sheet is tall.
+  static const _maxRevealHops = 5;
+
+  GlobalKey _planAnchor(String sku) =>
+      _planAnchors.putIfAbsent(sku, GlobalKey.new);
 
   /// Scrolls the sheet to one of its sections.
   ///
   /// A lazy list only mounts what is near the viewport, so an anchor nobody has
-  /// scrolled past has no context for `ensureVisible` to reach — and the packs
-  /// are two screens below the fold, which is exactly the jump it would ignore.
-  /// Walking to the end that holds the section builds it, and because a lazy
-  /// list's extent is an estimate that sharpens as it goes, it looks again
-  /// rather than trusting where the first hop landed. `ensureVisible` then puts
-  /// the section under the top edge instead of wherever the walk stopped.
-  Future<void> _revealSection(
-    BuildContext origin,
-    GlobalKey anchor, {
-    required bool towardsEnd,
-  }) async {
+  /// scrolled past has no context for `ensureVisible` to reach — and the rung
+  /// above yours is below the fold, which is exactly the jump it would ignore.
+  /// Everything reachable this way sits *below* the card holding the buttons,
+  /// so it walks down a screen at a time: each hop mounts the rows it crosses,
+  /// until the anchor itself is one of them. Jumping straight to the end would
+  /// only work for a section that lives there, and sails past every card in the
+  /// middle without ever building one.
+  Future<void> _revealSection(BuildContext origin, GlobalKey anchor) async {
     AppHaptics.tap();
     // Read before the first await: afterwards the card may have scrolled out of
     // the list and its context is no longer safe to reach into.
@@ -113,9 +119,10 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
         );
         return;
       }
-      final hopTo = towardsEnd
-          ? position.maxScrollExtent
-          : position.minScrollExtent;
+      final hopTo = math.min(
+        position.pixels + position.viewportDimension * 0.8,
+        position.maxScrollExtent,
+      );
       if ((hopTo - position.pixels).abs() < 1) {
         return;
       }
@@ -157,29 +164,38 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                 // Built here, inside the list, so the buttons can find the
                 // scrollable they are about to move.
                 Builder(
-                  builder: (context) => CreditsNeededCard(
-                    key: const ValueKey('paywall-credits-needed'),
-                    creditsNeeded: creditsNeeded,
-                    available: state.billing?.credits.available,
-                    onClose: () => Navigator.of(context).pop(),
-                    onBuyCredits: controller.topUps.isEmpty
-                        ? null
-                        : () => _revealSection(
-                            context,
-                            _topUpsAnchor,
-                            towardsEnd: true,
-                          ),
-                    onUpgradePlan: plans.isEmpty
-                        ? null
-                        : () => _revealSection(
-                            context,
-                            _plansAnchor,
-                            towardsEnd: false,
-                          ),
-                    upgradeLabel: currentTier == planTierOrder.last
-                        ? 'See plans'
-                        : 'Upgrade plan',
-                  ),
+                  builder: (context) {
+                    final available = state.billing?.credits.available;
+                    final nextPlan = nextBetterPlan(plans, currentTier);
+                    return CreditsNeededCard(
+                      key: const ValueKey('paywall-credits-needed'),
+                      creditsNeeded: creditsNeeded,
+                      available: available,
+                      onClose: () => Navigator.of(context).pop(),
+                      onBuyCredits: controller.topUps.isEmpty
+                          ? null
+                          : () => showBuyCreditsSheet(
+                              context,
+                              projectId: widget.projectId,
+                              shortfall: creditsNeeded.shortfallFrom(available),
+                              onSeePlans: () =>
+                                  _revealSection(context, _plansAnchor),
+                            ),
+                      onUpgradePlan: plans.isEmpty
+                          ? null
+                          : () => _revealSection(
+                              context,
+                              nextPlan == null
+                                  ? _plansAnchor
+                                  : _planAnchor(nextPlan.sku),
+                            ),
+                      // Naming the rung is the difference between a direction
+                      // and a shelf; on the top tier there is no rung to name.
+                      upgradeLabel: nextPlan == null
+                          ? 'See plans'
+                          : 'Upgrade to ${nextPlan.title}',
+                    );
+                  },
                 )
               else
                 _PaywallHero(
@@ -212,6 +228,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                   const SizedBox(height: 12),
                   for (final (index, plan) in plans.indexed) ...[
                     AppEntrance(
+                      key: _planAnchor(plan.sku),
                       index: index,
                       child: BillingPlanCard(
                         key: ValueKey('paywall-plan-${plan.sku}'),
@@ -248,7 +265,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                 const SizedBox(height: 14),
                 if (controller.topUps.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  _SectionRule(key: _topUpsAnchor, label: 'OR TOP UP'),
+                  const _SectionRule(label: 'OR TOP UP'),
                   const SizedBox(height: 16),
                   Text(
                     'Credits you buy outright never expire, and they are spent '
@@ -257,7 +274,26 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                       color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 4),
+                  // The shelves below are fixed sizes. This is the same shelves
+                  // read from the other end — "I need this many credits" —
+                  // which is the question anyone who ran out actually has.
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const ValueKey('paywall-choose-amount'),
+                      onPressed: () => showBuyCreditsSheet(
+                        context,
+                        projectId: widget.projectId,
+                        shortfall: creditsNeeded?.shortfallFrom(
+                          state.billing?.credits.available,
+                        ),
+                      ),
+                      icon: const Icon(Icons.calculate_outlined, size: 18),
+                      label: const Text('Choose an amount'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   for (final product in controller.topUps) ...[
                     BillingTopUpTile(
                       key: ValueKey('paywall-topup-${product.sku}'),
@@ -441,7 +477,7 @@ class _SectionLabel extends StatelessWidget {
 /// A centred rule that separates the ladder from the one-off purchases, so the
 /// packs read as an alternative rather than as a fourth, cheaper tier.
 class _SectionRule extends StatelessWidget {
-  const _SectionRule({required this.label, super.key});
+  const _SectionRule({required this.label});
 
   final String label;
 

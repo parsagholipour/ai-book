@@ -88,6 +88,29 @@ String billingTierForSku(String sku) => switch (sku) {
 BillingTierStyle billingTierStyleForTier(String tier) =>
     _tierStyles[tier] ?? _freeStyle;
 
+/// The rung directly above the one this account is on.
+///
+/// "Upgrade" is a direction, not a shelf: someone on Creator who ran out of
+/// credits wants Pro, and sending them to the top of a ladder they are already
+/// halfway up makes them find it themselves. Null on the top tier, where there
+/// is nothing above — the only honest answer there is the ladder itself.
+MobileBillingProduct? nextBetterPlan(
+  List<MobileBillingProduct> plans,
+  String currentTier,
+) {
+  final current = planTierOrder.indexOf(currentTier);
+  MobileBillingProduct? next;
+  var nextRank = planTierOrder.length;
+  for (final plan in plans) {
+    final rank = planTierOrder.indexOf(billingTierForSku(plan.sku));
+    if (rank > current && rank < nextRank) {
+      next = plan;
+      nextRank = rank;
+    }
+  }
+  return next;
+}
+
 BillingTierStyle billingTierStyleForSku(String sku) =>
     billingTierStyleForTier(billingTierForSku(sku));
 
