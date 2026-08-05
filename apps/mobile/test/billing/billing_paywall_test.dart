@@ -144,6 +144,78 @@ void main() {
     expect(billingController.state.message, 'Purchase canceled.');
   });
 
+  testWidgets('a shortfall leads the sheet, and both buttons reach a ladder', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testPaywall(
+        store: FakeStoreBillingClient(),
+        repository: FakeBillingRepository(),
+        creditsNeeded: const PaywallCreditsNeeded(
+          credits: 500,
+          reason: 'Writing this short novel.',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Credits needed'), findsOneWidget);
+    expect(find.text('Writing this short novel.'), findsOneWidget);
+    expect(find.textContaining('400 short'), findsOneWidget);
+    // The masthead the sheet opens with otherwise stays out of the way.
+    expect(find.text('Upgrade your plan'), findsNothing);
+
+    // The packs are two screens down, so a lazy list has not built them —
+    // which is the distance "Buy credits" exists to cover.
+    expect(find.text('OR TOP UP'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
+    await tester.pumpAndSettle();
+    expectInViewport(tester, find.text('OR TOP UP'));
+
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('paywall-upgrade-plan')),
+      -200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byKey(const ValueKey('paywall-upgrade-plan')));
+    await tester.pumpAndSettle();
+    expectInViewport(tester, find.text('Choose a plan'));
+  });
+
+  testWidgets('the shortfall settles once a purchase covers it', (
+    tester,
+  ) async {
+    final store = FakeStoreBillingClient();
+    await tester.pumpWidget(
+      testPaywall(
+        store: store,
+        repository: FakeBillingRepository(),
+        creditsNeeded: const PaywallCreditsNeeded(credits: 500),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('400 short'), findsOneWidget);
+    expect(find.byKey(const ValueKey('paywall-credits-done')), findsNothing);
+
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.one_book_export',
+        status: StorePurchaseStatus.purchased,
+        purchaseToken: 'purchase-token-1',
+        purchaseId: 'order-1',
+        pendingCompletePurchase: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The card reads the live balance, so the arithmetic it opened with is not
+    // still on screen after the credits it asked for arrived.
+    expect(find.text('You have enough credits'), findsOneWidget);
+    expect(find.textContaining('short'), findsNothing);
+    expect(find.byKey(const ValueKey('paywall-credits-done')), findsOneWidget);
+  });
+
   testWidgets('the credit log opens over the sheet rather than closing it', (
     tester,
   ) async {
@@ -219,6 +291,7 @@ void main() {
 Widget testPaywall({
   required FakeStoreBillingClient store,
   required FakeBillingRepository repository,
+  PaywallCreditsNeeded? creditsNeeded,
 }) {
   return ProviderScope(
     overrides: [
@@ -228,10 +301,24 @@ Widget testPaywall({
         EmptyCreditLogRepository(),
       ),
     ],
-    child: const MaterialApp(
-      home: Scaffold(body: BillingPaywall(projectId: 'project-1')),
+    child: MaterialApp(
+      home: Scaffold(
+        body: BillingPaywall(
+          projectId: 'project-1',
+          creditsNeeded: creditsNeeded,
+        ),
+      ),
     ),
   );
+}
+
+/// Scrolled *to* a section means on screen. A lazy list will happily mount a
+/// row a few hundred pixels below the fold, so finding it is not the assertion.
+void expectInViewport(WidgetTester tester, Finder finder) {
+  final target = tester.getRect(finder);
+  final viewport = tester.getRect(find.byType(ListView));
+  expect(target.top, greaterThanOrEqualTo(viewport.top - 1));
+  expect(target.bottom, lessThanOrEqualTo(viewport.bottom + 1));
 }
 
 class FakeBillingRepository implements BillingRepository {

@@ -352,6 +352,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                               _openProjectChatPaywall(
                                 projectId: activeProjectId,
                                 project: planValue?.asData?.value,
+                                credits: message.insufficientCreditsRequired,
                               ),
                             ),
                             onApplyEditProposal: activeProjectId == null
@@ -467,14 +468,18 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   Future<void> _openProjectChatPaywall({
     required String? projectId,
     MobileProjectDetail? project,
+    int? credits,
   }) async {
     await showBillingPaywall(
       context,
       projectId: projectId,
-      title: 'Add credits',
-      message: project == null
-          ? 'Add credits to apply this edit.'
-          : 'Add credits to edit "${project.title}".',
+      title: null,
+      creditsNeeded: PaywallCreditsNeeded(
+        credits: credits,
+        reason: project == null
+            ? 'Applying this edit.'
+            : 'Applying this edit to "${project.title}".',
+      ),
     );
     ref.invalidate(billingProvider);
     if (projectId != null) {
@@ -1108,10 +1113,15 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       if (!mounted) return;
       final paywallTitle = _paywallTitleForError(error.code);
       if (paywallTitle != null) {
+        // A credits refusal carries its numbers, so it becomes the sheet's
+        // credits-needed section; anything else the paywall can answer keeps
+        // the server's own wording.
+        final creditsNeeded = _paywallCreditsNeededForError(error);
         await showBillingPaywall(
           context,
-          title: paywallTitle,
-          message: error.message,
+          title: creditsNeeded == null ? paywallTitle : null,
+          message: creditsNeeded == null ? error.message : null,
+          creditsNeeded: creditsNeeded,
         );
         ref.invalidate(billingProvider);
         return;

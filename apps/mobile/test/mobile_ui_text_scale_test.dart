@@ -98,6 +98,27 @@ void main() {
     expect(find.text('Upgrade your plan'), findsOneWidget);
     expect(tester.takeException(), isNull);
 
+    // The credits-needed masthead puts a headline, a sentence, a meter and two
+    // buttons in one card, which is where a larger typeface runs out of width.
+    final shortfallStore = DebugStoreBillingClient();
+    addTearDown(shortfallStore.dispose);
+    await tester.pumpWidget(
+      _withProviders(
+        child: const BillingPaywall(
+          projectId: 'project-1',
+          creditsNeeded: PaywallCreditsNeeded(
+            credits: 3000,
+            reason: 'Writing this short novel and unlocking its export.',
+          ),
+        ),
+        billingRepository: _FakeBillingRepository(),
+        storeBillingClient: shortfallStore,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Credits needed'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
     // The credit log puts an amount hard against the right edge of every row,
     // which is where a larger typeface runs out of room first.
     await tester.pumpWidget(

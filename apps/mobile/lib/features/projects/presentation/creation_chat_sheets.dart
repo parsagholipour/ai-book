@@ -393,6 +393,22 @@ String? _paywallTitleForError(String? code) => switch (code) {
   _ => null,
 };
 
+/// The credits-needed section for a refusal that has one.
+///
+/// A 402 carries what the build would have cost, which is worth more than its
+/// message ("You need more credits for this action."). An image limit is not
+/// about credits at all — no section, the server's own wording instead.
+PaywallCreditsNeeded? _paywallCreditsNeededForError(ApiException error) {
+  if (error.code != 'INSUFFICIENT_CREDITS') {
+    return null;
+  }
+  return PaywallCreditsNeeded.fromApiError(
+    error,
+    reason:
+        'Writing this book, preparing its visuals and unlocking its export.',
+  );
+}
+
 /// Says what visuals will cost against the month's budget, when there is one.
 /// A null quota is a plan with no image limit, so it says nothing extra.
 String _visualsSubtitle(

@@ -536,10 +536,18 @@ class _FinishedCallActions extends StatelessWidget {
           FilledButton.icon(
             onPressed: () {
               AppHaptics.tap();
+              // Calls are charged by the minute, so there is no total to be
+              // short of — the card says what ran out and offers both ways to
+              // top it back up.
               showBillingPaywall(
                 context,
                 projectId: state.character?.projectId,
-                message: 'Add credits to keep talking to your characters.',
+                title: null,
+                creditsNeeded: const PaywallCreditsNeeded(
+                  reason:
+                      'Talking to your characters. Calls spend credits by the '
+                      'minute.',
+                ),
               );
             },
             icon: const Icon(Icons.add_card_outlined),

@@ -64,12 +64,20 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
     return null;
   }
   if (billing.credits.available < estimate) {
+    // The estimate and the balance are both known here, so the sheet opens on
+    // its credits-needed section: what this costs, how far short the account
+    // is, and the two ways to close the gap.
     await showBillingPaywall(
       context,
       projectId: project.id,
-      title: 'Credits needed',
-      message:
-          'This ${project.lengthPresetLabel.toLowerCase()} ${project.bookTypeLabel.toLowerCase()} needs about $estimate credits to write, prepare visuals, and unlock export. You have ${billing.credits.available}.',
+      title: null,
+      creditsNeeded: PaywallCreditsNeeded(
+        credits: estimate,
+        reason:
+            'Writing this ${project.lengthPresetLabel.toLowerCase()} '
+            '${project.bookTypeLabel.toLowerCase()}, preparing its visuals and '
+            'unlocking its export.',
+      ),
     );
     ref.invalidate(billingProvider);
     return null;

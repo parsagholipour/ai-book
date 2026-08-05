@@ -342,6 +342,7 @@ class ApiClient {
           code: errorBody['code'] as String? ?? 'API_ERROR',
           message: errorBody['message'] as String? ?? 'Something went wrong.',
           statusCode: response?.statusCode,
+          details: errorBody,
         );
       }
     }

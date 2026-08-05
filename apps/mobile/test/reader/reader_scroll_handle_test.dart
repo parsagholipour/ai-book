@@ -101,6 +101,17 @@ Future<void> pumpHandle(
   );
 }
 
+/// The fake viewer's scrollable extent: a 3000px document in a 600px window.
+const _scrollRange = 2400.0;
+
+/// How far the thumb can travel: the window less the pill. Derived rather than
+/// written out, so resizing the pill cannot quietly change what these tests
+/// claim about the mapping between the two.
+const _track = 600.0 - ReaderScrollHandle.handleHeight;
+
+/// Where the book sits once the thumb has been dragged to [top].
+double _offsetForTop(double top) => -(top / _track) * _scrollRange;
+
 double _opacity(WidgetTester tester) =>
     tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity;
 
@@ -157,11 +168,11 @@ void main() {
     await pumpHandle(tester, controller, alwaysVisible: true);
     expect(_top(tester), 0);
 
-    // Half way down a 2400px scroll range, on a 552px track.
-    controller.value = Matrix4.identity()..y = -1200;
+    // Half way down the scroll range is half way down the track.
+    controller.value = Matrix4.identity()..y = -_scrollRange / 2;
     await tester.pumpAndSettle();
 
-    expect(_top(tester), closeTo(276, 1));
+    expect(_top(tester), closeTo(_track / 2, 1));
   });
 
   testWidgets('scrolls the book when dragged', (tester) async {
@@ -171,8 +182,30 @@ void main() {
     await tester.drag(find.byType(AnimatedOpacity), const Offset(0, 100));
     await tester.pumpAndSettle();
 
-    // 100px down a 552px track is 18% of a 2400px scroll range.
-    expect(controller.value.y, closeTo(-435, 25));
+    // The book moves by the same fraction of its range as the thumb did of
+    // its track. The tolerance covers the touch slop the drag spends first.
+    expect(controller.value.y, closeTo(_offsetForTop(100), 25));
+  });
+
+  testWidgets('a grab that sets off sideways still drags the book', (
+    tester,
+  ) async {
+    // Nobody drags a scrollbar straight down.
+    final controller = FakeViewerController();
+    await pumpHandle(tester, controller, alwaysVisible: true);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(AnimatedOpacity)),
+    );
+    await gesture.moveBy(const Offset(-80, 6));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    // Sideways movement moves nothing: the book follows the vertical part.
+    expect(controller.value.y, closeTo(_offsetForTop(46), 1));
   });
 
   testWidgets('multi-event drag stays linear from a nonzero position', (
@@ -183,9 +216,9 @@ void main() {
     await pumpHandle(tester, controller, alwaysVisible: true);
 
     final gesture = await _startRecognizedDrag(tester);
-    // The 25px touch-slop crossing is itself a drag update, moving the handle
-    // from its 138px starting point to 163px.
-    const startTop = 163.0;
+    // The book starts a quarter of the way down, and the 25px touch-slop
+    // crossing is itself a drag update that moves the handle that far again.
+    const startTop = _track / 4 + 25;
     expect(_top(tester), closeTo(startTop, 1));
 
     for (var step = 1; step <= 5; step++) {
@@ -196,9 +229,9 @@ void main() {
 
     await gesture.up();
     await tester.pumpAndSettle();
-    // The recognized 25px plus five 20px updates advance 125 / 552 of the
-    // 2400px scroll range from the initial 600px document offset.
-    expect(controller.value.y, closeTo(-1143.48, 1));
+    // The recognized 25px plus five 20px updates put the thumb at one place on
+    // the track, whatever route it took to get there.
+    expect(controller.value.y, closeTo(_offsetForTop(startTop + 100), 1));
   });
 
   testWidgets('drag result depends on distance, not update count', (
@@ -219,7 +252,7 @@ void main() {
     ]);
 
     expect(segmentedResult, closeTo(singleResult, 0.01));
-    expect(segmentedResult, closeTo(-1143.48, 1));
+    expect(segmentedResult, closeTo(_offsetForTop(_track / 4 + 125), 1));
   });
 
   testWidgets('drag clamps at the beginning and end of the book', (

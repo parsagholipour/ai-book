@@ -152,12 +152,18 @@ Future<void> openProjectExportPaywall({
   required bool Function() isMounted,
   VoidCallback? onRefresh,
 }) async {
+  // Only ever reached through `projectExportNeedsCredits`, so this is a
+  // shortfall rather than an offer: the sheet leads with what the unlock costs.
   await showBillingPaywall(
     context,
     projectId: projectId,
-    title: 'Unlock exports',
-    message:
-        'This ${export.format.toUpperCase()} is ready. Add credits to unlock protected downloads for this book.',
+    title: null,
+    creditsNeeded: PaywallCreditsNeeded(
+      credits: export.creditsRequired,
+      reason:
+          'Your ${export.format.toUpperCase()} is ready. Credits unlock '
+          'protected downloads for this book.',
+    ),
   );
   if (!isMounted()) {
     return;

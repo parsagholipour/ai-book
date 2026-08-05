@@ -58,6 +58,16 @@ class MobileProjectChatMessage {
       metadata['insufficientCredits'] is Map<String, dynamic> ||
       metadata['insufficientCredits'] is Map;
 
+  /// What the refused edit would have cost, from the same metadata. The paywall
+  /// says how far short the balance is, and this is the only place the app is
+  /// told the price of an edit that never ran.
+  int? get insufficientCreditsRequired {
+    final raw = metadata['insufficientCredits'];
+    if (raw is! Map) return null;
+    final required = raw['requiredCredits'];
+    return required is int && required > 0 ? required : null;
+  }
+
   /// Credits this reply spent, when it queued paid work. The server stopped
   /// naming the price in the reply text, so this is what the credit badge in
   /// the bubble's corner shows. Null when the turn was free.

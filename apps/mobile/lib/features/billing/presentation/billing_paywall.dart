@@ -3,14 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/app_components.dart';
+import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/billing_models.dart';
 import 'billing_cancel_sheet.dart';
 import 'billing_controller.dart';
+import 'billing_credits_needed.dart';
 import 'billing_free_plan_card.dart';
 import 'billing_plan_tiles.dart';
 import 'billing_tier_style.dart';
 import 'credit_log_screen.dart';
+
+export 'billing_credits_needed.dart' show PaywallCreditsNeeded;
 
 /// Plans first, top-ups underneath.
 ///
@@ -22,36 +26,115 @@ import 'credit_log_screen.dart';
 /// [title] and [message] are the *reason* this sheet opened, so pass
 /// `title: null` where there is nothing to explain — the masthead then shrinks
 /// to the close button instead of restating what credits are.
+///
+/// [creditsNeeded] is that reason in the one case the sheet can do arithmetic
+/// about: the balance could not cover something. It becomes the masthead — a
+/// "Credits needed" section saying how short the account is and offering both
+/// ways out — so [title] and [message] go unused when it is passed.
 Future<void> showBillingPaywall(
   BuildContext context, {
   String? projectId,
   String? title = 'Upgrade your plan',
   String? message,
+  PaywallCreditsNeeded? creditsNeeded,
 }) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (context) =>
-        BillingPaywall(projectId: projectId, title: title, message: message),
+    builder: (context) => BillingPaywall(
+      projectId: projectId,
+      title: title,
+      message: message,
+      creditsNeeded: creditsNeeded,
+    ),
   );
 }
 
-class BillingPaywall extends ConsumerWidget {
+class BillingPaywall extends ConsumerStatefulWidget {
   const BillingPaywall({
     this.projectId,
     this.title = 'Upgrade your plan',
     this.message,
+    this.creditsNeeded,
     super.key,
   });
 
   final String? projectId;
   final String? title;
   final String? message;
+  final PaywallCreditsNeeded? creditsNeeded;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final controller = ref.watch(billingControllerProvider(projectId));
+  ConsumerState<BillingPaywall> createState() => _BillingPaywallState();
+}
+
+class _BillingPaywallState extends ConsumerState<BillingPaywall> {
+  /// What the credits-needed card's two buttons scroll to. The sheet already
+  /// holds both ladders, so neither button opens anything.
+  final _plansAnchor = GlobalKey();
+  final _topUpsAnchor = GlobalKey();
+
+  /// How many hops [_revealSection] will take before giving up.
+  static const _maxRevealHops = 4;
+
+  /// Scrolls the sheet to one of its sections.
+  ///
+  /// A lazy list only mounts what is near the viewport, so an anchor nobody has
+  /// scrolled past has no context for `ensureVisible` to reach — and the packs
+  /// are two screens below the fold, which is exactly the jump it would ignore.
+  /// Walking to the end that holds the section builds it, and because a lazy
+  /// list's extent is an estimate that sharpens as it goes, it looks again
+  /// rather than trusting where the first hop landed. `ensureVisible` then puts
+  /// the section under the top edge instead of wherever the walk stopped.
+  Future<void> _revealSection(
+    BuildContext origin,
+    GlobalKey anchor, {
+    required bool towardsEnd,
+  }) async {
+    AppHaptics.tap();
+    // Read before the first await: afterwards the card may have scrolled out of
+    // the list and its context is no longer safe to reach into.
+    final position = Scrollable.maybeOf(origin)?.position;
+    final reveal = AppMotion.reducedMotion(origin)
+        ? Duration.zero
+        : AppMotion.medium;
+    if (position == null) {
+      return;
+    }
+
+    for (var hop = 0; hop < _maxRevealHops; hop += 1) {
+      final target = anchor.currentContext;
+      if (target != null && target.mounted) {
+        await Scrollable.ensureVisible(
+          target,
+          duration: reveal,
+          curve: AppMotion.standard,
+        );
+        return;
+      }
+      final hopTo = towardsEnd
+          ? position.maxScrollExtent
+          : position.minScrollExtent;
+      if ((hopTo - position.pixels).abs() < 1) {
+        return;
+      }
+      await position.animateTo(
+        hopTo,
+        duration: reveal,
+        curve: AppMotion.standard,
+      );
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted) {
+        return;
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final creditsNeeded = widget.creditsNeeded;
+    final controller = ref.watch(billingControllerProvider(widget.projectId));
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -70,11 +153,40 @@ class BillingPaywall extends ConsumerWidget {
             controller: scrollController,
             padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
             children: [
-              _PaywallHero(
-                title: title,
-                message: message,
-                onClose: () => Navigator.of(context).pop(),
-              ),
+              if (creditsNeeded != null)
+                // Built here, inside the list, so the buttons can find the
+                // scrollable they are about to move.
+                Builder(
+                  builder: (context) => CreditsNeededCard(
+                    key: const ValueKey('paywall-credits-needed'),
+                    creditsNeeded: creditsNeeded,
+                    available: state.billing?.credits.available,
+                    onClose: () => Navigator.of(context).pop(),
+                    onBuyCredits: controller.topUps.isEmpty
+                        ? null
+                        : () => _revealSection(
+                            context,
+                            _topUpsAnchor,
+                            towardsEnd: true,
+                          ),
+                    onUpgradePlan: plans.isEmpty
+                        ? null
+                        : () => _revealSection(
+                            context,
+                            _plansAnchor,
+                            towardsEnd: false,
+                          ),
+                    upgradeLabel: currentTier == planTierOrder.last
+                        ? 'See plans'
+                        : 'Upgrade plan',
+                  ),
+                )
+              else
+                _PaywallHero(
+                  title: widget.title,
+                  message: widget.message,
+                  onClose: () => Navigator.of(context).pop(),
+                ),
               const SizedBox(height: 14),
               BillingPlanBanner(billing: state.billing),
               const SizedBox(height: 20),
@@ -92,6 +204,7 @@ class BillingPaywall extends ConsumerWidget {
               else ...[
                 if (plans.isNotEmpty) ...[
                   _SectionLabel(
+                    key: _plansAnchor,
                     label: currentTier == 'free'
                         ? 'Choose a plan'
                         : 'Change your plan',
@@ -129,13 +242,13 @@ class BillingPaywall extends ConsumerWidget {
                       : () => showCancelSubscriptionSheet(
                           context,
                           billing: state.billing!,
-                          projectId: projectId,
+                          projectId: widget.projectId,
                         ),
                 ),
                 const SizedBox(height: 14),
                 if (controller.topUps.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                  const _SectionRule(label: 'OR TOP UP'),
+                  _SectionRule(key: _topUpsAnchor, label: 'OR TOP UP'),
                   const SizedBox(height: 16),
                   Text(
                     'Credits you buy outright never expire, and they are spent '
@@ -308,7 +421,7 @@ class _PaywallHero extends StatelessWidget {
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel({required this.label});
+  const _SectionLabel({required this.label, super.key});
 
   final String label;
 
@@ -328,7 +441,7 @@ class _SectionLabel extends StatelessWidget {
 /// A centred rule that separates the ladder from the one-off purchases, so the
 /// packs read as an alternative rather than as a fourth, cheaper tier.
 class _SectionRule extends StatelessWidget {
-  const _SectionRule({required this.label});
+  const _SectionRule({required this.label, super.key});
 
   final String label;
 

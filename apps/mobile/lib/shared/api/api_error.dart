@@ -3,11 +3,17 @@ class ApiException implements Exception {
     required this.code,
     required this.message,
     this.statusCode,
+    this.details = const <String, dynamic>{},
   });
 
   final String code;
   final String message;
   final int? statusCode;
+
+  /// Whatever else the error body carried beside its code and message — the
+  /// credits a 402 was short of, the image quota a 403 hit. Refusals the app can
+  /// act on say so in numbers, and the message alone throws them away.
+  final Map<String, dynamic> details;
 
   bool get isAuthFailure {
     return statusCode == 401 ||

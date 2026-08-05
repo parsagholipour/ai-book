@@ -309,7 +309,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                             onSwitchBranch: (direction) =>
                                 _switchBranch(message, direction),
                             onOpenPaywall: message.hasInsufficientCredits
-                                ? () => _openPaywall(projectValue.asData?.value)
+                                ? () => _openPaywall(
+                                    projectValue.asData?.value,
+                                    credits:
+                                        message.insufficientCreditsRequired,
+                                  )
                                 : null,
                             onOpenReplanCopy:
                                 _replanCopyTargetProjectId(message) == null
@@ -763,14 +767,20 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     }
   }
 
-  Future<void> _openPaywall(MobileProjectDetail? project) async {
+  Future<void> _openPaywall(
+    MobileProjectDetail? project, {
+    int? credits,
+  }) async {
     await showBillingPaywall(
       context,
       projectId: widget.projectId,
-      title: 'Add credits',
-      message: project == null
-          ? 'Add credits to apply this edit.'
-          : 'Add credits to edit "${project.title}".',
+      title: null,
+      creditsNeeded: PaywallCreditsNeeded(
+        credits: credits,
+        reason: project == null
+            ? 'Applying this edit.'
+            : 'Applying this edit to "${project.title}".',
+      ),
     );
     ref.invalidate(billingProvider);
     _refresh();

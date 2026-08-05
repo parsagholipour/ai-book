@@ -48,18 +48,25 @@ class ReaderScrollHandle extends StatefulWidget {
   /// Constant on purpose: the travel below is measured against it, so a height
   /// that grew on grab would move the track under the finger and make the book
   /// jump at the moment the reader took hold of it.
-  static const handleHeight = 48.0;
+  static const handleHeight = 52.0;
 
   /// Width of the pill at rest, and while it is being held.
   ///
   /// The pill *is* the target — there is no transparent padding around it, so
   /// the rest of the right edge stays page and keeps taking taps and pans.
-  /// That is why it has to be a real width rather than a hairline.
-  static const handleWidth = 16.0;
-  static const grabbedWidth = 22.0;
+  /// That is why the width is the thing that makes it easy to grab: every
+  /// pixel of the target is a pixel the reader can see.
+  static const handleWidth = 34.0;
+  static const grabbedWidth = 40.0;
 
-  /// Gap between the pill and the edge of the screen.
+  /// Gap between the pill and the edge of the screen, on top of whatever strip
+  /// the platform reserves for its own edge gestures.
   static const edgeInset = 4.0;
+
+  /// How solid the pill is. It is furniture over someone's book, so it stays
+  /// short of opaque and only firms up while held.
+  static const restingOpacity = 0.45;
+  static const grabbedOpacity = 0.7;
 
   /// How long the handle stays up after the book stops moving.
   static const idleTimeout = Duration(milliseconds: 1500);
@@ -159,6 +166,15 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
     final width = _dragging
         ? ReaderScrollHandle.grabbedWidth
         : ReaderScrollHandle.handleWidth;
+    // Android's back gesture owns a strip along the screen edge, and touches
+    // that land in it are the system's before they are ours. A pill pressed
+    // against the edge therefore has a dead outer side, which is what makes
+    // the handle feel like it only answers on part of itself. Sit just inside
+    // the strip; the inset is zero wherever the platform claims nothing, so
+    // this costs nothing on iOS, on desktop or under `flutter test`.
+    final edge =
+        ReaderScrollHandle.edgeInset +
+        MediaQuery.systemGestureInsetsOf(context).right;
 
     // Filling the viewer costs nothing: a `Stack` hit-tests its children and
     // then reports a miss, so everywhere the pill is not stays page. The only
@@ -176,7 +192,7 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
             // leaving the handle stuck in its grabbed state.
             Positioned(
               key: _pillKey,
-              right: ReaderScrollHandle.edgeInset,
+              right: edge,
               top: metrics.top,
               width: width,
               height: ReaderScrollHandle.handleHeight,
@@ -186,19 +202,23 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
                 curve: AppMotion.standard,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onVerticalDragStart: (details) =>
-                      _onDragStart(details, metrics),
-                  onVerticalDragUpdate: (details) =>
-                      _onDragUpdate(details, metrics),
-                  onVerticalDragEnd: (_) => _onDragEnd(),
-                  onVerticalDragCancel: _releaseDrag,
+                  // Pan rather than vertical drag: a grab that sets off
+                  // sideways — most of them — is still someone dragging the
+                  // handle, and a recognizer that only wants vertical movement
+                  // would sit the gesture out whenever anything else is in the
+                  // arena to take it. Only `dy` is read below, so moving
+                  // sideways moves nothing.
+                  onPanStart: (details) => _onDragStart(details, metrics),
+                  onPanUpdate: (details) => _onDragUpdate(details, metrics),
+                  onPanEnd: (_) => _onDragEnd(),
+                  onPanCancel: _releaseDrag,
                   child: _pill(context),
                 ),
               ),
             ),
             if (_dragging)
               Positioned(
-                right: ReaderScrollHandle.edgeInset + width + 8,
+                right: edge + width + 8,
                 top: metrics.top,
                 height: ReaderScrollHandle.handleHeight,
                 child: Center(child: IgnorePointer(child: _bubble(context))),
@@ -211,6 +231,16 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
 
   Widget _pill(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    // A plain grey, not the scheme's `onSurfaceVariant` — that one is tinted
+    // towards the brand green, which over a white page reads as a colour
+    // rather than as a scrollbar. Flipped by brightness so the pill stays
+    // darker than the page in either theme.
+    final grey = colors.brightness == Brightness.light
+        ? const Color(0xFF5F6763)
+        : const Color(0xFFBFC6C2);
+    final opacity = _dragging
+        ? ReaderScrollHandle.grabbedOpacity
+        : ReaderScrollHandle.restingOpacity;
     return Semantics(
       label: 'Scroll through the book',
       value:
@@ -219,17 +249,16 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
       slider: true,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: _dragging
-              ? colors.primary
-              : colors.onSurfaceVariant.withValues(alpha: 0.55),
+          color: grey.withValues(alpha: opacity),
           borderRadius: BorderRadius.circular(TomezaRadii.chip),
-          border: Border.all(color: colors.surface.withValues(alpha: 0.7)),
         ),
         child: Center(
           child: Icon(
             Icons.drag_indicator,
-            size: 14,
-            color: _dragging ? colors.onPrimary : colors.surface,
+            size: 18,
+            // Reads against the pill from either side: dark ink on the pale
+            // wash a light theme leaves, light ink on the dark one.
+            color: colors.onSurface.withValues(alpha: _dragging ? 0.75 : 0.5),
           ),
         ),
       ),
