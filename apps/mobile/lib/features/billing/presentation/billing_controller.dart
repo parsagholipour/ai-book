@@ -113,8 +113,9 @@ class BillingController extends ChangeNotifier {
 
   BillingPurchaseState get state => _state;
 
-  /// A one-shot event emitted only after the backend verifies a purchase.
-  /// Checkout-opening, pending, canceled, and failed updates never emit here.
+  /// One-shot lifecycle events for purchases initiated by a visible surface.
+  /// Success is emitted only after a backend grant; stopped events let the
+  /// surface forget ownership after cancellation or failure.
   Stream<BillingPurchaseEvent> get purchaseEvents => _purchaseEvents.stream;
 
   /// Removes the inline copy once a purchase surface has taken responsibility
@@ -458,6 +459,10 @@ class BillingController extends ChangeNotifier {
             );
             _unacknowledgedPurchaseSuccess = success;
             _emitPurchaseEvent(success);
+          } else if (result.purchase.status != 'pending') {
+            _emitPurchaseEvent(
+              BillingPurchaseStopped(productId: purchase.productId),
+            );
           }
         } catch (error) {
           if (!_disposed) {

@@ -123,7 +123,7 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
   }
 
   void _onPurchaseEvent(BillingPurchaseEvent event) {
-    if (event is BillingPurchaseStopped) {
+    if (event is! BillingPurchaseSuccess) {
       _purchasesStartedHere.remove(event.productId);
       return;
     }
@@ -138,7 +138,7 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
     }
     _purchasesStartedHere.remove(event.productId);
     _completionHandled = true;
-    final purchase = event as BillingPurchaseSuccess;
+    final purchase = event;
     ref
         .read(billingControllerProvider(widget.projectId))
         .acknowledgePurchaseSuccess(purchase);

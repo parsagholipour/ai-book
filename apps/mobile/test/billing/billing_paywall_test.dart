@@ -163,6 +163,64 @@ void main() {
     expect(repository.verifications.single.productId, 'tomeza.credit_pack_1');
   });
 
+  testWidgets('a late success cannot pop the page under a closing paywall', (
+    tester,
+  ) async {
+    final store = FakeStoreBillingClient();
+    final repository = FakeBillingRepository();
+
+    await tester.pumpWidget(
+      testPaywallLauncher(store: store, repository: repository),
+    );
+    await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
+    await tester.pumpAndSettle();
+
+    final creditPack = find.byKey(
+      const ValueKey('paywall-topup-tomeza.credit_pack_1'),
+    );
+    await tester.scrollUntilVisible(
+      creditPack,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final buyButton = find.descendant(
+      of: creditPack,
+      matching: find.byType(FilledButton),
+    );
+    await tester.ensureVisible(buyButton);
+    await tester.pumpAndSettle();
+    await tester.tap(buyButton);
+    await tester.pump();
+
+    // Begin dismissing the paywall while its store purchase is still active.
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_1',
+        status: StorePurchaseStatus.purchased,
+        purchaseToken: 'late-purchase-token',
+        purchaseId: 'late-order',
+        pendingCompletePurchase: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verification and store completion survive route disposal, but the event
+    // no longer owns a current route and therefore cannot pop the launcher.
+    expect(
+      repository.verifications.single.purchaseToken,
+      'late-purchase-token',
+    );
+    expect(store.finished.single.purchaseToken, 'late-purchase-token');
+    expect(find.byType(BillingPaywall), findsNothing);
+    expect(find.byKey(const ValueKey('open-billing-paywall')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('billing-purchase-success-dialog')),
+      findsNothing,
+    );
+  });
+
   testWidgets('paywall handles restore, failed, and canceled purchase states', (
     tester,
   ) async {
@@ -377,6 +435,101 @@ void main() {
     expect(find.text('1000 credits added.'), findsNothing);
   });
 
+  testWidgets('a backend-pending purchase keeps the buy sheet open', (
+    tester,
+  ) async {
+    final store = FakeStoreBillingClient();
+    final repository = FakeBillingRepository()..nextPurchaseIsPending = true;
+    await tester.pumpWidget(
+      testPaywall(
+        store: store,
+        repository: repository,
+        creditsNeeded: const PaywallCreditsNeeded(credits: 500),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('buy-credits-buy')));
+    await tester.pump();
+
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_1',
+        status: StorePurchaseStatus.purchased,
+        purchaseToken: 'backend-pending-token',
+        purchaseId: 'backend-pending-order',
+        pendingCompletePurchase: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      repository.verifications.single.purchaseToken,
+      'backend-pending-token',
+    );
+    expect(store.finished.single.purchaseToken, 'backend-pending-token');
+    expect(find.byType(BuyCreditsSheet), findsOneWidget);
+    expect(find.byType(BillingPaywall), findsOneWidget);
+    expect(find.textContaining('Payment is pending'), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('billing-purchase-success-dialog')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('a canceled attempt does not claim a later purchase', (
+    tester,
+  ) async {
+    final store = FakeStoreBillingClient();
+    final repository = FakeBillingRepository();
+    await tester.pumpWidget(
+      testPaywall(
+        store: store,
+        repository: repository,
+        creditsNeeded: const PaywallCreditsNeeded(credits: 500),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('buy-credits-buy')));
+    await tester.pump();
+
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_1',
+        status: StorePurchaseStatus.canceled,
+        purchaseToken: '',
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(BuyCreditsSheet), findsOneWidget);
+
+    // A later restore or external completion for the same SKU is not the
+    // canceled button press and must not dismiss this sheet.
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_1',
+        status: StorePurchaseStatus.purchased,
+        purchaseToken: 'external-purchase-token',
+        purchaseId: 'external-order',
+        pendingCompletePurchase: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      repository.verifications.single.purchaseToken,
+      'external-purchase-token',
+    );
+    expect(find.byType(BuyCreditsSheet), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('billing-purchase-success-dialog')),
+      findsNothing,
+    );
+  });
+
   testWidgets('the shortfall settles once a purchase covers it', (
     tester,
   ) async {
@@ -564,6 +717,7 @@ class FakeBillingRepository implements BillingRepository {
   var refreshCalls = 0;
   var cancelCalls = 0;
   Object? cancelError;
+  bool nextPurchaseIsPending = false;
 
   @override
   Future<MobileBilling> getBilling() async => billing;
@@ -586,15 +740,21 @@ class FakeBillingRepository implements BillingRepository {
       ),
     );
     final isSubscription = productId == 'tomeza.creator_monthly';
-    final granted = isSubscription ? 3000 : 1000;
-    billing = fakeBilling(
-      availableCredits: billing.credits.available + granted,
-      planTier: planTier,
-    );
+    final granted = nextPurchaseIsPending
+        ? 0
+        : isSubscription
+        ? 3000
+        : 1000;
+    if (!nextPurchaseIsPending) {
+      billing = fakeBilling(
+        availableCredits: billing.credits.available + granted,
+        planTier: planTier,
+      );
+    }
     return GooglePlayVerificationResult(
       purchase: VerifiedPurchase(
         id: 'purchase-${verifications.length}',
-        status: 'granted',
+        status: nextPurchaseIsPending ? 'pending' : 'granted',
         creditsGranted: granted,
         subscriptionStatus: isSubscription ? 'active' : null,
         entitlementType: isSubscription ? 'CREATOR_PLAN' : null,
