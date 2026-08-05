@@ -7,31 +7,29 @@ class _ProjectChatFooter extends StatelessWidget {
   const _ProjectChatFooter({
     required this.controller,
     required this.enabled,
+    required this.lockedLabel,
     required this.projectStatus,
     required this.onSend,
   });
 
   final TextEditingController controller;
   final bool enabled;
+  final String? lockedLabel;
   final String projectStatus;
   final ValueChanged<String> onSend;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    // A book being rewritten cannot take another request — the API parks
-    // anything that arrives until the job settles — so the composer closes
-    // instead of looking like it is listening. The first build is a different
-    // moment: nothing is being replaced yet, so questions stay welcome.
-    final rebuilding = projectStatus == 'editing';
-    final open = enabled && !rebuilding;
-    final hintText = rebuilding
-        ? 'Regenerating your book…'
-        : projectStatus == 'complete'
-        ? 'Ask for an edit to this book…'
-        : projectStatus == 'generating'
-        ? 'Ask about this book…'
-        : 'Ask for a change…';
+    // A book being written or rewritten cannot take another request, so the
+    // composer closes instead of looking like it is listening. Keep anything
+    // already typed in the controller so it is ready once the job settles.
+    final open = enabled && lockedLabel == null;
+    final hintText =
+        lockedLabel ??
+        (projectStatus == 'complete'
+            ? 'Ask for an edit to this book…'
+            : 'Ask for a change…');
     return Material(
       color: colors.surface,
       elevation: 8,

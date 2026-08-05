@@ -695,6 +695,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
           return _ProjectChatFooter(
             controller: _composerController,
             enabled: !_projectChatSending,
+            lockedLabel: _outputMessagingLockLabel(
+              projectStatus: project.status,
+              liveStatus: planningStatusValue?.asData?.value,
+            ),
             projectStatus: project.status,
             onSend: (message) =>
                 _sendOutputMessage(activeProjectId, message.trim()),
@@ -808,6 +812,22 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   /// goes to the creation chat (forking a branch there); everything else is
   /// a normal project chat message.
   Future<void> _sendOutputMessage(String projectId, String message) async {
+    final projectStatus = ref
+        .read(projectDetailProvider(projectId))
+        .asData
+        ?.value
+        .status;
+    final liveStatus = ref.read(projectStatusProvider(projectId)).asData?.value;
+    // The field is already disabled while this is non-null. Repeat the guard
+    // at the callback boundary so a tap from the frame just before a live
+    // status update cannot sneak a message into an active generation.
+    if (_outputMessagingLockLabel(
+          projectStatus: projectStatus,
+          liveStatus: liveStatus,
+        ) !=
+        null) {
+      return;
+    }
     final editingCreationMessageId = _editingCreationMessageId;
     if (editingCreationMessageId != null) {
       await _sendCreationEdit(message, editingCreationMessageId);
@@ -1388,6 +1408,24 @@ bool _shouldWatchGenerationStatus(MobileProjectDetail? project) {
     'failed' => true,
     _ => false,
   };
+}
+
+String? _outputMessagingLockLabel({
+  required String? projectStatus,
+  required MobileProjectStatus? liveStatus,
+}) {
+  if (liveStatus?.isLive ?? false) {
+    return liveStatus!.status == 'generating'
+        ? 'Generating your book…'
+        : 'Regenerating your book…';
+  }
+  if (projectStatus == 'generating') {
+    return 'Generating your book…';
+  }
+  if (projectStatus == 'editing') {
+    return 'Regenerating your book…';
+  }
+  return null;
 }
 
 Object? _generationScrollKey(AsyncValue<MobileProjectStatus>? statusValue) {

@@ -133,9 +133,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   /// messages that would only be parked.
   String? _composerLockLabel(MobileProjectStatus? liveStatus) {
     if (liveStatus == null) return null;
-    return liveStatus.status == 'planning'
-        ? 'Revising your plan…'
-        : 'Regenerating your book…';
+    return switch (liveStatus.status) {
+      'planning' => 'Revising your plan…',
+      'generating' => 'Generating your book…',
+      _ => 'Regenerating your book…',
+    };
   }
 
   /// Whether to draw the assistant-side "thinking" bubble.

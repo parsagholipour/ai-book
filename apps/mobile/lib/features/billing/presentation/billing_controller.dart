@@ -9,6 +9,18 @@ import '../data/billing_repository.dart';
 import '../data/google_play_billing_client.dart';
 import '../domain/billing_models.dart';
 
+class BillingPurchaseSuccess {
+  const BillingPurchaseSuccess({
+    required this.productId,
+    required this.purchaseId,
+    required this.message,
+  });
+
+  final String productId;
+  final String purchaseId;
+  final String message;
+}
+
 class BillingPurchaseState {
   const BillingPurchaseState({
     this.billing,
@@ -81,10 +93,30 @@ class BillingController extends ChangeNotifier {
   final VoidCallback _onBillingChanged;
   final String? projectId;
   late final StreamSubscription<List<StorePurchaseUpdate>> _subscription;
+  final _successfulPurchases =
+      StreamController<BillingPurchaseSuccess>.broadcast();
 
   BillingPurchaseState _state = const BillingPurchaseState();
+  BillingPurchaseSuccess? _unacknowledgedPurchaseSuccess;
 
   BillingPurchaseState get state => _state;
+
+  /// A one-shot event emitted only after the backend verifies a purchase.
+  /// Checkout-opening, pending, canceled, and failed updates never emit here.
+  Stream<BillingPurchaseSuccess> get successfulPurchases =>
+      _successfulPurchases.stream;
+
+  /// Removes the inline copy once a purchase surface has taken responsibility
+  /// for showing the verified result in a dialog. Restore results and other
+  /// status messages stay in place until a surface explicitly handles them.
+  void acknowledgePurchaseSuccess(BillingPurchaseSuccess purchase) {
+    if (_unacknowledgedPurchaseSuccess?.purchaseId != purchase.purchaseId ||
+        _state.message != purchase.message) {
+      return;
+    }
+    _unacknowledgedPurchaseSuccess = null;
+    _setState(_state.copyWith(clearMessage: true));
+  }
 
   List<MobileBillingProduct> get products {
     final billing = _state.billing;
@@ -269,6 +301,7 @@ class BillingController extends ChangeNotifier {
   @override
   void dispose() {
     unawaited(_subscription.cancel());
+    unawaited(_successfulPurchases.close());
     super.dispose();
   }
 
@@ -366,15 +399,23 @@ class BillingController extends ChangeNotifier {
           final nextPending = {..._state.pendingProductIds}
             ..remove(purchase.productId);
           AppHaptics.success();
+          final successMessage = _successMessage(result);
           _setState(
             _state.copyWith(
               billing: result.billing,
               pendingProductIds: nextPending,
-              message: _successMessage(result),
+              message: successMessage,
               clearError: true,
             ),
           );
           _onBillingChanged();
+          final success = BillingPurchaseSuccess(
+            productId: purchase.productId,
+            purchaseId: result.purchase.id,
+            message: successMessage,
+          );
+          _unacknowledgedPurchaseSuccess = success;
+          _successfulPurchases.add(success);
         } catch (error) {
           AppHaptics.error();
           final nextPending = {..._state.pendingProductIds}

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'billing_controller.dart';
 import 'billing_credits_needed.dart';
 import 'billing_free_plan_card.dart';
 import 'billing_plan_tiles.dart';
+import 'billing_purchase_success_dialog.dart';
 import 'billing_tier_style.dart';
 import 'credit_log_screen.dart';
 
@@ -40,18 +42,22 @@ Future<void> showBillingPaywall(
   String? title = 'Upgrade your plan',
   String? message,
   PaywallCreditsNeeded? creditsNeeded,
-}) {
-  return showModalBottomSheet<void>(
+}) async {
+  final success = await showModalBottomSheet<BillingPurchaseSuccess>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (context) => BillingPaywall(
+    builder: (sheetContext) => BillingPaywall(
       projectId: projectId,
       title: title,
       message: message,
       creditsNeeded: creditsNeeded,
+      onPurchaseSuccess: (purchase) => Navigator.of(sheetContext).pop(purchase),
     ),
   );
+  if (success != null && context.mounted) {
+    await showBillingPurchaseSuccessDialog(context, success);
+  }
 }
 
 class BillingPaywall extends ConsumerStatefulWidget {
@@ -60,6 +66,7 @@ class BillingPaywall extends ConsumerStatefulWidget {
     this.title = 'Upgrade your plan',
     this.message,
     this.creditsNeeded,
+    this.onPurchaseSuccess,
     super.key,
   });
 
@@ -67,12 +74,16 @@ class BillingPaywall extends ConsumerStatefulWidget {
   final String? title;
   final String? message;
   final PaywallCreditsNeeded? creditsNeeded;
+  final ValueChanged<BillingPurchaseSuccess>? onPurchaseSuccess;
 
   @override
   ConsumerState<BillingPaywall> createState() => _BillingPaywallState();
 }
 
 class _BillingPaywallState extends ConsumerState<BillingPaywall> {
+  final _purchasesStartedHere = <String>{};
+  late StreamSubscription<BillingPurchaseSuccess> _purchaseSuccessSubscription;
+
   /// One anchor per plan card, so "Upgrade" can land on the rung it names
   /// rather than on the top of a ladder the reader is already halfway up.
   final _planAnchors = <String, GlobalKey>{};
@@ -83,6 +94,55 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
   /// How many hops [_revealSection] will take before giving up. Four screens
   /// is further than this sheet is tall.
   static const _maxRevealHops = 5;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenForPurchaseSuccess();
+  }
+
+  @override
+  void didUpdateWidget(covariant BillingPaywall oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.projectId != widget.projectId) {
+      unawaited(_purchaseSuccessSubscription.cancel());
+      _purchasesStartedHere.clear();
+      _listenForPurchaseSuccess();
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_purchaseSuccessSubscription.cancel());
+    super.dispose();
+  }
+
+  void _listenForPurchaseSuccess() {
+    _purchaseSuccessSubscription = ref
+        .read(billingControllerProvider(widget.projectId))
+        .successfulPurchases
+        .listen(_onPurchaseSuccess);
+  }
+
+  void _onPurchaseSuccess(BillingPurchaseSuccess purchase) {
+    if (!mounted || !_purchasesStartedHere.remove(purchase.productId)) {
+      return;
+    }
+    ref
+        .read(billingControllerProvider(widget.projectId))
+        .acknowledgePurchaseSuccess(purchase);
+    final onPurchaseSuccess = widget.onPurchaseSuccess;
+    if (onPurchaseSuccess != null) {
+      onPurchaseSuccess(purchase);
+      return;
+    }
+    unawaited(showBillingPurchaseSuccessDialog(context, purchase));
+  }
+
+  void _buy(BillingController controller, MobileBillingProduct product) {
+    _purchasesStartedHere.add(product.sku);
+    unawaited(controller.buy(product));
+  }
 
   GlobalKey _planAnchor(String sku) =>
       _planAnchors.putIfAbsent(sku, GlobalKey.new);
@@ -242,7 +302,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                         bestValue: plan.sku == value.bestValueSku,
                         savingsPercent: value.savingsFor(plan.sku),
                         pending: state.pendingProductIds.contains(plan.sku),
-                        onBuy: () => controller.buy(plan),
+                        onBuy: () => _buy(controller, plan),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -300,7 +360,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                       product: product,
                       storeProduct: state.storeProducts[product.sku],
                       pending: state.pendingProductIds.contains(product.sku),
-                      onBuy: () => controller.buy(product),
+                      onBuy: () => _buy(controller, product),
                     ),
                     const SizedBox(height: 10),
                   ],

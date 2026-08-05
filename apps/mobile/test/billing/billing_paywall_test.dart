@@ -68,21 +68,99 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final successDialog = find.byKey(
+      const ValueKey('billing-purchase-success-dialog'),
+    );
+    expect(successDialog, findsOneWidget);
+    expect(find.text('Purchase successful'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: successDialog,
+        matching: find.text('1000 credits added.'),
+      ),
+      findsOneWidget,
+    );
+    expect(repository.verifications.single.productId, 'tomeza.one_book_export');
+    expect(repository.verifications.single.purchaseToken, 'purchase-token-1');
+    expect(store.finished.single.purchaseToken, 'purchase-token-1');
+    await tester.tap(
+      find.descendant(of: successDialog, matching: find.byType(FilledButton)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1000 credits added.'), findsNothing);
     await tester.scrollUntilVisible(
       find.text('1,100'),
       -200,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(repository.verifications.single.productId, 'tomeza.one_book_export');
-    expect(repository.verifications.single.purchaseToken, 'purchase-token-1');
-    expect(store.finished.single.purchaseToken, 'purchase-token-1');
     expect(find.text('1,100'), findsOneWidget);
+  });
+
+  testWidgets('a verified purchase closes the paywall before its dialog', (
+    tester,
+  ) async {
+    final store = FakeStoreBillingClient();
+    final repository = FakeBillingRepository();
+
+    await tester.pumpWidget(
+      testPaywallLauncher(store: store, repository: repository),
+    );
+    await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
+    await tester.pumpAndSettle();
+
+    final creditPack = find.byKey(
+      const ValueKey('paywall-topup-tomeza.credit_pack_1'),
+    );
     await tester.scrollUntilVisible(
-      find.text('1000 credits added.'),
+      creditPack,
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('1000 credits added.'), findsOneWidget);
+    final buyButton = find.descendant(
+      of: creditPack,
+      matching: find.byType(FilledButton),
+    );
+    await tester.ensureVisible(buyButton);
+    await tester.pumpAndSettle();
+    await tester.tap(buyButton);
+    await tester.pump();
+
+    expect(store.buyCalls.single.product.id, 'tomeza.credit_pack_1');
+
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_1',
+        status: StorePurchaseStatus.pending,
+        purchaseToken: 'pending-token',
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(BillingPaywall), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('billing-purchase-success-dialog')),
+      findsNothing,
+    );
+
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_1',
+        status: StorePurchaseStatus.purchased,
+        purchaseToken: 'purchase-token-1',
+        purchaseId: 'order-1',
+        pendingCompletePurchase: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BillingPaywall), findsNothing);
+    expect(
+      find.byKey(const ValueKey('billing-purchase-success-dialog')),
+      findsOneWidget,
+    );
+    expect(find.text('Purchase successful'), findsOneWidget);
+    expect(repository.verifications.single.productId, 'tomeza.credit_pack_1');
   });
 
   testWidgets('paywall handles restore, failed, and canceled purchase states', (
@@ -204,10 +282,11 @@ void main() {
     tester,
   ) async {
     final store = FakeStoreBillingClient();
+    final repository = FakeBillingRepository();
     await tester.pumpWidget(
       testPaywall(
         store: store,
-        repository: FakeBillingRepository(),
+        repository: repository,
         creditsNeeded: const PaywallCreditsNeeded(credits: 500),
       ),
     );
@@ -238,6 +317,64 @@ void main() {
 
     expect(store.buyCalls.single.product.id, 'tomeza.credit_pack_2');
     expect(store.buyCalls.single.consumable, isTrue);
+    expect(find.byType(BuyCreditsSheet), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('billing-purchase-success-dialog')),
+      findsNothing,
+    );
+
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_2',
+        status: StorePurchaseStatus.pending,
+        purchaseToken: 'pending-token',
+      ),
+    );
+    await tester.pump();
+
+    // Opening checkout and a pending payment must not dismiss the sheet.
+    expect(find.byType(BuyCreditsSheet), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('billing-purchase-success-dialog')),
+      findsNothing,
+    );
+
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_2',
+        status: StorePurchaseStatus.purchased,
+        purchaseToken: 'purchase-token-2',
+        purchaseId: 'order-2',
+        pendingCompletePurchase: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BuyCreditsSheet), findsNothing);
+    expect(find.byType(BillingPaywall), findsOneWidget);
+    final successDialog = find.byKey(
+      const ValueKey('billing-purchase-success-dialog'),
+    );
+    expect(successDialog, findsOneWidget);
+    expect(find.text('Purchase successful'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: successDialog,
+        matching: find.text('1000 credits added.'),
+      ),
+      findsOneWidget,
+    );
+    expect(repository.verifications.single.productId, 'tomeza.credit_pack_2');
+    expect(repository.verifications.single.purchaseToken, 'purchase-token-2');
+    expect(store.finished.single.purchaseToken, 'purchase-token-2');
+
+    await tester.tap(
+      find.descendant(of: successDialog, matching: find.byType(FilledButton)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You have enough credits'), findsOneWidget);
+    expect(find.text('1000 credits added.'), findsNothing);
   });
 
   testWidgets('the shortfall settles once a purchase covers it', (
@@ -364,6 +501,36 @@ Widget testPaywall({
         body: BillingPaywall(
           projectId: 'project-1',
           creditsNeeded: creditsNeeded,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget testPaywallLauncher({
+  required FakeStoreBillingClient store,
+  required FakeBillingRepository repository,
+}) {
+  return ProviderScope(
+    overrides: [
+      storeBillingClientProvider.overrideWithValue(store),
+      billingRepositoryProvider.overrideWithValue(repository),
+      creditLogRepositoryProvider.overrideWithValue(EmptyCreditLogRepository()),
+    ],
+    child: MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (context) => Center(
+            child: FilledButton(
+              key: const ValueKey('open-billing-paywall'),
+              onPressed: () => showBillingPaywall(
+                context,
+                projectId: 'project-1',
+                title: null,
+              ),
+              child: const Text('Open billing'),
+            ),
+          ),
         ),
       ),
     ),

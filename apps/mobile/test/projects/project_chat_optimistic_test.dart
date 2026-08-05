@@ -96,36 +96,42 @@ void main() {
     expect(repository.chatFetches.length, greaterThan(fetchesBefore + 1));
   });
 
-  testWidgets('a message handed in on open is sent without the caller waiting', (
-    tester,
-  ) async {
-    // The reader pushes the chat and hands over the edit rather than awaiting
-    // the request itself, so acting on a passage opens the chat immediately.
-    final repository = _ScriptedProjectsRepository();
-    final gate = Completer<void>();
-    repository.sendGates.add(gate);
+  testWidgets(
+    'a message handed in on open is sent without the caller waiting',
+    (tester) async {
+      // The reader pushes the chat and hands over the edit rather than awaiting
+      // the request itself, so acting on a passage opens the chat immediately.
+      final repository = _ScriptedProjectsRepository();
+      final gate = Completer<void>();
+      repository.sendGates.add(gate);
 
-    await tester.pumpWidget(
-      _app(repository, initialMessage: 'On page 3, rewrite this passage: "x".'),
-    );
-    await tester.pump();
-    await tester.pump();
+      await tester.pumpWidget(
+        _app(
+          repository,
+          initialMessage: 'On page 3, rewrite this passage: "x".',
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
 
-    // On screen as a pending bubble before the server has answered.
-    expect(
-      find.text('On page 3, rewrite this passage: "x".'),
-      findsOneWidget,
-    );
-    expect(repository.sentMessages, ['On page 3, rewrite this passage: "x".']);
+      // On screen as a pending bubble before the server has answered.
+      expect(
+        find.text('On page 3, rewrite this passage: "x".'),
+        findsOneWidget,
+      );
+      expect(repository.sentMessages, [
+        'On page 3, rewrite this passage: "x".',
+      ]);
 
-    gate.complete();
-    await tester.pumpAndSettle();
+      gate.complete();
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text('Reply about On page 3, rewrite this passage: "x".'),
-      findsOneWidget,
-    );
-  });
+      expect(
+        find.text('Reply about On page 3, rewrite this passage: "x".'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('an empty handed-in message sends nothing', (tester) async {
     final repository = _ScriptedProjectsRepository();
@@ -144,7 +150,8 @@ void main() {
     expect(
       position.pixels,
       position.maxScrollExtent,
-      reason: 'a chat that opens at the oldest message hides what just happened',
+      reason:
+          'a chat that opens at the oldest message hides what just happened',
     );
     expect(position.maxScrollExtent, greaterThan(0), reason: 'needs overflow');
   });
@@ -182,8 +189,11 @@ void main() {
       findsNothing,
       reason: 'that is the whole book, not the pages this edit touches',
     );
-    expect(scrollPosition(tester).pixels, scrollPosition(tester).maxScrollExtent,
-        reason: 'progress must be in view, not above the fold');
+    expect(
+      scrollPosition(tester).pixels,
+      scrollPosition(tester).maxScrollExtent,
+      reason: 'progress must be in view, not above the fold',
+    );
 
     // Work finishes: the transcript refreshes without the user asking.
     repository.emitStatus(status: 'complete', progressPercent: 100);
@@ -191,7 +201,10 @@ void main() {
 
     expect(find.text('Rewriting page 3'), findsNothing);
     expect(repository.chatFetches.length, greaterThan(fetchesBefore));
-    expect(scrollPosition(tester).pixels, scrollPosition(tester).maxScrollExtent);
+    expect(
+      scrollPosition(tester).pixels,
+      scrollPosition(tester).maxScrollExtent,
+    );
   });
 
   testWidgets('the running step says how far through it is', (tester) async {
@@ -508,6 +521,27 @@ void main() {
     expect(repository.sentMessages, ['Now make it funnier']);
   });
 
+  testWidgets('the composer is locked while the book is first generated', (
+    tester,
+  ) async {
+    final repository = _ScriptedProjectsRepository();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    repository.emitStatus(status: 'generating', progressPercent: 30);
+    await tester.pump();
+    await tester.pump();
+
+    final composer = tester.widget<TextField>(find.byType(TextField));
+    expect(composer.enabled, isFalse);
+    expect(composer.decoration?.hintText, 'Generating your book…');
+    expect(find.byTooltip('Edit message'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.send_outlined));
+    await tester.pump();
+    expect(repository.sentMessages, isEmpty);
+  });
+
   testWidgets('a failed inline edit keeps the edited text in the editor', (
     tester,
   ) async {
@@ -519,10 +553,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Edit message'));
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byType(TextField).first,
-      'Edited but doomed',
-    );
+    await tester.enterText(find.byType(TextField).first, 'Edited but doomed');
     await tester.tap(find.text('Save & Submit'));
     await tester.pump();
     gate.completeError(
@@ -544,10 +575,7 @@ ScrollPosition scrollPosition(WidgetTester tester) {
       .position;
 }
 
-Widget _app(
-  _ScriptedProjectsRepository repository, {
-  String? initialMessage,
-}) {
+Widget _app(_ScriptedProjectsRepository repository, {String? initialMessage}) {
   return ProviderScope(
     overrides: [projectsRepositoryProvider.overrideWithValue(repository)],
     child: MaterialApp(
@@ -668,10 +696,14 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
       ..add((role: 'user', content: 'Now regenerate it in Persian'))
       ..add((
         role: 'assistant',
-        content: 'I created a new Persian copy and I\u2019ll rebuild the plan '
+        content:
+            'I created a new Persian copy and I\u2019ll rebuild the plan '
             'and book there.',
       ))
-      ..add((role: 'user', content: 'On page 2, replace "Bunny" with "cute Bunny".'))
+      ..add((
+        role: 'user',
+        content: 'On page 2, replace "Bunny" with "cute Bunny".',
+      ))
       ..add((
         role: 'assistant',
         content: 'Edit page 2. Tap Apply to confirm, or Cancel to drop it.',

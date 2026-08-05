@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,9 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
+import '../domain/billing_models.dart';
 import '../domain/credit_purchase_quote.dart';
 import 'billing_controller.dart';
 import 'billing_plan_tiles.dart';
+import 'billing_purchase_success_dialog.dart';
 
 /// "How many credits do you need?" — with the cost of that answer, the pack
 /// that delivers it, and the button that buys it.
@@ -22,18 +26,22 @@ Future<void> showBuyCreditsSheet(
   String? projectId,
   int? shortfall,
   VoidCallback? onSeePlans,
-}) {
-  return showModalBottomSheet<void>(
+}) async {
+  final success = await showModalBottomSheet<BillingPurchaseSuccess>(
     context: context,
     showDragHandle: true,
     useSafeArea: true,
     isScrollControlled: true,
-    builder: (_) => BuyCreditsSheet(
+    builder: (sheetContext) => BuyCreditsSheet(
       projectId: projectId,
       shortfall: shortfall,
       onSeePlans: onSeePlans,
+      onPurchaseSuccess: (purchase) => Navigator.of(sheetContext).pop(purchase),
     ),
   );
+  if (success != null && context.mounted) {
+    await showBillingPurchaseSuccessDialog(context, success);
+  }
 }
 
 class BuyCreditsSheet extends ConsumerStatefulWidget {
@@ -41,6 +49,7 @@ class BuyCreditsSheet extends ConsumerStatefulWidget {
     this.projectId,
     this.shortfall,
     this.onSeePlans,
+    this.onPurchaseSuccess,
     super.key,
   });
 
@@ -53,6 +62,9 @@ class BuyCreditsSheet extends ConsumerStatefulWidget {
   /// Closes this sheet and takes the paywall behind it to the plan ladder.
   /// Null when nothing is behind it to take.
   final VoidCallback? onSeePlans;
+
+  /// Returns a verified purchase to the route that presented this sheet.
+  final ValueChanged<BillingPurchaseSuccess>? onPurchaseSuccess;
 
   @override
   ConsumerState<BuyCreditsSheet> createState() => _BuyCreditsSheetState();
@@ -68,19 +80,60 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
   static const _maxCredits = 999999;
 
   final _amount = TextEditingController();
+  final _purchasesStartedHere = <String>{};
+  late StreamSubscription<BillingPurchaseSuccess> _purchaseSuccessSubscription;
 
   @override
   void initState() {
     super.initState();
     _amount.text = '${_openingCredits()}';
     _amount.addListener(_onAmountChanged);
+    _listenForPurchaseSuccess();
+  }
+
+  @override
+  void didUpdateWidget(covariant BuyCreditsSheet oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.projectId != widget.projectId) {
+      unawaited(_purchaseSuccessSubscription.cancel());
+      _purchasesStartedHere.clear();
+      _listenForPurchaseSuccess();
+    }
   }
 
   @override
   void dispose() {
+    unawaited(_purchaseSuccessSubscription.cancel());
     _amount.removeListener(_onAmountChanged);
     _amount.dispose();
     super.dispose();
+  }
+
+  void _listenForPurchaseSuccess() {
+    _purchaseSuccessSubscription = ref
+        .read(billingControllerProvider(widget.projectId))
+        .successfulPurchases
+        .listen(_onPurchaseSuccess);
+  }
+
+  void _onPurchaseSuccess(BillingPurchaseSuccess purchase) {
+    if (!mounted || !_purchasesStartedHere.remove(purchase.productId)) {
+      return;
+    }
+    ref
+        .read(billingControllerProvider(widget.projectId))
+        .acknowledgePurchaseSuccess(purchase);
+    final onPurchaseSuccess = widget.onPurchaseSuccess;
+    if (onPurchaseSuccess != null) {
+      onPurchaseSuccess(purchase);
+      return;
+    }
+    unawaited(showBillingPurchaseSuccessDialog(context, purchase));
+  }
+
+  void _buy(BillingController controller, MobileBillingProduct product) {
+    _purchasesStartedHere.add(product.sku);
+    unawaited(controller.buy(product));
   }
 
   void _onAmountChanged() => setState(() {});
@@ -219,7 +272,7 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
                     ),
                     onBuy: state.storeProducts[quote.best!.product.sku] == null
                         ? null
-                        : () => controller.buy(quote.best!.product),
+                        : () => _buy(controller, quote.best!.product),
                   ),
                 ],
                 if (quote.betterPlan != null) ...[
@@ -276,7 +329,7 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
                       product: product,
                       storeProduct: state.storeProducts[product.sku],
                       pending: state.pendingProductIds.contains(product.sku),
-                      onBuy: () => controller.buy(product),
+                      onBuy: () => _buy(controller, product),
                     ),
                     const SizedBox(height: 10),
                   ],

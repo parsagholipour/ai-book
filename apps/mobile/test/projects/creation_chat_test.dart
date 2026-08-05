@@ -1390,6 +1390,18 @@ void main() {
     expect(find.text('3/28 pages'), findsOneWidget);
     expect(find.text('1 visual'), findsOneWidget);
     expect(find.text('View progress'), findsOneWidget);
+    final composer = tester.widget<TextField>(find.byType(TextField));
+    expect(composer.enabled, isFalse);
+    expect(composer.decoration?.hintText, 'Generating your book…');
+    expect(
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.send_rounded),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(projects.revisionMessages, isEmpty);
 
     await tester.tap(find.text('View progress'));
     await tester.pump();
