@@ -26,6 +26,7 @@ export * from "./adapters/modelTiers.js";
 export * from "./adapters/textRouting.js";
 export * from "./adapters/textFallback.js";
 export * from "./adapters/geminiModels.js";
+export * from "./adapters/groundingRedirect.js";
 export * from "./adapters/gemini.js";
 export * from "./adapters/openaiSpeech.js";
 export * from "./adapters/fileUnderstanding.js";

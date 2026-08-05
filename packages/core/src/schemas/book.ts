@@ -555,12 +555,19 @@ export const mediaSettingsSchema = z.object({
   mobile: jsonValueSchema.optional()
 });
 
+/**
+ * Ceiling for a project prompt, whether a client typed it or the server
+ * composed it. The worker budgets its own planner additions against this, so
+ * anything that builds a prompt reads it from here rather than restating it.
+ */
+export const PROJECT_PROMPT_MAX_LENGTH = 20000;
+
 export const createProjectSchema = z.object({
   title: z.string().min(2).max(160).optional(),
   subtitle: z.string().max(180).optional(),
   authorName: z.string().max(120).optional(),
   coverTagline: z.string().max(180).optional(),
-  prompt: z.string().min(10).max(20000),
+  prompt: z.string().min(10).max(PROJECT_PROMPT_MAX_LENGTH),
   category: categorySchema.default("STORY"),
   subcategory: subcategorySchema,
   targetPages: z.coerce.number().int().min(1).max(600).default(40),

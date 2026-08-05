@@ -11,7 +11,7 @@ import {
 } from "../mobileCreation.js";
 import { type GenerationJobType } from "../queue.js";
 import { type MobileBookType, type MobileLengthPreset, type MobileQualityPreset } from "./dto.js";
-import { type CreateProjectInput, type ModelTier, type ToneProfile } from "@book-maker/core";
+import { PROJECT_PROMPT_MAX_LENGTH, type CreateProjectInput, type ModelTier, type ToneProfile } from "@book-maker/core";
 import { z } from "zod";
 
 /**
@@ -93,13 +93,20 @@ export const UNTITLED_MOBILE_PROJECT_TITLE = "Untitled Book";
 
 export const MOBILE_TITLE_SOURCE_PLANNER_PENDING = "planner_pending";
 
+/**
+ * What a client may type into the create-project body. Deliberately far below
+ * the domain ceiling — a prompt the server composes from a creation chat is
+ * validated by `mobileComposedProjectCreateSchema` instead.
+ */
+const MOBILE_TYPED_PROMPT_MAX = 5000;
+
 export const mobileProjectCreateBodySchema = z
   .object({
     bookType: mobileBookTypeSchema,
     bookTypeChoice: mobileBookTypeChoiceSchema.optional(),
     title: z.string().trim().min(2).max(160).optional(),
     authorName: z.string().trim().min(1).max(120).optional(),
-    prompt: z.string().trim().min(10).max(5000),
+    prompt: z.string().trim().min(10).max(MOBILE_TYPED_PROMPT_MAX),
     lengthPreset: mobileLengthPresetSchema.default("standard"),
     qualityPreset: mobileQualityPresetSchema.default("balanced"),
     imagesEnabled: z.boolean().default(true),
@@ -112,6 +119,18 @@ export const mobileProjectCreateBodySchema = z
     advisor: mobileBookAdvisorResponseSchema.optional()
   })
   .strict();
+
+/**
+ * The same shape, but for a prompt the server composed rather than one a
+ * client sent. `composeMobileProjectPrompt` folds the creation chat and its
+ * web research into the prompt, so a session that ran a search clears
+ * MOBILE_TYPED_PROMPT_MAX on its own; validating that against the typed-input
+ * cap threw a ZodError out of the build route as a 500. The untrusted body is
+ * still checked against the stricter schema at the route, before this runs.
+ */
+export const mobileComposedProjectCreateSchema = mobileProjectCreateBodySchema.extend({
+  prompt: z.string().trim().min(10).max(PROJECT_PROMPT_MAX_LENGTH)
+});
 
 export const mobilePlanRevisionBodySchema = z
   .object({

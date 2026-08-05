@@ -24,6 +24,7 @@ import type {
   Usage
 } from "./types.js";
 import { geminiImageReferenceLimit, isGeminiNativeImageModel, normalizeGeminiImageModel } from "./geminiModels.js";
+import { resolveGroundingRedirects } from "./groundingRedirect.js";
 import type { TextModelThinkingEffort } from "../schemas/book.js";
 
 export type GeminiAdapterOptions = {
@@ -423,7 +424,7 @@ export class GeminiResearchAdapter implements ResearchAdapter {
     const grounding = response.candidates?.[0]?.groundingMetadata;
     const chunks = grounding?.groundingChunks ?? [];
     const excerptsByChunk = collectGroundingExcerpts(grounding?.groundingSupports ?? [], rawText);
-    const sources = chunks
+    const grounded: ResearchResult["sources"] = chunks
       .map((chunk: any, index: number) => ({ web: chunk.web, index }))
       .filter((entry: { web: unknown; index: number }) => Boolean(entry.web))
       .map(({ web, index }: { web: any; index: number }) => {
@@ -436,6 +437,9 @@ export class GeminiResearchAdapter implements ResearchAdapter {
           summary: summary || text.slice(0, 600)
         };
       });
+    // Grounding cites every page through an expiring Google redirect. Unwrap it
+    // here, while it still resolves, so nothing downstream stores or shows one.
+    const sources = await resolveGroundingRedirects(grounded);
 
     return {
       query: query.query,

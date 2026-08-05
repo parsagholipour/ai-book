@@ -11,6 +11,7 @@ import {
   formatQualityFailure
 } from "../generation/bookHelpers.js";
 import { pageRewriteReport, revisePageDraftWithRestart } from "../generation/pageReview.js";
+import { researchCitationsForExport } from "../generation/researchLinks.js";
 import { storeEmbedding } from "../generation/semanticMemory.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
@@ -197,6 +198,7 @@ export async function compileExport(job: Job) {
     pages: markdownPages,
     textModel: providers.text
   });
+  const researchSources = await researchCitationsForExport(project.research);
   const markdown = strategy.compileMarkdown({
     plan,
     category: input.category,
@@ -211,11 +213,7 @@ export async function compileExport(job: Job) {
         }
       : {}),
     pages: markdownPages,
-    researchSources: project.research.map((source) => ({
-      title: source.title,
-      url: source.url ?? undefined,
-      summary: source.summary
-    })),
+    researchSources,
     // From the project row rather than `input`, whose mediaSettings come from
     // the plan's frozen snapshot: dropping the Sources list or restyling the
     // chapter headings is a live reader preference that only queues a recompile.

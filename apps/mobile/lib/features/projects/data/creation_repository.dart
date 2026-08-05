@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 
 abstract interface class CreationRepository {

@@ -1,5 +1,5 @@
 import { ThinkingLevel } from "@google/genai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -186,6 +186,44 @@ describe("GeminiResearchAdapter", () => {
     expect(result.summary).not.toContain("AI book");
     expect(result.sources[0]?.summary).not.toContain("AI book");
     expect(result.sources[0]?.summary).toContain("A useful reader-facing note");
+  });
+
+  it("cites the publisher's own address instead of Google's grounding redirect", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(null, { status: 302, headers: { location: "https://audubon.org/news/owls" } })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const adapter = new GeminiResearchAdapter({ apiKey: "test-key", textModel: "test-model" });
+    (adapter as any).ai = {
+      models: {
+        generateContent: async () => ({
+          text: "Owls hunt at night.",
+          candidates: [
+            {
+              groundingMetadata: {
+                groundingChunks: [
+                  {
+                    web: {
+                      title: "audubon.org",
+                      uri: "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AbC123"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        })
+      }
+    };
+
+    const result = await adapter.search({ query: "owls", purpose: "plan-research" });
+
+    expect(result.sources[0]?.url).toBe("https://audubon.org/news/owls");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 });
 

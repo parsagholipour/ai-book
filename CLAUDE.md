@@ -223,6 +223,14 @@ tells you when a listed file has dropped under the default so the entry can be d
   edit target): free, it sets `mediaSettings.includeSources` on the project and queues the same
   recompile undo uses. Read that flag with `includeSourcesPreference` from the **project row**,
   never from a plan version's `inputSnapshot`, or toggling it would need a replan to take effect.
+- **A cited source is stored as the publisher's own address, never Google's.** Search grounding
+  hands back every citation as a `vertexaisearch.cloud.google.com/grounding-api-redirect/...`
+  wrapper: it names Google as the source in the chat, and it expires — fatal for a Sources list
+  recompiled from `ResearchSource` rows forever. `GeminiResearchAdapter.search` unwraps at ingest
+  (`packages/core/src/adapters/groundingRedirect.ts`), which is the only moment the wrapper is sure
+  to still resolve, and `researchCitationsForExport` retries at compile time for rows written before
+  that, writing the fix back. An unresolved wrapper is kept rather than dropped — a worse link still
+  beats a missing citation — and the app's `displayHost` names no publisher for one.
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.**
   `formatChapterHeading` (`packages/core/src/generation/markdown.ts`) synthesizes `Chapter N: Title`
   at export time from a label table, and its sibling `cleanChapterTitle` *strips* that prefix back

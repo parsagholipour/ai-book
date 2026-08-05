@@ -654,7 +654,8 @@ class _ResearchSourceLink extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final uri = source.uri;
-    final label = '$index. ${source.title}${_domain(uri)}';
+    final host = source.displayHost;
+    final label = '$index. ${source.title}${host == null ? '' : ' · $host'}';
     final text = Text(
       label,
       maxLines: 2,
@@ -670,7 +671,8 @@ class _ResearchSourceLink extends StatelessWidget {
     }
     return Semantics(
       link: true,
-      label: 'Source $index. ${source.title}. Opens ${uri.host}',
+      label:
+          'Source $index. ${source.title}${host == null ? '' : '. Opens $host'}',
       child: InkWell(
         borderRadius: BorderRadius.circular(6),
         onTap: () => _open(context, uri),
@@ -681,10 +683,6 @@ class _ResearchSourceLink extends StatelessWidget {
       ),
     );
   }
-
-  String _domain(Uri? uri) => uri == null || uri.host.isEmpty
-      ? ''
-      : ' · ${uri.host.replaceFirst(RegExp(r'^www\\.'), '')}';
 
   Future<void> _open(BuildContext context, Uri uri) async {
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);

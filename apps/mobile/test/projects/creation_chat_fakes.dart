@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
+import 'package:tomeza/features/projects/domain/creation_message_models.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'creation_chat_harness.dart';

@@ -27,6 +27,7 @@ import {
   MOBILE_PRODUCT_PRESETS,
   MOBILE_TITLE_SOURCE_PLANNER_PENDING,
   UNTITLED_MOBILE_PROJECT_TITLE,
+  mobileComposedProjectCreateSchema,
   mobilePageCountRecommendationSchema,
   mobileProjectCreateBodySchema
 } from "./schemas.js";
@@ -46,8 +47,15 @@ import { z } from "zod";
  * the replan copy flow.
  */
 
+/**
+ * Both callers reach here with validated input: the create-project route parses
+ * the untrusted body against `mobileProjectCreateBodySchema` first, and the
+ * creation-chat build composes its prompt server-side. So this parse takes the
+ * looser prompt ceiling — applying the typed-input cap to a composed prompt
+ * only turned a long creation chat into a 500.
+ */
 export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestDto): MobileCreateProjectInput {
-  const parsed = mobileProjectCreateBodySchema.parse(input);
+  const parsed = mobileComposedProjectCreateSchema.parse(input);
   const bookTypeChoice = bookTypeChoiceForMobileCreate(parsed);
   const isAutoBookType = bookTypeChoice === "auto";
   const bookType = isAutoBookType ? MOBILE_AUTO_BOOK_TYPE_SETTINGS : MOBILE_BOOK_TYPE_SETTINGS[parsed.bookType];

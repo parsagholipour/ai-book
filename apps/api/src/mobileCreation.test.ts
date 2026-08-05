@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { GenerateWithToolsOptions, TextModelAdapter } from "@book-maker/core";
+import { PROJECT_PROMPT_MAX_LENGTH, type GenerateWithToolsOptions, type TextModelAdapter } from "@book-maker/core";
+import { mobileComposedProjectCreateSchema } from "./mobile/schemas.js";
 import {
+  COMPOSED_PROJECT_PROMPT_MAX,
   adviseMobileBook,
   attachmentContextForTurn,
   briefForMobilePayload,
@@ -1035,6 +1037,47 @@ describe("creation chat attachments", () => {
         messages: [{ role: "user", content: "" }]
       })
     ).toThrow();
+  });
+});
+
+describe("composed project prompt budget", () => {
+  // A chat that ran a web search on every assistant turn, each result stored at
+  // its schema maximum: a 4000-char summary and six 700-char sources.
+  const researchHeavy = mobileCreationDraftPayloadSchema.parse({
+    payloadVersion: 3,
+    rawIdea: "R".repeat(2000),
+    messages: Array.from({ length: 12 }, (_, index) =>
+      index % 2 === 0
+        ? { role: "user", content: `Turn ${index}: ${"detail ".repeat(80)}` }
+        : {
+            role: "assistant",
+            content: `Answer ${index}`,
+            research: {
+              query: "q".repeat(600),
+              summary: "s".repeat(4000),
+              sources: Array.from({ length: 6 }, (_, n) => ({
+                title: `Source ${n}`,
+                url: `https://example.com/${n}`,
+                summary: "e".repeat(700)
+              }))
+            }
+          }
+    )
+  });
+
+  it("keeps a research-heavy chat inside the project prompt ceiling", () => {
+    const prompt = composeMobileProjectPrompt(researchHeavy, deterministicAdvisor(researchHeavy));
+
+    // The build route hands this straight to buildMobileCreateProjectInput, so
+    // a prompt over the cap threw a ZodError and reached the app as a 500.
+    expect(mobileComposedProjectCreateSchema.shape.prompt.safeParse(prompt).success).toBe(true);
+    expect(prompt.length).toBeLessThanOrEqual(COMPOSED_PROJECT_PROMPT_MAX);
+    // Headroom has to survive for the worker's source-material injection.
+    expect(COMPOSED_PROJECT_PROMPT_MAX).toBeLessThan(PROJECT_PROMPT_MAX_LENGTH);
+    // Trimming shortens the evidence; it never drops the sections themselves.
+    expect(prompt).toContain("Original idea");
+    expect(prompt).toContain("Creation chat");
+    expect(prompt).toContain("Untrusted web evidence");
   });
 });
 
