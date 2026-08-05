@@ -337,6 +337,9 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
               final dirty = _dirtyPageIds.contains(page.id);
               return ChoiceChip(
                 selected: page.id == selectedPage.id,
+                // The checkmark would paint over the unsaved dot on the very
+                // page being edited, which is the one most likely to be dirty.
+                showCheckmark: false,
                 onSelected: (_) => setState(() => _selectedPageId = page.id),
                 avatar: dirty
                     ? Icon(Icons.circle, size: 10, color: colors.primary)

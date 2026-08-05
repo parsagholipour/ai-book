@@ -231,6 +231,7 @@ class _OutputSwitcher extends StatelessWidget {
                 final selected = output.projectId == activeProjectId;
                 return FilterChip(
                   selected: selected,
+                  showCheckmark: false,
                   avatar: Icon(
                     selected
                         ? Icons.radio_button_checked

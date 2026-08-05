@@ -170,6 +170,9 @@ class ReaderMarkupToolbar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: ChoiceChip(
         selected: selected,
+        // The checkmark paints over the avatar, so the active tool would lose
+        // the icon that says which tool it is.
+        showCheckmark: false,
         avatar: Icon(icon, size: 18),
         label: Text(label),
         onSelected: (_) {
