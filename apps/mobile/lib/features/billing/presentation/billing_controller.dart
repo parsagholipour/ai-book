@@ -9,16 +9,25 @@ import '../data/billing_repository.dart';
 import '../data/google_play_billing_client.dart';
 import '../domain/billing_models.dart';
 
-class BillingPurchaseSuccess {
+sealed class BillingPurchaseEvent {
+  const BillingPurchaseEvent({required this.productId});
+
+  final String productId;
+}
+
+class BillingPurchaseSuccess extends BillingPurchaseEvent {
   const BillingPurchaseSuccess({
-    required this.productId,
+    required super.productId,
     required this.purchaseId,
     required this.message,
   });
 
-  final String productId;
   final String purchaseId;
   final String message;
+}
+
+class BillingPurchaseStopped extends BillingPurchaseEvent {
+  const BillingPurchaseStopped({required super.productId});
 }
 
 class BillingPurchaseState {
@@ -82,6 +91,7 @@ class BillingController extends ChangeNotifier {
     required this._billingRepository,
     required this._storeClient,
     required this._onBillingChanged,
+    required this._keepAlive,
     this.projectId,
   }) {
     _subscription = _storeClient.purchaseUpdates.listen(_handlePurchases);
@@ -91,20 +101,21 @@ class BillingController extends ChangeNotifier {
   final BillingRepository _billingRepository;
   final StoreBillingClient _storeClient;
   final VoidCallback _onBillingChanged;
+  final VoidCallback Function() _keepAlive;
   final String? projectId;
   late final StreamSubscription<List<StorePurchaseUpdate>> _subscription;
-  final _successfulPurchases =
-      StreamController<BillingPurchaseSuccess>.broadcast();
+  final _purchaseEvents = StreamController<BillingPurchaseEvent>.broadcast();
+  final _purchaseKeepAliveReleases = <String, VoidCallback>{};
 
   BillingPurchaseState _state = const BillingPurchaseState();
   BillingPurchaseSuccess? _unacknowledgedPurchaseSuccess;
+  bool _disposed = false;
 
   BillingPurchaseState get state => _state;
 
   /// A one-shot event emitted only after the backend verifies a purchase.
   /// Checkout-opening, pending, canceled, and failed updates never emit here.
-  Stream<BillingPurchaseSuccess> get successfulPurchases =>
-      _successfulPurchases.stream;
+  Stream<BillingPurchaseEvent> get purchaseEvents => _purchaseEvents.stream;
 
   /// Removes the inline copy once a purchase surface has taken responsibility
   /// for showing the verified result in a dialog. Restore results and other
@@ -191,8 +202,10 @@ class BillingController extends ChangeNotifier {
           error: 'This item is not available from Google Play yet.',
         ),
       );
+      _emitPurchaseEvent(BillingPurchaseStopped(productId: product.sku));
       return;
     }
+    _holdPurchase(product.sku);
     _setState(
       _state.copyWith(
         pendingProductIds: {..._state.pendingProductIds, product.sku},
@@ -215,6 +228,8 @@ class BillingController extends ChangeNotifier {
           error: userFacingError(error),
         ),
       );
+      _emitPurchaseEvent(BillingPurchaseStopped(productId: product.sku));
+      _releasePurchase(product.sku);
     }
   }
 
@@ -289,10 +304,7 @@ class BillingController extends ChangeNotifier {
     } catch (error) {
       AppHaptics.error();
       _setState(
-        _state.copyWith(
-          subscriptionBusy: false,
-          error: userFacingError(error),
-        ),
+        _state.copyWith(subscriptionBusy: false, error: userFacingError(error)),
       );
       return false;
     }
@@ -300,8 +312,13 @@ class BillingController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    for (final release in _purchaseKeepAliveReleases.values) {
+      release();
+    }
+    _purchaseKeepAliveReleases.clear();
     unawaited(_subscription.cancel());
-    unawaited(_successfulPurchases.close());
+    unawaited(_purchaseEvents.close());
     super.dispose();
   }
 
@@ -317,6 +334,7 @@ class BillingController extends ChangeNotifier {
         .firstOrNull;
     switch (purchase.status) {
       case StorePurchaseStatus.pending:
+        _holdPurchase(purchase.productId);
         _setState(
           _state.copyWith(
             pendingProductIds: {
@@ -338,6 +356,10 @@ class BillingController extends ChangeNotifier {
             message: 'Purchase canceled.',
           ),
         );
+        _emitPurchaseEvent(
+          BillingPurchaseStopped(productId: purchase.productId),
+        );
+        _releasePurchase(purchase.productId);
         return;
       case StorePurchaseStatus.error:
         AppHaptics.error();
@@ -351,6 +373,10 @@ class BillingController extends ChangeNotifier {
                 'Google Play could not complete this purchase.',
           ),
         );
+        _emitPurchaseEvent(
+          BillingPurchaseStopped(productId: purchase.productId),
+        );
+        _releasePurchase(purchase.productId);
         return;
       case StorePurchaseStatus.purchased:
       case StorePurchaseStatus.restored:
@@ -360,6 +386,10 @@ class BillingController extends ChangeNotifier {
               error: 'This Google Play product is not configured.',
             ),
           );
+          _emitPurchaseEvent(
+            BillingPurchaseStopped(productId: purchase.productId),
+          );
+          _releasePurchase(purchase.productId);
           return;
         }
         if (purchase.purchaseToken.trim().isEmpty) {
@@ -368,8 +398,13 @@ class BillingController extends ChangeNotifier {
               error: 'Google Play did not return a purchase token.',
             ),
           );
+          _emitPurchaseEvent(
+            BillingPurchaseStopped(productId: purchase.productId),
+          );
+          _releasePurchase(purchase.productId);
           return;
         }
+        final verificationKeepAlive = _keepAlive();
         _setState(
           _state.copyWith(
             pendingProductIds: {
@@ -396,9 +431,15 @@ class BillingController extends ChangeNotifier {
             purchase,
             consumable: product.isConsumable,
           );
+          if (_disposed) {
+            return;
+          }
           final nextPending = {..._state.pendingProductIds}
             ..remove(purchase.productId);
-          AppHaptics.success();
+          final granted = result.purchase.status == 'granted';
+          if (granted) {
+            AppHaptics.success();
+          }
           final successMessage = _successMessage(result);
           _setState(
             _state.copyWith(
@@ -409,43 +450,73 @@ class BillingController extends ChangeNotifier {
             ),
           );
           _onBillingChanged();
-          final success = BillingPurchaseSuccess(
-            productId: purchase.productId,
-            purchaseId: result.purchase.id,
-            message: successMessage,
-          );
-          _unacknowledgedPurchaseSuccess = success;
-          _successfulPurchases.add(success);
+          if (granted) {
+            final success = BillingPurchaseSuccess(
+              productId: purchase.productId,
+              purchaseId: result.purchase.id,
+              message: successMessage,
+            );
+            _unacknowledgedPurchaseSuccess = success;
+            _emitPurchaseEvent(success);
+          }
         } catch (error) {
-          AppHaptics.error();
-          final nextPending = {..._state.pendingProductIds}
-            ..remove(purchase.productId);
-          _setState(
-            _state.copyWith(
-              pendingProductIds: nextPending,
-              error: userFacingError(error),
-            ),
-          );
+          if (!_disposed) {
+            AppHaptics.error();
+            final nextPending = {..._state.pendingProductIds}
+              ..remove(purchase.productId);
+            _setState(
+              _state.copyWith(
+                pendingProductIds: nextPending,
+                error: userFacingError(error),
+              ),
+            );
+            _emitPurchaseEvent(
+              BillingPurchaseStopped(productId: purchase.productId),
+            );
+          }
+        } finally {
+          verificationKeepAlive();
+          _releasePurchase(purchase.productId);
         }
     }
   }
 
   String _successMessage(GooglePlayVerificationResult result) {
+    if (result.purchase.status == 'pending') {
+      return 'Payment is pending. Credits unlock after Google Play confirms payment.';
+    }
     if (result.purchase.subscriptionStatus != null) {
       return 'Subscription verified. Your monthly credits are available.';
     }
     if (result.purchase.creditsGranted > 0) {
       return '${result.purchase.creditsGranted} credits added.';
     }
-    if (result.purchase.status == 'pending') {
-      return 'Payment is pending. Credits unlock after Google Play confirms payment.';
-    }
     return 'Purchase verified.';
   }
 
   void _setState(BillingPurchaseState value) {
+    if (_disposed) {
+      return;
+    }
     _state = value;
     notifyListeners();
+  }
+
+  void _holdPurchase(String productId) {
+    if (_disposed) {
+      return;
+    }
+    _purchaseKeepAliveReleases.putIfAbsent(productId, _keepAlive);
+  }
+
+  void _releasePurchase(String productId) {
+    _purchaseKeepAliveReleases.remove(productId)?.call();
+  }
+
+  void _emitPurchaseEvent(BillingPurchaseEvent event) {
+    if (!_disposed) {
+      _purchaseEvents.add(event);
+    }
   }
 }
 
@@ -456,6 +527,10 @@ final billingControllerProvider = Provider.autoDispose
         storeClient: ref.watch(storeBillingClientProvider),
         projectId: projectId,
         onBillingChanged: () => ref.invalidate(billingProvider),
+        keepAlive: () {
+          final link = ref.keepAlive();
+          return link.close;
+        },
       );
       ref.onDispose(controller.dispose);
       return controller;

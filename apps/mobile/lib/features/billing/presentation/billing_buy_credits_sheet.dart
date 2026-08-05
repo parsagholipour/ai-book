@@ -36,7 +36,11 @@ Future<void> showBuyCreditsSheet(
       projectId: projectId,
       shortfall: shortfall,
       onSeePlans: onSeePlans,
-      onPurchaseSuccess: (purchase) => Navigator.of(sheetContext).pop(purchase),
+      onPurchaseSuccess: (purchase) {
+        if (ModalRoute.of(sheetContext)?.isCurrent ?? false) {
+          Navigator.of(sheetContext).pop(purchase);
+        }
+      },
     ),
   );
   if (success != null && context.mounted) {
@@ -81,45 +85,60 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
 
   final _amount = TextEditingController();
   final _purchasesStartedHere = <String>{};
-  late StreamSubscription<BillingPurchaseSuccess> _purchaseSuccessSubscription;
+  late StreamSubscription<BillingPurchaseEvent> _purchaseEventSubscription;
+  bool _completionHandled = false;
 
   @override
   void initState() {
     super.initState();
     _amount.text = '${_openingCredits()}';
     _amount.addListener(_onAmountChanged);
-    _listenForPurchaseSuccess();
+    _listenForPurchaseEvents();
   }
 
   @override
   void didUpdateWidget(covariant BuyCreditsSheet oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.projectId != widget.projectId) {
-      unawaited(_purchaseSuccessSubscription.cancel());
+      unawaited(_purchaseEventSubscription.cancel());
       _purchasesStartedHere.clear();
-      _listenForPurchaseSuccess();
+      _completionHandled = false;
+      _listenForPurchaseEvents();
     }
   }
 
   @override
   void dispose() {
-    unawaited(_purchaseSuccessSubscription.cancel());
+    unawaited(_purchaseEventSubscription.cancel());
     _amount.removeListener(_onAmountChanged);
     _amount.dispose();
     super.dispose();
   }
 
-  void _listenForPurchaseSuccess() {
-    _purchaseSuccessSubscription = ref
+  void _listenForPurchaseEvents() {
+    _purchaseEventSubscription = ref
         .read(billingControllerProvider(widget.projectId))
-        .successfulPurchases
-        .listen(_onPurchaseSuccess);
+        .purchaseEvents
+        .listen(_onPurchaseEvent);
   }
 
-  void _onPurchaseSuccess(BillingPurchaseSuccess purchase) {
-    if (!mounted || !_purchasesStartedHere.remove(purchase.productId)) {
+  void _onPurchaseEvent(BillingPurchaseEvent event) {
+    if (event is BillingPurchaseStopped) {
+      _purchasesStartedHere.remove(event.productId);
       return;
     }
+    if (!mounted ||
+        _completionHandled ||
+        !_purchasesStartedHere.contains(event.productId)) {
+      return;
+    }
+    if (ModalRoute.of(context)?.isCurrent != true) {
+      _purchasesStartedHere.remove(event.productId);
+      return;
+    }
+    _purchasesStartedHere.remove(event.productId);
+    _completionHandled = true;
+    final purchase = event as BillingPurchaseSuccess;
     ref
         .read(billingControllerProvider(widget.projectId))
         .acknowledgePurchaseSuccess(purchase);
@@ -132,6 +151,9 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
   }
 
   void _buy(BillingController controller, MobileBillingProduct product) {
+    if (_completionHandled) {
+      return;
+    }
     _purchasesStartedHere.add(product.sku);
     unawaited(controller.buy(product));
   }
