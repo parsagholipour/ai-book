@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../../../shared/api/api_error.dart';
@@ -39,7 +42,20 @@ class BookReaderScreen extends ConsumerStatefulWidget {
 
 class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   ReaderDocumentLoader? _loader;
-  bool _paywallShown = false;
+
+  /// Whether the paywall is on screen right now, so a rebuild underneath it
+  /// cannot open a second copy.
+  bool _paywallOpen = false;
+
+  /// Whether the shortfall has already been put to the reader once.
+  ///
+  /// Closing the paywall is an answer — "not now" — and the screen behind it
+  /// still needs credits, so re-offering on the rebuild that dismissal causes
+  /// makes the sheet impossible to close and takes the back button with it: a
+  /// reader who declined to unlock could not leave the book. The offer is
+  /// therefore made once on arrival, and the locked state behind it keeps a
+  /// button to ask for it again deliberately.
+  bool _unlockOffered = false;
 
   /// Whether the re-check of the book's state has been asked for yet.
   bool _refreshRequested = false;
@@ -94,8 +110,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   /// action: an unlock the balance covers is spent silently by the download,
   /// and only a balance that cannot cover it interrupts the reader.
   Future<void> _offerUnlock(MobileExportAvailability export) async {
-    if (_paywallShown) return;
-    _paywallShown = true;
+    if (_paywallOpen) return;
+    _paywallOpen = true;
+    _unlockOffered = true;
     await openProjectExportPaywall(
       context: context,
       ref: ref,
@@ -103,8 +120,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       export: export,
       isMounted: () => mounted,
     );
-    if (mounted) {
-      setState(() => _paywallShown = false);
+    if (!mounted) return;
+    setState(() => _paywallOpen = false);
+    // A download that failed for want of credits is worth one more attempt now
+    // the reader has been to the shop: leaving it on its error card would make
+    // a purchase look like it changed nothing.
+    final loader = _loader;
+    if (loader != null && loader.stage == ReaderLoadStage.failed) {
+      unawaited(loader.load(export));
     }
   }
 
@@ -115,19 +138,22 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
     _statusSettled |= _refreshRequested && !statusValue.isLoading;
     if (!_statusSettled) {
-      return const _ReaderScaffold(
+      return _ReaderScaffold(
         title: 'Reading',
-        body: AppLoadingState(message: 'Opening your book'),
+        projectId: widget.projectId,
+        body: const AppLoadingState(message: 'Opening your book'),
       );
     }
 
     return statusValue.when(
-      loading: () => const _ReaderScaffold(
+      loading: () => _ReaderScaffold(
         title: 'Reading',
-        body: AppLoadingState(message: 'Opening your book'),
+        projectId: widget.projectId,
+        body: const AppLoadingState(message: 'Opening your book'),
       ),
       error: (error, _) => _ReaderScaffold(
         title: 'Reading',
+        projectId: widget.projectId,
         body: AppErrorState(
           title: 'Could not open this book',
           message: userFacingError(error),
@@ -146,6 +172,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     if (!export.available && loader.document == null) {
       return _ReaderScaffold(
         title: 'Reading',
+        projectId: widget.projectId,
         body: AppEmptyState(
           icon: Icons.menu_book_outlined,
           title: 'Still being written',
@@ -155,16 +182,21 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     }
 
     if (projectExportNeedsCredits(export, credits) && loader.document == null) {
-      // Scheduled rather than called inline: this runs during build.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _offerUnlock(export);
-      });
+      if (!_unlockOffered) {
+        // Scheduled rather than called inline: this runs during build.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_unlockOffered) unawaited(_offerUnlock(export));
+        });
+      }
       return _ReaderScaffold(
         title: 'Reading',
+        projectId: widget.projectId,
         body: AppEmptyState(
           icon: Icons.lock_outline,
           title: 'Unlock to read',
           message: projectExportStateText(export, credits),
+          actionLabel: 'Get credits',
+          onAction: () => unawaited(_offerUnlock(export)),
         ),
       );
     }
@@ -181,15 +213,33 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 }
 
 class _ReaderScaffold extends StatelessWidget {
-  const _ReaderScaffold({required this.title, required this.body});
+  const _ReaderScaffold({
+    required this.title,
+    required this.projectId,
+    required this.body,
+  });
 
   final String title;
+  final String projectId;
   final Widget body;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        // Reading is always leavable, including from the states that are not
+        // reading yet. A reader who arrived by deep link has nothing behind
+        // them to pop, so the book's own page stands in for back rather than a
+        // bar with no way out of it.
+        leading: Navigator.of(context).canPop()
+            ? null
+            : IconButton(
+                tooltip: 'Close',
+                icon: const Icon(Icons.close),
+                onPressed: () => context.go('/projects/$projectId'),
+              ),
+      ),
       body: Center(child: body),
     );
   }

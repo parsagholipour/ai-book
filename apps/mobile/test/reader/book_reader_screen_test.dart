@@ -23,9 +23,13 @@ import 'package:tomeza/features/reader/presentation/reader_view.dart';
 
 /// A reader repository with no filesystem or network behind it.
 class FakeReaderRepository implements ReaderRepository {
-  FakeReaderRepository({this.failDownload = false});
+  FakeReaderRepository({this.failDownload = false, this.downloadError});
 
   bool failDownload;
+
+  /// What a failed download throws. Null is an ordinary network failure; a
+  /// refusal the app can act on — a 402, say — is passed explicitly.
+  Object? downloadError;
   ReaderState state = const ReaderState();
   List<ReaderAnnotation> annotations = const [];
   ReaderSettings settings = const ReaderSettings();
@@ -45,7 +49,7 @@ class FakeReaderRepository implements ReaderRepository {
     onProgress?.call(50, 100);
     await gate?.future;
     if (failDownload) {
-      throw Exception('connection lost');
+      throw downloadError ?? Exception('connection lost');
     }
     downloadedRevisions.add(export.revision);
     return CachedExport(
@@ -113,14 +117,16 @@ class FakeReaderRepository implements ReaderRepository {
 
 MobileExportAvailability pdfExport({
   bool available = true,
+  bool unlocked = true,
+  int creditsRequired = 0,
   int revision = 1,
   int byteSize = 100,
 }) {
   return MobileExportAvailability(
     format: 'pdf',
     available: available,
-    unlocked: true,
-    creditsRequired: 0,
+    unlocked: unlocked,
+    creditsRequired: creditsRequired,
     downloadUrl: '/api/mobile/projects/project-1/export/pdf',
     filename: 'the-race.pdf',
     contentType: 'application/pdf',

@@ -6,8 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
-import '../../../shared/api/api_error.dart';
-import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../projects/data/projects_repository.dart';
 import '../../projects/domain/project_models.dart';
@@ -697,15 +695,11 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   String? _chapterFor(int page) => outlineEntryForPage(_outline, page)?.title;
 
   Widget _loadingBody(ReaderDocumentLoader loader) {
-    final error = loader.error;
-    if (loader.stage == ReaderLoadStage.failed && error != null) {
-      return AppErrorState(
-        title: 'Could not download this book',
-        message: userFacingError(error),
-        onRetry: () => unawaited(loader.load(widget.export)),
-      );
-    }
-    return ReaderDownloadProgress(progress: loader.progress);
+    return ReaderDownloadState(
+      loader: loader,
+      onRetry: () => unawaited(loader.load(widget.export)),
+      onOpenPaywall: widget.onOpenPaywall,
+    );
   }
 
   /// The viewer's parameters, built once per gesture mode and reused.

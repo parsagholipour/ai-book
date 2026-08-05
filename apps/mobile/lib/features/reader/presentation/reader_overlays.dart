@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/motion.dart';
+import 'reader_document_loader.dart';
 
 /// Positions the selection action bar and animates it in and out.
 ///
@@ -109,6 +111,57 @@ class ReaderDimOverlay extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// What stands in for the book while there is no document to render: the
+/// download, or the reason it never arrived.
+class ReaderDownloadState extends StatelessWidget {
+  const ReaderDownloadState({
+    required this.loader,
+    required this.onRetry,
+    required this.onOpenPaywall,
+    super.key,
+  });
+
+  final ReaderDocumentLoader loader;
+  final VoidCallback onRetry;
+  final VoidCallback onOpenPaywall;
+
+  @override
+  Widget build(BuildContext context) {
+    final error = loader.error;
+    if (loader.stage != ReaderLoadStage.failed || error == null) {
+      return ReaderDownloadProgress(progress: loader.progress);
+    }
+    // A download the balance could not pay for is not something retrying
+    // fixes — the same call refuses again — so it offers the paywall instead.
+    // The screen decided credits were enough before starting, so this is the
+    // balance moving underneath the reader rather than a locked book.
+    if (_isPaymentFailure(error)) {
+      return AppErrorState(
+        icon: Icons.lock_outline,
+        title: 'Credits needed to open this book',
+        message: userFacingError(error),
+        actionLabel: 'Get credits',
+        actionIcon: Icons.bolt_outlined,
+        onRetry: onOpenPaywall,
+      );
+    }
+    return AppErrorState(
+      title: 'Could not download this book',
+      message: userFacingError(error),
+      onRetry: onRetry,
+    );
+  }
+
+  /// Whether [error] is the export refusing to unlock for want of credits.
+  ///
+  /// A download's error body arrives as a stream, so the 402 does not always
+  /// survive as a parsed code — the status is checked as well.
+  bool _isPaymentFailure(Object error) {
+    return error is ApiException &&
+        (error.code == 'INSUFFICIENT_CREDITS' || error.statusCode == 402);
   }
 }
 
