@@ -54,12 +54,14 @@ part 'creation_chat_generation.dart';
 part 'creation_chat_plan_footers.dart';
 part 'creation_chat_brief.dart';
 part 'creation_chat_transcript.dart';
+part 'creation_chat_sources.dart';
 part 'creation_chat_bubbles.dart';
 part 'creation_chat_composer.dart';
 part 'creation_chat_sheets.dart';
 part 'creation_chat_visuals_prompt.dart';
 part 'creation_chat_output_send.dart';
 part 'creation_chat_compose_context.dart';
+part 'creation_chat_resume.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({super.key, this.startFresh = false, this.draftId});
@@ -72,7 +74,7 @@ class CreationChatScreen extends ConsumerStatefulWidget {
 }
 
 class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
-    with _OutputChatSend, _CreationComposerContext {
+    with _OutputChatSend, _CreationComposerContext, _CreationChatResume {
   @override
   final _composerController = TextEditingController();
   final _revisionController = TextEditingController();
@@ -81,11 +83,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   final _drawerKey = GlobalKey<EasyDrawerControllerState>();
 
   String? _projectId;
+  @override
   String? _planBusyAction;
   String? _activePlanKey;
   String? _pendingRevisionPlanKey;
   String? _pendingRevisionOperationId;
-  Object? _planRetryRequest;
   Timer? _planRefreshTimer;
   Timer? _stickScrollTimer;
   Object? _lastScrollTrigger;
@@ -422,6 +424,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                 operation: operation,
                               ),
                             ),
+                            onRetryGeneration: _retryBookGeneration,
                           ),
                         ),
                       ),
@@ -564,6 +567,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     }
   }
 
+  @override
   String? _activeProjectId(CreationChatState state) {
     if (state.composingNewOutput) return null;
     return state.activeProjectId ?? _projectId ?? state.createdProjectId;
@@ -757,49 +761,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         );
       },
     );
-  }
-
-  Future<void> _retryPlanGeneration(String projectId) async {
-    if (_planBusyAction != null) return;
-    final retryRequest = Object();
-    setState(() {
-      _planBusyAction = 'retry-plan';
-      _planRetryRequest = retryRequest;
-    });
-    try {
-      final recovery = await ref
-          .read(projectsRepositoryProvider)
-          .resumeProject(projectId);
-      if (!mounted) return;
-      _refreshOutput(projectId);
-      ref.invalidate(projectsProvider);
-      if (!_finishPlanRetry(retryRequest, projectId)) return;
-      _startPlanPoll();
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(recovery.currentAction)));
-    } catch (error) {
-      if (!mounted) return;
-      if (!_finishPlanRetry(retryRequest, projectId)) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  bool _finishPlanRetry(Object retryRequest, String projectId) {
-    if (!identical(_planRetryRequest, retryRequest)) return false;
-    final ownsBusyState = _planBusyAction == 'retry-plan';
-    final stillActive =
-        ownsBusyState &&
-        _activeProjectId(ref.read(creationChatControllerProvider)) == projectId;
-    setState(() {
-      _planRetryRequest = null;
-      if (ownsBusyState) {
-        _planBusyAction = null;
-      }
-    });
-    return stillActive;
   }
 
   void _syncStickToBottomFromUserScroll() {

@@ -211,6 +211,68 @@ void main() {
 
     expect(find.text('Book route project-1'), findsOneWidget);
   });
+
+  testWidgets('a failed book offers its retry in the chat, not one screen '
+      'away', (tester) async {
+    final projects = _StubProjectsRepository(
+      status: _status(
+        status: 'failed',
+        statusLabel: 'Generation failed',
+        currentAction: 'Writing stopped.',
+        failureMessage: 'The writer stopped partway through.',
+        retryAvailable: true,
+      ),
+    );
+    await _pumpChat(tester, projects: projects);
+
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('The writer stopped partway through.'), findsOneWidget);
+
+    await tester.tap(find.text('Retry generation'));
+    await _settleEnough(tester);
+
+    expect(projects.resumedProjectIds, ['project-1']);
+    // The book page is still there for anyone who wants it — the retry just no
+    // longer lives only behind it.
+    expect(find.text('Book route project-1'), findsNothing);
+  });
+
+  testWidgets('a failure the server cannot resume offers no retry', (
+    tester,
+  ) async {
+    await _pumpChat(
+      tester,
+      status: _status(
+        status: 'failed',
+        statusLabel: 'Generation failed',
+        failureMessage: 'This book cannot be resumed.',
+      ),
+    );
+
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('Retry generation'), findsNothing);
+    expect(find.text('View progress'), findsOneWidget);
+  });
+
+  testWidgets('a scheduled automatic retry is not a failure and offers no '
+      'second retry', (tester) async {
+    await _pumpChat(
+      tester,
+      status: _status(
+        status: 'failed',
+        failureMessage: 'A page timed out.',
+        retryAvailable: true,
+        nextRetryAt: DateTime.utc(2026, 6, 15, 1),
+        retryState: 'scheduled',
+        retryMessage: 'Picking your book back up in a moment.',
+      ),
+    );
+
+    expect(find.text('Retry scheduled'), findsOneWidget);
+    expect(find.text('Picking your book back up in a moment.'), findsOneWidget);
+    expect(find.text('Needs attention'), findsNothing);
+    expect(find.text('Retry generation'), findsNothing);
+  });
 }
 
 /// Pumps far enough for the crossfades and the eased bar, but never waits for
@@ -225,11 +287,11 @@ Future<void> _pumpChat(
   WidgetTester tester, {
   MobileProjectStatus? status,
   Stream<MobileProjectStatus>? statusStream,
+  _StubProjectsRepository? projects,
 }) async {
-  final projects = _StubProjectsRepository(
-    status: status,
-    statusStream: statusStream,
-  );
+  final repository =
+      projects ??
+      _StubProjectsRepository(status: status, statusStream: statusStream);
   final router = GoRouter(
     initialLocation: '/books/chat/draft-done',
     routes: [
@@ -250,7 +312,7 @@ Future<void> _pumpChat(
     ProviderScope(
       overrides: [
         creationRepositoryProvider.overrideWithValue(_StubCreationRepository()),
-        projectsRepositoryProvider.overrideWithValue(projects),
+        projectsRepositoryProvider.overrideWithValue(repository),
         billingRepositoryProvider.overrideWithValue(_StubBillingRepository()),
       ],
       child: MaterialApp.router(
@@ -270,6 +332,11 @@ MobileProjectStatus _status({
   MobileGenerationProgress? generationProgress,
   bool coverEnabled = true,
   bool illustrationsEnabled = true,
+  String? failureMessage,
+  bool retryAvailable = false,
+  DateTime? nextRetryAt,
+  String? retryState,
+  String? retryMessage,
 }) {
   return MobileProjectStatus(
     projectId: 'project-1',
@@ -278,7 +345,11 @@ MobileProjectStatus _status({
     progressPercent: progressPercent,
     currentAction: currentAction,
     generationProgress: generationProgress,
-    retryAvailable: false,
+    failureMessage: failureMessage,
+    retryAvailable: retryAvailable,
+    nextRetryAt: nextRetryAt,
+    retryState: retryState,
+    retryMessage: retryMessage,
     steps: const [],
     pageProgress: const MobilePageProgress(completed: 3, target: 28),
     imageCount: 1,
@@ -315,6 +386,20 @@ class _StubProjectsRepository implements ProjectsRepository {
 
   final MobileProjectStatus? status;
   final Stream<MobileProjectStatus>? statusStream;
+  final List<String> resumedProjectIds = [];
+
+  @override
+  Future<MobileProjectRecovery> resumeProject(String id) async {
+    resumedProjectIds.add(id);
+    return const MobileProjectRecovery(
+      projectId: 'project-1',
+      status: 'generating',
+      currentAction: 'Picking your book back up.',
+      resumedActions: 1,
+      skippedActions: 0,
+      stoppingActions: 0,
+    );
+  }
 
   @override
   Stream<MobileProjectStatus> watchProjectStatus(String id) {

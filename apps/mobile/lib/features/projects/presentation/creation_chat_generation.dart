@@ -10,12 +10,14 @@ class _PlanWithGenerationProgress extends StatelessWidget {
     required this.showGeneration,
     this.statusValue,
     this.projectId,
+    this.onRetryGeneration,
   });
 
   final Widget child;
   final bool showGeneration;
   final AsyncValue<MobileProjectStatus>? statusValue;
   final String? projectId;
+  final Future<void> Function(String projectId)? onRetryGeneration;
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +30,11 @@ class _PlanWithGenerationProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         child,
-        _GenerationProgressBubble(projectId: id, statusValue: status),
+        _GenerationProgressBubble(
+          projectId: id,
+          statusValue: status,
+          onRetryGeneration: onRetryGeneration,
+        ),
       ],
     );
   }
@@ -38,10 +44,16 @@ class _GenerationProgressBubble extends ConsumerStatefulWidget {
   const _GenerationProgressBubble({
     required this.projectId,
     required this.statusValue,
+    this.onRetryGeneration,
   });
 
   final String projectId;
   final AsyncValue<MobileProjectStatus> statusValue;
+
+  /// Restarts a book whose writing failed. The bubble is where the failure is
+  /// read, so it is also where the fix is offered — the same retry the book
+  /// page has, without making anyone leave the chat to find it.
+  final Future<void> Function(String projectId)? onRetryGeneration;
 
   @override
   ConsumerState<_GenerationProgressBubble> createState() =>
@@ -98,6 +110,19 @@ class _GenerationProgressBubbleState
     ref.invalidate(projectDetailProvider(widget.projectId));
   }
 
+  Future<void> _retryGeneration() async {
+    final onRetry = widget.onRetryGeneration;
+    if (onRetry == null || _busyAction != null) {
+      return;
+    }
+    setState(() => _busyAction = 'retry');
+    await onRetry(widget.projectId);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _busyAction = null);
+  }
+
   @override
   Widget build(BuildContext context) {
     return widget.statusValue.when(
@@ -122,7 +147,16 @@ class _GenerationProgressBubbleState
               .toInt(),
         );
         final failureMessage = status.failureMessage?.trim();
-        final isFailed = status.status == 'failed' || status.hasFailure;
+        // A scheduled automatic retry is still the book being written: the
+        // worker will pick it up on its own, so it is neither a failure to
+        // announce nor something to offer a second, competing retry for.
+        final waitingForRetry = status.isAutomaticRetryPending;
+        final isFailed =
+            !waitingForRetry && (status.status == 'failed' || status.hasFailure);
+        final canRetry =
+            isFailed &&
+            status.retryAvailable &&
+            widget.onRetryGeneration != null;
         final reviewRequired = status.requiresReview;
         final isGenerating = status.status == 'generating';
         final downloadExport = status.isComplete && !reviewRequired
@@ -139,11 +173,15 @@ class _GenerationProgressBubbleState
             ? 'Review required before export'
             : status.isComplete
             ? 'Ready to export'
+            : waitingForRetry
+            ? 'Retry scheduled'
             : isFailed
             ? 'Needs attention'
             : status.statusLabel;
-        final detail =
-            isFailed && failureMessage != null && failureMessage.isNotEmpty
+        final detail = waitingForRetry
+            // `effectiveAction` prefers the server's own retry wording.
+            ? status.effectiveAction
+            : isFailed && failureMessage != null && failureMessage.isNotEmpty
             ? failureMessage
             : reviewRequired && status.quality.issues.isNotEmpty
             ? status.quality.issues.first.message
@@ -162,6 +200,8 @@ class _GenerationProgressBubbleState
                         ? Icons.error_outline
                         : status.isComplete
                         ? Icons.check_circle_outline
+                        : waitingForRetry
+                        ? Icons.autorenew_outlined
                         : Icons.auto_awesome_outlined,
                     color: isFailed || reviewRequired
                         ? colors.error
@@ -249,6 +289,11 @@ class _GenerationProgressBubbleState
                 spacing: 8,
                 runSpacing: 8,
                 children: [
+                  if (canRetry)
+                    _RetryGenerationButton(
+                      busy: _busyAction == 'retry',
+                      onRetry: () => unawaited(_retryGeneration()),
+                    ),
                   if (status.exports.pdf.available)
                     _ReadBookButton(projectId: widget.projectId),
                   if (downloadExport != null)
@@ -426,6 +471,31 @@ class _CompletionDownloadButton extends StatelessWidget {
             )
           : const Icon(Icons.open_in_new_outlined),
       label: Text(projectExportDownloadLabel(export, false)),
+    );
+  }
+}
+
+/// Restarts writing after a failure, from the chat the failure was read in.
+class _RetryGenerationButton extends StatelessWidget {
+  const _RetryGenerationButton({required this.busy, required this.onRetry});
+
+  final bool busy;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton.icon(
+      onPressed: busy ? null : onRetry,
+      icon: busy
+          ? const SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                semanticsLabel: 'Retrying generation',
+              ),
+            )
+          : const Icon(Icons.replay_outlined),
+      label: const Text('Retry generation'),
     );
   }
 }

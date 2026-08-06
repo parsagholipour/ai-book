@@ -29,6 +29,7 @@ class _Transcript extends StatelessWidget {
     this.onRetryFailedMessage,
     this.onDismissFailedMessage,
     this.onRetryFailedOperation,
+    this.onRetryGeneration,
     this.onEditCreationMessage,
     this.onSwitchCreationBranch,
   });
@@ -65,6 +66,9 @@ class _Transcript extends StatelessWidget {
   final ValueChanged<String>? onDismissFailedMessage;
   final void Function(MobileBookEditOperation operation)?
   onRetryFailedOperation;
+
+  /// Restarts a failed book generation from the progress bubble itself.
+  final Future<void> Function(String projectId)? onRetryGeneration;
   final void Function(MobileCreationMessage message)? onEditCreationMessage;
   final void Function(MobileCreationMessage message, String direction)?
   onSwitchCreationBranch;
@@ -152,6 +156,7 @@ class _Transcript extends StatelessWidget {
               showGenerationForCurrentPlan && currentPlanKey == _planKey(plan),
           statusValue: generationStatusValue,
           projectId: plan.projectId,
+          onRetryGeneration: onRetryGeneration,
           child: _PlanBubble.snapshot(
             key: ValueKey('project-plan-${plan.id}'),
             plan: plan,
@@ -208,6 +213,7 @@ class _Transcript extends StatelessWidget {
         showGeneration: showGenerationForCurrentPlan,
         statusValue: generationStatusValue,
         projectId: currentProject?.id,
+        onRetryGeneration: onRetryGeneration,
         child: _PlanBubble.live(
           key: const ValueKey('project-plan-live'),
           planValue: planValue!,
@@ -603,101 +609,6 @@ class _MessageBubble extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _ResearchSources extends StatelessWidget {
-  const _ResearchSources({required this.sources, required this.foreground});
-
-  final List<MobileCreationResearchSource> sources;
-  final Color foreground;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.public,
-              size: 15,
-              color: foreground.withValues(alpha: 0.8),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              'Sources',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: foreground,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        for (var index = 0; index < sources.length; index++)
-          _ResearchSourceLink(
-            index: index + 1,
-            source: sources[index],
-            foreground: foreground,
-          ),
-      ],
-    );
-  }
-}
-
-class _ResearchSourceLink extends StatelessWidget {
-  const _ResearchSourceLink({
-    required this.index,
-    required this.source,
-    required this.foreground,
-  });
-
-  final int index;
-  final MobileCreationResearchSource source;
-  final Color foreground;
-
-  @override
-  Widget build(BuildContext context) {
-    final uri = source.uri;
-    final host = source.displayHost;
-    final label = '$index. ${source.title}${host == null ? '' : ' · $host'}';
-    final text = Text(
-      label,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-        color: foreground,
-        decoration: uri == null ? null : TextDecoration.underline,
-        decorationColor: foreground,
-      ),
-    );
-    if (uri == null) {
-      return Padding(padding: const EdgeInsets.only(top: 3), child: text);
-    }
-    return Semantics(
-      link: true,
-      label:
-          'Source $index. ${source.title}${host == null ? '' : '. Opens $host'}',
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: () => _open(context, uri),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          child: text,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _open(BuildContext context, Uri uri) async {
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showAppSnackBar(
-        const SnackBar(content: Text('Could not open that source.')),
-      );
-    }
   }
 }
 
