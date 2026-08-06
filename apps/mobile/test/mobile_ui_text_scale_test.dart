@@ -314,6 +314,7 @@ class _FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
   }) async {

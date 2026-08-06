@@ -174,6 +174,9 @@ export const mobileProjectChatMessageBodySchema = z
   .object({
     message: z.string().trim().min(1).max(5000),
     editMessageId: z.string().trim().min(1).max(128).optional(),
+    // The earlier message this one is a reply to. Any role can be replied to.
+    // It is quoted for the model only — never folded into the routed text.
+    replyToMessageId: z.string().trim().min(1).max(128).optional(),
     requestId: requestIdSchema.optional()
   })
   .strict();
@@ -234,7 +237,9 @@ export const mobileCreationMessageBodySchema = z
     requestId: requestIdSchema.optional(),
     expectedRevision: z.number().int().positive().optional(),
     // When set, the message replaces a prior user message as a new branch.
-    editMessageId: z.string().trim().min(1).max(64).optional()
+    editMessageId: z.string().trim().min(1).max(64).optional(),
+    // When set, the message is a reply quoting an earlier turn of either role.
+    replyToMessageId: z.string().trim().min(1).max(64).optional()
   })
   .strict()
   .refine((body) => body.message.length > 0 || (body.attachmentIds?.length ?? 0) > 0, {
@@ -459,6 +464,7 @@ export const mobileProjectChatMessageOpenApiBody = {
   properties: {
     message: { type: "string", minLength: 1, maxLength: 5000 },
     editMessageId: { type: "string", minLength: 1, maxLength: 128 },
+    replyToMessageId: { type: "string", minLength: 1, maxLength: 128 },
     requestId: { type: "string", minLength: 8, maxLength: 64 }
   },
   required: ["message"]

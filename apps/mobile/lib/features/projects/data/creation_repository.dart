@@ -44,6 +44,7 @@ abstract interface class CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
   });
@@ -233,6 +234,7 @@ class MobileCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
   }) async {
@@ -246,6 +248,7 @@ class MobileCreationRepository implements CreationRepository {
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),
         'editMessageId': ?editMessageId,
+        'replyToMessageId': ?replyToMessageId,
         'requestId': ?requestId,
         'expectedRevision': ?expectedRevision,
       },

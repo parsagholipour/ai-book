@@ -4,6 +4,7 @@ import {
   readCreationAttachmentFile,
   saveCreationAttachmentFile
 } from "../../attachmentStorage.js";
+import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import {
   appendCreationMessage,
   foldCreationTranscriptTree,
@@ -334,11 +335,21 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       }));
 
       const priorTree = creationTreeFromPayload(parsedPayload.data);
+      // A reply can quote either role, and it is resolved against the whole
+      // stored tree rather than the active branch: the quote is a snapshot, so
+      // it stays readable even if the branch it came from is switched away.
+      const replyToMessageId = parsedBody.data.replyToMessageId;
+      const repliedTo = replyToMessageId ? priorTree.find((message) => message.id === replyToMessageId) : undefined;
+      if (replyToMessageId && !repliedTo) {
+        return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That message was not found in this chat.");
+      }
+      const replyTo = repliedTo?.id ? chatReplyQuoteFor({ id: repliedTo.id, role: repliedTo.role, content: repliedTo.content }) : null;
       const userMessage = {
         role: "user" as const,
         content: parsedBody.data.message,
         ...(parsedBody.data.requestId ? { requestId: parsedBody.data.requestId } : {}),
-        ...(attachmentRefs.length > 0 ? { attachments: attachmentRefs } : {})
+        ...(attachmentRefs.length > 0 ? { attachments: attachmentRefs } : {}),
+        ...(replyTo ? { replyTo } : {})
       };
       let treeWithUser: MobileCreationMessage[];
       if (parsedBody.data.editMessageId) {

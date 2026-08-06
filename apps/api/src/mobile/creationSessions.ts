@@ -153,6 +153,7 @@ export function serializeCreationMessages(tree: MobileCreationMessage[]): Mobile
     content: message.content,
     ...(message.attachments && message.attachments.length > 0 ? { attachments: message.attachments } : {}),
     ...(message.research ? { research: message.research } : {}),
+    ...(message.replyTo ? { replyTo: message.replyTo } : {}),
     branch: branches.get(message.id ?? "") ?? null
   }));
 }

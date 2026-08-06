@@ -15,6 +15,7 @@ import {
   type ToolLoopTool
 } from "@book-maker/core";
 import { z } from "zod";
+import { CHAT_REPLY_EXCERPT_MAX, chatReplyQuoteLabel } from "./chatReplyQuote.js";
 import { linearizeCreationMessages } from "./creationChatTree.js";
 
 const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
@@ -249,6 +250,17 @@ export const mobileCreationMessageSchema = z
     requestId: z.string().trim().min(8).max(64).optional(),
     parentId: z.string().trim().min(1).max(64).nullable().optional(),
     isActiveChild: z.boolean().optional(),
+    // The earlier message this turn replies to, snapshotted at send time so it
+    // still renders after the transcript cap folds the original into the
+    // summary. See chatReplyQuote.ts.
+    replyTo: z
+      .object({
+        messageId: z.string().trim().min(1).max(64),
+        role: z.enum(["user", "assistant"]),
+        excerpt: z.string().trim().min(1).max(CHAT_REPLY_EXCERPT_MAX)
+      })
+      .strict()
+      .optional(),
     // Server-only UI state for restoring a branch. It is deliberately not
     // included in the serialized message DTO sent to the mobile client.
     turnUi: mobileCreationMessageTurnUiSchema.optional()
@@ -2213,7 +2225,13 @@ function chatTranscriptForPrompt(messages: MobileCreationMessage[] | undefined, 
   }
   const transcript = messages
     ?.slice(-40)
-    .map((message) => `${message.role === "assistant" ? "Assistant" : "User"}: ${message.content.trim()}`)
+    .map((message) => {
+      const speaker = message.role === "assistant" ? "Assistant" : "User";
+      // A reply is annotated rather than merged, so the quoted words stay
+      // attributed to whoever said them and cannot read as the user's own ask.
+      const quote = message.replyTo ? ` (${chatReplyQuoteLabel(message.replyTo)})` : "";
+      return `${speaker}${quote}: ${message.content.trim()}`;
+    })
     .filter((line) => line.length > 0)
     .join("\n")
     .trim();

@@ -51,4 +51,61 @@ void main() {
       1,
     );
   });
+
+  Future<int> swipeBy(WidgetTester tester, double dx) async {
+    var replies = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: MessageHoldFeedback(
+            onLongPressStart: (_) async {},
+            onSwipeReply: () => replies++,
+            child: const SizedBox(width: 160, height: 80),
+          ),
+        ),
+      ),
+    );
+    await tester.drag(find.byType(MessageHoldFeedback), Offset(dx, 0));
+    await tester.pumpAndSettle();
+    return replies;
+  }
+
+  testWidgets('swiping past the threshold starts a reply', (tester) async {
+    expect(
+      await swipeBy(tester, MessageHoldFeedback.swipeReplyThreshold + 12),
+      1,
+    );
+  });
+
+  testWidgets('a short swipe springs back without replying', (tester) async {
+    expect(
+      await swipeBy(tester, MessageHoldFeedback.swipeReplyThreshold - 12),
+      0,
+    );
+  });
+
+  testWidgets('swiping the other way never replies', (tester) async {
+    expect(
+      await swipeBy(tester, -(MessageHoldFeedback.swipeReplyThreshold + 40)),
+      0,
+    );
+  });
+
+  testWidgets('no reply handler means no drag at all', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: MessageHoldFeedback(
+            onLongPressStart: (_) async {},
+            child: const SizedBox(width: 160, height: 80),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(find.byType(MessageHoldFeedback), const Offset(120, 0));
+    await tester.pump();
+
+    expect(find.byIcon(Icons.reply_outlined), findsNothing);
+  });
 }

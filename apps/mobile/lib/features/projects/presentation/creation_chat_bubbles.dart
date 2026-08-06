@@ -10,6 +10,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.activeProjectId,
     this.onSwitchBranch,
     this.onEdit,
+    this.onReply,
     this.onOpenReplanCopy,
     this.onOpenPaywall,
     this.showProposalActions = false,
@@ -23,6 +24,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchBranch;
   final void Function(MobileProjectChatMessage message)? onEdit;
+  final void Function(MobileProjectChatMessage message)? onReply;
   final ValueChanged<String>? onOpenReplanCopy;
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
   final bool showProposalActions;
@@ -47,13 +49,17 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         replanCopyTargetProjectId != null &&
         replanCopyTargetProjectId != activeProjectId &&
         onOpenReplanCopy != null;
+    final replyTo = message.replyTo;
+    final startReply = onReply == null ? null : () => onReply!(message);
     final bubble = MessageHoldFeedback(
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
         position: details.globalPosition,
         message: message.content,
         onEdit: isUser && onEdit != null ? () => onEdit!(message) : null,
+        onReply: startReply,
       ),
+      onSwipeReply: startReply,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -72,6 +78,8 @@ class _ProjectChatMessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (replyTo != null)
+              ChatQuotedMessage(target: replyTo, foreground: foreground),
             Row(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,

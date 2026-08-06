@@ -45,6 +45,7 @@ class ScriptedCreationRepository implements CreationRepository {
   final sentAttachmentIds = <List<String>>[];
   final startedMessages = <String>[];
   final editRequests = <String>[];
+  final replyRequests = <String?>[];
   final branchSwitches = <({String messageId, String direction})>[];
   final uploadedAttachments = <String, MobileCreationAttachment>{};
   final deletedAttachmentIds = <String>[];
@@ -163,7 +164,7 @@ class ScriptedCreationRepository implements CreationRepository {
         'title': 'New book',
         'status': 'ACTIVE',
         'messages': [
-          {'role': 'assistant', 'content': greeting},
+          {'id': 'assistant-greeting', 'role': 'assistant', 'content': greeting},
         ],
         'createdProjectId': null,
         'updatedAt': '2026-06-15T00:00:00.000Z',
@@ -185,6 +186,7 @@ class ScriptedCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? editMessageId,
+    String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
   }) async {
@@ -199,6 +201,7 @@ class ScriptedCreationRepository implements CreationRepository {
       _originalUserContent ??= sentMessages.isEmpty ? null : sentMessages.last;
     }
     sentMessages.add(message);
+    replyRequests.add(replyToMessageId);
     sentAttachmentIds.add(attachmentIds ?? const <String>[]);
     return MobileCreationConversationResponse.fromJson({
       'session': {
@@ -215,6 +218,12 @@ class ScriptedCreationRepository implements CreationRepository {
             'id': 'user-current',
             'role': 'user',
             'content': message,
+            if (replyToMessageId != null)
+              'replyTo': {
+                'messageId': replyToMessageId,
+                'role': 'assistant',
+                'excerpt': greeting,
+              },
             if (editMessageId != null)
               'branch': {
                 'index': 2,
@@ -626,6 +635,7 @@ class PlanProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String message,
     String? requestId,
+    String? replyToMessageId,
   }) async {
     revisionMessages.add(message);
     final gate = sendGate;

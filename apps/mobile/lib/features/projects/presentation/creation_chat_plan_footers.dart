@@ -280,13 +280,17 @@ class _PlanFailedFooter extends StatelessWidget {
 }
 
 String _planFailureMessage(MobileProjectStatus? status) {
-  final detail = status?.failureMessage?.trim();
-  if (detail != null && detail.isNotEmpty) {
-    return detail;
-  }
-  return status?.retryAvailable == true
+  final safeMessage = status?.retryAvailable == true
       ? 'Your idea is saved, but we couldn’t create the plan. Retry when you’re ready.'
       : 'Your idea is saved, but we couldn’t create the plan. Check again for recovery options.';
+
+  // Backend failure messages can contain provider and schema diagnostics. They
+  // are useful while developing, but should never be rendered by production or
+  // profile builds.
+  if (!kDebugMode) return safeMessage;
+
+  final detail = status?.failureMessage?.trim();
+  return detail != null && detail.isNotEmpty ? detail : safeMessage;
 }
 
 bool _planGenerationFailed(

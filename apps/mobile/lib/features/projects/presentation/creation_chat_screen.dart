@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -31,6 +32,7 @@ import '../domain/creation_models.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
 import 'chat_media_preview.dart';
+import 'chat_reply_quote.dart';
 import 'chat_thinking_bubble.dart';
 import 'creation_chat_controller.dart';
 import 'creation_labels.dart';
@@ -57,6 +59,7 @@ part 'creation_chat_composer.dart';
 part 'creation_chat_sheets.dart';
 part 'creation_chat_visuals_prompt.dart';
 part 'creation_chat_output_send.dart';
+part 'creation_chat_compose_context.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({super.key, this.startFresh = false, this.draftId});
@@ -69,7 +72,7 @@ class CreationChatScreen extends ConsumerStatefulWidget {
 }
 
 class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
-    with _OutputChatSend {
+    with _OutputChatSend, _CreationComposerContext {
   @override
   final _composerController = TextEditingController();
   final _revisionController = TextEditingController();
@@ -87,7 +90,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   Object? _lastScrollTrigger;
   bool _stickToBottom = true;
   bool _projectChatBranchSwitching = false;
-  String? _editingCreationMessageId;
   final Set<String> _requestedReplanCopyOutputSyncs = <String>{};
 
   // Plan question tracking
@@ -155,6 +157,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _projectChatBranchSwitching = false;
     _editingProjectMessageId = null;
     _editingCreationMessageId = null;
+    _replyTarget = null;
     _requestedReplanCopyOutputSyncs.clear();
   }
 
@@ -354,6 +357,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                 _dismissPendingProjectEcho,
                             onSwitchProjectBranch: _switchProjectBranch,
                             onEditProjectMessage: _startProjectMessageEdit,
+                            onReplyToMessage: _startReply,
                             onOpenReplanCopy: _openReplanCopy,
                             onOpenPaywall: (message) => unawaited(
                               _openProjectChatPaywall(
@@ -419,12 +423,17 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                         ),
                       ),
                       if (_editingProjectMessageId != null)
-                        _EditingMessageBanner(
+                        ChatComposerContextBanner.editing(
                           onCancel: _cancelProjectMessageEdit,
                         )
                       else if (_editingCreationMessageId != null)
-                        _EditingMessageBanner(
+                        ChatComposerContextBanner.editing(
                           onCancel: _cancelCreationMessageEdit,
+                        )
+                      else if (_replyTarget != null)
+                        ChatComposerContextBanner.replying(
+                          target: _replyTarget!,
+                          onCancel: _cancelReply,
                         ),
                       if (isInOutputStage)
                         _FooterLimiter(
@@ -850,6 +859,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     final trimmed = text.trim();
     final state = ref.read(creationChatControllerProvider);
     AppHaptics.tap();
+    // Taken before the guards below so a send that bails leaves the banner up.
+    final replyTo = _replyTarget;
     final activeProjectId = _activeProjectId(state);
     if (activeProjectId != null) {
       if (trimmed.isEmpty) return;
@@ -864,11 +875,14 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       return;
     }
     _composerController.clear();
+    if (replyTo != null) {
+      setState(() => _replyTarget = null);
+    }
     _resumeStickToBottom();
     try {
       await ref
           .read(creationChatControllerProvider.notifier)
-          .sendMessage(trimmed);
+          .sendMessage(trimmed, replyTo: replyTo);
     } catch (_) {}
   }
 
@@ -897,7 +911,15 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       await _sendCreationEdit(message, editingCreationMessageId);
       return;
     }
-    await _sendProjectMessage(projectId: projectId, message: message);
+    final replyTo = _replyTarget;
+    if (replyTo != null) {
+      setState(() => _replyTarget = null);
+    }
+    await _sendProjectMessage(
+      projectId: projectId,
+      message: message,
+      replyTo: replyTo,
+    );
   }
 
   Future<void> _sendCreationEdit(String message, String editMessageId) async {
@@ -911,27 +933,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     } catch (_) {}
   }
 
-  void _startCreationMessageEdit(MobileCreationMessage message) {
-    final state = ref.read(creationChatControllerProvider);
-    if (message.id == null || state.isBusy || state.switchingBranch) return;
-    setState(() {
-      // Only one edit at a time: starting a brainstorm edit replaces any
-      // in-progress project chat edit, and vice versa.
-      _editingProjectMessageId = null;
-      _editingCreationMessageId = message.id;
-      _composerController.text = message.content;
-      _composerController.selection = TextSelection.collapsed(
-        offset: _composerController.text.length,
-      );
-    });
-  }
-
-  void _cancelCreationMessageEdit() {
-    setState(() {
-      _editingCreationMessageId = null;
-      _composerController.clear();
-    });
-  }
 
   Future<void> _openAttachMenu(CreationChatState state) async {
     final action = await showModalBottomSheet<String>(
@@ -1111,24 +1112,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     ).showAppSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _startProjectMessageEdit(MobileProjectChatMessage message) {
-    if (_projectChatSending) return;
-    setState(() {
-      _editingCreationMessageId = null;
-      _editingProjectMessageId = message.id;
-      _composerController.text = message.content;
-      _composerController.selection = TextSelection.collapsed(
-        offset: _composerController.text.length,
-      );
-    });
-  }
-
-  void _cancelProjectMessageEdit() {
-    setState(() {
-      _editingProjectMessageId = null;
-      _composerController.clear();
-    });
-  }
 
   Future<void> _switchProjectBranch(
     MobileProjectChatMessage message,

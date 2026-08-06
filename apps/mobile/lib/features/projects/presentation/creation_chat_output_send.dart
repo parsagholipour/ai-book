@@ -15,6 +15,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   String? _pendingProjectRequestId;
   String? _pendingProjectRequestText;
   String? _pendingProjectEditMessageId;
+  String? _pendingProjectReplyToId;
 
   /// The message the user just sent, echoed until the refreshed transcript
   /// carries it — or until it fails and offers itself back to retry.
@@ -36,16 +37,22 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   Future<MobileProjectChatSendResult?> _sendProjectMessage({
     required String projectId,
     required String message,
+    ChatReplyTarget? replyTo,
   }) async {
     final trimmed = message.trim();
     if (trimmed.isEmpty || _projectChatSending) return null;
     final editingMessageId = _editingProjectMessageId;
+    // The quoted message is part of what makes a request distinct: the same
+    // words replying to a different turn are a different ask, so reusing the
+    // idempotency key would replay the first one instead of sending this.
     final samePendingRequest =
         _pendingProjectRequestText == trimmed &&
-        _pendingProjectEditMessageId == editingMessageId;
+        _pendingProjectEditMessageId == editingMessageId &&
+        _pendingProjectReplyToId == replyTo?.messageId;
     if (!samePendingRequest) {
       _pendingProjectRequestText = trimmed;
       _pendingProjectEditMessageId = editingMessageId;
+      _pendingProjectReplyToId = replyTo?.messageId;
       _pendingProjectRequestId =
           'project-chat-${DateTime.now().microsecondsSinceEpoch}';
     }
@@ -72,10 +79,12 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
               projectId: projectId,
               message: trimmed,
               requestId: requestId,
+              replyToMessageId: replyTo?.messageId,
             );
       _pendingProjectRequestId = null;
       _pendingProjectRequestText = null;
       _pendingProjectEditMessageId = null;
+      _pendingProjectReplyToId = null;
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);

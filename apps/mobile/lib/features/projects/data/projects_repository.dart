@@ -42,6 +42,7 @@ abstract interface class ProjectsRepository {
     required String projectId,
     required String message,
     String? requestId,
+    String? replyToMessageId,
   });
 
   Future<MobileProjectChatSendResult> editProjectChatMessage({
@@ -256,10 +257,15 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String message,
     String? requestId,
+    String? replyToMessageId,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/chat/messages',
-      data: {'message': message, 'requestId': ?requestId},
+      data: {
+        'message': message,
+        'requestId': ?requestId,
+        'replyToMessageId': ?replyToMessageId,
+      },
       receiveTimeout: llmReceiveTimeout,
     );
     return MobileProjectChatSendResult.fromJson(

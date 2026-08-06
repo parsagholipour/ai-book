@@ -5,6 +5,7 @@
 // Split out of project_models.dart, which re-exports this file so the screens
 // that import it keep seeing these types.
 
+import 'chat_reply_target.dart';
 import 'project_models.dart';
 
 class MobileProjectChatMessage {
@@ -104,6 +105,9 @@ class MobileProjectChatMessage {
     final trimmed = targetProjectId.trim();
     return trimmed.isEmpty ? null : trimmed;
   }
+
+  /// The earlier message this turn replies to, quoted above its own text.
+  ChatReplyTarget? get replyTo => ChatReplyTarget.fromJson(metadata['replyTo']);
 
   /// Saved-export marker attached when the user saved a manual Edit Mode
   /// change. Messages carrying it render as a saved export card.

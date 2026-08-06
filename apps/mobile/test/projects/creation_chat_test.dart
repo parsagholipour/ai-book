@@ -222,6 +222,100 @@ void main() {
     expect(grounded.research?.sources.last.uri, isNull);
   });
 
+  testWidgets('replying quotes the message and sends it with the reply', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    // The greeting is a local turn the server has never seen, so there is
+    // nothing to quote until a real exchange exists.
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(bubbleText(reply));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reply'));
+    await tester.pumpAndSettle();
+
+    // The composer says what it is attached to, and — unlike an edit — leaves
+    // whatever is typed alone.
+    expect(find.text('Replying to the assistant'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField).first, 'The second one');
+    // The send button enables on the frame the typed text lands in.
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(creation.sentMessages.last, 'The second one');
+    expect(creation.replyRequests.last, 'assistant-reply');
+    expect(creation.editRequests, isEmpty);
+    // The banner is for the next message only.
+    expect(find.text('Replying to the assistant'), findsNothing);
+    // The sent bubble carries the quote above its own text.
+    expect(find.text('Assistant'), findsOneWidget);
+    expect(bubbleText('The second one'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('cancelling a reply sends the message unquoted', (tester) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(bubbleText(reply));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reply'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Cancel reply'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Replying to the assistant'), findsNothing);
+
+    await tester.enterText(find.byType(TextField).first, 'Make it shorter');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    // It really sent — an unsent message would also report a null reply.
+    expect(creation.sentMessages.last, 'Make it shorter');
+    expect(creation.replyRequests.last, isNull);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('starting an edit drops a pending reply', (tester) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(bubbleText(reply));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reply'));
+    await tester.pumpAndSettle();
+    expect(find.text('Replying to the assistant'), findsOneWidget);
+
+    // The two modes share one composer, so the strip can never show both.
+    await tester.longPress(bubbleText('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Editing message'), findsOneWidget);
+    expect(find.text('Replying to the assistant'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('editing a sent message forks a branch with arrows', (
     tester,
   ) async {

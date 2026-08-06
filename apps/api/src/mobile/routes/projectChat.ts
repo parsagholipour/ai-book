@@ -5,6 +5,7 @@ import {
   messageWithScope,
   type BookEditIntent
 } from "../../bookEditIntent.js";
+import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import {
   applyOrCancelEditProposal,
   busyEditReply,
@@ -127,6 +128,18 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That chat message was not found.");
       }
 
+      // Unlike an edit, a reply targets any role: pointing at the assistant's
+      // answer is the common case, and pointing at your own earlier request is
+      // how a narrowing follow-up reads.
+      const replyToMessageId = parsed.data.replyToMessageId;
+      const repliedToMessage = replyToMessageId
+        ? await prisma.projectChatMessage.findFirst({ where: { id: replyToMessageId, projectId: id } })
+        : null;
+      if (replyToMessageId && !repliedToMessage) {
+        return sendMobileError(reply, 404, "MESSAGE_NOT_FOUND", "That chat message was not found.");
+      }
+      const replyTo = repliedToMessage ? chatReplyQuoteFor(repliedToMessage) : null;
+
       const activeMessages = await loadActiveProjectChatMessages(id);
       const activeEditedMessage = editedMessage
         ? activeMessages.find((message) => message.id === editedMessage.id)
@@ -190,11 +203,14 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           parentId,
           content: parsed.data.message,
           requestId: parsed.data.requestId,
-          metadata: resolvedPendingEdit
-            ? { resolvedPendingEdit }
-            : editedMessage
-              ? { editedFromMessageId: editedMessage.id }
-              : {},
+          metadata: {
+            ...(resolvedPendingEdit
+              ? { resolvedPendingEdit }
+              : editedMessage
+                ? { editedFromMessageId: editedMessage.id }
+                : {}),
+            ...(replyTo ? { replyTo } : {})
+          },
           selectSibling: Boolean(editedMessage)
         });
       } catch (error) {
@@ -278,7 +294,12 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
             })),
             textModel: routingTextModel,
             loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null,
-            clarifyExhausted
+            clarifyExhausted,
+            // Given to the router, not merged into the message: without a
+            // referent "make that shorter" falls to the heuristics' catch-all
+            // clarify, and a second unresolved turn is forced into a whole-book
+            // rewrite. The heuristics and page targeting never see it.
+            ...(replyTo ? { replyTo } : {})
           });
 
       // Answering questions and reading content are always allowed while a job
@@ -308,7 +329,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         intent,
         textModel: routingTextModel,
         executeProposal: Boolean(confirmedProposal),
-        ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {})
+        ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {}),
+        ...(replyTo ? { replyTo } : {})
       });
 
       return {

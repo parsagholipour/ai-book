@@ -3,13 +3,14 @@ import 'package:flutter/services.dart';
 
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 
-enum _MessageAction { copy, edit }
+enum _MessageAction { copy, reply, edit }
 
 Future<void> showMessageActionsMenu({
   required BuildContext context,
   required Offset position,
   required String message,
   VoidCallback? onEdit,
+  VoidCallback? onReply,
 }) async {
   final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
   if (overlay is! RenderBox) return;
@@ -32,6 +33,18 @@ Future<void> showMessageActionsMenu({
           ],
         ),
       ),
+      if (onReply != null)
+        const PopupMenuItem<_MessageAction>(
+          value: _MessageAction.reply,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.reply_outlined),
+              SizedBox(width: 12),
+              Text('Reply'),
+            ],
+          ),
+        ),
       if (onEdit != null)
         const PopupMenuItem<_MessageAction>(
           value: _MessageAction.edit,
@@ -47,6 +60,10 @@ Future<void> showMessageActionsMenu({
     ],
   );
 
+  if (action == _MessageAction.reply) {
+    onReply?.call();
+    return;
+  }
   if (action == _MessageAction.edit) {
     onEdit?.call();
     return;

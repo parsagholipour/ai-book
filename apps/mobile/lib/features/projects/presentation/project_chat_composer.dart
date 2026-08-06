@@ -1,7 +1,55 @@
 import 'package:flutter/material.dart';
 
-// The chat's text-entry widgets: the bottom composer, and the inline editor a
-// sent message turns into when it is edited.
+import 'chat_reply_quote.dart';
+
+// The chat's text-entry widgets: the bottom composer with the strip that names
+// what it is replying to, and the inline editor a sent message turns into when
+// it is edited.
+
+/// The composer plus its context strip.
+///
+/// The two are one widget because the strip is part of the text-entry area: it
+/// has to sit directly above the field, inside the same `SafeArea`, or the
+/// keyboard insets push them apart.
+class ProjectChatComposerBar extends StatelessWidget {
+  const ProjectChatComposerBar({
+    required this.controller,
+    required this.sending,
+    required this.onSend,
+    this.lockedLabel,
+    this.replyTarget,
+    this.onCancelReply,
+    super.key,
+  });
+
+  final TextEditingController controller;
+  final bool sending;
+  final VoidCallback onSend;
+  final String? lockedLabel;
+  final ChatReplyTarget? replyTarget;
+  final VoidCallback? onCancelReply;
+
+  @override
+  Widget build(BuildContext context) {
+    final target = replyTarget;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (target != null && onCancelReply != null)
+          ChatComposerContextBanner.replying(
+            target: target,
+            onCancel: onCancelReply!,
+          ),
+        ProjectChatComposer(
+          controller: controller,
+          sending: sending,
+          onSend: onSend,
+          lockedLabel: lockedLabel,
+        ),
+      ],
+    );
+  }
+}
 
 class InlineMessageEditor extends StatelessWidget {
   const InlineMessageEditor({

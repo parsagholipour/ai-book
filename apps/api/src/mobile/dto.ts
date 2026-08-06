@@ -131,6 +131,8 @@ export type MobileCreationMessageDto = {
   content: string;
   attachments?: MobileCreationMessage["attachments"];
   research?: MobileCreationMessage["research"];
+  /** The quoted earlier message, when this turn was sent as a reply. */
+  replyTo?: MobileCreationMessage["replyTo"];
   branch: CreationChatBranchDto | null;
 };
 

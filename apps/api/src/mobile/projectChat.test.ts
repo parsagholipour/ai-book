@@ -528,6 +528,129 @@ describe("mobile project chat", () => {
     await app.close();
   });
 
+  it("stores the quoted message when a chat turn is a reply", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.projectChatMessages.push({
+      id: "chat-quoted",
+      projectId: "project-1",
+      parentId: null,
+      role: "ASSISTANT",
+      content: "This plan is about a rabbit race.",
+      operationId: null,
+      metadata: {},
+      isActiveChild: true,
+      createdAt: new Date("2026-06-15T11:00:00.000Z")
+    });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "PLAN_READY",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord({ status: "DRAFT", approvedAt: null }),
+        pages: []
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "What does that mean?", replyToMessageId: "chat-quoted" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    const sent = body.messages.find((message: any) => message.content === "What does that mean?");
+    // The quote is a snapshot, not a lookup: the transcript prunes, and the
+    // excerpt has to survive the original being folded away.
+    expect(sent.metadata.replyTo).toEqual({
+      messageId: "chat-quoted",
+      role: "assistant",
+      excerpt: "This plan is about a rabbit race."
+    });
+    await app.close();
+  });
+
+  it("rejects a reply to a message that is not in this project", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "PLAN_READY",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord({ status: "DRAFT", approvedAt: null }),
+        pages: []
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "What does that mean?", replyToMessageId: "chat-missing" }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("MESSAGE_NOT_FOUND");
+    expect(mockPrisma.projectChatMessage.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("prices a reply exactly as it prices the same message sent on its own", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // The quote is chosen to be maximally dangerous to the pricing path: it
+    // names a page and carries two quoted phrases, which is the shape
+    // pageIndexesFromMessage and replacementTermsFromMessage read as an
+    // exact-replacement instruction targeting page 1.
+    const poisonedQuote =
+      'On page 1 I changed "the rabbit" into "the fly" for you.';
+    const request = "Make the whole book warmer and simpler.";
+    const proposalFor = async (payload: Record<string, unknown>) => {
+      resetMobileHarness();
+      mockAccessTokens({ "token-a": "user-a" });
+      state.projectChatMessages.push({
+        id: "chat-quoted",
+        projectId: "project-1",
+        parentId: null,
+        role: "ASSISTANT",
+        content: poisonedQuote,
+        operationId: null,
+        metadata: {},
+        isActiveChild: true,
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      });
+      mockPrisma.project.findFirst.mockResolvedValue(
+        projectRecord({
+          id: "project-1",
+          status: "COMPLETE",
+          currentPlanId: "plan-1",
+          currentPlan: approvedPlanRecord(),
+          pages: generatedPages()
+        })
+      );
+      const app = await buildMobileApp();
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/chat/messages",
+        headers: bearer("token-a"),
+        payload: { message: request, ...payload }
+      });
+      await app.close();
+      return response.json().reply.metadata.editProposal;
+    };
+
+    const plain = await proposalFor({});
+    const replied = await proposalFor({ replyToMessageId: "chat-quoted" });
+
+    expect(plain).toBeTruthy();
+    expect(replied.kind).toBe(plain.kind);
+    expect(replied.scope).toBe(plain.scope);
+    expect(replied.affectedPageIndexes).toEqual(plain.affectedPageIndexes);
+    expect(replied.credits).toBe(plain.credits);
+  });
+
   it("cancels a priced edit proposal without charging", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(

@@ -5,6 +5,7 @@ import '../../../shared/ui/motion.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../domain/project_models.dart';
 import 'branch_navigator.dart';
+import 'chat_reply_quote.dart';
 import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
@@ -328,6 +329,7 @@ class ProjectMessageBubble extends StatelessWidget {
     required this.showProposalActions,
     required this.sending,
     this.showCreditCost = true,
+    this.onReply,
     this.onStartEdit,
     this.onCancelEdit,
     this.onSubmitEdit,
@@ -351,6 +353,10 @@ class ProjectMessageBubble extends StatelessWidget {
   /// bubble would only be repeating the number.
   final bool showCreditCost;
   final ValueChanged<String> onSwitchBranch;
+
+  /// Quotes this message in the composer. Null while the message is being
+  /// edited, since the two modes are mutually exclusive.
+  final VoidCallback? onReply;
   final VoidCallback? onStartEdit;
   final VoidCallback? onCancelEdit;
   final VoidCallback? onSubmitEdit;
@@ -380,13 +386,17 @@ class ProjectMessageBubble extends StatelessWidget {
         : isUser
         ? colors.onPrimary
         : colors.onSurface;
+    final replyTo = message.replyTo;
+    final startReply = onReply == null || editing ? null : () => onReply!();
     final bubble = MessageHoldFeedback(
       onLongPressStart: (details) => showMessageActionsMenu(
         context: context,
         position: details.globalPosition,
         message: message.content,
         onEdit: isUser ? onStartEdit : null,
+        onReply: startReply,
       ),
+      onSwipeReply: startReply,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: DecoratedBox(
@@ -399,6 +409,8 @@ class ProjectMessageBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (replyTo != null && !editing)
+                  ChatQuotedMessage(target: replyTo, foreground: foreground),
                 if (editing)
                   InlineMessageEditor(
                     controller: editController,

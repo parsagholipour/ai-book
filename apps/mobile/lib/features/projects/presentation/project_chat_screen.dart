@@ -12,12 +12,15 @@ import '../../billing/presentation/billing_paywall.dart';
 import '../../voice/presentation/character_cast_sheet.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
+import 'chat_reply_quote.dart';
 import 'chat_thinking_bubble.dart';
 import 'plan_revision_retry.dart';
 import 'project_chat_bubbles.dart';
 import 'project_chat_composer.dart';
 import 'project_chat_operations.dart';
 import 'project_route_error.dart';
+
+part 'project_chat_edit_actions.dart';
 
 /// What a screen wants the book chat to do when it opens.
 ///
@@ -57,12 +60,15 @@ class ProjectChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ProjectChatScreen> createState() => _ProjectChatScreenState();
 }
 
-class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
+class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
+    with _ProjectChatEditActions {
+  @override
   late final _controller = TextEditingController(
     text: widget.initialDraft ?? '',
   );
   final _editController = TextEditingController();
   final _scrollController = ScrollController();
+  @override
   bool _sending = false;
   bool _editing = false;
   bool _switchingBranch = false;
@@ -70,12 +76,15 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   String? _editingMessageId;
   String? _pendingSendRequestId;
   String? _pendingSendMessage;
+
+  /// The message the composer is quoting, and the one the in-flight send
+  /// quoted — kept separately so a retry resends the same reply.
+  ChatReplyTarget? _replyTarget;
+  ChatReplyTarget? _pendingSendReplyTo;
   String? _pendingEditRequestId;
   String? _pendingEditMessage;
   String? _historyNextCursor;
   bool? _historyHasMore;
-  String? _retryingOperationId;
-  bool _undoing = false;
   int _requestSequence = 0;
   bool _initialScrollDone = false;
   ProviderSubscription<AsyncValue<MobileProjectStatus>>? _statusSubscription;
@@ -122,6 +131,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   ///
   /// Read rather than watched: the guards using it run from callbacks, where
   /// the composer's disabled state was already decided by the last build.
+  @override
   bool get _bookIsBusy =>
       ref.read(projectStatusProvider(widget.projectId)).asData?.value.isLive ??
       false;
@@ -157,6 +167,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   /// start and finish between two status ticks, which used to strand the
   /// result behind a manual pull-to-refresh. A queued operation in the response
   /// is proof the work exists, so arm the edge from that too.
+  @override
   void _armFallingEdge(MobileBookEditOperation? operation) {
     if (operation != null && operation.isRunning) {
       _wasLive = true;
@@ -307,6 +318,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                             onStartEdit: message.isUser && liveStatus == null
                                 ? () => _startEdit(message)
                                 : null,
+                            onReply: () => _startReply(message),
                             onCancelEdit: _cancelEdit,
                             onSubmitEdit: _submitEdit,
                             onSwitchBranch: (direction) =>
@@ -376,11 +388,13 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
                   ),
                 ),
               ),
-              ProjectChatComposer(
+              ProjectChatComposerBar(
                 controller: _controller,
                 sending: _sending || _editing,
                 onSend: _send,
                 lockedLabel: _composerLockLabel(liveStatus),
+                replyTarget: _replyTarget,
+                onCancelReply: _cancelReply,
               ),
             ],
           );
@@ -396,6 +410,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     );
   }
 
+  @override
   void _refresh() {
     if (mounted) {
       setState(() {
@@ -457,13 +472,37 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     final message = _controller.text.trim();
     if (message.isEmpty || _sending || _bookIsBusy) return;
     _controller.clear();
-    await _sendMessage(message);
+    final replyTo = _replyTarget;
+    if (replyTo != null) {
+      setState(() => _replyTarget = null);
+    }
+    await _sendMessage(message, replyTo: replyTo);
+  }
+
+  /// Quotes a message in the composer. Starting a reply cancels an in-progress
+  /// edit: the two share the composer, and an edit rewrites its own message
+  /// rather than adding a new one.
+  void _startReply(MobileProjectChatMessage message) {
+    final target = ChatReplyTarget.from(
+      messageId: message.id,
+      role: message.role,
+      content: message.content,
+    );
+    if (target == null) return;
+    setState(() {
+      _editingMessageId = null;
+      _replyTarget = target;
+    });
+  }
+
+  void _cancelReply() {
+    setState(() => _replyTarget = null);
   }
 
   Future<void> _retryPendingEcho() async {
     final echo = _pendingEcho;
     if (echo == null || _sending || _bookIsBusy) return;
-    await _sendMessage(echo.text);
+    await _sendMessage(echo.text, replyTo: _pendingSendReplyTo);
   }
 
   void _dismissPendingEcho() {
@@ -484,12 +523,17 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     });
   }
 
-  Future<void> _sendMessage(String message) async {
+  @override
+  Future<void> _sendMessage(String message, {ChatReplyTarget? replyTo}) async {
     // Retrying the same text reuses the request ID, so the server replays
-    // the original turn instead of duplicating it.
-    if (_pendingSendMessage != message) {
+    // the original turn instead of duplicating it. The quoted message is part
+    // of the request: the same words replying to a different turn are a
+    // different ask, and reusing the key would replay the first one.
+    if (_pendingSendMessage != message ||
+        _pendingSendReplyTo?.messageId != replyTo?.messageId) {
       _pendingSendRequestId = _newRequestId('chat');
       _pendingSendMessage = message;
+      _pendingSendReplyTo = replyTo;
     }
     final requestId = _pendingSendRequestId!;
     setState(() {
@@ -504,9 +548,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
             projectId: widget.projectId,
             message: message,
             requestId: requestId,
+            replyToMessageId: replyTo?.messageId,
           );
       _pendingSendRequestId = null;
       _pendingSendMessage = null;
+      _pendingSendReplyTo = null;
       _armFallingEdge(result.operation);
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectDetailProvider(widget.projectId));
@@ -548,6 +594,8 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     setState(() {
       _pendingEditRequestId = null;
       _pendingEditMessage = null;
+      // Editing and replying share the composer area.
+      _replyTarget = null;
       _editingMessageId = message.id;
       _editController.text = message.content;
       _editController.selection = TextSelection.collapsed(
@@ -638,145 +686,6 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     }
   }
 
-  Future<void> _retryOperation(MobileBookEditOperation operation) async {
-    if (operation.isAutomaticRetryPending || _retryingOperationId != null) {
-      return;
-    }
-    if (!operation.retryAvailable) {
-      final submittedText = operation.submittedText?.trim();
-      if (submittedText != null && submittedText.isNotEmpty) {
-        setState(() {
-          _controller.text = submittedText;
-          _controller.selection = TextSelection.collapsed(
-            offset: submittedText.length,
-          );
-        });
-      }
-      ScaffoldMessenger.of(context).showAppSnackBar(
-        SnackBar(
-          content: Text(
-            submittedText == null || submittedText.isEmpty
-                ? 'Edit your request below, then send it again.'
-                : 'The original request is ready to edit and send again.',
-          ),
-        ),
-      );
-      return;
-    }
-    setState(() => _retryingOperationId = operation.id);
-    try {
-      await ref
-          .read(projectsRepositoryProvider)
-          .retryOperation(
-            projectId: widget.projectId,
-            operationId: operation.id,
-            requestId: createPlanRevisionRetryRequestId(operation.id),
-          );
-      if (!mounted) return;
-      setState(() => _retryingOperationId = null);
-      _refresh();
-      _scrollToBottomSoon();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _retryingOperationId = null);
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  Future<void> _applyProposal(String proposalId) async {
-    if (_sending || _bookIsBusy) return;
-    if (proposalId.isEmpty) {
-      await _sendMessage('apply it');
-      return;
-    }
-    final requestId = _newRequestId('proposal-apply');
-    setState(() => _sending = true);
-    // Move to where the progress will appear before the request even returns.
-    _scrollToBottomSoon();
-    try {
-      final result = await ref
-          .read(projectsRepositoryProvider)
-          .applyEditProposal(
-            projectId: widget.projectId,
-            proposalId: proposalId,
-            requestId: requestId,
-          );
-      if (!mounted) return;
-      _armFallingEdge(result.operation);
-      setState(() => _sending = false);
-      ref.invalidate(projectChatProvider(widget.projectId));
-      ref.invalidate(projectStatusProvider(widget.projectId));
-      ref.invalidate(billingProvider);
-      _scrollToBottomSoon();
-      // A replan builds the rebuilt book somewhere else and leaves this one
-      // untouched. Staying here shows the unchanged book, which reads as the
-      // edit having done nothing at all.
-      final replanCopyId = result.reply.replanCopyTargetProjectId;
-      if (replanCopyId != null && replanCopyId != widget.projectId) {
-        context.push('/projects/$replanCopyId/chat');
-      }
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _sending = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  Future<void> _cancelProposal(String proposalId) async {
-    if (_sending) return;
-    if (proposalId.isEmpty) {
-      await _sendMessage('cancel');
-      return;
-    }
-    final requestId = _newRequestId('proposal-cancel');
-    setState(() => _sending = true);
-    try {
-      await ref
-          .read(projectsRepositoryProvider)
-          .cancelEditProposal(
-            projectId: widget.projectId,
-            proposalId: proposalId,
-            requestId: requestId,
-          );
-      if (!mounted) return;
-      setState(() => _sending = false);
-      ref.invalidate(projectChatProvider(widget.projectId));
-      _scrollToBottomSoon();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _sending = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
-  Future<void> _undoLastEdit() async {
-    if (_undoing || _sending) return;
-    final requestId = _newRequestId('undo');
-    setState(() => _undoing = true);
-    try {
-      final result = await ref
-          .read(projectsRepositoryProvider)
-          .undoLastBookEdit(projectId: widget.projectId, requestId: requestId);
-      if (!mounted) return;
-      _armFallingEdge(result.operation);
-      setState(() => _undoing = false);
-      _refresh();
-      _scrollToBottomSoon();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _undoing = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
-    }
-  }
-
   Future<void> _openPaywall(
     MobileProjectDetail? project, {
     int? credits,
@@ -815,6 +724,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
   /// Two passes, because a card arriving with the new content sizes itself
   /// during that first layout: a single scroll aims at an extent that is about
   /// to grow and stops just short of the bottom.
+  @override
   void _scrollToBottomSoon({bool animate = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToBottom(animate: animate);
@@ -840,6 +750,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen> {
     );
   }
 
+  @override
   String _newRequestId(String prefix) {
     _requestSequence += 1;
     return '$prefix-${DateTime.now().microsecondsSinceEpoch}-$_requestSequence';

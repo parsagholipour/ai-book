@@ -795,6 +795,7 @@ class _ScriptedProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String message,
     String? requestId,
+    String? replyToMessageId,
   }) async {
     sendRequestIds.add(requestId);
     sentMessages.add(message);

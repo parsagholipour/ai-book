@@ -19,6 +19,7 @@ class _Transcript extends StatelessWidget {
     this.onDismissPendingProjectEcho,
     this.onSwitchProjectBranch,
     this.onEditProjectMessage,
+    this.onReplyToMessage,
     this.onOpenReplanCopy,
     this.onOpenPaywall,
     this.onApplyEditProposal,
@@ -50,6 +51,9 @@ class _Transcript extends StatelessWidget {
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchProjectBranch;
   final void Function(MobileProjectChatMessage message)? onEditProjectMessage;
+
+  /// Quotes any message — either stage, either role — in the composer.
+  final void Function(ChatReplyTarget? target)? onReplyToMessage;
   final ValueChanged<String>? onOpenReplanCopy;
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
   final void Function(String proposalId)? onApplyEditProposal;
@@ -168,6 +172,15 @@ class _Transcript extends StatelessWidget {
         activeProjectId: activeProjectId,
         onSwitchBranch: onSwitchProjectBranch,
         onEdit: onEditProjectMessage,
+        onReply: onReplyToMessage == null
+            ? null
+            : (message) => onReplyToMessage!(
+                ChatReplyTarget.from(
+                  messageId: message.id,
+                  role: message.role,
+                  content: message.content,
+                ),
+              ),
         onOpenReplanCopy: onOpenReplanCopy,
         onOpenPaywall: item.message!.hasInsufficientCredits
             ? onOpenPaywall
@@ -228,6 +241,15 @@ class _Transcript extends StatelessWidget {
       onRetryFailed: onRetryFailedMessage,
       onDismissFailed: onDismissFailedMessage,
       onEdit: onEditCreationMessage,
+      onReply: onReplyToMessage == null
+          ? null
+          : (message) => onReplyToMessage!(
+              ChatReplyTarget.from(
+                messageId: message.id,
+                role: message.role,
+                content: message.content,
+              ),
+            ),
       onSwitchBranch: onSwitchCreationBranch,
       switchingBranch: state.switchingBranch || state.isBusy,
     );
@@ -305,41 +327,6 @@ class _ProjectTranscriptItem {
     if (plan != null) return 0;
     if (message != null) return 1;
     return 2;
-  }
-}
-
-class _EditingMessageBanner extends StatelessWidget {
-  const _EditingMessageBanner({required this.onCancel});
-
-  final VoidCallback onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: colors.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
-        child: Row(
-          children: [
-            Icon(Icons.edit_outlined, size: 18, color: colors.primary),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Editing message',
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-            ),
-            IconButton(
-              tooltip: 'Cancel edit',
-              visualDensity: VisualDensity.compact,
-              onPressed: onCancel,
-              icon: const Icon(Icons.close, size: 18),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -437,6 +424,7 @@ class _MessageBubble extends StatelessWidget {
     this.onRetryFailed,
     this.onDismissFailed,
     this.onEdit,
+    this.onReply,
     this.onSwitchBranch,
     this.switchingBranch = false,
   });
@@ -447,6 +435,7 @@ class _MessageBubble extends StatelessWidget {
   final ValueChanged<String>? onRetryFailed;
   final ValueChanged<String>? onDismissFailed;
   final void Function(MobileCreationMessage message)? onEdit;
+  final void Function(MobileCreationMessage message)? onReply;
   final void Function(MobileCreationMessage message, String direction)?
   onSwitchBranch;
   final bool switchingBranch;
@@ -471,6 +460,12 @@ class _MessageBubble extends StatelessWidget {
     final localId = message.localId;
     final branch = message.branch;
     final canEdit = isUser && !failed && message.id != null && onEdit != null;
+    final replyTo = message.replyTo;
+    // A message that never reached the server has no id to quote, and the
+    // serializer pads a missing one with an empty string rather than null.
+    final canReply =
+        !failed && (message.id?.isNotEmpty ?? false) && onReply != null;
+    final startReply = canReply ? () => onReply!(message) : null;
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: MessageHoldFeedback(
@@ -479,7 +474,9 @@ class _MessageBubble extends StatelessWidget {
           position: details.globalPosition,
           message: message.content,
           onEdit: canEdit ? () => onEdit!(message) : null,
+          onReply: startReply,
         ),
+        onSwipeReply: startReply,
         child: Container(
           margin: const EdgeInsets.symmetric(vertical: 5),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -499,6 +496,8 @@ class _MessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (replyTo != null)
+                ChatQuotedMessage(target: replyTo, foreground: foreground),
               if (message.includedSourceNotes) ...[
                 Text(
                   'Included source notes',

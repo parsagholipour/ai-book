@@ -1,3 +1,4 @@
+import 'chat_reply_target.dart';
 import 'project_models.dart';
 
 /// What a creation-chat message is made of: the message itself, the grounded
@@ -23,6 +24,7 @@ class MobileCreationMessage {
     this.parentId,
     this.branch,
     this.requestId,
+    this.replyTo,
   });
 
   final String role;
@@ -41,6 +43,9 @@ class MobileCreationMessage {
 
   /// Client-generated idempotency key retained for failed-send retries.
   final String? requestId;
+
+  /// The earlier message this turn replies to, quoted above its own text.
+  final ChatReplyTarget? replyTo;
 
   /// Present for server messages; optimistic local messages may set this too.
   final DateTime? createdAt;
@@ -83,6 +88,7 @@ class MobileCreationMessage {
       parentId: parentId,
       branch: branch,
       requestId: requestId,
+      replyTo: replyTo,
     );
   }
 
@@ -112,6 +118,7 @@ class MobileCreationMessage {
       id: json['id'] as String?,
       parentId: json['parentId'] as String?,
       requestId: json['requestId'] as String?,
+      replyTo: ChatReplyTarget.fromJson(json['replyTo']),
       branch: branch is Map<String, dynamic>
           ? MobileProjectChatBranch.fromJson(branch)
           : null,

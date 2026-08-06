@@ -339,6 +339,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String message,
     String? requestId,
+    String? replyToMessageId,
   }) async {
     final reply = MobileProjectChatMessage(
       id: 'reply',

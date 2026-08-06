@@ -1,28 +1,18 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
+import 'chat_reply_quote.dart';
+import 'creation_chat_state.dart';
 import 'creation_labels.dart';
 import 'creation_preset_merge.dart';
 import 'pending_chat_sessions.dart';
 
-const _defaultPresets = MobileCreationPresets(
-  bookType: 'lead_magnet',
-  bookTypeChoice: 'auto',
-  lengthPreset: 'short',
-  qualityPreset: 'balanced',
-  coverEnabled: true,
-  illustrationsEnabled: true,
-);
-
-const _emptyReadiness = MobileCreationReadiness(
-  score: 0,
-  canBuild: false,
-  missing: <String>[],
-);
+// The state types moved out to keep this file inside its size budget; they are
+// re-exported so the screen and its part files keep importing one file.
+export 'creation_chat_state.dart';
 
 const _localGreetingText =
     'Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.';
@@ -30,7 +20,7 @@ const _localGreetingText =
 const _localGreetingTurn = MobileCreationTurn(
   assistantMessage: _localGreetingText,
   brief: MobileBookRecipe(lane: 'auto'),
-  presets: _defaultPresets,
+  presets: defaultCreationPresets,
   detectedLane: 'auto',
   quickReplies: <String>[
     'Bedtime story for 5 year olds',
@@ -38,265 +28,12 @@ const _localGreetingTurn = MobileCreationTurn(
     'Workbook for new coaches',
     'Short story about a garden mystery',
   ],
-  readiness: _emptyReadiness,
+  readiness: emptyCreationReadiness,
   titleSuggestions: <String>[],
   shapePreview: <String>['Clear reader promise'],
   warnings: <String>[],
 );
 
-/// Keys tracked for "Your choice" badges in the live brief / advanced sheet.
-enum CreationChoice {
-  bookType,
-  length,
-  finish,
-  cover,
-  illustrations,
-  language,
-  tone,
-}
-
-enum PendingAttachmentStatus { uploading, ready, failed }
-
-/// A file picked in the composer: uploading, ready to send, or failed.
-@immutable
-class PendingCreationAttachment {
-  const PendingCreationAttachment({
-    required this.localId,
-    required this.name,
-    required this.kind,
-    required this.status,
-    this.attachment,
-    this.localPath,
-    this.bytes,
-    this.mimeType,
-    this.error,
-  });
-
-  final String localId;
-  final String name;
-
-  /// 'photo' or 'document'.
-  final String kind;
-  final PendingAttachmentStatus status;
-
-  /// Server record once the upload and reading finished.
-  final MobileCreationAttachment? attachment;
-
-  /// Local file path used for photo thumbnails during this app session.
-  final String? localPath;
-
-  /// Kept while uploading/failed so a retry does not re-pick the file.
-  final List<int>? bytes;
-  final String? mimeType;
-  final String? error;
-
-  bool get isPhoto => kind == 'photo';
-  bool get isReady => status == PendingAttachmentStatus.ready;
-  bool get isUploading => status == PendingAttachmentStatus.uploading;
-  bool get isFailed => status == PendingAttachmentStatus.failed;
-
-  PendingCreationAttachment copyWith({
-    PendingAttachmentStatus? status,
-    MobileCreationAttachment? attachment,
-    Object? bytes = _sentinel,
-    Object? error = _sentinel,
-  }) {
-    return PendingCreationAttachment(
-      localId: localId,
-      name: name,
-      kind: kind,
-      status: status ?? this.status,
-      attachment: attachment ?? this.attachment,
-      localPath: localPath,
-      bytes: bytes == _sentinel ? this.bytes : bytes as List<int>?,
-      mimeType: mimeType,
-      error: error == _sentinel ? this.error : error as String?,
-    );
-  }
-
-  static const _sentinel = Object();
-}
-
-@immutable
-class CreationChatState {
-  const CreationChatState({
-    this.initializing = true,
-    this.draftId,
-    this.sessionTitle,
-    this.sessionRevision = 1,
-    this.messages = const <MobileCreationMessage>[],
-    this.assistantTyping = false,
-    this.building = false,
-    this.brief,
-    this.presets = _defaultPresets,
-    this.detectedLane = 'auto',
-    this.quickReplies = const <String>[],
-    this.question,
-    this.readiness = _emptyReadiness,
-    this.titleSuggestions = const <String>[],
-    this.shapePreview = const <String>[],
-    this.warnings = const <String>[],
-    this.outputs = const <MobileCreationOutput>[],
-    this.sourceNotes = '',
-    this.optionalDetails = const MobileCreationOptionalDetails(),
-    this.language = 'en',
-    this.userChoices = const <CreationChoice>{},
-    this.initError,
-    this.createdProjectId,
-    this.activeProjectId,
-    this.composingNewOutput = false,
-    this.pendingBuildRequest = false,
-    this.pendingAttachments = const <PendingCreationAttachment>[],
-    this.attachmentThumbnails = const <String, String>{},
-    this.attachmentUrls = const <String, String>{},
-    this.switchingBranchMessageId,
-  });
-
-  final bool initializing;
-  final String? draftId;
-  final String? sessionTitle;
-  final int sessionRevision;
-  final List<MobileCreationMessage> messages;
-  final bool assistantTyping;
-  final bool building;
-  final MobileBookRecipe? brief;
-  final MobileCreationPresets presets;
-  final String detectedLane;
-  final List<String> quickReplies;
-  final MobileCreationQuestion? question;
-  final MobileCreationReadiness readiness;
-  final List<String> titleSuggestions;
-  final List<String> shapePreview;
-  final List<String> warnings;
-  final List<MobileCreationOutput> outputs;
-  final String sourceNotes;
-  final MobileCreationOptionalDetails optionalDetails;
-  final String language;
-  final Set<CreationChoice> userChoices;
-  final String? initError;
-  final String? createdProjectId;
-  final String? activeProjectId;
-  final bool composingNewOutput;
-
-  /// True when the user asked to build from chat and the screen should start
-  /// the same preflight/build flow as the Build button.
-  final bool pendingBuildRequest;
-
-  /// Files picked in the composer that have not been sent with a message yet.
-  final List<PendingCreationAttachment> pendingAttachments;
-
-  /// Local photo paths by server attachment id, for transcript thumbnails.
-  final Map<String, String> attachmentThumbnails;
-
-  /// Server file paths by attachment id, so photos still render after an app
-  /// restart or on another device (files are stored server-side for 6 months).
-  final Map<String, String> attachmentUrls;
-
-  /// Message whose branch arrows triggered an in-flight switch, if any.
-  final String? switchingBranchMessageId;
-
-  bool get hasSession => draftId != null;
-
-  bool get switchingBranch => switchingBranchMessageId != null;
-
-  bool get hasReadyAttachments =>
-      pendingAttachments.any((attachment) => attachment.isReady);
-
-  bool get hasUploadingAttachments =>
-      pendingAttachments.any((attachment) => attachment.isUploading);
-
-  String get displayTitle {
-    final title = sessionTitle?.trim();
-    return title == null || title.isEmpty ? 'New book' : title;
-  }
-
-  bool get isBusy => assistantTyping || building;
-
-  bool get canBuild => hasSession && readiness.canBuild && !isBusy;
-
-  bool get hasSourceNotes => sourceNotes.trim().isNotEmpty;
-
-  bool get hasActiveOutput =>
-      !composingNewOutput && (activeProjectId ?? createdProjectId) != null;
-
-  CreationChatState copyWith({
-    bool? initializing,
-    String? draftId,
-    Object? sessionTitle = _sentinel,
-    int? sessionRevision,
-    List<MobileCreationMessage>? messages,
-    bool? assistantTyping,
-    bool? building,
-    Object? brief = _sentinel,
-    MobileCreationPresets? presets,
-    String? detectedLane,
-    List<String>? quickReplies,
-    Object? question = _sentinel,
-    MobileCreationReadiness? readiness,
-    List<String>? titleSuggestions,
-    List<String>? shapePreview,
-    List<String>? warnings,
-    List<MobileCreationOutput>? outputs,
-    String? sourceNotes,
-    MobileCreationOptionalDetails? optionalDetails,
-    String? language,
-    Set<CreationChoice>? userChoices,
-    Object? initError = _sentinel,
-    Object? createdProjectId = _sentinel,
-    Object? activeProjectId = _sentinel,
-    bool? composingNewOutput,
-    bool? pendingBuildRequest,
-    List<PendingCreationAttachment>? pendingAttachments,
-    Map<String, String>? attachmentThumbnails,
-    Map<String, String>? attachmentUrls,
-    Object? switchingBranchMessageId = _sentinel,
-  }) {
-    return CreationChatState(
-      initializing: initializing ?? this.initializing,
-      draftId: draftId ?? this.draftId,
-      sessionTitle: sessionTitle == _sentinel
-          ? this.sessionTitle
-          : sessionTitle as String?,
-      sessionRevision: sessionRevision ?? this.sessionRevision,
-      messages: messages ?? this.messages,
-      assistantTyping: assistantTyping ?? this.assistantTyping,
-      building: building ?? this.building,
-      brief: brief == _sentinel ? this.brief : brief as MobileBookRecipe?,
-      presets: presets ?? this.presets,
-      detectedLane: detectedLane ?? this.detectedLane,
-      quickReplies: quickReplies ?? this.quickReplies,
-      question: question == _sentinel
-          ? this.question
-          : question as MobileCreationQuestion?,
-      readiness: readiness ?? this.readiness,
-      titleSuggestions: titleSuggestions ?? this.titleSuggestions,
-      shapePreview: shapePreview ?? this.shapePreview,
-      warnings: warnings ?? this.warnings,
-      outputs: outputs ?? this.outputs,
-      sourceNotes: sourceNotes ?? this.sourceNotes,
-      optionalDetails: optionalDetails ?? this.optionalDetails,
-      language: language ?? this.language,
-      userChoices: userChoices ?? this.userChoices,
-      initError: initError == _sentinel ? this.initError : initError as String?,
-      createdProjectId: createdProjectId == _sentinel
-          ? this.createdProjectId
-          : createdProjectId as String?,
-      activeProjectId: activeProjectId == _sentinel
-          ? this.activeProjectId
-          : activeProjectId as String?,
-      composingNewOutput: composingNewOutput ?? this.composingNewOutput,
-      pendingBuildRequest: pendingBuildRequest ?? this.pendingBuildRequest,
-      pendingAttachments: pendingAttachments ?? this.pendingAttachments,
-      attachmentThumbnails: attachmentThumbnails ?? this.attachmentThumbnails,
-      attachmentUrls: attachmentUrls ?? this.attachmentUrls,
-      switchingBranchMessageId: switchingBranchMessageId == _sentinel
-          ? this.switchingBranchMessageId
-          : switchingBranchMessageId as String?,
-    );
-  }
-
-  static const _sentinel = Object();
-}
 
 class CreationChatController extends Notifier<CreationChatState> {
   int _initRequestId = 0;
@@ -393,7 +130,11 @@ class CreationChatController extends Notifier<CreationChatState> {
     return init(fresh: fresh, draftId: draftId, force: true);
   }
 
-  Future<void> sendMessage(String text, {String? editMessageId}) async {
+  Future<void> sendMessage(
+    String text, {
+    String? editMessageId,
+    ChatReplyTarget? replyTo,
+  }) async {
     final trimmed = text.trim();
     final draftId = state.draftId;
     final readyAttachments = state.pendingAttachments
@@ -431,6 +172,9 @@ class CreationChatController extends Notifier<CreationChatState> {
       createdAt: DateTime.now(),
       sendStatus: CreationMessageSendStatus.sending,
       includedSourceNotes: includedSourceNotes,
+      // Carried on the optimistic message so the quote renders straight away
+      // rather than appearing when the server's copy lands.
+      replyTo: replyTo,
       attachments: [
         for (final pending in readyAttachments)
           MobileCreationMessageAttachment(
@@ -514,6 +258,7 @@ class CreationChatController extends Notifier<CreationChatState> {
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
               editMessageId: editMessageId,
+              replyToMessageId: replyTo?.messageId,
               requestId: serverRequestId,
               expectedRevision: state.sessionRevision,
             );
@@ -696,6 +441,9 @@ class CreationChatController extends Notifier<CreationChatState> {
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              // A retry keeps the quote the failed send carried, or it would
+              // reach the model as a bare fragment the second time.
+              replyToMessageId: failed.replyTo?.messageId,
               requestId: serverRequestId,
               expectedRevision: state.sessionRevision,
             );
