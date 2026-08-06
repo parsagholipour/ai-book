@@ -81,6 +81,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   String? _activePlanKey;
   String? _pendingRevisionPlanKey;
   String? _pendingRevisionOperationId;
+  Object? _planRetryRequest;
   Timer? _planRefreshTimer;
   Timer? _stickScrollTimer;
   Object? _lastScrollTrigger;
@@ -143,6 +144,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _planBusyAction = null;
     _activePlanKey = null;
     _pendingRevisionPlanKey = null;
+    _planRetryRequest = null;
     _planQuestionIndex = 0;
     _planQuestionAnswers = {};
     _lastScrollTrigger = null;
@@ -256,7 +258,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                 IconButton(
                   tooltip: 'New output in this chat',
                   onPressed: () {
-                    setState(() => _projectId = null);
+                    setState(() {
+                      _projectId = null;
+                      _resetPlanReviewState();
+                    });
                     ref
                         .read(creationChatControllerProvider.notifier)
                         .startNewOutput();
@@ -590,6 +595,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   void _resetPlanReviewState() {
     _editingProjectMessageId = null;
     _planBusyAction = null;
+    _planRetryRequest = null;
     _activePlanKey = null;
     _pendingRevisionPlanKey = null;
     _pendingRevisionOperationId = null;
@@ -663,9 +669,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   }) {
     return planValue.when(
       loading: () => _PlanBuildingFooter(
-        message: _planBusyAction == 'revise'
-            ? 'Revising your book plan…'
-            : 'Creating your book plan…',
+        message: switch (_planBusyAction) {
+          'revise' => 'Revising your book plan…',
+          'retry-plan' => 'Retrying your book plan…',
+          _ => 'Creating your book plan…',
+        },
         isRevision: _planBusyAction == 'revise',
         statusValue: planningStatusValue,
       ),
@@ -675,9 +683,22 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       ),
       data: (project) {
         final plan = project.plan;
+        final liveStatus = planningStatusValue?.asData?.value;
+        if (plan == null && _planGenerationFailed(project, liveStatus)) {
+          return _PlanFailedFooter(
+            message: _planFailureMessage(liveStatus),
+            retrying: _planBusyAction == 'retry-plan',
+            retryAvailable: liveStatus?.retryAvailable == true,
+            onRetry: () => unawaited(_retryPlanGeneration(activeProjectId)),
+            onRefresh: () => _refreshOutput(activeProjectId),
+          );
+        }
         if (plan == null) {
+          final liveAction = liveStatus?.effectiveAction.trim();
           return _PlanBuildingFooter(
-            message: _planProgressLabel(project),
+            message: liveAction != null && liveAction.isNotEmpty
+                ? liveAction
+                : _planProgressLabel(project),
             statusValue: planningStatusValue,
           );
         }
@@ -723,6 +744,49 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         );
       },
     );
+  }
+
+  Future<void> _retryPlanGeneration(String projectId) async {
+    if (_planBusyAction != null) return;
+    final retryRequest = Object();
+    setState(() {
+      _planBusyAction = 'retry-plan';
+      _planRetryRequest = retryRequest;
+    });
+    try {
+      final recovery = await ref
+          .read(projectsRepositoryProvider)
+          .resumeProject(projectId);
+      if (!mounted) return;
+      _refreshOutput(projectId);
+      ref.invalidate(projectsProvider);
+      if (!_finishPlanRetry(retryRequest, projectId)) return;
+      _startPlanPoll();
+      ScaffoldMessenger.of(
+        context,
+      ).showAppSnackBar(SnackBar(content: Text(recovery.currentAction)));
+    } catch (error) {
+      if (!mounted) return;
+      if (!_finishPlanRetry(retryRequest, projectId)) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showAppSnackBar(SnackBar(content: Text(userFacingError(error))));
+    }
+  }
+
+  bool _finishPlanRetry(Object retryRequest, String projectId) {
+    if (!identical(_planRetryRequest, retryRequest)) return false;
+    final ownsBusyState = _planBusyAction == 'retry-plan';
+    final stillActive =
+        ownsBusyState &&
+        _activeProjectId(ref.read(creationChatControllerProvider)) == projectId;
+    setState(() {
+      _planRetryRequest = null;
+      if (ownsBusyState) {
+        _planBusyAction = null;
+      }
+    });
+    return stillActive;
   }
 
   void _syncStickToBottomFromUserScroll() {
@@ -1311,6 +1375,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   }
 
   void _stopPollingWhenSettled(MobileProjectDetail project) {
+    if (project.status == 'failed') {
+      _planRefreshTimer?.cancel();
+      _planRefreshTimer = null;
+      return;
+    }
     if (project.status == 'planning' ||
         project.status == 'generating' ||
         project.status == 'editing' ||

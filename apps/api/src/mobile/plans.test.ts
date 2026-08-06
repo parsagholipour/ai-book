@@ -189,6 +189,66 @@ describe("mobile plan lifecycle", () => {
     await app.close();
   });
 
+  it("requeues a failed initial plan as a planning recovery", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(
+      projectRecord({
+        id: "project-1",
+        status: "FAILED",
+        currentPlanId: null,
+        currentPlan: null
+      })
+    );
+    const failedPlanPayload = {
+      inputSnapshot: { prompt: "Write a practical onboarding guide." },
+      billingLedgerEntryId: "ledger-plan"
+    };
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([
+      jobRecord({
+        id: "job-failed-plan",
+        projectId: "project-1",
+        type: "PLAN_BOOK",
+        status: "FAILED",
+        bullJobId: "bull-failed-plan",
+        payload: failedPlanPayload,
+        createdAt: new Date("2026-06-15T12:10:00.000Z")
+      })
+    ]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([]);
+    mockPrisma.project.update.mockResolvedValueOnce({});
+    vi.mocked(requeueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-failed-plan", type: "PLAN_BOOK", status: "QUEUED" })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/resume",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({
+      projectId: "project-1",
+      status: "recovery_started",
+      currentAction: "Retrying your book plan.",
+      resumedActions: 1,
+      skippedActions: 0,
+      stoppingActions: 0
+    });
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "PLANNING" }
+    });
+    expect(vi.mocked(requeueGenerationJob)).toHaveBeenCalledWith({
+      id: "job-failed-plan",
+      projectId: "project-1",
+      type: "PLAN_BOOK",
+      payload: failedPlanPayload
+    });
+    await app.close();
+  });
+
   it("rejects mobile plan approval when credits are insufficient", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.planVersion.findFirst.mockResolvedValueOnce({

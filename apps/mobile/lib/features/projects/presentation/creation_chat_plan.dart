@@ -5,14 +5,20 @@ part of 'creation_chat_screen.dart';
 // in the parent library file.
 
 class _PlanBubble extends StatefulWidget {
-  const _PlanBubble.live({super.key, required this.planValue, this.busyAction})
-    : plan = null;
+  const _PlanBubble.live({
+    super.key,
+    required this.planValue,
+    this.statusValue,
+    this.busyAction,
+  }) : plan = null;
 
   const _PlanBubble.snapshot({super.key, required this.plan})
     : planValue = null,
+      statusValue = null,
       busyAction = null;
 
   final AsyncValue<MobileProjectDetail>? planValue;
+  final AsyncValue<MobileProjectStatus>? statusValue;
   final MobilePlan? plan;
   final String? busyAction;
 
@@ -50,10 +56,17 @@ class _PlanBubbleState extends State<_PlanBubble> {
       error: (e, _) => _buildSpinnerBubble(context, 'Waiting for plan…'),
       data: (project) {
         final plan = project.plan;
-        if (project.status == 'planning') {
+        final liveStatus = widget.statusValue?.asData?.value;
+        if (plan == null && _planGenerationFailed(project, liveStatus)) {
+          return _buildFailureBubble(context, _planFailureMessage(liveStatus));
+        }
+        if (project.status == 'planning' || liveStatus?.status == 'planning') {
+          final liveAction = liveStatus?.effectiveAction.trim();
           return _buildSpinnerBubble(
             context,
-            _planProgressLabel(project),
+            liveAction != null && liveAction.isNotEmpty
+                ? liveAction
+                : _planProgressLabel(project),
             semanticsLabel: plan == null ? 'Building plan' : 'Revising plan',
           );
         }
@@ -70,6 +83,24 @@ class _PlanBubbleState extends State<_PlanBubble> {
         }
         return _buildPlanCard(context, plan);
       },
+    );
+  }
+
+  Widget _buildFailureBubble(BuildContext context, String message) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: AppInlineNotice(
+            icon: Icons.error_outline,
+            title: 'Plan generation failed',
+            message: message,
+            tone: AppNoticeTone.error,
+          ),
+        ),
+      ),
     );
   }
 

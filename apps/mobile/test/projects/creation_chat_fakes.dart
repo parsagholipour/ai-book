@@ -448,12 +448,19 @@ class PlanProjectsRepository implements ProjectsRepository {
   final chatOperations = <MobileBookEditOperation>[];
   final downloadedFormats = <String>[];
   final openedFormats = <String>[];
+  final resumedProjectIds = <String>[];
 
   /// Holds a chat send open so the in-flight UI can be inspected.
   Completer<void>? sendGate;
 
+  /// Holds recovery open so the retry button's in-flight state can be tested.
+  Completer<void>? resumeGate;
+
   /// Makes the next chat send fail.
   Object? sendFailure;
+
+  /// Makes the next generation recovery fail.
+  Object? resumeFailure;
 
   @override
   Future<MobileProjectDetail> getProject(String id) async {
@@ -725,6 +732,41 @@ class PlanProjectsRepository implements ProjectsRepository {
     required String direction,
   }) {
     return getProjectChat(projectId);
+  }
+
+  @override
+  Future<MobileProjectRecovery> resumeProject(String id) async {
+    resumedProjectIds.add(id);
+    final gate = resumeGate;
+    resumeGate = null;
+    if (gate != null) await gate.future;
+    final failure = resumeFailure;
+    resumeFailure = null;
+    if (failure != null) throw failure;
+    project = plannedProject(
+      id: id,
+      status: 'planning',
+      currentAction: 'Retrying your book plan.',
+      withoutPlan: true,
+      coverEnabled: project.coverEnabled,
+      illustrationsEnabled: project.illustrationsEnabled,
+    );
+    status = projectStatus(
+      projectId: id,
+      status: 'planning',
+      currentAction: 'Retrying your book plan.',
+      completedPages: 0,
+      targetPages: project.targetPages,
+      imageCount: 0,
+    );
+    return MobileProjectRecovery(
+      projectId: id,
+      status: 'recovery_started',
+      currentAction: 'Retrying your book plan.',
+      resumedActions: 1,
+      skippedActions: 0,
+      stoppingActions: 0,
+    );
   }
 
   @override

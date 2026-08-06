@@ -195,6 +195,7 @@ class _Transcript extends StatelessWidget {
         child: _PlanBubble.live(
           key: const ValueKey('project-plan-live'),
           planValue: planValue!,
+          statusValue: generationStatusValue,
           busyAction: planBusyAction,
         ),
       );

@@ -16,6 +16,7 @@ import 'package:tomeza/features/projects/presentation/chat_thinking_bubble.dart'
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/pending_chat_sessions.dart';
+import 'package:tomeza/shared/api/api_error.dart';
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
 
@@ -1119,6 +1120,287 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('Set the promise'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('failed initial plan stops loading and retries from the chat', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
+    final resumeGate = Completer<void>();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
+        status: 'failed',
+        currentAction: 'Needs attention.',
+        withoutPlan: true,
+      ),
+      status: projectStatus(
+        status: 'failed',
+        currentAction: 'Needs attention.',
+        failureMessage: 'We hit a problem while creating your plan.',
+        retryAvailable: true,
+        completedPages: 0,
+        imageCount: 0,
+      ),
+    )..resumeGate = resumeGate;
+
+    await tester.pumpWidget(
+      routerApp(
+        creation: creation,
+        projects: projects,
+        initialLocation: '/books/chat/draft-done',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Plan generation failed'), findsOneWidget);
+    expect(find.text('Your plan needs a retry'), findsOneWidget);
+    expect(
+      find.text('We hit a problem while creating your plan.'),
+      findsWidgets,
+    );
+    expect(find.text('Understanding your idea'), findsNothing);
+    expect(
+      find.text('You can leave this chat — we’ll keep working.'),
+      findsNothing,
+    );
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Retry plan'));
+    await tester.pump();
+
+    expect(projects.resumedProjectIds, ['project-1']);
+    final retryingButton = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, 'Retrying…'),
+    );
+    expect(retryingButton.onPressed, isNull);
+
+    resumeGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('Retry plan'), findsNothing);
+    expect(find.text('Plan generation failed'), findsNothing);
+    expect(find.text('Understanding your idea'), findsWidgets);
+    expect(find.text('Retrying your book plan.'), findsWidgets);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('failed plan retry errors remain recoverable', (tester) async {
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
+    final projects =
+        PlanProjectsRepository(
+            project: plannedProject(
+              status: 'failed',
+              currentAction: 'Needs attention.',
+              withoutPlan: true,
+            ),
+            status: projectStatus(
+              status: 'failed',
+              currentAction: 'Needs attention.',
+              failureMessage: 'We hit a problem while creating your plan.',
+              retryAvailable: true,
+              completedPages: 0,
+              imageCount: 0,
+            ),
+          )
+          ..resumeFailure = const ApiException(
+            code: 'RECOVERY_NOT_AVAILABLE',
+            message: 'Generation is still winding down. Try again in a moment.',
+            statusCode: 409,
+          );
+
+    await tester.pumpWidget(
+      routerApp(
+        creation: creation,
+        projects: projects,
+        initialLocation: '/books/chat/draft-done',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Retry plan'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(projects.resumedProjectIds, ['project-1']);
+    expect(
+      find.text('Generation is still winding down. Try again in a moment.'),
+      findsOneWidget,
+    );
+    expect(find.widgetWithText(FilledButton, 'Retry plan'), findsOneWidget);
+    expect(find.text('Understanding your idea'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets(
+    'nonrecoverable plan failure offers a status refresh, not retry',
+    (tester) async {
+      final creation = ScriptedCreationRepository(
+        sessions: [
+          chatSession(
+            draftId: 'draft-done',
+            title: 'Completed idea',
+            status: 'COMPLETED',
+            createdProjectId: 'project-1',
+          ),
+        ],
+      );
+      creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
+      final projects = PlanProjectsRepository(
+        project: plannedProject(
+          // The streamed status is newer than this stale planning snapshot.
+          status: 'planning',
+          currentAction: 'Creating your book plan.',
+          withoutPlan: true,
+        ),
+        status: projectStatus(
+          status: 'failed',
+          currentAction: 'Needs attention.',
+          failureMessage: 'This plan cannot be retried yet.',
+          retryAvailable: false,
+          completedPages: 0,
+          imageCount: 0,
+        ),
+      );
+
+      await tester.pumpWidget(
+        routerApp(
+          creation: creation,
+          projects: projects,
+          initialLocation: '/books/chat/draft-done',
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Your plan needs attention'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Check again'), findsOneWidget);
+      expect(find.text('Retry plan'), findsNothing);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Check again'));
+      await tester.pump();
+
+      expect(projects.resumedProjectIds, isEmpty);
+
+      await tester.teardownScreen();
+    },
+  );
+
+  testWidgets('plan retry completion does not disturb another output', (
+    tester,
+  ) async {
+    final failedOutput = creationOutput(
+      projectId: 'project-1',
+      title: 'Failed plan',
+      sequence: 1,
+    );
+    final otherOutput = creationOutput(
+      projectId: 'project-2',
+      title: 'Other plan',
+      sequence: 2,
+    );
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+          activeProjectId: 'project-1',
+          outputs: [failedOutput, otherOutput],
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Completed transcript';
+    final resumeGate = Completer<void>();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
+        status: 'failed',
+        currentAction: 'Needs attention.',
+        withoutPlan: true,
+      ),
+      status: projectStatus(
+        status: 'failed',
+        currentAction: 'Needs attention.',
+        failureMessage: 'We hit a problem while creating your plan.',
+        retryAvailable: true,
+        completedPages: 0,
+        imageCount: 0,
+      ),
+    )..resumeGate = resumeGate;
+
+    await tester.pumpWidget(
+      routerApp(
+        creation: creation,
+        projects: projects,
+        initialLocation: '/books/chat/draft-done',
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Retry plan'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilterChip, 'Other plan'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(
+      tester
+          .widget<FilterChip>(find.widgetWithText(FilterChip, 'Other plan'))
+          .selected,
+      isTrue,
+    );
+
+    resumeGate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(projects.resumedProjectIds, ['project-1']);
+    expect(
+      tester
+          .widget<FilterChip>(find.widgetWithText(FilterChip, 'Other plan'))
+          .selected,
+      isTrue,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(SnackBar),
+        matching: find.text('Retrying your book plan.'),
+      ),
+      findsNothing,
+    );
 
     await tester.teardownScreen();
   });

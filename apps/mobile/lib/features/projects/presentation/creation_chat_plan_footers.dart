@@ -217,6 +217,86 @@ class _PlanBuildingFooter extends StatelessWidget {
   }
 }
 
+class _PlanFailedFooter extends StatelessWidget {
+  const _PlanFailedFooter({
+    required this.message,
+    required this.retrying,
+    required this.retryAvailable,
+    required this.onRetry,
+    required this.onRefresh,
+  });
+
+  final String message;
+  final bool retrying;
+  final bool retryAvailable;
+  final VoidCallback onRetry;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: AppPrimaryActionPanel(
+            icon: Icons.error_outline,
+            title: retryAvailable
+                ? 'Your plan needs a retry'
+                : 'Your plan needs attention',
+            message: message,
+            actionLabel: retrying
+                ? 'Retrying…'
+                : retryAvailable
+                ? 'Retry plan'
+                : 'Check again',
+            actionIcon: retrying
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      semanticsLabel: 'Retrying plan generation',
+                    ),
+                  )
+                : Icon(
+                    retryAvailable
+                        ? Icons.replay_outlined
+                        : Icons.refresh_outlined,
+                  ),
+            onAction: retrying
+                ? null
+                : retryAvailable
+                ? onRetry
+                : onRefresh,
+            tone: AppNoticeTone.error,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _planFailureMessage(MobileProjectStatus? status) {
+  final detail = status?.failureMessage?.trim();
+  if (detail != null && detail.isNotEmpty) {
+    return detail;
+  }
+  return status?.retryAvailable == true
+      ? 'Your idea is saved, but we couldn’t create the plan. Retry when you’re ready.'
+      : 'Your idea is saved, but we couldn’t create the plan. Check again for recovery options.';
+}
+
+bool _planGenerationFailed(
+  MobileProjectDetail project,
+  MobileProjectStatus? status,
+) {
+  return status?.status == 'failed' ||
+      (status == null && project.status == 'failed');
+}
+
 List<MobileProjectStatusStep> _fallbackPlanningSteps(bool isRevision) => [
   MobileProjectStatusStep(
     key: 'understand',
