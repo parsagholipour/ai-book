@@ -124,7 +124,7 @@ export function includeSourcesPreference(mediaSettings: unknown): boolean | unde
   return typeof settings.includeSources === "boolean" ? settings.includeSources : undefined;
 }
 
-type MarkdownLabels = {
+export type MarkdownLabels = {
   contentsEyebrow: string;
   contentsHeading: string;
   chapter: string;
@@ -257,7 +257,8 @@ const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
   }
 };
 
-function markdownLabels(language: string | undefined): MarkdownLabels {
+/** Reader-facing chrome in the book's language, keyed the same way `scriptProfileForLanguage` is. */
+export function markdownLabels(language: string | undefined): MarkdownLabels {
   if (isEnglishLanguage(language)) {
     return DEFAULT_MARKDOWN_LABELS;
   }

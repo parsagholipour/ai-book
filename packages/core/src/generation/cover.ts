@@ -1,13 +1,13 @@
-import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
 import puppeteer from "puppeteer";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
+import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
+import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
+import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
+import { cleanText, fitCoverText, type FittedCoverText } from "./coverText.js";
 import type { BookPlan, CoverTemplateId, CreateProjectInput } from "../schemas/book.js";
 
 export const COVER_WIDTH = 1800;
 export const COVER_HEIGHT = 2400;
-
-const require = createRequire(import.meta.url);
 
 export type CoverMetadata = {
   title: string;
@@ -40,20 +40,6 @@ export type CoverTemplateOverride = {
   accentColor?: string | undefined;
   /** Light artwork needs a heavier scrim: every template sets light text. */
   overlayCss?: string | undefined;
-};
-
-export type FitCoverTextOptions = {
-  text: string;
-  baseFontSize: number;
-  minFontSize: number;
-  maxCharsPerLine: number;
-  maxLines: number;
-};
-
-export type FittedCoverText = {
-  fontSize: number;
-  lines: string[];
-  truncated: boolean;
 };
 
 export type ResolvedCoverTemplate = {
@@ -195,8 +181,6 @@ const COVER_TEMPLATES: Record<Exclude<CoverTemplateId, "auto">, ResolvedCoverTem
   }
 };
 
-let cachedFontCss: string | undefined;
-
 export function resolveCoverTemplate(
   requested: CoverTemplateId | undefined,
   category: CreateProjectInput["category"],
@@ -247,6 +231,26 @@ export function applyCoverTemplateOverride(
   };
 }
 
+/**
+ * Swaps out a display face a non-Latin title cannot use.
+ *
+ * The script's own font is registered under every family name, so a Persian
+ * title always has glyphs — but Bebas Neue is condensed uppercase Latin, and a
+ * cover mixing it with Vazirmatn reads as two different books. Nunito is the
+ * other high-impact display face already in the set, and keeping the swap
+ * inside the closed `titleFont` union is what leaves the seven templates and
+ * the design catalog untouched.
+ */
+export function coverTemplateForScript(
+  template: ResolvedCoverTemplate,
+  script: ScriptProfile
+): ResolvedCoverTemplate {
+  if (script.script === "latin" || template.titleFont !== "BebasCover") {
+    return template;
+  }
+  return { ...template, titleFont: "NunitoCover" };
+}
+
 export function buildCoverArtworkPrompt(options: CoverArtworkPromptInput): string {
   const template = resolveCoverTemplate(
     options.input.mediaSettings.coverTemplate,
@@ -278,7 +282,7 @@ export function buildCoverArtworkPrompt(options: CoverArtworkPromptInput): strin
 }
 
 export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffer> {
-  const template = applyCoverTemplateOverride(
+  const baseTemplate = applyCoverTemplateOverride(
     resolveCoverTemplate(
       options.template?.id ?? options.input.mediaSettings.coverTemplate,
       options.input.category,
@@ -286,6 +290,8 @@ export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffe
     ),
     options.template
   );
+  const script = scriptProfileForLanguage(options.input.language);
+  const template = coverTemplateForScript(baseTemplate, script);
   const title = cleanText(options.metadata.title) || "Untitled Book";
   const subtitle = cleanText(options.metadata.subtitle ?? options.plan.subtitle);
   const tagline = cleanText(options.metadata.coverTagline);
@@ -295,17 +301,20 @@ export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffe
     baseFontSize: template.titleSize,
     minFontSize: 76,
     maxCharsPerLine: template.maxTitleChars,
-    maxLines: template.maxTitleLines
+    maxLines: template.maxTitleLines,
+    script
   });
   const subtitleFit = fitCoverText({
     text: subtitle || tagline || "",
     baseFontSize: template.subtitleSize,
     minFontSize: 30,
     maxCharsPerLine: 38,
-    maxLines: 2
+    maxLines: 2,
+    script
   });
   const html = await buildCoverHtml({
     template,
+    script,
     imageDataUrl: `data:${options.artwork.mimeType};base64,${options.artwork.bytes.toString("base64")}`,
     titleFit,
     subtitleFit,
@@ -321,7 +330,22 @@ export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffe
     const page = await browser.newPage();
     await page.setViewport({ width: COVER_WIDTH, height: COVER_HEIGHT, deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: "load" });
+    // `load` and `document.fonts.ready` both resolve while the artwork is still
+    // being rasterized, and the screenshot then captures unpainted tiles as the
+    // page backdrop — a black rectangle over the artwork. Decoding the image
+    // explicitly and letting two frames go by is what makes the capture stable;
+    // it started mattering once a book's fonts grew past a megabyte and gave
+    // the compositor real work to lose the race to.
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await page.evaluate(async () => {
+      const art = document.querySelector("img.art");
+      if (art instanceof HTMLImageElement) {
+        await art.decode().catch(() => undefined);
+      }
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+    });
     const screenshot = await page.screenshot({
       type: "png",
       clip: { x: 0, y: 0, width: COVER_WIDTH, height: COVER_HEIGHT }
@@ -332,82 +356,26 @@ export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffe
   }
 }
 
-export function fitCoverText(options: FitCoverTextOptions): FittedCoverText {
-  const text = cleanText(options.text);
-  if (!text) {
-    return { fontSize: options.baseFontSize, lines: [], truncated: false };
-  }
-
-  for (let fontSize = options.baseFontSize; fontSize >= options.minFontSize; fontSize -= 4) {
-    const charsPerLine = Math.max(8, Math.floor(options.maxCharsPerLine * (options.baseFontSize / fontSize)));
-    const lines = wrapText(text, charsPerLine);
-    if (lines.length <= options.maxLines) {
-      return { fontSize, lines, truncated: false };
-    }
-  }
-
-  const minCharsPerLine = Math.max(8, Math.floor(options.maxCharsPerLine * (options.baseFontSize / options.minFontSize)));
-  const lines = wrapText(text, minCharsPerLine).slice(0, options.maxLines);
-  const last = lines.at(-1);
-  if (last) {
-    lines[lines.length - 1] = ellipsize(last, minCharsPerLine);
-  }
-  return { fontSize: options.minFontSize, lines, truncated: true };
-}
-
-function wrapText(text: string, maxCharsPerLine: number): string[] {
-  const lines: string[] = [];
-  let current = "";
-  for (const word of text.split(/\s+/)) {
-    if (word.length > maxCharsPerLine) {
-      if (current) {
-        lines.push(current);
-        current = "";
-      }
-      lines.push(...splitLongWord(word, maxCharsPerLine));
-      continue;
-    }
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxCharsPerLine) {
-      current = candidate;
-    } else {
-      if (current) {
-        lines.push(current);
-      }
-      current = word;
-    }
-  }
-  if (current) {
-    lines.push(current);
-  }
-  return lines;
-}
-
-function splitLongWord(word: string, maxCharsPerLine: number): string[] {
-  const parts: string[] = [];
-  for (let index = 0; index < word.length; index += maxCharsPerLine) {
-    parts.push(word.slice(index, index + maxCharsPerLine));
-  }
-  return parts;
-}
-
-function ellipsize(value: string, maxLength: number): string {
-  if (value.length <= Math.max(1, maxLength - 1)) {
-    return `${value}...`;
-  }
-  return `${value.slice(0, Math.max(1, maxLength - 1)).trimEnd()}...`;
-}
-
 async function buildCoverHtml(options: {
   template: ResolvedCoverTemplate;
+  script: ScriptProfile;
   imageDataUrl: string;
   titleFit: FittedCoverText;
   subtitleFit: FittedCoverText;
   authorName?: string | undefined;
   tagline?: string | undefined;
 }): Promise<string> {
-  const fontCss = await loadFontCss();
+  const script = options.script;
   const template = options.template;
+  const fontCss = await loadCoverFontCss(
+    bookFontSetForLanguage(script.code),
+    [
+      options.titleFit.lines.join(" "),
+      options.subtitleFit.lines.join(" "),
+      options.authorName ?? "",
+      options.tagline ?? ""
+    ].join(" ")
+  );
   const panelClass = `panel-${template.panel}`;
   const textAlignClass = `align-${template.textAlign}`;
   const titleLines = options.titleFit.lines.map((line) => `<span>${escapeHtml(line)}</span>`).join("");
@@ -415,7 +383,7 @@ async function buildCoverHtml(options: {
   const tagline = cleanText(options.tagline);
 
   return `<!doctype html>
-<html>
+<html lang="${script.code}" dir="${script.direction}">
 <head>
 <meta charset="utf-8" />
 <style>
@@ -434,12 +402,18 @@ body { font-family: "NotoSansCover"; background: #111; }
   flex-direction: column;
   gap: 34px;
   color: ${template.color};
+  /* A line that still overflows must not widen the page. In RTL that overflow
+     shifts the layout origin, which slides the artwork off the cover and
+     leaves the backdrop showing through. */
+  overflow: hidden;
 }
 .panel-top { top: 132px; }
 .panel-center { top: 50%; transform: translateY(-50%); }
 .panel-bottom { bottom: 128px; }
 .align-center { text-align: center; align-items: center; }
-.align-left { text-align: left; align-items: flex-start; }
+/* Logical, so an RTL cover starts its type on the right. flex-start already
+   resolves against the inline axis; only text-align was physical. */
+.align-left { text-align: start; align-items: flex-start; }
 .accent {
   width: 180px;
   height: 10px;
@@ -455,7 +429,7 @@ body { font-family: "NotoSansCover"; background: #111; }
   font-family: "${template.titleFont}";
   font-size: ${options.titleFit.fontSize}px;
   font-weight: 800;
-  line-height: 0.94;
+  line-height: ${script.coverTitleLineHeight};
   letter-spacing: 0;
   text-wrap: balance;
   text-shadow: 0 8px 28px rgba(0, 0, 0, 0.38);
@@ -507,47 +481,37 @@ body { font-family: "NotoSansCover"; background: #111; }
 </html>`;
 }
 
-async function loadFontCss(): Promise<string> {
-  if (cachedFontCss) {
-    return cachedFontCss;
-  }
+// Fontsource packages below ship OFL-1.1 fonts. Do not replace them with
+// proprietary, paid, system-only, or unclear-license fonts.
+const COVER_LATIN_FONTS: ReadonlyArray<[ResolvedCoverTemplate["titleFont"] | ResolvedCoverTemplate["supportingFont"], string]> = [
+  ["InterCover", "@fontsource-variable/inter"],
+  ["NotoSansCover", "@fontsource-variable/noto-sans"],
+  ["NunitoCover", "@fontsource-variable/nunito"],
+  ["PlayfairCover", "@fontsource-variable/playfair-display"],
+  ["SourceSerifCover", "@fontsource-variable/source-serif-4"],
+  ["BebasCover", "@fontsource/bebas-neue"]
+];
 
-  // Fontsource packages below ship OFL-1.1 fonts. Do not replace them with
-  // proprietary, paid, system-only, or unclear-license fonts.
-  const fonts = await Promise.all([
-    fontFace("InterCover", "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2", "100 900"),
-    fontFace("NotoSansCover", "@fontsource-variable/noto-sans/files/noto-sans-latin-wght-normal.woff2", "100 900"),
-    fontFace("NunitoCover", "@fontsource-variable/nunito/files/nunito-latin-wght-normal.woff2", "200 1000"),
-    fontFace(
-      "PlayfairCover",
-      "@fontsource-variable/playfair-display/files/playfair-display-latin-wght-normal.woff2",
-      "400 900"
-    ),
-    fontFace(
-      "SourceSerifCover",
-      "@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2",
-      "200 900"
-    ),
-    fontFace("BebasCover", "@fontsource/bebas-neue/files/bebas-neue-latin-400-normal.woff2", "400")
-  ]);
-  cachedFontCss = fonts.join("\n");
-  return cachedFontCss;
-}
-
-async function fontFace(family: string, specifier: string, weight: string): Promise<string> {
-  const fontPath = require.resolve(specifier);
-  const bytes = await readFile(fontPath);
-  return `@font-face {
-  font-family: "${family}";
-  src: url("data:font/woff2;base64,${bytes.toString("base64")}") format("woff2");
-  font-weight: ${weight};
-  font-style: normal;
-  font-display: block;
-}`;
-}
-
-function cleanText(value: string | null | undefined): string {
-  return value?.replace(/\s+/g, " ").trim() ?? "";
+/**
+ * The six cover families, each carrying the book's script alongside its Latin
+ * face.
+ *
+ * Registering the script under *every* family name is what keeps
+ * `COVER_TEMPLATES` and the design catalog free of language knowledge: whatever
+ * face a template names, a Persian title finds glyphs in it. The script package
+ * is listed last so it wins the overlap — its range claims the joining controls
+ * a Latin face would otherwise take.
+ */
+function loadCoverFontCss(fontSet: BookFontSet, text: string): Promise<string> {
+  const codePoints = codePointsOf(text);
+  const script = fontSet.body.filter((pkg) => pkg.package !== "@fontsource-variable/source-serif-4");
+  return embedFontFaceCss(
+    COVER_LATIN_FONTS.map(([family, pkg]) => ({
+      family,
+      packages: [{ package: pkg, css: ["index.css"] }, ...script],
+      codePoints
+    }))
+  );
 }
 
 function escapeHtml(value: string): string {

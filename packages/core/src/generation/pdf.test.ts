@@ -139,6 +139,45 @@ describe("localizeImagesInMarkdown", () => {
     expect((pdf.match(/\/Title/g) ?? []).length).toBeGreaterThan(1);
   }, 30_000);
 
+  const itIfPdfFontsAndTextAvailable = hasCommand("pdffonts") && hasCommand("pdftotext") ? it : it.skip;
+
+  itIfPdfFontsAndTextAvailable("embeds an Arabic-script face for a Persian book", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-persian-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    await generateBookPdf("# \u06a9\u062a\u0627\u0628 \u0645\u0627\u0647\n\n\u0627\u06cc\u0646 \u06cc\u06a9 \u0622\u0632\u0645\u0627\u06cc\u0634 \u0627\u0633\u062a.\n", {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001",
+      outputPath,
+      language: "Farsi"
+    });
+
+    expect(execFileSync("pdffonts", [outputPath], { encoding: "utf8" })).toMatch(/Vazirmatn/i);
+    // The assertion that actually proves the reported bug is gone: extraction
+    // only succeeds when the glyphs carry a real ToUnicode map, so a tofu
+    // render would come back empty even though pdffonts still named a font.
+    expect(execFileSync("pdftotext", [outputPath, "-"], { encoding: "utf8" })).toContain("\u06a9\u062a\u0627\u0628");
+  }, 60_000);
+
+  itIfPdfFontsAndTextAvailable("still typesets an English book in Source Serif", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-latin-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    await generateBookPdf("# The Book\n\nFirst page.\n", {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001",
+      outputPath,
+      language: "en"
+    });
+
+    expect(execFileSync("pdffonts", [outputPath], { encoding: "utf8" })).toMatch(/SourceSerif/i);
+    expect(execFileSync("pdftotext", [outputPath, "-"], { encoding: "utf8" })).toContain("The Book");
+  }, 60_000);
+
   const itIfPdfRasterAvailable = hasCommand("pdftoppm") ? it : it.skip;
 
   itIfPdfRasterAvailable("renders a leading cover to the first page edge", async () => {

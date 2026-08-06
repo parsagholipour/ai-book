@@ -1,11 +1,12 @@
-import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, sep } from "node:path";
 import { mdToPdf } from "md-to-pdf";
+import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
+import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
+import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
+import { bookPdfCss } from "./pdfCss.js";
 
 const IMAGE_MARKDOWN_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
-const require = createRequire(import.meta.url);
-let cachedBookPdfFontCss: string | undefined;
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -16,187 +17,17 @@ const MIME_BY_EXT: Record<string, string> = {
   ".svg": "image/svg+xml"
 };
 
-const BOOK_PDF_CSS = `
-  @page {
-    size: A4;
-    margin: 20mm 18mm 22mm;
-    @bottom-center {
-      content: "Page " counter(page);
-      font-family: sans-serif;
-      font-size: 8pt;
-      color: #6b7280;
-    }
-  }
-  @page pdf-cover {
-    size: A4;
-    margin: 0;
-    @bottom-center {
-      content: none;
-    }
-  }
-  html,
-  body {
-    margin: 0;
-    padding: 0;
-  }
-  body {
-    font-family: "SourceSerifBook", Georgia, "Times New Roman", serif;
-    font-size: 11pt;
-    line-height: 1.55;
-    color: #1a1a1a;
-    max-width: 100%;
-  }
-  h1, h2, h3 {
-    font-family: "SourceSerifBook", Georgia, "Times New Roman", serif;
-  }
-  h1 { font-size: 22pt; margin-top: 0; page-break-after: avoid; font-weight: 700; }
-  h2 { font-size: 14pt; margin-top: 1.4em; page-break-after: avoid; font-weight: 700; }
-  h3 { font-size: 12pt; page-break-after: avoid; font-weight: 700; }
-  .book-contents {
-    box-sizing: border-box;
-    min-height: 245mm;
-    padding: 22mm 8mm 14mm;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    color: #211a14;
-    break-before: page;
-    break-after: page;
-    page-break-before: always;
-    page-break-after: always;
-  }
-  .book-contents__eyebrow {
-    margin: 0 0 0.65rem;
-    text-align: center;
-    font-family: "InterBook", "Segoe UI", system-ui, sans-serif;
-    font-size: 8.5pt;
-    font-weight: 700;
-    letter-spacing: 0.28em;
-    text-transform: uppercase;
-    color: #9a7448;
-  }
-  .book-contents h2 {
-    margin: 0;
-    text-align: center;
-    font-family: "SourceSerifBook", Georgia, "Times New Roman", serif;
-    font-size: 28pt;
-    font-weight: 500;
-    letter-spacing: 0.02em;
-  }
-  .book-contents__ornament {
-    width: 56mm;
-    height: 1px;
-    margin: 7mm auto 13mm;
-    background: linear-gradient(90deg, transparent, #c9b79f 18%, #8b6f4e 50%, #c9b79f 82%, transparent);
-  }
-  .book-contents__list {
-    list-style: none;
-    margin: 0 auto;
-    padding: 0;
-    width: min(150mm, 100%);
-  }
-  .book-contents__item {
-    margin: 0 0 7mm;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-  .book-contents__link {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(22mm, 42mm) max-content;
-    column-gap: 3mm;
-    align-items: end;
-    color: inherit;
-    text-decoration: none;
-  }
-  .book-contents__chapter {
-    grid-column: 1 / 4;
-    margin-bottom: 1.3mm;
-    font-family: "InterBook", "Segoe UI", system-ui, sans-serif;
-    font-size: 8pt;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: #9a7448;
-  }
-  .book-contents__name {
-    grid-column: 1;
-    font-family: "SourceSerifBook", Georgia, "Times New Roman", serif;
-    font-size: 13.5pt;
-    line-height: 1.25;
-  }
-  .book-contents__leader {
-    grid-column: 2;
-    border-bottom: 1px dotted #b7a38a;
-    transform: translateY(-1.8mm);
-  }
-  .book-contents__page {
-    grid-column: 3;
-    min-width: 7mm;
-    text-align: right;
-    font-family: "SourceSerifBook", Georgia, "Times New Roman", serif;
-    font-size: 11pt;
-    color: #6f5842;
-  }
-  .book-contents--compact,
-  .book-contents--dense {
-    justify-content: flex-start;
-    padding-top: 16mm;
-  }
-  .book-contents--compact .book-contents__ornament,
-  .book-contents--dense .book-contents__ornament {
-    margin-bottom: 9mm;
-  }
-  .book-contents--compact .book-contents__item {
-    margin-bottom: 4.5mm;
-  }
-  .book-contents--dense h2 {
-    font-size: 24pt;
-  }
-  .book-contents--dense .book-contents__item {
-    margin-bottom: 3mm;
-  }
-  .book-contents--dense .book-contents__chapter {
-    margin-bottom: 0.7mm;
-    font-size: 7.2pt;
-  }
-  .book-contents--dense .book-contents__name {
-    font-size: 11.2pt;
-  }
-  img {
-    display: block;
-    max-width: 100%;
-    height: auto;
-    margin: 1em auto;
-    page-break-inside: avoid;
-  }
-  pre, code { font-family: ui-monospace, monospace; font-size: 9pt; }
-  a { color: #2563eb; }
-  hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5em 0; }
-  .page-break { break-after: page; page-break-after: always; }
-  .pdf-cover-page {
-    page: pdf-cover;
-    width: 210mm;
-    height: 297mm;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    background: #fff;
-    break-after: page;
-    page-break-after: always;
-  }
-  .pdf-cover-page img {
-    width: 100%;
-    height: 100%;
-    max-width: none;
-    margin: 0;
-    object-fit: cover;
-  }
-`;
 
 export type GenerateBookPdfOptions = {
   imageStorageDir: string;
   publicApiUrl: string;
   outputPath?: string | undefined;
+  /**
+   * The book's language, in any of the shapes `Project.language` holds ("fa",
+   * "Farsi", "Persian"). It picks the embedded fonts and the text direction —
+   * without it a Persian book has no Arabic glyphs to render with.
+   */
+  language?: string | undefined;
 };
 
 export type PreparedMarkdownForPdf = {
@@ -296,10 +127,16 @@ export async function generateBookPdf(
     imageStorageDir: options.imageStorageDir,
     publicApiUrl: options.publicApiUrl
   });
-  const css = `${await loadBookPdfFontCss()}\n${BOOK_PDF_CSS}`;
+  const profile = scriptProfileForLanguage(options.language);
+  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), prepared.markdown);
+  const css = `${fontCss}\n${bookPdfCss(profile)}`;
 
   const result = await mdToPdf(
-    { content: `<style>${css}</style>\n\n${prepared.markdown}` },
+    // The stylesheet rides on the `css` option alone. It used to also be
+    // inlined into the content, and md-to-pdf applies `css` last and wins —
+    // so the copy was pure waste, and a CJK book's fonts would have put
+    // megabytes of it into the DOM twice.
+    { content: prepared.markdown },
     {
       ...(options.outputPath ? { dest: options.outputPath } : {}),
       pdf_options: {
@@ -315,10 +152,16 @@ export async function generateBookPdf(
       launch_options: {
         args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
       },
-      script:
-        prepared.imageDataUrls.size > 0
+      script: [
+        // md-to-pdf's HTML wrapper is fixed and carries no `lang` or `dir`.
+        // The direction itself comes from CSS, which is bidi-equivalent; this
+        // is for what CSS cannot reach — Chrome copies `lang` into the PDF's
+        // own `/Lang`, and `dir` adds the UA's root bidi isolation.
+        ...(isDefaultLatinProfile(profile) ? [] : [{ content: buildDocumentLanguageScript(profile) }]),
+        ...(prepared.imageDataUrls.size > 0
           ? [{ content: buildEmbedLocalImagesScript(prepared.imageDataUrls) }]
-          : [],
+          : [])
+      ],
       basedir: options.imageStorageDir
     }
   );
@@ -330,40 +173,28 @@ export async function generateBookPdf(
   return Buffer.from(result.content);
 }
 
-async function loadBookPdfFontCss(): Promise<string> {
-  if (cachedBookPdfFontCss) {
-    return cachedBookPdfFontCss;
-  }
-
-  const fonts = await Promise.all([
-    fontFace(
-      "SourceSerifBook",
-      "@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-normal.woff2",
-      "200 900",
-      "normal"
-    ),
-    fontFace(
-      "SourceSerifBook",
-      "@fontsource-variable/source-serif-4/files/source-serif-4-latin-wght-italic.woff2",
-      "200 900",
-      "italic"
-    ),
-    fontFace("InterBook", "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2", "100 900", "normal")
+/**
+ * The `@font-face` rules for the two families `BOOK_PDF_CSS` names. Only the
+ * faces covering characters the book actually contains are embedded, which is
+ * what keeps a Chinese book — 101 available subsets — to a few megabytes.
+ */
+function loadBookPdfFontCss(fontSet: BookFontSet, markdown: string): Promise<string> {
+  const codePoints = codePointsOf(markdown);
+  return embedFontFaceCss([
+    { family: "SourceSerifBook", packages: fontSet.body, codePoints },
+    { family: "InterBook", packages: fontSet.display, codePoints }
   ]);
-  cachedBookPdfFontCss = fonts.join("\n");
-  return cachedBookPdfFontCss;
 }
 
-async function fontFace(family: string, specifier: string, weight: string, style: "normal" | "italic"): Promise<string> {
-  const fontPath = require.resolve(specifier);
-  const bytes = await readFile(fontPath);
-  return `@font-face {
-  font-family: "${family}";
-  src: url("data:font/woff2;base64,${bytes.toString("base64")}") format("woff2");
-  font-weight: ${weight};
-  font-style: ${style};
-  font-display: block;
-}`;
+function isDefaultLatinProfile(profile: ScriptProfile): boolean {
+  return profile.script === "latin" && profile.direction === "ltr" && profile.code === "en";
+}
+
+function buildDocumentLanguageScript(profile: ScriptProfile): string {
+  return `(() => {
+  document.documentElement.lang = ${JSON.stringify(profile.code)};
+  document.documentElement.dir = ${JSON.stringify(profile.direction)};
+})();`;
 }
 
 function resolveImageLocalPath(

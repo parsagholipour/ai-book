@@ -106,6 +106,48 @@ describe("generateBookEpub", () => {
     expect(chapterOne).not.toMatch(/<img[^>]*[^/]>/);
   });
 
+  it("gives a Persian book a real language code, RTL pagination and a localized nav", async () => {
+    // "Persian" is seven letters, so the old BCP-47 regex rejected it and every
+    // such book shipped <dc:language>en</dc:language>.
+    const bytes = await generateBookEpub("## \u0641\u0635\u0644 \u06cc\u06a9\n\n\u0627\u06cc\u0646 \u06cc\u06a9 \u0622\u0632\u0645\u0627\u06cc\u0634 \u0627\u0633\u062a.", {
+      title: "\u06a9\u062a\u0627\u0628 \u0645\u0627\u0647",
+      language: "Persian",
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001"
+    });
+    const zip = await JSZip.loadAsync(bytes);
+
+    const opf = await zip.file("OEBPS/content.opf")!.async("string");
+    expect(opf).toContain("<dc:language>fa</dc:language>");
+    // The one thing a reading system cannot infer from CSS.
+    expect(opf).toContain('<spine page-progression-direction="rtl">');
+
+    const chapter = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
+    expect(chapter).toContain('xml:lang="fa"');
+    expect(chapter).toContain('dir="rtl"');
+
+    const nav = await zip.file("OEBPS/nav.xhtml")!.async("string");
+    expect(nav).toContain("<h1>\u0641\u0647\u0631\u0633\u062a</h1>");
+
+    const css = await zip.file("OEBPS/styles.css")!.async("string");
+    expect(css).toContain("direction: rtl");
+    // No italic face exists, so Chrome must not be allowed to fake one.
+    expect(css).toContain("font-style: normal");
+  });
+
+  it("reads a stored code as readily as a stored label", async () => {
+    for (const language of ["fa", "Farsi", "Persian"]) {
+      const bytes = await generateBookEpub("Text.", {
+        title: "T",
+        language,
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001"
+      });
+      const opf = await (await JSZip.loadAsync(bytes)).file("OEBPS/content.opf")!.async("string");
+      expect(opf, language).toContain("<dc:language>fa</dc:language>");
+    }
+  });
+
   it("falls back to a single chapter when no headings exist", async () => {
     const bytes = await generateBookEpub("Just one paragraph of text.", {
       title: "Tiny Book",

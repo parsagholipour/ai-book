@@ -1344,7 +1344,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const { disposition = "attachment" } = pdfExportQuerySchema.parse(request.query);
     const project = await prisma.project.findFirst({
       where: ownedProjectWhere(id, actor),
-      select: { title: true, status: true, currentPlanId: true, mediaSettings: true }
+      select: { title: true, language: true, status: true, currentPlanId: true, mediaSettings: true }
     });
     if (!project) {
       return reply.code(404).send({ error: "Book not found" });

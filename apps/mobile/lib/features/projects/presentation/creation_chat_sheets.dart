@@ -741,7 +741,7 @@ class _LanguageField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final known = creationLanguageOptions.any((o) => o.code == language);
+    final options = creationLanguageOptionsFor(language);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -764,13 +764,17 @@ class _LanguageField extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          initialValue: known ? language : 'en',
+          initialValue: language.isEmpty ? 'en' : language,
+          isExpanded: true,
           decoration: const InputDecoration(
             prefixIcon: Icon(Icons.translate_outlined),
           ),
           items: [
-            for (final option in creationLanguageOptions)
-              DropdownMenuItem(value: option.code, child: Text(option.label)),
+            for (final option in options)
+              DropdownMenuItem(
+                value: option.code,
+                child: Text(option.label, overflow: TextOverflow.ellipsis),
+              ),
           ],
           onChanged: (value) {
             if (value != null) onChanged(value);

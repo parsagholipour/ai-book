@@ -230,7 +230,8 @@ export async function compileExport(job: Job) {
   await strategy.generatePdf(markdown, {
     imageStorageDir: config.IMAGE_STORAGE_DIR,
     publicApiUrl: config.PUBLIC_API_URL,
-    outputPath: join(projectDir, "book.pdf")
+    outputPath: join(projectDir, "book.pdf"),
+    language: input.language
   });
   await advanceJobStep(generationJobId, "epub", 95);
   const generateEpub = () =>

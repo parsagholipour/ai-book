@@ -5,10 +5,10 @@ import {
   SENTENCE_PAUSE_MS,
   TITLE_PAUSE_MS,
   buildChapterNarration,
-  isRtlLanguage,
   narrationParagraphs,
   splitIntoSegments
 } from "./narration.js";
+import { isRtlLanguage } from "../prompting/script.js";
 
 describe("narration text pipeline", () => {
   it("keeps paragraph breaks and drops everything that is not speech", () => {

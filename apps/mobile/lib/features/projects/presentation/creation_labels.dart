@@ -100,14 +100,54 @@ const qualityPresetOptions = <CreationPresetOption>[
   ),
 ];
 
+/// Mirrors `LANGUAGE_NAME_CODES` on the server. The list used to hold six
+/// Latin-script languages, so a language the chat detected from a non-Latin
+/// prompt — Persian above all — had no entry and the settings sheet showed
+/// "English" over a Persian book. Each label carries the endonym so a reader
+/// recognises their own language in the list.
 const creationLanguageOptions = <CreationLanguageOption>[
   CreationLanguageOption(code: 'en', label: 'English'),
-  CreationLanguageOption(code: 'es', label: 'Spanish'),
-  CreationLanguageOption(code: 'fr', label: 'French'),
-  CreationLanguageOption(code: 'de', label: 'German'),
-  CreationLanguageOption(code: 'pt', label: 'Portuguese'),
-  CreationLanguageOption(code: 'it', label: 'Italian'),
+  CreationLanguageOption(code: 'ar', label: 'العربية · Arabic'),
+  CreationLanguageOption(code: 'zh', label: '中文 · Chinese'),
+  CreationLanguageOption(code: 'da', label: 'Dansk · Danish'),
+  CreationLanguageOption(code: 'nl', label: 'Nederlands · Dutch'),
+  CreationLanguageOption(code: 'fa', label: 'فارسی · Persian'),
+  CreationLanguageOption(code: 'fr', label: 'Français · French'),
+  CreationLanguageOption(code: 'de', label: 'Deutsch · German'),
+  CreationLanguageOption(code: 'el', label: 'Ελληνικά · Greek'),
+  CreationLanguageOption(code: 'he', label: 'עברית · Hebrew'),
+  CreationLanguageOption(code: 'hi', label: 'हिन्दी · Hindi'),
+  CreationLanguageOption(code: 'it', label: 'Italiano · Italian'),
+  CreationLanguageOption(code: 'ja', label: '日本語 · Japanese'),
+  CreationLanguageOption(code: 'ko', label: '한국어 · Korean'),
+  CreationLanguageOption(code: 'no', label: 'Norsk · Norwegian'),
+  CreationLanguageOption(code: 'pl', label: 'Polski · Polish'),
+  CreationLanguageOption(code: 'pt', label: 'Português · Portuguese'),
+  CreationLanguageOption(code: 'ru', label: 'Русский · Russian'),
+  CreationLanguageOption(code: 'es', label: 'Español · Spanish'),
+  CreationLanguageOption(code: 'sv', label: 'Svenska · Swedish'),
+  CreationLanguageOption(code: 'th', label: 'ไทย · Thai'),
+  CreationLanguageOption(code: 'tr', label: 'Türkçe · Turkish'),
+  CreationLanguageOption(code: 'uk', label: 'Українська · Ukrainian'),
+  CreationLanguageOption(code: 'ur', label: 'اردو · Urdu'),
+  CreationLanguageOption(code: 'vi', label: 'Tiếng Việt · Vietnamese'),
 ];
+
+/// The picker's options, plus the stored language when it is not one of them.
+///
+/// Showing a fallback of "English" for an unrecognised code is a lie the reader
+/// is one tap away from making true, so an unknown code becomes its own option
+/// instead.
+List<CreationLanguageOption> creationLanguageOptionsFor(String language) {
+  final known = creationLanguageOptions.any((option) => option.code == language);
+  if (known || language.isEmpty) {
+    return creationLanguageOptions;
+  }
+  return [
+    CreationLanguageOption(code: language, label: languageLabel(language)),
+    ...creationLanguageOptions,
+  ];
+}
 
 List<CreationPresetOption> lengthPresetOptions(String bookType) {
   return [

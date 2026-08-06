@@ -30,6 +30,11 @@ const BOOK_EPUB_FILENAME = "book.epub";
 
 export type ProjectPdfExportSource = {
   title: string;
+  /**
+   * Load-bearing on the lazy rebuild path below: a PDF regenerated without it
+   * has no fonts for the book's script and comes back as tofu.
+   */
+  language: string;
   currentPlanId: string | null;
   mediaSettings: unknown;
 };
@@ -90,7 +95,8 @@ export async function sendProjectPdfExport(options: {
       pdf = await strategy.generatePdf(markdown, {
         imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
         publicApiUrl: appConfig.PUBLIC_API_URL,
-        outputPath: pdfPath
+        outputPath: pdfPath,
+        language: project.language
       });
     } catch (error) {
       request.log.error({ err: error, projectId }, "PDF generation failed");

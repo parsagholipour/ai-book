@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyCoverTemplateOverride, buildCoverArtworkPrompt, fitCoverText, resolveCoverTemplate } from "./cover.js";
+import { applyCoverTemplateOverride, buildCoverArtworkPrompt, coverTemplateForScript, resolveCoverTemplate } from "./cover.js";
+import { scriptProfileForLanguage } from "../prompting/script.js";
+import { fitCoverText } from "./coverText.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
 
@@ -85,6 +87,20 @@ describe("cover generation helpers", () => {
 
       expect(prompt).toContain(`Template mood: ${expected}.`);
     }
+  });
+
+  it("swaps an uppercase-Latin display face out for a non-Latin title", () => {
+    // Bebas Neue has no Arabic glyphs and is condensed all-caps, so a Persian
+    // title set beside it reads as two different books.
+    const science = resolveCoverTemplate("science", "SCIENCE");
+    expect(science.titleFont).toBe("BebasCover");
+    expect(coverTemplateForScript(science, scriptProfileForLanguage("fa")).titleFont).toBe("NunitoCover");
+    expect(coverTemplateForScript(science, scriptProfileForLanguage("en"))).toBe(science);
+  });
+
+  it("leaves a template whose display face is not Bebas alone", () => {
+    const kids = resolveCoverTemplate("kids", "KIDS");
+    expect(coverTemplateForScript(kids, scriptProfileForLanguage("fa"))).toBe(kids);
   });
 
   it("fits long cover titles without exceeding the configured line count", () => {

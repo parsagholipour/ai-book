@@ -10,6 +10,7 @@
  * than guessed, and any interpolation error inside a chunk is erased at the next
  * one.
  */
+import { isRtlLanguage } from "../prompting/script.js";
 
 const MAX_CHUNK_CHARS = 400;
 const MAX_SEGMENT_CHARS = 360;
@@ -26,27 +27,6 @@ export const CHAPTER_TAIL_PAUSE_MS = 700;
  */
 const NARRATION_CHARS_PER_SECOND = 14.5;
 
-const RTL_LANGUAGES = new Set([
-  "ar",
-  "arabic",
-  "fa",
-  "farsi",
-  "persian",
-  "he",
-  "iw",
-  "hebrew",
-  "ur",
-  "urdu",
-  "ps",
-  "pashto",
-  "sd",
-  "sindhi",
-  "yi",
-  "yiddish",
-  "dv",
-  "ku",
-  "kurdish"
-]);
 
 export type NarrationSegmentKind = "title" | "sentence";
 
@@ -149,15 +129,6 @@ export function estimateNarrationDurationMs(chunks: NarrationChunk[]): number {
     const speech = (chunk.text.length / NARRATION_CHARS_PER_SECOND) * 1000;
     return total + speech + chunk.pauseAfterMs;
   }, 0);
-}
-
-export function isRtlLanguage(language: string | null | undefined): boolean {
-  const normalized = (language ?? "").trim().toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  const base = normalized.split(/[-_]/)[0] ?? normalized;
-  return RTL_LANGUAGES.has(normalized) || RTL_LANGUAGES.has(base);
 }
 
 /**

@@ -3,6 +3,8 @@ import { extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { marked } from "marked";
+import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
+import { markdownLabels } from "./markdown.js";
 
 const IMAGE_MARKDOWN_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
@@ -15,17 +17,35 @@ const MIME_BY_EXT: Record<string, string> = {
   ".svg": "image/svg+xml"
 };
 
-const EPUB_CSS = `
+/**
+ * Reader fonts, not embedded ones: every mainstream reading system ships faces
+ * for these scripts and resolves `serif` per script, readers expect to change
+ * the reading font, and a CJK face would add megabytes to every file. Naming
+ * `Georgia` first for a non-Latin book is the one thing worth avoiding — a
+ * Latin-only face at the head of the stack makes some readers fall back per
+ * character instead of picking one face for the run.
+ */
+function epubCss(profile: ScriptProfile): string {
+  const stack =
+    profile.script === "latin"
+      ? `Georgia, "Times New Roman", serif`
+      : `"Vazirmatn", "Noto Naskh Arabic", "Noto Serif", serif`;
+  return `
+html, body {
+  direction: ${profile.direction};
+}
 body {
-  font-family: Georgia, "Times New Roman", serif;
-  line-height: 1.55;
+  font-family: ${stack};
+  line-height: ${profile.lineHeight};
   margin: 0 5%;
   color: #1a1a1a;
 }
-h1, h2, h3 { font-family: Georgia, "Times New Roman", serif; page-break-after: avoid; }
+h1, h2, h3 { font-family: ${stack}; page-break-after: avoid; }
 img { max-width: 100%; height: auto; display: block; margin: 1em auto; }
 hr { border: none; border-top: 1px solid #d7d7d7; margin: 1.5em 0; }
-`;
+pre, code { direction: ltr; unicode-bidi: isolate; text-align: left; }
+${profile.hasItalic ? "" : "em, i, cite, blockquote { font-style: normal; }\nem, i { font-weight: 600; }\n"}`;
+}
 
 export type GenerateBookEpubOptions = {
   title: string;
@@ -58,13 +78,14 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
   const images = new Map<string, EpubImage>();
   const localizedMarkdown = await packageLocalImages(markdown, options, images);
   const chapters = splitIntoChapters(localizedMarkdown, options.title);
+  const profile = scriptProfileForLanguage(options.language);
   const renderedChapters: EpubChapter[] = [];
   for (const [index, chapter] of chapters.entries()) {
     renderedChapters.push({
       id: `chapter-${index + 1}`,
       title: chapter.title,
       fileName: `chapter-${index + 1}.xhtml`,
-      xhtml: chapterXhtml(chapter.title, await renderMarkdownToXhtml(chapter.markdown))
+      xhtml: chapterXhtml(chapter.title, await renderMarkdownToXhtml(chapter.markdown), profile)
     });
   }
 
@@ -83,8 +104,8 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
   </rootfiles>
 </container>`
   );
-  zip.file("OEBPS/styles.css", EPUB_CSS);
-  zip.file("OEBPS/nav.xhtml", navXhtml(options.title, renderedChapters));
+  zip.file("OEBPS/styles.css", epubCss(profile));
+  zip.file("OEBPS/nav.xhtml", navXhtml(options.title, renderedChapters, profile, markdownLabels(options.language).contentsHeading));
   for (const chapter of renderedChapters) {
     zip.file(`OEBPS/${chapter.fileName}`, chapter.xhtml);
   }
@@ -100,7 +121,8 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
       language,
       chapters: renderedChapters,
       images: [...images.values()],
-      coverImageId: coverImage?.id
+      coverImageId: coverImage?.id,
+      direction: profile.direction
     })
   );
 
@@ -214,10 +236,18 @@ function toXhtml(html: string): string {
     .replace(/&nbsp;/g, "&#160;");
 }
 
-function chapterXhtml(title: string, body: string): string {
+/** EPUB 3 requires `xml:lang`; `dir` is legal on a content document's root. */
+function htmlOpenTag(profile: ScriptProfile): string {
+  return (
+    `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"` +
+    ` xml:lang="${profile.code}" lang="${profile.code}" dir="${profile.direction}">`
+  );
+}
+
+function chapterXhtml(title: string, body: string, profile: ScriptProfile): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+${htmlOpenTag(profile)}
 <head>
   <title>${escapeXml(title)}</title>
   <link rel="stylesheet" type="text/css" href="styles.css" />
@@ -228,19 +258,24 @@ ${body}
 </html>`;
 }
 
-function navXhtml(bookTitle: string, chapters: EpubChapter[]): string {
+function navXhtml(
+  bookTitle: string,
+  chapters: EpubChapter[],
+  profile: ScriptProfile,
+  contentsHeading: string
+): string {
   const items = chapters
     .map((chapter) => `      <li><a href="${chapter.fileName}">${escapeXml(chapter.title)}</a></li>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+${htmlOpenTag(profile)}
 <head>
   <title>${escapeXml(bookTitle)}</title>
 </head>
 <body>
   <nav epub:type="toc" id="toc">
-    <h1>Contents</h1>
+    <h1>${escapeXml(contentsHeading)}</h1>
     <ol>
 ${items}
     </ol>
@@ -257,6 +292,7 @@ function contentOpf(options: {
   chapters: EpubChapter[];
   images: EpubImage[];
   coverImageId: string | undefined;
+  direction: "ltr" | "rtl";
 }): string {
   const manifestItems = [
     `    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
@@ -285,19 +321,19 @@ function contentOpf(options: {
   <manifest>
 ${manifestItems}
   </manifest>
-  <spine>
+  <spine${options.direction === "rtl" ? ` page-progression-direction="rtl"` : ""}>
 ${spineItems}
   </spine>
 </package>`;
 }
 
+/**
+ * `Project.language` is a display label as often as it is a code, and the old
+ * regex rejected every label: a Persian book shipped `<dc:language>en</dc:language>`
+ * because "Persian" is seven letters.
+ */
 function normalizeEpubLanguage(language: string | undefined): string {
-  const trimmed = language?.trim().toLowerCase();
-  if (!trimmed) {
-    return "en";
-  }
-  const candidate = trimmed.split(/[_\s]/)[0] ?? trimmed;
-  return /^[a-z]{2,3}(-[a-z0-9]+)*$/i.test(candidate) ? candidate : "en";
+  return scriptProfileForLanguage(language).code;
 }
 
 function escapeXml(value: string): string {

@@ -23,7 +23,7 @@ export async function registerMobileExportRoutes(fastify: FastifyInstance, conte
       const { id } = idParamsSchema.parse(request.params);
       const project = await prisma.project.findFirst({
         where: { id, userId: auth.user.id },
-        select: { title: true, status: true, currentPlanId: true, mediaSettings: true }
+        select: { title: true, language: true, status: true, currentPlanId: true, mediaSettings: true }
       });
       if (!project) {
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");

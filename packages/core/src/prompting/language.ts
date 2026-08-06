@@ -5,12 +5,22 @@ export const DEFAULT_PROJECT_LANGUAGE = "en";
 
 const ENGLISH_LANGUAGE_VALUES = new Set(["en", "eng", "english", "en-us", "en-gb", "en_us", "en_gb"]);
 
+/**
+ * Every value a stored language can take, mapped to its English label. Must
+ * stay a superset of {@link LANGUAGE_NAME_CODES}: a name the chat can request
+ * but this table cannot label ends up passed to the model verbatim, which is
+ * how `targetLanguageGenerationGuidance` once said "Target language: he".
+ */
 const COMMON_LANGUAGE_LABELS: Record<string, string> = {
   ar: "Arabic",
   arabic: "Arabic",
+  da: "Danish",
+  danish: "Danish",
   de: "German",
   german: "German",
   deutsch: "German",
+  el: "Greek",
+  greek: "Greek",
   es: "Spanish",
   spanish: "Spanish",
   "espanol": "Spanish",
@@ -20,6 +30,9 @@ const COMMON_LANGUAGE_LABELS: Record<string, string> = {
   fr: "French",
   french: "French",
   "francais": "French",
+  he: "Hebrew",
+  iw: "Hebrew",
+  hebrew: "Hebrew",
   hi: "Hindi",
   hindi: "Hindi",
   it: "Italian",
@@ -28,14 +41,28 @@ const COMMON_LANGUAGE_LABELS: Record<string, string> = {
   japanese: "Japanese",
   ko: "Korean",
   korean: "Korean",
+  nl: "Dutch",
+  dutch: "Dutch",
+  no: "Norwegian",
+  norwegian: "Norwegian",
+  pl: "Polish",
+  polish: "Polish",
   pt: "Portuguese",
   portuguese: "Portuguese",
   ru: "Russian",
   russian: "Russian",
+  sv: "Swedish",
+  swedish: "Swedish",
+  th: "Thai",
+  thai: "Thai",
   tr: "Turkish",
   turkish: "Turkish",
+  uk: "Ukrainian",
+  ukrainian: "Ukrainian",
   ur: "Urdu",
   urdu: "Urdu",
+  vi: "Vietnamese",
+  vietnamese: "Vietnamese",
   zh: "Chinese",
   chinese: "Chinese",
   "zh-cn": "Chinese",
@@ -68,7 +95,8 @@ export const LANGUAGE_NAME_CODES: Record<string, string> = {
   norwegian: "no",
   danish: "da",
   polish: "pl",
-  ukrainian: "uk"
+  ukrainian: "uk",
+  vietnamese: "vi"
 };
 
 /** Alternation of every name in {@link LANGUAGE_NAME_CODES}, longest first. */

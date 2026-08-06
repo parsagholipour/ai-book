@@ -6,8 +6,16 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true \
 WORKDIR /app
 RUN corepack enable
 
+# fonts-noto-core is not a fallback for the scripts the exporters know about —
+# those embed their own faces with a unicode-range, so a system font is never
+# consulted. It is the only coverage for a language the registry has no entry
+# for (Amharic, Bengali, Tamil, Khmer…), which `Project.language` can hold
+# because it is free-form, and for non-Latin text inside a monospace code span.
+# fonts-noto-cjk is deliberately absent: CJK is embedded, and the package is
+# 200 MB.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium ca-certificates fonts-liberation \
+  && apt-get install -y --no-install-recommends \
+    chromium ca-certificates fonts-liberation fonts-noto-core fonts-noto-color-emoji \
   && rm -rf /var/lib/apt/lists/*
 
 FROM base AS dev
