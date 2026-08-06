@@ -10,6 +10,13 @@ import type {
 } from "../../api.js";
 import { firstString, formatUsd } from "../shared/formatters.js";
 
+/**
+ * Mirrors `CoverArtSource` in `packages/core`, which apps/web cannot import.
+ * "design" is the free bundled catalog; "none" is the only genuinely
+ * cover-less state, and this console is the only surface that can set it.
+ */
+export type CoverArtSource = "ai" | "design" | "none";
+
 export type ProjectCategory =
   | "KIDS"
   | "SCIENCE"
@@ -44,7 +51,8 @@ export type DraftProject = {
   complexity: number;
   temperature: number;
   fullIllustrations: boolean;
-  includeCover: boolean;
+  /** "ai" draws the cover, "design" picks a bundled one, "none" has no cover. */
+  coverArtSource: CoverArtSource;
   finalReview: boolean;
   toneProfile: ToneProfile;
   draftCandidates: number;
@@ -321,7 +329,7 @@ export const initialDraft: DraftProject = {
   complexity: 3,
   temperature: 0.8,
   fullIllustrations: true,
-  includeCover: true,
+  coverArtSource: "ai",
   finalReview: true,
   toneProfile: DEFAULT_TONE_PROFILE,
   draftCandidates: 1
@@ -346,7 +354,8 @@ export function projectInputFromDraft(draft: DraftProject, textModelOptions: Tex
     mediaSettings: {
       fullIllustrations: draft.fullIllustrations,
       illustrationCadence: "template-driven",
-      includeCover: draft.includeCover,
+      includeCover: draft.coverArtSource === "ai",
+      coverArtSource: draft.coverArtSource,
       coverTemplate: draft.coverTemplate,
       imageModel: imageModelSelectionFromOption(draft.imageModel),
       finalReview: draft.finalReview,
@@ -397,7 +406,11 @@ export function draftFromSavedInputs(project: Project): DraftProject {
       2
     ),
     fullIllustrations: firstBoolean(mediaSettings.fullIllustrations, initialDraft.fullIllustrations),
-    includeCover: firstBoolean(mediaSettings.includeCover, initialDraft.includeCover),
+    coverArtSource: isCoverArtSource(mediaSettings.coverArtSource)
+      ? mediaSettings.coverArtSource
+      : firstBoolean(mediaSettings.includeCover, true)
+        ? "ai"
+        : "design",
     finalReview: firstBoolean(mediaSettings.finalReview, initialDraft.finalReview),
     audienceAgeRange:
       category === "KIDS" ? audienceAgeRangeFromValue(mediaSettings.audienceAgeRange) : initialDraft.audienceAgeRange,
@@ -430,6 +443,10 @@ export function draftSubcategoryFromValue(
     return { subcategory: trimmed, customSubcategory: "" };
   }
   return { subcategory: CUSTOM_SUBCATEGORY_VALUE, customSubcategory: trimmed };
+}
+
+export function isCoverArtSource(value: unknown): value is CoverArtSource {
+  return value === "ai" || value === "design" || value === "none";
 }
 
 export function coverTemplateFromValue(value: string): DraftProject["coverTemplate"] {

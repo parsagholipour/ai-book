@@ -820,7 +820,7 @@ List<String> projectMeta(MobileProjectSummary project) {
     project.bookTypeLabel,
     project.lengthPresetLabel,
     generatedImagesLabel(
-      coverEnabled: project.coverEnabled,
+      coverArtSource: project.coverArtSource,
       illustrationsEnabled: project.illustrationsEnabled,
     ),
     if (project.hasReadyExport)

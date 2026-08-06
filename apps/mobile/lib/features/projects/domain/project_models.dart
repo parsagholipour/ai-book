@@ -32,6 +32,7 @@ class MobileProjectSummary {
     required this.qualityPreset,
     bool? coverEnabled,
     bool? illustrationsEnabled,
+    String? coverArtSource,
     @Deprecated('Use coverEnabled and illustrationsEnabled.')
     bool? imagesEnabled,
     required this.status,
@@ -51,7 +52,10 @@ class MobileProjectSummary {
     this.source = 'generated',
     this.coverImage,
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
-       illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true;
+       illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
+       coverArtSource =
+           coverArtSource ??
+           ((coverEnabled ?? imagesEnabled ?? true) ? 'ai' : 'design');
 
   final String id;
   final String title;
@@ -66,8 +70,14 @@ class MobileProjectSummary {
   final String bookType;
   final String lengthPreset;
   final String qualityPreset;
+  /// True only when a model draws the cover. It is what the cover is priced on,
+  /// so a book with a free designed cover reports false here — read
+  /// [coverArtSource] to say what the book actually has.
   final bool coverEnabled;
   final bool illustrationsEnabled;
+
+  /// 'ai', 'design' (picked from the bundled catalog, free) or 'none'.
+  final String coverArtSource;
 
   /// Deprecated wire compatibility aggregate. Never use this for pricing or
   /// illustrated-book quota checks.
@@ -98,6 +108,7 @@ class MobileProjectSummary {
       qualityPreset: json['qualityPreset'] as String,
       coverEnabled: json['coverEnabled'] as bool?,
       illustrationsEnabled: json['illustrationsEnabled'] as bool?,
+      coverArtSource: json['coverArtSource'] as String?,
       imagesEnabled: legacyImagesEnabled,
       status: json['status'] as String,
       statusLabel: json['statusLabel'] as String,
@@ -159,6 +170,7 @@ class MobileProjectDetail extends MobileProjectSummary {
     required super.qualityPreset,
     super.coverEnabled,
     super.illustrationsEnabled,
+    super.coverArtSource,
     super.imagesEnabled,
     required super.status,
     required super.statusLabel,
@@ -203,6 +215,7 @@ class MobileProjectDetail extends MobileProjectSummary {
       qualityPreset: json['qualityPreset'] as String,
       coverEnabled: json['coverEnabled'] as bool?,
       illustrationsEnabled: json['illustrationsEnabled'] as bool?,
+      coverArtSource: json['coverArtSource'] as String?,
       imagesEnabled: legacyImagesEnabled,
       status: json['status'] as String,
       statusLabel: json['statusLabel'] as String,
@@ -672,14 +685,16 @@ int estimatedInteriorImageCount({
 
 /// Compact copy for places that summarize generated imagery in one phrase.
 String generatedImagesLabel({
-  required bool coverEnabled,
+  required String coverArtSource,
   required bool illustrationsEnabled,
 }) {
-  return switch ((coverEnabled, illustrationsEnabled)) {
-    (true, true) => 'Cover + illustrations',
-    (true, false) => 'Cover only',
-    (false, true) => 'Illustrations only',
-    (false, false) => 'No generated images',
+  return switch ((coverArtSource, illustrationsEnabled)) {
+    ('ai', true) => 'Cover + illustrations',
+    ('ai', false) => 'Cover only',
+    ('design', true) => 'Designed cover + illustrations',
+    ('design', false) => 'Designed cover',
+    (_, true) => 'Illustrations only',
+    (_, false) => 'No generated images',
   };
 }
 

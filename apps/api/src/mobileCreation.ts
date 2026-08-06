@@ -753,7 +753,7 @@ export async function enrichCreationTurnWithSearch(
   const updateSettingsTool: ToolLoopTool<z.infer<typeof creationUpdateSettingsArgsSchema>> = {
     name: "update_settings",
     description:
-      "Apply an explicit chat setting change: book type, page count, cover on/off, in-book illustrations on/off, all images on/off, tone, or book language. Use coverEnabled and illustrationsEnabled for exact choices; use imagesEnabled only for a broad all-images request. Call only when the user clearly wants the change.",
+      "Apply an explicit chat setting change: book type, page count, AI cover art on/off, in-book illustrations on/off, all images on/off, tone, or book language. Use coverEnabled and illustrationsEnabled for exact choices; use imagesEnabled only for a broad all-images request. coverEnabled false does not remove the cover - the book gets a designed cover from a bundled catalog for free. Call only when the user clearly wants the change.",
     parameters: creationUpdateSettingsArgsSchema,
     execute: (args) => {
       settingsFromTool = { ...settingsFromTool, ...args };
@@ -1124,7 +1124,7 @@ export function metaAnswerForMessage(message: string): string | null {
     return "Tell me your book idea and I'll shape it into a plan you can review. Once you approve it, I write the full book with visuals and give you PDF and EPUB downloads. You can keep editing by chat afterwards.";
   }
   if (/\b(picture|image|images|illustration|visual|cover)s?\b/.test(text) && /\b(can|do|does|will|add|include|without|no)\b/.test(text)) {
-    return "Yes - a book can have a cover, in-book illustrations, both, or neither. The cover is separate, so you can keep it even when you turn illustrations off.";
+    return "Yes - you can have AI cover art, in-book illustrations, both, or neither. They are separate choices, and every book gets a cover either way: turn the AI cover art off and I pick a designed cover to match your book, free.";
   }
   if (/\b(edit|change|fix|revise|rewrite|undo)\b/.test(text) && /\b(after|later|once|when|can)\b/.test(text)) {
     return "After your book is generated you can keep chatting to fix wording, rewrite pages or chapters, undo the last edit, or rebuild the whole book.";

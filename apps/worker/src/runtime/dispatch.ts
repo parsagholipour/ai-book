@@ -1,6 +1,6 @@
 import { Job, type JobsOptions } from "bullmq";
 import { createHash } from "node:crypto";
-import { resolveBookGenerationStrategy, type CreateProjectInput } from "@book-maker/core";
+import { coverArtSourceFor, resolveBookGenerationStrategy, type CreateProjectInput } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { retryJobOptions } from "./jobRetryPolicy.js";
 import { acceptedSavedPageTarget, terminalSavedPageCount } from "../generation/wholeBookTolerance.js";
@@ -181,7 +181,7 @@ export function dispatchBackoffMs(attempt: number): number {
 }
 
 export async function maybeEnqueueCover(projectId: string, planId: string, input: CreateProjectInput): Promise<boolean> {
-  if (!input.mediaSettings.includeCover) {
+  if (coverArtSourceFor(input.mediaSettings) === "none") {
     return false;
   }
   const [coverAssets, openCoverJobs] = await Promise.all([
@@ -316,7 +316,7 @@ export async function maybeEnqueueCompile(
     terminalPages === pages.length &&
     pages.length === acceptedPageTarget &&
     openPageJobs === 0;
-  if (pagesReady && input.mediaSettings.includeCover && coverAssets === 0 && openImageJobs === 0) {
+  if (pagesReady && coverArtSourceFor(input.mediaSettings) !== "none" && coverAssets === 0 && openImageJobs === 0) {
     await maybeEnqueueCover(projectId, planId, input);
     return;
   }

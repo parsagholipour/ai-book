@@ -1,5 +1,6 @@
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import type { ImageAdapterCapabilities } from "../adapters/types.js";
+import { coverArtSourceFor } from "./coverSource.js";
 
 type Character = BookPlan["characters"][number];
 
@@ -23,7 +24,12 @@ export type SelectCharacterReferenceOptions = {
 };
 
 export function shouldGenerateCharacterReferences(input: CreateProjectInput, plan: BookPlan): boolean {
-  return plan.characters.length > 0 && (input.mediaSettings.fullIllustrations || input.mediaSettings.includeCover);
+  // Only an AI cover can use a reference sheet; a designed cover draws nothing,
+  // so generating them for one would be image spend no quote includes.
+  return (
+    plan.characters.length > 0 &&
+    (input.mediaSettings.fullIllustrations || coverArtSourceFor(input.mediaSettings) === "ai")
+  );
 }
 
 export function shouldUseCharacterReferenceImages(

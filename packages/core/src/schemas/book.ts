@@ -511,6 +511,12 @@ export const coverTemplateIdSchema = z.enum([
   "self-help",
   "romance"
 ]);
+/**
+ * Where a book's cover artwork comes from. Read it with `coverArtSourceFor`
+ * rather than off the settings directly — the legacy `includeCover` flag is
+ * still the only thing older rows carry.
+ */
+export const coverArtSourceSchema = z.enum(["ai", "design", "none"]);
 export const toneProfileSchema = z.enum(TONE_PROFILES).default("neutral");
 export const AUDIENCE_AGE_RANGES = ["2-4", "4-6", "6-8"] as const;
 export const audienceAgeRangeSchema = z.enum(AUDIENCE_AGE_RANGES);
@@ -519,6 +525,12 @@ export const mediaSettingsSchema = z.object({
   fullIllustrations: z.boolean().default(true),
   illustrationCadence: illustrationCadenceSchema,
   includeCover: z.boolean().default(true),
+  /**
+   * Supersedes `includeCover`, which only says whether the cover was drawn by a
+   * model. Unset falls back to it, so `false` means a designed cover rather
+   * than no cover at all — see `coverArtSourceFor`.
+   */
+  coverArtSource: coverArtSourceSchema.optional(),
   coverTemplate: coverTemplateIdSchema.default("auto"),
   finalReview: z.boolean().default(true),
   /**

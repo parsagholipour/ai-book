@@ -138,6 +138,10 @@ export function mediaSettingsWithReplanSettings(
     ...mediaSettings,
     fullIllustrations,
     includeCover,
+    // Only restate the source when the request actually spoke about the cover:
+    // "no cover" means a free designed one, but a replan that never mentioned it
+    // must not promote an operator's explicit "none" back into a cover.
+    ...(settings.includeCover === undefined ? {} : { coverArtSource: includeCover ? "ai" : "design" }),
     illustrationCadence: fullIllustrations ? mediaSettings.illustrationCadence : "manual",
     ...(mediaSettings.mobile === undefined
       ? {}

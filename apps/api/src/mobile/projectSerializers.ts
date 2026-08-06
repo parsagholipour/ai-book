@@ -74,9 +74,7 @@ export async function serializeProjectSummary(
     bookType: mobile?.bookType ?? inferBookType(project.category, project.subcategory),
     lengthPreset: mobile?.lengthPreset ?? "custom",
     qualityPreset: mobile?.qualityPreset ?? "custom",
-    coverEnabled: imageSettings.coverEnabled,
-    illustrationsEnabled: imageSettings.illustrationsEnabled,
-    imagesEnabled: imageSettings.imagesEnabled,
+    ...imageSettings,
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
@@ -278,9 +276,7 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
     progressPercent,
-    coverEnabled: imageSettings.coverEnabled,
-    illustrationsEnabled: imageSettings.illustrationsEnabled,
-    imagesEnabled: imageSettings.imagesEnabled,
+    ...imageSettings,
     // The live phrase leads whenever there is one: it is the only part of this
     // payload that says what is happening right now rather than what stage it is.
     currentAction: planningProgress?.steps.find((step) => step.status === "active")?.label ??

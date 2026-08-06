@@ -1,4 +1,5 @@
 import { type CreditPricing, creditPricing } from "./creditPricing.js";
+import { coverArtSourceFor } from "./generation/coverSource.js";
 import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
 
 export const CREDIT_USD_VALUE = 0.01;
@@ -257,7 +258,7 @@ export function estimateFullBookCreditCost(
   pricing: CreditPricing = creditPricing()
 ): CreditCostEstimate {
   const estimatedInteriorImages = estimateInteriorImageCount(input);
-  const includesCover = input.mediaSettings.includeCover === true;
+  const includesCover = coverArtSourceFor(input.mediaSettings) === "ai";
   const fullBookCredits = pricing.fullBookBase + input.targetPages * pricing.fullBookPerPage;
   const interiorImageCredits = estimatedInteriorImages * pricing.imageGeneration;
   const coverCredits = includesCover ? pricing.imageGeneration : 0;
@@ -351,7 +352,7 @@ export function estimateAudiobookCreditCost(
 export function estimateProviderCostForProject(input: CreateProjectInput): ProviderCostEstimate {
   const assumptions = providerCostAssumptionsForInput(input);
   const estimatedInteriorImages = estimateInteriorImageCount(input);
-  const includesCover = input.mediaSettings.includeCover === true;
+  const includesCover = coverArtSourceFor(input.mediaSettings) === "ai";
   const includesPremiumReview = isPremiumProject(input);
   const estimatedUsd =
     assumptions.textBase +

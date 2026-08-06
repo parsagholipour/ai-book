@@ -17,7 +17,7 @@ import {
   mobileLengthPresetSchema,
   mobileQualityPresetSchema
 } from "./schemas.js";
-import { type CreateProjectInput, type CreditPricing, type PlanTier } from "@book-maker/core";
+import { type CoverArtSource, type CreateProjectInput, type CreditPricing, type PlanTier } from "@book-maker/core";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
 import { z } from "zod";
 
@@ -64,8 +64,11 @@ export type MobileProjectSummaryDto = {
   qualityPreset: MobileQualityPreset | "custom";
   /** Compatibility aggregate: coverEnabled || illustrationsEnabled. */
   imagesEnabled: boolean;
+  /** True only for AI cover artwork; see coverArtSource. */
   coverEnabled: boolean;
   illustrationsEnabled: boolean;
+  /** "ai" drew the cover, "design" picked a bundled one for free, "none" has no cover. */
+  coverArtSource: CoverArtSource;
   status: string;
   statusLabel: string;
   progressPercent: number;
@@ -400,8 +403,11 @@ export type MobileProjectStatusDto = {
   projectId: string;
   /** Compatibility aggregate: coverEnabled || illustrationsEnabled. */
   imagesEnabled: boolean;
+  /** True only for AI cover artwork; see coverArtSource. */
   coverEnabled: boolean;
   illustrationsEnabled: boolean;
+  /** "ai" drew the cover, "design" picked a bundled one for free, "none" has no cover. */
+  coverArtSource: CoverArtSource;
   status: string;
   statusLabel: string;
   progressPercent: number;

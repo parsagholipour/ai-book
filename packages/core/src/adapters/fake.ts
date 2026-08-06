@@ -9,6 +9,7 @@ import {
   type CreateProjectInput
 } from "../schemas/book.js";
 import { DEFAULT_TTS_CHANNELS, DEFAULT_TTS_SAMPLE_RATE, pcm16DurationMs } from "../audio/pcm.js";
+import { COVER_DESIGN_SELECTION_PURPOSE, DEFAULT_COVER_DESIGN_ID } from "../generation/coverDesigns.js";
 import type {
   EmbeddingAdapter,
   GenerateJsonOptions,
@@ -113,6 +114,12 @@ export class FakeTextModelAdapter implements TextModelAdapter {
   private fakeForSchema(schema: z.ZodTypeAny, options: GenerateJsonOptions<unknown>): unknown {
     if (options.purpose === "detect-language") {
       return fakeLanguageDetection(options);
+    }
+
+    if (options.purpose === COVER_DESIGN_SELECTION_PURPOSE) {
+      // A real id keeps MOCK_AI on the model path instead of exercising the
+      // selection fallback on every dry run.
+      return { designId: DEFAULT_COVER_DESIGN_ID, reason: "Deterministic dry-run pick." };
     }
 
     if (schema === bookPlanSchema && this.input) {

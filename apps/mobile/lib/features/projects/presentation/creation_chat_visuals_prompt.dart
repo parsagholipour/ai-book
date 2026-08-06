@@ -5,6 +5,10 @@ part of 'creation_chat_screen.dart';
 // Cover and interior art are independent choices, each charged at the current
 // `imageGeneration` rate. Only interiors consume a monthly illustrated-book
 // slot. This dialog keeps those costs visibly separate.
+//
+// Turning the cover off is not "no cover": the book gets one from the bundled
+// design catalog for free, so the row reads "Designed cover" rather than the
+// "Not included" the illustrations row uses.
 
 /// The screen's opener, next to the dialog it presents — same arrangement as
 /// `_CreationChatSheets`.
@@ -126,7 +130,8 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
             children: [
               Text(
                 'Cover art and in-book illustrations are priced separately. '
-                'Choose exactly which images this book needs.',
+                'Every book gets a cover either way — without AI art we pick a '
+                'designed one to match it, free.',
                 style: text.bodyMedium?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -137,7 +142,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                 value: _coverEnabled,
                 onChanged: (value) => setState(() => _coverEnabled = value),
                 secondary: const Icon(Icons.auto_stories_outlined),
-                title: const Text('Cover image'),
+                title: const Text('AI cover art'),
                 subtitle: Text(_coverSubtitle(_coverEnabled)),
               ),
               SwitchListTile(
@@ -169,10 +174,10 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _VisualsCostRow(
-                      label: 'Cover image',
+                      label: 'Cover',
                       value: _coverEnabled
                           ? '+$coverCredits credits'
-                          : 'Not included',
+                          : 'Designed cover, free',
                       muted: !_coverEnabled,
                     ),
                     const SizedBox(height: 6),

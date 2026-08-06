@@ -345,7 +345,7 @@ class _AdvancedSheet extends ConsumerWidget {
               secondary: const Icon(Icons.auto_stories_outlined),
               title: Row(
                 children: [
-                  const Expanded(child: Text('Cover image')),
+                  const Expanded(child: Text('AI cover art')),
                   if (state.userChoices.contains(CreationChoice.cover))
                     const AppStatusBadge(
                       label: 'Your choice',
@@ -428,7 +428,9 @@ PaywallCreditsNeeded? _paywallCreditsNeededForError(ApiException error) {
 }
 
 String _coverSubtitle(bool enabled) {
-  return enabled ? 'One generated cover image.' : 'No generated cover image.';
+  return enabled
+      ? 'One cover image drawn for your book.'
+      : 'Free: a designed cover is chosen to match your book.';
 }
 
 /// Says what illustrations will cost against the month's budget, when there is

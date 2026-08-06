@@ -133,6 +133,8 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     fullIllustrations: parsed.illustrationsEnabled,
     illustrationCadence: parsed.illustrationsEnabled ? "template-driven" : "manual",
     includeCover: parsed.coverEnabled,
+    // Declining the AI cover buys a bundled design rather than no cover.
+    coverArtSource: parsed.coverEnabled ? "ai" : "design",
     coverTemplate: bookType.coverTemplate,
     finalReview: quality.finalReview,
     toneProfile: bookType.toneProfile,

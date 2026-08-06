@@ -71,22 +71,45 @@ void main() {
     expect(request.toJson(), containsPair('imagesEnabled', true));
   });
 
-  test('generated image summaries cover all four combinations', () {
+  test('generated image summaries name a designed cover as a cover', () {
     expect(
-      generatedImagesLabel(coverEnabled: true, illustrationsEnabled: true),
+      generatedImagesLabel(coverArtSource: 'ai', illustrationsEnabled: true),
       'Cover + illustrations',
     );
     expect(
-      generatedImagesLabel(coverEnabled: true, illustrationsEnabled: false),
+      generatedImagesLabel(coverArtSource: 'ai', illustrationsEnabled: false),
       'Cover only',
     );
+    // Declining AI cover art still leaves the book with a cover, so saying
+    // 'Illustrations only' or 'No generated images' would be wrong.
     expect(
-      generatedImagesLabel(coverEnabled: false, illustrationsEnabled: true),
+      generatedImagesLabel(coverArtSource: 'design', illustrationsEnabled: true),
+      'Designed cover + illustrations',
+    );
+    expect(
+      generatedImagesLabel(coverArtSource: 'design', illustrationsEnabled: false),
+      'Designed cover',
+    );
+    expect(
+      generatedImagesLabel(coverArtSource: 'none', illustrationsEnabled: true),
       'Illustrations only',
     );
     expect(
-      generatedImagesLabel(coverEnabled: false, illustrationsEnabled: false),
+      generatedImagesLabel(coverArtSource: 'none', illustrationsEnabled: false),
       'No generated images',
+    );
+  });
+
+  test('a project without an explicit source reads it off the legacy flag', () {
+    MobileProjectSummary summary(Map<String, dynamic> overrides) =>
+        MobileProjectSummary.fromJson({..._projectJson(), ...overrides});
+
+    expect(summary({'coverEnabled': true}).coverArtSource, 'ai');
+    // Declining AI cover art buys a designed cover, not a cover-less book.
+    expect(summary({'coverEnabled': false}).coverArtSource, 'design');
+    expect(
+      summary({'coverEnabled': false, 'coverArtSource': 'none'}).coverArtSource,
+      'none',
     );
   });
 

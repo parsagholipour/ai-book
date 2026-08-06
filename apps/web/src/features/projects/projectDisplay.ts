@@ -94,11 +94,14 @@ export function projectUsesImageModel(project: Project): boolean {
     typeof mediaSettings.fullIllustrations === "boolean"
       ? mediaSettings.fullIllustrations
       : true;
-  const includeCover =
-    typeof mediaSettings.includeCover === "boolean"
-      ? mediaSettings.includeCover
-      : true;
-  return fullIllustrations || includeCover;
+  // A bundled design draws itself, so only generated cover art needs a model.
+  const generatedCover =
+    mediaSettings.coverArtSource === undefined
+      ? typeof mediaSettings.includeCover === "boolean"
+        ? mediaSettings.includeCover
+        : true
+      : mediaSettings.coverArtSource === "ai";
+  return fullIllustrations || generatedCover;
 }
 
 export function projectSavedMediaSettings(project: Project): NonNullable<Project["mediaSettings"]> {

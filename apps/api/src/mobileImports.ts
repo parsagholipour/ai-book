@@ -185,6 +185,8 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
         fullIllustrations: false,
         illustrationCadence: "manual",
         includeCover: false,
+        // An imported manuscript brings no artwork, so it gets a designed one.
+        coverArtSource: "design",
         coverTemplate: "auto",
         finalReview: false,
         toneProfile: "neutral",

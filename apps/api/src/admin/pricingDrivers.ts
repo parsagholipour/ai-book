@@ -24,6 +24,7 @@
 import {
   type CreditPriceKey,
   type CreditPricing,
+  coverArtSourceFor,
   createProjectSchema,
   estimateInteriorImageCount,
   isPremiumProject,
@@ -154,7 +155,7 @@ export async function loadPricingDrivers(
         pages: input.targetPages,
         // Initial covers share the image-generation price. Cover regeneration
         // remains a separate, standalone operation counted from its own ledger rows.
-        images: estimateInteriorImageCount(input) + (input.mediaSettings.includeCover === true ? 1 : 0),
+        images: estimateInteriorImageCount(input) + (coverArtSourceFor(input.mediaSettings) === "ai" ? 1 : 0),
         premium: isPremiumProject(input) ? 1 : 0
       });
     } catch {

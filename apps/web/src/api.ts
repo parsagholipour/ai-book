@@ -45,6 +45,7 @@ export type Project = {
     imageModel?: ImageModelSelection | string;
     fullIllustrations?: boolean;
     includeCover?: boolean;
+    coverArtSource?: string;
     coverTemplate?: string;
     finalReview?: boolean;
     audienceAgeRange?: AudienceAgeRange;
@@ -109,6 +110,7 @@ export type ProjectInputSnapshot = {
     imageModel?: ImageModelSelection | string;
     fullIllustrations?: boolean;
     includeCover?: boolean;
+    coverArtSource?: string;
     coverTemplate?: string;
     finalReview?: boolean;
     audienceAgeRange?: AudienceAgeRange;

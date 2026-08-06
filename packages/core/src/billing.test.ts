@@ -89,6 +89,48 @@ describe("billing credit assumptions", () => {
     expect(withCover.lineItems.some((item) => item.code === "COVER_REGENERATION")).toBe(false);
   });
 
+  it("charges for the cover only when a model draws it", () => {
+    const base = {
+      prompt: "Create a concise guide with a cover.",
+      category: "BUSINESS",
+      targetPages: 8,
+      mediaSettings: { fullIllustrations: false }
+    };
+    const quote = (mediaSettings: Record<string, unknown>) =>
+      estimateFullBookCreditCost(
+        createProjectSchema.parse({ ...base, mediaSettings: { ...base.mediaSettings, ...mediaSettings } })
+      );
+
+    const ai = quote({ includeCover: true, coverArtSource: "ai" });
+    const designed = quote({ includeCover: false, coverArtSource: "design" });
+    const none = quote({ includeCover: false, coverArtSource: "none" });
+
+    expect(ai.totalCredits - designed.totalCredits).toBe(DEFAULT_CREDIT_COSTS.imageGeneration);
+    // A bundled design is drawn from the catalog, so it costs the same as no
+    // cover at all even though the book ends up with one.
+    expect(designed.totalCredits).toBe(none.totalCredits);
+    expect(designed.assumptions.includesCover).toBe(false);
+    expect(ai.assumptions.includesCover).toBe(true);
+  });
+
+  it("keeps quoting projects written before coverArtSource existed", () => {
+    // The legacy flag is the only thing older rows carry, and `includeCover:
+    // false` now means a designed cover — the quote must not move for either.
+    const legacy = (includeCover: boolean) =>
+      estimateFullBookCreditCost(
+        createProjectSchema.parse({
+          prompt: "Create a concise guide with a cover.",
+          category: "BUSINESS",
+          targetPages: 8,
+          mediaSettings: { fullIllustrations: false, includeCover }
+        })
+      );
+
+    expect(legacy(true).assumptions.includesCover).toBe(true);
+    expect(legacy(false).assumptions.includesCover).toBe(false);
+    expect(legacy(true).totalCredits - legacy(false).totalCredits).toBe(DEFAULT_CREDIT_COSTS.imageGeneration);
+  });
+
   it("adds premium review credits when the mobile preset uses best-of drafting", () => {
     const input = createProjectSchema.parse({
       prompt: "Create a premium guide about pricing consulting retainers.",

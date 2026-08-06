@@ -16,20 +16,26 @@ import {
   bookPlanSchema,
   buildCharacterReferencePrompt,
   buildCoverArtworkPrompt,
+  coverArtSourceFor,
   createProviders,
   optimizeImageForStorage,
   publicAssetUrl,
   renderCoverPng,
   selectCharacterReferenceAssets,
+  selectCoverDesign,
   shouldGenerateCharacterReferences,
   shouldUseCharacterReferenceImages,
   type BookGenerationStrategy,
   type BookPlan,
+  type CoverDesign,
+  type CoverTemplateOverride,
   type CreateProjectInput,
   type ImageAdapter,
   type ImageAdapterCapabilities,
   type ProviderSet
 } from "@book-maker/core";
+import { coverDesignArtwork } from "../generation/coverArtwork.js";
+import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -55,7 +61,8 @@ export async function generateCover(job: Job) {
   }
 
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
-  if (!input.mediaSettings.includeCover) {
+  const coverArtSource = coverArtSourceFor(input.mediaSettings);
+  if (coverArtSource === "none") {
     await advanceJobStep(generationJobId, "store", 90, "Cover disabled");
     await maybeEnqueueCompile(projectId, planId);
     return;
@@ -82,38 +89,105 @@ export async function generateCover(job: Job) {
     generationJobId
   });
   await advanceJobStep(generationJobId, "prompt", 20, "Building cover prompt");
-  const baseArtworkPrompt = buildCoverArtworkPrompt({ input, plan, metadata });
-  const referenceImagePaths = selectReferenceImagePaths({
-    input,
-    plan,
-    assets: characterReferences,
-    projectId,
-    image: providers.image,
-    context: [baseArtworkPrompt, ...plan.characters.map((character) => `${character.name}: ${character.description}`)].join("\n")
-  });
-  const artworkPrompt = [
-    baseArtworkPrompt,
-    referenceImagePaths.length > 0 ? characterReferencePromptInstruction(referenceImagePaths.length) : ""
-  ].filter(Boolean).join("\n");
 
-  await advanceJobStep(generationJobId, "render", 45, "Rendering cover artwork");
-  const artwork = await strategy.generateImageBytes({
-    image: providers.image,
-    prompt: artworkPrompt,
-    projectId,
-    referenceImagePaths,
-    aspectRatio: "3:4"
-  });
+  const designedCover = async (fallbackReason?: string): Promise<CoverArtworkResult> => {
+    await updateJobProgress(generationJobId, { message: "Choosing a cover design" });
+    const choice = await selectCoverDesign({
+      textModel: providers.text,
+      input,
+      plan,
+      seed: projectId,
+      title: metadata.title,
+      subtitle: metadata.subtitle
+    });
+    await advanceJobStep(generationJobId, "render", 45, `Rendering the ${choice.design.name} cover`);
+    const artwork = await coverDesignArtwork(choice.design);
+    return {
+      artwork: { bytes: artwork.bytes, mimeType: artwork.mimeType },
+      prompt: `Designed cover: ${choice.design.name} — ${choice.design.description}`,
+      provider: BUNDLED_COVER_PROVIDER,
+      template: coverTemplateOverrideForDesign(choice.design),
+      metadata: {
+        coverArtSource: "design",
+        coverDesignId: choice.design.id,
+        coverDesignName: choice.design.name,
+        coverDesignSelectedBy: choice.selectedBy,
+        coverDesignArtwork: artwork.source,
+        coverTemplate: choice.design.template,
+        artworkMimeType: artwork.mimeType,
+        // A bundled design costs nothing, and saying so keeps it out of the
+        // Costs tab's "unpriced" bucket, which means understated real spend.
+        costUsd: 0,
+        ...(choice.reason ? { coverDesignReason: choice.reason } : {}),
+        ...(fallbackReason ? { coverFallbackReason: fallbackReason } : {})
+      }
+    };
+  };
+
+  let cover: CoverArtworkResult;
+  if (coverArtSource === "design") {
+    cover = await designedCover();
+  } else {
+    const baseArtworkPrompt = buildCoverArtworkPrompt({ input, plan, metadata });
+    const referenceImagePaths = selectReferenceImagePaths({
+      input,
+      plan,
+      assets: characterReferences,
+      projectId,
+      image: providers.image,
+      context: [baseArtworkPrompt, ...plan.characters.map((character) => `${character.name}: ${character.description}`)].join("\n")
+    });
+    const artworkPrompt = [
+      baseArtworkPrompt,
+      referenceImagePaths.length > 0 ? characterReferencePromptInstruction(referenceImagePaths.length) : ""
+    ].filter(Boolean).join("\n");
+
+    await advanceJobStep(generationJobId, "render", 45, "Rendering cover artwork");
+    try {
+      const artwork = await strategy.generateImageBytes({
+        image: providers.image,
+        prompt: artworkPrompt,
+        projectId,
+        referenceImagePaths,
+        aspectRatio: "3:4"
+      });
+      cover = {
+        artwork: { bytes: artwork.bytes, mimeType: artwork.mimeType },
+        prompt: artworkPrompt,
+        provider: artwork.provider,
+        metadata: {
+          coverArtSource: "ai",
+          model: artwork.model,
+          artworkMimeType: artwork.mimeType,
+          revisedPrompt: artwork.revisedPrompt,
+          ...imageGenerationMetadata(artwork),
+          coverTemplate: input.mediaSettings.coverTemplate,
+          sourceImageProvider: artwork.provider,
+          sourceImageModel: artwork.model,
+          characterReferenceCount: referenceImagePaths.length
+        }
+      };
+    } catch (error) {
+      if (isStopRequestedError(error)) {
+        throw error;
+      }
+      // The cover is the last thing a book makes, so every page is already
+      // written and charged for. Failing here used to mark the project FAILED
+      // and refund the whole run; a designed cover finishes the book instead.
+      await updateJobProgress(generationJobId, {
+        message: "Cover artwork failed; falling back to a designed cover"
+      });
+      cover = await designedCover("ai_cover_failed");
+    }
+  }
 
   await advanceJobStep(generationJobId, "render", 68, "Rendering cover typography");
   const coverPng = await renderCoverPng({
     input,
     plan,
     metadata,
-    artwork: {
-      bytes: artwork.bytes,
-      mimeType: artwork.mimeType
-    }
+    artwork: cover.artwork,
+    ...(cover.template ? { template: cover.template } : {})
   });
 
   await advanceJobStep(generationJobId, "store", 84, "Storing cover");
@@ -131,19 +205,12 @@ export async function generateCover(job: Job) {
       data: {
         projectId,
         type: "COVER",
-        prompt: artworkPrompt,
-        provider: artwork.provider,
+        prompt: cover.prompt,
+        provider: cover.provider,
         path: publicPath,
         metadata: {
-          model: artwork.model,
           ...imageStorageMetadata(optimizedCover),
-          artworkMimeType: artwork.mimeType,
-          revisedPrompt: artwork.revisedPrompt,
-          ...imageGenerationMetadata(artwork),
-          coverTemplate: input.mediaSettings.coverTemplate,
-          sourceImageProvider: artwork.provider,
-          sourceImageModel: artwork.model,
-          characterReferenceCount: referenceImagePaths.length,
+          ...cover.metadata,
           renderer: "puppeteer",
           fonts: [
             "Inter (OFL-1.1)",
@@ -159,6 +226,30 @@ export async function generateCover(job: Job) {
   ]);
 
   await maybeEnqueueCompile(projectId, planId);
+}
+
+/** `ImageAsset.provider` for a cover that came from the catalog, not a model. */
+export const BUNDLED_COVER_PROVIDER = "bundled";
+
+type CoverArtworkResult = {
+  artwork: { bytes: Buffer; mimeType: string };
+  /** Stored on the asset; the admin views read it as the cover's provenance. */
+  prompt: string;
+  provider: string;
+  template?: CoverTemplateOverride;
+  metadata: Record<string, unknown>;
+};
+
+/**
+ * A design was authored as a whole, so it brings its own typography rather than
+ * taking the book type's `coverTemplate` — which routes AI artwork.
+ */
+export function coverTemplateOverrideForDesign(design: CoverDesign): CoverTemplateOverride {
+  return {
+    id: design.template,
+    ...(design.accentColor ? { accentColor: design.accentColor } : {}),
+    ...(design.overlayCss ? { overlayCss: design.overlayCss } : {})
+  };
 }
 
 export async function ensureCharacterReferenceAssets(options: {

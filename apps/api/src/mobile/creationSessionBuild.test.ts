@@ -281,6 +281,7 @@ describe("mobile creation session project build", () => {
       [
         "authorName",
         "bookType",
+        "coverArtSource",
         "coverEnabled",
         "coverImage",
         "createdAt",

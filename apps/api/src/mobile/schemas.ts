@@ -415,7 +415,11 @@ export const mobileProjectCreateOpenApiBody = {
       deprecated: true,
       description: "Compatibility aggregate. Prefer coverEnabled and illustrationsEnabled."
     },
-    coverEnabled: { type: "boolean", default: true },
+    coverEnabled: {
+      type: "boolean",
+      default: true,
+      description: "Generate the cover artwork with a model. False still gives the book a cover, picked from the bundled design catalog for free."
+    },
     illustrationsEnabled: { type: "boolean", default: true },
     pageCountMode: { type: "string", enum: mobilePageCountModeSchema.options, default: "auto" },
     targetPages: { type: "integer", minimum: 1, maximum: 600 },

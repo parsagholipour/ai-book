@@ -27,6 +27,19 @@ export type RenderCoverOptions = CoverArtworkPromptInput & {
     bytes: Buffer;
     mimeType: string;
   };
+  /**
+   * Typography and scrim for a bundled cover design, which was authored as a
+   * whole and therefore brings its own. Absent for AI artwork, which keeps
+   * being routed by `resolveCoverTemplate`.
+   */
+  template?: CoverTemplateOverride;
+};
+
+export type CoverTemplateOverride = {
+  id: Exclude<CoverTemplateId, "auto">;
+  accentColor?: string | undefined;
+  /** Light artwork needs a heavier scrim: every template sets light text. */
+  overlayCss?: string | undefined;
 };
 
 export type FitCoverTextOptions = {
@@ -43,7 +56,7 @@ export type FittedCoverText = {
   truncated: boolean;
 };
 
-type ResolvedCoverTemplate = {
+export type ResolvedCoverTemplate = {
   id: Exclude<CoverTemplateId, "auto">;
   titleFont: "PlayfairCover" | "NunitoCover" | "BebasCover" | "SourceSerifCover";
   supportingFont: "InterCover" | "SourceSerifCover" | "NunitoCover" | "NotoSansCover";
@@ -220,6 +233,20 @@ export function resolveCoverTemplate(
   return COVER_TEMPLATES.minimal;
 }
 
+export function applyCoverTemplateOverride(
+  template: ResolvedCoverTemplate,
+  override: CoverTemplateOverride | undefined
+): ResolvedCoverTemplate {
+  if (!override) {
+    return template;
+  }
+  return {
+    ...template,
+    ...(override.accentColor ? { accentColor: override.accentColor } : {}),
+    ...(override.overlayCss ? { overlayCss: override.overlayCss } : {})
+  };
+}
+
 export function buildCoverArtworkPrompt(options: CoverArtworkPromptInput): string {
   const template = resolveCoverTemplate(
     options.input.mediaSettings.coverTemplate,
@@ -251,10 +278,13 @@ export function buildCoverArtworkPrompt(options: CoverArtworkPromptInput): strin
 }
 
 export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffer> {
-  const template = resolveCoverTemplate(
-    options.input.mediaSettings.coverTemplate,
-    options.input.category,
-    options.input.subcategory
+  const template = applyCoverTemplateOverride(
+    resolveCoverTemplate(
+      options.template?.id ?? options.input.mediaSettings.coverTemplate,
+      options.input.category,
+      options.input.subcategory
+    ),
+    options.template
   );
   const title = cleanText(options.metadata.title) || "Untitled Book";
   const subtitle = cleanText(options.metadata.subtitle ?? options.plan.subtitle);

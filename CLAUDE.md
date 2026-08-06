@@ -215,6 +215,36 @@ tells you when a listed file has dropped under the default so the entry can be d
   `bookEditIntent.ts` splits into `bookEditMessage.ts` (reading a message: pages, quotes, scope,
   languages — a leaf) and `bookEditHeuristics.ts` (the model-free classifier), which is why those
   import types back from it but never values.
+- **Declining the cover buys a designed one, it does not remove the cover.** `includeCover` only
+  ever answered "did a model draw this", so `coverArtSourceFor` (`packages/core/src/generation/
+  coverSource.ts`) resolves `false` to `"design"`: the book gets a cover from the 50-entry catalog
+  in `coverDesigns.ts` for free, picked by `selectCoverDesign` from the title, premise, audience
+  and category. **Read the source through that resolver, never `includeCover` directly** — it is
+  what keeps the quote, the dispatch gate and the handler agreeing, and what lets rows written
+  before the field existed price identically. Only `"none"` means no cover, and only the operator
+  console sets it. A design supplies just the *artwork layer*: `renderCoverPng` still typesets the
+  real title with the OFL fonts, which is why nothing downstream — the `cover.jpg` path, the PDF
+  cover page, the EPUB `cover-image`, the app's `coverImage` — needed a single change. The design's
+  own `template` wins over the book type's `coverTemplate`, because a design was authored as a
+  whole. `shouldGenerateCharacterReferences` gates on `=== "ai"` for the same reason a designed
+  cover writes `costUsd: 0`: neither may spend on a cover nobody was charged for, and a bundled
+  cover left unpriced would land in the Costs tab's `unratedCalls` bucket, which means *understated*
+  spend.
+- **A cover that cannot be drawn now finishes the book instead of failing it.** The cover is the
+  last thing a book makes, so a total image-provider outage used to mark a fully written, fully paid
+  project FAILED and refund `FULL_BOOK_GENERATION` — `generate-image` has no retry attempts
+  (`jobRetryPolicy.ts`) and is not in `DERIVATIVE_GENERATION_JOBS`. `generateCover.ts` now catches
+  anything that is not a `StopRequestedError` and renders a designed cover, recording
+  `coverFallbackReason: "ai_cover_failed"`. The stop check is load-bearing: swallowing it would turn
+  every user-cancelled run into a finished book.
+- **Two things decide whether a cover design reads, and neither is visible in the code.** Each
+  template darkens the half its text panel sits in — science and business blacken the *top*,
+  kids/fiction/romance the *bottom* — so a motif that centres its subject where the type goes is
+  simply invisible; that is what `FOCUS_BY_TEMPLATE` in `coverDesignArtwork.ts` exists for. And
+  every mark is seen through that scrim, so painting in `ground` at low opacity disappears. Render
+  the catalog with `pnpm covers:preview` and look at the contact sheet before trusting a palette or
+  a motif change. Seeding is off the design id, not the project, so re-rendering a book keeps its
+  cover.
 - **The Sources list at the end of a book is not page text.** `compileBookMarkdown` builds it from
   the project's `ResearchSource` rows on every export, so no page edit can remove it — routed as
   one it charges for rewriting pages that never held it and then recompiles the section straight

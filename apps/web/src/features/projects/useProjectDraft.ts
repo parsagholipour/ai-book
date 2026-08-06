@@ -78,7 +78,7 @@ export function useProjectDraft(args: { runtime: RuntimeInfo | null; selectedPro
     strategyOptions.find((strategy) => strategy.id === draft.generationStrategy) ?? strategyOptions[0];
   const selectedTextModel = resolveTextModelOption(textModelOptions, draft.textModel);
   const selectedImageModel = resolveImageModelOption(imageModelOptions, draft.imageModel);
-  const showImageModelControls = draft.fullIllustrations || draft.includeCover;
+  const showImageModelControls = draft.fullIllustrations || draft.coverArtSource === "ai";
 
   return {
     draft,

@@ -462,7 +462,7 @@ void main() {
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
 
-    final cover = find.widgetWithText(SwitchListTile, 'Cover image');
+    final cover = find.widgetWithText(SwitchListTile, 'AI cover art');
     final illustrations = find.widgetWithText(
       SwitchListTile,
       'In-book illustrations',
@@ -491,7 +491,7 @@ void main() {
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
 
-    final stickyCover = find.widgetWithText(SwitchListTile, 'Cover image');
+    final stickyCover = find.widgetWithText(SwitchListTile, 'AI cover art');
     final stickyIllustrations = find.widgetWithText(
       SwitchListTile,
       'In-book illustrations',

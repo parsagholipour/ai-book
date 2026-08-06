@@ -357,13 +357,18 @@ export function ProjectSidebar(props: {
           </>
         ) : null}
         <div className="two-col">
-          <label className="check-row">
-            <input
-              type="checkbox"
-              checked={props.draft.includeCover}
-              onChange={(event) => props.setDraft({ ...props.draft, includeCover: event.target.checked })}
-            />
-            Cover
+          <label>
+            Cover art
+            <select
+              value={props.draft.coverArtSource}
+              onChange={(event) =>
+                props.setDraft({ ...props.draft, coverArtSource: event.target.value as DraftProject["coverArtSource"] })
+              }
+            >
+              <option value="ai">Generated</option>
+              <option value="design">Bundled design</option>
+              <option value="none">No cover</option>
+            </select>
           </label>
           <label>
             Cover template

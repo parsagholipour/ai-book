@@ -1,7 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { buildCoverArtworkPrompt, fitCoverText } from "./cover.js";
+import { applyCoverTemplateOverride, buildCoverArtworkPrompt, fitCoverText, resolveCoverTemplate } from "./cover.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+
+describe("applyCoverTemplateOverride", () => {
+  it("keeps the resolved template when a design overrides nothing", () => {
+    const template = resolveCoverTemplate("fiction", "STORY");
+    expect(applyCoverTemplateOverride(template, undefined)).toBe(template);
+    expect(applyCoverTemplateOverride(template, { id: "fiction" })).toEqual(template);
+  });
+
+  it("takes the design's own accent and scrim, which belong to its artwork", () => {
+    const template = resolveCoverTemplate("minimal", "CUSTOM");
+    const overridden = applyCoverTemplateOverride(template, {
+      id: "minimal",
+      accentColor: "#8a7f6b",
+      overlayCss: "linear-gradient(180deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.7) 100%)"
+    });
+
+    expect(overridden.accentColor).toBe("#8a7f6b");
+    expect(overridden.overlayCss).toContain("rgba(0,0,0,0.7)");
+    // Typography is the template's, not the override's, business.
+    expect(overridden.titleFont).toBe(template.titleFont);
+  });
+});
 
 describe("cover generation helpers", () => {
   it("builds a text-free artwork prompt with watermark constraints", () => {

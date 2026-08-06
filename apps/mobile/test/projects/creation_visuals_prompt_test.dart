@@ -47,12 +47,12 @@ void main() {
     await _openPrompt(tester, creation);
 
     expect(find.text('Choose book images'), findsOneWidget);
-    expect(find.widgetWithText(SwitchListTile, 'Cover image'), findsOneWidget);
+    expect(find.widgetWithText(SwitchListTile, 'AI cover art'), findsOneWidget);
     expect(
       find.widgetWithText(SwitchListTile, 'In-book illustrations'),
       findsOneWidget,
     );
-    expect(find.text('One generated cover image.'), findsOneWidget);
+    expect(find.text('One cover image drawn for your book.'), findsOneWidget);
     // Nothing was requested yet — the dialog stands in front of the build.
     expect(creation.buildCount, 0);
 
@@ -100,7 +100,10 @@ void main() {
       illustrationsEnabled: false,
     );
     expect(find.text('≈ $coverOnly credits'), findsOneWidget);
+    // The cover row never says "Not included": turning AI art off still leaves
+    // the book with a cover, picked from the bundled catalog for free.
     expect(find.text('Not included'), findsOneWidget);
+    expect(find.text('Designed cover, free'), findsNothing);
     expect(find.text('No generated images inside the book.'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, 'Continue'));
@@ -275,7 +278,7 @@ void main() {
     );
     expect(find.text('≈ $illustratedTotal credits'), findsOneWidget);
 
-    final coverSwitch = find.widgetWithText(SwitchListTile, 'Cover image');
+    final coverSwitch = find.widgetWithText(SwitchListTile, 'AI cover art');
     final illustrationSwitch = find.widgetWithText(
       SwitchListTile,
       'In-book illustrations',
@@ -286,7 +289,11 @@ void main() {
 
     expect(illustratedTotal - illustrationsOnly, 45);
     expect(find.text('≈ $illustrationsOnly credits'), findsOneWidget);
-    expect(find.text('No generated cover image.'), findsOneWidget);
+    // Off is a free designed cover, not the absence of one.
+    expect(
+      find.text('Free: a designed cover is chosen to match your book.'),
+      findsOneWidget,
+    );
 
     await tester.tap(illustrationSwitch);
     await tester.pump();
