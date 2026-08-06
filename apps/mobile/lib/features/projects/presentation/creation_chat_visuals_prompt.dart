@@ -120,6 +120,10 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
     );
 
     return AlertDialog(
+      // Content-heavy dialog — use more of the screen than the default
+      // 40dp side insets / 560 max width leave for a short confirmation.
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      constraints: const BoxConstraints(minWidth: 320, maxWidth: 640),
       title: const Text('Choose book images'),
       content: SizedBox(
         width: double.maxFinite,
@@ -136,7 +140,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                   color: colors.onSurfaceVariant,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _coverEnabled,
@@ -160,11 +164,11 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                   ),
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
+                  horizontal: 16,
+                  vertical: 14,
                 ),
                 decoration: BoxDecoration(
                   color: colors.surfaceContainerHighest,
@@ -180,7 +184,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                           : 'Designed cover, free',
                       muted: !_coverEnabled,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     _VisualsCostRow(
                       label: imageCount == 1
                           ? '1 illustration'
@@ -190,13 +194,13 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                           : 'Not included',
                       muted: !_illustrationsEnabled,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     _VisualsCostRow(
                       label: '${widget.targetPages} pages, everything else',
                       value: '$baseTotal credits',
                       muted: true,
                     ),
-                    const Divider(height: 18),
+                    const Divider(height: 22),
                     _VisualsCostRow(
                       label: 'Estimated total',
                       value: '≈ $selectedTotal credits',
@@ -205,12 +209,12 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Text(
                 'Estimated full package cost, charged when you approve the plan.',
                 style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
