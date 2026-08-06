@@ -732,47 +732,40 @@ export const planQuestionSchema = z.preprocess(
   })
 );
 
-export const bookPlanSchema = z.preprocess(
-  normalizeBookPlan,
-  z.object({
-    title: z.string(),
-    subtitle: z.string().optional(),
-    premise: z.string(),
-    audience: z.string(),
-    writingComplexity: z.coerce.number().int().min(1).max(10),
-    voiceGuide: z.array(z.string()).min(1),
-    antiAiRules: z.array(z.string()).min(1),
-    questions: z.array(planQuestionSchema).default([]),
-    chapters: z.array(chapterPlanSchema).min(1),
-    characters: z.array(characterSchema).default([]),
-    locations: z.array(locationSchema).default([]),
-    continuityRules: z.array(z.string()).default([]),
-    researchQueries: z.array(z.string()).default([]),
-    researchNotes: z.array(researchSourceSchema).default([]),
-    illustrationPlan: illustrationPlanSchema
-  })
-);
+const bookPlanObjectSchema = z.object({
+  title: z.string(),
+  subtitle: z.string().optional(),
+  premise: z.string(),
+  audience: z.string(),
+  writingComplexity: z.coerce.number().int().min(1).max(10),
+  voiceGuide: z.array(z.string()).min(1),
+  antiAiRules: z.array(z.string()).min(1),
+  questions: z.array(planQuestionSchema).default([]),
+  chapters: z.array(chapterPlanSchema).min(1),
+  characters: z.array(characterSchema).default([]),
+  locations: z.array(locationSchema).default([]),
+  continuityRules: z.array(z.string()).default([]),
+  researchQueries: z.array(z.string()).default([]),
+  researchNotes: z.array(researchSourceSchema).default([]),
+  illustrationPlan: illustrationPlanSchema
+});
+
+export const bookPlanSchema = z.preprocess(normalizeBookPlan, bookPlanObjectSchema);
 
 export function bookPlanSchemaWithFallback(fallback: BookPlan) {
+  return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema);
+}
+
+/**
+ * Initial planning treats research as trusted server-owned context. Omitting it
+ * from the model-facing schema prevents structured-output providers from
+ * reproducing the source package in their response; the planner attaches the
+ * original notes after this schema has parsed the creative plan fields.
+ */
+export function bookPlanModelOutputSchemaWithFallback(fallback: BookPlan) {
   return z.preprocess(
     normalizeBookPlanWithFallback(fallback),
-    z.object({
-      title: z.string(),
-      subtitle: z.string().optional(),
-      premise: z.string(),
-      audience: z.string(),
-      writingComplexity: z.coerce.number().int().min(1).max(10),
-      voiceGuide: z.array(z.string()).min(1),
-      antiAiRules: z.array(z.string()).min(1),
-      questions: z.array(planQuestionSchema).default([]),
-      chapters: z.array(chapterPlanSchema).min(1),
-      characters: z.array(characterSchema).default([]),
-      locations: z.array(locationSchema).default([]),
-      continuityRules: z.array(z.string()).default([]),
-      researchQueries: z.array(z.string()).default([]),
-      researchNotes: z.array(researchSourceSchema).default([]),
-      illustrationPlan: illustrationPlanSchema
-    })
+    bookPlanObjectSchema.omit({ researchNotes: true })
   );
 }
 

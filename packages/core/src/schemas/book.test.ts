@@ -1,6 +1,13 @@
+import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { BOOK_CATEGORIES } from "../categories.js";
-import { TONE_PROFILES, bookPlanSchema, bookPlanSchemaWithFallback, createProjectSchema } from "./book.js";
+import {
+  TONE_PROFILES,
+  bookPlanModelOutputSchemaWithFallback,
+  bookPlanSchema,
+  bookPlanSchemaWithFallback,
+  createProjectSchema
+} from "./book.js";
 
 describe("createProjectSchema", () => {
   it("accepts the expanded top-level book categories", () => {
@@ -318,6 +325,16 @@ describe("createProjectSchema", () => {
     });
 
     expect(plan.writingComplexity).toBe(6);
+  });
+
+  it("omits server-owned research notes from the planner model output schema", () => {
+    const fallback = bookPlanSchema.parse(minimalPlan("template-driven"));
+    const jsonSchema = z.toJSONSchema(bookPlanModelOutputSchemaWithFallback(fallback), {
+      unrepresentable: "any"
+    }) as { properties?: Record<string, unknown>; required?: string[] };
+
+    expect(jsonSchema.properties).not.toHaveProperty("researchNotes");
+    expect(jsonSchema.required ?? []).not.toContain("researchNotes");
   });
 
   it("recovers a partial plan from an echoed planning prompt envelope", () => {

@@ -116,7 +116,7 @@ describe("deterministic dry run", () => {
     expect(plan.researchNotes).toHaveLength(0);
   });
 
-  it("normalizes planner research notes returned as strings", async () => {
+  it("ignores research notes created by the planner model", async () => {
     const input = smallBookInput();
 
     const plan = await createPlanningPackage({
@@ -125,18 +125,7 @@ describe("deterministic dry run", () => {
       research: new FakeResearchAdapter()
     });
 
-    expect(plan.researchNotes).toEqual([
-      {
-        query: "planner-note",
-        title: "Planner research note",
-        summary: "Use standard textbook-level concepts; do not invent studies."
-      },
-      {
-        query: "planner-note",
-        title: "Planner research note",
-        summary: "Historical examples should be qualified when source detail is unavailable."
-      }
-    ]);
+    expect(plan.researchNotes).toEqual([]);
   });
 
   it("normalizes AI-created chapter page targets to the requested book length", async () => {

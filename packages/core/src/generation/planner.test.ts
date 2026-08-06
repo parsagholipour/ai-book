@@ -76,6 +76,111 @@ describe("createPlanningPackage", () => {
     expect(phases).toEqual(["understand", "shape", "finalize"]);
   });
 
+  it("keeps planning research out of the model response and attaches trusted sources server-side", async () => {
+    const input = testInput({ prompt: "Write a current guide to household energy use" });
+    const fallback = makeFallbackPlan(input);
+    let request: GenerateJsonOptions<unknown> | undefined;
+    const textModel: TextModelAdapter = {
+      async generateJson<T>(options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        request = options as GenerateJsonOptions<unknown>;
+        const modelResponse = {
+          ...fallback,
+          researchNotes: [
+            {
+              query: "model-created-query",
+              title: "Model-created source",
+              summary: "This source was invented by the model."
+            }
+          ]
+        };
+        return {
+          data: options.schema.parse(modelResponse),
+          text: JSON.stringify(modelResponse),
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    };
+
+    const plan = await createPlanningPackage({
+      input,
+      textModel,
+      research: {
+        async search(query) {
+          return {
+            query: query.query,
+            summary: "Trusted research summary",
+            sources: [
+              {
+                title: "Trusted source one",
+                url: "https://example.com/one",
+                summary: "First trusted finding."
+              },
+              {
+                title: "Trusted source two",
+                url: "https://example.com/two",
+                summary: "Second trusted finding."
+              }
+            ]
+          };
+        }
+      }
+    });
+
+    expect(plan.researchNotes).toEqual([
+      {
+        query: input.prompt,
+        title: "Trusted source one",
+        url: "https://example.com/one",
+        summary: "First trusted finding."
+      },
+      {
+        query: input.prompt,
+        title: "Trusted source two",
+        url: "https://example.com/two",
+        summary: "Second trusted finding."
+      }
+    ]);
+    expect(
+      (
+        request!.schema.parse({
+          ...fallback,
+          researchNotes: [{ query: "x", title: "x", summary: "x" }]
+        }) as Record<string, unknown>
+      ).researchNotes
+    ).toBeUndefined();
+    const systemPrompt = request!.messages.find((message) => message.role === "system")!.content;
+    expect(systemPrompt).toContain("do not include a researchNotes field");
+    const userPayload = JSON.parse(request!.messages.find((message) => message.role === "user")!.content);
+    expect(userPayload.researchNotes).toBeUndefined();
+    expect(userPayload.fallbackOutline.researchNotes).toBeUndefined();
+    expect(userPayload.researchContext).toEqual([
+      {
+        query: input.prompt,
+        sources: [
+          {
+            title: "Trusted source one",
+            url: "https://example.com/one",
+            summary: "First trusted finding."
+          },
+          {
+            title: "Trusted source two",
+            url: "https://example.com/two",
+            summary: "Second trusted finding."
+          }
+        ]
+      }
+    ]);
+    expect(JSON.stringify(userPayload.researchContext).split(input.prompt)).toHaveLength(2);
+  });
+
   it("preserves the model's empty clarification decision for a clear prompt", async () => {
     const input = testInput({
       prompt: "A bedtime story for a 5-year-old about Spider-Man in Brazil"

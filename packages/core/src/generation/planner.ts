@@ -4,6 +4,8 @@ import { kidsReadingGuidanceLines, kidsReadingGuidancePayload } from "../prompti
 import { getTemplateForInput, makeFallbackPlan, type TemplateDefinition } from "../prompting/templates.js";
 import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/tone.js";
 import {
+  bookPlanModelOutputSchemaWithFallback,
+  bookPlanSchema,
   bookPlanSchemaWithFallback,
   type BookPlan,
   type ChapterPlan,
@@ -55,8 +57,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     return normalizePlanPageTargets({ ...fallback, researchNotes }, options.input.targetPages);
   }
 
-  const planningSchema = bookPlanSchemaWithFallback({ ...fallback, researchNotes });
-  let result: JsonResult<BookPlan>;
+  const planningSchema = bookPlanModelOutputSchemaWithFallback({ ...fallback, researchNotes });
+  let result: JsonResult<Omit<BookPlan, "researchNotes">>;
   try {
     result = await generateJsonWithRetry(options.textModel, {
       purpose: "plan-book",
@@ -75,6 +77,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             `The sum of chapter targetPages must equal exactly ${options.input.targetPages}.`,
             "Do not create more chapters than targetPages, because every chapter must contain at least one page.",
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",
+            "Treat researchContext as input-only evidence. Use it to ground the plan, but do not include a researchNotes field or reproduce its source records in your response; the server attaches them after planning.",
             "Preserve concrete user intent. Treat the request as complete once the requested book and its subject are understandable, and make sensible creative decisions yourself.",
             "Set questions to [] for every coherent request. Ask at most one question only when a missing subject, unclear reference, contradictory instruction, or unavailable required source makes the user's request impossible to understand.",
             "Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other choices you can make while drafting the plan.",
@@ -97,8 +100,8 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
               language: targetLanguagePayload(options.input.language),
               readingGuidance: kidsReadingGuidancePayload(options.input),
               template,
-              fallbackOutline: fallback,
-              researchNotes
+              fallbackOutline: planWithoutResearchNotes(fallback),
+              researchContext: researchContextForPlanPrompt(researchNotes)
             },
             null,
             2
@@ -112,9 +115,9 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
 
   await options.onPhase?.("finalize");
   try {
-    const plan = planningSchema.parse({
+    const plan = bookPlanSchema.parse({
       ...result.data,
-      researchNotes: mergeResearchNotes(researchNotes, result.data.researchNotes)
+      researchNotes
     });
     return normalizePlanPageTargets(
       {
@@ -331,6 +334,25 @@ function mergeResearchNotes(first: ResearchSource[], second: ResearchSource[]): 
     merged.push(source);
   }
   return merged;
+}
+
+function planWithoutResearchNotes(plan: BookPlan): Omit<BookPlan, "researchNotes"> {
+  const { researchNotes: _researchNotes, ...rest } = plan;
+  return rest;
+}
+
+function researchContextForPlanPrompt(researchNotes: ResearchSource[]): Array<{
+  query: string;
+  sources: Array<Omit<ResearchSource, "query">>;
+}> {
+  const sourcesByQuery = new Map<string, Array<Omit<ResearchSource, "query">>>();
+  for (const researchNote of researchNotes) {
+    const { query, ...source } = researchNote;
+    const sources = sourcesByQuery.get(query) ?? [];
+    sources.push(source);
+    sourcesByQuery.set(query, sources);
+  }
+  return [...sourcesByQuery].map(([query, sources]) => ({ query, sources }));
 }
 
 export async function expandChapterResearch(options: ExpandChapterResearchOptions): Promise<ResearchSource[]> {
