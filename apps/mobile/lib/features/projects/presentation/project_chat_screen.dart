@@ -68,6 +68,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   );
   final _editController = TextEditingController();
   final _scrollController = ScrollController();
+  final _messageAnchors = ChatMessageAnchorController(
+    debugLabel: 'project-chat',
+  );
   @override
   bool _sending = false;
   bool _editing = false;
@@ -216,6 +219,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     _scrollToBottomSoon(animate: false);
   }
 
+  void _scrollToReplyTarget() {
+    final target = _replyTarget;
+    if (target == null) return;
+    _messageAnchors.reveal(target: target, scrollController: _scrollController);
+  }
+
   @override
   Widget build(BuildContext context) {
     final chatValue = ref.watch(projectChatProvider(widget.projectId));
@@ -295,6 +304,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                       else
                         for (final message in _visibleMessages(chat)) ...[
                           ProjectMessageBubble(
+                            key: _messageAnchors.keyFor(message.id),
                             message: message,
                             editController: _editController,
                             editing: _editingMessageId == message.id,
@@ -394,6 +404,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                 onSend: _send,
                 lockedLabel: _composerLockLabel(liveStatus),
                 replyTarget: _replyTarget,
+                onOpenReply: _scrollToReplyTarget,
                 onCancelReply: _cancelReply,
               ),
             ],
@@ -474,7 +485,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     _controller.clear();
     final replyTo = _replyTarget;
     if (replyTo != null) {
-      setState(() => _replyTarget = null);
+      setState(() {
+        _replyTarget = null;
+        _messageAnchors.forget();
+      });
     }
     await _sendMessage(message, replyTo: replyTo);
   }
@@ -489,6 +503,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       content: message.content,
     );
     if (target == null) return;
+    _messageAnchors.remember(target);
     setState(() {
       _editingMessageId = null;
       _replyTarget = target;
@@ -496,7 +511,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   }
 
   void _cancelReply() {
-    setState(() => _replyTarget = null);
+    setState(() {
+      _replyTarget = null;
+      _messageAnchors.forget();
+    });
   }
 
   Future<void> _retryPendingEcho() async {
@@ -596,6 +614,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       _pendingEditMessage = null;
       // Editing and replying share the composer area.
       _replyTarget = null;
+      _messageAnchors.forget();
       _editingMessageId = message.id;
       _editController.text = message.content;
       _editController.selection = TextSelection.collapsed(

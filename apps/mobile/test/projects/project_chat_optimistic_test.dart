@@ -156,6 +156,34 @@ void main() {
     expect(position.maxScrollExtent, greaterThan(0), reason: 'needs overflow');
   });
 
+  testWidgets('tapping the reply banner scrolls back to its message', (
+    tester,
+  ) async {
+    final repository = _ScriptedProjectsRepository()..fillWithManyMessages();
+    await tester.pumpWidget(_app(repository));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.text('The newest message'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reply'));
+    await tester.pumpAndSettle();
+
+    final position = scrollPosition(tester);
+    expect(find.byTooltip('Go to replied message'), findsOneWidget);
+
+    // Move far enough away for the lazily built target bubble to be disposed.
+    // The banner should still remember where it was in the transcript.
+    position.jumpTo(position.minScrollExtent);
+    await tester.pump();
+    expect(position.pixels, position.minScrollExtent);
+
+    await tester.tap(find.byTooltip('Go to replied message'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(position.pixels, greaterThan(position.maxScrollExtent * 0.8));
+  });
+
   testWidgets('a running edit reports progress and lands the result on its own', (
     tester,
   ) async {

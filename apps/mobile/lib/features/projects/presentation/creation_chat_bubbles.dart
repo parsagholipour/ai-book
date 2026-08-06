@@ -16,6 +16,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.showProposalActions = false,
     this.onApplyProposal,
     this.onCancelProposal,
+    super.key,
   });
 
   final MobileProjectChatMessage message;

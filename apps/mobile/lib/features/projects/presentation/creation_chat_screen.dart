@@ -76,6 +76,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   @override
   final _composerController = TextEditingController();
   final _revisionController = TextEditingController();
+  @override
   final _scrollController = ScrollController();
   final _drawerKey = GlobalKey<EasyDrawerControllerState>();
 
@@ -158,6 +159,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _editingProjectMessageId = null;
     _editingCreationMessageId = null;
     _replyTarget = null;
+    _messageAnchors.reset();
     _requestedReplanCopyOutputSyncs.clear();
   }
 
@@ -340,6 +342,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                           child: _Transcript(
                             state: state,
                             controller: _scrollController,
+                            messageAnchorKey: _messageAnchors.keyFor,
                             planValue: planValue,
                             projectChatValue: projectChatValue,
                             generationStatusValue: generationStatusValue,
@@ -433,6 +436,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       else if (_replyTarget != null)
                         ChatComposerContextBanner.replying(
                           target: _replyTarget!,
+                          onOpen: _scrollToReplyTarget,
                           onCancel: _cancelReply,
                         ),
                       if (isInOutputStage)
@@ -804,6 +808,13 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _stickToBottom = position.maxScrollExtent - position.pixels <= 80;
   }
 
+  @override
+  void _stopFollowingTranscript() {
+    _stickToBottom = false;
+    _stickScrollTimer?.cancel();
+    _stickScrollTimer = null;
+  }
+
   /// Re-engages follow-the-conversation scrolling. Submitting the composer is
   /// an explicit signal to watch the reply, even after scrolling up (which is
   /// how every message edit starts).
@@ -876,7 +887,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     }
     _composerController.clear();
     if (replyTo != null) {
-      setState(() => _replyTarget = null);
+      setState(() {
+        _replyTarget = null;
+        _messageAnchors.forget();
+      });
     }
     _resumeStickToBottom();
     try {
@@ -913,7 +927,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     }
     final replyTo = _replyTarget;
     if (replyTo != null) {
-      setState(() => _replyTarget = null);
+      setState(() {
+        _replyTarget = null;
+        _messageAnchors.forget();
+      });
     }
     await _sendProjectMessage(
       projectId: projectId,
@@ -932,7 +949,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
           .sendMessage(message, editMessageId: editMessageId);
     } catch (_) {}
   }
-
 
   Future<void> _openAttachMenu(CreationChatState state) async {
     final action = await showModalBottomSheet<String>(
@@ -1111,7 +1127,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       context,
     ).showAppSnackBar(SnackBar(content: Text(message)));
   }
-
 
   Future<void> _switchProjectBranch(
     MobileProjectChatMessage message,

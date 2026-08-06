@@ -18,6 +18,7 @@ class ProjectChatComposerBar extends StatelessWidget {
     required this.onSend,
     this.lockedLabel,
     this.replyTarget,
+    this.onOpenReply,
     this.onCancelReply,
     super.key,
   });
@@ -27,6 +28,7 @@ class ProjectChatComposerBar extends StatelessWidget {
   final VoidCallback onSend;
   final String? lockedLabel;
   final ChatReplyTarget? replyTarget;
+  final VoidCallback? onOpenReply;
   final VoidCallback? onCancelReply;
 
   @override
@@ -35,9 +37,10 @@ class ProjectChatComposerBar extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (target != null && onCancelReply != null)
+        if (target != null && onOpenReply != null && onCancelReply != null)
           ChatComposerContextBanner.replying(
             target: target,
+            onOpen: onOpenReply!,
             onCancel: onCancelReply!,
           ),
         ProjectChatComposer(

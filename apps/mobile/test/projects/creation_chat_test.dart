@@ -290,6 +290,52 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('the reply banner scrolls to its message after moving away', (
+    tester,
+  ) async {
+    const draftId = 'long-reply-chat';
+    final creation = ScriptedCreationRepository(
+      sessions: [chatSession(draftId: draftId, title: 'Long reply chat')],
+    );
+    creation.resumeMessages[draftId] = [
+      for (var index = 0; index < 40; index++)
+        {
+          'id': 'history-$index',
+          'role': index.isEven ? 'user' : 'assistant',
+          'content': 'History message $index',
+        },
+    ];
+    await tester.pumpWidget(app(creation: creation, draftId: draftId));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(bubbleText('History message 39'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reply'));
+    await tester.pumpAndSettle();
+
+    final transcript = tester
+        .widgetList<ListView>(find.byType(ListView))
+        .firstWhere(
+          (list) =>
+              list.scrollDirection == Axis.vertical &&
+              list.controller?.hasClients == true &&
+              list.controller!.position.maxScrollExtent > 0,
+        );
+    final position = transcript.controller!.position;
+    expect(find.byTooltip('Go to replied message'), findsOneWidget);
+
+    position.jumpTo(position.minScrollExtent);
+    await tester.pump();
+    expect(position.pixels, position.minScrollExtent);
+
+    await tester.tap(find.byTooltip('Go to replied message'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(position.pixels, greaterThan(position.maxScrollExtent * 0.8));
+    await tester.teardownScreen();
+  });
+
   testWidgets('starting an edit drops a pending reply', (tester) async {
     final creation = ScriptedCreationRepository();
     await tester.pumpWidget(app(creation: creation));

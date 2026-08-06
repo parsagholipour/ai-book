@@ -5,8 +5,8 @@ import 'package:flutter/foundation.dart';
 /// The excerpt travels with the reply rather than being looked up later: both
 /// transcripts prune older turns — project chat paginates and the creation tree
 /// folds its oldest turns into a summary — so resolving by id alone would
-/// eventually render nothing. The id is kept so a later version can scroll to
-/// the source.
+/// eventually render nothing. The id lets the composer scroll back to the
+/// source while that turn is still in the transcript.
 ///
 /// Shared by both chat surfaces. The widgets that draw it live in
 /// `presentation/chat_reply_quote.dart`, which re-exports this type.

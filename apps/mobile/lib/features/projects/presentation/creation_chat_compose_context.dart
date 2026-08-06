@@ -14,9 +14,23 @@ part of 'creation_chat_screen.dart';
 /// each and every entry point below drops the other two.
 mixin _CreationComposerContext on _OutputChatSend {
   String? _editingCreationMessageId;
+  final _messageAnchors = ChatMessageAnchorController(
+    debugLabel: 'creation-chat',
+  );
+
+  // Provided by the screen this mixin is applied to.
+  ScrollController get _scrollController;
+  void _stopFollowingTranscript();
 
   /// The message the composer is quoting, for either stage of this screen.
   ChatReplyTarget? _replyTarget;
+
+  void _scrollToReplyTarget() {
+    final target = _replyTarget;
+    if (target == null || !_scrollController.hasClients) return;
+    _stopFollowingTranscript();
+    _messageAnchors.reveal(target: target, scrollController: _scrollController);
+  }
 
   void _startCreationMessageEdit(MobileCreationMessage message) {
     final state = ref.read(creationChatControllerProvider);
@@ -26,6 +40,8 @@ mixin _CreationComposerContext on _OutputChatSend {
       // in-progress project chat edit, and vice versa.
       _editingProjectMessageId = null;
       _editingCreationMessageId = message.id;
+      _replyTarget = null;
+      _messageAnchors.forget();
       _composerController.text = message.content;
       _composerController.selection = TextSelection.collapsed(
         offset: _composerController.text.length,
@@ -45,6 +61,7 @@ mixin _CreationComposerContext on _OutputChatSend {
   /// was typed, which is why the reply path leaves the text alone.
   void _startReply(ChatReplyTarget? target) {
     if (target == null) return;
+    _messageAnchors.remember(target);
     setState(() {
       _editingProjectMessageId = null;
       _editingCreationMessageId = null;
@@ -53,7 +70,10 @@ mixin _CreationComposerContext on _OutputChatSend {
   }
 
   void _cancelReply() {
-    setState(() => _replyTarget = null);
+    setState(() {
+      _replyTarget = null;
+      _messageAnchors.forget();
+    });
   }
 
   void _startProjectMessageEdit(MobileProjectChatMessage message) {
@@ -61,6 +81,8 @@ mixin _CreationComposerContext on _OutputChatSend {
     setState(() {
       _editingCreationMessageId = null;
       _editingProjectMessageId = message.id;
+      _replyTarget = null;
+      _messageAnchors.forget();
       _composerController.text = message.content;
       _composerController.selection = TextSelection.collapsed(
         offset: _composerController.text.length,

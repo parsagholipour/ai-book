@@ -7,6 +7,7 @@ class _Transcript extends StatelessWidget {
   const _Transcript({
     required this.state,
     required this.controller,
+    required this.messageAnchorKey,
     this.planValue,
     this.projectChatValue,
     this.generationStatusValue,
@@ -34,6 +35,7 @@ class _Transcript extends StatelessWidget {
 
   final CreationChatState state;
   final ScrollController controller;
+  final Key Function(String messageId) messageAnchorKey;
   final AsyncValue<MobileProjectDetail>? planValue;
   final AsyncValue<MobileProjectChat>? projectChatValue;
   final AsyncValue<MobileProjectStatus>? generationStatusValue;
@@ -167,6 +169,7 @@ class _Transcript extends StatelessWidget {
         );
       }
       return _ProjectChatMessageBubble(
+        key: messageAnchorKey(item.message!.id),
         message: item.message!,
         switchingBranch: switchingProjectBranch,
         activeProjectId: activeProjectId,
@@ -235,6 +238,9 @@ class _Transcript extends StatelessWidget {
       return const ChatThinkingBubble(stages: bookChatThinkingStages);
     }
     return _MessageBubble(
+      key: state.messages[index].id == null
+          ? null
+          : messageAnchorKey(state.messages[index].id!),
       message: state.messages[index],
       attachmentThumbnails: state.attachmentThumbnails,
       attachmentUrls: state.attachmentUrls,
@@ -427,6 +433,7 @@ class _MessageBubble extends StatelessWidget {
     this.onReply,
     this.onSwitchBranch,
     this.switchingBranch = false,
+    super.key,
   });
 
   final MobileCreationMessage message;
