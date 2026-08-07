@@ -41,6 +41,8 @@ export type ProjectPdfExportSource = {
 
 export type ProjectEpubExportSource = {
   title: string;
+  /** Becomes the EPUB's `dc:creator`, which is what a reading system files the book under. */
+  authorName: string | null;
   language: string;
   currentPlanId: string | null;
 };
@@ -135,6 +137,7 @@ export async function sendProjectEpubExport(options: {
       await mkdir(dirname(epubPath), { recursive: true });
       epub = await generateBookEpub(markdown, {
         title: project.title,
+        ...(project.authorName ? { author: project.authorName } : {}),
         language: project.language,
         imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
         publicApiUrl: appConfig.PUBLIC_API_URL,
@@ -181,6 +184,7 @@ export async function compileProjectMarkdown(
     plan: project.currentPlan.planningPackage as never,
     category: project.category,
     language: project.language,
+    ...(project.authorName ? { authorName: project.authorName } : {}),
     ...(cover
       ? {
           cover: {

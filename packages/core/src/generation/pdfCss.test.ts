@@ -28,6 +28,28 @@ describe("bookPdfCss", () => {
     expect(css).toContain("margin-inline-start: 1em");
   });
 
+  it("gives the title page a page of its own and sets the byline plain", () => {
+    expect(BOOK_PDF_CSS).toMatch(/\.book-title-page \{[^}]*page-break-after: always/);
+    // No book numbers its title page — a named @page is how the cover already
+    // drops its footer, and a named selector outranks the bare one.
+    expect(BOOK_PDF_CSS).toMatch(/\.book-title-page \{[^}]*page: pdf-title/);
+    expect(BOOK_PDF_CSS).toMatch(/@page pdf-title \{[\s\S]*?content: none/);
+    // No break-before: the cover ahead of it already breaks after itself, and
+    // a title page with no cover is the first thing on page one.
+    expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page \{[^}]*break-before/);
+    // A name is not chrome — nothing here to undo per script.
+    expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page__byline \{[^}]*letter-spacing/);
+    expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page__byline \{[^}]*text-transform/);
+  });
+
+  it("takes the title page's Latin typography back for other scripts", () => {
+    const persianOverrides = bookPdfCss(scriptProfileForLanguage("fa")).slice(BOOK_PDF_CSS.length);
+    // Tracking on the title pulls a joined Persian word apart, and Chrome's
+    // synthetic oblique on the subtitle skews the joining baseline.
+    expect(persianOverrides).toContain(".book-title-page__title");
+    expect(persianOverrides).toContain(".book-title-page__subtitle");
+  });
+
   it("drops tracking and uppercasing for joining scripts only", () => {
     // letter-spacing pulls a joined Arabic word apart into isolated letters.
     expect(bookPdfCss(scriptProfileForLanguage("fa"))).toContain("letter-spacing: normal");

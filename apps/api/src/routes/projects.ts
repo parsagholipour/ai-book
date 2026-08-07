@@ -1378,7 +1378,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const project = await prisma.project.findFirst({
       where: ownedProjectWhere(id, actor),
-      select: { title: true, language: true, status: true, currentPlanId: true }
+      select: { title: true, authorName: true, language: true, status: true, currentPlanId: true }
     });
     if (!project) {
       return reply.code(404).send({ error: "Book not found" });

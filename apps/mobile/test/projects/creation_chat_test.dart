@@ -536,6 +536,42 @@ void main() {
     },
   );
 
+  testWidgets('advanced sheet sends the author name to the build', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Advanced settings'));
+    await tester.pumpAndSettle();
+
+    final authorField = find.byKey(const ValueKey('author-name-field'));
+    await tester.ensureVisible(authorField);
+    await tester.enterText(authorField, 'Ada Lovelace');
+    await tester.pumpAndSettle();
+
+    // No "Your choice" badge: the studio never proposes a byline, so there is
+    // nothing for the reader to be overriding.
+    expect(find.text('Your choice'), findsNothing);
+
+    final doneButton = find.widgetWithText(FilledButton, 'Done');
+    await tester.ensureVisible(doneButton);
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(creation.buildOptionalDetails?.authorName, 'Ada Lovelace');
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('build asks for pages when preflight requires a page count', (
     tester,
   ) async {

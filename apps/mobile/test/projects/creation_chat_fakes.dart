@@ -59,6 +59,7 @@ class ScriptedCreationRepository implements CreationRepository {
   final resumeMessages = <String, List<Map<String, dynamic>>>{};
   final resumeSyncedOutputs = <String, List<MobileCreationOutput>>{};
   MobileCreationPresets? buildPresets;
+  MobileCreationOptionalDetails? buildOptionalDetails;
   String? buildDraftId;
   int buildCount = 0;
 
@@ -331,6 +332,7 @@ class ScriptedCreationRepository implements CreationRepository {
   }) async {
     buildDraftId = draftId;
     buildPresets = presets;
+    buildOptionalDetails = optionalDetails;
     buildCount += 1;
     final projectId = 'project-$buildCount';
     final project = plannedProject(id: projectId);

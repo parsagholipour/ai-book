@@ -23,6 +23,13 @@ export const BOOK_PDF_CSS = `
       content: none;
     }
   }
+  /* Keeps the normal margins, drops only the footer: no book numbers its title page. */
+  @page pdf-title {
+    size: A4;
+    @bottom-center {
+      content: none;
+    }
+  }
   html,
   body {
     margin: 0;
@@ -41,6 +48,43 @@ export const BOOK_PDF_CSS = `
   h1 { font-size: 22pt; margin-top: 0; page-break-after: avoid; font-weight: 700; }
   h2 { font-size: 14pt; margin-top: 1.4em; page-break-after: avoid; font-weight: 700; }
   h3 { font-size: 12pt; page-break-after: avoid; font-weight: 700; }
+  .book-title-page {
+    page: pdf-title;
+    box-sizing: border-box;
+    min-height: 245mm;
+    padding: 22mm 8mm 14mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    color: #211a14;
+    break-after: page;
+    page-break-after: always;
+  }
+  .book-title-page__title {
+    margin: 0;
+    font-size: 34pt;
+    font-weight: 500;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+  }
+  .book-title-page__subtitle {
+    margin: 8mm auto 0;
+    width: min(140mm, 100%);
+    font-size: 14pt;
+    font-style: italic;
+    color: #4a4038;
+  }
+  /*
+   * Set plain, unlike the sibling eyebrows: a name is not chrome to decorate,
+   * and tracking it would need undoing again in CURSIVE_OVERRIDES for every
+   * joining script.
+   */
+  .book-title-page__byline {
+    margin: 18mm 0 0;
+    font-size: 12pt;
+    color: #6b5c4c;
+  }
   .book-contents {
     box-sizing: border-box;
     min-height: 245mm;
@@ -230,7 +274,8 @@ const CURSIVE_OVERRIDES = `
     letter-spacing: normal;
     text-transform: none;
   }
-  .book-contents h2 {
+  .book-contents h2,
+  .book-title-page__title {
     letter-spacing: normal;
   }
 `;
@@ -241,7 +286,7 @@ const CURSIVE_OVERRIDES = `
  * and Persian prose does use `_emphasis_`, so this fires in practice.
  */
 const NO_ITALIC_OVERRIDES = `
-  em, i, cite, blockquote {
+  em, i, cite, blockquote, .book-title-page__subtitle {
     font-style: normal;
   }
   em, i {

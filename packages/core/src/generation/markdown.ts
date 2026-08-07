@@ -1,6 +1,10 @@
 import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import { isNarrativeBookCategory, isSourceForwardBookCategory } from "../categories.js";
-import { isEnglishLanguage, languageLabel } from "../prompting/language.js";
+import { DEFAULT_MARKDOWN_LABELS, markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
+
+// Re-exported because `markdownLabels` was always part of this module's surface
+// — `epub.ts` and the exporters import it from here.
+export { markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
 
 export type MarkdownPage = {
   index: number;
@@ -43,6 +47,16 @@ export type CompileMarkdownInput = {
   chapterHeadingStyle?: ChapterHeadingStyle | undefined;
   /** Replaces the word "Chapter" — "Part", "Episode". `undefined` keeps the localized default. */
   chapterHeadingLabel?: string | undefined;
+  /**
+   * The byline. Present means the book gets a title page carrying the title,
+   * subtitle and author; absent leaves the front matter exactly as it was
+   * before title pages existed, so no authorless book changes on recompile.
+   *
+   * Read it from the project row rather than a plan's frozen `inputSnapshot`:
+   * that is the same source `coverMetadataFromProject` typesets the cover from,
+   * and the two must never disagree.
+   */
+  authorName?: string | undefined;
 };
 
 /**
@@ -146,147 +160,6 @@ export function includeSourcesPreference(mediaSettings: unknown): boolean | unde
   return typeof settings.includeSources === "boolean" ? settings.includeSources : undefined;
 }
 
-export type MarkdownLabels = {
-  contentsEyebrow: string;
-  contentsHeading: string;
-  chapter: string;
-  sources: string;
-  illustration: string;
-  bookCover: string;
-};
-
-const DEFAULT_MARKDOWN_LABELS: MarkdownLabels = {
-  contentsEyebrow: "Table of Contents",
-  contentsHeading: "Contents",
-  chapter: "Chapter",
-  sources: "Sources",
-  illustration: "Illustration",
-  bookCover: "Book cover"
-};
-
-const MARKDOWN_LABELS_BY_LANGUAGE: Record<string, MarkdownLabels> = {
-  arabic: {
-    contentsEyebrow: "فهرس المحتويات",
-    contentsHeading: "المحتويات",
-    chapter: "الفصل",
-    sources: "المصادر",
-    illustration: "رسم توضيحي",
-    bookCover: "غلاف الكتاب"
-  },
-  chinese: {
-    contentsEyebrow: "目录",
-    contentsHeading: "目录",
-    chapter: "第",
-    sources: "资料来源",
-    illustration: "插图",
-    bookCover: "书籍封面"
-  },
-  french: {
-    contentsEyebrow: "Table des matières",
-    contentsHeading: "Sommaire",
-    chapter: "Chapitre",
-    sources: "Sources",
-    illustration: "Illustration",
-    bookCover: "Couverture du livre"
-  },
-  german: {
-    contentsEyebrow: "Inhaltsverzeichnis",
-    contentsHeading: "Inhalt",
-    chapter: "Kapitel",
-    sources: "Quellen",
-    illustration: "Illustration",
-    bookCover: "Buchcover"
-  },
-  hindi: {
-    contentsEyebrow: "विषय-सूची",
-    contentsHeading: "विषय-सूची",
-    chapter: "अध्याय",
-    sources: "स्रोत",
-    illustration: "चित्र",
-    bookCover: "पुस्तक आवरण"
-  },
-  italian: {
-    contentsEyebrow: "Indice",
-    contentsHeading: "Indice",
-    chapter: "Capitolo",
-    sources: "Fonti",
-    illustration: "Illustrazione",
-    bookCover: "Copertina del libro"
-  },
-  japanese: {
-    contentsEyebrow: "目次",
-    contentsHeading: "目次",
-    chapter: "第",
-    sources: "出典",
-    illustration: "挿絵",
-    bookCover: "本の表紙"
-  },
-  korean: {
-    contentsEyebrow: "목차",
-    contentsHeading: "목차",
-    chapter: "장",
-    sources: "출처",
-    illustration: "삽화",
-    bookCover: "책 표지"
-  },
-  persian: {
-    contentsEyebrow: "فهرست مطالب",
-    contentsHeading: "فهرست",
-    chapter: "فصل",
-    sources: "منابع",
-    illustration: "تصویر",
-    bookCover: "جلد کتاب"
-  },
-  portuguese: {
-    contentsEyebrow: "Sumário",
-    contentsHeading: "Sumário",
-    chapter: "Capítulo",
-    sources: "Fontes",
-    illustration: "Ilustração",
-    bookCover: "Capa do livro"
-  },
-  russian: {
-    contentsEyebrow: "Оглавление",
-    contentsHeading: "Содержание",
-    chapter: "Глава",
-    sources: "Источники",
-    illustration: "Иллюстрация",
-    bookCover: "Обложка книги"
-  },
-  spanish: {
-    contentsEyebrow: "Tabla de contenido",
-    contentsHeading: "Contenido",
-    chapter: "Capítulo",
-    sources: "Fuentes",
-    illustration: "Ilustración",
-    bookCover: "Cubierta del libro"
-  },
-  turkish: {
-    contentsEyebrow: "İçindekiler",
-    contentsHeading: "İçindekiler",
-    chapter: "Bölüm",
-    sources: "Kaynaklar",
-    illustration: "İllüstrasyon",
-    bookCover: "Kitap kapağı"
-  },
-  urdu: {
-    contentsEyebrow: "فہرست مضامین",
-    contentsHeading: "فہرست",
-    chapter: "باب",
-    sources: "ذرائع",
-    illustration: "تصویر",
-    bookCover: "کتاب کا سرورق"
-  }
-};
-
-/** Reader-facing chrome in the book's language, keyed the same way `scriptProfileForLanguage` is. */
-export function markdownLabels(language: string | undefined): MarkdownLabels {
-  if (isEnglishLanguage(language)) {
-    return DEFAULT_MARKDOWN_LABELS;
-  }
-  return MARKDOWN_LABELS_BY_LANGUAGE[languageLabel(language).toLowerCase()] ?? DEFAULT_MARKDOWN_LABELS;
-}
-
 export function compileBookMarkdown(input: CompileMarkdownInput): string {
   const pages = [...input.pages].sort((a, b) => a.index - b.index);
   const labels = markdownLabels(input.language);
@@ -300,11 +173,15 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
     presentation === "chapters" && chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels, heading) : "";
   const research = formatReaderFacingSources(input, pages);
   const coverImagePath = input.cover?.imagePath;
+  // A title page replaces the plain heading rather than joining it — printing
+  // `# Title` above a title page that says the same thing sets the title twice.
+  const titlePage = formatTitlePage(input, labels);
 
   const markdown = [
     coverImagePath ? `![${sanitizeCoverAlt(input.cover?.imageAlt, labels)}](${coverImagePath})` : "",
-    coverImagePath ? "" : `# ${input.plan.title}`,
-    !coverImagePath && input.plan.subtitle ? `\n_${input.plan.subtitle}_\n` : "",
+    titlePage,
+    titlePage || coverImagePath ? "" : `# ${input.plan.title}`,
+    !titlePage && !coverImagePath && input.plan.subtitle ? `\n_${input.plan.subtitle}_\n` : "",
     contents,
     "",
     ...pages.map((page) => {
@@ -509,6 +386,30 @@ function formatChapterHeading(chapter: DisplayChapter, heading: ChapterHeadingFo
     return `${chapter.index}. ${clean}`;
   }
   return `${numbered}: ${clean}`;
+}
+
+/**
+ * The title page, or `""` for a book with no byline.
+ *
+ * A cover already typesets the title and the author over the artwork, so this
+ * is not what makes the name visible — it is what survives the cover being a
+ * bundled design, an EPUB read in a reader that shows no cover, or a book with
+ * no cover at all. Gating it on the author is what keeps every book written
+ * before this from gaining a page on its next recompile.
+ */
+function formatTitlePage(input: CompileMarkdownInput, labels: MarkdownLabels): string {
+  const authorName = input.authorName?.trim();
+  if (!authorName) {
+    return "";
+  }
+  const subtitle = input.plan.subtitle?.trim();
+  return [
+    '<section class="book-title-page">',
+    `  <h1 class="book-title-page__title">${escapeHtml(input.plan.title)}</h1>`,
+    ...(subtitle ? [`  <p class="book-title-page__subtitle">${escapeHtml(subtitle)}</p>`] : []),
+    `  <p class="book-title-page__byline">${escapeHtml(`${labels.by} ${authorName}`)}</p>`,
+    "</section>"
+  ].join("\n");
 }
 
 function formatContentsSection(

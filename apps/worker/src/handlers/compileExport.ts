@@ -217,6 +217,10 @@ export async function compileExport(job: Job) {
     // From the project row rather than `input`, whose mediaSettings come from
     // the plan's frozen snapshot: dropping the Sources list or restyling the
     // chapter headings is a live reader preference that only queues a recompile.
+    // The byline reads from the row for the same reason, and because that is
+    // where `coverMetadataFromProject` typesets it from — the title page and
+    // the cover must never name different authors.
+    ...(project.authorName ? { authorName: project.authorName } : {}),
     includeSources: includeSourcesPreference(project.mediaSettings),
     chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
     chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
@@ -237,6 +241,7 @@ export async function compileExport(job: Job) {
   const generateEpub = () =>
     generateBookEpub(markdown, {
       title: plan.title,
+      ...(project.authorName ? { author: project.authorName } : {}),
       language: input.language,
       imageStorageDir: config.IMAGE_STORAGE_DIR,
       publicApiUrl: config.PUBLIC_API_URL,

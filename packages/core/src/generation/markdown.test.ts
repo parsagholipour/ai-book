@@ -522,6 +522,75 @@ describe("compileBookMarkdown", () => {
   });
 });
 
+describe("compileBookMarkdown title page", () => {
+  const cover = { imagePath: "/assets/images/project/cover.png", imageAlt: "Cover for the book" };
+  const pages: MarkdownPage[] = [{ index: 1, title: "First", markdown: "The first page." }];
+
+  it("sets a title page after the cover when the book names an author", () => {
+    const plan = { ...storyPlan(), title: "The Clockmaker", subtitle: "A patient trade" };
+
+    const markdown = compileBookMarkdown({ plan, cover, pages, authorName: "Ada Lovelace" });
+
+    expect(markdown).toMatch(/^!\[Cover for the book]/);
+    expect(markdown).toContain('<section class="book-title-page">');
+    expect(markdown).toContain('<h1 class="book-title-page__title">The Clockmaker</h1>');
+    expect(markdown).toContain('<p class="book-title-page__subtitle">A patient trade</p>');
+    expect(markdown).toContain('<p class="book-title-page__byline">by Ada Lovelace</p>');
+    expect(markdown.indexOf("cover.png")).toBeLessThan(markdown.indexOf("book-title-page"));
+    expect(markdown.indexOf("book-title-page")).toBeLessThan(markdown.indexOf("The first page."));
+    expect(findBookLikeMarkdownIssues(markdown)).toEqual([]);
+  });
+
+  it("leaves the front matter untouched when no author is named", () => {
+    // The guarantee that no book written before title pages existed gains a
+    // page on its next recompile.
+    const plan = { ...storyPlan(), title: "The Clockmaker", subtitle: "A patient trade" };
+
+    for (const authorName of [undefined, "", "   "]) {
+      const markdown = compileBookMarkdown({ plan, cover, pages, authorName });
+      expect(markdown, String(authorName)).not.toContain("book-title-page");
+      expect(markdown, String(authorName)).toBe(compileBookMarkdown({ plan, cover, pages }));
+    }
+  });
+
+  it("replaces the plain heading rather than setting the title twice", () => {
+    const plan = { ...storyPlan(), title: "The Clockmaker", subtitle: "A patient trade" };
+
+    const markdown = compileBookMarkdown({ plan, pages, authorName: "Ada Lovelace" });
+
+    expect(markdown).toMatch(/^<section class="book-title-page">/);
+    expect(markdown).not.toContain(`# ${plan.title}`);
+    expect(markdown).not.toContain(`_${plan.subtitle}_`);
+  });
+
+  it("omits the subtitle line for a book that has none", () => {
+    const plan = { ...storyPlan(), title: "The Clockmaker", subtitle: undefined };
+
+    const markdown = compileBookMarkdown({ plan, cover, pages, authorName: "Ada Lovelace" });
+
+    expect(markdown).not.toContain("book-title-page__subtitle");
+    expect(markdown).toContain('<p class="book-title-page__byline">by Ada Lovelace</p>');
+  });
+
+  it("writes the byline in the book's own language", () => {
+    const plan = { ...storyPlan(), title: "ساعت‌ساز" };
+
+    const markdown = compileBookMarkdown({ plan, cover, pages, language: "fa", authorName: "پروین" });
+
+    expect(markdown).toContain('<p class="book-title-page__byline">نوشتهٔ پروین</p>');
+    expect(markdown).not.toContain("by پروین");
+  });
+
+  it("escapes a name that carries markup", () => {
+    const plan = { ...storyPlan(), title: "The Clockmaker" };
+
+    const markdown = compileBookMarkdown({ plan, cover, pages, authorName: "Fisher & <b>Sons</b>" });
+
+    expect(markdown).toContain("by Fisher &amp; &lt;b&gt;Sons&lt;/b&gt;");
+    expect(markdown).not.toContain("<b>Sons</b>");
+  });
+});
+
 function storyPlan(): ReturnType<typeof makeFallbackPlan> {
   return makeFallbackPlan({
     prompt: "A story about a careful clockmaker.",

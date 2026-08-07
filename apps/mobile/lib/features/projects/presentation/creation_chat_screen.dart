@@ -58,6 +58,7 @@ part 'creation_chat_sources.dart';
 part 'creation_chat_bubbles.dart';
 part 'creation_chat_composer.dart';
 part 'creation_chat_sheets.dart';
+part 'creation_chat_advanced_fields.dart';
 part 'creation_chat_visuals_prompt.dart';
 part 'creation_chat_output_send.dart';
 part 'creation_chat_compose_context.dart';

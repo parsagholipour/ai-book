@@ -84,6 +84,39 @@ describe("generateBookEpub", () => {
     expect(chapterTwo).toContain("The second chapter text.");
   });
 
+  it("carries a compiled title page into the front matter as XHTML", async () => {
+    // The title page is raw HTML inside the Markdown, so it reaches an EPUB
+    // through `marked` rather than through a Markdown construct — and it must
+    // not start a chapter of its own, which only `##` may do.
+    const bytes = await generateBookEpub(
+      [
+        '<section class="book-title-page">',
+        '  <h1 class="book-title-page__title">The Clockmaker</h1>',
+        '  <p class="book-title-page__byline">by Test Author</p>',
+        "</section>",
+        "",
+        "## Chapter One: Springs",
+        "",
+        "The first chapter text."
+      ].join("\n"),
+      {
+        title: "The Clockmaker",
+        author: "Test Author",
+        language: "en",
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001"
+      }
+    );
+    const zip = await JSZip.loadAsync(bytes);
+
+    const front = await zip.file("OEBPS/chapter-1.xhtml")!.async("string");
+    expect(front).toContain('<section class="book-title-page">');
+    expect(front).toContain('<p class="book-title-page__byline">by Test Author</p>');
+    const chapterOne = await zip.file("OEBPS/chapter-2.xhtml")!.async("string");
+    expect(chapterOne).toContain("The first chapter text.");
+    expect(chapterOne).not.toContain("book-title-page");
+  });
+
   it("packages local images and strips unresolvable ones", async () => {
     const zip = await buildSampleEpub();
 
