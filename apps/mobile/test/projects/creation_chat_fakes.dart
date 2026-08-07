@@ -164,7 +164,11 @@ class ScriptedCreationRepository implements CreationRepository {
         'title': 'New book',
         'status': 'ACTIVE',
         'messages': [
-          {'id': 'assistant-greeting', 'role': 'assistant', 'content': greeting},
+          {
+            'id': 'assistant-greeting',
+            'role': 'assistant',
+            'content': greeting,
+          },
         ],
         'createdProjectId': null,
         'updatedAt': '2026-06-15T00:00:00.000Z',
@@ -487,7 +491,15 @@ class PlanProjectsRepository implements ProjectsRepository {
 
   @override
   Stream<MobileProjectStatus> watchProjectStatus(String id) async* {
-    yield await getProjectStatus(id);
+    final status = await getProjectStatus(id);
+    yield status;
+    // The server holds this open for as long as the book is live and closes it
+    // the moment it settles — and a stream that ends early is exactly what
+    // makes the client fall back to polling. Ending one here on a live book
+    // would leave that poll's timer pending past the end of the test.
+    if (status.isLive) {
+      await Completer<void>().future;
+    }
   }
 
   @override

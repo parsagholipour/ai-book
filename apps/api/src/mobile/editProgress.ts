@@ -22,12 +22,12 @@ type EditProgressDto = NonNullable<MobileProjectStatusDto["editProgress"]>;
 type EditStep = EditProgressDto["steps"][number];
 type EditStepKey = EditStep["key"];
 type StatusJob = ProjectStatusResult["project"]["jobs"][number];
-type EditJobType = "APPLY_BOOK_EDIT" | "CONTINUE_BOOK";
+type EditJobType = "APPLY_BOOK_EDIT" | "CONTINUE_BOOK" | "REPLAN_BOOK";
 
 /**
- * The reader-facing name for each step the two edit jobs report.
+ * The reader-facing name for each step the edit jobs report.
  *
- * Keyed by job type because `export` means the same thing in both but the
+ * Keyed by job type because `export` means the same thing in all of them but the
  * earlier steps do not, and because an unknown key must be droppable — a step
  * template can gain entries in the worker before this table knows about them.
  */
@@ -43,6 +43,11 @@ const STEP_LABELS: Record<EditJobType, Partial<Record<EditStepKey, string>>> = {
     draft: "Writing the new pages",
     save: "Saving the new chapters",
     export: "Rebuilding your book"
+  },
+  REPLAN_BOOK: {
+    revise: "Planning your new book",
+    save: "Saving the new plan",
+    generate: "Starting the rewrite"
   }
 };
 
@@ -55,7 +60,8 @@ const STEP_LABELS: Record<EditJobType, Partial<Record<EditStepKey, string>>> = {
  */
 const STEP_ORDER: Record<EditJobType, EditStepKey[]> = {
   APPLY_BOOK_EDIT: ["prepare", "snapshot", "apply", "export"],
-  CONTINUE_BOOK: ["outline", "draft", "save", "export"]
+  CONTINUE_BOOK: ["outline", "draft", "save", "export"],
+  REPLAN_BOOK: ["revise", "save", "generate"]
 };
 
 /** Where an edit job's own progress column tops out (its `export` step). */
@@ -77,6 +83,21 @@ const COMPILE_PROGRESS_CEILING = 95;
  */
 const EDIT_BAND = { start: 5, end: 92 } as const;
 const REBUILD_BAND = { start: EDIT_BAND.end, end: 99 } as const;
+
+/**
+ * A replan gets its own, much narrower band, because it is not an edit to this
+ * book — it is the *plan* for a new one, and a whole book still has to be
+ * written after it.
+ *
+ * It reports through this module only because it runs while the project sits at
+ * `EDITING`, but it hands straight over to `generationProgress`, whose
+ * `PREPARE_BAND` opens the writing at 20. Running a replan up the ordinary edit
+ * band would put the bar at 92 and then drop it to 20 the moment the real work
+ * started. Ending below 20 is what makes that handover move forwards — the same
+ * reason `statusProgressPercent` answers 10 for `PLANNING` and 20 for
+ * `PLAN_READY`.
+ */
+const REPLAN_BAND = { start: 2, end: 18 } as const;
 
 export function serializeEditProgress(status: ProjectStatusResult): MobileProjectStatusDto["editProgress"] {
   if (status.project.status !== "EDITING") {
@@ -141,7 +162,7 @@ function editBehindRebuild(status: ProjectStatusResult, compile: StatusJob): Sta
   if (jsonRecord(compile.payload).skipFinalReview === true) {
     return undefined;
   }
-  return status.project.jobs.find((job) => isEditJob(job) && job.status === "COMPLETED");
+  return status.project.jobs.find((job) => isRebuildableEditJob(job) && job.status === "COMPLETED");
 }
 
 /**
@@ -232,6 +253,18 @@ export function liveDetail(job: StatusJob): string | null {
   const activeKey = active?.key;
   const page = typeof active?.pageIndex === "number" ? active.pageIndex : null;
   const pages = affectedPageCount(job);
+  if (job.type === "REPLAN_BOOK") {
+    switch (activeKey) {
+      case "revise":
+        return "Planning your new book";
+      case "save":
+        return "Saving the new plan";
+      case "generate":
+        return "Starting the rewrite";
+      default:
+        return "Getting ready to rewrite your book";
+    }
+  }
   if (job.type === "CONTINUE_BOOK") {
     switch (activeKey) {
       case "outline":
@@ -287,7 +320,8 @@ function applyPhrase(phase: string | undefined, page: number): string {
 export function editProgressPercent(job: StatusJob): number {
   const stored = Number.isFinite(job.progress) ? Math.max(0, job.progress) : 0;
   const ratio = Math.min(1, stored / EDIT_PROGRESS_CEILING);
-  return Math.round(EDIT_BAND.start + (EDIT_BAND.end - EDIT_BAND.start) * ratio);
+  const band = job.type === "REPLAN_BOOK" ? REPLAN_BAND : EDIT_BAND;
+  return Math.round(band.start + (band.end - band.start) * ratio);
 }
 
 /**
@@ -312,6 +346,20 @@ function activeStepKey(job: StatusJob): string | undefined {
 }
 
 function isEditJob(job: StatusJob): boolean {
+  return isRebuildableEditJob(job) || job.type === "REPLAN_BOOK";
+}
+
+/**
+ * The edit jobs that finish by handing a rebuild to `COMPILE_EXPORT`.
+ *
+ * A replan is deliberately not one of them: it hands off to `GENERATE_BOOK` and
+ * the project leaves `EDITING` at the same moment, so it is never the edit
+ * behind an open compile. Letting it match would mean that a *later* recompile
+ * of the revised book — a heading or sources toggle, which writes no edit job of
+ * its own — found the replan sitting completed in the job list and dressed the
+ * rebuild up as "Planning your new book".
+ */
+function isRebuildableEditJob(job: StatusJob): boolean {
   return job.type === "APPLY_BOOK_EDIT" || job.type === "CONTINUE_BOOK";
 }
 
@@ -327,6 +375,8 @@ function isEditStepKey(key: string): key is EditStepKey {
     key === "export" ||
     key === "outline" ||
     key === "draft" ||
-    key === "save"
+    key === "save" ||
+    key === "revise" ||
+    key === "generate"
   );
 }

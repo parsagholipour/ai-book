@@ -95,12 +95,29 @@ class _PlanBuildingFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final planningProgress = statusValue?.asData?.value.planningProgress;
-    final progress = planningProgress?.percent;
-    final steps = planningProgress?.steps ?? _fallbackPlanningSteps(isRevision);
+    final status = statusValue?.asData?.value;
+    final planningProgress = status?.planningProgress;
+    // Rebuilding a finished book into a new one runs while the project sits at
+    // `editing`, so it reports its steps on `editProgress` rather than
+    // `planningProgress` — same shape, same card. Without this the footer fell
+    // back to a static step list and an indeterminate bar for the whole job,
+    // which is a long time to tell someone nothing.
+    final editProgress = planningProgress == null ? status?.editProgress : null;
+    final isRewrite = editProgress != null;
+    final progress = planningProgress?.percent ?? editProgress?.percent;
+    final steps =
+        planningProgress?.steps ??
+        editProgress?.steps ??
+        _fallbackPlanningSteps(isRevision);
     final activeStep = steps.where((step) => step.isActive).firstOrNull;
     final allStepsDone = steps.isNotEmpty && steps.every((step) => step.isDone);
-    final title = allStepsDone
+    final settledDetail = isRewrite
+        // A finished replan is not a finished book: the writing starts here.
+        ? 'Writing your new book…'
+        : 'Opening it for review…';
+    final title = isRewrite
+        ? 'Rewriting your book'
+        : allStepsDone
         ? isRevision
               ? 'Your revised plan is ready'
               : 'Your book plan is ready'
@@ -108,7 +125,7 @@ class _PlanBuildingFooter extends StatelessWidget {
         ? 'Revising your book plan'
         : 'Creating your book plan';
     final detail = allStepsDone
-        ? 'Opening it for review…'
+        ? settledDetail
         : activeStep?.label ?? message.replaceAll('…', '');
     final colors = Theme.of(context).colorScheme;
 

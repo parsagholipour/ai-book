@@ -621,17 +621,17 @@ Stream<MobileProjectStatus> _watchProjectStatus(
   String id,
 ) async* {
   try {
-    var emittedStatus = false;
     await for (final status in repository.watchProjectStatus(id)) {
-      emittedStatus = true;
       yield status;
       if (!status.isLive) {
         return;
       }
     }
-    if (emittedStatus) {
-      return;
-    }
+    // Falling out of the loop with the book still live means the socket ended
+    // without saying so — a backgrounded app, a proxy idle timeout, a network
+    // switch. It raises nothing, so the only sign is the stream simply
+    // stopping, and returning here would freeze the progress UI on its last
+    // tick for the rest of the generation. Drop through to polling instead.
   } catch (_) {
     // Older API builds, local proxies, or transient stream failures fall back
     // to short polling so the progress UI remains live enough to trust.

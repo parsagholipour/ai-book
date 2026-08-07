@@ -447,7 +447,7 @@ export type MobileProjectStatusDto = {
     percent: number;
     detail: string | null;
     steps: Array<{
-      key: "prepare" | "snapshot" | "apply" | "export" | "outline" | "draft" | "save";
+      key: "prepare" | "snapshot" | "apply" | "export" | "outline" | "draft" | "save" | "revise" | "generate";
       label: string;
       status: "pending" | "active" | "done" | "failed";
       detail: string | null;

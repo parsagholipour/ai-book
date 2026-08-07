@@ -177,7 +177,6 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       if (!mounted) return;
       setState(() => _projectChatSending = false);
       if (result.operation != null) {
-        _startPlanPoll();
         ScaffoldMessenger.of(context).showAppSnackBar(
           SnackBar(content: Text(result.operation!.displayAction)),
         );
@@ -186,7 +185,13 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       // one untouched, so staying put shows the unchanged book.
       final replanCopyId = result.reply.replanCopyTargetProjectId;
       if (replanCopyId != null && replanCopyId != projectId) {
+        // `_openReplanCopy` arms the poll itself, against the copy. Doing it
+        // here instead would arm it against *this* project — which is finished
+        // — and the settled-project check cancels the timer during the await
+        // below, before the copy is ever selected.
         await _openReplanCopy(replanCopyId);
+      } else if (result.operation != null) {
+        _startPlanPoll();
       }
     } catch (error) {
       if (!mounted) return;

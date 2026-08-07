@@ -62,6 +62,7 @@ part 'creation_chat_visuals_prompt.dart';
 part 'creation_chat_output_send.dart';
 part 'creation_chat_compose_context.dart';
 part 'creation_chat_resume.dart';
+part 'creation_chat_liveness.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
   const CreationChatScreen({super.key, this.startFresh = false, this.draftId});
@@ -74,7 +75,11 @@ class CreationChatScreen extends ConsumerStatefulWidget {
 }
 
 class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
-    with _OutputChatSend, _CreationComposerContext, _CreationChatResume {
+    with
+        _OutputChatSend,
+        _CreationComposerContext,
+        _CreationChatResume,
+        _LiveOutputRefresh {
   @override
   final _composerController = TextEditingController();
   final _revisionController = TextEditingController();
@@ -86,9 +91,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   @override
   String? _planBusyAction;
   String? _activePlanKey;
+  @override
   String? _pendingRevisionPlanKey;
+  @override
   String? _pendingRevisionOperationId;
-  Timer? _planRefreshTimer;
   Timer? _stickScrollTimer;
   Object? _lastScrollTrigger;
   bool _stickToBottom = true;
@@ -220,9 +226,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       projectChatValue = ref.watch(projectChatProvider(activeProjectId));
       final project = planValue?.asData?.value;
       if (_shouldWatchGenerationStatus(project)) {
-        generationStatusValue = ref.watch(
-          projectStatusProvider(activeProjectId),
-        );
+        final statusValue = ref.watch(projectStatusProvider(activeProjectId));
+        generationStatusValue = statusValue;
+        // The status stream is the only thing that knows the book is still
+        // being worked on; the plan and the transcript arrive by polling.
+        _syncLivePolling(activeProjectId, statusValue);
       }
       planValue?.whenData(_stopPollingWhenSettled);
       projectChatValue?.whenData(_stopPollingWhenRevisionFailed);
@@ -329,12 +337,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                         _OutputSwitcher(
                           outputs: state.outputs,
                           activeProjectId: activeProjectId,
-                          onSelect: (projectId) {
-                            setState(_resetPlanReviewState);
-                            ref
-                                .read(creationChatControllerProvider.notifier)
-                                .selectOutput(projectId);
-                          },
+                          onSelect: _selectOutput,
                         ),
                       if (state.warnings.isNotEmpty)
                         _ChatWarningsBanner(warnings: state.warnings),
@@ -640,8 +643,20 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     if (!_hasOutput(state, projectId)) {
       return;
     }
+    _selectOutput(projectId);
+  }
+
+  /// Moves the screen to another output in this chat, and starts watching it.
+  ///
+  /// The refresh is the load-bearing part: a replan copy is *mid-generation*
+  /// when it is opened, and without re-arming the status stream and the poll
+  /// its detail would be fetched once — while it still has no plan — and never
+  /// again, leaving the footer on "Creating your book plan" forever.
+  void _selectOutput(String projectId) {
     setState(_resetPlanReviewState);
-    controller.selectOutput(projectId);
+    ref.read(creationChatControllerProvider.notifier).selectOutput(projectId);
+    _refreshOutput(projectId);
+    _startPlanPoll();
   }
 
   @override
@@ -1321,73 +1336,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _activePlanKey = planKey;
     _planQuestionIndex = 0;
     _planQuestionAnswers = {};
-  }
-
-  @override
-  void _startPlanPoll() {
-    _planRefreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
-      final id = _activeProjectId(ref.read(creationChatControllerProvider));
-      if (id == null) return;
-      if (ref.read(projectDetailProvider(id)).isLoading) return;
-      _refreshOutput(id, refreshStatus: false);
-    });
-  }
-
-  void _stopPollingWhenSettled(MobileProjectDetail project) {
-    if (project.status == 'failed') {
-      _planRefreshTimer?.cancel();
-      _planRefreshTimer = null;
-      return;
-    }
-    if (project.status == 'planning' ||
-        project.status == 'generating' ||
-        project.status == 'editing' ||
-        project.plan == null) {
-      return;
-    }
-    final settledPlanKey = _planKey(project.plan!);
-    final stillWaitingForRevisedPlan =
-        _pendingRevisionPlanKey != null &&
-        _pendingRevisionPlanKey == settledPlanKey &&
-        project.status != 'failed';
-    if (stillWaitingForRevisedPlan) return;
-    _planRefreshTimer?.cancel();
-    _planRefreshTimer = null;
-    if (_planBusyAction == 'revise') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _planBusyAction == 'revise') {
-          setState(() {
-            _planBusyAction = null;
-            _pendingRevisionPlanKey = null;
-            _pendingRevisionOperationId = null;
-          });
-        }
-      });
-    }
-  }
-
-  void _stopPollingWhenRevisionFailed(MobileProjectChat chat) {
-    final pendingOperationId = _pendingRevisionOperationId;
-    if (pendingOperationId == null) return;
-    final failedPendingRevision = chat.operations.any(
-      (operation) =>
-          operation.id == pendingOperationId &&
-          operation.isPlanRevision &&
-          operation.isFailed,
-    );
-    if (!failedPendingRevision) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _pendingRevisionOperationId != pendingOperationId) {
-        return;
-      }
-      setState(() {
-        _planBusyAction = null;
-        _pendingRevisionPlanKey = null;
-        _pendingRevisionOperationId = null;
-      });
-      _planRefreshTimer?.cancel();
-      _planRefreshTimer = null;
-    });
   }
 }
 

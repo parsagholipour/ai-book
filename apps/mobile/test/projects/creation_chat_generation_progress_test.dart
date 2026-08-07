@@ -273,6 +273,112 @@ void main() {
     expect(find.text('Needs attention'), findsNothing);
     expect(find.text('Retry generation'), findsNothing);
   });
+
+  // Rebuilding a finished book into a new one is a whole generation the chat
+  // arrives at rather than starts, and it reports itself as an *edit*. Both of
+  // those once left the footer frozen on a static list for the entire run.
+  testWidgets('a book being rewritten shows the replan steps, not the '
+      'placeholder plan list', (tester) async {
+    await _pumpChat(
+      tester,
+      projects: _StubProjectsRepository(
+        status: _status(
+          status: 'editing',
+          statusLabel: 'Rewriting your book',
+          progressPercent: 8,
+          currentAction: 'Planning your new book',
+          editProgress: const MobileGenerationProgress(
+            percent: 8,
+            detail: 'Planning your new book',
+            steps: [
+              MobileProjectStatusStep(
+                key: 'revise',
+                label: 'Planning your new book',
+                status: 'active',
+              ),
+              MobileProjectStatusStep(
+                key: 'save',
+                label: 'Saving the new plan',
+                status: 'pending',
+              ),
+              MobileProjectStatusStep(
+                key: 'generate',
+                label: 'Starting the rewrite',
+                status: 'pending',
+              ),
+            ],
+          ),
+        ),
+        detailBuilder: (_) => _detail(status: 'editing', plan: null),
+      ),
+    );
+    // The status arrives a turn after the detail does, and the title and detail
+    // lines crossfade — without this the outgoing text is still mounted.
+    await _settleEnough(tester);
+
+    expect(find.text('Rewriting your book'), findsOneWidget);
+    expect(find.text('Planning your new book'), findsWidgets);
+    expect(find.text('Saving the new plan'), findsOneWidget);
+    expect(find.text('Starting the rewrite'), findsOneWidget);
+    expect(find.text('8%'), findsOneWidget);
+    // The placeholder title and step the footer used to be stuck on.
+    expect(find.text('Creating your book plan'), findsNothing);
+    expect(find.text('Understanding your idea'), findsNothing);
+  });
+
+  testWidgets('the finished book is fetched when the status stream closes', (
+    tester,
+  ) async {
+    final controller = StreamController<MobileProjectStatus>();
+    addTearDown(controller.close);
+    final projects = _StubProjectsRepository(
+      statusStream: controller.stream,
+      // Still being rewritten when the screen arrives; finished by the time the
+      // stream closes. Only a re-fetch can ever tell the screen the difference.
+      detailBuilder: (call) => call == 0
+          ? _detail(status: 'editing', plan: null)
+          : _detail(status: 'complete'),
+    );
+    await _pumpChat(tester, projects: projects);
+
+    controller.add(_status(status: 'editing', currentAction: 'Rewriting.'));
+    await _settleEnough(tester);
+    final fetchesWhileLive = projects.detailFetches;
+
+    controller.add(_status(status: 'complete', progressPercent: 100));
+    await _settleEnough(tester);
+
+    expect(projects.detailFetches, greaterThan(fetchesWhileLive));
+    expect(find.text('Rewriting your book'), findsNothing);
+  });
+}
+
+/// The book the screen reads, at whatever stage a test needs it.
+MobileProjectDetail _detail({String status = 'generating', MobilePlan? plan}) {
+  return MobileProjectDetail(
+    id: 'project-1',
+    title: 'Launch Course Workbook',
+    bookType: 'workbook',
+    lengthPreset: 'standard',
+    qualityPreset: 'balanced',
+    imagesEnabled: true,
+    status: status,
+    statusLabel: 'Generating your book',
+    progressPercent: 38,
+    currentAction: 'Writing your book.',
+    promptPreview: 'Create a workbook.',
+    targetPages: 28,
+    pageCount: 3,
+    imageCount: 1,
+    hasPlan: plan != null,
+    exports: _exports,
+    createdAt: DateTime.utc(2026, 6, 15),
+    updatedAt: DateTime.utc(2026, 6, 15),
+    prompt: 'Create a workbook.',
+    language: 'en',
+    plan: plan,
+    pages: const [],
+  );
 }
 
 /// Pumps far enough for the crossfades and the eased bar, but never waits for
@@ -330,6 +436,7 @@ MobileProjectStatus _status({
   int progressPercent = 38,
   String currentAction = 'Writing your book pages.',
   MobileGenerationProgress? generationProgress,
+  MobileGenerationProgress? editProgress,
   bool coverEnabled = true,
   bool illustrationsEnabled = true,
   String? failureMessage,
@@ -345,6 +452,7 @@ MobileProjectStatus _status({
     progressPercent: progressPercent,
     currentAction: currentAction,
     generationProgress: generationProgress,
+    editProgress: editProgress,
     failureMessage: failureMessage,
     retryAvailable: retryAvailable,
     nextRetryAt: nextRetryAt,
@@ -382,11 +490,16 @@ const _exports = MobileExportSet(
 );
 
 class _StubProjectsRepository implements ProjectsRepository {
-  _StubProjectsRepository({this.status, this.statusStream});
+  _StubProjectsRepository({this.status, this.statusStream, this.detailBuilder});
 
   final MobileProjectStatus? status;
   final Stream<MobileProjectStatus>? statusStream;
+
+  /// Builds the detail for each `getProject` call, so a test can hand back a
+  /// book that changes underneath the screen the way a real one does.
+  final MobileProjectDetail Function(int call)? detailBuilder;
   final List<String> resumedProjectIds = [];
+  int detailFetches = 0;
 
   @override
   Future<MobileProjectRecovery> resumeProject(String id) async {
@@ -407,7 +520,16 @@ class _StubProjectsRepository implements ProjectsRepository {
     if (stream != null) {
       return stream;
     }
-    return Stream.value(status ?? _status());
+    final value = status ?? _status();
+    // The server holds the connection open for as long as the book is live and
+    // closes it the moment it settles — and a stream that ends early is exactly
+    // what makes the client fall back to polling. Closing one here on a live
+    // book would leave that poll's timer pending past the end of the test.
+    return value.isLive
+        ? Stream<MobileProjectStatus>.multi(
+            (controller) => controller.add(value),
+          )
+        : Stream.value(value);
   }
 
   @override
@@ -426,6 +548,11 @@ class _StubProjectsRepository implements ProjectsRepository {
 
   @override
   Future<MobileProjectDetail> getProject(String id) async {
+    final call = detailFetches++;
+    final build = detailBuilder;
+    if (build != null) {
+      return build(call);
+    }
     return MobileProjectDetail(
       id: 'project-1',
       title: 'Launch Course Workbook',

@@ -309,6 +309,84 @@ describe("mobile edit progress", () => {
     expect(status.progressPercent).toBeGreaterThan(92);
   });
 
+  it("reports a replan's own steps instead of leaving the bar blank", async () => {
+    const status = await readStatus(
+      editingStatus({
+        project: {
+          jobs: [
+            editJob({
+              id: "job-replan",
+              type: "REPLAN_BOOK",
+              progress: 30,
+              steps: steps("revise", ["revise", "save", "generate"]),
+              payload: {}
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.editProgress.steps.map((step: any) => step.key)).toEqual(["revise", "save", "generate"]);
+    expect(status.editProgress.steps[0]).toMatchObject({ label: "Planning your new book", status: "active" });
+    expect(status.editProgress.detail).toBe("Planning your new book");
+    expect(status.currentAction).toBe("Planning your new book");
+  });
+
+  it("keeps a replan below where writing the new book picks the bar up", async () => {
+    // The replan hands straight over to `generationProgress`, whose prepare band
+    // opens at 20. Ending above that would run the bar to ~92 and then drop it.
+    const percents: number[] = [];
+    for (const progress of [0, 30, 65, 85]) {
+      const status = await readStatus(
+        editingStatus({
+          project: {
+            jobs: [
+              editJob({
+                id: "job-replan",
+                type: "REPLAN_BOOK",
+                progress,
+                steps: steps("revise", ["revise", "save", "generate"]),
+                payload: {}
+              })
+            ]
+          }
+        })
+      );
+      percents.push(status.progressPercent);
+      expect(status.progressPercent).toBe(status.editProgress.percent);
+    }
+
+    expect(percents).toEqual([...percents].sort((left, right) => left - right));
+    expect(percents[0]).toBeGreaterThan(0);
+    expect(percents.at(-1)).toBeLessThan(20);
+  });
+
+  it("never dresses a later rebuild up as the replan that came before it", async () => {
+    // A heading or sources toggle recompiles without writing an edit job of its
+    // own; the completed replan still sitting in the job list is not its story.
+    const status = await readStatus(
+      editingStatus({
+        project: {
+          jobs: [
+            compileJob({ progress: 60, steps: steps("pdf", ["qa", "compile", "write", "pdf", "epub"]) }),
+            editJob({
+              id: "job-replan",
+              type: "REPLAN_BOOK",
+              status: "COMPLETED",
+              progress: 85,
+              steps: steps("generate", ["revise", "save", "generate"]),
+              payload: {}
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.editProgress.steps).toEqual([
+      { key: "export", label: "Rebuilding your book", status: "active", detail: null }
+    ]);
+  });
+
   it("reports nothing for a book that is not being edited", async () => {
     const status = await readStatus(
       editingStatus({
