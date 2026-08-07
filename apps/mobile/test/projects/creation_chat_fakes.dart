@@ -13,6 +13,7 @@ import 'creation_chat_harness.dart';
 class ScriptedCreationRepository implements CreationRepository {
   ScriptedCreationRepository({
     this.replyWithQuestion = false,
+    this.replyWithOpenQuestion = false,
     this.replyWithBuildRequest = false,
     this.preflightRequiresPageCount = false,
     this.resumeByIdGate,
@@ -20,6 +21,10 @@ class ScriptedCreationRepository implements CreationRepository {
   }) : sessions = sessions ?? const <MobileChatSession>[];
 
   final bool replyWithQuestion;
+
+  /// A question whose answer is a value only the reader can supply, so the API
+  /// sends it with no options and the card points at the message box.
+  final bool replyWithOpenQuestion;
   final bool replyWithBuildRequest;
   final bool preflightRequiresPageCount;
   final List<MobilePageCountRecommendation> preflightRecommendations = const [
@@ -256,10 +261,20 @@ class ScriptedCreationRepository implements CreationRepository {
         // A question never blocks the build: the API keeps canBuild true and
         // the app offers "Skip and build the plan".
         canBuild: true,
-        quickReplies: replyWithQuestion ? const [] : const ['Make it shorter'],
-        question: replyWithQuestion
+        quickReplies: (replyWithQuestion || replyWithOpenQuestion)
+            ? const []
+            : const ['Make it shorter'],
+        question: replyWithOpenQuestion
+            ? const {
+                'prompt': 'What name should appear as the author?',
+                'answerKind': 'open',
+                'options': <String>[],
+                'allowCustom': true,
+              }
+            : replyWithQuestion
             ? const {
                 'prompt': 'Who is this book for?',
+                'answerKind': 'choice',
                 'options': ['New managers', 'Team leads'],
                 'allowCustom': true,
               }

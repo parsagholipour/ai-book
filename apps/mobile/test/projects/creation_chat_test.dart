@@ -758,6 +758,56 @@ void main() {
     },
   );
 
+  testWidgets(
+    'a plan question with no premade answers opens its field without the keyboard',
+    (tester) async {
+      final creation = ScriptedCreationRepository();
+      final projects = PlanProjectsRepository(
+        project: plannedProject(plan: openQuestionPlan()),
+      );
+      await tester.pumpWidget(app(creation: creation, projects: projects));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('A kids book'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+      await tester.continuePastVisualsPrompt();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      final customField = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == 'Type your own answer…',
+      );
+
+      expect(
+        find.text('What name should appear as the author?'),
+        findsOneWidget,
+      );
+      // Nothing to tap, so the field is already open - but it must not grab
+      // focus, because the keyboard would collapse the question it answers.
+      expect(find.widgetWithText(TextButton, 'Custom…'), findsNothing);
+      expect(customField, findsOneWidget);
+      expect(tester.widget<TextField>(customField).autofocus, isFalse);
+
+      await tester.enterText(customField, 'Parsa');
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+
+      // The next question has real choices, so the field goes away again
+      // instead of carrying the previous answer over.
+      expect(find.text('Question 2 of 2'), findsOneWidget);
+      expect(customField, findsNothing);
+      expect(find.text('Live classes'), findsOneWidget);
+
+      await tester.teardownScreen();
+    },
+  );
+
   testWidgets('long question options wrap instead of fading away', (
     tester,
   ) async {
@@ -2433,6 +2483,44 @@ void main() {
       await tester.teardownScreen();
     },
   );
+
+  // A name, a title or a date is a value only the reader has. The API sends
+  // that question with no options rather than inventing three that describe
+  // how the reader would answer, so the card has to point at the message box.
+  testWidgets('an open question points at the composer instead of options', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository(replyWithOpenQuestion: true);
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'A tale published under my own name',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('What name should appear as the author?'),
+      findsOneWidget,
+    );
+    expect(find.text('Type your answer below.'), findsOneWidget);
+    // No numbered choices to tap, and the composer is the way to answer.
+    expect(find.text('1.'), findsNothing);
+    final composer = tester.widget<TextField>(find.byType(TextField).last);
+    expect(composer.decoration?.hintText, 'Answer the question above…');
+
+    await tester.enterText(find.byType(TextField).last, 'Parsa');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(creation.sentMessages.last, 'Parsa');
+
+    await tester.teardownScreen();
+  });
 
   testWidgets('a question offers a skip that still builds the plan', (
     tester,

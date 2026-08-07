@@ -218,6 +218,11 @@ describe("createPlanningPackage", () => {
     expect(plan.questions).toEqual([]);
     expect(systemPrompt).toContain("Set questions to [] for every coherent request");
     expect(systemPrompt).toContain("Never ask for optional tone, mood, conflict, ending");
+    // Premade answers are for questions a few complete answers really cover. A
+    // name or a title is asked open, so the reader types it once instead of
+    // tapping an option that only describes how they would answer.
+    expect(systemPrompt).toContain("set options to [] and let them type it");
+    expect(systemPrompt).toContain("Never write an option that only describes how the reader will answer");
   });
 
   it("keeps at most one subject clarification for an incomplete prompt", async () => {
@@ -317,6 +322,9 @@ describe("revisePlanningPackage", () => {
     expect(userPayload.currentPlan.researchNotesSummary[0].url).toBeUndefined();
     expect(JSON.stringify(userPayload)).not.toContain("https://example.com/very-long-source");
     expect(JSON.stringify(userPayload)).not.toContain("A".repeat(300));
+    // A revision re-emits questions, so it carries the same open-answer rule.
+    const revisionPrompt = request!.messages.find((message) => message.role === "system")!.content;
+    expect(revisionPrompt).toContain("set options to [] and let them type it");
   });
 
   it("defaults omitted revision questions to none instead of restoring legacy questions", async () => {

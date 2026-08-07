@@ -430,6 +430,25 @@ MobilePlan questionPlan() {
   );
 }
 
+/// A plan that opens with a question only the reader can answer in their own
+/// words (no premade answers), followed by an ordinary choice.
+MobilePlan openQuestionPlan() {
+  return plan(
+    questions: const [
+      MobilePlanQuestion(
+        prompt: 'What name should appear as the author?',
+        options: [],
+        allowCustom: true,
+      ),
+      MobilePlanQuestion(
+        prompt: 'Should examples focus on live classes or recorded lessons?',
+        options: ['Live classes', 'Recorded lessons'],
+        allowCustom: true,
+      ),
+    ],
+  );
+}
+
 MobileBilling billing() {
   return const MobileBilling(
     credits: CreditBalance(

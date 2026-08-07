@@ -813,8 +813,11 @@ describe("mobile creation sessions", () => {
     expect(response.statusCode).toBe(200);
     expect(body.turn.assistantMessage).toBe("");
     expect(body.turn.language).toBe("pt");
+    // The stored snapshot predates answerKind; restoring it defaults to the
+    // tappable shape it was written with.
     expect(body.turn.question).toEqual({
       prompt: "Para quem é este livro?",
+      answerKind: "choice",
       options: ["Jovens adultos", "Leitores de romance", "Público geral"],
       allowCustom: true
     });

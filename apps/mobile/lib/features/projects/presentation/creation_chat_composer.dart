@@ -549,6 +549,7 @@ class _QuestionPanel extends StatelessWidget {
             enabled: enabled,
             onSelect: onSelect,
             onSkip: () => onSelect('Skip this for now.'),
+            openAnswerHint: 'Type your answer below.',
           ),
         ],
       ],
@@ -557,6 +558,10 @@ class _QuestionPanel extends StatelessWidget {
 }
 
 /// Numbered answer choices for the question drawer (not chips/badges).
+///
+/// An empty [options] list is an open question: the answer is a value only the
+/// reader can supply, so the card points at the message box instead of showing
+/// invented choices. The keyboard stays down until they tap it.
 class _QuestionOptionList extends StatelessWidget {
   const _QuestionOptionList({
     required this.options,
@@ -564,6 +569,7 @@ class _QuestionOptionList extends StatelessWidget {
     required this.onSelect,
     required this.onSkip,
     this.onCustom,
+    this.openAnswerHint,
   });
 
   final List<String> options;
@@ -572,6 +578,9 @@ class _QuestionOptionList extends StatelessWidget {
   final VoidCallback onSkip;
   final VoidCallback? onCustom;
 
+  /// Shown in place of the choices when there are none.
+  final String? openAnswerHint;
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -579,6 +588,25 @@ class _QuestionOptionList extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (options.isEmpty && openAnswerHint != null)
+          Row(
+            children: [
+              Icon(
+                Icons.keyboard_outlined,
+                size: 16,
+                color: colors.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  openAnswerHint!,
+                  style: theme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
         for (var i = 0; i < options.length; i++) ...[
           if (i > 0) const SizedBox(height: 4),
           Material(

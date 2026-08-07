@@ -537,6 +537,40 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
   final _customController = TextEditingController();
   bool _showCustomField = false;
 
+  /// The field only steals focus when the reader asked for it with "Custom…".
+  /// A question that has no options opens the field on its own, and raising the
+  /// keyboard there would collapse the question it is meant to answer.
+  bool _autofocusCustomField = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncCustomFieldToQuestion();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlanQuestionPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.questionIndex != widget.questionIndex) {
+      // Typing state belongs to one question, not to the panel.
+      _customController.clear();
+      _showCustomField = false;
+      _autofocusCustomField = false;
+      _syncCustomFieldToQuestion();
+    }
+  }
+
+  /// An open question (no premade answers) is answered by typing, so show the
+  /// field instead of hiding it behind a "Custom…" tap.
+  void _syncCustomFieldToQuestion() {
+    final question = widget.plan.questions.elementAtOrNull(
+      widget.questionIndex,
+    );
+    if (question != null && question.options.isEmpty && question.allowCustom) {
+      _showCustomField = true;
+    }
+  }
+
   @override
   void dispose() {
     _customController.dispose();
@@ -609,9 +643,13 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
               enabled: !widget.isBusy,
               onSelect: widget.onSelect,
               onCustom: question.allowCustom && !_showCustomField
-                  ? () => setState(() => _showCustomField = true)
+                  ? () => setState(() {
+                      _showCustomField = true;
+                      _autofocusCustomField = true;
+                    })
                   : null,
               onSkip: widget.onSkip,
+              openAnswerHint: _showCustomField ? null : 'Type your answer below.',
             ),
           ),
         ],
@@ -624,7 +662,7 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
                 child: TextField(
                   controller: _customController,
                   enabled: !widget.isBusy,
-                  autofocus: true,
+                  autofocus: _autofocusCustomField,
                   minLines: 1,
                   maxLines: 3,
                   textInputAction: TextInputAction.send,
