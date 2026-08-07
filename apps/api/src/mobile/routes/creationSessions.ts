@@ -15,6 +15,7 @@ import {
 } from "../../creationChatTree.js";
 import {
   greetingCreationTurn,
+  mergeCreationOptionalDetails,
   mergeMobileCreationPresets,
   mobileCreationDraftPayloadSchema,
   mobileCreationPresetsSchema,
@@ -245,7 +246,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         payload = mobileCreationDraftPayloadSchema.parse({
           payloadVersion: 3,
           rawIdea: userTextFromMessages(messages),
-          optionalDetails: turnRequest.optionalDetails ?? { mustInclude: "", tone: "" },
+          optionalDetails: mergeCreationOptionalDetails(turnRequest.optionalDetails, turn),
           sourceNotes: turnRequest.sourceNotes ?? "",
           detectedLane: turn.brief.lane,
           recipe: turn.brief,
@@ -388,7 +389,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       const updatedPayload = mobileCreationDraftPayloadSchema.parse({
         payloadVersion: 3,
         rawIdea: userTextFromMessages(linearizeCreationMessages(persisted.messages).active),
-        optionalDetails: turnRequest.optionalDetails ?? { mustInclude: "", tone: "" },
+        optionalDetails: mergeCreationOptionalDetails(turnRequest.optionalDetails, turn),
         sourceNotes: turnRequest.sourceNotes ?? "",
         detectedLane: turn.brief.lane,
         recipe: turn.brief,

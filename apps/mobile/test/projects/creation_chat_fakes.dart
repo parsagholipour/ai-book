@@ -15,6 +15,7 @@ class ScriptedCreationRepository implements CreationRepository {
     this.replyWithQuestion = false,
     this.replyWithOpenQuestion = false,
     this.replyWithBuildRequest = false,
+    this.replyAuthorName,
     this.preflightRequiresPageCount = false,
     this.resumeByIdGate,
     List<MobileChatSession>? sessions,
@@ -26,6 +27,10 @@ class ScriptedCreationRepository implements CreationRepository {
   /// sends it with no options and the card points at the message box.
   final bool replyWithOpenQuestion;
   final bool replyWithBuildRequest;
+
+  /// The byline the chat captured from the message just sent, as the API
+  /// returns it on the turn for the Advanced-settings sheet to pick up.
+  final String? replyAuthorName;
   final bool preflightRequiresPageCount;
   final List<MobilePageCountRecommendation> preflightRecommendations = const [
     MobilePageCountRecommendation(
@@ -281,6 +286,7 @@ class ScriptedCreationRepository implements CreationRepository {
             : null,
         buildRequested: replyWithBuildRequest,
         warnings: replyWarnings,
+        authorName: replyAuthorName,
       ),
     });
   }

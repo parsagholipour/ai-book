@@ -132,6 +132,8 @@ Map<String, dynamic> turnJson({
   int? targetPages,
   bool buildRequested = false,
   List<String> warnings = const [],
+  String? authorName,
+  String? title,
 }) {
   return {
     'assistantMessage': assistantMessage,
@@ -157,6 +159,8 @@ Map<String, dynamic> turnJson({
     'titleSuggestions': <dynamic>[],
     'shapePreview': ['Intro'],
     'warnings': warnings,
+    'authorName': ?authorName,
+    'title': ?title,
     'buildRequested': buildRequested,
   };
 }

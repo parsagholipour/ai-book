@@ -11,6 +11,7 @@ import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_cancel_sheet.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../../billing/presentation/billing_tier_style.dart';
 import '../../billing/presentation/play_subscriptions_link.dart';
 import '../data/account_repository.dart';
 
@@ -140,6 +141,12 @@ class AccountPlanCard extends StatelessWidget {
     final quota = value?.imageQuota;
     final paid = value?.isPaidPlan ?? false;
     final cancelling = plan?.cancelAtPeriodEnd ?? false;
+    final nextPlan = value == null
+        ? null
+        : nextBetterPlan(
+            value.products.where((product) => product.isSubscription).toList(),
+            value.planTier,
+          );
 
     return Card(
       key: const ValueKey('account-plan-card'),
@@ -215,6 +222,13 @@ class AccountPlanCard extends StatelessWidget {
                 runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
+                  if (nextPlan != null)
+                    FilledButton.icon(
+                      key: const ValueKey('account-upgrade-plan'),
+                      onPressed: onUpgrade,
+                      icon: const Icon(Icons.arrow_upward),
+                      label: const Text('Upgrade plan'),
+                    ),
                   OutlinedButton.icon(
                     key: const ValueKey('account-manage-subscription'),
                     onPressed: () => onManageSubscription(plan?.productSku),
@@ -237,12 +251,12 @@ class AccountPlanCard extends StatelessWidget {
                     ),
                 ],
               )
-            else
+            else if (nextPlan != null)
               FilledButton.icon(
                 key: const ValueKey('account-upgrade-plan'),
                 onPressed: onUpgrade,
                 icon: const Icon(Icons.arrow_upward),
-                label: const Text('Upgrade'),
+                label: const Text('Upgrade plan'),
               ),
           ],
         ),

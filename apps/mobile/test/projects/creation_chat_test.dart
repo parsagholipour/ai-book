@@ -572,6 +572,51 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('a byline stated in chat fills the advanced sheet and the build', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository(
+      replyAuthorName: 'Parsa Gh.',
+    );
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).first,
+      'A fable about generosity, put my name Parsa Gh. on it',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Advanced settings'));
+    await tester.pumpAndSettle();
+
+    final authorField = find.byKey(const ValueKey('author-name-field'));
+    await tester.ensureVisible(authorField);
+    expect(
+      tester.widget<TextField>(authorField).controller?.text,
+      'Parsa Gh.',
+    );
+    // Still no badge: the value is the reader's own words being transcribed,
+    // not a studio proposal they overrode.
+    expect(find.text('Your choice'), findsNothing);
+
+    final doneButton = find.widgetWithText(FilledButton, 'Done');
+    await tester.ensureVisible(doneButton);
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(creation.buildOptionalDetails?.authorName, 'Parsa Gh.');
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('build asks for pages when preflight requires a page count', (
     tester,
   ) async {

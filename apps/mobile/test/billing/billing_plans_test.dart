@@ -402,6 +402,40 @@ void main() {
       expect(find.byKey(const ValueKey('account-cancel-subscription')), findsOneWidget);
     });
 
+    testWidgets('a subscriber below the top tier is offered an upgrade', (
+      tester,
+    ) async {
+      var upgradeTaps = 0;
+      await tester.pumpWidget(
+        _wrap(
+          AccountPlanCard(
+            billing: AsyncData(
+              _billing(
+                tier: 'creator',
+                productSku: 'tomeza.creator_monthly',
+                planCredits: 4200,
+                monthlyCredits: 6000,
+              ),
+            ),
+            onUpgrade: () => upgradeTaps += 1,
+            onManageSubscription: (_) {},
+            onCancelSubscription: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final upgrade = find.byKey(const ValueKey('account-upgrade-plan'));
+      expect(upgrade, findsOneWidget);
+      expect(find.text('Upgrade plan'), findsOneWidget);
+      await tester.tap(upgrade);
+      expect(upgradeTaps, 1);
+      expect(
+        find.byKey(const ValueKey('account-manage-subscription')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a cancelled subscriber is told when they drop to free', (
       tester,
     ) async {

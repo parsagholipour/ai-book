@@ -14,6 +14,7 @@ import {
   type ToneProfile
 } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 
 export type CreatePlanPhase = "understand" | "shape" | "finalize";
 
@@ -79,6 +80,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "For factual, scientific, historical, or research-grounded books, build the plan around source-backed claims and explicit uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings.",
             "Treat researchContext as input-only evidence. Use it to ground the plan, but do not include a researchNotes field or reproduce its source records in your response; the server attaches them after planning.",
             "Preserve concrete user intent. Treat the request as complete once the requested book and its subject are understandable, and make sensible creative decisions yourself.",
+            BYLINE_IS_TYPESET_RULE,
             "Set questions to [] for every coherent request. Ask at most one question only when a missing subject, unclear reference, contradictory instruction, or unavailable required source makes the user's request impossible to understand.",
             "Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other choices you can make while drafting the plan.",
             "Any necessary question must be plain, self-contained, tied directly to words the user supplied, and must not mention an unexplained character or detail invented by the plan.",
@@ -150,6 +152,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
             [
               `Revise this book generation plan. Return a JSON object with revised plan fields at the JSON root, not nested under plan, data, or result. You may omit unchanged fields because the server preserves them from the current plan. Do not re-emit unchanged researchNotes; existing research notes are preserved server-side. Apply the user's requested changes directly and preserve useful existing decisions. Plan real book chapters, not one titled chapter or section per generated page. The sum of chapter targetPages must equal exactly ${targetPages}; do not create more chapters than targetPages. For factual, scientific, historical, or research-grounded books, preserve source-backed claims and uncertainty; do not invent studies, journals, institutes, experts, statistics, citations, or numeric findings. When the user answers planning questions, bake the answered decisions into the plan and remove or update questions that are now resolved. Treat skipped questions as no preference: decide those details yourself and remove them from questions. Never re-ask a question the user already answered or skipped, even reworded. Set questions to [] whenever the user's book and subject are understandable. Ask at most one plain, self-contained question only for a missing subject, unclear reference, contradictory instruction, or unavailable required source. Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other plan details you can decide yourself.`,
               "Any question you keep needs 2-4 premade answers only when a few complete answers really cover it, and every option must be a full answer usable as-is. When the answer is a value only the reader can supply - a name, a title, a place, a number, a date - set options to [] and let them type it. Never write an option that only describes how the reader will answer.",
+              BYLINE_IS_TYPESET_RULE,
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               ...targetLanguageGenerationGuidance(options.language),
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),

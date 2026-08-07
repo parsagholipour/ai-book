@@ -34,7 +34,6 @@ const _localGreetingTurn = MobileCreationTurn(
   warnings: <String>[],
 );
 
-
 class CreationChatController extends Notifier<CreationChatState> {
   int _initRequestId = 0;
   int _messageRequestId = 0;
@@ -865,7 +864,10 @@ class CreationChatController extends Notifier<CreationChatState> {
 
   void setTone(String value) {
     state = state.copyWith(
-      optionalDetails: _copyOptional(tone: value.trim()),
+      optionalDetails: copyOptionalDetails(
+        state.optionalDetails,
+        tone: value.trim(),
+      ),
       userChoices: {...state.userChoices, CreationChoice.tone},
     );
   }
@@ -873,11 +875,19 @@ class CreationChatController extends Notifier<CreationChatState> {
   void setTitle(String value) {
     final trimmed = value.trim();
     if (trimmed.isEmpty) {
-      state = state.copyWith(optionalDetails: _copyOptional(title: trimmed));
+      state = state.copyWith(
+        optionalDetails: copyOptionalDetails(
+          state.optionalDetails,
+          title: trimmed,
+        ),
+      );
       return;
     }
     state = state.copyWith(
-      optionalDetails: _copyOptional(title: trimmed),
+      optionalDetails: copyOptionalDetails(
+        state.optionalDetails,
+        title: trimmed,
+      ),
       sessionTitle: trimmed,
     );
   }
@@ -894,7 +904,10 @@ class CreationChatController extends Notifier<CreationChatState> {
 
   void setAuthorName(String value) {
     state = state.copyWith(
-      optionalDetails: _copyOptional(authorName: value.trim()),
+      optionalDetails: copyOptionalDetails(
+        state.optionalDetails,
+        authorName: value.trim(),
+      ),
     );
   }
 
@@ -937,21 +950,6 @@ class CreationChatController extends Notifier<CreationChatState> {
     });
     _syncOutputsRequest = request;
     return request;
-  }
-
-  MobileCreationOptionalDetails _copyOptional({
-    String? title,
-    String? authorName,
-    String? mustInclude,
-    String? tone,
-  }) {
-    final current = state.optionalDetails;
-    return MobileCreationOptionalDetails(
-      title: title ?? current.title,
-      authorName: authorName ?? current.authorName,
-      mustInclude: mustInclude ?? current.mustInclude,
-      tone: tone ?? current.tone,
-    );
   }
 
   MobileCreationPresets? _presetsForRequest() {
@@ -1171,6 +1169,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       messages: messages,
       createdProjectId: session?.createdProjectId,
       brief: turn.brief,
+      optionalDetails: mergeChatOptionalDetails(state.optionalDetails, turn),
       presets: mergeStickyCreationPresets(
         incoming: turn.presets,
         current: state.presets,

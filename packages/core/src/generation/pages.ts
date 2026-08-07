@@ -14,6 +14,7 @@ import {
 } from "../prompting/readingLevel.js";
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 import { normalizePlanPageTargets } from "./planner.js";
 import type {
   BookPlan,
@@ -52,7 +53,8 @@ const READER_FACING_PAGE_BRIEF_RULES = [
   "Treat pageBrief purpose, beat, requiredContinuity, and endingPressure as internal assignment notes; transform them into prose instead of echoing their wording.",
   'Do not write procedural phrases such as "concluding the survey", "this chapter transitions", "the next section", or "the scope of this survey" in the page.',
   "If requiredContinuity points to an earlier page, preserve consistency without re-explaining that page's concrete examples; add a new implication or consequence.",
-  "When pageScope.isLastPageOfChapter is true, close with a concrete implication for the chapter's argument and let any handoff to the next chapter arise from substance, not from announcing a transition."
+  "When pageScope.isLastPageOfChapter is true, close with a concrete implication for the chapter's argument and let any handoff to the next chapter arise from substance, not from announcing a transition.",
+  BYLINE_IS_TYPESET_RULE
 ];
 
 function styleGuidancePayload(input: CreateProjectInput) {

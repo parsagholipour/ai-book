@@ -212,6 +212,68 @@ describe("mobile creation session project build", () => {
     await app.close();
   });
 
+  it("prints a chat-captured byline on the project without repeating it as an instruction", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: "A fable about generosity",
+      // What the chat's update_settings tool wrote via mergeCreationOptionalDetails.
+      optionalDetails: { authorName: "Parsa Gh.", mustInclude: "", tone: "" },
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: "A fable about generosity, put my name Parsa Gh. on it" }
+      ],
+      selectedPresets: {
+        bookType: "short_story",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true,
+        pageCountMode: "custom",
+        targetPages: 8,
+        pageCountSource: "settings"
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-story" });
+    mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+      projectRecord({
+        id: "project-from-session",
+        title: data.title,
+        authorName: data.authorName ?? null,
+        prompt: data.prompt,
+        category: data.category,
+        subcategory: data.subcategory ?? null,
+        targetPages: data.targetPages,
+        mediaSettings: data.mediaSettings,
+        currentPlan: null,
+        pages: [],
+        _count: { pages: 0, images: 0, jobs: 0 }
+      })
+    );
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "session-draft", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/build",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
+
+    expect(response.statusCode).toBe(201);
+    // The structured field is what the cover and the title page are typeset from.
+    expect(createCall.data.authorName).toBe("Parsa Gh.");
+    // "Must include: … Parsa Gh." is what once made the planner write the
+    // byline into the premise, and a premise reaches every page call.
+    expect(createCall.data.prompt).not.toMatch(/Must include:.*Parsa/);
+    await app.close();
+  });
+
   it("maps product presets into backend settings while returning a mobile-safe creation DTO", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.template.findFirst.mockResolvedValue({ id: "template-business" });

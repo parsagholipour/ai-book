@@ -399,9 +399,12 @@ class _ToneField extends StatelessWidget {
 ///
 /// No "Your choice" badge and no [CreationChoice] entry, unlike every field
 /// above: the badge marks a value the studio proposed and the reader overrode,
-/// and the studio never proposes a byline. Stateful only to own the controller
-/// across sheet rebuilds — nothing else in the app writes this value, so there
-/// is no external change to resync from.
+/// and the studio still proposes no byline. A name stated in chat does land
+/// here — `mergeChatOptionalDetails` fills it — but that is the reader's own
+/// words being transcribed, not a suggestion to accept or reject. Stateful
+/// only to own the controller across sheet rebuilds; the chat cannot run while
+/// this sheet is open, and each open builds a fresh state from the field, so
+/// there is no live external change to resync from.
 class _AuthorNameField extends StatefulWidget {
   const _AuthorNameField({required this.authorName, required this.onChanged});
 

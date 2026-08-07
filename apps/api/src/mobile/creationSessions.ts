@@ -194,6 +194,35 @@ export function creationTurnForStoredDraft(
   payload: MobileCreationDraftPayload,
   messages = conversationMessagesFromPayload(payload)
 ): MobileCreationTurn {
+  return withStoredCreationMetadata(storedDraftTurn(draft, payload, messages), payload);
+}
+
+/**
+ * `optionalDetails` is not part of the session DTO, so a cold app start has no
+ * other way back to the byline and title the Advanced sheet was showing.
+ * Echoing them onto the restored turn refills those fields, and it is safe to
+ * do unconditionally: this is exactly what the client last sent us.
+ */
+function withStoredCreationMetadata(
+  turn: MobileCreationTurn,
+  payload: MobileCreationDraftPayload
+): MobileCreationTurn {
+  const { authorName, title } = payload.optionalDetails;
+  if (!authorName && !title) {
+    return turn;
+  }
+  return {
+    ...turn,
+    ...(authorName ? { authorName } : {}),
+    ...(title ? { title } : {})
+  };
+}
+
+function storedDraftTurn(
+  draft: { lastTurn?: unknown },
+  payload: MobileCreationDraftPayload,
+  messages: MobileCreationMessage[]
+): MobileCreationTurn {
   const persisted = mobileCreationTurnSchema.safeParse(draft.lastTurn);
   if (persisted.success && persisted.data.assistantMessage.trim()) {
     return persisted.data;

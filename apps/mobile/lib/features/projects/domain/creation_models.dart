@@ -476,6 +476,8 @@ class MobileCreationTurn {
     required this.warnings,
     this.question,
     this.language,
+    this.authorName,
+    this.title,
     this.buildRequested = false,
   });
 
@@ -492,6 +494,14 @@ class MobileCreationTurn {
 
   /// Book language detected from the chat ("fa", "es", ...), if any.
   final String? language;
+
+  /// Byline stated in chat, or the one the draft was resumed with. Fills the
+  /// author field in Advanced settings; the app prints it, so it never belongs
+  /// in the book's own text.
+  final String? authorName;
+
+  /// Book title stated in chat, or the one the draft was resumed with.
+  final String? title;
 
   /// True when the user asked in chat to build the plan ("ok build it").
   final bool buildRequested;
@@ -516,6 +526,8 @@ class MobileCreationTurn {
       shapePreview: _stringList(json['shapePreview']),
       warnings: _stringList(json['warnings']),
       language: json['language'] as String?,
+      authorName: json['authorName'] as String?,
+      title: json['title'] as String?,
       buildRequested: json['buildRequested'] as bool? ?? false,
     );
   }

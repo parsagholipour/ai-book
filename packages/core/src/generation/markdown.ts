@@ -389,6 +389,16 @@ function formatChapterHeading(chapter: DisplayChapter, heading: ChapterHeadingFo
 }
 
 /**
+ * What every text-generating prompt has to be told about the byline, because
+ * `formatTitlePage` below and `renderCoverPng` already print it. Without this
+ * a stated author reads as a writing instruction: one book's plan answered
+ * "make it under my name" by ending its premise with «به قلم پارسا ق.», and a
+ * premise reaches every single page call.
+ */
+export const BYLINE_IS_TYPESET_RULE =
+  "The cover and the title page are typeset by the app from the project's title and author name. Never write the author's name, a byline, an attribution such as \"by <name>\", a dedication-style credit, or any other front matter into the premise, chapter titles, or page text; naming the author there prints it a second time inside the book.";
+
+/**
  * The title page, or `""` for a book with no byline.
  *
  * A cover already typesets the title and the author over the artwork, so this

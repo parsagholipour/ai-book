@@ -223,6 +223,57 @@ describe("creation chat web search", () => {
     expect(patch.buildRequested).toBe(false);
   });
 
+  it("captures a byline and title stated in chat onto the turn", async () => {
+    const model = toolModel([
+      {
+        toolCalls: [
+          {
+            name: "update_settings",
+            arguments: { authorName: "Parsa Gh.", title: "The Lantern" }
+          }
+        ]
+      },
+      {
+        finish: {
+          assistantMessage: "Got it — The Lantern, by Parsa Gh.",
+          question: null
+        }
+      }
+    ]);
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: neverSearchAdapter() },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.authorName).toBe("Parsa Gh.");
+    expect(patch.title).toBe("The Lantern");
+    // The byline belongs to optionalDetails, not to the book brief: copying it
+    // into mustInclude is what once made the planner write it into the premise.
+    expect(patch.brief?.mustInclude ?? "").not.toContain("Parsa");
+  });
+
+  it("ignores a byline the model puts in the finish patch instead of the tool", async () => {
+    const model = toolModel([
+      {
+        finish: {
+          assistantMessage: "Sounds good.",
+          question: null,
+          authorName: "Invented Name"
+        }
+      }
+    ]);
+
+    const patch = await enrichCreationTurnWithSearch(
+      { textModel: model, research: neverSearchAdapter() },
+      request,
+      deterministicCreationTurn(request)
+    );
+
+    expect(patch.authorName).toBeUndefined();
+  });
+
   it("applies exact cover-only settings from the model tool", async () => {
     const model = toolModel([
       {
