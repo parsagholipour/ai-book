@@ -52,10 +52,10 @@ Important notes:
 
 ## Support Links
 
-- Privacy policy: `PRIVACY_POLICY_URL` / `https://example.com/tomeza/privacy` placeholder.
-- Terms of service: `TERMS_OF_SERVICE_URL` / `https://example.com/tomeza/terms` placeholder.
-- Account deletion: `ACCOUNT_DELETION_URL` / `https://example.com/tomeza/account-deletion` placeholder.
-- Support email: `SUPPORT_EMAIL` / `support@example.com` placeholder.
+- Privacy policy: `https://tomeza.ravanix.app/privacy`.
+- Terms of service: `https://tomeza.ravanix.app/terms`.
+- Account deletion: `https://tomeza.ravanix.app/account-deletion`.
+- Support email: `support@ravanix.app`.
 
 ## Play Console Manual Checklist
 

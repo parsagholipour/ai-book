@@ -69,10 +69,17 @@ void main() {
     expect(find.text('Accept and continue'), findsOneWidget);
 
     for (final checkbox in find.byType(Checkbox).evaluate()) {
-      await tester.tap(find.byWidget(checkbox.widget));
+      final finder = find.byWidget(checkbox.widget);
+      await tester.ensureVisible(finder);
+      await tester.tap(finder);
       await tester.pump();
     }
-    await tester.tap(find.widgetWithText(FilledButton, 'Accept and continue'));
+    final acceptButton = find.widgetWithText(
+      FilledButton,
+      'Accept and continue',
+    );
+    await tester.ensureVisible(acceptButton);
+    await tester.tap(acceptButton);
     await tester.pumpAndSettle();
 
     expect(find.text('New book'), findsOneWidget);
@@ -84,6 +91,7 @@ void main() {
   ) async {
     await tester.pumpWidget(testApp(authRepository: FakeAuthRepository()));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Create account'));
     await tester.tap(find.text('Create account'));
     await tester.pumpAndSettle();
 
@@ -99,7 +107,9 @@ void main() {
       find.widgetWithText(TextFormField, 'Password'),
       'CorrectPass123',
     );
-    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    final createButton = find.widgetWithText(FilledButton, 'Create account');
+    await tester.ensureVisible(createButton);
+    await tester.tap(createButton);
     await tester.pump();
 
     expect(

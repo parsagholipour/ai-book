@@ -59,6 +59,7 @@ import {
 } from "@book-maker/db/billing";
 import { type FastifyReply } from "fastify";
 import type { MobileRouteContext } from "./routeContext.js";
+import { assessCurrentContentRestrictions } from "../contentRestrictions.js";
 
 /**
  * The creation "build" step: turn an accepted creation draft into a real
@@ -106,6 +107,21 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       ...(overrides.sourceNotes !== undefined ? { sourceNotes: overrides.sourceNotes } : {}),
       ...(overrides.optionalDetails ? { optionalDetails: overrides.optionalDetails } : {})
     };
+    const restriction = await assessCurrentContentRestrictions(
+      [
+        mergedPayload.rawIdea ?? "",
+        mergedPayload.sourceNotes ?? "",
+        JSON.stringify(mergedPayload.optionalDetails ?? {})
+      ].join("\n")
+    );
+    if (!restriction.allowed) {
+      return {
+        ok: false as const,
+        status: 422,
+        code: restriction.reason === "copyright" ? "COPYRIGHT_RESTRICTED" : "CONTENT_RESTRICTED",
+        message: restriction.message
+      };
+    }
     const advisorFromDraft = mobileBookAdvisorResponseSchema.safeParse(draft.advisorSnapshot);
     const advisor = advisorFromDraft.success
       ? advisorFromDraft.data
