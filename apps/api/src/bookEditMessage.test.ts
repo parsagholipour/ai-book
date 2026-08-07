@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { targetLanguageFromLanguageVersionRequest } from "./bookEditMessage.js";
+import { pageIndexesFromMessage, targetLanguageFromLanguageVersionRequest } from "./bookEditMessage.js";
+
+describe("pageIndexesFromMessage", () => {
+  // Titles that share no words with the messages below, so only the numeral
+  // path can produce a match.
+  const pages = ["Opening", "Rising", "Middle", "Turning", "Close"].map((title, offset) => ({
+    id: `page-${offset + 1}`,
+    index: offset + 1,
+    title,
+    summary: "",
+    previewText: ""
+  }));
+
+  it("reads a page reference typed in the user's own numerals", () => {
+    // The reader writes "On page 4" itself, but a reader typing by hand uses the
+    // digits their keyboard produces.
+    expect(pageIndexesFromMessage("page ۴ needs a rewrite", pages)).toEqual([4]);
+    expect(pageIndexesFromMessage("pages ۲-۴", pages)).toEqual([2, 3, 4]);
+  });
+
+  it("still reads the reader's own English references", () => {
+    expect(pageIndexesFromMessage('On page 3, rewrite this passage: "x".', pages)).toEqual([3]);
+  });
+});
 
 describe("targetLanguageFromLanguageVersionRequest", () => {
   it("reads a real request for another language version", () => {

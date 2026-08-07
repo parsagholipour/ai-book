@@ -344,6 +344,44 @@ describe("mobile creation drafts and advisor", () => {
     await app.close();
   });
 
+  it("does not ask again for a length the user already stated in their own script", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const idea = "یک کتاب ۳ صفحه ای بساز از بهترین حکایت بوستان سعدی با توضیحات";
+    const payload = {
+      payloadVersion: 3,
+      rawIdea: idea,
+      language: "fa",
+      messages: [
+        { role: "assistant", content: "Hi!" },
+        { role: "user", content: idea }
+      ],
+      selectedPresets: {
+        bookType: "lead_magnet",
+        bookTypeChoice: "auto",
+        lengthPreset: "short",
+        qualityPreset: "balanced",
+        imagesEnabled: true,
+        pageCountMode: "auto"
+      }
+    };
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "session-draft", payload }));
+    const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-sessions/session-draft/preflight",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      requiresPageCount: false,
+      detectedPageCount: { targetPages: 3, source: "chat" }
+    });
+    await app.close();
+  });
+
   it("lets custom page settings override an explicit chat page count", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const payload = {

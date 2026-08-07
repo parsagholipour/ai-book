@@ -3,6 +3,7 @@ import {
   LANGUAGE_CLAUSE_END_GUARD,
   LANGUAGE_NAME_CODES,
   languageNamePattern,
+  normalizeNumerals,
   normalizeProjectLanguage,
   replanSettingsFromMessage,
   type ReplanSettings
@@ -327,7 +328,10 @@ export function replanSettingsFromEditMessage(
 
 export function pageIndexesFromMessage(message: string, pages: BookEditPageContext[]): number[] {
   const indexes = new Set<number>();
-  for (const match of message.matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
+  // Numerals are normalized but the word "page" is not translated: the reader
+  // writes its own references in English ("On page 4") whatever the book's
+  // language, so this only has to survive a reader typing their own digits.
+  for (const match of normalizeNumerals(message).matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
     const start = Number(match[1]);
     const end = match[2] ? Number(match[2]) : start;
     for (let index = Math.min(start, end); index <= Math.max(start, end); index += 1) {
