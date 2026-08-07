@@ -223,6 +223,10 @@ describe("createPlanningPackage", () => {
     // tapping an option that only describes how they would answer.
     expect(systemPrompt).toContain("set options to [] and let them type it");
     expect(systemPrompt).toContain("Never write an option that only describes how the reader will answer");
+    // The app draws the picker from answerKind, so a question several options
+    // answer at once is declared rather than smuggled into the prompt text.
+    expect(systemPrompt).toContain('"multi" (up to 6 options)');
+    expect(systemPrompt).toContain("never list the options inside the prompt text");
   });
 
   it("keeps at most one subject clarification for an incomplete prompt", async () => {
@@ -230,8 +234,8 @@ describe("createPlanningPackage", () => {
     const candidate: BookPlan = {
       ...makeFallbackPlan(input),
       questions: [
-        { prompt: "What should the story be about?", options: ["A hero", "An animal"], allowCustom: true },
-        { prompt: "What mood should it have?", options: ["Cozy", "Funny"], allowCustom: true }
+        { prompt: "What should the story be about?", options: ["A hero", "An animal"], answerKind: "choice", allowCustom: true },
+        { prompt: "What mood should it have?", options: ["Cozy", "Funny"], answerKind: "choice", allowCustom: true }
       ]
     };
     const textModel: TextModelAdapter = {
@@ -325,6 +329,7 @@ describe("revisePlanningPackage", () => {
     // A revision re-emits questions, so it carries the same open-answer rule.
     const revisionPrompt = request!.messages.find((message) => message.role === "system")!.content;
     expect(revisionPrompt).toContain("set options to [] and let them type it");
+    expect(revisionPrompt).toContain('"multi" (up to 6 options)');
   });
 
   it("defaults omitted revision questions to none instead of restoring legacy questions", async () => {
@@ -332,9 +337,9 @@ describe("revisePlanningPackage", () => {
     const currentPlan: BookPlan = {
       ...makeFallbackPlan(input),
       questions: [
-        { prompt: "What tone should the story have?", options: ["Playful", "Calm"], allowCustom: true },
-        { prompt: "Should the turtle have a name?", options: ["Yes", "No"], allowCustom: true },
-        { prompt: "How long should chapters be?", options: ["Short", "Long"], allowCustom: true }
+        { prompt: "What tone should the story have?", options: ["Playful", "Calm"], answerKind: "choice", allowCustom: true },
+        { prompt: "Should the turtle have a name?", options: ["Yes", "No"], answerKind: "choice", allowCustom: true },
+        { prompt: "How long should chapters be?", options: ["Short", "Long"], answerKind: "choice", allowCustom: true }
       ]
     };
     const textModel: TextModelAdapter = {
@@ -375,7 +380,7 @@ describe("revisePlanningPackage", () => {
     const currentPlan: BookPlan = {
       ...makeFallbackPlan(input),
       questions: [
-        { prompt: answeredPrompt, options: ["My notes"], allowCustom: true }
+        { prompt: answeredPrompt, options: ["My notes"], answerKind: "open", allowCustom: true }
       ]
     };
     const textModel: TextModelAdapter = {
@@ -384,9 +389,9 @@ describe("revisePlanningPackage", () => {
           data: {
             title: "Revised Rabbit Race",
             questions: [
-              { prompt: answeredPrompt, options: ["My notes"], allowCustom: true },
-              { prompt: necessaryPrompt, options: ["Keep four", "Use eight"], allowCustom: true },
-              { prompt: "What mood should it have?", options: ["Cozy"], allowCustom: true }
+              { prompt: answeredPrompt, options: ["My notes"], answerKind: "open", allowCustom: true },
+              { prompt: necessaryPrompt, options: ["Keep four", "Use eight"], answerKind: "choice", allowCustom: true },
+              { prompt: "What mood should it have?", options: ["Cozy"], answerKind: "open", allowCustom: true }
             ]
           } as T,
           text: "{}",

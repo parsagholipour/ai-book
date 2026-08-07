@@ -20,6 +20,7 @@ import { mobileSafetyRoutes } from "./mobileSafety.js";
 import { closeQueue, reconcileUndispatchedGenerationJobs } from "./queue.js";
 import { adminAnalyticsRoutes } from "./routes/adminAnalytics.js";
 import { adminPricingRoutes } from "./routes/adminPricing.js";
+import { adminSafetyRoutes } from "./routes/adminSafety.js";
 import { projectRoutes } from "./routes/projects.js";
 
 const config = loadConfig();
@@ -154,6 +155,7 @@ await app.register(mobileProjectRoutes);
 await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);
 await app.register(adminPricingRoutes);
+await app.register(adminSafetyRoutes);
 await app.register(adminAnalyticsRoutes);
 await app.register(projectRoutes);
 

@@ -52,6 +52,7 @@ import { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
+import { enforceContentRestrictions } from "../../contentRestrictions.js";
 
 /**
  * Plan revision/approval, operation retries, and stalled-generation resume.
@@ -101,6 +102,9 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!project) {
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
       }
+      if (!(await enforceContentRestrictions(reply, project.prompt))) {
+        return;
+      }
 
       try {
         return reply
@@ -136,6 +140,9 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       const parsed = mobilePlanRevisionBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide a short revision request.");
+      }
+      if (!(await enforceContentRestrictions(reply, parsed.data.message))) {
+        return;
       }
       const plan = await prisma.planVersion.findFirst({
         where: { id, project: { userId: auth.user.id } },
@@ -241,6 +248,9 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       }
 
       const generationInput = createProjectSchema.parse(inputSnapshotFromProject(plan.project));
+      if (!(await enforceContentRestrictions(reply, generationInput.prompt))) {
+        return;
+      }
       const creditEstimate = estimateFullBookCreditCost(generationInput);
 
       // This is the only route that starts an illustrated generation, so it is

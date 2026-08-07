@@ -14,6 +14,7 @@ class ScriptedCreationRepository implements CreationRepository {
   ScriptedCreationRepository({
     this.replyWithQuestion = false,
     this.replyWithOpenQuestion = false,
+    this.replyWithMultiQuestion = false,
     this.replyWithBuildRequest = false,
     this.replyAuthorName,
     this.preflightRequiresPageCount = false,
@@ -26,6 +27,10 @@ class ScriptedCreationRepository implements CreationRepository {
   /// A question whose answer is a value only the reader can supply, so the API
   /// sends it with no options and the card points at the message box.
   final bool replyWithOpenQuestion;
+
+  /// A question several of the options answer at once, sent as answerKind
+  /// "multi" so the card collects picks instead of sending the first tap.
+  final bool replyWithMultiQuestion;
   final bool replyWithBuildRequest;
 
   /// The byline the chat captured from the message just sent, as the API
@@ -266,10 +271,20 @@ class ScriptedCreationRepository implements CreationRepository {
         // A question never blocks the build: the API keeps canBuild true and
         // the app offers "Skip and build the plan".
         canBuild: true,
-        quickReplies: (replyWithQuestion || replyWithOpenQuestion)
+        quickReplies:
+            (replyWithQuestion ||
+                replyWithOpenQuestion ||
+                replyWithMultiQuestion)
             ? const []
             : const ['Make it shorter'],
-        question: replyWithOpenQuestion
+        question: replyWithMultiQuestion
+            ? const {
+                'prompt': 'Which themes should the tales carry?',
+                'answerKind': 'multi',
+                'options': ['Forgiveness', 'Patience', 'Justice'],
+                'allowCustom': true,
+              }
+            : replyWithOpenQuestion
             ? const {
                 'prompt': 'What name should appear as the author?',
                 'answerKind': 'open',

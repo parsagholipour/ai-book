@@ -43,19 +43,19 @@ class AppConfig {
     const rawApiBaseUrl = String.fromEnvironment('API_BASE_URL');
     const rawPrivacyPolicyUrl = String.fromEnvironment(
       'PRIVACY_POLICY_URL',
-      defaultValue: 'https://example.com/tomeza/privacy',
+      defaultValue: 'https://tomeza.ravanix.app/privacy',
     );
     const rawTermsOfServiceUrl = String.fromEnvironment(
       'TERMS_OF_SERVICE_URL',
-      defaultValue: 'https://example.com/tomeza/terms',
+      defaultValue: 'https://tomeza.ravanix.app/terms',
     );
     const rawAccountDeletionUrl = String.fromEnvironment(
       'ACCOUNT_DELETION_URL',
-      defaultValue: 'https://example.com/tomeza/account-deletion',
+      defaultValue: 'https://tomeza.ravanix.app/account-deletion',
     );
     const rawSupportEmail = String.fromEnvironment(
       'SUPPORT_EMAIL',
-      defaultValue: 'support@example.com',
+      defaultValue: 'support@ravanix.app',
     );
 
     final environment = AppEnvironment.parse(rawEnvironment);
@@ -92,7 +92,7 @@ class AppConfig {
       termsOfServiceUrl: termsOfServiceUrl,
       accountDeletionUrl: accountDeletionUrl,
       supportEmail: rawSupportEmail.trim().isEmpty
-          ? 'support@example.com'
+          ? 'support@ravanix.app'
           : rawSupportEmail.trim(),
     );
   }

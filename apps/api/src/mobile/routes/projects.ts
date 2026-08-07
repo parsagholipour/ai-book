@@ -6,6 +6,7 @@ import { idParamsSchema, mobileAuthError, mobileProjectCreateBodySchema, mobileP
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
+import { enforceContentRestrictions } from "../../contentRestrictions.js";
 
 /**
  * Project list, create and detail.
@@ -62,6 +63,9 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       const parsed = mobileProjectCreateBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide a book type, prompt, and supported mobile presets.");
+      }
+      if (!(await enforceContentRestrictions(reply, parsed.data.prompt))) {
+        return;
       }
 
       const project = await createMobileProjectRecord(auth.user.id, buildMobileCreateProjectInput(parsed.data));

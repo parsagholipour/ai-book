@@ -428,17 +428,26 @@ class MobileCreationQuestion {
     required this.prompt,
     required this.options,
     required this.allowCustom,
+    this.answerKind = QuestionAnswerKind.choice,
   });
 
   final String prompt;
   final List<String> options;
   final bool allowCustom;
 
+  /// Whether one of the options answers this, several of them do, or none can.
+  final QuestionAnswerKind answerKind;
+
   factory MobileCreationQuestion.fromJson(Map<String, dynamic> json) {
+    final options = _stringList(json['options']);
     return MobileCreationQuestion(
       prompt: json['prompt'] as String,
-      options: _stringList(json['options']),
+      options: options,
       allowCustom: json['allowCustom'] as bool? ?? true,
+      answerKind: questionAnswerKindFromJson(
+        json['answerKind'],
+        optionCount: options.length,
+      ),
     );
   }
 }

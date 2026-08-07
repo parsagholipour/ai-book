@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import 'auth_controller.dart';
@@ -25,6 +27,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _displayNameController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _termsAccepted = false;
+  bool _ageGuardianAttested = false;
+  bool _showLegalError = false;
 
   bool get _isSignUp => widget.mode == AuthScreenMode.signUp;
 
@@ -206,6 +211,56 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               },
               onFieldSubmitted: (_) => _submit(),
             ),
+            if (_isSignUp) ...[
+              const SizedBox(height: 14),
+              _LegalAttestation(
+                checked: _termsAccepted,
+                onChanged: isSubmitting
+                    ? null
+                    : (value) => setState(() {
+                        _termsAccepted = value;
+                        _showLegalError = false;
+                      }),
+                label:
+                    'I agree to the Terms and acknowledge the Privacy Policy.',
+                links: [
+                  _LegalLink(
+                    label: 'Terms',
+                    onTap: () => _openLegalUrl(
+                      ref.read(appConfigProvider).termsOfServiceUrl,
+                    ),
+                  ),
+                  _LegalLink(
+                    label: 'Privacy Policy',
+                    onTap: () => _openLegalUrl(
+                      ref.read(appConfigProvider).privacyPolicyUrl,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _LegalAttestation(
+                checked: _ageGuardianAttested,
+                onChanged: isSubmitting
+                    ? null
+                    : (value) => setState(() {
+                        _ageGuardianAttested = value;
+                        _showLegalError = false;
+                      }),
+                label:
+                    'I confirm that I am at least 13 and, if I am under the age of majority, my parent or guardian has agreed.',
+              ),
+              if (_showLegalError) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Accept both statements to create your account.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ],
             const SizedBox(height: 22),
             FilledButton.icon(
               onPressed: isSubmitting ? null : _submit,
@@ -234,10 +289,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
     final notifier = ref.read(authControllerProvider.notifier);
     if (_isSignUp) {
+      if (!_termsAccepted || !_ageGuardianAttested) {
+        setState(() => _showLegalError = true);
+        return;
+      }
       await notifier.signUp(
         email: _emailController.text,
         password: _passwordController.text,
         displayName: _displayNameController.text,
+        termsAccepted: _termsAccepted,
+        ageGuardianAttested: _ageGuardianAttested,
       );
     } else {
       await notifier.signIn(
@@ -247,6 +308,14 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
     if (ref.read(authControllerProvider).asData?.value != null) {
       TextInput.finishAutofillContext();
+    }
+  }
+
+  Future<void> _openLegalUrl(Uri uri) async {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+      ScaffoldMessenger.of(context).showAppSnackBar(
+        const SnackBar(content: Text('That legal page could not be opened.')),
+      );
     }
   }
 
@@ -262,6 +331,84 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     context.push('/auth/sign-up');
   }
+}
+
+class _LegalAttestation extends StatelessWidget {
+  const _LegalAttestation({
+    required this.checked,
+    required this.onChanged,
+    required this.label,
+    this.links = const [],
+  });
+
+  final bool checked;
+  final ValueChanged<bool>? onChanged;
+  final String label;
+  final List<_LegalLink> links;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onChanged == null ? null : () => onChanged!(!checked),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(8, 10, 10, 10),
+        decoration: BoxDecoration(
+          border: Border.all(color: colors.outlineVariant),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Checkbox(
+              value: checked,
+              onChanged: onChanged == null
+                  ? null
+                  : (value) => onChanged!(value ?? false),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: Theme.of(context).textTheme.bodySmall),
+                  if (links.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 4,
+                      children: links
+                          .map(
+                            (link) => TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                minimumSize: const Size(0, 32),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: link.onTap,
+                              child: Text(link.label),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LegalLink {
+  const _LegalLink({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
 }
 
 class _BrandMark extends StatelessWidget {

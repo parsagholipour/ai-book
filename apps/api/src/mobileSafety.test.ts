@@ -12,7 +12,8 @@ const mockPrisma = vi.hoisted(() => ({
   project: { findFirst: vi.fn(), delete: vi.fn() },
   imageAsset: { findFirst: vi.fn() },
   moderationReport: { create: vi.fn(), findMany: vi.fn(), update: vi.fn() },
-  accountDeletionRequest: { findFirst: vi.fn(), create: vi.fn() }
+  accountDeletionRequest: { findFirst: vi.fn(), create: vi.fn() },
+  legalAcceptance: { create: vi.fn() }
 }));
 
 vi.mock("@book-maker/db", () => ({
@@ -71,6 +72,7 @@ describe("mobile safety routes", () => {
     mockPrisma.accountDeletionRequest.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
       deletionRequestRecord(data)
     );
+    mockPrisma.legalAcceptance.create.mockResolvedValue({ id: "acceptance-1" });
     vi.mocked(stopProjectGenerationJobs).mockResolvedValue({
       stoppedJobs: 1,
       activeJobs: 0,
@@ -88,6 +90,42 @@ describe("mobile safety routes", () => {
     tempBookStorageDir = null;
     tempImageStorageDir = null;
     tempVoiceStorageDir = null;
+  });
+
+  it("publishes legal metadata without authentication and records reacceptance", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const app = await buildApp();
+
+    const metadata = await app.inject({ method: "GET", url: "/api/mobile/legal" });
+    const acceptance = await app.inject({
+      method: "POST",
+      url: "/api/mobile/legal/acceptance",
+      headers: bearer("token-a"),
+      payload: {
+        termsVersion: "2026-08-08",
+        privacyVersion: "2026-08-08",
+        termsAccepted: true,
+        ageGuardianAttested: true
+      }
+    });
+
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json().legal).toMatchObject({
+      termsVersion: "2026-08-08",
+      privacyVersion: "2026-08-08",
+      effectiveDate: "2026-08-08",
+      companyName: "Ravanix Technologies L.L.C-FZ"
+    });
+    expect(acceptance.statusCode).toBe(200);
+    expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-a",
+        termsAttested: true,
+        ageGuardianAttested: true,
+        source: "mobile_reacceptance"
+      })
+    });
+    await app.close();
   });
 
   it("stores reports for AI-generated books owned by the signed-in user", async () => {

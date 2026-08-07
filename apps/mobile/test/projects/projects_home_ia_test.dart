@@ -274,6 +274,9 @@ class _RenderScenario {
 
 class FakeAuthRepository implements AuthRepository {
   @override
+  Future<void> acceptCurrentLegalDocuments() async {}
+
+  @override
   Future<AuthSession?> restoreSession() async => fakeSession();
 
   @override
@@ -289,6 +292,8 @@ class FakeAuthRepository implements AuthRepository {
     required String email,
     required String password,
     String? displayName,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
   }) async {
     return fakeSession(email: email, displayName: displayName);
   }

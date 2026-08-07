@@ -5,6 +5,12 @@ import { dirname, isAbsolute, resolve } from "node:path";
 import { DEFAULT_ALIBABA_API_HOST, DEFAULT_ALIBABA_IMAGE_MODEL, DEFAULT_ALIBABA_TEXT_MODEL } from "./adapters/alibabaModels.js";
 import { DEFAULT_DEEPINFRA_BASE_URL, DEFAULT_DEEPINFRA_FAST_MODEL, DEFAULT_DEEPINFRA_MODEL } from "./adapters/deepinfraModels.js";
 import { normalizeGeminiImageModel } from "./adapters/geminiModels.js";
+import {
+  LEGAL_SUPPORT_EMAIL,
+  PUBLIC_ACCOUNT_DELETION_URL,
+  PUBLIC_PRIVACY_POLICY_URL,
+  PUBLIC_TERMS_OF_SERVICE_URL
+} from "./legal.js";
 
 const envSchema = z.object({
   NODE_ENV: z.string().optional(),
@@ -59,10 +65,10 @@ const envSchema = z.object({
   API_HOST: z.string().default("0.0.0.0"),
   API_PORT: z.coerce.number().int().positive().optional(),
   PUBLIC_API_URL: z.string().url().default("http://localhost:4001"),
-  PRIVACY_POLICY_URL: z.string().url().default("https://example.com/tomeza/privacy"),
-  TERMS_OF_SERVICE_URL: z.string().url().default("https://example.com/tomeza/terms"),
-  ACCOUNT_DELETION_URL: z.string().url().default("https://example.com/tomeza/account-deletion"),
-  SUPPORT_EMAIL: z.string().email().default("support@example.com"),
+  PRIVACY_POLICY_URL: z.string().url().default(PUBLIC_PRIVACY_POLICY_URL),
+  TERMS_OF_SERVICE_URL: z.string().url().default(PUBLIC_TERMS_OF_SERVICE_URL),
+  ACCOUNT_DELETION_URL: z.string().url().default(PUBLIC_ACCOUNT_DELETION_URL),
+  SUPPORT_EMAIL: z.string().email().default(LEGAL_SUPPORT_EMAIL),
   GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
   GOOGLE_PLAY_ACCESS_TOKEN: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),

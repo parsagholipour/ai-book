@@ -803,6 +803,55 @@ void main() {
     },
   );
 
+  // The planner asks "which of these themes?" about a book of tales. One answer
+  // was all the drawer could send, so the plan revision only ever heard one.
+  testWidgets('a multi-answer plan question revises with every pick', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(plan: multiQuestionPlan()),
+    );
+    await tester.pumpWidget(app(creation: creation, projects: projects));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('Question 1 of 1'), findsOneWidget);
+    expect(find.text('Pick as many as you like.'), findsOneWidget);
+
+    await tester.tap(find.text('Forgiveness'));
+    await tester.pump();
+    // A tap is a pick, not an answer: nothing has been sent yet.
+    expect(projects.revisionMessages, isEmpty);
+
+    await tester.ensureVisible(find.text('Justice'));
+    await tester.pump();
+    await tester.tap(find.text('Justice'));
+    await tester.pump();
+
+    final sendFinder = find.widgetWithText(FilledButton, 'Send 2 answers');
+    await tester.ensureVisible(sendFinder);
+    await tester.pump();
+    await tester.tap(sendFinder);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(projects.revisionMessages, hasLength(1));
+    expect(
+      projects.revisionMessages.single,
+      contains('Which themes should the tales carry?: Forgiveness, Justice'),
+    );
+
+    await tester.teardownScreen();
+  });
+
   testWidgets(
     'a plan question with no premade answers opens its field without the keyboard',
     (tester) async {
@@ -2563,6 +2612,52 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(creation.sentMessages.last, 'Parsa');
+
+    await tester.teardownScreen();
+  });
+
+  // "Which of these themes?" is answered by several options at once. Sending the
+  // first tap dropped the rest, so the interviewer stopped offering options at
+  // all and asked for a typed list instead.
+  testWidgets('a multi-answer question sends every pick as one answer', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository(replyWithMultiQuestion: true);
+    await tester.pumpWidget(app(creation: creation, startFresh: true));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextField).last,
+      'A tale like Saadi\'s Bustan',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Which themes should the tales carry?'), findsOneWidget);
+    expect(find.text('Pick as many as you like.'), findsOneWidget);
+    // Checkboxes, not a numbered fork, and nothing is sent by a tap.
+    expect(find.text('1.'), findsNothing);
+
+    await tester.tap(find.text('Forgiveness'));
+    await tester.pump();
+    expect(creation.sentMessages, ['A tale like Saadi\'s Bustan']);
+
+    // The drawer scrolls when a long option list does not fit above the
+    // composer, so reach the last option the way a reader would.
+    await tester.ensureVisible(find.text('Justice'));
+    await tester.pump();
+    await tester.tap(find.text('Justice'));
+    await tester.pump();
+
+    final sendFinder = find.widgetWithText(FilledButton, 'Send 2 answers');
+    await tester.ensureVisible(sendFinder);
+    await tester.pump();
+    await tester.tap(sendFinder);
+    await tester.pumpAndSettle();
+
+    // Offered order, and one message rather than two.
+    expect(creation.sentMessages.last, 'Forgiveness, Justice');
 
     await tester.teardownScreen();
   });

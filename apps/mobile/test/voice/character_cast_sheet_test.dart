@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/voice/data/voice_repository.dart';
+import 'package:tomeza/features/voice/data/voice_disclosure_store.dart';
 import 'package:tomeza/features/voice/domain/voice_models.dart';
 import 'package:tomeza/features/voice/presentation/character_cast_sheet.dart';
 
@@ -71,6 +72,18 @@ class FakeVoiceRepository implements VoiceRepository {
   }) => throw UnimplementedError();
 }
 
+class MemoryVoiceDisclosureStore implements VoiceDisclosureStore {
+  bool acknowledged = false;
+
+  @override
+  Future<void> acknowledge() async {
+    acknowledged = true;
+  }
+
+  @override
+  Future<bool> hasAcknowledged() async => acknowledged;
+}
+
 Future<void> pumpCastSheet(WidgetTester tester, FakeVoiceRepository repository) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -118,6 +131,46 @@ void main() {
 
     expect(find.text('Marlow'), findsOneWidget);
     expect(find.text('The lighthouse keeper'), findsOneWidget);
+  });
+
+  testWidgets('discloses microphone and provider processing before the first call', (
+    tester,
+  ) async {
+    final disclosure = MemoryVoiceDisclosureStore();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          voiceRepositoryProvider.overrideWithValue(FakeVoiceRepository(cast())),
+          voiceDisclosureStoreProvider.overrideWithValue(disclosure),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: ElevatedButton(
+                onPressed: () => showCharacterCastSheet(
+                  context: context,
+                  projectId: 'project-1',
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Marlow'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Before your first voice call'), findsOneWidget);
+    expect(find.textContaining('sent in real time'), findsOneWidget);
+    expect(find.textContaining('does not retain live-call audio'), findsOneWidget);
+    expect(disclosure.acknowledged, isFalse);
+
+    await tester.tap(find.text('Not now'));
+    await tester.pumpAndSettle();
+    expect(disclosure.acknowledged, isFalse);
   });
 
   testWidgets('says a character is being prepared rather than hiding them', (tester) async {

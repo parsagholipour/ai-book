@@ -51,6 +51,63 @@ void main() {
     expect(find.text('Create your account'), findsNothing);
   });
 
+  testWidgets('existing users must accept current legal documents before creating', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testApp(
+        authRepository: FakeAuthRepository(
+          initialSession: fakeSession(legalAcceptanceRequired: true),
+        ),
+        projectsRepository: FakeProjectsRepository(projects: [fakeProject()]),
+        billingRepository: FakeBillingRepository(billing: fakeBilling()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Review the current terms'), findsOneWidget);
+    expect(find.text('Accept and continue'), findsOneWidget);
+
+    for (final checkbox in find.byType(Checkbox).evaluate()) {
+      await tester.tap(find.byWidget(checkbox.widget));
+      await tester.pump();
+    }
+    await tester.tap(find.widgetWithText(FilledButton, 'Accept and continue'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('New book'), findsOneWidget);
+    expect(find.text('Review the current terms'), findsNothing);
+  });
+
+  testWidgets('signup legal attestations start unchecked and are required', (
+    tester,
+  ) async {
+    await tester.pumpWidget(testApp(authRepository: FakeAuthRepository()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Create account'));
+    await tester.pumpAndSettle();
+
+    final checkboxes = tester.widgetList<Checkbox>(find.byType(Checkbox));
+    expect(checkboxes, hasLength(2));
+    expect(checkboxes.every((checkbox) => checkbox.value == false), isTrue);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Email'),
+      'reader@example.com',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Password'),
+      'CorrectPass123',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create account'));
+    await tester.pump();
+
+    expect(
+      find.text('Accept both statements to create your account.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('restore network errors stay on a retryable splash screen', (
     tester,
   ) async {
@@ -169,9 +226,22 @@ class FakeAuthRepository implements AuthRepository {
     required String email,
     required String password,
     String? displayName,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
   }) async {
     _session = fakeSession(email: email, displayName: displayName);
     return _session!;
+  }
+
+  @override
+  Future<void> acceptCurrentLegalDocuments() async {
+    final current = _session;
+    if (current != null) {
+      _session = AuthSession(
+        user: current.user.copyWith(legalAcceptanceRequired: false),
+        tokens: current.tokens,
+      );
+    }
   }
 
   @override
@@ -654,6 +724,7 @@ class FakeBillingRepository implements BillingRepository {
 AuthSession fakeSession({
   String email = 'creator@example.com',
   String? displayName = 'Mira',
+  bool legalAcceptanceRequired = false,
 }) {
   return AuthSession(
     user: AuthUser(
@@ -663,6 +734,7 @@ AuthSession fakeSession({
       status: 'ACTIVE',
       createdAt: DateTime.utc(2026, 6, 1),
       updatedAt: DateTime.utc(2026, 6, 1),
+      legalAcceptanceRequired: legalAcceptanceRequired,
     ),
     tokens: MobileSessionTokens(
       accessToken: 'access-token',

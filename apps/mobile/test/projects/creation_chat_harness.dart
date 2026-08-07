@@ -434,6 +434,21 @@ MobilePlan questionPlan() {
   );
 }
 
+/// A plan whose one question several of its answers cover at once, which the
+/// planner declares so the drawer collects picks instead of sending the first.
+MobilePlan multiQuestionPlan() {
+  return plan(
+    questions: const [
+      MobilePlanQuestion(
+        prompt: 'Which themes should the tales carry?',
+        options: ['Forgiveness', 'Patience', 'Justice'],
+        allowCustom: true,
+        answerKind: QuestionAnswerKind.multi,
+      ),
+    ],
+  );
+}
+
 /// A plan that opens with a question only the reader can answer in their own
 /// words (no premade answers), followed by an ordinary choice.
 MobilePlan openQuestionPlan() {

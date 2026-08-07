@@ -7,6 +7,7 @@ import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../data/voice_repository.dart';
+import '../data/voice_disclosure_store.dart';
 import '../domain/voice_models.dart';
 import 'voice_call_avatar.dart';
 import 'voice_call_screen.dart';
@@ -205,20 +206,53 @@ class _CastRow extends ConsumerWidget {
         color: enabled ? colors.primary : colors.onSurfaceVariant.withValues(alpha: 0.4),
       ),
       onTap: enabled
-          ? () {
-              AppHaptics.commit();
-              Navigator.of(context).pop();
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) => VoiceCallScreen(
-                    projectId: projectId,
-                    character: character,
-                    pageIndex: pageIndex,
-                  ),
-                ),
-              );
-            }
+          ? () => _placeCall(context, ref)
           : null,
+    );
+  }
+
+  Future<void> _placeCall(BuildContext context, WidgetRef ref) async {
+    final store = ref.read(voiceDisclosureStoreProvider);
+    if (!await store.hasAcknowledged()) {
+      if (!context.mounted) return;
+      final accepted = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          icon: const Icon(Icons.mic_outlined),
+          title: const Text('Before your first voice call'),
+          content: const Text(
+            'Your microphone audio is sent in real time to the selected AI voice provider. '
+            'Ravanix does not retain live-call audio on its server, but transcript text, call duration, billing records, and call telemetry may be stored with the project. '
+            'Your device will ask for microphone permission next.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Continue'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+      await store.acknowledge();
+    }
+    if (!context.mounted) return;
+    AppHaptics.commit();
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (context) => VoiceCallScreen(
+          projectId: projectId,
+          character: character,
+          pageIndex: pageIndex,
+        ),
+      ),
     );
   }
 

@@ -218,6 +218,22 @@ tells you when a listed file has dropped under the default so the entry can be d
   `bookEditIntent.ts` splits into `bookEditMessage.ts` (reading a message: pages, quotes, scope,
   languages — a leaf) and `bookEditHeuristics.ts` (the model-free classifier), which is why those
   import types back from it but never values.
+- **A question declares how many of its answers count, and the picker follows.** Both question
+  surfaces — the planner's `questions` (`planQuestionSchema` in `packages/core/src/schemas/book.ts`)
+  and the creation interviewer's clarification (`apps/api/src/creationQuestion.ts`) — carry
+  `answerKind`: `choice` (exactly one), `multi` (several, sent together), `open` (nothing to tap).
+  Fewer than two options is `open` whatever the model said, in every normalizer, because one option
+  is neither a choice nor a set to combine. Without `multi` the models had no honest way to ask
+  "which of these themes?": the app sent the first tap and dropped the rest, so they learned to
+  bury the options inside the prompt text and ask for a typed answer — which is why both planner
+  prompts now forbid writing "choose one or more" or listing options in the prompt. A `multi`
+  answer travels as **one line** (`joinQuestionAnswers`, Dart and web both), separated by the comma
+  of its own script, because that line is a real chat message the reader sees and the model reads.
+  All four pickers read the same flag: the composer drawer and the plan drawer share
+  `_QuestionOptionList` (`creation_chat_question_options.dart`), plus `PlanQuestionsCard` on the
+  book page and the operator console's `PlanQuestionStepper`. In the console the picks live in
+  `QuestionResponse.picked`, which is also what stops a joined answer being mistaken for a typed
+  custom one.
 - **Declining the cover buys a designed one, it does not remove the cover.** `includeCover` only
   ever answered "did a model draw this", so `coverArtSourceFor` (`packages/core/src/generation/
   coverSource.ts`) resolves `false` to `"design"`: the book gets a cover from the 50-entry catalog

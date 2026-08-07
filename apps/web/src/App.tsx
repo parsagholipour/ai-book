@@ -9,9 +9,11 @@ import { ModerationScreen } from "./features/admin/ModerationScreen.js";
 import { OperationsScreen } from "./features/admin/OperationsScreen.js";
 import { OverviewScreen } from "./features/admin/OverviewScreen.js";
 import { UsersScreen } from "./features/admin/UsersScreen.js";
+import { SafetySettingsScreen } from "./features/admin/SafetySettingsScreen.js";
 import { ConsoleScreen } from "./features/console/ConsoleScreen.js";
 import { PricingScreen } from "./features/pricing/PricingScreen.js";
 import { ADMIN_PATH, PRICING_PATH } from "./features/projects/routing.js";
+import { AccountDeletionPage, PrivacyPage, TermsPage } from "./features/legal/LegalPages.js";
 
 /**
  * Auth gate, then routing. Nothing else — the console's own wiring lives in
@@ -22,6 +24,17 @@ import { ADMIN_PATH, PRICING_PATH } from "./features/projects/routing.js";
  * tear down and re-open the console's SSE subscription on every selection.
  */
 export function App() {
+  return (
+    <Routes>
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/account-deletion" element={<AccountDeletionPage />} />
+      <Route path="*" element={<AuthenticatedApp />} />
+    </Routes>
+  );
+}
+
+function AuthenticatedApp() {
   const auth = useAuth();
 
   if (!auth.authStatus) {
@@ -55,6 +68,7 @@ export function App() {
         <Route path="costs" element={<CostsScreen />} />
         <Route path="users" element={<UsersScreen />} />
         <Route path="moderation" element={<ModerationScreen />} />
+        <Route path="settings" element={<SafetySettingsScreen />} />
         <Route path="pricing" element={<PricingScreen />} />
       </Route>
       {/* Pricing shipped at its own path before the dashboard grew around it. */}

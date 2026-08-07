@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildQuestionResponseMessage,
+  joinQuestionAnswers,
   normalizePlanQuestions,
   pruneQuestionResponses,
   type QuestionResponse
@@ -59,7 +60,10 @@ export function usePlanQuestions(args: {
     const nextQuestion = planQuestions[boundedIndex];
     const response = nextQuestion ? questionResponses[nextQuestion.id] : undefined;
     const isCustomAnswer =
-      nextQuestion && response?.status === "answered" && !nextQuestion.options.includes(response.answer ?? "");
+      nextQuestion &&
+      response?.status === "answered" &&
+      !(response.picked?.length ?? 0) &&
+      !nextQuestion.options.includes(response.answer ?? "");
 
     setActiveQuestionIndex(boundedIndex);
     setCustomQuestionAnswer(isCustomAnswer ? response?.answer ?? "" : "");
@@ -79,6 +83,37 @@ export function usePlanQuestions(args: {
     if (nextIndex < planQuestions.length) {
       setActiveQuestionIndex(nextIndex);
     }
+  }
+
+  /**
+   * A tap on an option. A single-answer question is answered by it and moves on;
+   * a multi-answer question collects it, so nothing advances until the operator
+   * has finished picking.
+   */
+  function toggleActiveQuestionOption(option: string) {
+    if (!activeQuestion) return;
+    if (activeQuestion.answerKind !== "multi") {
+      answerActiveQuestion(option);
+      return;
+    }
+
+    setQuestionResponses((current) => {
+      const picked = new Set(current[activeQuestion.id]?.picked ?? []);
+      if (!picked.delete(option)) {
+        picked.add(option);
+      }
+      // Offered order, not tap order, so the answer reads like the question.
+      const ordered = activeQuestion.options.filter((candidate) => picked.has(candidate));
+      if (ordered.length === 0) {
+        const { [activeQuestion.id]: _cleared, ...rest } = current;
+        return rest;
+      }
+      return {
+        ...current,
+        [activeQuestion.id]: { status: "answered", answer: joinQuestionAnswers(ordered), picked: ordered }
+      };
+    });
+    setCustomQuestionAnswer("");
   }
 
   function skipActiveQuestion() {
@@ -118,6 +153,7 @@ export function usePlanQuestions(args: {
     setCustomQuestionAnswer,
     goToPlanQuestion,
     answerActiveQuestion,
+    toggleActiveQuestionOption,
     skipActiveQuestion,
     submitQuestionResponses
   };

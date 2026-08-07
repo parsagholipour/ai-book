@@ -74,6 +74,63 @@ void main() {
     expect(revisionMessage, contains('Busy solo teachers'));
     expect(revisionMessage, contains('No preference.'));
   });
+
+  // A question several chips answer at once keeps them all: the card used to
+  // replace the previous pick, so the revision only ever heard the last chip.
+  testWidgets('a multi-answer question revises with every chip picked', (
+    tester,
+  ) async {
+    String? revisionMessage;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PlanQuestionsCard(
+            plan: fakeMultiQuestionPlan(),
+            onSubmitAnswers: (message) async {
+              revisionMessage = message;
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Pick as many as you like.'), findsOneWidget);
+
+    await tester.tap(find.text('Forgiveness'));
+    await tester.pump();
+    await tester.tap(find.text('Justice'));
+    await tester.pump();
+
+    await tester.tap(find.text('Revise with answers'));
+    await tester.pump();
+
+    expect(revisionMessage, contains('Answer: Forgiveness, Justice'));
+  });
+}
+
+MobilePlan fakeMultiQuestionPlan() {
+  final base = fakePlan();
+  return MobilePlan(
+    id: base.id,
+    projectId: base.projectId,
+    version: base.version,
+    status: base.status,
+    title: base.title,
+    premise: base.premise,
+    audience: base.audience,
+    questions: const [
+      MobilePlanQuestion(
+        prompt: 'Which themes should the tales carry?',
+        options: ['Forgiveness', 'Patience', 'Justice'],
+        allowCustom: true,
+        answerKind: QuestionAnswerKind.multi,
+      ),
+    ],
+    chapters: base.chapters,
+    createdAt: base.createdAt,
+    updatedAt: base.updatedAt,
+  );
 }
 
 MobileProjectDetail fakeProjectWithPlan() {

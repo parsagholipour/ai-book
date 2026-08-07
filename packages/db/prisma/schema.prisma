@@ -272,6 +272,41 @@ model User {
   mobileCreationDrafts    MobileCreationDraft[]
   bookImports             BookImport[]
   voiceCalls              VoiceCall[]
+  legalAcceptances        LegalAcceptance[]
+}
+
+/// Append-only proof that a user affirmatively accepted a specific pair of
+/// legal documents. Historical rows are preserved when the documents change.
+model LegalAcceptance {
+  id                     String   @id @default(cuid())
+  userId                 String
+  termsVersion           String
+  privacyVersion         String
+  acceptedAt             DateTime @default(now())
+  source                 String
+  termsAttested          Boolean
+  ageGuardianAttested    Boolean
+  ipHash                 String?
+  userAgent              String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, termsVersion, privacyVersion, acceptedAt])
+  @@index([acceptedAt])
+}
+
+/// Append-only operator history for the optional copyright prompt gate. The
+/// newest version is active; no rows means disabled, preserving shipped
+/// behavior until an operator deliberately enables the restriction.
+model SafetySettingsRevision {
+  id                           String   @id @default(cuid())
+  version                      Int      @unique
+  copyrightRestrictionsEnabled Boolean  @default(false)
+  note                         String?
+  updatedBy                    String?
+  createdAt                    DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model UserPasswordCredential {

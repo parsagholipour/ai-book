@@ -473,7 +473,7 @@ class AccountPrivacyControls extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Deleted projects remove generated project records and local generated files. Billing, safety, moderation, abuse-prevention, and support records may be retained as required.',
+                  'Uploaded source files are kept for up to 180 days. Projects and generated assets remain until you delete them or the account. Limited billing, fraud, security, moderation, support, dispute, and legal records may be retained as required.',
                   style: TextStyle(color: colors.onSurfaceVariant),
                 ),
               ],
@@ -495,7 +495,7 @@ class AccountPrivacyControls extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Request deletion of your account and associated app data. Support will review retained billing, safety, and compliance records.',
+                  'We target verified requests within 30 days. Account deletion removes projects and user content, subject to limited retained records. It does not cancel a Google Play subscription; cancel that separately in Google Play.',
                   style: TextStyle(color: colors.onSurfaceVariant),
                 ),
                 const SizedBox(height: 12),

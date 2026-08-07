@@ -7,9 +7,11 @@ export 'edit_changes_models.dart';
 export 'export_models.dart';
 export 'project_chat_models.dart';
 export 'project_status_models.dart';
+export 'question_answers.dart';
 
 import 'export_models.dart';
 import 'project_status_models.dart';
+import 'question_answers.dart';
 
 /// Reads `coverImage` from a project summary or detail payload.
 ///
@@ -414,18 +416,28 @@ class MobilePlanQuestion {
     required this.prompt,
     required this.options,
     required this.allowCustom,
+    this.answerKind = QuestionAnswerKind.choice,
   });
 
   final String prompt;
   final List<String> options;
   final bool allowCustom;
 
+  /// Whether one of the options answers this, several of them do, or none can.
+  final QuestionAnswerKind answerKind;
+
   factory MobilePlanQuestion.fromJson(Map<String, dynamic> json) {
-    final options = json['options'] as List<dynamic>;
+    final options = (json['options'] as List<dynamic>)
+        .map((option) => option as String)
+        .toList();
     return MobilePlanQuestion(
       prompt: json['prompt'] as String,
-      options: options.map((option) => option as String).toList(),
+      options: options,
       allowCustom: json['allowCustom'] as bool,
+      answerKind: questionAnswerKindFromJson(
+        json['answerKind'],
+        optionCount: options.length,
+      ),
     );
   }
 }

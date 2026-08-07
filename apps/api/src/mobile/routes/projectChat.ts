@@ -56,6 +56,7 @@ import { isPrismaUniqueConflict } from "../support.js";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
+import { enforceContentRestrictions } from "../../contentRestrictions.js";
 
 /**
  * Post-generation chat: messages, edit proposals, undo and branch switching.
@@ -104,6 +105,9 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const parsed = mobileProjectChatMessageBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a chat message.");
+      }
+      if (!(await enforceContentRestrictions(reply, parsed.data.message))) {
+        return;
       }
 
       const project = await loadProjectForChat(auth.user.id, id);

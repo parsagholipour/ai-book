@@ -546,124 +546,13 @@ class _QuestionPanel extends StatelessWidget {
           const SizedBox(height: 8),
           _QuestionOptionList(
             options: question.options,
+            multiSelect: question.answerKind.allowsMultiple,
             enabled: enabled,
             onSelect: onSelect,
             onSkip: () => onSelect('Skip this for now.'),
             openAnswerHint: 'Type your answer below.',
           ),
         ],
-      ],
-    );
-  }
-}
-
-/// Numbered answer choices for the question drawer (not chips/badges).
-///
-/// An empty [options] list is an open question: the answer is a value only the
-/// reader can supply, so the card points at the message box instead of showing
-/// invented choices. The keyboard stays down until they tap it.
-class _QuestionOptionList extends StatelessWidget {
-  const _QuestionOptionList({
-    required this.options,
-    required this.enabled,
-    required this.onSelect,
-    required this.onSkip,
-    this.onCustom,
-    this.openAnswerHint,
-  });
-
-  final List<String> options;
-  final bool enabled;
-  final ValueChanged<String> onSelect;
-  final VoidCallback onSkip;
-  final VoidCallback? onCustom;
-
-  /// Shown in place of the choices when there are none.
-  final String? openAnswerHint;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final theme = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (options.isEmpty && openAnswerHint != null)
-          Row(
-            children: [
-              Icon(
-                Icons.keyboard_outlined,
-                size: 16,
-                color: colors.onSurfaceVariant,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  openAnswerHint!,
-                  style: theme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        for (var i = 0; i < options.length; i++) ...[
-          if (i > 0) const SizedBox(height: 4),
-          Material(
-            color: colors.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: enabled ? () => onSelect(options[i]) : null,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 10,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 22,
-                      child: Text(
-                        '${i + 1}.',
-                        style: theme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: colors.primary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        options[i],
-                        style: theme.bodyMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-        const SizedBox(height: 4),
-        Row(
-          children: [
-            if (onCustom != null)
-              TextButton.icon(
-                onPressed: enabled ? onCustom : null,
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('Custom…'),
-              ),
-            TextButton.icon(
-              onPressed: enabled ? onSkip : null,
-              icon: const Icon(Icons.skip_next_outlined, size: 18),
-              label: const Text('Skip'),
-            ),
-          ],
-        ),
       ],
     );
   }

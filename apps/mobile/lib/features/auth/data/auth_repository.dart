@@ -12,7 +12,10 @@ abstract interface class AuthRepository {
     required String email,
     required String password,
     String? displayName,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
   });
+  Future<void> acceptCurrentLegalDocuments();
   Future<void> logout();
 }
 
@@ -73,6 +76,8 @@ class MobileAuthRepository implements AuthRepository {
     required String email,
     required String password,
     String? displayName,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
   }) {
     return _createSession(
       '/api/mobile/auth/signup',
@@ -81,6 +86,23 @@ class MobileAuthRepository implements AuthRepository {
         'password': password,
         if (displayName != null && displayName.trim().isNotEmpty)
           'displayName': displayName.trim(),
+        'termsVersion': currentTermsVersion,
+        'privacyVersion': currentPrivacyVersion,
+        'termsAccepted': termsAccepted,
+        'ageGuardianAttested': ageGuardianAttested,
+      },
+    );
+  }
+
+  @override
+  Future<void> acceptCurrentLegalDocuments() async {
+    await apiClient.postJson(
+      '/api/mobile/legal/acceptance',
+      data: {
+        'termsVersion': currentTermsVersion,
+        'privacyVersion': currentPrivacyVersion,
+        'termsAccepted': true,
+        'ageGuardianAttested': true,
       },
     );
   }

@@ -317,6 +317,10 @@ class PlanQuestionsCard extends StatefulWidget {
 class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
   final _customController = TextEditingController();
   final Map<int, String> _answers = {};
+
+  /// The chips tapped per question. A multi-answer question folds all of them
+  /// into one answer, so the answer alone can no longer say which chips are on.
+  final Map<int, Set<String>> _picks = {};
   var _index = 0;
 
   @override
@@ -337,7 +341,7 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
     }
 
     final question = questions[_index];
-    final currentAnswer = _answers[_index];
+    final picks = _picks[_index] ?? const <String>{};
     return PlanSectionCard(
       title: 'Questions',
       icon: Icons.help_outline,
@@ -357,6 +361,14 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
           ),
           if (question.options.isNotEmpty) ...[
             const SizedBox(height: 12),
+            if (question.answerKind.allowsMultiple)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Pick as many as you like.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -364,13 +376,10 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
                 for (final option in question.options)
                   FilterChip(
                     label: Text(option),
-                    selected: currentAnswer == option,
+                    selected: picks.contains(option),
                     onSelected: widget.isBusy
                         ? null
-                        : (_) => setState(() {
-                            _answers[_index] = option;
-                            _customController.clear();
-                          }),
+                        : (_) => _togglePick(question, option),
                   ),
               ],
             ),
@@ -403,6 +412,7 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
                 onPressed: widget.isBusy
                     ? null
                     : () {
+                        _picks.remove(_index);
                         _answers[_index] = 'No preference.';
                         _goToNextOrStay();
                       },
@@ -437,9 +447,33 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
     );
   }
 
+  /// One tap on a single-answer question replaces the pick; on a multi-answer
+  /// question it adds to or removes from the set, and the answer is the set.
+  void _togglePick(MobilePlanQuestion question, String option) {
+    setState(() {
+      final picks = _picks.putIfAbsent(_index, () => <String>{});
+      if (!question.answerKind.allowsMultiple) {
+        picks.clear();
+        picks.add(option);
+      } else if (!picks.remove(option)) {
+        picks.add(option);
+      }
+      final answer = joinQuestionAnswers(question.options.where(picks.contains));
+      if (answer.isEmpty) {
+        _answers.remove(_index);
+      } else {
+        _answers[_index] = answer;
+      }
+      _customController.clear();
+    });
+  }
+
   void _saveAndGoNext() {
     final custom = _customController.text.trim();
     if (custom.isNotEmpty) {
+      // A typed answer replaces the chips rather than joining them, so the
+      // chips must let go of their selection too.
+      _picks.remove(_index);
       _answers[_index] = custom;
     }
     _goToNextOrStay();
@@ -457,13 +491,9 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
     setState(() {
       _index = index;
       final answer = _answers[index];
-      final options = widget.plan.questions[index].options;
+      final tapped = (_picks[index] ?? const <String>{}).isNotEmpty;
       _customController.text =
-          answer != null &&
-              !options.contains(answer) &&
-              answer != 'No preference.'
-          ? answer
-          : '';
+          answer != null && !tapped && answer != 'No preference.' ? answer : '';
     });
   }
 

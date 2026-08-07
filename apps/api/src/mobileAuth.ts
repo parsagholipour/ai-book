@@ -3,6 +3,12 @@ import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual, type Sc
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import { InMemoryRateLimiter, rateLimitKey, sendRateLimitError, type RateLimitConfig } from "./rateLimit.js";
+import {
+  CURRENT_LEGAL_VERSIONS,
+  hasCurrentLegalAcceptance,
+  isCurrentLegalAcceptanceInput,
+  legalAcceptanceEvidence
+} from "./legalAcceptance.js";
 
 const ACCESS_TOKEN_PREFIX = "bma_at";
 const REFRESH_TOKEN_PREFIX = "bma_rt";
@@ -34,7 +40,11 @@ const signUpBodySchema = z
   .object({
     email: emailSchema,
     password: passwordSchema,
-    displayName: displayNameSchema
+    displayName: displayNameSchema,
+    termsVersion: z.string().trim().min(1).max(40),
+    privacyVersion: z.string().trim().min(1).max(40),
+    termsAccepted: z.literal(true),
+    ageGuardianAttested: z.literal(true)
   })
   .strict();
 const signInBodySchema = z
@@ -89,6 +99,7 @@ export type AuthUser = {
   status: string;
   createdAt: string;
   updatedAt: string;
+  legalAcceptanceRequired: boolean;
 };
 
 export type AuthFailure = {
@@ -134,7 +145,20 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
 
       const parsed = signUpBodySchema.safeParse(request.body);
       if (!parsed.success) {
-        return sendAuthError(reply, 400, "VALIDATION_ERROR", "Enter a valid email and a password with at least 8 characters.");
+        return sendAuthError(
+          reply,
+          400,
+          "LEGAL_ACCEPTANCE_REQUIRED",
+          "Accept the current Terms and Privacy Policy and confirm the age requirement to create an account."
+        );
+      }
+      if (!isCurrentLegalAcceptanceInput(parsed.data)) {
+        return sendAuthError(
+          reply,
+          409,
+          "LEGAL_DOCUMENTS_UPDATED",
+          "The Terms or Privacy Policy changed. Review the current documents and try again."
+        );
       }
 
       const limit = signUpLimiter.hit(rateLimitKey(request, parsed.data.email));
@@ -158,11 +182,14 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
             ...(parsed.data.displayName ? { displayName: parsed.data.displayName } : {}),
             passwordCredential: {
               create: { passwordHash }
+            },
+            legalAcceptances: {
+              create: legalAcceptanceEvidence(parsed.data, "mobile_signup", request)
             }
           }
         });
         const session = await createMobileSession(user.id, requestSessionContext(request));
-        return reply.code(201).send(authSessionResponse(user, session));
+        return reply.code(201).send(authSessionResponse(user, session, true));
       } catch (error) {
         if (isUniqueConstraintError(error)) {
           return sendAuthError(reply, 409, "EMAIL_ALREADY_REGISTERED", "An account with this email already exists.");
@@ -205,7 +232,7 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
       }
 
       const session = await createMobileSession(user.id, requestSessionContext(request));
-      return authSessionResponse(user, session);
+      return authSessionResponse(user, session, await hasCurrentLegalAcceptance(user.id));
     }
   );
 
@@ -226,7 +253,7 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
       if (!refreshed.ok) {
         return sendAuthError(reply, refreshed.statusCode, refreshed.code, refreshed.message);
       }
-      return authSessionResponse(refreshed.user, refreshed.session);
+      return authSessionResponse(refreshed.user, refreshed.session, !refreshed.user.legalAcceptanceRequired);
     }
   );
 
@@ -269,7 +296,8 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
       return sendAuthError(reply, verified.statusCode, verified.code, verified.message);
     }
 
-    return { user: verified.user };
+    const accepted = await hasCurrentLegalAcceptance(verified.user.id);
+    return { user: { ...verified.user, legalAcceptanceRequired: !accepted } };
   });
 };
 
@@ -343,7 +371,7 @@ export async function verifyMobileAccessToken(
 
   return {
     ok: true,
-    user: toAuthUser(session.user),
+    user: toAuthUser(session.user, true),
     sessionId: session.id
   };
 }
@@ -412,7 +440,7 @@ export async function refreshMobileSession(
 
     return {
       ok: true,
-      user: toAuthUser(session.user),
+      user: toAuthUser(session.user, await hasCurrentLegalAcceptance(session.user.id)),
       session: nextSession
     };
   }
@@ -551,9 +579,15 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function authSessionResponse(user: AuthUserRecord | AuthUser, session: IssuedMobileSession) {
+function authSessionResponse(
+  user: AuthUserRecord | AuthUser,
+  session: IssuedMobileSession,
+  legalAccepted: boolean
+) {
   return {
-    user: isSerializedAuthUser(user) ? user : toAuthUser(user),
+    user: isSerializedAuthUser(user)
+      ? { ...user, legalAcceptanceRequired: !legalAccepted }
+      : toAuthUser(user, legalAccepted),
     session: {
       accessToken: session.accessToken,
       accessTokenExpiresAt: session.accessTokenExpiresAt.toISOString(),
@@ -563,14 +597,15 @@ function authSessionResponse(user: AuthUserRecord | AuthUser, session: IssuedMob
   };
 }
 
-function toAuthUser(user: AuthUserRecord): AuthUser {
+function toAuthUser(user: AuthUserRecord, legalAccepted: boolean): AuthUser {
   return {
     id: user.id,
     email: user.email,
     displayName: user.displayName ?? null,
     status: user.status,
     createdAt: user.createdAt.toISOString(),
-    updatedAt: user.updatedAt.toISOString()
+    updatedAt: user.updatedAt.toISOString(),
+    legalAcceptanceRequired: !legalAccepted
   };
 }
 
@@ -645,14 +680,15 @@ const authErrorResponseSchema = {
 
 const authUserResponseSchema = {
   type: "object",
-  required: ["id", "email", "displayName", "status", "createdAt", "updatedAt"],
+  required: ["id", "email", "displayName", "status", "createdAt", "updatedAt", "legalAcceptanceRequired"],
   properties: {
     id: { type: "string" },
     email: { type: "string" },
     displayName: { type: "string", nullable: true },
     status: { type: "string" },
     createdAt: { type: "string" },
-    updatedAt: { type: "string" }
+    updatedAt: { type: "string" },
+    legalAcceptanceRequired: { type: "boolean" }
   },
   additionalProperties: false
 } as const;
@@ -681,11 +717,22 @@ const authSessionResponseSchema = {
 
 const signUpRequestSchema = {
   type: "object",
-  required: ["email", "password"],
+  required: [
+    "email",
+    "password",
+    "termsVersion",
+    "privacyVersion",
+    "termsAccepted",
+    "ageGuardianAttested"
+  ],
   properties: {
     email: { type: "string", maxLength: 254 },
     password: { type: "string", minLength: 8, maxLength: 200 },
-    displayName: { type: "string", minLength: 1, maxLength: 120 }
+    displayName: { type: "string", minLength: 1, maxLength: 120 },
+    termsVersion: { type: "string", const: CURRENT_LEGAL_VERSIONS.termsVersion },
+    privacyVersion: { type: "string", const: CURRENT_LEGAL_VERSIONS.privacyVersion },
+    termsAccepted: { type: "boolean", const: true },
+    ageGuardianAttested: { type: "boolean", const: true }
   },
   additionalProperties: false
 } as const;

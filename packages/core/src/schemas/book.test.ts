@@ -492,6 +492,35 @@ describe("createProjectSchema", () => {
     expect(plan.characters[1]?.description).toBe("A careful guide who understands the town's old machines.");
     expect(plan.characters[1]?.visualRules).toEqual(["Silver hair and ink-stained cuffs."]);
   });
+
+  // A question several options answer at once has to say so, or the app sends
+  // the first tap and drops the rest.
+  it("reads a multi-answer question through any of the flags a model reaches for", () => {
+    const plan = bookPlanSchema.parse({
+      ...minimalPlan("template-driven"),
+      questions: [
+        { prompt: "Which themes should the tales carry?", options: ["Forgiveness", "Patience"], answerKind: "multi" },
+        { prompt: "Which settings appear?", choices: ["A garden", "A desert"], multiSelect: true },
+        { prompt: "Which era?", options: ["Now", "Then"] }
+      ]
+    });
+
+    expect(plan.questions.map((question) => question.answerKind)).toEqual(["multi", "multi", "choice"]);
+  });
+
+  // One option is neither a choice nor a set to combine, so the reader types.
+  it("treats a question with fewer than two options as open however it was declared", () => {
+    const plan = bookPlanSchema.parse({
+      ...minimalPlan("template-driven"),
+      questions: [
+        { prompt: "Which theme?", options: ["Forgiveness"], answerKind: "multi" },
+        "What should the hero be called?"
+      ]
+    });
+
+    expect(plan.questions.map((question) => question.answerKind)).toEqual(["open", "open"]);
+    expect(plan.questions[1]?.options).toEqual([]);
+  });
 });
 
 function minimalPlan(cadence: string) {

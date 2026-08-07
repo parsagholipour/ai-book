@@ -4,13 +4,32 @@ export type NormalizedPlanQuestion = {
   id: string;
   prompt: string;
   options: string[];
+  /** "multi" means several options can be sent together as one answer. */
+  answerKind: "choice" | "multi" | "open";
   allowCustom: boolean;
 };
 
 export type QuestionResponse = {
   status: "answered" | "skipped";
   answer?: string;
+  /** Options tapped on a multi-answer question; `answer` is their joined form. */
+  picked?: string[];
 };
+
+/** Arabic, Arabic Supplement and the presentation forms: Persian, Arabic, Urdu. */
+const ARABIC_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/;
+
+/**
+ * Joins the picks of a multi-answer question into the single answer line the
+ * plan revision reads. The separator follows the script of the answers, because
+ * a Persian or Arabic list strung together with a Latin comma reads as broken
+ * text in the language the plan was written in.
+ */
+export function joinQuestionAnswers(answers: string[]): string {
+  const picked = answers.map((answer) => answer.trim()).filter(Boolean);
+  const separator = picked.some((answer) => ARABIC_SCRIPT.test(answer)) ? "\u060c " : ", ";
+  return picked.join(separator);
+}
 
 export function normalizePlanQuestions(questions: unknown): NormalizedPlanQuestion[] {
   if (!Array.isArray(questions)) {
@@ -46,19 +65,24 @@ export function normalizePlanQuestion(question: unknown, index: number): Normali
     record.premadeAnswers
   );
   const allowCustom = typeof record.allowCustom === "boolean" ? record.allowCustom : true;
-  return makeNormalizedPlanQuestion(index, prompt, options, allowCustom);
+  return makeNormalizedPlanQuestion(index, prompt, options, allowCustom, record.answerKind);
 }
 
 export function makeNormalizedPlanQuestion(
   index: number,
   prompt: string,
   options: string[],
-  allowCustom: boolean
+  allowCustom: boolean,
+  answerKind?: unknown
 ): NormalizedPlanQuestion {
+  const distinctOptions = [...new Set(options.map((option) => option.trim()).filter(Boolean))];
   return {
     id: `${index}-${prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 48)}`,
     prompt,
-    options: [...new Set(options.map((option) => option.trim()).filter(Boolean))],
+    options: distinctOptions,
+    // Fewer than two options is open whatever the plan says: one option is
+    // neither a choice nor a set to combine.
+    answerKind: distinctOptions.length < 2 ? "open" : answerKind === "multi" ? "multi" : "choice",
     allowCustom
   };
 }

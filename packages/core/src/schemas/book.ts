@@ -705,12 +705,32 @@ export const researchSourceSchema = z.preprocess(
   })
 );
 
+/**
+ * How many of the offered answers the reader may pick. A question the reader can
+ * honestly answer with several options ("which of these themes?") used to arrive
+ * as `choice`, so the app sent the first tap and dropped the rest; the model
+ * worked around it by listing the options inside the prompt text and asking for
+ * a typed answer. `multi` is that question declared honestly.
+ *
+ * Fewer than two options is `open` whatever the model says: one choice is not a
+ * choice, so the reader types the value instead of tapping an invented answer.
+ */
+function planQuestionAnswerKind(value: Record<string, unknown>, options: string[]): "choice" | "multi" | "open" {
+  if (options.length < 2) {
+    return "open";
+  }
+  const declared = stringField(value, ["answerKind", "answerType"])?.trim().toLowerCase();
+  const multiple = booleanField(value, ["multiSelect", "multiple", "allowMultiple", "selectMultiple"]);
+  return multiple === true || declared === "multi" || declared === "multiple" ? "multi" : "choice";
+}
+
 export const planQuestionSchema = z.preprocess(
   (value) => {
     if (typeof value === "string") {
       return {
         prompt: value,
         options: [],
+        answerKind: "open",
         allowCustom: true
       };
     }
@@ -718,16 +738,19 @@ export const planQuestionSchema = z.preprocess(
       return value;
     }
 
+    const options = stringArrayField(value, ["options", "suggestedAnswers", "answers", "choices", "premadeAnswers"]) ?? [];
     return {
       ...value,
       prompt: stringField(value, ["prompt", "question", "text"]),
-      options: stringArrayField(value, ["options", "suggestedAnswers", "answers", "choices", "premadeAnswers"]) ?? [],
+      options,
+      answerKind: planQuestionAnswerKind(value, options),
       allowCustom: booleanField(value, ["allowCustom", "customAnswer", "custom"]) ?? true
     };
   },
   z.object({
     prompt: z.string(),
     options: z.array(z.string()).default([]),
+    answerKind: z.enum(["choice", "multi", "open"]).default("open"),
     allowCustom: z.boolean().default(true)
   })
 );

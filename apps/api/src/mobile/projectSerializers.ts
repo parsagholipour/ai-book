@@ -158,6 +158,7 @@ export function serializePlan(planVersion: MobilePlanRecord): MobilePlanDto {
     questions: plan.questions.map((question) => ({
       prompt: question.prompt,
       options: question.options,
+      answerKind: question.answerKind,
       allowCustom: question.allowCustom
     })),
     chapters: plan.chapters.map((chapter) => ({

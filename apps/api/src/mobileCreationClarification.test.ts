@@ -103,6 +103,41 @@ describe("creation chat clarification policy", () => {
     });
   });
 
+  // "Which of these themes?" is honestly answered by several options at once.
+  // Declaring it keeps all six and lets the app send them together, instead of
+  // the model listing them inside the prompt and asking for a typed answer.
+  it("keeps a multi-answer question multi, with room for six options", async () => {
+    const options = [
+      "بخشش و گذشت",
+      "صبر و بردباری",
+      "عدالت و انصاف",
+      "قناعت و ساده‌زیستی",
+      "دوستی و وفاداری",
+      "راستگویی و صداقت"
+    ];
+    const turn = await runCreationTurn(
+      { messages: [{ role: "user", content: "حکایتی مثل بوستان سعدی بساز" }] },
+      {
+        enrich: async () => ({
+          assistantMessage: "حکایت‌ها حول کدام موضوع اخلاقی باشند؟",
+          question: {
+            prompt: "حکایت‌ها حول کدام موضوع اخلاقی باشند؟",
+            answerKind: "multi",
+            options,
+            allowCustom: true
+          }
+        })
+      }
+    );
+
+    expect(turn.question).toEqual({
+      prompt: "حکایت‌ها حول کدام موضوع اخلاقی باشند؟",
+      answerKind: "multi",
+      options,
+      allowCustom: true
+    });
+  });
+
   it("accepts the model's null decision when the subject is concrete", async () => {
     const turn = await runCreationTurn(
       {
@@ -171,6 +206,7 @@ describe("creation chat clarification policy", () => {
     // Options are no longer mandatory: a value only the user knows is asked open.
     expect(systemPrompt).not.toContain("Use 2-4 short tappable options plus a custom answer");
     expect(systemPrompt).toContain('set answerKind to "open", leave options empty');
+    expect(systemPrompt).toContain('Set answerKind to "multi" with up to 6 options');
     expect(systemPrompt).toContain("Never invent options that only describe how the user will answer");
     expect(systemPrompt).toContain("Never ask a follow-up that narrows a fact you already asked about");
     expect(payload.conversation).toEqual(request.messages);

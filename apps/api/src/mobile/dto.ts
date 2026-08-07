@@ -225,7 +225,13 @@ export type MobilePlanDto = {
   subtitle: string | null;
   premise: string;
   audience: string;
-  questions: Array<{ prompt: string; options: string[]; allowCustom: boolean }>;
+  questions: Array<{
+    prompt: string;
+    options: string[];
+    /** "multi" lets the reader send several of the options as one answer. */
+    answerKind: "choice" | "multi" | "open";
+    allowCustom: boolean;
+  }>;
   chapters: Array<{ index: number; title: string; summary: string; targetPages: number }>;
   createdAt: string;
   updatedAt: string;

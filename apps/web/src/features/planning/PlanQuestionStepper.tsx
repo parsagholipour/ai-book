@@ -8,6 +8,14 @@ import {
 } from "lucide-react";
 import type { NormalizedPlanQuestion, QuestionResponse } from "./planQuestions.js";
 
+/** A multi-answer question keeps its picks in `picked`; the answer is their join. */
+function isOptionSelected(response: QuestionResponse | undefined, option: string): boolean {
+  if (response?.status !== "answered") {
+    return false;
+  }
+  return response.picked ? response.picked.includes(option) : response.answer === option;
+}
+
 export function PlanQuestionStepper(props: {
   questions: NormalizedPlanQuestion[];
   responses: Record<string, QuestionResponse>;
@@ -17,6 +25,7 @@ export function PlanQuestionStepper(props: {
   revisionPending: boolean;
   responsesSubmitted: boolean;
   onAnswer: (answer: string) => void;
+  onSelectOption: (option: string) => void;
   onCustomAnswerChange: (answer: string) => void;
   onGoTo: (index: number) => void;
   onSkip: () => void;
@@ -74,19 +83,17 @@ export function PlanQuestionStepper(props: {
           {activeResponse ? <span className={`question-state ${activeResponse.status}`}>{activeResponse.status}</span> : null}
         </div>
         <p>{activeQuestion.prompt}</p>
+        {activeQuestion.answerKind === "multi" ? <small className="muted">Pick as many as apply.</small> : null}
         {activeQuestion.options.length > 0 ? (
           <div className="answer-options">
             {activeQuestion.options.map((option) => (
               <button
                 key={option}
                 type="button"
-                className={
-                  activeResponse?.status === "answered" && activeResponse.answer === option
-                    ? "answer-option selected"
-                    : "answer-option"
-                }
-                onClick={() => props.onAnswer(option)}
+                className={isOptionSelected(activeResponse, option) ? "answer-option selected" : "answer-option"}
+                onClick={() => props.onSelectOption(option)}
                 disabled={controlsBusy}
+                aria-pressed={activeQuestion.answerKind === "multi" ? isOptionSelected(activeResponse, option) : undefined}
               >
                 {option}
               </button>

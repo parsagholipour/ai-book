@@ -6,6 +6,7 @@ class AuthUser {
     required this.createdAt,
     required this.updatedAt,
     this.displayName,
+    this.legalAcceptanceRequired = false,
   });
 
   final String id;
@@ -14,6 +15,7 @@ class AuthUser {
   final String status;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final bool legalAcceptanceRequired;
 
   factory AuthUser.fromJson(Map<String, dynamic> json) {
     return AuthUser(
@@ -23,6 +25,8 @@ class AuthUser {
       status: json['status'] as String,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      legalAcceptanceRequired:
+          json['legalAcceptanceRequired'] as bool? ?? false,
     );
   }
 
@@ -34,12 +38,26 @@ class AuthUser {
       'status': status,
       'createdAt': createdAt.toUtc().toIso8601String(),
       'updatedAt': updatedAt.toUtc().toIso8601String(),
+      'legalAcceptanceRequired': legalAcceptanceRequired,
     };
   }
 
   String get displayLabel {
     final name = displayName?.trim();
     return name == null || name.isEmpty ? email : name;
+  }
+
+  AuthUser copyWith({bool? legalAcceptanceRequired}) {
+    return AuthUser(
+      id: id,
+      email: email,
+      displayName: displayName,
+      status: status,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      legalAcceptanceRequired:
+          legalAcceptanceRequired ?? this.legalAcceptanceRequired,
+    );
   }
 }
 
@@ -104,3 +122,6 @@ class AuthSession {
     );
   }
 }
+
+const currentTermsVersion = '2026-08-08';
+const currentPrivacyVersion = '2026-08-08';

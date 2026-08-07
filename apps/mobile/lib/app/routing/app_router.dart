@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/account/presentation/account_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/auth/presentation/legal_acceptance_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
 import '../../features/projects/presentation/book_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
@@ -72,6 +73,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final path = state.uri.path;
       final isAuthRoute = path.startsWith('/auth');
       final isSplash = path == '/splash';
+      final isLegalAcceptance = path == '/legal/acceptance';
       final currentSession = authState.asData?.value;
       final hasSession = currentSession != null;
 
@@ -87,7 +89,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         return isAuthRoute ? null : '/auth/sign-in';
       }
 
-      if (isAuthRoute || isSplash) {
+      if (currentSession.user.legalAcceptanceRequired) {
+        return isLegalAcceptance || path == '/account'
+            ? null
+            : '/legal/acceptance';
+      }
+
+      if (isAuthRoute || isSplash || isLegalAcceptance) {
         return '/home';
       }
 
@@ -107,6 +115,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/auth/sign-up',
         pageBuilder: (context, state) =>
             _appPage(state, const AuthScreen(mode: AuthScreenMode.signUp)),
+      ),
+      GoRoute(
+        path: '/legal/acceptance',
+        pageBuilder: (context, state) =>
+            _appPage(state, const LegalAcceptanceScreen()),
       ),
       GoRoute(
         path: '/home',

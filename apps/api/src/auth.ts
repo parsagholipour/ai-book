@@ -7,6 +7,7 @@ import {
   markOperatorRequest,
   sendMobileAuthFailure
 } from "./requestAuth.js";
+import { hasCurrentLegalAcceptance } from "./legalAcceptance.js";
 
 const AUTH_COOKIE_NAME = "ai_book_maker_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -66,8 +67,19 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
 
     const mobileAuth = await authenticateMobileBearer(request);
     if (mobileAuth) {
-      if ("ok" in mobileAuth && mobileAuth.ok === false) {
+      if ("ok" in mobileAuth) {
         return sendMobileAuthFailure(reply, mobileAuth);
+      }
+      if (
+        requiresCurrentLegalAcceptance(request.method, path) &&
+        !(await hasCurrentLegalAcceptance(mobileAuth.user.id))
+      ) {
+        return reply.code(428).send({
+          error: {
+            code: "LEGAL_ACCEPTANCE_REQUIRED",
+            message: "Review and accept the current Terms and Privacy Policy to continue."
+          }
+        });
       }
       return;
     }
@@ -90,10 +102,41 @@ function pathFromRequestUrl(rawUrl: string): string {
 }
 
 function shouldProtectPath(path: string): boolean {
-  if (path === "/api/health" || path.startsWith("/api/auth/") || path.startsWith("/api/mobile/auth/")) {
+  if (
+    path === "/api/health" ||
+    path === "/api/mobile/legal" ||
+    path.startsWith("/api/auth/") ||
+    path.startsWith("/api/mobile/auth/")
+  ) {
     return false;
   }
   return path.startsWith("/api/") || path.startsWith("/assets/images/") || path.startsWith("/assets/voice/") || path.startsWith("/docs");
+}
+
+/**
+ * Existing data stays readable while acceptance is outstanding. Destructive
+ * deletion, reporting, subscription management, logout, and call settlement
+ * also remain available so the acceptance screen can never trap a user in an
+ * account or paid/active operation.
+ */
+export function requiresCurrentLegalAcceptance(method: string, path: string): boolean {
+  if (!["POST", "PUT", "PATCH"].includes(method.toUpperCase())) {
+    return false;
+  }
+  if (!path.startsWith("/api/mobile/")) {
+    return false;
+  }
+  if (
+    path === "/api/mobile/legal/acceptance" ||
+    path === "/api/mobile/account/deletion-request" ||
+    path.startsWith("/api/mobile/billing/") ||
+    path.endsWith("/reports") ||
+    path.endsWith("/heartbeat") ||
+    path.endsWith("/end")
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function isOperatorOnlyPath(path: string): boolean {

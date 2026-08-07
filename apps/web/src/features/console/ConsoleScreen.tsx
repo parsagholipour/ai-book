@@ -173,6 +173,7 @@ export function ConsoleScreen(props: { auth: ReturnType<typeof useAuth> }) {
         onStopProject={() => void actions.stopProject()}
         onRegenerateCover={() => void actions.regenerateCover()}
         onAnswerQuestion={planQuestions.answerActiveQuestion}
+        onSelectQuestionOption={planQuestions.toggleActiveQuestionOption}
         onCustomQuestionAnswerChange={planQuestions.setCustomQuestionAnswer}
         onGoToQuestion={planQuestions.goToPlanQuestion}
         onSkipQuestion={planQuestions.skipActiveQuestion}

@@ -24,6 +24,7 @@ export function PlanSection(props: {
   onRevisePlan: () => void;
   onPlanMessageChange: (message: string) => void;
   onAnswerQuestion: (answer: string) => void;
+  onSelectQuestionOption: (option: string) => void;
   onCustomQuestionAnswerChange: (answer: string) => void;
   onGoToQuestion: (index: number) => void;
   onSkipQuestion: () => void;
@@ -75,6 +76,7 @@ export function PlanSection(props: {
         revisionPending={props.hasActivePlanRevision}
         responsesSubmitted={props.submittedQuestionResponses}
         onAnswer={props.onAnswerQuestion}
+        onSelectOption={props.onSelectQuestionOption}
         onCustomAnswerChange={props.onCustomQuestionAnswerChange}
         onGoTo={props.onGoToQuestion}
         onSkip={props.onSkipQuestion}

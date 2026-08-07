@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildQuestionResponseMessage,
+  joinQuestionAnswers,
   normalizePlanQuestions,
   pruneQuestionResponses,
   type QuestionResponse
@@ -27,21 +28,46 @@ describe("plan question helpers", () => {
         id: "0-who-is-the-narrator-",
         prompt: "Who is the narrator?",
         options: [],
+        answerKind: "open",
         allowCustom: true
       },
       {
         id: "1-choose-a-mood",
         prompt: "Choose a mood",
         options: ["Cozy", "Epic"],
+        answerKind: "choice",
         allowCustom: false
       },
       {
         id: "2-pick-an-ending",
         prompt: "Pick an ending",
         options: ["Hopeful", "Bittersweet"],
+        answerKind: "choice",
         allowCustom: true
       }
     ]);
+  });
+
+  // The planner may ask a question several options answer at once. It has to
+  // survive normalization, because that flag is what stops the stepper from
+  // sending the first tap and dropping the rest.
+  it("keeps a multi-answer question multi, and needs two options to be one", () => {
+    const [multi, tooFew] = normalizePlanQuestions([
+      {
+        prompt: "Which themes should the tales carry?",
+        options: ["Forgiveness", "Patience", "Justice"],
+        answerKind: "multi"
+      },
+      { prompt: "Which era?", options: ["Now"], answerKind: "multi" }
+    ]);
+
+    expect(multi?.answerKind).toBe("multi");
+    expect(tooFew?.answerKind).toBe("open");
+  });
+
+  it("joins picks with the comma of their own script", () => {
+    expect(joinQuestionAnswers(["Forgiveness", " Patience ", ""])).toBe("Forgiveness, Patience");
+    expect(joinQuestionAnswers(["بخشش و گذشت", "صبر و بردباری"])).toBe("بخشش و گذشت، صبر و بردباری");
   });
 
   it("builds response messages with answered and skipped questions", () => {

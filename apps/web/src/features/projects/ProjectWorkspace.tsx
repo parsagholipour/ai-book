@@ -66,6 +66,7 @@ export function ProjectWorkspace(props: {
   onStopProject: () => void;
   onRegenerateCover: () => void;
   onAnswerQuestion: (answer: string) => void;
+  onSelectQuestionOption: (option: string) => void;
   onCustomQuestionAnswerChange: (answer: string) => void;
   onGoToQuestion: (index: number) => void;
   onSkipQuestion: () => void;
@@ -202,6 +203,7 @@ export function ProjectWorkspace(props: {
               onRevisePlan={props.onRevisePlan}
               onPlanMessageChange={props.onPlanMessageChange}
               onAnswerQuestion={props.onAnswerQuestion}
+              onSelectQuestionOption={props.onSelectQuestionOption}
               onCustomQuestionAnswerChange={props.onCustomQuestionAnswerChange}
               onGoToQuestion={props.onGoToQuestion}
               onSkipQuestion={props.onSkipQuestion}

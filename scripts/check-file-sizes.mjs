@@ -34,7 +34,7 @@ const GRANDFATHERED = {
   "packages/core/src/generation/pages.ts": 2450,
   "packages/core/src/generation/pages.test.ts": 2160,
   "apps/api/src/routes/projects.ts": 1990,
-  "apps/api/src/mobileCreation.ts": 2590,
+  "apps/api/src/mobileCreation.ts": 2550,
   "apps/web/src/features/voice/BrowserVoiceRoomClient.ts": 1790,
   "apps/web/src/features/voice/BrowserVoiceCallClient.ts": 1360,
   "apps/api/src/routes/projects.test.ts": 1200,

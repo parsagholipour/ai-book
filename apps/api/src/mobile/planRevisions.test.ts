@@ -612,4 +612,47 @@ describe("mobile plan revision retries and operations", () => {
     await app.close();
   });
 
+  // The app draws a one-of picker or a several-of picker from answerKind, so a
+  // question the planner meant as several answers has to arrive saying so.
+  it("tells the app how many answers a plan question takes", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-1" }));
+    const basePlan = approvedPlanRecord().planningPackage as Record<string, unknown>;
+    state.planVersions.push(
+      approvedPlanRecord({
+        id: "plan-questions",
+        status: "DRAFT",
+        approvedAt: null,
+        planningPackage: {
+          ...basePlan,
+          questions: [
+            {
+              prompt: "Which themes should the tales carry?",
+              options: ["Forgiveness", "Patience", "Justice"],
+              answerKind: "multi",
+              allowCustom: true
+            }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/chat",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().plans[0].questions).toEqual([
+      {
+        prompt: "Which themes should the tales carry?",
+        options: ["Forgiveness", "Patience", "Justice"],
+        answerKind: "multi",
+        allowCustom: true
+      }
+    ]);
+    await app.close();
+  });
 });

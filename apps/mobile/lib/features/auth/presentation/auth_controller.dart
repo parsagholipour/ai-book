@@ -27,12 +27,32 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     required String email,
     required String password,
     String? displayName,
+    required bool termsAccepted,
+    required bool ageGuardianAttested,
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(
       () => ref
           .read(authRepositoryProvider)
-          .signUp(email: email, password: password, displayName: displayName),
+          .signUp(
+            email: email,
+            password: password,
+            displayName: displayName,
+            termsAccepted: termsAccepted,
+            ageGuardianAttested: ageGuardianAttested,
+          ),
+    );
+  }
+
+  Future<void> acceptCurrentLegalDocuments() async {
+    final current = state.asData?.value;
+    if (current == null) return;
+    await ref.read(authRepositoryProvider).acceptCurrentLegalDocuments();
+    state = AsyncData(
+      AuthSession(
+        user: current.user.copyWith(legalAcceptanceRequired: false),
+        tokens: current.tokens,
+      ),
     );
   }
 

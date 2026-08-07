@@ -1,4 +1,5 @@
 export * from "./config.js";
+export * from "./legal.js";
 export * from "./urls.js";
 export * from "./textDiff.js";
 export * from "./categories.js";

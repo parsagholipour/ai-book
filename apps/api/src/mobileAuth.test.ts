@@ -202,7 +202,11 @@ describe("mobile auth routes", () => {
       payload: {
         email: "Reader@Example.COM",
         password: "CorrectPass123",
-        displayName: "Reader"
+        displayName: "Reader",
+        termsVersion: "2026-08-08",
+        privacyVersion: "2026-08-08",
+        termsAccepted: true,
+        ageGuardianAttested: true
       }
     });
     const body = response.json();
@@ -213,6 +217,13 @@ describe("mobile auth routes", () => {
     expect(body.session.accessToken).toMatch(/^bma_at_/);
     expect(body.session.refreshToken).toMatch(/^bma_rt_/);
     expect(createCall.data.passwordCredential.create.passwordHash).not.toContain("CorrectPass123");
+    expect(createCall.data.legalAcceptances.create).toMatchObject({
+      termsVersion: "2026-08-08",
+      privacyVersion: "2026-08-08",
+      termsAttested: true,
+      ageGuardianAttested: true,
+      source: "mobile_signup"
+    });
     await app.close();
   });
 
@@ -238,6 +249,34 @@ describe("mobile auth routes", () => {
     expect(body.user.email).toBe("reader@example.com");
     expect(body.session.accessToken).toMatch(/^bma_at_/);
     expect(mockPrisma.mobileSession.create).toHaveBeenCalledOnce();
+    await app.close();
+  });
+
+  it("rejects missing and stale signup acceptance", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    const app = await buildApp();
+
+    const missing = await app.inject({
+      method: "POST",
+      url: "/api/mobile/auth/signup",
+      payload: { email: "reader@example.com", password: "CorrectPass123" }
+    });
+    const stale = await app.inject({
+      method: "POST",
+      url: "/api/mobile/auth/signup",
+      payload: {
+        email: "reader@example.com",
+        password: "CorrectPass123",
+        termsVersion: "2026-01-01",
+        privacyVersion: "2026-08-08",
+        termsAccepted: true,
+        ageGuardianAttested: true
+      }
+    });
+
+    expect(missing.statusCode).toBe(400);
+    expect(stale.statusCode).toBe(400);
+    expect(mockPrisma.user.create).not.toHaveBeenCalled();
     await app.close();
   });
 
@@ -408,7 +447,11 @@ async function signUp(app: FastifyInstance) {
     url: "/api/mobile/auth/signup",
     payload: {
       email: "reader@example.com",
-      password: "CorrectPass123"
+      password: "CorrectPass123",
+      termsVersion: "2026-08-08",
+      privacyVersion: "2026-08-08",
+      termsAccepted: true,
+      ageGuardianAttested: true
     }
   });
 }

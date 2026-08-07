@@ -640,6 +640,7 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
             visible: !typingCustom,
             child: _QuestionOptionList(
               options: question.options,
+              multiSelect: question.answerKind.allowsMultiple,
               enabled: !widget.isBusy,
               onSelect: widget.onSelect,
               onCustom: question.allowCustom && !_showCustomField

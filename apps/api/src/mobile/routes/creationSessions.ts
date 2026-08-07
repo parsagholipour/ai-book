@@ -71,6 +71,7 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuild.js";
 import type { MobileRouteContext } from "../routeContext.js";
+import { enforceContentRestrictions } from "../../contentRestrictions.js";
 
 /**
  * Branching creation chat: sessions, messages, attachments, preflight and build.
@@ -220,6 +221,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         creationAssistantMessage(greeting)
       ];
       const firstMessage = parsedBody.data.message;
+      if (firstMessage && !(await enforceContentRestrictions(reply, firstMessage))) {
+        return;
+      }
       let turn = greeting;
       let messages = normalizeCreationMessageIds(greetingMessages);
       let payload: MobileCreationDraftPayload;
@@ -295,6 +299,9 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       const parsedBody = mobileCreationMessageBodySchema.safeParse(request.body);
       if (!parsedBody.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a short message to continue the chat.");
+      }
+      if (!(await enforceContentRestrictions(reply, parsedBody.data.message))) {
+        return;
       }
       const draft = await prisma.mobileCreationDraft.findFirst({
         where: { id, userId: auth.user.id },

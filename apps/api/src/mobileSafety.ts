@@ -2,6 +2,12 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { loadConfig } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { z } from "zod";
+import {
+  CURRENT_LEGAL_VERSIONS,
+  isCurrentLegalAcceptanceInput,
+  legalAcceptanceData,
+  legalMetadata
+} from "./legalAcceptance.js";
 import type { AuthFailure } from "./mobileAuth.js";
 import { stopProjectGenerationJobs } from "./queue.js";
 import {
@@ -48,6 +54,14 @@ const reviewBodySchema = z
   .object({
     status: z.enum(["pending", "reviewed", "actioned", "dismissed"]),
     reviewNotes: z.string().trim().max(4000).optional()
+  })
+  .strict();
+const legalAcceptanceBodySchema = z
+  .object({
+    termsVersion: z.string().trim().min(1).max(40),
+    privacyVersion: z.string().trim().min(1).max(40),
+    termsAccepted: z.literal(true),
+    ageGuardianAttested: z.literal(true)
   })
   .strict();
 
@@ -106,21 +120,46 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     ...options.projectDeletionRateLimit
   });
 
-  fastify.get("/api/mobile/legal", async (request, reply) => {
+  fastify.get("/api/mobile/legal", async () => {
+    return {
+      legal: {
+        ...legalMetadata(appConfig),
+        aiGeneratedContentDisclosure:
+          "Books, pages, and visuals are generated with AI from user prompts and product presets."
+      }
+    };
+  });
+
+  fastify.post("/api/mobile/legal/acceptance", async (request, reply) => {
     const auth = await requireMobileAuth(request, reply);
     if (!auth) {
       return;
     }
+    const parsed = legalAcceptanceBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendMobileError(
+        reply,
+        400,
+        "LEGAL_ACCEPTANCE_REQUIRED",
+        "Accept the current Terms and Privacy Policy and confirm the age requirement to continue."
+      );
+    }
+    if (!isCurrentLegalAcceptanceInput(parsed.data)) {
+      return sendMobileError(
+        reply,
+        409,
+        "LEGAL_DOCUMENTS_UPDATED",
+        "The Terms or Privacy Policy changed. Review the current documents and try again."
+      );
+    }
 
+    await prisma.legalAcceptance.create({
+      data: legalAcceptanceData(auth.user.id, parsed.data, "mobile_reacceptance", request)
+    });
     return {
-      legal: {
-        privacyPolicyUrl: appConfig.PRIVACY_POLICY_URL,
-        termsOfServiceUrl: appConfig.TERMS_OF_SERVICE_URL,
-        accountDeletionUrl: appConfig.ACCOUNT_DELETION_URL,
-        supportEmail: appConfig.SUPPORT_EMAIL,
-        aiGeneratedContentDisclosure:
-          "Books, pages, and visuals are generated with AI from user prompts and product presets."
-      }
+      accepted: true,
+      legalAcceptanceRequired: false,
+      ...CURRENT_LEGAL_VERSIONS
     };
   });
 

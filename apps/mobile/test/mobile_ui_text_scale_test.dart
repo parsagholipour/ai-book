@@ -210,6 +210,9 @@ Widget _scaledApp({required Widget child}) {
 
 class _FakeAuthRepository implements AuthRepository {
   @override
+  Future<void> acceptCurrentLegalDocuments() async {}
+
+  @override
   Future<AuthSession?> restoreSession() async => null;
 
   @override
@@ -228,6 +231,8 @@ class _FakeAuthRepository implements AuthRepository {
     required String email,
     required String password,
     String? displayName,
+    bool termsAccepted = false,
+    bool ageGuardianAttested = false,
   }) async {
     return _fakeSession(email: email, displayName: displayName);
   }
