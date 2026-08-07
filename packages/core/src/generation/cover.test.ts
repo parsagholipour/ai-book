@@ -1,9 +1,53 @@
-import { describe, expect, it } from "vitest";
-import { applyCoverTemplateOverride, buildCoverArtworkPrompt, coverTemplateForScript, resolveCoverTemplate } from "./cover.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  applyCoverTemplateOverride,
+  buildCoverArtworkPrompt,
+  coverTemplateForScript,
+  renderCoverPng,
+  resolveCoverTemplate
+} from "./cover.js";
 import { scriptProfileForLanguage } from "../prompting/script.js";
 import { fitCoverText } from "./coverText.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+
+const screenshot = vi.hoisted(() => vi.fn(async () => Buffer.from("png")));
+
+vi.mock("puppeteer", () => ({
+  default: {
+    launch: async () => ({
+      newPage: async () => ({
+        setViewport: async () => undefined,
+        setContent: async () => undefined,
+        // The real page runs these against a document; the options we assert on
+        // do not depend on anything they return.
+        evaluate: async () => undefined,
+        screenshot
+      }),
+      close: async () => undefined
+    })
+  }
+}));
+
+describe("renderCoverPng", () => {
+  it("captures within the viewport, which is what makes the clip usable on an RTL cover", async () => {
+    // `clip` alone opts into Chrome's beyond-viewport capture, which resolves
+    // the rect against the document's scroll origin. In a `dir="rtl"` document
+    // that origin is the right edge, so x:0 lands a whole cover width away from
+    // the artwork and the screenshot comes back as nothing but the `#111` body
+    // backdrop — a book that generated a blank black cover. Layout is identical
+    // either way, so no other assertion in this file would notice.
+    const input = { ...testInput(), language: "Persian" };
+    await renderCoverPng({
+      input,
+      plan: makeFallbackPlan(input),
+      metadata: { title: "بوستان سعدی" },
+      artwork: { bytes: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>"), mimeType: "image/svg+xml" }
+    });
+
+    expect(screenshot).toHaveBeenCalledWith(expect.objectContaining({ captureBeyondViewport: false }));
+  });
+});
 
 describe("applyCoverTemplateOverride", () => {
   it("keeps the resolved template when a design overrides nothing", () => {

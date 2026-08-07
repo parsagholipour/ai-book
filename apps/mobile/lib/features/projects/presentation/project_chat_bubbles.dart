@@ -396,7 +396,6 @@ class ProjectMessageBubble extends StatelessWidget {
         onEdit: isUser ? onStartEdit : null,
         onReply: startReply,
       ),
-      onSwipeReply: startReply,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 520),
         child: DecoratedBox(

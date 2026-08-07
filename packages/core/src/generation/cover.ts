@@ -346,8 +346,17 @@ export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffe
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
     });
+    // `captureBeyondViewport` is what makes a clip usable on an RTL cover.
+    // Passing `clip` alone opts into the beyond-viewport capture path, which
+    // resolves the rect against the document's scroll origin — and in a
+    // `dir="rtl"` document that origin sits at the right edge, so x:0 lands
+    // a full cover width away from the artwork and the capture comes back as
+    // nothing but the `#111` body backdrop. Layout is identical either way, so
+    // this only ever looked like "the cover generated black". The clip is
+    // already exactly the viewport; capturing within it is the same pixels.
     const screenshot = await page.screenshot({
       type: "png",
+      captureBeyondViewport: false,
       clip: { x: 0, y: 0, width: COVER_WIDTH, height: COVER_HEIGHT }
     });
     return Buffer.from(screenshot);
