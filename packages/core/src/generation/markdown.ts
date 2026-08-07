@@ -62,6 +62,28 @@ export const CHAPTER_HEADING_STYLES: readonly ChapterHeadingStyle[] = [
 
 export const DEFAULT_CHAPTER_HEADING_STYLE: ChapterHeadingStyle = "label_number_title";
 
+/**
+ * How much chapter apparatus a book earns, decided by its own size rather than
+ * by whether the planner happened to name its beats "chapters".
+ *
+ * - `chapters` — `Chapter N: Title` headings and a Contents page.
+ * - `sections` — the titles alone, unnumbered, and no Contents page.
+ * - `none` — neither.
+ */
+export type ChapterPresentation = "chapters" | "sections" | "none";
+
+/** At or above this many pages a book can carry numbered chapters and a Contents page. */
+const MIN_CHAPTERED_BOOK_PAGES = 8;
+
+/**
+ * At or below this many pages, a division per page is still a structure — a
+ * leaflet's movements — rather than a page index, and keeps its titles.
+ */
+const MAX_SECTIONED_BOOK_PAGES = 4;
+
+/** Below this many pages each, divisions are section breaks wearing chapters' names. */
+const MIN_PAGES_PER_DIVISION = 2;
+
 /** Longer than this stops being a label and starts being a sentence in the heading. */
 export const CHAPTER_HEADING_LABEL_MAX_LENGTH = 24;
 
@@ -269,10 +291,13 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
   const pages = [...input.pages].sort((a, b) => a.index - b.index);
   const labels = markdownLabels(input.language);
   const readerChapterStarts = readerChapterStartsForPages(input.readerChapters, pages);
-  const chapterStarts = readerChapterStarts.length > 0 ? readerChapterStarts : chapterStartsForPages(input.plan, pages);
+  const starts = readerChapterStarts.length > 0 ? readerChapterStarts : chapterStartsForPages(input.plan, pages);
+  const presentation = chapterPresentationFor(starts, pages);
+  const chapterStarts = presentation === "none" ? [] : starts;
   const chapterByStartPage = new Map(chapterStarts.map((start) => [start.pageIndex, start.chapter]));
-  const heading = chapterHeadingFormat(input, labels);
-  const contents = chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels, heading) : "";
+  const heading = chapterHeadingFormat(input, labels, presentation);
+  const contents =
+    presentation === "chapters" && chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels, heading) : "";
   const research = formatReaderFacingSources(input, pages);
   const coverImagePath = input.cover?.imagePath;
 
@@ -354,10 +379,6 @@ function chapterStartsForPages(
 
   const pageIndexes = new Set(pages.map((page) => page.index));
   const chapters = [...plan.chapters].sort((a, b) => a.index - b.index);
-  if (looksLikePageLevelChapterPlan(chapters, pages.length)) {
-    return [];
-  }
-
   const starts: Array<{ pageIndex: number; chapter: ChapterPlan }> = [];
   let nextPageIndex = 1;
 
@@ -393,32 +414,61 @@ function readerChapterStartsForPages(
       index: index + 1
     }));
 
-  if (looksLikePageLevelReaderChapters(chapters, pages.length)) {
-    return [];
-  }
-
   return chapters.map((chapter) => ({
     pageIndex: chapter.startPageIndex,
     chapter
   }));
 }
 
-function looksLikePageLevelChapterPlan(chapters: ChapterPlan[], pageCount: number): boolean {
-  if (chapters.length <= 1) {
-    return false;
+/**
+ * Decides the apparatus from the partition that is about to be printed, so a
+ * plan's chapters and model-written reader chapters are held to one standard.
+ *
+ * The word "Chapter" over three paragraphs is what this exists to prevent. A
+ * three-page book is still divided into beats worth titling — that is what the
+ * planner wrote them for — but none of them is a chapter, and a Contents page
+ * listing three of them costs a quarter of the finished PDF.
+ */
+export function chapterPresentationFor(
+  starts: ReadonlyArray<{ pageIndex: number }>,
+  pages: ReadonlyArray<{ index: number }>
+): ChapterPresentation {
+  if (starts.length < 2 || pages.length === 0) {
+    return "none";
   }
-  const maxReasonableChapterCount = Math.max(4, Math.ceil(pageCount / 3));
-  const shortChapterCount = chapters.filter((chapter) => chapter.targetPages <= 2).length;
-  return chapters.length > maxReasonableChapterCount && shortChapterCount / chapters.length >= 0.7;
+  const pageLevel = looksLikePageLevelPartition(starts, pages);
+  if (!pageLevel && pages.length >= MIN_CHAPTERED_BOOK_PAGES) {
+    return "chapters";
+  }
+  // A short book earns unnumbered breaks even at one per page; a long one cut
+  // that finely is a page list rather than a structure, and gets nothing.
+  if (!pageLevel || pages.length <= MAX_SECTIONED_BOOK_PAGES) {
+    return "sections";
+  }
+  return "none";
 }
 
-function looksLikePageLevelReaderChapters(chapters: ReaderChapter[], pageCount: number): boolean {
-  if (chapters.length <= 1) {
-    return false;
-  }
-  const spans = chapters.map((chapter) => chapter.endPageIndex - chapter.startPageIndex + 1);
+/**
+ * Whether the partition is really a page index rather than a structure.
+ *
+ * Measured on the distance between consecutive starts rather than on a plan's
+ * `targetPages`, which is a forecast the finished book may not have honoured —
+ * and which used to be tested with a floor of four chapters, so a three-page
+ * book cut into three could never be caught however thin the pieces were.
+ *
+ * Both halves are needed. The average catches a book sliced uniformly too fine;
+ * the share of single-page divisions catches one that hides four of them behind
+ * a single long chapter, which the average would forgive.
+ */
+function looksLikePageLevelPartition(
+  starts: ReadonlyArray<{ pageIndex: number }>,
+  pages: ReadonlyArray<{ index: number }>
+): boolean {
+  const ordered = [...starts].sort((a, b) => a.pageIndex - b.pageIndex);
+  const lastPageIndex = pages.reduce((last, page) => Math.max(last, page.index), 0);
+  const spans = ordered.map((start, index) => (ordered[index + 1]?.pageIndex ?? lastPageIndex + 1) - start.pageIndex);
   const onePageSpans = spans.filter((span) => span <= 1).length;
-  return chapters.length >= pageCount || onePageSpans / chapters.length >= 0.7;
+  return pages.length / ordered.length < MIN_PAGES_PER_DIVISION || onePageSpans / spans.length >= 0.7;
 }
 
 type DisplayChapter = Pick<ChapterPlan, "index" | "title" | "summary">;
@@ -426,9 +476,15 @@ type DisplayChapter = Pick<ChapterPlan, "index" | "title" | "summary">;
 /** The heading wording in force for one compile: a style plus the word to use for "Chapter". */
 type ChapterHeadingFormat = { style: ChapterHeadingStyle; word: string };
 
-function chapterHeadingFormat(input: CompileMarkdownInput, labels: MarkdownLabels): ChapterHeadingFormat {
+function chapterHeadingFormat(
+  input: CompileMarkdownInput,
+  labels: MarkdownLabels,
+  presentation: ChapterPresentation
+): ChapterHeadingFormat {
   return {
-    style: input.chapterHeadingStyle ?? DEFAULT_CHAPTER_HEADING_STYLE,
+    // A stated preference always wins: someone who asked for "Part 1" keeps it
+    // however small the book is. Only the default is sized to the book.
+    style: input.chapterHeadingStyle ?? (presentation === "sections" ? "title_only" : DEFAULT_CHAPTER_HEADING_STYLE),
     word: sanitizeChapterHeadingLabel(input.chapterHeadingLabel) ?? labels.chapter
   };
 }

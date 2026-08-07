@@ -19,7 +19,7 @@ import {
 import {
   audiobookChapterPlans,
   joinNarrationChunks,
-  spokenChapterLabel,
+  narratedChapterLabel,
   synthesizeChunks,
   type AudiobookChapterPlan
 } from "./generateAudiobookSupport.js";
@@ -78,8 +78,8 @@ export async function generateAudiobook(job: Job) {
     throw new Error("This book has no finished pages to narrate.");
   }
 
-  const chapterLabel = spokenChapterLabel(project.language);
   const plans = audiobookChapterPlans(pages);
+  const chapterLabel = narratedChapterLabel(plans, pages, project.language);
   const narrations = plans.map((chapter) =>
     buildChapterNarration({
       chapterIndex: chapter.index,

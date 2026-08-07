@@ -276,6 +276,21 @@ tells you when a listed file has dropped under the default so the entry can be d
   credits to rewrite twelve pages that would have recompiled the identical heading.
   `applyPresentationPreference` (`apps/api/src/mobile/presentationEdits.ts`) is the shared mechanism
   for both: one `mediaSettings` field plus a recompile, no `BookEditOperation`, no ledger entry.
+- **A book only earns the word "Chapter" by being long enough to need it.** The planner is told to
+  make its chapter targets sum to exactly `targetPages`, so a three-page book gets three one-page
+  chapters — a good *writing* scaffold, three distinct beats, and an absurd thing to print as
+  "Chapter 1" over three paragraphs plus a Contents page costing a quarter of the PDF.
+  `chapterPresentationFor` (`packages/core/src/generation/markdown.ts`) sizes the apparatus to the
+  finished book instead: `chapters` (numbered headings + Contents), `sections` (the titles alone,
+  no Contents — the default style becomes `title_only`), or `none`. Read it off the partition that
+  is *about to be printed*, never off `plan.chapters`, which is why one test now covers both the
+  plan's chapters and model-written reader chapters — the plan-side guard it replaced had a floor
+  of four chapters, so a three-page book cut into three could never trip it. An explicit
+  `mediaSettings.chapterHeadingStyle` still outranks all of this; only the default is sized.
+  The narrator asks the same question through `narratedChapterLabel`
+  (`apps/worker/src/handlers/generateAudiobookSupport.ts`) and drops the spoken label — but it must
+  never re-partition, because `chapter-<n>.mp3` and the READY-skip that resumes a failed narration
+  are keyed on chapter index.
 - **A verified exact replacement is free, and the verification is what makes it safe.**
   `locallyPatchedPage` was always model-free, but the choice between it and a two-model-call page
   rewrite was made per page *at apply time* and never reached pricing, so a `local_patch` was billed

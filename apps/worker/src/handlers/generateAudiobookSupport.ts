@@ -1,4 +1,5 @@
 import {
+  chapterPresentationFor,
   concatPcm16ChunksWithSilence,
   createDeterministicReaderChapters,
   languageLabel,
@@ -163,6 +164,28 @@ export function joinNarrationChunks(chunks: Pcm16AudioChunk[], narration: Chapte
  */
 export function spokenChapterLabel(language: string | null | undefined): string {
   return CHAPTER_LABELS[languageLabel(language).toLowerCase()] ?? "Chapter";
+}
+
+/**
+ * That word again, or `undefined` when the book is too small to have chapters —
+ * the same judgement the printed book makes, so a 700-word booklet narrated as
+ * three ninety-second parts is not announced as three chapters.
+ *
+ * Only the spoken words change. The partition stays exactly as
+ * {@link audiobookChapterPlans} built it, because `chapter-<n>.mp3` and the
+ * READY-skip that lets a failed narration resume are keyed on chapter index —
+ * re-chaptering here would renumber audio already on disk.
+ */
+export function narratedChapterLabel(
+  plans: AudiobookChapterPlan[],
+  pages: Array<{ index: number }>,
+  language: string | null | undefined
+): string | undefined {
+  const starts = plans.flatMap((plan) => {
+    const first = plan.pages[0];
+    return first ? [{ pageIndex: first.index }] : [];
+  });
+  return chapterPresentationFor(starts, pages) === "chapters" ? spokenChapterLabel(language) : undefined;
 }
 
 const CHAPTER_LABELS: Record<string, string> = {

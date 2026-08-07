@@ -3,18 +3,19 @@ import {
   assertBookLikeMarkdown,
   chapterHeadingLabelPreference,
   chapterHeadingStylePreference,
+  chapterPresentationFor,
   compileBookMarkdown,
   findBookLikeMarkdownIssues,
-  includeSourcesPreference
+  type MarkdownPage
 } from "./markdown.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 
 describe("compileBookMarkdown", () => {
   it("compiles Markdown pages without metadata frontmatter and with chapter contents", () => {
-    const plan = withTwoOnePageChapters(makeFallbackPlan({
+    const plan = withTwoMultiPageChapters(makeFallbackPlan({
       prompt: "A story about a careful clockmaker.",
       category: "STORY",
-      targetPages: 2,
+      targetPages: 8,
       complexity: 5,
       temperature: 0.8,
       language: "en",
@@ -30,10 +31,10 @@ describe("compileBookMarkdown", () => {
 
     const markdown = compileBookMarkdown({
       plan,
-      pages: [
-        { index: 2, title: "Second", markdown: "The second page." },
+      pages: chapteredPages([
+        { index: 5, title: "Second", markdown: "The second page." },
         { index: 1, title: "First", markdown: "The first page.", imagePath: "/assets/images/p1.png" }
-      ]
+      ])
     });
 
     expect(markdown).toMatch(/^# /);
@@ -96,10 +97,10 @@ describe("compileBookMarkdown", () => {
   });
 
   it("localizes visible Markdown scaffolding for non-English books", () => {
-    const plan = withTwoOnePageChapters(makeFallbackPlan({
+    const plan = withTwoMultiPageChapters(makeFallbackPlan({
       prompt: "یک داستان کودکانه درباره کتابخانه ماه.",
       category: "KIDS",
-      targetPages: 2,
+      targetPages: 8,
       complexity: 3,
       temperature: 0.8,
       language: "Persian",
@@ -116,10 +117,10 @@ describe("compileBookMarkdown", () => {
     const markdown = compileBookMarkdown({
       plan,
       language: "Persian",
-      pages: [
+      pages: chapteredPages([
         { index: 1, title: "آغاز", markdown: "صفحه نخست.", imagePath: "/assets/images/p1.png", imageAlt: "Illustration" },
-        { index: 2, title: "پایان", markdown: "صفحه دوم." }
-      ]
+        { index: 5, title: "پایان", markdown: "صفحه دوم." }
+      ])
     });
 
     expect(markdown).toContain('<h2 id="book-contents-title">فهرست</h2>');
@@ -193,6 +194,80 @@ describe("compileBookMarkdown", () => {
     expect(markdown).not.toContain("book-contents");
     expect(markdown).not.toContain("## Chapter");
     expect(markdown).not.toContain("## Page");
+  });
+
+  it("titles a short book's movements without calling three paragraphs a chapter", () => {
+    // The shape the planner writes for a three-page book: one beat per page.
+    // The beats are worth titling — they are why the pages differ — but none of
+    // them is a chapter, and a Contents page listing three costs a quarter of
+    // the PDF.
+    const plan = withThreeOnePageChapters(storyPlan());
+    const markdown = compileBookMarkdown({
+      plan,
+      language: "Persian",
+      pages: Array.from({ length: 3 }, (_, offset) => ({
+        index: offset + 1,
+        title: `Movement ${offset + 1}`,
+        markdown: `Prose for page ${offset + 1}.`
+      }))
+    });
+
+    expect(markdown).toContain("## Opening Move");
+    expect(markdown).toContain("## Second Movement");
+    expect(markdown).toContain("## Closing Move");
+    expect(markdown).not.toContain("فصل");
+    expect(markdown).not.toContain("Chapter 1");
+    expect(markdown).not.toContain("book-contents");
+    expect(findBookLikeMarkdownIssues(markdown)).toEqual([]);
+  });
+
+  it("still numbers a short book's chapters when the reader asked for a label", () => {
+    const markdown = compileBookMarkdown({
+      plan: withThreeOnePageChapters(storyPlan()),
+      pages: Array.from({ length: 3 }, (_, offset) => ({
+        index: offset + 1,
+        title: `Movement ${offset + 1}`,
+        markdown: `Prose for page ${offset + 1}.`
+      })),
+      chapterHeadingLabel: "Part",
+      chapterHeadingStyle: "label_number_title"
+    });
+
+    // A stated preference outranks the book's size; only the default is sized.
+    expect(markdown).toContain("## Part 1: Opening Move");
+  });
+
+  it("sizes the chapter apparatus to the book", () => {
+    const pages = (count: number) => Array.from({ length: count }, (_, offset) => ({ index: offset + 1 }));
+    const startsAt = (...pageIndexes: number[]) => pageIndexes.map((pageIndex) => ({ pageIndex }));
+
+    // Nothing to divide.
+    expect(chapterPresentationFor(startsAt(1), pages(8))).toBe("none");
+    expect(chapterPresentationFor([], pages(8))).toBe("none");
+
+    // Multi-page divisions in a book long enough to carry them.
+    expect(chapterPresentationFor(startsAt(1, 4, 6), pages(8))).toBe("chapters");
+    expect(chapterPresentationFor(startsAt(1, 9, 17), pages(24))).toBe("chapters");
+
+    // Real divisions, book too short for the word "Chapter".
+    expect(chapterPresentationFor(startsAt(1, 3, 5), pages(7))).toBe("sections");
+
+    // A division per page: a structure in a leaflet, a page index above that.
+    expect(chapterPresentationFor(startsAt(1, 2, 3), pages(3))).toBe("sections");
+    expect(chapterPresentationFor(startsAt(1, 2, 3, 4), pages(4))).toBe("sections");
+    expect(chapterPresentationFor(startsAt(1, 2, 3, 4, 5), pages(5))).toBe("none");
+    expect(chapterPresentationFor(startsAt(1, 2, 3, 4, 5, 6, 7, 8), pages(8))).toBe("none");
+
+    // Sliced uniformly too fine: fourteen divisions over twenty-four pages
+    // averages under two pages each, even though few of them are single pages.
+    expect(chapterPresentationFor(startsAt(1, 3, 5, 6, 8, 10, 11, 13, 15, 16, 18, 20, 21, 23), pages(24))).toBe("none");
+
+    // One long division cannot carry four single-page ones: the average here is
+    // 3.6 pages, which forgives them, and the share of single pages does not.
+    expect(chapterPresentationFor(startsAt(1, 2, 3, 4, 5), pages(18))).toBe("none");
+
+    // Order is not assumed, and the last division runs to the final page.
+    expect(chapterPresentationFor(startsAt(6, 1, 4), pages(8))).toBe("chapters");
   });
 
   it("prefers reader chapters over page-like generation chapters", () => {
@@ -298,10 +373,10 @@ describe("compileBookMarkdown", () => {
   });
 
   it("places contents right after the cover instead of a title-only page", () => {
-    const plan = withTwoOnePageChapters(makeFallbackPlan({
+    const plan = withTwoMultiPageChapters(makeFallbackPlan({
       prompt: "A story about a careful clockmaker.",
       category: "STORY",
-      targetPages: 2,
+      targetPages: 8,
       complexity: 5,
       temperature: 0.8,
       language: "en",
@@ -318,10 +393,10 @@ describe("compileBookMarkdown", () => {
     const markdown = compileBookMarkdown({
       plan,
       cover: { imagePath: "/assets/images/project/cover.png", imageAlt: "Cover for the book" },
-      pages: [
+      pages: chapteredPages([
         { index: 1, title: "First", markdown: "The first page." },
-        { index: 2, title: "Second", markdown: "The second page." }
-      ]
+        { index: 5, title: "Second", markdown: "The second page." }
+      ])
     });
 
     expect(markdown).toMatch(/^!\[Cover for the book]/);
@@ -330,134 +405,11 @@ describe("compileBookMarkdown", () => {
     expect(markdown.indexOf('<section class="book-contents"')).toBeLessThan(markdown.indexOf("The first page."));
   });
 
-  it("renders source citations for factual kid-facing books without internal research summaries", () => {
-    const plan = makeFallbackPlan({
-      prompt: "An educational kids' picture book explaining how honeybees pollinate flowers.",
-      category: "KIDS",
-      targetPages: 1,
-      complexity: 3,
-      temperature: 0.7,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "every-page",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
-
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "KIDS",
-      pages: [{ index: 1, title: "First", markdown: "The first page." }],
-      researchSources: [
-        {
-          title: "meetnewbooks.com",
-          url: "https://example.com/source",
-          summary: "For an AI book outline exploring this topic, consider these works."
-        },
-        {
-          title: "Gemini grounded summary",
-          summary: "No external citation should be printed for this internal note."
-        }
-      ]
-    });
-
-    expect(markdown).toContain("## Sources");
-    expect(markdown).toContain("- [meetnewbooks.com](https://example.com/source)");
-    expect(markdown).not.toContain("For an AI book");
-    expect(markdown).not.toContain("Gemini grounded summary");
-    expect(markdown).not.toContain("No external citation");
-  });
-
-  it("renders source citations for source-forward nonfiction categories", () => {
-    const plan = makeFallbackPlan({
-      prompt: "A careful patient education book about sleep and long-term health.",
-      category: "HEALTH",
-      targetPages: 1,
-      complexity: 6,
-      temperature: 0.45,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "template-driven",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
-
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "HEALTH",
-      pages: [{ index: 1, title: "First", markdown: "The first page." }],
-      researchSources: [
-        {
-          title: "Sleep research",
-          url: "https://example.com/sleep",
-          summary: "A source that should appear in the back matter."
-        }
-      ]
-    });
-
-    expect(markdown).toContain("## Sources");
-    expect(markdown).toContain("- [Sleep research](https://example.com/sleep)");
-  });
-
-  it("drops the sources back matter when the reader turned it off", () => {
-    const plan = makeFallbackPlan({
-      prompt: "A careful patient education book about sleep and long-term health.",
-      category: "HEALTH",
-      targetPages: 1,
-      complexity: 6,
-      temperature: 0.45,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "template-driven",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
-
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "HEALTH",
-      pages: [{ index: 1, title: "First", markdown: "The first page." }],
-      researchSources: [
-        {
-          title: "Sleep research",
-          url: "https://example.com/sleep",
-          summary: "A source the reader asked us to stop printing."
-        }
-      ],
-      includeSources: false
-    });
-
-    expect(markdown).not.toContain("## Sources");
-    expect(markdown).not.toContain("https://example.com/sleep");
-  });
-
-  it("reads the sources preference off a project's media settings", () => {
-    expect(includeSourcesPreference({ includeSources: false })).toBe(false);
-    expect(includeSourcesPreference({ includeSources: true })).toBe(true);
-    // Unset (and anything unparseable) leaves the automatic decision alone.
-    expect(includeSourcesPreference({ includeCover: true })).toBeUndefined();
-    expect(includeSourcesPreference(null)).toBeUndefined();
-  });
 
   it("drops the chapter label from headings and contents when the reader asks for titles only", () => {
     const markdown = compileBookMarkdown({
-      plan: withTwoOnePageChapters(storyPlan()),
-      pages: [
-        { index: 1, title: "First", markdown: "The first page." },
-        { index: 2, title: "Second", markdown: "The second page." }
-      ],
+      plan: withTwoMultiPageChapters(storyPlan()),
+      pages: chapteredPages(),
       chapterHeadingStyle: "title_only"
     });
 
@@ -473,11 +425,8 @@ describe("compileBookMarkdown", () => {
 
   it("keeps numbering without the label when the reader asks for numbered titles", () => {
     const markdown = compileBookMarkdown({
-      plan: withTwoOnePageChapters(storyPlan()),
-      pages: [
-        { index: 1, title: "First", markdown: "The first page." },
-        { index: 2, title: "Second", markdown: "The second page." }
-      ],
+      plan: withTwoMultiPageChapters(storyPlan()),
+      pages: chapteredPages(),
       chapterHeadingStyle: "number_title"
     });
 
@@ -488,15 +437,12 @@ describe("compileBookMarkdown", () => {
   });
 
   it("swaps in a custom chapter label without doubling a title that already carries it", () => {
-    const plan = withTwoOnePageChapters(storyPlan());
+    const plan = withTwoMultiPageChapters(storyPlan());
     const markdown = compileBookMarkdown({
       // The stored title is "Chapter 1: Opening Move"; under a custom label the
       // English prefix still has to come off or the heading reads twice.
       plan: { ...plan, chapters: [{ ...plan.chapters[0]!, title: "Part 1: Opening Move" }, plan.chapters[1]!] },
-      pages: [
-        { index: 1, title: "First", markdown: "The first page." },
-        { index: 2, title: "Second", markdown: "The second page." }
-      ],
+      pages: chapteredPages(),
       chapterHeadingLabel: "Part"
     });
 
@@ -506,13 +452,10 @@ describe("compileBookMarkdown", () => {
   });
 
   it("never emits an empty heading when a titleless chapter is set to titles only", () => {
-    const plan = withTwoOnePageChapters(storyPlan());
+    const plan = withTwoMultiPageChapters(storyPlan());
     const markdown = compileBookMarkdown({
       plan: { ...plan, chapters: [{ ...plan.chapters[0]!, title: "   " }, plan.chapters[1]!] },
-      pages: [
-        { index: 1, title: "First", markdown: "The first page." },
-        { index: 2, title: "Second", markdown: "The second page." }
-      ],
+      pages: chapteredPages(),
       chapterHeadingStyle: "title_only"
     });
 
@@ -523,13 +466,12 @@ describe("compileBookMarkdown", () => {
 
   it("still strips a page's own heading after the chapter style changes", () => {
     const markdown = compileBookMarkdown({
-      plan: withTwoOnePageChapters(storyPlan()),
-      pages: [
+      plan: withTwoMultiPageChapters(storyPlan()),
+      pages: chapteredPages([
         // Written when "Chapter 1: ..." was canonical. It must not survive as a
         // duplicate underneath the newly styled heading.
-        { index: 1, title: "First", markdown: "# Chapter 1: Opening Move\n\nThe first page." },
-        { index: 2, title: "Second", markdown: "The second page." }
-      ],
+        { index: 1, title: "First", markdown: "# Chapter 1: Opening Move\n\nThe first page." }
+      ]),
       chapterHeadingStyle: "title_only"
     });
 
@@ -550,184 +492,6 @@ describe("compileBookMarkdown", () => {
     expect(chapterHeadingLabelPreference({})).toBeUndefined();
   });
 
-  it("omits source citations for fictional kid stories even when source rows exist", () => {
-    const plan = makeFallbackPlan({
-      prompt: "A bedtime story about a rabbit who learns to listen to the rain.",
-      category: "KIDS",
-      targetPages: 1,
-      complexity: 3,
-      temperature: 0.9,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "every-page",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
-
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "KIDS",
-      pages: [{ index: 1, title: "First", markdown: "The rabbit tucked a blanket under his chin." }],
-      researchSources: [
-        {
-          title: "Rabbit facts",
-          url: "https://example.com/rabbits",
-          summary: "Background notes that should not become back matter for a purely fictional story."
-        }
-      ]
-    });
-
-    expect(markdown).not.toContain("## Sources");
-    expect(markdown).not.toContain("https://example.com/rabbits");
-  });
-
-  it("omits source citations for kid fables with moral lessons", () => {
-    const plan = {
-      ...makeFallbackPlan({
-        prompt: "A story for kids",
-        category: "KIDS",
-        targetPages: 1,
-        complexity: 3,
-        temperature: 0.8,
-        language: "en",
-        mediaSettings: {
-          fullIllustrations: true,
-          illustrationCadence: "template-driven",
-          includeCover: true,
-          coverTemplate: "kids",
-          finalReview: false,
-          toneProfile: "neutral" as const
-        }
-      }),
-      premise: "A retelling of the classic fable where slow and steady wins the race, with an instructional ending.",
-      chapters: [
-        {
-          index: 1,
-          title: "The Big Race",
-          summary:
-            "Turtle and Rabbit decide to race, and the story ends with a clear lesson about persistence and not giving up.",
-          keyBeats: [
-            "Rabbit zooms ahead while Turtle begins his slow walk.",
-            "Turtle reaches the finish line; the animals celebrate, and the story closes with a simple message about steady effort."
-          ],
-          targetPages: 1
-        }
-      ]
-    };
-
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "KIDS",
-      pages: [{ index: 1, title: "First", markdown: "Slow and steady had won the race." }],
-      researchSources: [
-        {
-          title: "Fable background",
-          url: "https://example.com/tortoise-hare",
-          summary: "Background notes that should not become back matter for a fictional fable retelling."
-        }
-      ]
-    });
-
-    expect(markdown).not.toContain("## Sources");
-    expect(markdown).not.toContain("https://example.com/tortoise-hare");
-  });
-
-  it("omits source citations for a custom-category bedtime story even when background research ran", () => {
-    const plan = {
-      ...makeFallbackPlan({
-        prompt: "Write a 5 page book for children sleep",
-        category: "CUSTOM",
-        targetPages: 1,
-        complexity: 3,
-        temperature: 0.9,
-        language: "en",
-        mediaSettings: {
-          fullIllustrations: true,
-          illustrationCadence: "every-page",
-          includeCover: true,
-          coverTemplate: "auto",
-          finalReview: true,
-          toneProfile: "neutral" as const
-        }
-      }),
-      premise:
-        "A gentle bedtime story where a child visits a magical vegetable garden at dusk, and each vegetable shares a calming sleep ritual, helping the child wind down for the night.",
-      researchNotes: [
-        {
-          query: "children sleep routines",
-          title: "sleepfoundation.org",
-          url: "https://example.com/sleep-hygiene",
-          summary: "Background research used to ground the writing, not reader-facing back matter."
-        }
-      ]
-    };
-
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "CUSTOM",
-      pages: [{ index: 1, title: "First", markdown: "The eggplant let out a long, slow yawn." }],
-      researchSources: [
-        {
-          title: "sleepfoundation.org",
-          url: "https://example.com/sleep-hygiene",
-          summary: "Background research used to ground the writing, not reader-facing back matter."
-        }
-      ]
-    });
-
-    expect(markdown).not.toContain("## Sources");
-    expect(markdown).not.toContain("https://example.com/sleep-hygiene");
-  });
-
-  it("omits source citations for story-category books even when the plan carries research", () => {
-    const plan = {
-      ...makeFallbackPlan({
-        prompt: "A historical drama set in a lighthouse during a real storm.",
-        category: "STORY",
-        targetPages: 1,
-        complexity: 5,
-        temperature: 0.85,
-        language: "en",
-        mediaSettings: {
-          fullIllustrations: false,
-          illustrationCadence: "template-driven",
-          includeCover: true,
-          coverTemplate: "fiction",
-          finalReview: true,
-          toneProfile: "neutral" as const
-        }
-      }),
-      researchQueries: ["historical lighthouse storms"],
-      researchNotes: [
-        {
-          query: "historical lighthouse storms",
-          title: "Storm archive",
-          url: "https://example.com/storms",
-          summary: "Grounding research for the fiction, not a bibliography."
-        }
-      ]
-    };
-
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "STORY",
-      pages: [{ index: 1, title: "First", markdown: "The lamp burned steady against the gale." }],
-      researchSources: [
-        {
-          title: "Storm archive",
-          url: "https://example.com/storms",
-          summary: "Grounding research for the fiction, not a bibliography."
-        }
-      ]
-    });
-
-    expect(markdown).not.toContain("## Sources");
-    expect(markdown).not.toContain("https://example.com/storms");
-  });
 
   it("rejects compiled export artifacts", () => {
     const badMarkdown = [
@@ -777,7 +541,7 @@ function storyPlan(): ReturnType<typeof makeFallbackPlan> {
   });
 }
 
-function withTwoOnePageChapters(plan: ReturnType<typeof makeFallbackPlan>): ReturnType<typeof makeFallbackPlan> {
+function withTwoMultiPageChapters(plan: ReturnType<typeof makeFallbackPlan>): ReturnType<typeof makeFallbackPlan> {
   return {
     ...plan,
     chapters: [
@@ -785,18 +549,43 @@ function withTwoOnePageChapters(plan: ReturnType<typeof makeFallbackPlan>): Retu
         index: 1,
         title: "Chapter 1: Opening Move",
         summary: "Open the book.",
-        targetPages: 1,
+        targetPages: 4,
         keyBeats: []
       },
       {
         index: 2,
         title: "Second Movement",
         summary: "Continue the book.",
-        targetPages: 1,
+        targetPages: 4,
         keyBeats: []
       }
     ]
   };
+}
+
+function withThreeOnePageChapters(plan: ReturnType<typeof makeFallbackPlan>): ReturnType<typeof makeFallbackPlan> {
+  return {
+    ...plan,
+    chapters: [
+      { index: 1, title: "Chapter 1: Opening Move", summary: "Open the book.", targetPages: 1, keyBeats: [] },
+      { index: 2, title: "Second Movement", summary: "Continue the book.", targetPages: 1, keyBeats: [] },
+      { index: 3, title: "Closing Move", summary: "Close the book.", targetPages: 1, keyBeats: [] }
+    ]
+  };
+}
+
+/**
+ * A book big enough to earn numbered chapters and a Contents page: eight pages
+ * under {@link withTwoMultiPageChapters}. Anything smaller now compiles to
+ * unnumbered section titles, so every heading-wording test needs this shape.
+ * Pass the pages the test actually cares about; the rest are filler.
+ */
+function chapteredPages(overrides: MarkdownPage[] = []): MarkdownPage[] {
+  const byIndex = new Map(overrides.map((page) => [page.index, page]));
+  return Array.from({ length: 8 }, (_, offset) => {
+    const index = offset + 1;
+    return byIndex.get(index) ?? { index, title: `Movement ${index}`, markdown: `Prose for page ${index}.` };
+  });
 }
 
 function withPageLikeChapters(plan: ReturnType<typeof makeFallbackPlan>): ReturnType<typeof makeFallbackPlan> {

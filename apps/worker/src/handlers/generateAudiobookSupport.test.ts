@@ -3,6 +3,7 @@ import { buildChapterNarration, DEFAULT_TTS_SAMPLE_RATE } from "@book-maker/core
 import {
   audiobookChapterPlans,
   joinNarrationChunks,
+  narratedChapterLabel,
   spokenChapterLabel,
   synthesizeChunks,
   type AudiobookSourcePage
@@ -190,5 +191,34 @@ describe("spokenChapterLabel", () => {
   it("falls back to English for a language with no label of its own", () => {
     expect(spokenChapterLabel("sv")).toBe("Chapter");
     expect(spokenChapterLabel(null)).toBe("Chapter");
+  });
+});
+
+describe("narratedChapterLabel", () => {
+  it("announces chapters for a book the printed edition would number", () => {
+    const pages = Array.from({ length: 24 }, (_, index) =>
+      page(index + 1, { index: Math.ceil((index + 1) / 8), title: `Chapter ${Math.ceil((index + 1) / 8)}` })
+    );
+    expect(narratedChapterLabel(audiobookChapterPlans(pages), pages, "fa")).toBe("فصل");
+  });
+
+  it("says nothing before the title of a book too small to have chapters", () => {
+    // Three one-page chapters over three pages: the printed book drops the word
+    // too, so a ninety-second part is not announced as a chapter.
+    const pages = Array.from({ length: 3 }, (_, index) =>
+      page(index + 1, { index: index + 1, title: `Movement ${index + 1}` })
+    );
+    expect(narratedChapterLabel(audiobookChapterPlans(pages), pages, "fa")).toBeUndefined();
+  });
+
+  it("leaves the partition alone whatever it decides", () => {
+    const pages = Array.from({ length: 3 }, (_, index) =>
+      page(index + 1, { index: index + 1, title: `Movement ${index + 1}` })
+    );
+    const plans = audiobookChapterPlans(pages);
+    narratedChapterLabel(plans, pages, "fa");
+    // Chapter files and the READY-skip that resumes a failed narration are keyed
+    // on these indexes; only the spoken words may change.
+    expect(plans.map((plan) => plan.index)).toEqual([1, 2, 3]);
   });
 });
