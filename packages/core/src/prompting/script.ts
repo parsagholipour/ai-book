@@ -55,6 +55,13 @@ export type ScriptProfile = {
   readonly charWidthScale: number;
   /** Key into the font registry in `generation/bookFonts.ts`. */
   readonly fontSet: string;
+  /**
+   * The script's own decimal digits, "0" through "9" in order, or null when it
+   * numbers with Western digits. Only scripts whose digits are in everyday use
+   * are listed: Hebrew and CJK both have numeral systems, but a modern book in
+   * either numbers its pages 1, 2, 3.
+   */
+  readonly numerals: string | null;
 };
 
 const LATIN_PROFILE: ScriptProfile = {
@@ -67,8 +74,18 @@ const LATIN_PROFILE: ScriptProfile = {
   lineHeight: 1.55,
   coverTitleLineHeight: 0.94,
   charWidthScale: 1,
-  fontSet: "latin"
+  fontSet: "latin",
+  numerals: null
 };
+
+/** Extended Arabic-Indic, U+06F0-06F9 — Persian and Urdu. */
+const PERSIAN_DIGITS = "۰۱۲۳۴۵۶۷۸۹";
+/** Arabic-Indic, U+0660-0669. Visibly not the Persian four, six and seven. */
+const ARABIC_INDIC_DIGITS = "٠١٢٣٤٥٦٧٨٩";
+/** Devanagari, U+0966-096F. */
+const DEVANAGARI_DIGITS = "०१२३४५६७८९";
+/** Thai, U+0E50-0E59. */
+const THAI_DIGITS = "๐๑๒๓๔๕๖๗๘๙";
 
 function profile(overrides: Partial<ScriptProfile> & Pick<ScriptProfile, "code">): ScriptProfile {
   return { ...LATIN_PROFILE, ...overrides };
@@ -98,9 +115,17 @@ const CJK_DEFAULTS = {
  * "Persian" all land on the same entry.
  */
 const SCRIPT_PROFILES: Record<string, ScriptProfile> = {
-  persian: profile({ ...ARABIC_DEFAULTS, code: "fa", fontSet: "arabic-persian" }),
-  arabic: profile({ ...ARABIC_DEFAULTS, code: "ar", fontSet: "arabic-naskh" }),
-  urdu: profile({ ...ARABIC_DEFAULTS, code: "ur", fontSizeScale: 1.08, lineHeight: 2, fontSet: "arabic-naskh" }),
+  persian: profile({ ...ARABIC_DEFAULTS, code: "fa", fontSet: "arabic-persian", numerals: PERSIAN_DIGITS }),
+  arabic: profile({ ...ARABIC_DEFAULTS, code: "ar", fontSet: "arabic-naskh", numerals: ARABIC_INDIC_DIGITS }),
+  urdu: profile({
+    ...ARABIC_DEFAULTS,
+    code: "ur",
+    fontSizeScale: 1.08,
+    lineHeight: 2,
+    fontSet: "arabic-naskh",
+    // Urdu counts in the Persian digits, not the Arabic ones its letters share.
+    numerals: PERSIAN_DIGITS
+  }),
   hebrew: profile({
     script: "hebrew",
     direction: "rtl",
@@ -119,7 +144,8 @@ const SCRIPT_PROFILES: Record<string, ScriptProfile> = {
     lineHeight: 1.8,
     coverTitleLineHeight: 1.35,
     charWidthScale: 0.8,
-    fontSet: "devanagari"
+    fontSet: "devanagari",
+    numerals: DEVANAGARI_DIGITS
   }),
   thai: profile({
     script: "thai",
@@ -130,7 +156,8 @@ const SCRIPT_PROFILES: Record<string, ScriptProfile> = {
     lineHeight: 1.9,
     coverTitleLineHeight: 1.35,
     charWidthScale: 0.85,
-    fontSet: "thai"
+    fontSet: "thai",
+    numerals: THAI_DIGITS
   }),
   chinese: profile({ ...CJK_DEFAULTS, script: "han-simplified", code: "zh", fontSet: "han-simplified" }),
   japanese: profile({ ...CJK_DEFAULTS, script: "japanese", code: "ja", fontSet: "japanese" }),

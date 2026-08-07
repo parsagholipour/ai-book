@@ -49,8 +49,34 @@ describe("bookPdfCss", () => {
     expect(bookPdfCss(scriptProfileForLanguage("zh"))).toMatch(/line-height: 1\.75/);
   });
 
-  it("leaves the page footer alone", () => {
+  it("keeps the English page footer for every script that counts in Western digits", () => {
     // The @page margin box is live in headless Chrome, not dead CSS.
-    expect(bookPdfCss(scriptProfileForLanguage("fa"))).toContain('content: "Page " counter(page)');
+    for (const language of ["en", "fr", "ru", "he", "zh", "ja", "ko"]) {
+      const css = bookPdfCss(scriptProfileForLanguage(language));
+      expect(css, language).toContain('content: "Page " counter(page)');
+      expect(css, language).not.toContain("book-page-number");
+    }
+  });
+
+  it("numbers the pages of a Persian book in Persian digits, and only the number", () => {
+    const css = bookPdfCss(scriptProfileForLanguage("fa"));
+    expect(css).toContain('symbols: "۰" "۱" "۲" "۳" "۴" "۵" "۶" "۷" "۸" "۹"');
+    expect(css).toContain("content: counter(page, book-page-number)");
+    // Appended, so the base rule is still there — the override has to come last.
+    expect(css.lastIndexOf("content: counter(page, book-page-number)")).toBeGreaterThan(
+      css.lastIndexOf('content: "Page " counter(page)')
+    );
+    // The footer's own family, or the digits render as tofu: the host's
+    // `sans-serif` is whatever the container happens to have installed.
+    expect(css).toContain('font-family: "InterBook", sans-serif');
+  });
+
+  it("gives each numbering script its own digits", () => {
+    // Arabic-Indic and the extended Persian set are different code points, and
+    // a Persian reader reads ٤٥٦ as the wrong shapes for four, five and six.
+    expect(bookPdfCss(scriptProfileForLanguage("ar"))).toContain('"٤" "٥" "٦"');
+    expect(bookPdfCss(scriptProfileForLanguage("ur"))).toContain('"۴" "۵" "۶"');
+    expect(bookPdfCss(scriptProfileForLanguage("hi"))).toContain('"४" "५" "६"');
+    expect(bookPdfCss(scriptProfileForLanguage("th"))).toContain('"๔" "๕" "๖"');
   });
 });

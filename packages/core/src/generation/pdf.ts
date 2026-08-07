@@ -128,7 +128,7 @@ export async function generateBookPdf(
     publicApiUrl: options.publicApiUrl
   });
   const profile = scriptProfileForLanguage(options.language);
-  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), prepared.markdown);
+  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), prepared.markdown, profile);
   const css = `${fontCss}\n${bookPdfCss(profile)}`;
 
   const result = await mdToPdf(
@@ -178,8 +178,11 @@ export async function generateBookPdf(
  * faces covering characters the book actually contains are embedded, which is
  * what keeps a Chinese book — 101 available subsets — to a few megabytes.
  */
-function loadBookPdfFontCss(fontSet: BookFontSet, markdown: string): Promise<string> {
-  const codePoints = codePointsOf(markdown);
+function loadBookPdfFontCss(fontSet: BookFontSet, markdown: string, profile: ScriptProfile): Promise<string> {
+  // The footer's digits come from the script profile rather than from the book
+  // text, so a Persian book that happens to write every number out in words
+  // still has to carry the faces that can draw "۱۲" at the foot of the page.
+  const codePoints = codePointsOf(markdown, profile.numerals ?? "");
   return embedFontFaceCss([
     { family: "SourceSerifBook", packages: fontSet.body, codePoints },
     { family: "InterBook", packages: fontSet.display, codePoints }

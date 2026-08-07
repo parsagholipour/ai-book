@@ -154,6 +154,12 @@ describe("localizeImagesInMarkdown", () => {
       language: "Farsi"
     });
 
+    // The footer counts in Persian digits and drops the English word, so page
+    // one reads "۱" — and nothing English is left at the foot of the page.
+    const footer = execFileSync("pdftotext", [outputPath, "-"], { encoding: "utf8" });
+    expect(footer).toContain("۱");
+    expect(footer).not.toMatch(/\bPage\b/);
+
     expect(execFileSync("pdffonts", [outputPath], { encoding: "utf8" })).toMatch(/Vazirmatn/i);
     // The assertion that actually proves the reported bug is gone: extraction
     // only succeeds when the glyphs carry a real ToUnicode map, so a tofu

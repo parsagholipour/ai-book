@@ -249,6 +249,42 @@ const NO_ITALIC_OVERRIDES = `
   }
 `;
 
+/**
+ * The page footer, for a script that writes its own digits.
+ *
+ * The footer is the only number the exporter itself prints — everything else on
+ * the page was written by a model in the book's language — so a Persian book
+ * carried an English "Page 12" at the foot of every leaf. It now prints the
+ * number alone, in the book's own digits: "Page" is an English word, and the
+ * bare number is what a book in any language sets there anyway.
+ *
+ * The counter style is written out rather than named (`persian`, `devanagari`,
+ * … are all predefined in Chrome) so the glyphs the PDF will contain are the
+ * same ones `pdf.ts` seeds into the embedded font subset — a footer whose face
+ * was never embedded renders as tofu, which is worse than English digits.
+ *
+ * `@page pdf-cover` still wins on the cover: a named page selector outranks the
+ * bare one however the two are ordered.
+ */
+function pageNumeralOverrides(profile: ScriptProfile): string {
+  if (!profile.numerals) {
+    return "";
+  }
+  const symbols = [...profile.numerals].map((digit) => `"${digit}"`).join(" ");
+  return `
+  @counter-style book-page-number {
+    system: numeric;
+    symbols: ${symbols};
+  }
+  @page {
+    @bottom-center {
+      content: counter(page, book-page-number);
+      font-family: "InterBook", sans-serif;
+    }
+  }
+`;
+}
+
 function typographyOverrides(profile: ScriptProfile): string {
   if (profile.fontSizeScale === 1 && profile.lineHeight === 1.55) {
     return "";
@@ -277,7 +313,8 @@ export function bookPdfCss(profile: ScriptProfile): string {
     profile.direction === "rtl" ? RTL_OVERRIDES : "",
     profile.cursive ? CURSIVE_OVERRIDES : "",
     profile.hasItalic ? "" : NO_ITALIC_OVERRIDES,
-    typographyOverrides(profile)
+    typographyOverrides(profile),
+    pageNumeralOverrides(profile)
   ].filter(Boolean);
 
   return overrides.length > 0 ? [BOOK_PDF_CSS, ...overrides].join("\n") : BOOK_PDF_CSS;
