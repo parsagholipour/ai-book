@@ -16,7 +16,13 @@ class TomezaApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       theme: buildTomezaLightTheme(),
       darkTheme: buildTomezaDarkTheme(),
-      routerConfig: router,
+      // Spelled out rather than `routerConfig: router` so the back button can go
+      // through `appBackButtonDispatcherProvider`; the other three are exactly
+      // what `routerConfig` would have supplied.
+      routerDelegate: router.routerDelegate,
+      routeInformationParser: router.routeInformationParser,
+      routeInformationProvider: router.routeInformationProvider,
+      backButtonDispatcher: ref.watch(appBackButtonDispatcherProvider),
     );
   }
 }

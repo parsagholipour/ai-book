@@ -16,6 +16,7 @@ import '../../features/reader/presentation/book_reader_screen.dart';
 import '../../shared/api/api_error.dart';
 import '../../shared/ui/feedback/app_feedback.dart';
 import '../../shared/ui/motion.dart';
+import 'exit_confirmation.dart';
 
 /// Screen transition used for every route.
 ///
@@ -226,6 +227,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   );
   ref.onDispose(router.dispose);
   return router;
+});
+
+/// Back-button handling for the whole app.
+///
+/// [GoRouter] builds its own [RootBackButtonDispatcher] and keeps it in a final
+/// field, so the confirm-before-exit one has to be handed to `MaterialApp.router`
+/// directly — which is why `app.dart` wires the delegate, parser and provider
+/// itself instead of passing `routerConfig`.
+final appBackButtonDispatcherProvider = Provider<BackButtonDispatcher>((ref) {
+  final router = ref.watch(appRouterProvider);
+  return ConfirmExitBackButtonDispatcher(router.routerDelegate.navigatorKey);
 });
 
 class SplashScreen extends ConsumerWidget {
