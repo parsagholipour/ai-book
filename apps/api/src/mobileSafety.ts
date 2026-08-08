@@ -1,13 +1,11 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import { loadConfig } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { z } from "zod";
-import {
-  CURRENT_LEGAL_VERSIONS,
-  isCurrentLegalAcceptanceInput,
-  legalAcceptanceData,
-  legalMetadata
-} from "./legalAcceptance.js";
+import { CURRENT_LEGAL_VERSIONS, legalAcceptanceData, legalMetadata } from "./legalAcceptance.js";
 import type { AuthFailure } from "./mobileAuth.js";
 import { stopProjectGenerationJobs } from "./queue.js";
 import {
@@ -56,12 +54,17 @@ const reviewBodySchema = z
     reviewNotes: z.string().trim().max(4000).optional()
   })
   .strict();
+// Re-acceptance is one tap: fresh assent to the terms only. The age/guardian
+// attestation was made at signup and does not expire with a terms bump, so it
+// defaults to false here and is recorded as whatever the client actually
+// re-presented. Version echoes from older builds are accepted and ignored —
+// the server stamps the versions in force at acceptance time.
 const legalAcceptanceBodySchema = z
   .object({
-    termsVersion: z.string().trim().min(1).max(40),
-    privacyVersion: z.string().trim().min(1).max(40),
     termsAccepted: z.literal(true),
-    ageGuardianAttested: z.literal(true)
+    ageGuardianAttested: z.boolean().optional().default(false),
+    termsVersion: z.string().trim().max(40).optional(),
+    privacyVersion: z.string().trim().max(40).optional()
   })
   .strict();
 
@@ -130,6 +133,21 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
     };
   });
 
+  // Deliberately public (see `shouldProtectPath`): the sample is what a person
+  // deciding whether to sign up gets to read. It serves one operator-chosen
+  // compiled book, so there is nothing user-owned to protect.
+  fastify.get("/api/mobile/sample-book", async (_request, reply) => {
+    const projectId = appConfig.SAMPLE_PROJECT_ID;
+    const pdfPath = projectId ? join(appConfig.BOOK_STORAGE_DIR, projectId, "book.pdf") : null;
+    const size = pdfPath ? await stat(pdfPath).then((s) => s.size).catch(() => null) : null;
+    if (!pdfPath || size == null) {
+      return sendMobileError(reply, 404, "SAMPLE_UNAVAILABLE", "No sample book is published right now.");
+    }
+    reply.header("Content-Length", String(size));
+    reply.header("Cache-Control", "public, max-age=3600");
+    return reply.type("application/pdf").send(createReadStream(pdfPath));
+  });
+
   fastify.post("/api/mobile/legal/acceptance", async (request, reply) => {
     const auth = await requireMobileAuth(request, reply);
     if (!auth) {
@@ -141,18 +159,9 @@ export const mobileSafetyRoutes: FastifyPluginAsync<SafetyRouteOptions> = async 
         reply,
         400,
         "LEGAL_ACCEPTANCE_REQUIRED",
-        "Accept the current Terms and Privacy Policy and confirm the age requirement to continue."
+        "Accept the current Terms and Privacy Policy to continue."
       );
     }
-    if (!isCurrentLegalAcceptanceInput(parsed.data)) {
-      return sendMobileError(
-        reply,
-        409,
-        "LEGAL_DOCUMENTS_UPDATED",
-        "The Terms or Privacy Policy changed. Review the current documents and try again."
-      );
-    }
-
     await prisma.legalAcceptance.create({
       data: legalAcceptanceData(auth.user.id, parsed.data, "mobile_reacceptance", request)
     });

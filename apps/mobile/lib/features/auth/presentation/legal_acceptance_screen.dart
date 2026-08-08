@@ -6,8 +6,15 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
+import '../domain/legal_gate.dart';
 import 'auth_controller.dart';
 
+/// Shown when the account's accepted Terms or Privacy Policy version is no
+/// longer the current one. New accounts attest at signup and never see this;
+/// agreeing here is deliberately one tap, because the age/guardian attestation
+/// from signup does not expire when the documents change. "Not now" lets the
+/// reader keep reading — the server refuses writes until they agree, and that
+/// refusal re-opens this screen.
 class LegalAcceptanceScreen extends ConsumerStatefulWidget {
   const LegalAcceptanceScreen({super.key});
 
@@ -18,8 +25,6 @@ class LegalAcceptanceScreen extends ConsumerStatefulWidget {
 
 class _LegalAcceptanceScreenState
     extends ConsumerState<LegalAcceptanceScreen> {
-  bool _termsAccepted = false;
-  bool _ageGuardianAttested = false;
   bool _busy = false;
   String? _error;
 
@@ -47,13 +52,13 @@ class _LegalAcceptanceScreenState
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Review the current terms',
+                        'The terms have been updated',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Before creating, importing, editing, or exporting content, review and accept the current legal documents.',
+                        'By continuing, you agree to the updated Terms and acknowledge the Privacy Policy.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: colors.onSurfaceVariant,
@@ -76,35 +81,6 @@ class _LegalAcceptanceScreenState
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        value: _termsAccepted,
-                        onChanged: _busy
-                            ? null
-                            : (value) => setState(() {
-                                _termsAccepted = value ?? false;
-                                _error = null;
-                              }),
-                        title: const Text(
-                          'I agree to the Terms and acknowledge the Privacy Policy.',
-                        ),
-                      ),
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        value: _ageGuardianAttested,
-                        onChanged: _busy
-                            ? null
-                            : (value) => setState(() {
-                                _ageGuardianAttested = value ?? false;
-                                _error = null;
-                              }),
-                        title: const Text(
-                          'I confirm that I am at least 13 and, if I am under the age of majority, my parent or guardian has agreed.',
-                        ),
-                      ),
                       if (_error != null) ...[
                         const SizedBox(height: 8),
                         Text(
@@ -124,12 +100,12 @@ class _LegalAcceptanceScreenState
                                 ),
                               )
                             : const Icon(Icons.check),
-                        label: const Text('Accept and continue'),
+                        label: const Text('Agree and continue'),
                       ),
                       const SizedBox(height: 10),
                       OutlinedButton(
-                        onPressed: _busy ? null : () => context.go('/account'),
-                        child: const Text('Account and deletion options'),
+                        onPressed: _busy ? null : _notNow,
+                        child: const Text('Not now'),
                       ),
                       TextButton(
                         onPressed: _busy
@@ -151,12 +127,6 @@ class _LegalAcceptanceScreenState
   }
 
   Future<void> _accept() async {
-    if (!_termsAccepted || !_ageGuardianAttested) {
-      setState(() {
-        _error = 'Accept both statements to continue.';
-      });
-      return;
-    }
     setState(() {
       _busy = true;
       _error = null;
@@ -173,6 +143,13 @@ class _LegalAcceptanceScreenState
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// Reading stays available without agreeing; creating and editing do not.
+  /// The server enforces that split, so this only steps out of the way.
+  void _notNow() {
+    ref.read(legalGateDismissedProvider.notifier).dismiss();
+    context.go('/home');
   }
 
   Future<void> _open(Uri uri) async {

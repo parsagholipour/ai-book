@@ -14,7 +14,7 @@ import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
 import { ensureVoiceSample } from "../audiobookSamples.js";
 import { serializeAudiobook, serializeNarratorVoices } from "../audiobookSerializer.js";
 import type { MobileAudiobookDto, MobileNarratorVoiceDto } from "../dto.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendInsufficientCredits, sendMobileError } from "../httpErrors.js";
+import { hitTieredLimit, requireMobileAuth, sendInsufficientCredits, sendMobileError } from "../httpErrors.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import {
   idParamsSchema,
@@ -117,7 +117,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
       }
       // Returns true when the request is allowed through, false once it has
       // already sent the rate-limit response.
-      if (!hitAuthenticatedLimit(context.generationLimiter, request, reply, auth.user.id, "narrate this book")) {
+      if (!(await hitTieredLimit(context.generationLimiter, request, reply, auth.user.id, "narrate this book"))) {
         return;
       }
 

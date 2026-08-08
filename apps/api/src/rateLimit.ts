@@ -13,7 +13,20 @@ export class InMemoryRateLimiter {
     this.config = config;
   }
 
-  hit(key: string, now = Date.now()): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
+  get maxAttempts(): number {
+    return this.config.maxAttempts;
+  }
+
+  /**
+   * `maxAttempts` overrides the configured ceiling for this hit only — how
+   * subscriber tiers get more headroom out of the same bucket. Counting is
+   * unchanged, so a caller alternating ceilings still shares one window.
+   */
+  hit(
+    key: string,
+    now = Date.now(),
+    maxAttempts = this.config.maxAttempts
+  ): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
     const existing = this.buckets.get(key);
     if (!existing || existing.resetAt <= now) {
       this.buckets.set(key, { count: 1, resetAt: now + this.config.windowMs });
@@ -21,7 +34,7 @@ export class InMemoryRateLimiter {
     }
 
     existing.count += 1;
-    if (existing.count <= this.config.maxAttempts) {
+    if (existing.count <= maxAttempts) {
       return { allowed: true };
     }
 

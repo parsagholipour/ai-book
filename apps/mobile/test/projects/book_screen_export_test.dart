@@ -148,7 +148,7 @@ void main() {
   });
 
   testWidgets(
-    'blocked quality issues hide exports and identify affected pages',
+    'blocked quality issues warn and identify pages but keep exports available',
     (tester) async {
       const quality = MobileProjectQuality(
         state: 'blocked',
@@ -180,10 +180,16 @@ void main() {
         ),
       );
 
-      expect(find.text('Export blocked by quality checks'), findsOneWidget);
+      expect(find.text('Quality checks flagged pages'), findsOneWidget);
       expect(find.text('Page 3 contains placeholder text.'), findsOneWidget);
       expect(find.textContaining('Pages 3 · Open Edit Mode'), findsOneWidget);
-      expect(find.text('Exports'), findsNothing);
+      // The warning never withholds the book: exports stay available.
+      await tester.dragUntilVisible(
+        find.text('Exports'),
+        find.byType(ListView),
+        const Offset(0, -120),
+      );
+      expect(find.text('Exports'), findsOneWidget);
     },
   );
 

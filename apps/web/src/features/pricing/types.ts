@@ -17,7 +17,8 @@ export type CreditPricingKey =
   | "audiobookPerPage"
   // Not prices — the free tier's monthly limits. Same table, same audit trail.
   | "freeMonthlyCredits"
-  | "freeIllustratedBooksPerMonth";
+  | "freeIllustratedBooksPerMonth"
+  | "freeManuscriptImportsPerMonth";
 
 export type CreditPricingValues = Record<CreditPricingKey, number>;
 

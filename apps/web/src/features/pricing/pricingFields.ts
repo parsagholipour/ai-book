@@ -70,6 +70,11 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
         key: "freeIllustratedBooksPerMonth",
         label: "Illustrated books a month",
         help: "After this, a free reader can still write books, but only without visuals."
+      },
+      {
+        key: "freeManuscriptImportsPerMonth",
+        label: "Manuscript imports a month",
+        help: "Bring-your-own-book uploads on the free plan. Subscribers import without limits."
       }
     ]
   }

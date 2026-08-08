@@ -105,6 +105,7 @@ function shouldProtectPath(path: string): boolean {
   if (
     path === "/api/health" ||
     path === "/api/mobile/legal" ||
+    path === "/api/mobile/sample-book" ||
     path.startsWith("/api/auth/") ||
     path.startsWith("/api/mobile/auth/")
   ) {

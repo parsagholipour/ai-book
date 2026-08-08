@@ -40,15 +40,20 @@ export {
 export {
   type ConsumeUsageResult,
   type ImageQuota,
+  type MonthlyQuota,
   type PlanAccountRow,
   type PlanSummary,
   ILLUSTRATED_BOOK_COUNTER,
+  MANUSCRIPT_IMPORT_COUNTER,
   calendarPeriodKey,
   consumeIllustratedBookUse,
+  consumeManuscriptImportUse,
   ensureCurrentPlanPeriod,
   getImageQuota,
+  getImportQuota,
   getPlanSummary,
   releaseIllustratedBookUse,
+  releaseManuscriptImportUse,
   resolvePlanTier
 } from "./planPeriods.ts";
 

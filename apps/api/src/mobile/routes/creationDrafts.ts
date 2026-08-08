@@ -7,7 +7,7 @@ import {
 } from "../../mobileCreation.js";
 import { serializeCreationDraft } from "../creationSessions.js";
 import { type MobileBookAdvisorResponseDto, type MobileCreationDraftResponseDto } from "../dto.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import { hitAuthenticatedLimit, hitTieredLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import { jsonInputValue } from "../support.js";
 import { prisma } from "@book-maker/db";
@@ -118,7 +118,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(advisorLimiter, request, reply, auth.user.id, "book-advisor")) {
+      if (!(await hitTieredLimit(advisorLimiter, request, reply, auth.user.id, "book-advisor"))) {
         return;
       }
       const parsed = mobileBookAdvisorBodySchema.safeParse(request.body);
@@ -141,7 +141,7 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "creation-finalize")) {
+      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "creation-finalize"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

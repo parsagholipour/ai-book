@@ -1,7 +1,11 @@
 import { type AuthFailure } from "../mobileAuth.js";
 import { InMemoryRateLimiter, rateLimitKey, sendRateLimitError } from "../rateLimit.js";
 import { authenticateMobileBearer, sendMobileAuthFailure, type MobileAuthContext } from "../requestAuth.js";
-import { InsufficientCreditsError, ensureProjectExportEntitlementOrSpend } from "@book-maker/db/billing";
+import {
+  InsufficientCreditsError,
+  ensureProjectExportEntitlementOrSpend,
+  hasActiveSubscriptionEntitlement
+} from "@book-maker/db/billing";
 import { type FastifyReply, type FastifyRequest } from "fastify";
 
 /**
@@ -29,6 +33,49 @@ export function hitAuthenticatedLimit(
   action: string
 ): boolean {
   const limit = limiter.hit(rateLimitKey(request, userId, action));
+  if (limit.allowed) {
+    return true;
+  }
+  sendRateLimitError(reply, limit.retryAfterSeconds);
+  return false;
+}
+
+/**
+ * Subscribers get this much more headroom on the tier-aware limits. The
+ * defaults were sized for free-tier abuse, and a Max subscriber generating
+ * books all afternoon is the customer, not the abuser.
+ */
+const SUBSCRIBER_RATE_LIMIT_MULTIPLIER = 5;
+const SUBSCRIBER_CACHE_TTL_MS = 60_000;
+const subscriberCache = new Map<string, { subscribed: boolean; expiresAt: number }>();
+
+async function isSubscriberForRateLimit(userId: string): Promise<boolean> {
+  const now = Date.now();
+  const cached = subscriberCache.get(userId);
+  if (cached && cached.expiresAt > now) {
+    return cached.subscribed;
+  }
+  // A lookup failure means the default ceiling, never a blocked request.
+  const subscribed = await hasActiveSubscriptionEntitlement(userId).catch(() => false);
+  subscriberCache.set(userId, { subscribed: subscribed === true, expiresAt: now + SUBSCRIBER_CACHE_TTL_MS });
+  return subscribed === true;
+}
+
+/**
+ * [hitAuthenticatedLimit] with a subscriber-scaled ceiling, for the limits a
+ * heavy *paying* user can realistically reach (generation, the advisor).
+ * Free-tier limits are unchanged; the subscription check is cached briefly so
+ * the limit check stays cheap.
+ */
+export async function hitTieredLimit(
+  limiter: InMemoryRateLimiter,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  userId: string,
+  action: string
+): Promise<boolean> {
+  const multiplier = (await isSubscriberForRateLimit(userId)) ? SUBSCRIBER_RATE_LIMIT_MULTIPLIER : 1;
+  const limit = limiter.hit(rateLimitKey(request, userId, action), Date.now(), limiter.maxAttempts * multiplier);
   if (limit.allowed) {
     return true;
   }

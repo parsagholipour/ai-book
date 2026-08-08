@@ -48,7 +48,8 @@ export const DEFAULT_CREDIT_COSTS = {
   // their allowance from the product catalog instead, since those numbers are
   // pinned to a Play price point that cannot change without one.
   freeMonthlyCredits: 1_000,
-  freeIllustratedBooksPerMonth: 3
+  freeIllustratedBooksPerMonth: 3,
+  freeManuscriptImportsPerMonth: 1
 } as const;
 
 export type CreditPricingKey = keyof typeof DEFAULT_CREDIT_COSTS;
@@ -64,7 +65,11 @@ export const CREDIT_PRICING_KEYS = Object.keys(DEFAULT_CREDIT_COSTS) as CreditPr
  * anything projecting revenue has to leave them out or it will invent income
  * from the free tier.
  */
-export const PLAN_ALLOWANCE_KEYS = ["freeMonthlyCredits", "freeIllustratedBooksPerMonth"] as const;
+export const PLAN_ALLOWANCE_KEYS = [
+  "freeMonthlyCredits",
+  "freeIllustratedBooksPerMonth",
+  "freeManuscriptImportsPerMonth"
+] as const;
 
 export type PlanAllowanceKey = (typeof PLAN_ALLOWANCE_KEYS)[number];
 export type CreditPriceKey = Exclude<CreditPricingKey, PlanAllowanceKey>;
@@ -101,7 +106,8 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   // Generous ceilings: the failure mode for an allowance is giving too much
   // away, which is bounded and reversible next period, not an instant charge.
   freeMonthlyCredits: 100_000,
-  freeIllustratedBooksPerMonth: 100
+  freeIllustratedBooksPerMonth: 100,
+  freeManuscriptImportsPerMonth: 100
 };
 
 /**

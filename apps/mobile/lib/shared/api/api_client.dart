@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/config/app_config.dart';
 import '../../features/auth/domain/auth_models.dart';
+import '../../features/auth/domain/legal_gate.dart';
 import 'api_error.dart';
 import 'auth_token_store.dart';
 
@@ -24,6 +25,8 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return ApiClient(
     dio: ref.watch(dioProvider),
     tokenStore: ref.watch(authTokenStoreProvider),
+    onLegalAcceptanceRequired: () =>
+        ref.read(legalGateDismissedProvider.notifier).reset(),
   );
 });
 
@@ -33,10 +36,19 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 const llmReceiveTimeout = Duration(seconds: 120);
 
 class ApiClient {
-  ApiClient({required this.dio, required this.tokenStore});
+  ApiClient({
+    required this.dio,
+    required this.tokenStore,
+    this.onLegalAcceptanceRequired,
+  });
 
   final Dio dio;
   final AuthTokenStore tokenStore;
+
+  /// Called when the server refuses a request with 428: the account has not
+  /// accepted the current legal documents. Re-arms the updated-terms gate a
+  /// "Not now" had dismissed, so the router walks the reader back to it.
+  final void Function()? onLegalAcceptanceRequired;
 
   /// Coalesces concurrent refresh attempts. The backend rotates the refresh
   /// token on every call, so parallel refreshes desync the stored pair from
@@ -334,6 +346,9 @@ class ApiClient {
 
   ApiException _mapDioException(DioException error) {
     final response = error.response;
+    if (response?.statusCode == 428) {
+      onLegalAcceptanceRequired?.call();
+    }
     final data = response?.data;
     if (data is Map<String, dynamic>) {
       final errorBody = data['error'];

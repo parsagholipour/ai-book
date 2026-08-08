@@ -1,5 +1,5 @@
 import { type MobileProjectCreateResponseDto, type MobileProjectRecord } from "../dto.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import { hitTieredLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import { buildMobileCreateProjectInput, createMobileProjectRecord } from "../projectRecords.js";
 import { serializeProjectDetail, serializeProjectSummary } from "../projectSerializers.js";
 import { idParamsSchema, mobileAuthError, mobileProjectCreateBodySchema, mobileProjectCreateOpenApiBody } from "../schemas.js";
@@ -56,7 +56,7 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "create-project")) {
+      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "create-project"))) {
         return;
       }
 

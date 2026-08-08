@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/account/presentation/account_screen.dart';
+import '../../features/auth/domain/legal_gate.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
 import '../../features/auth/presentation/legal_acceptance_screen.dart';
+import '../../features/auth/presentation/sample_book_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
 import '../../features/projects/presentation/book_screen.dart';
 import '../../features/projects/presentation/creation_chat_screen.dart';
@@ -63,6 +65,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   ref.listen(authControllerProvider, (_, _) {
     authRefresh.value += 1;
   });
+  // A 428 from any write clears the gate dismissal, and the redirect below
+  // must re-run right then to walk the reader back to the terms screen.
+  ref.listen(legalGateDismissedProvider, (_, _) {
+    authRefresh.value += 1;
+  });
   ref.onDispose(authRefresh.dispose);
 
   final router = GoRouter(
@@ -86,13 +93,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       }
 
       if (!hasSession) {
-        return isAuthRoute ? null : '/auth/sign-in';
+        // The sample book is the one signed-out destination besides auth:
+        // reading it is how someone decides to create an account at all.
+        return isAuthRoute || path == '/sample-book' ? null : '/auth/sign-in';
       }
 
       if (currentSession.user.legalAcceptanceRequired) {
-        return isLegalAcceptance || path == '/account'
-            ? null
-            : '/legal/acceptance';
+        // The gate mirrors the server: reads stay open while re-acceptance is
+        // outstanding, only writes are refused. "Not now" dismisses the gate
+        // for this session; a refused write un-dismisses it (see the
+        // legalGateDismissedProvider listener above).
+        if (!ref.read(legalGateDismissedProvider)) {
+          return isLegalAcceptance || path == '/account'
+              ? null
+              : '/legal/acceptance';
+        }
+        return isAuthRoute || isSplash ? '/home' : null;
       }
 
       if (isAuthRoute || isSplash || isLegalAcceptance) {
@@ -120,6 +136,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/legal/acceptance',
         pageBuilder: (context, state) =>
             _appPage(state, const LegalAcceptanceScreen()),
+      ),
+      GoRoute(
+        path: '/sample-book',
+        pageBuilder: (context, state) =>
+            _appPage(state, const SampleBookScreen()),
       ),
       GoRoute(
         path: '/home',

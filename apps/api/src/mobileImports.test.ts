@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { hasActiveSubscriptionEntitlement } from "@book-maker/db/billing";
+import {
+  consumeManuscriptImportUse,
+  getImportQuota,
+  hasActiveSubscriptionEntitlement
+} from "@book-maker/db/billing";
 import { saveCreationAttachmentFile } from "./attachmentStorage.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "./queue.js";
 import { mobileImportRoutes } from "./mobileImports.js";
@@ -22,7 +26,10 @@ vi.mock("@book-maker/db", () => ({
 }));
 
 vi.mock("@book-maker/db/billing", () => ({
-  hasActiveSubscriptionEntitlement: vi.fn()
+  hasActiveSubscriptionEntitlement: vi.fn(),
+  getImportQuota: vi.fn(),
+  consumeManuscriptImportUse: vi.fn(),
+  releaseManuscriptImportUse: vi.fn()
 }));
 
 vi.mock("./queue.js", () => ({
@@ -154,13 +161,64 @@ describe("mobile import routes", () => {
     await app.close();
   });
 
-  it("rejects imports without an active subscription", async () => {
+  it("gives a free account its monthly import and stamps the claim on the job", async () => {
     vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+    vi.mocked(getImportQuota).mockResolvedValue({
+      used: 0,
+      limit: 1,
+      periodKey: "2026-08",
+      resetsAt: new Date("2026-09-01T00:00:00.000Z")
+    });
+    vi.mocked(consumeManuscriptImportUse).mockResolvedValue({
+      allowed: true,
+      used: 1,
+      limit: 1,
+      periodKey: "2026-08",
+      resetsAt: new Date("2026-09-01T00:00:00.000Z")
+    });
     const app = await buildApp();
+
     const response = await inject(app);
+
+    expect(response.statusCode).toBe(201);
+    const enqueue = vi.mocked(enqueueGenerationJob).mock.calls.at(0)?.[0] as { payload: Record<string, unknown> };
+    // The claim rides the payload so a failed worker import can hand it back.
+    expect(enqueue.payload.importQuota).toEqual({ userId: "user-a", periodKey: "2026-08" });
+    await app.close();
+  });
+
+  it("refuses a second free import this month and points at the plan", async () => {
+    vi.mocked(hasActiveSubscriptionEntitlement).mockResolvedValue(false);
+    vi.mocked(getImportQuota).mockResolvedValue({
+      used: 1,
+      limit: 1,
+      periodKey: "2026-08",
+      resetsAt: new Date("2026-09-01T00:00:00.000Z")
+    });
+    vi.mocked(consumeManuscriptImportUse).mockResolvedValue({
+      allowed: false,
+      used: 1,
+      limit: 1,
+      periodKey: "2026-08",
+      resetsAt: new Date("2026-09-01T00:00:00.000Z")
+    });
+    const app = await buildApp();
+
+    const response = await inject(app);
+
     expect(response.statusCode).toBe(403);
+    // The same code shipped clients already answer with the upgrade sheet.
     expect(response.json().error.code).toBe("SUBSCRIPTION_REQUIRED");
     expect(mockPrisma.project.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("claims no import slot for subscribers", async () => {
+    const app = await buildApp();
+    const response = await inject(app);
+    expect(response.statusCode).toBe(201);
+    expect(getImportQuota).not.toHaveBeenCalled();
+    expect(consumeManuscriptImportUse).not.toHaveBeenCalled();
     await app.close();
   });
 

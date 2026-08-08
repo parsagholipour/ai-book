@@ -327,6 +327,43 @@ describe("free tier illustrated book limit", () => {
     await app.close();
   });
 
+  it("writes the book without illustrations when the reader explicitly chooses to", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    draftPlanForApproval();
+    vi.mocked(getImageQuota).mockResolvedValue(freeQuota(3));
+    vi.mocked(reserveCredits).mockResolvedValueOnce({
+      id: "ledger-1",
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "FULL_BOOK_GENERATION",
+      amountCredits: -500,
+      planCreditsDelta: -500,
+      entryType: "RESERVE",
+      status: "RESERVED",
+      idempotencyKey: "mobile:plan:plan-1:approve"
+    });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-book" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-1/approve",
+      headers: bearer("token-a"),
+      payload: { disableIllustrations: true }
+    });
+    const projectUpdate = mockPrisma.project.update.mock.calls.at(0)?.[0] as {
+      data: { mediaSettings: Record<string, unknown> };
+    };
+
+    expect(response.statusCode).toBe(202);
+    // The choice is persisted before pricing, so the charge and the book agree
+    // and the spent image budget is never claimed.
+    expect(projectUpdate.data.mediaSettings.fullIllustrations).toBe(false);
+    expect(consumeIllustratedBookUse).not.toHaveBeenCalled();
+    expect(reserveCredits).toHaveBeenCalled();
+    await app.close();
+  });
+
   it("lets a text-only book through once the image budget is gone", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const textOnly = projectRecord({ id: "project-1" });

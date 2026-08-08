@@ -1,7 +1,11 @@
 import type { Job } from "bullmq";
 import { isRecoverableNetworkError, workerJobControlsProjectStatus, type JobStep } from "@book-maker/core";
 import { Prisma, planRevisionRetryDelayMs, prisma } from "@book-maker/db";
-import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
+import {
+  refundCreditLedgerEntry,
+  refundLatestProjectOperationCredits,
+  releaseManuscriptImportUse
+} from "@book-maker/db/billing";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
 import {
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
@@ -467,10 +471,29 @@ export async function markFailed(job: Job, error: unknown) {
     }
     return;
   }
+  if (job.name === "import-book") {
+    await releaseImportQuotaForJob(job);
+  }
   if (projectId && workerJobControlsProjectStatus(job.name)) {
     await refundFailedProjectCredits(job, projectId, errorMessage(error));
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
+}
+
+/**
+ * A failed or stopped import hands back the free tier's monthly slot the
+ * upload claimed. The claim rides the job payload (`importQuota`) precisely so
+ * this needs no lookup — and it is absent for subscribers, whose imports
+ * claim nothing.
+ */
+async function releaseImportQuotaForJob(job: Job): Promise<void> {
+  const quota = job.data.importQuota as { userId?: unknown; periodKey?: unknown } | undefined;
+  if (!quota || typeof quota.userId !== "string" || typeof quota.periodKey !== "string") {
+    return;
+  }
+  await releaseManuscriptImportUse(quota.userId, quota.periodKey).catch((error: unknown) => {
+    console.error(`Failed to release import slot for user ${quota.userId}`, error);
+  });
 }
 
 /**
@@ -618,6 +641,9 @@ export async function markStopped(job: Job) {
       await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
     }
     return;
+  }
+  if (job.name === "import-book") {
+    await releaseImportQuotaForJob(job);
   }
   if (projectId && workerJobControlsProjectStatus(job.name)) {
     await refundFailedProjectCredits(job, projectId, STOPPED_JOB_ERROR);

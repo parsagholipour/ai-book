@@ -26,7 +26,11 @@ abstract interface class ProjectsRepository {
     String? requestId,
   });
 
-  Future<MobilePlanOperation> approvePlan(String planId, {String? requestId});
+  Future<MobilePlanOperation> approvePlan(
+    String planId, {
+    String? requestId,
+    bool disableIllustrations = false,
+  });
 
   Future<MobileProjectStatus> getProjectStatus(String id);
 
@@ -203,10 +207,14 @@ class MobileProjectsRepository implements ProjectsRepository {
   Future<MobilePlanOperation> approvePlan(
     String planId, {
     String? requestId,
+    bool disableIllustrations = false,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/plans/$planId/approve',
-      data: {'requestId': ?requestId},
+      data: {
+        'requestId': ?requestId,
+        if (disableIllustrations) 'disableIllustrations': true,
+      },
     );
     return MobilePlanOperation.fromJson(response.data as Map<String, dynamic>);
   }

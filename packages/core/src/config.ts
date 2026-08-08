@@ -81,6 +81,18 @@ const envSchema = z.object({
       const trimmed = value?.trim();
       return trimmed ? trimmed : undefined;
     }),
+  /**
+   * Project whose compiled book.pdf is served, unauthenticated, as the
+   * try-before-signup sample at GET /api/mobile/sample-book. Unset means the
+   * endpoint answers 404 and the app draws no sample affordance.
+   */
+  SAMPLE_PROJECT_ID: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim();
+      return trimmed ? trimmed : undefined;
+    }),
   BOOK_STORAGE_DIR: z.string().default("./storage/books"),
   IMAGE_STORAGE_DIR: z.string().default("./storage/images"),
   VOICE_STORAGE_DIR: z.string().default("./storage/voice"),

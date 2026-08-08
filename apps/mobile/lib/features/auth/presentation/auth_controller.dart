@@ -4,6 +4,7 @@ import '../../projects/data/creation_repository.dart';
 import '../../projects/data/projects_repository.dart';
 import '../data/auth_repository.dart';
 import '../domain/auth_models.dart';
+import '../domain/legal_gate.dart';
 
 final authControllerProvider =
     AsyncNotifierProvider<AuthController, AuthSession?>(AuthController.new);
@@ -48,6 +49,7 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     final current = state.asData?.value;
     if (current == null) return;
     await ref.read(authRepositoryProvider).acceptCurrentLegalDocuments();
+    ref.read(legalGateDismissedProvider.notifier).reset();
     state = AsyncData(
       AuthSession(
         user: current.user.copyWith(legalAcceptanceRequired: false),
@@ -59,6 +61,9 @@ class AuthController extends AsyncNotifier<AuthSession?> {
   Future<void> logout() async {
     state = const AsyncLoading();
     await ref.read(authRepositoryProvider).logout();
+    // A "Not now" on the updated-terms gate belongs to the account that chose
+    // it; whoever signs in next starts at the gate if they still owe assent.
+    ref.read(legalGateDismissedProvider.notifier).reset();
     // Books and chats are cached across screens so the drawer can open without
     // a blank frame; that cache belongs to the account that just signed out.
     // `asReload` marks the refetch as a dependency change rather than a

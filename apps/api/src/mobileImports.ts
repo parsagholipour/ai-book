@@ -12,7 +12,12 @@ import {
   type ParsedManuscript
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { hasActiveSubscriptionEntitlement } from "@book-maker/db/billing";
+import {
+  consumeManuscriptImportUse,
+  getImportQuota,
+  hasActiveSubscriptionEntitlement,
+  releaseManuscriptImportUse
+} from "@book-maker/db/billing";
 import { z } from "zod";
 import { saveCreationAttachmentFile } from "./attachmentStorage.js";
 import {
@@ -30,8 +35,10 @@ import { InMemoryRateLimiter, type RateLimitConfig } from "./rateLimit.js";
 /**
  * "Bring your own book": authors upload a finished manuscript and it becomes
  * a first-class project — real Chapter/Page rows behind the existing chat,
- * edit, and export stack. The upload is gated on an active subscription; the
- * heavy parsing/segmentation runs in the worker's IMPORT_BOOK job.
+ * edit, and export stack. Subscribers import without limits; the free tier
+ * gets a monthly allowance (`freeManuscriptImportsPerMonth`), claimed only
+ * after the upload has validated so a rejected file never burns the month's
+ * import. The heavy parsing/segmentation runs in the worker's IMPORT_BOOK job.
  */
 
 /** Rough chars-per-page used only for the provisional targetPages estimate. */
@@ -111,14 +118,9 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the file with a filename and requestId.");
       }
 
-      if (!(await subscriptionCheck(auth.user.id))) {
-        return sendMobileError(
-          reply,
-          403,
-          "SUBSCRIPTION_REQUIRED",
-          "Importing your own book is part of the Creator plan. Subscribe to bring your manuscripts in."
-        );
-      }
+      // Subscribers skip the quota entirely; everyone else is checked against
+      // the free monthly allowance *after* the upload validates, further down.
+      const subscribed = await subscriptionCheck(auth.user.id);
 
       // Idempotent replay: the same requestId always answers with the project
       // the first attempt created, never a duplicate.
@@ -217,6 +219,31 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
         return sendMobileError(reply, 422, "IMPORT_FAILED", "That file could not be saved. Try again.");
       }
 
+      // The free tier's monthly import, claimed last so every 4xx above cost
+      // nothing. The claim rides the job payload as `importQuota`, which is
+      // what lets a failed worker import hand the slot back (markFailed).
+      // The same SUBSCRIPTION_REQUIRED code as before the allowance existed,
+      // because shipped clients answer it with the upgrade sheet — which is
+      // also the right answer to "this month's import is used".
+      let importQuotaPeriodKey: string | null = null;
+      if (!subscribed) {
+        const quota = await getImportQuota(auth.user.id);
+        if (quota) {
+          const claim = await consumeManuscriptImportUse({ userId: auth.user.id, limit: quota.limit });
+          if (!claim.allowed) {
+            return sendMobileError(
+              reply,
+              403,
+              "SUBSCRIPTION_REQUIRED",
+              claim.limit === 1
+                ? "You've used this month's free import. Importing more is part of the Creator plan."
+                : `Free plans include ${claim.limit} manuscript imports a month and you have used all of them. Importing more is part of the Creator plan.`
+            );
+          }
+          importQuotaPeriodKey = claim.periodKey;
+        }
+      }
+
       const created = await prisma.$transaction(async (tx) => {
         const project = await tx.project.create({
           data: {
@@ -256,9 +283,18 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
           dedupeKey: `import-book:${project.id}`,
           transaction: tx,
           dispatch: false,
-          payload: { importId, language: query.data.language ?? null }
+          payload: {
+            importId,
+            language: query.data.language ?? null,
+            ...(importQuotaPeriodKey ? { importQuota: { userId: auth.user.id, periodKey: importQuotaPeriodKey } } : {})
+          }
         });
         return { project, bookImport, durableJob };
+      }).catch(async (error: unknown) => {
+        if (importQuotaPeriodKey) {
+          await releaseManuscriptImportUse(auth.user.id, importQuotaPeriodKey).catch(() => undefined);
+        }
+        throw error;
       });
 
       await dispatchGenerationJob(created.durableJob.id);

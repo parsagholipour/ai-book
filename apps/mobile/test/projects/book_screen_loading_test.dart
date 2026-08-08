@@ -85,6 +85,7 @@ class SlowPlanRepository implements ProjectsRepository {
   Future<MobilePlanOperation> approvePlan(
     String planId, {
     String? requestId,
+    bool disableIllustrations = false,
   }) async {
     return planOperation(status: 'generation_queued', planId: planId);
   }

@@ -152,7 +152,20 @@ export const mobilePlanRevisionBodySchema = z
   })
   .strict();
 
-export const mobilePlanApprovalBodySchema = z.object({ requestId: requestIdSchema.optional() }).strict().default({});
+export const mobilePlanApprovalBodySchema = z
+  .object({
+    requestId: requestIdSchema.optional(),
+    /**
+     * Explicit reader choice to generate without interior illustrations —
+     * offered when the free tier's monthly illustrated-book budget is spent.
+     * Never inferred: the server refuses with IMAGE_LIMIT_REACHED and only the
+     * reader's tap sets this, because a silent downgrade would deliver a
+     * different book than the plan promised.
+     */
+    disableIllustrations: z.boolean().optional()
+  })
+  .strict()
+  .default({});
 
 export const mobileAudiobookStartBodySchema = z
   .object({
@@ -453,7 +466,12 @@ export const mobilePlanApprovalOpenApiBody = {
   additionalProperties: false,
   properties: {
     // Idempotency key: send one and retries replay instead of re-charging.
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    disableIllustrations: {
+      type: "boolean",
+      description:
+        "Generate this book without interior illustrations. An explicit reader choice, offered when the free monthly illustrated-book budget is spent."
+    }
   }
 } as const;
 

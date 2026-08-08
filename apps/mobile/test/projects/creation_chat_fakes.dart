@@ -544,6 +544,7 @@ class PlanProjectsRepository implements ProjectsRepository {
   Future<MobilePlanOperation> approvePlan(
     String planId, {
     String? requestId,
+    bool disableIllustrations = false,
   }) async {
     final plan = project.plan;
     MobilePlan? approvedPlan;

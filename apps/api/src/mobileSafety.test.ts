@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -92,7 +92,7 @@ describe("mobile safety routes", () => {
     tempVoiceStorageDir = null;
   });
 
-  it("publishes legal metadata without authentication and records reacceptance", async () => {
+  it("publishes legal metadata without authentication and records a one-tap reacceptance", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const app = await buildApp();
 
@@ -101,12 +101,7 @@ describe("mobile safety routes", () => {
       method: "POST",
       url: "/api/mobile/legal/acceptance",
       headers: bearer("token-a"),
-      payload: {
-        termsVersion: "2026-08-08",
-        privacyVersion: "2026-08-08",
-        termsAccepted: true,
-        ageGuardianAttested: true
-      }
+      payload: { termsAccepted: true }
     });
 
     expect(metadata.statusCode).toBe(200);
@@ -120,6 +115,63 @@ describe("mobile safety routes", () => {
     expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "user-a",
+        termsVersion: "2026-08-08",
+        privacyVersion: "2026-08-08",
+        termsAttested: true,
+        ageGuardianAttested: false,
+        source: "mobile_reacceptance"
+      })
+    });
+    await app.close();
+  });
+
+  it("serves the published sample book without authentication", async () => {
+    process.env.SAMPLE_PROJECT_ID = "sample-project";
+    mkdirSync(join(tempBookStorageDir!, "sample-project"), { recursive: true });
+    writeFileSync(join(tempBookStorageDir!, "sample-project", "book.pdf"), "%PDF-1.4 sample");
+    const app = await buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/mobile/sample-book" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/pdf");
+    expect(response.body).toContain("%PDF-1.4 sample");
+    await app.close();
+  });
+
+  it("answers 404 for the sample book when none is published", async () => {
+    delete process.env.SAMPLE_PROJECT_ID;
+    const app = await buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/mobile/sample-book" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error.code).toBe("SAMPLE_UNAVAILABLE");
+    await app.close();
+  });
+
+  it("accepts a legacy reacceptance body and stamps the versions in force", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const app = await buildApp();
+
+    const acceptance = await app.inject({
+      method: "POST",
+      url: "/api/mobile/legal/acceptance",
+      headers: bearer("token-a"),
+      payload: {
+        termsVersion: "2026-01-01",
+        privacyVersion: "2026-01-01",
+        termsAccepted: true,
+        ageGuardianAttested: true
+      }
+    });
+
+    expect(acceptance.statusCode).toBe(200);
+    expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-a",
+        termsVersion: "2026-08-08",
+        privacyVersion: "2026-08-08",
         termsAttested: true,
         ageGuardianAttested: true,
         source: "mobile_reacceptance"

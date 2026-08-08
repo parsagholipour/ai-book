@@ -1,7 +1,6 @@
 import { clipQualityText, clipQualityTextPrefix, clipQualityTextSuffix, qualityIssuesFromFinalQa } from "../generation/exportQualityReview.js";
 import {
   extractRepairPageIndexes,
-  invalidateProjectExports,
   loadPagesForExport,
   pageReportFromFinalQa,
   parseChapterBrief,
@@ -168,14 +167,17 @@ export async function compileExport(job: Job) {
       data: { qualityReport: qualityReport as unknown as Prisma.InputJsonValue }
     });
   }
-  if (qualityReport.state === "blocked") {
-    await invalidateProjectExports(projectId);
-    await prisma.project.update({ where: { id: projectId }, data: { status: "REVIEW_REQUIRED" } });
+  // A blocked report used to stop here with no artifacts at all, which held a
+  // paid book hostage to its own QA: nothing to read in-app, downloads refused.
+  // Now every compile produces the best available book — the same promise the
+  // model-QA path already made — and "blocked" only decides whether the project
+  // finishes as REVIEW_REQUIRED, which keeps the flagged issues on screen and
+  // the free Edit Mode repair path open.
+  const reviewRequired = qualityReport.state === "blocked";
+  if (reviewRequired) {
     await updateJobProgress(generationJobId, {
-      progress: 100,
       message: qualitySummaryMessage(qualityReport)
     });
-    return;
   }
 
   await advanceJobStep(generationJobId, "compile", 55);
@@ -279,7 +281,10 @@ export async function compileExport(job: Job) {
       message: "EPUB export failed; markdown and PDF were still produced."
     });
   }
-  await prisma.project.update({ where: { id: projectId }, data: { status: "COMPLETE" } });
+  await prisma.project.update({
+    where: { id: projectId },
+    data: { status: reviewRequired ? "REVIEW_REQUIRED" : "COMPLETE" }
+  });
   await maybeEnqueueCharacterCandidatePreparation(projectId, planId);
 }
 

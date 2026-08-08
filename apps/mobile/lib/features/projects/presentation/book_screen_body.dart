@@ -163,10 +163,11 @@ class BookScreenBody extends StatelessWidget {
 
           // Exports only once there is a file to talk about. A locked-format
           // list beside a book that is 30% written is noise about a decision
-          // nobody can make yet.
+          // nobody can make yet. Flagged quality issues warn in the card above
+          // but never withhold the download — the reader paid for this book.
           if (exports != null &&
-              !(quality?.isBlocked ?? false) &&
               (stage == BookStage.ready ||
+                  stage == BookStage.reviewRequired ||
                   exports.pdf.available ||
                   exports.epub.available)) ...[
             ProjectExportPanel(
@@ -176,7 +177,10 @@ class BookScreenBody extends StatelessWidget {
               onOpen: onOpen,
               onDownload: onDownload,
               onOpenPaywall: onOpenPaywall,
-              editBookProjectId: stage == BookStage.ready ? projectId : null,
+              editBookProjectId:
+                  stage == BookStage.ready || stage == BookStage.reviewRequired
+                  ? projectId
+                  : null,
             ),
             const SizedBox(height: 12),
           ],
@@ -425,7 +429,7 @@ class _QualityGateCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     blocked
-                        ? 'Export blocked by quality checks'
+                        ? 'Quality checks flagged pages'
                         : 'Review recommended',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,

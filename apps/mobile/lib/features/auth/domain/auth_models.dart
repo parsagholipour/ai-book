@@ -122,6 +122,3 @@ class AuthSession {
     );
   }
 }
-
-const currentTermsVersion = '2026-08-08';
-const currentPrivacyVersion = '2026-08-08';

@@ -3,17 +3,15 @@ import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual, type Sc
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import { InMemoryRateLimiter, rateLimitKey, sendRateLimitError, type RateLimitConfig } from "./rateLimit.js";
-import {
-  CURRENT_LEGAL_VERSIONS,
-  hasCurrentLegalAcceptance,
-  isCurrentLegalAcceptanceInput,
-  legalAcceptanceEvidence
-} from "./legalAcceptance.js";
+import { hasCurrentLegalAcceptance, legalAcceptanceEvidence } from "./legalAcceptance.js";
 
 const ACCESS_TOKEN_PREFIX = "bma_at";
 const REFRESH_TOKEN_PREFIX = "bma_rt";
 const ACCESS_TOKEN_TTL_MS = 15 * 60 * 1000;
-const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// 90 days: a reader who comes back after a quiet couple of months should not
+// be met by a password prompt. Rotation on every refresh plus hash-only
+// storage is what makes the longer window safe.
+const REFRESH_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const REFRESH_TOKEN_GRACE_MS = 30 * 1000;
 const TOKEN_BYTE_LENGTH = 32;
 const SCRYPT_N = 16_384;
@@ -41,8 +39,11 @@ const signUpBodySchema = z
     email: emailSchema,
     password: passwordSchema,
     displayName: displayNameSchema,
-    termsVersion: z.string().trim().min(1).max(40),
-    privacyVersion: z.string().trim().min(1).max(40),
+    // Older shipped builds echo their compiled-in document versions. They are
+    // accepted and ignored: the server stamps the versions in force, so a
+    // version bump can never strand an installed app on a rejection loop.
+    termsVersion: z.string().trim().max(40).optional(),
+    privacyVersion: z.string().trim().max(40).optional(),
     termsAccepted: z.literal(true),
     ageGuardianAttested: z.literal(true)
   })
@@ -150,14 +151,6 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
           400,
           "LEGAL_ACCEPTANCE_REQUIRED",
           "Accept the current Terms and Privacy Policy and confirm the age requirement to create an account."
-        );
-      }
-      if (!isCurrentLegalAcceptanceInput(parsed.data)) {
-        return sendAuthError(
-          reply,
-          409,
-          "LEGAL_DOCUMENTS_UPDATED",
-          "The Terms or Privacy Policy changed. Review the current documents and try again."
         );
       }
 
@@ -717,20 +710,17 @@ const authSessionResponseSchema = {
 
 const signUpRequestSchema = {
   type: "object",
-  required: [
-    "email",
-    "password",
-    "termsVersion",
-    "privacyVersion",
-    "termsAccepted",
-    "ageGuardianAttested"
-  ],
+  required: ["email", "password", "termsAccepted", "ageGuardianAttested"],
   properties: {
     email: { type: "string", maxLength: 254 },
     password: { type: "string", minLength: 8, maxLength: 200 },
     displayName: { type: "string", minLength: 1, maxLength: 120 },
-    termsVersion: { type: "string", const: CURRENT_LEGAL_VERSIONS.termsVersion },
-    privacyVersion: { type: "string", const: CURRENT_LEGAL_VERSIONS.privacyVersion },
+    termsVersion: {
+      type: "string",
+      maxLength: 40,
+      description: "Deprecated. Accepted from older clients and ignored; the server records the versions in force."
+    },
+    privacyVersion: { type: "string", maxLength: 40, description: "Deprecated. Accepted and ignored." },
     termsAccepted: { type: "boolean", const: true },
     ageGuardianAttested: { type: "boolean", const: true }
   },

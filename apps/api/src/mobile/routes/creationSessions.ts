@@ -45,7 +45,7 @@ import {
   type MobileCreationBuildPreflightResponseDto,
   type MobileCreationConversationResponseDto,
 } from "../dto.js";
-import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
+import { hitAuthenticatedLimit, hitTieredLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import {
   DEFAULT_CREATION_TURN_TIMEOUT_MS,
   attachmentParamsSchema,
@@ -305,7 +305,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-message")) {
+      if (!(await hitTieredLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-message"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -787,7 +787,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-preflight")) {
+      if (!(await hitTieredLimit(advisorLimiter, request, reply, auth.user.id, "creation-session-preflight"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -825,7 +825,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "creation-session-build")) {
+      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "creation-session-build"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);

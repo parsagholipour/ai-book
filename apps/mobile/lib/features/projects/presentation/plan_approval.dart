@@ -40,7 +40,6 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
     return null;
   }
 
-  final estimate = estimateApprovalCredits(project, billing.creditCosts);
   final hasProjectUnlock = billing.entitlements.any(
     (entitlement) =>
         entitlement.type == 'EXPORT_UNLOCK' &&
@@ -49,19 +48,45 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   if (!context.mounted) {
     return null;
   }
-  // The server refuses this too, but catching it here means the choice — upgrade
-  // or write it without visuals — is offered before anything is charged.
+  // The server refuses an illustrated approval past the monthly budget too,
+  // but asking here means the reader picks the outcome — write it without
+  // illustrations now, or upgrade — before anything is charged. Never a
+  // silent downgrade: only this explicit tap sends `disableIllustrations`.
+  var disableIllustrations = false;
   if (project.illustrationsEnabled && billing.isImageQuotaExhausted) {
     final quota = billing.imageQuota!;
-    await showBillingPaywall(
-      context,
-      projectId: project.id,
-      title: 'Out of illustrated books',
-      message:
-          'Your plan includes ${quota.limit} illustrated books a month and you have used all of them. '
-          'Upgrade for unlimited illustrations, or turn In-book illustrations off for this book.',
-    );
-    ref.invalidate(billingProvider);
+    final choice = await _askImageLimitChoice(context, quota);
+    if (choice == null) {
+      return null;
+    }
+    if (choice == _ImageLimitChoice.upgrade) {
+      if (context.mounted) {
+        await showBillingPaywall(
+          context,
+          projectId: project.id,
+          title: 'Out of illustrated books',
+          message:
+              'Your plan includes ${quota.limit} illustrated books a month and you have used all of them. '
+              'Upgrade for unlimited illustrations.',
+        );
+        ref.invalidate(billingProvider);
+      }
+      return null;
+    }
+    disableIllustrations = true;
+  }
+
+  final estimate = disableIllustrations
+      ? estimateProjectCredits(
+          bookType: project.bookType,
+          qualityPreset: project.qualityPreset,
+          coverEnabled: project.coverEnabled,
+          illustrationsEnabled: false,
+          targetPages: project.targetPages,
+          creditCosts: billing.creditCosts,
+        )
+      : estimateApprovalCredits(project, billing.creditCosts);
+  if (!context.mounted) {
     return null;
   }
   if (billing.credits.available < estimate) {
@@ -84,12 +109,16 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
     return null;
   }
 
+  final estimateSummary =
+      'Estimated package: $estimate credits. You have ${billing.credits.available} available.';
   final approved = await showAppConfirmationDialog(
     context,
     title: 'Approve this plan?',
     message: hasProjectUnlock
         ? 'This project already has an export unlock. Starting the full book can still spend writing credits.'
-        : 'Estimated package: $estimate credits. You have ${billing.credits.available} available.',
+        : disableIllustrations
+        ? 'Written without in-book illustrations. $estimateSummary'
+        : estimateSummary,
     confirmLabel: 'Approve and start writing',
   );
   if (!approved) {
@@ -103,6 +132,7 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
         .approvePlan(
           plan.id,
           requestId: 'approve-${DateTime.now().microsecondsSinceEpoch}',
+          disableIllustrations: disableIllustrations,
         );
     ref.invalidate(projectsProvider);
     ref.invalidate(billingProvider);
@@ -118,4 +148,42 @@ Future<MobilePlanOperation?> confirmAndApprovePlan(
   } finally {
     onSettled?.call();
   }
+}
+
+enum _ImageLimitChoice { withoutIllustrations, upgrade }
+
+/// The month's illustrated books are spent; the book itself is not blocked.
+/// Both ways forward sit in one dialog so neither is a dead end: write it
+/// without illustrations now, or look at upgrading.
+Future<_ImageLimitChoice?> _askImageLimitChoice(
+  BuildContext context,
+  MobileImageQuota quota,
+) {
+  return showDialog<_ImageLimitChoice>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Out of illustrated books'),
+      content: Text(
+        'Your plan includes ${quota.limit} illustrated books a month and you '
+        'have used all of them. You can still write this book now without '
+        'in-book illustrations, or upgrade for unlimited.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.of(context).pop(_ImageLimitChoice.upgrade),
+          child: const Text('See upgrades'),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.of(context).pop(_ImageLimitChoice.withoutIllustrations),
+          child: const Text('Write without illustrations'),
+        ),
+      ],
+    ),
+  );
 }

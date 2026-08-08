@@ -16,8 +16,6 @@ export const CURRENT_LEGAL_VERSIONS = {
 } as const;
 
 export type LegalAcceptanceInput = {
-  termsVersion: string;
-  privacyVersion: string;
   termsAccepted: boolean;
   ageGuardianAttested: boolean;
 };
@@ -36,15 +34,13 @@ export function legalMetadata(config: AppConfig) {
   };
 }
 
-export function isCurrentLegalAcceptanceInput(input: LegalAcceptanceInput): boolean {
-  return (
-    input.termsAccepted === true &&
-    input.ageGuardianAttested === true &&
-    input.termsVersion === CURRENT_TERMS_VERSION &&
-    input.privacyVersion === CURRENT_PRIVACY_VERSION
-  );
-}
-
+/**
+ * Terms currency is per version; the age/guardian attestation is per account.
+ * Signup is the only way to create a mobile account and it requires the age
+ * attestation, so a version bump only ever needs fresh assent to the terms —
+ * which is why re-acceptance rows may carry `ageGuardianAttested: false` and
+ * the query must not filter on it.
+ */
 export async function hasCurrentLegalAcceptance(userId: string): Promise<boolean> {
   const delegate = optionalLegalAcceptanceDelegate();
   // A few isolated unit-test clients intentionally expose only the delegates
@@ -59,8 +55,7 @@ export async function hasCurrentLegalAcceptance(userId: string): Promise<boolean
       userId,
       termsVersion: CURRENT_TERMS_VERSION,
       privacyVersion: CURRENT_PRIVACY_VERSION,
-      termsAttested: true,
-      ageGuardianAttested: true
+      termsAttested: true
     },
     select: { id: true },
     orderBy: { acceptedAt: "desc" }
@@ -80,6 +75,14 @@ export function legalAcceptanceData(
   };
 }
 
+/**
+ * The recorded versions are stamped server-side as whatever is in force at the
+ * moment of acceptance. Clients used to echo their compiled-in versions and the
+ * server rejected a mismatch — which turned every version bump into a hard
+ * dead-end for shipped builds until an app-store update. The user reads the
+ * documents through live URLs, so the server's clock is the honest record of
+ * what they agreed to.
+ */
 export function legalAcceptanceEvidence(
   input: LegalAcceptanceInput,
   source: string,
@@ -88,8 +91,8 @@ export function legalAcceptanceEvidence(
   const rawUserAgent = request.headers["user-agent"];
   const userAgent = Array.isArray(rawUserAgent) ? rawUserAgent.join(" ") : rawUserAgent;
   return {
-    termsVersion: input.termsVersion,
-    privacyVersion: input.privacyVersion,
+    termsVersion: CURRENT_TERMS_VERSION,
+    privacyVersion: CURRENT_PRIVACY_VERSION,
     source,
     termsAttested: input.termsAccepted,
     ageGuardianAttested: input.ageGuardianAttested,

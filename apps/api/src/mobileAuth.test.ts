@@ -55,7 +55,7 @@ describe("mobile auth service", () => {
     expect(session.accessToken).toMatch(/^bma_at_/);
     expect(session.refreshToken).toMatch(/^bma_rt_/);
     expect(session.accessTokenExpiresAt.toISOString()).toBe("2026-06-15T08:15:00.000Z");
-    expect(session.refreshTokenExpiresAt.toISOString()).toBe("2026-07-15T08:00:00.000Z");
+    expect(session.refreshTokenExpiresAt.toISOString()).toBe("2026-09-13T08:00:00.000Z");
     expect(createCall.data.accessTokenHash).toBe(hashToken(session.accessToken));
     expect(createCall.data.refreshTokenHash).toBe(hashToken(session.refreshToken));
     expect(JSON.stringify(createCall.data)).not.toContain(session.accessToken);
@@ -252,7 +252,7 @@ describe("mobile auth routes", () => {
     await app.close();
   });
 
-  it("rejects missing and stale signup acceptance", async () => {
+  it("rejects a signup without the attestations", async () => {
     mockPrisma.user.findUnique.mockResolvedValue(null);
     const app = await buildApp();
 
@@ -261,22 +261,41 @@ describe("mobile auth routes", () => {
       url: "/api/mobile/auth/signup",
       payload: { email: "reader@example.com", password: "CorrectPass123" }
     });
-    const stale = await app.inject({
+
+    expect(missing.statusCode).toBe(400);
+    expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("accepts a stale client version echo and stamps the versions in force", async () => {
+    mockPrisma.user.findUnique.mockResolvedValue(null);
+    mockPrisma.user.create.mockImplementation(async ({ data }: { data: any }) =>
+      activeUser({ email: data.email })
+    );
+    const app = await buildApp();
+
+    const response = await app.inject({
       method: "POST",
       url: "/api/mobile/auth/signup",
       payload: {
         email: "reader@example.com",
         password: "CorrectPass123",
         termsVersion: "2026-01-01",
-        privacyVersion: "2026-08-08",
+        privacyVersion: "2026-01-01",
         termsAccepted: true,
         ageGuardianAttested: true
       }
     });
+    const createCall = mockPrisma.user.create.mock.calls.at(0)?.[0] as { data: any };
 
-    expect(missing.statusCode).toBe(400);
-    expect(stale.statusCode).toBe(400);
-    expect(mockPrisma.user.create).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(201);
+    expect(createCall.data.legalAcceptances.create).toMatchObject({
+      termsVersion: "2026-08-08",
+      privacyVersion: "2026-08-08",
+      termsAttested: true,
+      ageGuardianAttested: true,
+      source: "mobile_signup"
+    });
     await app.close();
   });
 

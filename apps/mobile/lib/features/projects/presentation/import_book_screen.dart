@@ -117,13 +117,15 @@ class _ImportBookScreenState extends ConsumerState<ImportBookScreen> {
       if (!mounted) return;
       setState(() => _importing = false);
       if (error.code == 'SUBSCRIPTION_REQUIRED') {
+        // Free accounts import one manuscript a month, so this only shows once
+        // that import is used.
         await showBillingPaywall(
           context,
-          title: 'Import your book',
+          title: 'Import more books',
           message:
-              'Bring your finished manuscript into Tomeza — improve it with AI, '
-              'keep writing in your own voice, and export it. Included with the '
-              'Creator plan.',
+              'You\'ve used this month\'s free import. The Creator plan brings '
+              'in as many manuscripts as you like — improve them with AI, keep '
+              'writing in your own voice, and export them.',
         );
         if (mounted) {
           ref.invalidate(billingProvider);

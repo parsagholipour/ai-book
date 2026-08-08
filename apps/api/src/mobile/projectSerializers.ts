@@ -516,7 +516,7 @@ export function currentActionForProject(
     case "COMPLETE":
       return "Ready to download.";
     case "REVIEW_REQUIRED":
-      return "Fix the flagged pages before exporting.";
+      return "Ready to download - some pages are flagged for review.";
     case "FAILED":
       return "Needs attention.";
     default:

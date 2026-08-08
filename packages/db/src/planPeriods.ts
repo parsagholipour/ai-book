@@ -33,8 +33,9 @@ import {
   runSerializable
 } from "./billingInternals.ts";
 
-/** The only usage counter today. See `UsageCounter` in the schema. */
+/** Monthly usage counters. See `UsageCounter` in the schema. */
 export const ILLUSTRATED_BOOK_COUNTER = "illustrated_books";
+export const MANUSCRIPT_IMPORT_COUNTER = "manuscript_imports";
 
 export type PlanPeriodBounds = {
   key: string;
@@ -55,12 +56,14 @@ export type PlanSummary = {
   productSku: string | null;
 };
 
-export type ImageQuota = {
+export type MonthlyQuota = {
   used: number;
   limit: number;
   periodKey: string;
   resetsAt: Date;
 };
+
+export type ImageQuota = MonthlyQuota;
 
 export type PlanAccountRow = {
   userId: string;
@@ -249,18 +252,35 @@ export async function getPlanSummary(userId: string, now: Date = new Date()): Pr
  * limit at all. Callers treat `null` as unlimited rather than as "unknown".
  */
 export async function getImageQuota(userId: string, now: Date = new Date()): Promise<ImageQuota | null> {
+  return getMonthlyQuota(ILLUSTRATED_BOOK_COUNTER, creditPricing().freeIllustratedBooksPerMonth, userId, now);
+}
+
+/**
+ * The free tier's manuscript-import budget; `null` means unlimited (any paid
+ * plan). Same semantics as {@link getImageQuota}.
+ */
+export async function getImportQuota(userId: string, now: Date = new Date()): Promise<MonthlyQuota | null> {
+  return getMonthlyQuota(MANUSCRIPT_IMPORT_COUNTER, creditPricing().freeManuscriptImportsPerMonth, userId, now);
+}
+
+async function getMonthlyQuota(
+  kind: string,
+  limit: number,
+  userId: string,
+  now: Date
+): Promise<MonthlyQuota | null> {
   const tier = await resolvePlanTier(userId, now);
   if (tier !== "free") {
     return null;
   }
   const periodKey = calendarPeriodKey(now);
   const counter = await prisma.usageCounter.findUnique({
-    where: { userId_kind_periodKey: { userId, kind: ILLUSTRATED_BOOK_COUNTER, periodKey } },
+    where: { userId_kind_periodKey: { userId, kind, periodKey } },
     select: { used: true }
   });
   return {
     used: counter?.used ?? 0,
-    limit: creditPricing().freeIllustratedBooksPerMonth,
+    limit,
     periodKey,
     resetsAt: calendarPeriodBounds(now).end
   };
@@ -285,10 +305,26 @@ export async function consumeIllustratedBookUse(options: {
   limit: number;
   now?: Date | undefined;
 }): Promise<ConsumeUsageResult> {
+  return consumeMonthlyUse(ILLUSTRATED_BOOK_COUNTER, options);
+}
+
+/** Claim one manuscript import against the free tier's monthly budget. */
+export async function consumeManuscriptImportUse(options: {
+  userId: string;
+  limit: number;
+  now?: Date | undefined;
+}): Promise<ConsumeUsageResult> {
+  return consumeMonthlyUse(MANUSCRIPT_IMPORT_COUNTER, options);
+}
+
+async function consumeMonthlyUse(
+  kind: string,
+  options: { userId: string; limit: number; now?: Date | undefined }
+): Promise<ConsumeUsageResult> {
   const now = options.now ?? new Date();
   const periodKey = calendarPeriodKey(now);
   const resetsAt = calendarPeriodBounds(now).end;
-  const where = { userId: options.userId, kind: ILLUSTRATED_BOOK_COUNTER, periodKey };
+  const where = { userId: options.userId, kind, periodKey };
 
   if (options.limit <= 0) {
     return { allowed: false, used: 0, limit: options.limit, periodKey, resetsAt };
@@ -322,6 +358,14 @@ export async function releaseIllustratedBookUseTx(tx: BillingTx, userId: string,
 /** Hand a slot back when the generation it was claimed for never happened. */
 export async function releaseIllustratedBookUse(userId: string, periodKey: string): Promise<void> {
   await releaseIllustratedBookUseTx(prisma, userId, periodKey);
+}
+
+/** Hand an import slot back when the import it was claimed for failed. */
+export async function releaseManuscriptImportUse(userId: string, periodKey: string): Promise<void> {
+  await prisma.usageCounter.updateMany({
+    where: { userId, kind: MANUSCRIPT_IMPORT_COUNTER, periodKey, used: { gt: 0 } },
+    data: { used: { decrement: 1 } }
+  });
 }
 
 const FALLBACK_PERIOD_MS = 31 * 24 * 60 * 60 * 1000;

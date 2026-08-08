@@ -493,6 +493,7 @@ class FakeProjectsRepository implements ProjectsRepository {
   Future<MobilePlanOperation> approvePlan(
     String planId, {
     String? requestId,
+    bool disableIllustrations = false,
   }) async {
     return fakeOperation(status: 'generation_queued', planId: planId);
   }

@@ -8,6 +8,7 @@ import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import 'auth_controller.dart';
+import 'sample_book_screen.dart';
 
 enum AuthScreenMode { signIn, signUp }
 
@@ -131,6 +132,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                             : 'Create account',
                       ),
                     ),
+                    // Only when the server publishes one; a probe failure
+                    // simply draws nothing.
+                    if (ref.watch(sampleBookAvailableProvider).value ?? false)
+                      TextButton.icon(
+                        onPressed: isSubmitting
+                            ? null
+                            : () => context.push('/sample-book'),
+                        icon: const Icon(Icons.menu_book_outlined, size: 18),
+                        label: const Text('See a sample book first'),
+                      ),
                   ],
                 ),
               ),

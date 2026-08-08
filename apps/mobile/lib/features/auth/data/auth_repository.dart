@@ -86,8 +86,6 @@ class MobileAuthRepository implements AuthRepository {
         'password': password,
         if (displayName != null && displayName.trim().isNotEmpty)
           'displayName': displayName.trim(),
-        'termsVersion': currentTermsVersion,
-        'privacyVersion': currentPrivacyVersion,
         'termsAccepted': termsAccepted,
         'ageGuardianAttested': ageGuardianAttested,
       },
@@ -96,14 +94,11 @@ class MobileAuthRepository implements AuthRepository {
 
   @override
   Future<void> acceptCurrentLegalDocuments() async {
+    // One tap, terms only: the server stamps the versions in force, and the
+    // age/guardian attestation from signup does not expire with a terms bump.
     await apiClient.postJson(
       '/api/mobile/legal/acceptance',
-      data: {
-        'termsVersion': currentTermsVersion,
-        'privacyVersion': currentPrivacyVersion,
-        'termsAccepted': true,
-        'ageGuardianAttested': true,
-      },
+      data: {'termsAccepted': true},
     );
   }
 

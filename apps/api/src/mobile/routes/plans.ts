@@ -9,7 +9,7 @@ import { type MobileProjectRecoveryDto } from "../dto.js";
 import { queueDirectPlanRevision } from "../editOperations.js";
 import { retryPlanRevisionOperation } from "../planRevisionRetries.js";
 import {
-  hitAuthenticatedLimit,
+  hitTieredLimit,
   requireMobileAuth,
   sendImageLimitReached,
   sendInsufficientCredits,
@@ -36,10 +36,10 @@ import {
   mobilePlanRevisionOpenApiBody,
   operationRetryBodySchema
 } from "../schemas.js";
-import { hashString } from "../support.js";
+import { hashString, jsonRecord } from "../support.js";
 import { randomUUID } from "node:crypto";
 import { createProjectSchema, estimateFullBookCreditCost } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import {
   InsufficientCreditsError,
   commitReservedCredits,
@@ -75,7 +75,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "plan")) {
+      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "plan"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -136,7 +136,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!auth) {
         return;
       }
-      if (!hitAuthenticatedLimit(generationLimiter, request, reply, auth.user.id, "revise-plan")) {
+      if (!(await hitTieredLimit(generationLimiter, request, reply, auth.user.id, "revise-plan"))) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -248,6 +248,38 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         return reply
           .code(202)
           .send(planOperation("generation_queued", plan.projectId, id, existingApprovalJob, "Full book generation is already scheduled."));
+      }
+
+      // An explicit "continue without illustrations" choice, made when the
+      // free tier's monthly image budget refused the illustrated approval.
+      // Written to the project row (what this route prices from) *and* the
+      // plan's frozen inputSnapshot (what the worker generates from) before
+      // either is read, so the charge and the book can never disagree. Raw
+      // spreads, not a schema round-trip, so unknown mediaSettings keys —
+      // mobile metadata among them — survive untouched.
+      if (approvalBody.data.disableIllustrations) {
+        const rawSettings = { ...jsonRecord(plan.project.mediaSettings), fullIllustrations: false };
+        const rawSnapshot = plan.inputSnapshot ? jsonRecord(plan.inputSnapshot) : null;
+        await prisma.$transaction([
+          prisma.project.update({
+            where: { id: plan.projectId },
+            data: { mediaSettings: rawSettings as Prisma.InputJsonValue }
+          }),
+          ...(rawSnapshot
+            ? [
+                prisma.planVersion.update({
+                  where: { id },
+                  data: {
+                    inputSnapshot: {
+                      ...rawSnapshot,
+                      mediaSettings: { ...jsonRecord(rawSnapshot.mediaSettings), fullIllustrations: false }
+                    } as Prisma.InputJsonValue
+                  }
+                })
+              ]
+            : [])
+        ]);
+        plan.project.mediaSettings = rawSettings as Prisma.JsonValue;
       }
 
       const generationInput = createProjectSchema.parse(inputSnapshotFromProject(plan.project));
