@@ -58,6 +58,138 @@ export async function createOpenBookEditOperation(
   }
 }
 
+/**
+ * The one reserve → commit → enqueue → compensate skeleton every charged edit
+ * runs through, so "every failure path refunds" is enforced by the shape of
+ * the code rather than by reviewers noticing.
+ *
+ * The compensation ordering is the safety property, taken from the plan
+ * revision path: once a GenerationJob row exists, it is reachable by both
+ * reconcilers, so a refund is only safe after `cancelUndispatchedGenerationJob`
+ * provably claimed the row. A job that was already dispatched (or that a
+ * reconciler claimed first) will run, and the charge must stand — the failure
+ * is logged instead of refunded. `run` must call `registerQueuedJob` the
+ * moment a durable job row exists so this catch can reach it.
+ */
+export async function withChargedEnqueue<T>(options: {
+  reserve: () => Promise<CreditLedgerEntryRecord | null>;
+  refundReason: string;
+  run: (context: {
+    spend: CreditLedgerEntryRecord | null;
+    registerQueuedJob: (jobId: string) => void;
+  }) => Promise<T>;
+  /**
+   * Domain compensation beyond the refund (restore a project status, fail a
+   * replan copy). Runs only when the queued work is provably dead — when the
+   * job survived, the work is still coming and the domain state it needs must
+   * stay put.
+   */
+  onFailureWhenDead?: ((context: { jobWasQueued: boolean }) => Promise<void>) | undefined;
+}): Promise<T> {
+  let reservation: CreditLedgerEntryRecord | null = null;
+  let spend: CreditLedgerEntryRecord | null = null;
+  let queuedJobId: string | null = null;
+  try {
+    reservation = await options.reserve();
+    spend = reservation ? await commitReservedCredits(reservation.id) : null;
+    return await options.run({
+      spend,
+      registerQueuedJob: (jobId) => {
+        queuedJobId = jobId;
+      }
+    });
+  } catch (error) {
+    const jobProvablyDead = queuedJobId
+      ? await cancelUndispatchedGenerationJob(queuedJobId, options.refundReason).catch(() => false)
+      : true;
+    if (jobProvablyDead && options.onFailureWhenDead) {
+      try {
+        await options.onFailureWhenDead({ jobWasQueued: queuedJobId !== null });
+      } catch {
+        // Compensation is best-effort; the refund decision below still runs.
+      }
+    }
+    const entryToRefund = spend ?? reservation;
+    if (entryToRefund && jobProvablyDead) {
+      await refundCreditLedgerEntry(entryToRefund.id, options.refundReason);
+    } else if (entryToRefund) {
+      console.error("Charged enqueue compensation kept the charge: the queued job could not be canceled", {
+        generationJobId: queuedJobId,
+        ledgerEntryId: entryToRefund.id,
+        reason: options.refundReason
+      });
+    }
+    throw error;
+  }
+}
+
+/**
+ * The chat layer over withChargedEnqueue: stamps the operation row with the
+ * job and charge, writes the assistant reply, and turns failures into the
+ * operation's FAILED state (with the insufficient-credits reply when that is
+ * what happened).
+ */
+async function queueChargedChatOperation(options: {
+  project: ProjectForChat;
+  userMessageId: string;
+  intent: BookEditIntent;
+  operation: MobileBookEditOperationRecord;
+  cost: number;
+  refundReason: string;
+  reserve: () => Promise<CreditLedgerEntryRecord | null>;
+  /** Domain setup plus the job enqueue; runs after the charge is committed. */
+  enqueue: (spend: CreditLedgerEntryRecord | null) => Promise<{ id: string }>;
+  /** Extra fields for the operation row beyond the job/charge linkage. */
+  operationData?: Prisma.BookEditOperationUncheckedUpdateInput | undefined;
+  replyContent: string;
+  replyMetadata: Record<string, unknown>;
+  onFailureWhenDead?: ((context: { jobWasQueued: boolean }) => Promise<void>) | undefined;
+}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
+  try {
+    return await withChargedEnqueue({
+      reserve: options.reserve,
+      refundReason: options.refundReason,
+      onFailureWhenDead: options.onFailureWhenDead,
+      run: async ({ spend, registerQueuedJob }) => {
+        const job = await options.enqueue(spend);
+        registerQueuedJob(job.id);
+        const updated = await prisma.bookEditOperation.update({
+          where: { id: options.operation.id },
+          data: {
+            generationJobId: job.id,
+            ledgerEntryId: spend?.id ?? null,
+            creditsCharged: options.cost,
+            ...options.operationData
+          },
+          include: { generationJob: { select: { id: true, status: true } } }
+        });
+        const reply = await createAssistantChatMessage({
+          projectId: options.project.id,
+          parentId: options.userMessageId,
+          operationId: options.operation.id,
+          content: options.replyContent,
+          metadata: options.replyMetadata
+        });
+        await prisma.bookEditOperation.update({
+          where: { id: options.operation.id },
+          data: { assistantMessageId: reply.id }
+        });
+        return { reply, operation: updated };
+      }
+    });
+  } catch (error) {
+    await prisma.bookEditOperation.update({
+      where: { id: options.operation.id },
+      data: { status: "FAILED", error: errorMessage(error) }
+    });
+    if (error instanceof InsufficientCreditsError) {
+      const reply = await insufficientCreditsChatMessage(options.project.id, options.userMessageId, options.intent, error);
+      return { reply, operation: null };
+    }
+    throw error;
+  }
+}
+
 export async function queueChatPlanRevision(options: {
   userId: string;
   project: ProjectForChat;
@@ -156,100 +288,83 @@ export async function queueChatBookReplanCopy(options: {
     return { reply, operation: null };
   }
 
-  let reservation: CreditLedgerEntryRecord | null = null;
-  let spend: CreditLedgerEntryRecord | null = null;
+  const replanCopy = (copyId: string) => ({
+    sourceProjectId: project.id,
+    targetProjectId: copyId,
+    ...(targetLanguage ? { targetLanguage } : {})
+  });
   let copy: MobileProjectRecord | null = null;
-  try {
-    reservation = await reserveCredits({
-      userId,
-      projectId: project.id,
-      operation: "BOOK_REPLAN",
-      amountCredits: cost,
-      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:book-replan`,
-      description: "Mobile book replan copy",
-      metadata: {
-        intent,
-        sourceProjectId: project.id,
-        operationId: operation.id,
-        ...(targetLanguage ? { targetLanguage } : {})
-      }
-    });
-    copy = await createReplanProjectCopy({
-      userId,
-      sourceProject: project,
-      request: message,
-      operationId: operation.id,
-      targetLanguage,
-      settings: replanSettings
-    });
-    spend = reservation ? await commitReservedCredits(reservation.id) : null;
-    const job = await enqueueGenerationJob({
-      projectId: copy.id,
-      type: "REPLAN_BOOK",
-      dedupeKey: `replan-book:${copy.id}:${operation.id}`,
-      payload: {
-        operationId: operation.id,
-        sourceProjectId: project.id,
-        sourcePlanId: project.currentPlanId,
+  return queueChargedChatOperation({
+    project,
+    userMessageId,
+    intent,
+    operation,
+    cost,
+    refundReason: "Book replan copy could not be queued.",
+    reserve: () =>
+      reserveCredits({
+        userId,
+        projectId: project.id,
+        operation: "BOOK_REPLAN",
+        amountCredits: cost,
+        idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:book-replan`,
+        description: "Mobile book replan copy",
+        metadata: {
+          intent,
+          sourceProjectId: project.id,
+          operationId: operation.id,
+          ...(targetLanguage ? { targetLanguage } : {})
+        }
+      }),
+    enqueue: async (spend) => {
+      copy = await createReplanProjectCopy({
+        userId,
+        sourceProject: project,
         request: message,
-        affectedPageIndexes: [],
-        intentKind: intent.kind,
-        ...(targetLanguage ? { targetLanguage } : {}),
-        // Explicit, because the worker plans from the *source* plan's input
-        // snapshot: without a number here it would size the rebuilt book to the
-        // book being replaced, whatever the copy row says.
-        ...(replanSettings?.targetPages === undefined ? {} : { targetPages: replanSettings.targetPages }),
-        ...(spend ? { billingLedgerEntryId: spend.id } : {})
-      }
-    });
-    const updated = await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: {
-        generationJobId: job.id,
-        ledgerEntryId: spend?.id ?? null,
-        creditsCharged: cost,
-        classifier: jsonInputValue({
-          ...intent,
-          replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id, ...(targetLanguage ? { targetLanguage } : {}) }
-        })
-      },
-      include: { generationJob: { select: { id: true, status: true } } }
-    });
-    const reply = await createAssistantChatMessage({
-      projectId: project.id,
-      parentId: userMessageId,
-      operationId: operation.id,
-      content: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged.`,
-      metadata: {
+        operationId: operation.id,
+        targetLanguage,
+        settings: replanSettings
+      });
+      return enqueueGenerationJob({
+        projectId: copy.id,
+        type: "REPLAN_BOOK",
+        dedupeKey: `replan-book:${copy.id}:${operation.id}`,
+        payload: {
+          operationId: operation.id,
+          sourceProjectId: project.id,
+          sourcePlanId: project.currentPlanId,
+          request: message,
+          affectedPageIndexes: [],
+          intentKind: intent.kind,
+          ...(targetLanguage ? { targetLanguage } : {}),
+          // Explicit, because the worker plans from the *source* plan's input
+          // snapshot: without a number here it would size the rebuilt book to the
+          // book being replaced, whatever the copy row says.
+          ...(replanSettings?.targetPages === undefined ? {} : { targetPages: replanSettings.targetPages }),
+          ...(spend ? { billingLedgerEntryId: spend.id } : {})
+        }
+      });
+    },
+    replyContent: `I created a new${targetLanguage ? ` ${languageDisplayName(targetLanguage)}` : ""} copy and I’ll rebuild the plan and book there. This book stays unchanged.`,
+    // Getters, because both depend on the copy that `enqueue` creates: the
+    // wrapper reads them only after the job is queued.
+    get operationData() {
+      return copy ? { classifier: jsonInputValue({ ...intent, replanCopy: replanCopy(copy.id) }) } : undefined;
+    },
+    get replyMetadata() {
+      return {
         intent,
         charged: true,
         creditsCharged: cost,
-        replanCopy: { sourceProjectId: project.id, targetProjectId: copy.id, ...(targetLanguage ? { targetLanguage } : {}) }
+        ...(copy ? { replanCopy: replanCopy(copy.id) } : {})
+      };
+    },
+    onFailureWhenDead: async () => {
+      if (copy) {
+        await prisma.project.update({ where: { id: copy.id }, data: { status: "FAILED" } }).catch(() => undefined);
       }
-    });
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: { assistantMessageId: reply.id }
-    });
-    return { reply, operation: updated };
-  } catch (error) {
-    const entryToRefund = spend ?? reservation;
-    if (entryToRefund) {
-      await refundCreditLedgerEntry(entryToRefund.id, "Book replan copy could not be queued.");
     }
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: { status: "FAILED", error: errorMessage(error) }
-    });
-    if (copy) {
-      await prisma.project.update({ where: { id: copy.id }, data: { status: "FAILED" } }).catch(() => undefined);
-    }
-    if (error instanceof InsufficientCreditsError) {
-      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
-      return { reply, operation: null };
-    }
-    throw error;
-  }
+  });
 }
 
 export async function queueChatBookEdit(options: {
@@ -315,79 +430,54 @@ export async function queueChatBookEdit(options: {
     return { reply, operation: null };
   }
 
-  let reservation: CreditLedgerEntryRecord | null = null;
-  let spend: CreditLedgerEntryRecord | null = null;
-  try {
-    reservation = await reserveCredits({
-      userId,
-      projectId: project.id,
-      operation: billingOperation,
-      amountCredits: cost,
-      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:charge`,
-      description: `Mobile ${operationKind.toLowerCase().replaceAll("_", " ")} edit`,
-      metadata: { intent, affectedPageIndexes }
-    });
-    spend = reservation ? await commitReservedCredits(reservation.id) : null;
-    await prisma.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
-    const job = await enqueueGenerationJob({
-      projectId: project.id,
-      type: "APPLY_BOOK_EDIT",
-      dedupeKey: `apply-book-edit:${project.id}:${operation.id}`,
-      payload: {
-        operationId: operation.id,
-        request: message,
-        affectedPageIndexes,
-        intentKind: intent.kind,
-        ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
-        ...(spend ? { billingLedgerEntryId: spend.id } : {}),
-        // `mode: "exact"` is a promise, not a hint: every page here was verified
-        // to contain the literal text, so the worker must not fall back to a
-        // model rewrite for any of them. That fallback is what silently turned
-        // a patch-priced edit into a per-page regeneration.
-        ...(patch
-          ? { exactReplacement: patch.replacement, mode: "exact" as const }
-          : exactReplacementFromMessage(message)
-            ? { exactReplacement: exactReplacementFromMessage(message) }
-            : {})
-      }
-    });
-    const updated = await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: {
-        generationJobId: job.id,
-        ledgerEntryId: spend?.id ?? null,
-        creditsCharged: cost
-      },
-      include: { generationJob: { select: { id: true, status: true } } }
-    });
-    const reply = await createAssistantChatMessage({
-      projectId: project.id,
-      parentId: userMessageId,
-      operationId: operation.id,
-      content: operationQueuedMessage(intent.kind, affectedPageIndexes, intent),
-      metadata: { intent, charged: true, creditsCharged: cost }
-    });
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: { assistantMessageId: reply.id }
-    });
-    return { reply, operation: updated };
-  } catch (error) {
-    const entryToRefund = spend ?? reservation;
-    if (entryToRefund) {
-      await refundCreditLedgerEntry(entryToRefund.id, "Book edit could not be queued.");
+  return queueChargedChatOperation({
+    project,
+    userMessageId,
+    intent,
+    operation,
+    cost,
+    refundReason: "Book edit could not be queued.",
+    reserve: () =>
+      reserveCredits({
+        userId,
+        projectId: project.id,
+        operation: billingOperation,
+        amountCredits: cost,
+        idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:charge`,
+        description: `Mobile ${operationKind.toLowerCase().replaceAll("_", " ")} edit`,
+        metadata: { intent, affectedPageIndexes }
+      }),
+    enqueue: async (spend) => {
+      await prisma.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
+      return enqueueGenerationJob({
+        projectId: project.id,
+        type: "APPLY_BOOK_EDIT",
+        dedupeKey: `apply-book-edit:${project.id}:${operation.id}`,
+        payload: {
+          operationId: operation.id,
+          request: message,
+          affectedPageIndexes,
+          intentKind: intent.kind,
+          ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
+          ...(spend ? { billingLedgerEntryId: spend.id } : {}),
+          // `mode: "exact"` is a promise, not a hint: every page here was verified
+          // to contain the literal text, so the worker must not fall back to a
+          // model rewrite for any of them. That fallback is what silently turned
+          // a patch-priced edit into a per-page regeneration.
+          ...(patch
+            ? { exactReplacement: patch.replacement, mode: "exact" as const }
+            : exactReplacementFromMessage(message)
+              ? { exactReplacement: exactReplacementFromMessage(message) }
+              : {})
+        }
+      });
+    },
+    replyContent: operationQueuedMessage(intent.kind, affectedPageIndexes, intent),
+    replyMetadata: { intent, charged: true, creditsCharged: cost },
+    onFailureWhenDead: async () => {
+      await prisma.project.update({ where: { id: project.id }, data: { status: "COMPLETE" } }).catch(() => undefined);
     }
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: { status: "FAILED", error: errorMessage(error) }
-    });
-    await prisma.project.update({ where: { id: project.id }, data: { status: "COMPLETE" } }).catch(() => undefined);
-    if (error instanceof InsufficientCreditsError) {
-      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
-      return { reply, operation: null };
-    }
-    throw error;
-  }
+  });
 }
 
 /**
@@ -421,70 +511,45 @@ export async function queueChatContinueBook(options: {
     return { reply, operation: null };
   }
 
-  let reservation: CreditLedgerEntryRecord | null = null;
-  let spend: CreditLedgerEntryRecord | null = null;
-  try {
-    reservation = await reserveCredits({
-      userId,
-      projectId: project.id,
-      operation: "PAGE_REGENERATION",
-      amountCredits: cost,
-      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:charge`,
-      description: "Mobile book continuation",
-      metadata: { intent, chapterCount, newPageCount }
-    });
-    spend = reservation ? await commitReservedCredits(reservation.id) : null;
-    await prisma.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
-    const job = await enqueueGenerationJob({
-      projectId: project.id,
-      type: "CONTINUE_BOOK",
-      dedupeKey: `continue-book:${project.id}:${operation.id}`,
-      payload: {
-        operationId: operation.id,
-        request: message,
-        chapterCount,
-        newPageCount,
-        ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
-        ...(spend ? { billingLedgerEntryId: spend.id } : {})
-      }
-    });
-    const updated = await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: {
-        generationJobId: job.id,
-        ledgerEntryId: spend?.id ?? null,
-        creditsCharged: cost
-      },
-      include: { generationJob: { select: { id: true, status: true } } }
-    });
-    const reply = await createAssistantChatMessage({
-      projectId: project.id,
-      parentId: userMessageId,
-      operationId: operation.id,
-      content: operationQueuedMessage(intent.kind, [], intent),
-      metadata: { intent, charged: true, creditsCharged: cost }
-    });
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: { assistantMessageId: reply.id }
-    });
-    return { reply, operation: updated };
-  } catch (error) {
-    const entryToRefund = spend ?? reservation;
-    if (entryToRefund) {
-      await refundCreditLedgerEntry(entryToRefund.id, "Book continuation could not be queued.");
+  return queueChargedChatOperation({
+    project,
+    userMessageId,
+    intent,
+    operation,
+    cost,
+    refundReason: "Book continuation could not be queued.",
+    reserve: () =>
+      reserveCredits({
+        userId,
+        projectId: project.id,
+        operation: "PAGE_REGENERATION",
+        amountCredits: cost,
+        idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:charge`,
+        description: "Mobile book continuation",
+        metadata: { intent, chapterCount, newPageCount }
+      }),
+    enqueue: async (spend) => {
+      await prisma.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
+      return enqueueGenerationJob({
+        projectId: project.id,
+        type: "CONTINUE_BOOK",
+        dedupeKey: `continue-book:${project.id}:${operation.id}`,
+        payload: {
+          operationId: operation.id,
+          request: message,
+          chapterCount,
+          newPageCount,
+          ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
+          ...(spend ? { billingLedgerEntryId: spend.id } : {})
+        }
+      });
+    },
+    replyContent: operationQueuedMessage(intent.kind, [], intent),
+    replyMetadata: { intent, charged: true, creditsCharged: cost },
+    onFailureWhenDead: async () => {
+      await prisma.project.update({ where: { id: project.id }, data: { status: "COMPLETE" } }).catch(() => undefined);
     }
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
-      data: { status: "FAILED", error: errorMessage(error) }
-    });
-    await prisma.project.update({ where: { id: project.id }, data: { status: "COMPLETE" } }).catch(() => undefined);
-    if (error instanceof InsufficientCreditsError) {
-      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
-      return { reply, operation: null };
-    }
-    throw error;
-  }
+  });
 }
 
 export async function queueDirectPlanRevision(options: {
@@ -556,68 +621,63 @@ export async function queueChargedPlanRevision(options: {
   operationId?: string | undefined;
 }): Promise<{ job: Awaited<ReturnType<typeof enqueueGenerationJob>>; ledgerEntry: CreditLedgerEntryRecord | null }> {
   const amountCredits = creditCostForOperation("PLAN_REVISION");
-  let reservation: CreditLedgerEntryRecord | null = null;
-  let spend: CreditLedgerEntryRecord | null = null;
-  let queuedJobId: string | null = null;
-  try {
-    reservation = await reserveCredits({
-      userId: options.userId,
-      projectId: options.projectId,
-      operation: "PLAN_REVISION",
-      amountCredits,
-      idempotencyKey: options.idempotencyKey,
-      description: "Mobile plan revision",
-      metadata: {
-        planId: options.planId,
-        ...(options.operationId ? { operationId: options.operationId } : {})
-      }
-    });
-    spend = reservation ? await commitReservedCredits(reservation.id) : null;
-    const transactionResult = await prisma.$transaction(async (tx) => {
-      const job = await enqueueGenerationJob({
+  return withChargedEnqueue({
+    refundReason: "Plan revision could not be queued.",
+    reserve: () =>
+      reserveCredits({
+        userId: options.userId,
         projectId: options.projectId,
-        type: "REVISE_PLAN",
-        dedupeKey: `revise-plan:${options.projectId}:${options.planId}:${hashString(options.idempotencyKey)}`,
-        transaction: tx,
-        dispatch: false,
-        payload: {
+        operation: "PLAN_REVISION",
+        amountCredits,
+        idempotencyKey: options.idempotencyKey,
+        description: "Mobile plan revision",
+        metadata: {
           planId: options.planId,
-          message: options.message,
-          ...(spend ? { billingLedgerEntryId: spend.id } : {}),
-          ...(options.operationId ? { editOperationId: options.operationId } : {})
+          ...(options.operationId ? { operationId: options.operationId } : {})
         }
-      });
-      if (spend) {
-        await tx.creditLedgerEntry.update({
-          where: { id: spend.id },
-          data: { projectId: options.projectId, generationJobId: job.id }
-        });
-      }
-      if (options.operationId) {
-        await tx.bookEditOperation.update({
-          where: { id: options.operationId },
-          data: {
-            generationJobId: job.id,
-            ledgerEntryId: spend?.id ?? null,
-            creditsCharged: amountCredits
+      }),
+    run: async ({ spend, registerQueuedJob }) => {
+      const transactionResult = await prisma.$transaction(async (tx) => {
+        const job = await enqueueGenerationJob({
+          projectId: options.projectId,
+          type: "REVISE_PLAN",
+          dedupeKey: `revise-plan:${options.projectId}:${options.planId}:${hashString(options.idempotencyKey)}`,
+          transaction: tx,
+          dispatch: false,
+          payload: {
+            planId: options.planId,
+            message: options.message,
+            ...(spend ? { billingLedgerEntryId: spend.id } : {}),
+            ...(options.operationId ? { editOperationId: options.operationId } : {})
           }
         });
+        if (spend) {
+          await tx.creditLedgerEntry.update({
+            where: { id: spend.id },
+            data: { projectId: options.projectId, generationJobId: job.id }
+          });
+        }
+        if (options.operationId) {
+          await tx.bookEditOperation.update({
+            where: { id: options.operationId },
+            data: {
+              generationJobId: job.id,
+              ledgerEntryId: spend?.id ?? null,
+              creditsCharged: amountCredits
+            }
+          });
+        }
+        await tx.project.update({ where: { id: options.projectId }, data: { status: "PLANNING" } });
+        return { job };
+      });
+      registerQueuedJob(transactionResult.job.id);
+      await dispatchGenerationJob(transactionResult.job.id);
+      return { job: transactionResult.job, ledgerEntry: spend };
+    },
+    onFailureWhenDead: async ({ jobWasQueued }) => {
+      if (!jobWasQueued) {
+        return;
       }
-      await tx.project.update({ where: { id: options.projectId }, data: { status: "PLANNING" } });
-      return { job };
-    });
-    queuedJobId = transactionResult.job.id;
-    await dispatchGenerationJob(queuedJobId);
-    return { job: transactionResult.job, ledgerEntry: spend };
-  } catch (error) {
-    // Once the transaction committed, the job row exists and the reconcilers
-    // will publish it — so the refund is only safe after the cancel provably
-    // claimed the row. A row that was already dispatched will run; the charge
-    // must stand then.
-    const jobProvablyDead = queuedJobId
-      ? await cancelUndispatchedGenerationJob(queuedJobId, "Plan revision could not be queued.").catch(() => false)
-      : true;
-    if (queuedJobId && jobProvablyDead) {
       // The committed transaction moved the project to PLANNING for a revision
       // that is now not coming; put it back the same way the worker's failure
       // path does (restoreProjectAfterFailedPlanRevision).
@@ -628,18 +688,7 @@ export async function queueChargedPlanRevision(options: {
         })
         .catch(() => ({ count: 0 }));
     }
-    const entryToRefund = spend ?? reservation;
-    if (entryToRefund && jobProvablyDead) {
-      await refundCreditLedgerEntry(entryToRefund.id, "Plan revision could not be queued.");
-    } else if (entryToRefund) {
-      console.error("Plan revision compensation kept the charge: the queued job could not be canceled", {
-        projectId: options.projectId,
-        generationJobId: queuedJobId,
-        ledgerEntryId: entryToRefund.id
-      });
-    }
-    throw error;
-  }
+  });
 }
 
 export async function hasOpenProjectWork(projectId: string): Promise<boolean> {
