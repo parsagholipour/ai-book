@@ -447,7 +447,7 @@ class _AuthorNameFieldState extends State<_AuthorNameField> {
           textInputAction: TextInputAction.done,
           decoration: InputDecoration(
             hintText: 'Whose name goes on the cover?',
-            helperText: 'Printed on the cover and the title page.',
+            helperText: 'Printed once on the book cover.',
             counterText: '',
             filled: true,
             fillColor: Theme.of(context).colorScheme.surface,

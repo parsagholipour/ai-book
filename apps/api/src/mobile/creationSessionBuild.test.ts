@@ -266,7 +266,7 @@ describe("mobile creation session project build", () => {
     const createCall = mockPrisma.project.create.mock.calls.at(0)?.[0] as { data: Record<string, any> };
 
     expect(response.statusCode).toBe(201);
-    // The structured field is what the cover and the title page are typeset from.
+    // The structured field is what the cover (or coverless fallback title page) is typeset from.
     expect(createCall.data.authorName).toBe("Parsa Gh.");
     // "Must include: … Parsa Gh." is what once made the planner write the
     // byline into the premise, and a premise reaches every page call.

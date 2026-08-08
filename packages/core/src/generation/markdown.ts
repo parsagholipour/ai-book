@@ -48,9 +48,9 @@ export type CompileMarkdownInput = {
   /** Replaces the word "Chapter" — "Part", "Episode". `undefined` keeps the localized default. */
   chapterHeadingLabel?: string | undefined;
   /**
-   * The byline. Present means the book gets a title page carrying the title,
-   * subtitle and author; absent leaves the front matter exactly as it was
-   * before title pages existed, so no authorless book changes on recompile.
+   * The byline. When the export has no cover, this gives it a fallback title
+   * page carrying the title, subtitle and author. A cover already typesets the
+   * same metadata, so covered books must not repeat it on a second page.
    *
    * Read it from the project row rather than a plan's frozen `inputSnapshot`:
    * that is the same source `coverMetadataFromProject` typesets the cover from,
@@ -173,9 +173,10 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
     presentation === "chapters" && chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels, heading) : "";
   const research = formatReaderFacingSources(input, pages);
   const coverImagePath = input.cover?.imagePath;
-  // A title page replaces the plain heading rather than joining it — printing
-  // `# Title` above a title page that says the same thing sets the title twice.
-  const titlePage = formatTitlePage(input, labels);
+  // The cover already carries the title, subtitle and byline. A title page is
+  // only the no-cover fallback; rendering both repeats the same front matter
+  // on the first two pages.
+  const titlePage = coverImagePath ? "" : formatTitlePage(input, labels);
 
   const markdown = [
     coverImagePath ? `![${sanitizeCoverAlt(input.cover?.imageAlt, labels)}](${coverImagePath})` : "",
@@ -396,16 +397,15 @@ function formatChapterHeading(chapter: DisplayChapter, heading: ChapterHeadingFo
  * premise reaches every single page call.
  */
 export const BYLINE_IS_TYPESET_RULE =
-  "The cover and the title page are typeset by the app from the project's title and author name. Never write the author's name, a byline, an attribution such as \"by <name>\", a dedication-style credit, or any other front matter into the premise, chapter titles, or page text; naming the author there prints it a second time inside the book.";
+  "The cover (or the fallback title page when there is no cover) is typeset by the app from the project's title and author name. Never write the author's name, a byline, an attribution such as \"by <name>\", a dedication-style credit, or any other front matter into the premise, chapter titles, or page text; naming the author there prints it a second time inside the book.";
 
 /**
- * The title page, or `""` for a book with no byline.
+ * The no-cover fallback title page, or `""` for a book with no byline.
  *
- * A cover already typesets the title and the author over the artwork, so this
- * is not what makes the name visible — it is what survives the cover being a
- * bundled design, an EPUB read in a reader that shows no cover, or a book with
- * no cover at all. Gating it on the author is what keeps every book written
- * before this from gaining a page on its next recompile.
+ * The caller suppresses this whenever a cover exists because the cover already
+ * typesets the same title, subtitle and author. Keeping the fallback here makes
+ * the byline visible for an exceptional coverless export without duplicating
+ * normal books' front matter.
  */
 function formatTitlePage(input: CompileMarkdownInput, labels: MarkdownLabels): string {
   const authorName = input.authorName?.trim();

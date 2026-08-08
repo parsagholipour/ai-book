@@ -220,8 +220,9 @@ export async function compileExport(job: Job) {
     // the plan's frozen snapshot: dropping the Sources list or restyling the
     // chapter headings is a live reader preference that only queues a recompile.
     // The byline reads from the row for the same reason, and because that is
-    // where `coverMetadataFromProject` typesets it from — the title page and
-    // the cover must never name different authors.
+    // where `coverMetadataFromProject` typesets it from. Covered books print
+    // the byline there; this value only feeds a title-page fallback when no
+    // cover exists.
     ...(project.authorName ? { authorName: project.authorName } : {}),
     includeSources: includeSourcesPreference(project.mediaSettings),
     chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
