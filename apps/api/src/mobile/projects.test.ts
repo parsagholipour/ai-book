@@ -230,6 +230,46 @@ describe("mobile project listing, detail and status", () => {
       url: "/api/mobile/projects/project-a/assets/image-cover"
     });
     expect(JSON.stringify(project)).not.toMatch(/temperature|generationStrategy|mediaSettings|cost|tokens/);
+    // Not a replan copy, so it names no origin.
+    expect(project.revisedFrom).toBeNull();
+    await app.close();
+  });
+
+  it("names the book a replan copy was rebuilt from, without the internal markers", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(
+      projectRecord({
+        id: "project-copy",
+        title: "Preview Book (revised)",
+        mediaSettings: {
+          mobile: {
+            bookType: "lead_magnet",
+            revisionOfProjectId: "project-a",
+            revisionOperationId: "operation-1",
+            revisionRequest: "Rebuild it in French",
+            revisionSource: "project_chat_book_replan",
+            revisionTargetLanguage: "fr"
+          }
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-copy",
+      headers: bearer("token-a")
+    });
+    const project = response.json().project;
+
+    expect(response.statusCode).toBe(200);
+    expect(project.revisedFrom).toEqual({
+      projectId: "project-a",
+      request: "Rebuild it in French",
+      targetLanguage: "fr"
+    });
+    // The operation linkage and source marker are server-side provenance.
+    expect(JSON.stringify(project)).not.toMatch(/operation-1|revisionSource/);
     await app.close();
   });
 

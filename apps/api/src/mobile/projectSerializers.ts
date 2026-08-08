@@ -22,6 +22,7 @@ import {
   type MobileProjectDetailDto,
   type MobileProjectImageDto,
   type MobileProjectRecord,
+  type MobileProjectRevisionOriginDto,
   type MobileProjectStatusDto,
   type MobileProjectSummaryDto,
   type MobileQueuedJobDto,
@@ -89,6 +90,7 @@ export async function serializeProjectSummary(
     imageCount,
     hasPlan: hasExistingPlan,
     source: projectSourceFromMediaSettings(project.mediaSettings),
+    revisedFrom: revisedFromMediaSettings(project.mediaSettings),
     coverImage: serializeImage(
       project.images?.find((image) => image.type === "COVER") ?? null,
       "cover",
@@ -657,6 +659,27 @@ export function mobileAssetFilenameFromPath(path: string, projectId: string): st
 export function projectSourceFromMediaSettings(mediaSettings: unknown): "imported" | "generated" {
   const mobile = jsonRecord(jsonRecord(mediaSettings).mobile);
   return Object.keys(jsonRecord(mobile.import)).length > 0 ? "imported" : "generated";
+}
+
+/**
+ * The backward pointer a replan copy carries to the book it was rebuilt from
+ * (`createReplanProjectCopy` writes it onto `mediaSettings.mobile`). The
+ * forward linkage lives on the source project's edit operation and chat
+ * thread; this is the only place the copy itself names its origin. The
+ * operation id and source marker stay server-side.
+ */
+export function revisedFromMediaSettings(mediaSettings: unknown): MobileProjectRevisionOriginDto | null {
+  const mobile = jsonRecord(jsonRecord(mediaSettings).mobile);
+  if (mobile.revisionSource !== "project_chat_book_replan") {
+    return null;
+  }
+  if (typeof mobile.revisionOfProjectId !== "string" || !mobile.revisionOfProjectId) {
+    return null;
+  }
+  const request = typeof mobile.revisionRequest === "string" && mobile.revisionRequest.trim() ? mobile.revisionRequest.trim() : null;
+  const targetLanguage =
+    typeof mobile.revisionTargetLanguage === "string" && mobile.revisionTargetLanguage ? mobile.revisionTargetLanguage : null;
+  return { projectId: mobile.revisionOfProjectId, request, targetLanguage };
 }
 
 /**

@@ -9,7 +9,7 @@ import {
   type MobilePageCountMode,
   type MobilePageCountSource
 } from "../mobileCreation.js";
-import { buildProjectStatus, type ProjectQualityStatus } from "../projectStatus.js";
+import { type ProjectQualityStatus } from "../projectStatus.js";
 import { type ProjectExportFormat } from "../routes/projects.js";
 import {
   mobileBookTypeSchema,
@@ -17,7 +17,7 @@ import {
   mobileLengthPresetSchema,
   mobileQualityPresetSchema
 } from "./schemas.js";
-import { type CoverArtSource, type CreateProjectInput, type CreditPricing, type PlanTier } from "@book-maker/core";
+import { type CoverArtSource, type CreditPricing, type PlanTier } from "@book-maker/core";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
 import { z } from "zod";
 
@@ -80,6 +80,8 @@ export type MobileProjectSummaryDto = {
   hasPlan: boolean;
   /** "imported" for books brought in by the author, "generated" otherwise. */
   source: "imported" | "generated";
+  /** Set on a copy created by a chat "rebuild the book" request; null otherwise. */
+  revisedFrom: MobileProjectRevisionOriginDto | null;
   /**
    * Cover art, when the project has one. Present on summaries so the mobile
    * library can render a real bookshelf instead of placeholder tiles; null
@@ -97,6 +99,15 @@ export type MobileProjectDetailDto = MobileProjectSummaryDto & {
   plan: MobilePlanDto | null;
   pages: MobileProjectPageDto[];
   quality: ProjectQualityStatus;
+};
+
+/** Where a replan copy came from: the book it was rebuilt from and the request that asked. */
+export type MobileProjectRevisionOriginDto = {
+  /** The source project; it may since have been deleted. */
+  projectId: string;
+  /** The chat request that asked for the rebuild, as the reader typed it. */
+  request: string | null;
+  targetLanguage: string | null;
 };
 
 export type MobileProjectCreateResponseDto = {
@@ -553,149 +564,20 @@ export type MobileAudiobookProgressDto = {
   chapterCount: number;
 };
 
-export type MobileMediaMetadata = {
-  [key: string]: MobileJsonValue;
-  bookType: MobileBookType | "custom";
-  bookTypeChoice: MobileBookTypeChoice;
-  lengthPreset: MobileLengthPreset | "custom";
-  qualityPreset: MobileQualityPreset;
-  /** Compatibility aggregate: coverEnabled || illustrationsEnabled. */
-  imagesEnabled: boolean;
-  coverEnabled: boolean;
-  illustrationsEnabled: boolean;
-  pageCountMode: MobilePageCountMode;
-  targetPages: number;
-  pageCountSource: MobilePageCountSource;
-};
-
-export type MobileCreateProjectInput = CreateProjectInput & {
-  mediaSettings: CreateProjectInput["mediaSettings"] & {
-    mobile: MobileMediaMetadata;
-  };
-};
-
-export type MobileProjectRecord = {
-  id: string;
-  userId?: string;
-  title: string;
-  subtitle: string | null;
-  authorName: string | null;
-  coverTagline: string | null;
-  prompt: string;
-  category: string;
-  subcategory: string | null;
-  targetPages: number;
-  complexity: number;
-  temperature: number;
-  language: string;
-  mediaSettings: unknown;
-  status: string;
-  contentRevision: number;
-  templateId?: string | null;
-  currentPlanId: string | null;
-  currentPlan?: MobilePlanRecord | null;
-  pages?: MobilePageRecord[];
-  images?: MobileImageRecord[];
-  _count?: {
-    pages?: number;
-    images?: number;
-    jobs?: number;
-  };
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type MobileCreationOutputRecord = {
-  id: string;
-  draftId: string;
-  projectId: string;
-  requestId?: string | null;
-  title: string;
-  sequence: number;
-  createdAt: Date;
-  updatedAt: Date;
-  project?: { title: string; updatedAt?: Date } | null;
-};
-
-export type MobilePlanRecord = {
-  id: string;
-  projectId: string;
-  version: number;
-  status: string;
-  planningPackage: unknown;
-  approvedAt: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export type MobilePageRecord = {
-  id: string;
-  index: number;
-  title: string;
-  markdown: string;
-  summary: string;
-  status: string;
-  imageFailureReason?: string | null;
-  images?: MobileImageRecord[];
-};
-
-export type MobileImageRecord = {
-  id: string;
-  projectId: string;
-  pageId: string | null;
-  type: string;
-  path: string;
-  metadata: unknown;
-};
-
-export type MobileProjectChatMessageRecord = {
-  id: string;
-  projectId: string;
-  requestId?: string | null;
-  parentId?: string | null;
-  role: string;
-  content: string;
-  operationId: string | null;
-  metadata: unknown;
-  isActiveChild?: boolean;
-  createdAt: Date;
-};
-
-export type MobileBookEditOperationRecord = {
-  id: string;
-  projectId: string;
-  requestId?: string | null;
-  userMessageId?: string | null;
-  assistantMessageId?: string | null;
-  generationJobId?: string | null;
-  ledgerEntryId?: string | null;
-  kind: string;
-  status: string;
-  request?: string;
-  classifier?: unknown;
-  affectedPageIndexes: number[];
-  creditsCharged: number;
-  automaticRetryCount?: number;
-  automaticRetryLimit?: number;
-  nextRetryAt?: Date | null;
-  lastRetryAt?: Date | null;
-  lastRetryReason?: string | null;
-  retryRequestId?: string | null;
-  error?: string | null;
-  generationJob?: { id: string; status: string } | null;
-  /**
-   * The credit entry this operation spent against, when the query asked for it.
-   * A reserved entry is refunded in place (`REFUNDED`); a settled one is
-   * reversed by a separate entry, which is what `reversedByEntry` catches.
-   */
-  ledgerEntry?: { status: string; reversedByEntry?: { id: string } | null } | null;
-  /** Present when the query asked for it; how many pages this edit snapshotted. */
-  _count?: { snapshots: number };
-  createdAt: Date;
-  appliedAt: Date | null;
-};
-
-export type ProjectStatusResult = NonNullable<Awaited<ReturnType<typeof buildProjectStatus>>>;
+// The Prisma row shapes these DTOs are built from live in ./recordTypes.ts;
+// re-exported here so every consumer keeps one import surface.
+export type {
+  MobileBookEditOperationRecord,
+  MobileCreateProjectInput,
+  MobileCreationOutputRecord,
+  MobileImageRecord,
+  MobileMediaMetadata,
+  MobilePageRecord,
+  MobilePlanRecord,
+  MobileProjectChatMessageRecord,
+  MobileProjectRecord,
+  ProjectStatusResult
+} from "./recordTypes.js";
 
 export type MobileBillingDto = {
   credits: {

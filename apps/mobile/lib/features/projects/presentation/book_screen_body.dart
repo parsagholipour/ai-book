@@ -202,6 +202,16 @@ class BookHeaderCard extends StatelessWidget {
 
   final MobileProjectDetail project;
 
+  /// A replan copy says what it is; the original book stays untouched, so the
+  /// request is the one piece of context the copy carries with it.
+  static String _rebuiltFromLabel(MobileProjectRevisionOrigin origin) {
+    final request = origin.request?.trim();
+    if (request == null || request.isEmpty) {
+      return 'Rebuilt from an earlier book.';
+    }
+    return 'Rebuilt from an earlier book — “$request”';
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
@@ -250,6 +260,29 @@ class BookHeaderCard extends StatelessWidget {
                           color: colors.onSurfaceVariant,
                         ),
                       ),
+                      if (project.revisedFrom != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.history_outlined,
+                              size: 16,
+                              color: colors.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _rebuiltFromLabel(project.revisedFrom!),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: colors.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

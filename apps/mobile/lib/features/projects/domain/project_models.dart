@@ -52,6 +52,7 @@ class MobileProjectSummary {
     this.subtitle,
     this.authorName,
     this.source = 'generated',
+    this.revisedFrom,
     this.coverImage,
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
        illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
@@ -69,6 +70,10 @@ class MobileProjectSummary {
 
   /// "imported" for books the author uploaded, "generated" otherwise.
   final String source;
+
+  /// Set when this book is a copy a chat "rebuild the book" request created;
+  /// names the book it was rebuilt from.
+  final MobileProjectRevisionOrigin? revisedFrom;
   final String bookType;
   final String lengthPreset;
   final String qualityPreset;
@@ -127,6 +132,11 @@ class MobileProjectSummary {
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       source: json['source'] as String? ?? 'generated',
+      revisedFrom: json['revisedFrom'] == null
+          ? null
+          : MobileProjectRevisionOrigin.fromJson(
+              json['revisedFrom'] as Map<String, dynamic>,
+            ),
       coverImage: parseProjectCoverImage(json),
     );
   }
@@ -192,6 +202,7 @@ class MobileProjectDetail extends MobileProjectSummary {
     super.subtitle,
     super.authorName,
     super.source,
+    super.revisedFrom,
     super.coverImage,
     this.plan,
     this.quality = const MobileProjectQuality.pending(),
@@ -234,6 +245,11 @@ class MobileProjectDetail extends MobileProjectSummary {
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
       source: json['source'] as String? ?? 'generated',
+      revisedFrom: json['revisedFrom'] == null
+          ? null
+          : MobileProjectRevisionOrigin.fromJson(
+              json['revisedFrom'] as Map<String, dynamic>,
+            ),
       prompt: json['prompt'] as String,
       language: json['language'] as String,
       plan: plan == null
@@ -248,6 +264,29 @@ class MobileProjectDetail extends MobileProjectSummary {
       quality: MobileProjectQuality.fromJson(
         (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
+    );
+  }
+}
+
+/// Where a replan copy came from: the book it was rebuilt from and the chat
+/// request that asked for the rebuild. The source project may since have been
+/// deleted, so [projectId] is a name, not a promise the book still exists.
+class MobileProjectRevisionOrigin {
+  const MobileProjectRevisionOrigin({
+    required this.projectId,
+    this.request,
+    this.targetLanguage,
+  });
+
+  final String projectId;
+  final String? request;
+  final String? targetLanguage;
+
+  factory MobileProjectRevisionOrigin.fromJson(Map<String, dynamic> json) {
+    return MobileProjectRevisionOrigin(
+      projectId: json['projectId'] as String,
+      request: json['request'] as String?,
+      targetLanguage: json['targetLanguage'] as String?,
     );
   }
 }

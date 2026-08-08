@@ -130,6 +130,40 @@ void main() {
     expect(find.text('Read in Tomeza'), findsOneWidget);
     expect(find.text('Book plan'), findsOneWidget);
   });
+
+  testWidgets('a replan copy names the book it was rebuilt from', (
+    tester,
+  ) async {
+    await _useTallSurface(tester);
+
+    await tester.pumpWidget(
+      _app(
+        BookScreenBody(
+          project: _project(
+            status: 'generating',
+            plan: _plan(approved: true),
+            revisedFrom: const MobileProjectRevisionOrigin(
+              projectId: 'project-source',
+              request: 'Rebuild it in French',
+            ),
+          ),
+          status: _status(status: 'generating', progressPercent: 38),
+          billing: _billing,
+          revisionController: TextEditingController(),
+          onRefresh: () async {},
+          onOpen: (_) async {},
+          onDownload: (_) async {},
+          onOpenPaywall: (_) async {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.text('Rebuilt from an earlier book — “Rebuild it in French”'),
+      findsOneWidget,
+    );
+  });
 }
 
 /// The page is one scrolling list, and the default test viewport cuts it off
@@ -164,8 +198,10 @@ MobileProjectDetail _project({
   required String status,
   MobilePlan? plan,
   List<MobileProjectPage> pages = const [],
+  MobileProjectRevisionOrigin? revisedFrom,
 }) {
   return MobileProjectDetail(
+    revisedFrom: revisedFrom,
     id: 'project-1',
     title: 'Launch Course Workbook',
     bookType: 'workbook',

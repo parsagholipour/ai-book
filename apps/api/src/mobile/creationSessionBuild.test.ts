@@ -364,6 +364,7 @@ describe("mobile creation session project build", () => {
         "promptPreview",
         "quality",
         "qualityPreset",
+        "revisedFrom",
         "source",
         "status",
         "statusLabel",
