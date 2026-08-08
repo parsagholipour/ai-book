@@ -1,8 +1,14 @@
 import { Job, type JobsOptions } from "bullmq";
 import { createHash } from "node:crypto";
-import { coverArtSourceFor, resolveBookGenerationStrategy, type CreateProjectInput } from "@book-maker/core";
+import {
+  coverArtSourceFor,
+  dispatchBackoffMs,
+  resolveBookGenerationStrategy,
+  retryJobOptions,
+  workerJobNameForType,
+  type CreateProjectInput
+} from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { retryJobOptions } from "./jobRetryPolicy.js";
 import { acceptedSavedPageTarget, terminalSavedPageCount } from "../generation/wholeBookTolerance.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { config } from "./config.js";
@@ -18,9 +24,7 @@ import { errorMessage, jsonPayloadToRecord } from "./serialization.js";
  * strand a book mid-generation.
  */
 
-/** Backoff bounds for re-dispatching jobs that failed to reach Redis. */
-const DISPATCH_BACKOFF_BASE_MS = 5_000;
-const DISPATCH_BACKOFF_MAX_MS = 5 * 60_000;
+export { dispatchBackoffMs, workerJobNameForType } from "@book-maker/core";
 
 export async function enqueueWorkerJob(options: {
   projectId: string;
@@ -160,29 +164,6 @@ export async function reconcileUndispatchedWorkerJobs(limit = 50): Promise<numbe
   return jobs.length;
 }
 
-export function workerJobNameForType(type: string): string {
-  const names: Record<string, string> = {
-    PLAN_BOOK: "plan-book",
-    REVISE_PLAN: "revise-plan",
-    GENERATE_BOOK: "generate-book",
-    GENERATE_PAGE: "generate-page",
-    GENERATE_IMAGE: "generate-image",
-    COMPILE_EXPORT: "compile-export",
-    APPLY_BOOK_EDIT: "apply-book-edit",
-    REPLAN_BOOK: "replan-book",
-    PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
-    BUILD_CHARACTER_PERSONA: "build-character-persona",
-    IMPORT_BOOK: "import-book",
-    CONTINUE_BOOK: "continue-book",
-    GENERATE_AUDIOBOOK: "generate-audiobook"
-  };
-  const name = names[type];
-  if (!name) {
-    throw new Error(`Unknown generation job type: ${type}`);
-  }
-  return name;
-}
-
 export async function canEnqueueProjectWork(projectId: string): Promise<boolean> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -193,10 +174,6 @@ export async function canEnqueueProjectWork(projectId: string): Promise<boolean>
 
 export function jobOptionsForName(name: string): JobsOptions | undefined {
   return retryJobOptions(name);
-}
-
-export function dispatchBackoffMs(attempt: number): number {
-  return Math.min(DISPATCH_BACKOFF_MAX_MS, DISPATCH_BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1));
 }
 
 export async function maybeEnqueueCover(projectId: string, planId: string, input: CreateProjectInput): Promise<boolean> {

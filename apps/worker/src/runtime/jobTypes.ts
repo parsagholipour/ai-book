@@ -1,4 +1,4 @@
-import type { ChapterBrief, ChapterPlan, PageDraft } from "@book-maker/core";
+import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE, type ChapterBrief, type ChapterPlan, type PageDraft } from "@book-maker/core";
 
 /**
  * Job-shaped types and stop-signalling shared by the worker runtime and every
@@ -6,8 +6,7 @@ import type { ChapterBrief, ChapterPlan, PageDraft } from "@book-maker/core";
  * without pulling in the queue or provider stack.
  */
 
-export const STOPPED_JOB_MESSAGE = "Stopped";
-export const STOPPED_JOB_ERROR = "Stopped by user";
+export { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE };
 
 /**
  * Thrown when a user stops a generation mid-flight. The worker translates this

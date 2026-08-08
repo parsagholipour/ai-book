@@ -1,5 +1,11 @@
 import type { Job } from "bullmq";
-import { isRecoverableNetworkError, workerJobControlsProjectStatus, type JobStep } from "@book-maker/core";
+import {
+  isRecoverableNetworkError,
+  shouldBypassConfiguredRetries as retryPolicyShouldBypass,
+  shouldRecoverJobAttempt as retryPolicyShouldRecover,
+  workerJobControlsProjectStatus,
+  type JobStep
+} from "@book-maker/core";
 import { Prisma, planRevisionRetryDelayMs, prisma } from "@book-maker/db";
 import {
   refundCreditLedgerEntry,
@@ -7,10 +13,6 @@ import {
   releaseManuscriptImportUse
 } from "@book-maker/db/billing";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
-import {
-  shouldBypassConfiguredRetries as retryPolicyShouldBypass,
-  shouldRecoverJobAttempt as retryPolicyShouldRecover
-} from "./jobRetryPolicy.js";
 import { staleGenerationTargetReason } from "./staleJobGuard.js";
 import {
   STOPPED_JOB_ERROR,

@@ -70,9 +70,4 @@ export function range(start: number, end: number): number[] {
 }
 
 /** Narrows a Prisma JSON column to a plain object, defaulting to `{}`. */
-export function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return {};
-  }
-  return payload as Record<string, unknown>;
-}
+export { jsonPayloadToRecord } from "@book-maker/core";

@@ -22,7 +22,10 @@ vi.mock("ioredis", () => ({
   }
 }));
 
-vi.mock("@book-maker/core", () => ({ loadConfig: () => ({ REDIS_URL: "redis://test" }) }));
+vi.mock("@book-maker/core", async () => {
+  const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+  return { ...actual, loadConfig: () => ({ REDIS_URL: "redis://test" }) };
+});
 vi.mock("@book-maker/db", () => ({
   Prisma: { JsonNull: null },
   prisma: {

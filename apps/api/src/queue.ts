@@ -1,8 +1,22 @@
 import { Queue, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
-import { loadConfig } from "@book-maker/core";
+import {
+  STOPPED_JOB_ERROR,
+  STOPPED_JOB_MESSAGE,
+  dispatchBackoffMs,
+  jobNames,
+  jsonPayloadToRecord,
+  loadConfig,
+  retryJobOptions,
+  type GenerationJobType
+} from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { refundLatestProjectOperationCredits } from "@book-maker/db/billing";
+
+// The job-name table, retry budgets, backoff, and stop constants are shared
+// with the worker through @book-maker/core/jobDispatch — one definition on
+// both sides of the queue.
+export { jobNames, type GenerationJobType };
 
 export const BOOK_QUEUE_NAME = "book-maker";
 
@@ -15,43 +29,6 @@ export const redisConnection = new Redis(config.REDIS_URL, {
 export const bookQueue = new Queue(BOOK_QUEUE_NAME, {
   connection: redisConnection
 });
-
-const GENERATE_PAGE_RECOVERY_ATTEMPTS = 4;
-// generate-book jobs resume from settled pages on retry (see the worker's
-// directGenerationResume.ts), so one automatic retry recovers a network blip
-// without regenerating finished work. Keep in sync with the worker's
-// jobRetryPolicy.ts.
-const GENERATE_BOOK_RECOVERY_ATTEMPTS = 2;
-// generate-audiobook resumes from the chapters already marked READY, and it is
-// the job most exposed to a per-minute speech quota. Same file to keep in sync.
-const GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS = 3;
-const GENERATE_PAGE_RECOVERY_BACKOFF_MS = 15_000;
-const DISPATCH_BACKOFF_BASE_MS = 5_000;
-const DISPATCH_BACKOFF_MAX_MS = 5 * 60_000;
-const STOPPED_JOB_MESSAGE = "Stopped";
-const STOPPED_JOB_ERROR = "Stopped by user";
-
-// Every job the worker's dispatch switch actually handles — keep in sync with
-// `workerJobNameForType` in apps/worker/src/runtime/dispatch.ts. The Prisma
-// enum's RESEARCH is deliberately absent: nothing writes it and the worker
-// rejects it, so naming it here let the API dispatch a job that could only die.
-export const jobNames = {
-  PLAN_BOOK: "plan-book",
-  REVISE_PLAN: "revise-plan",
-  GENERATE_BOOK: "generate-book",
-  GENERATE_PAGE: "generate-page",
-  GENERATE_IMAGE: "generate-image",
-  COMPILE_EXPORT: "compile-export",
-  APPLY_BOOK_EDIT: "apply-book-edit",
-  REPLAN_BOOK: "replan-book",
-  PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
-  BUILD_CHARACTER_PERSONA: "build-character-persona",
-  IMPORT_BOOK: "import-book",
-  CONTINUE_BOOK: "continue-book",
-  GENERATE_AUDIOBOOK: "generate-audiobook"
-} as const;
-
-export type GenerationJobType = keyof typeof jobNames;
 
 type RequeueableGenerationJob = {
   id: string;
@@ -315,34 +292,6 @@ export async function closeQueue() {
   redisConnection.disconnect();
 }
 
-function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return {};
-  }
-  return payload as Record<string, unknown>;
-}
-
 function jobOptionsForType(type: GenerationJobType): JobsOptions | undefined {
-  const attempts =
-    type === "GENERATE_PAGE"
-      ? GENERATE_PAGE_RECOVERY_ATTEMPTS
-      : type === "GENERATE_BOOK"
-        ? GENERATE_BOOK_RECOVERY_ATTEMPTS
-        : type === "GENERATE_AUDIOBOOK"
-          ? GENERATE_AUDIOBOOK_RECOVERY_ATTEMPTS
-          : undefined;
-  if (attempts === undefined) {
-    return undefined;
-  }
-  return {
-    attempts,
-    backoff: {
-      type: "exponential",
-      delay: GENERATE_PAGE_RECOVERY_BACKOFF_MS
-    }
-  };
-}
-
-function dispatchBackoffMs(attempt: number): number {
-  return Math.min(DISPATCH_BACKOFF_MAX_MS, DISPATCH_BACKOFF_BASE_MS * 2 ** Math.max(0, attempt - 1));
+  return retryJobOptions(jobNames[type]);
 }

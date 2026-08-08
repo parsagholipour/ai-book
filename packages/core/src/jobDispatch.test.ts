@@ -1,14 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
+  dispatchBackoffMs,
+  jobNames,
+  jsonPayloadToRecord,
   retryJobOptions,
   shouldBypassConfiguredRetries,
-  shouldRecoverJobAttempt
-} from "./jobRetryPolicy.js";
+  shouldRecoverJobAttempt,
+  workerJobNameForType
+} from "./jobDispatch.js";
+
+describe("worker job names", () => {
+  it("maps every dispatchable JobType and rejects unknown ones", () => {
+    for (const [type, name] of Object.entries(jobNames)) {
+      expect(workerJobNameForType(type)).toBe(name);
+    }
+    // RESEARCH exists in the Prisma enum but nothing handles it; naming it
+    // would let the API dispatch a job that could only die.
+    expect(() => workerJobNameForType("RESEARCH")).toThrow(/Unknown generation job type/);
+  });
+});
 
 describe("job retry policy", () => {
   it("gives generate-page and generate-book retry budgets and leaves other jobs one-shot", () => {
     expect(retryJobOptions("generate-page")).toMatchObject({ attempts: 4 });
     expect(retryJobOptions("generate-book")).toMatchObject({ attempts: 2 });
+    expect(retryJobOptions("generate-audiobook")).toMatchObject({ attempts: 3 });
     expect(retryJobOptions("compile-export")).toBeUndefined();
     expect(retryJobOptions("plan-book")).toBeUndefined();
   });
@@ -47,5 +63,22 @@ describe("job retry policy", () => {
     expect(
       shouldBypassConfiguredRetries({ jobName: "plan-book", attemptsMade: 0, maxAttempts: 1, recoverableNetworkError: false })
     ).toBe(false);
+  });
+});
+
+describe("dispatch backoff", () => {
+  it("doubles from 5s and caps at 5 minutes", () => {
+    expect(dispatchBackoffMs(1)).toBe(5_000);
+    expect(dispatchBackoffMs(2)).toBe(10_000);
+    expect(dispatchBackoffMs(7)).toBe(300_000);
+  });
+});
+
+describe("jsonPayloadToRecord", () => {
+  it("keeps records and turns everything else into an empty one", () => {
+    expect(jsonPayloadToRecord({ planId: "plan-1" })).toEqual({ planId: "plan-1" });
+    expect(jsonPayloadToRecord(null)).toEqual({});
+    expect(jsonPayloadToRecord([1, 2])).toEqual({});
+    expect(jsonPayloadToRecord("nope")).toEqual({});
   });
 });
