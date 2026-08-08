@@ -42,6 +42,131 @@ export function bestDraftCandidate(best: DraftCandidate, candidate: DraftCandida
   return candidate.report.score > best.report.score ? candidate : best;
 }
 
+export type PageQualityLoopOutcome = {
+  approved: boolean;
+  /** The draft to keep: the approved one, or the best-scoring failure. */
+  draft: PageDraft;
+  report: PageQualityReport;
+  /** The kept draft's candidate number (the best candidate's when not approved). */
+  revision: number;
+  /** Total candidates/attempts consumed, whichever draft was kept. */
+  attempts: number;
+};
+
+/**
+ * The one score → revise → re-score loop behind every page review: the
+ * generate-page handler, the direct passes' per-page review, and the final-QA
+ * repair in compile-export.
+ *
+ * The counting base is the caller's: the page loops count *candidates* from
+ * the original draft (`maxCandidates` = MAX_PAGE_QA_CANDIDATES), while final
+ * QA counts *attempts* from the first rewrite — one later — which is why it
+ * passes `recoveryRevision: PAGE_QA_RECOVERY_CANDIDATE - 1`. Both enter
+ * recovery mode at the third rewrite; collapsing the two numbers into one
+ * constant silently delays that by a rewrite.
+ */
+export async function runPageQualityLoop(options: {
+  strategy: BookGenerationStrategy;
+  input: CreateProjectInput;
+  plan: BookPlan;
+  chapter?: ChapterPlan | undefined;
+  chapterBrief?: ChapterBrief | undefined;
+  pageBrief?: PageProductionBeat | undefined;
+  chapterPageStart?: number | undefined;
+  chapterPageEnd?: number | undefined;
+  chapterId?: string | null | undefined;
+  pageIndex: number;
+  draft: PageDraft;
+  /** The initial draft's review, produced by the caller. */
+  report: PageQualityReport;
+  previousPages: PriorPageContext[];
+  continuityNotes: string[];
+  textModel: TextModelAdapter;
+  generationJobId?: string | undefined;
+  maxCandidates: number;
+  recoveryRevision?: number | undefined;
+  /** Page loops repair a drifted page brief at the recovery candidate; final QA does not. */
+  repairBrief?: boolean | undefined;
+  reviseContext: string;
+  reviseProgress?: number | undefined;
+  /** Per-rewrite progress reporting, in the caller's own style. */
+  onRewrite?: ((revision: number) => Promise<void>) | undefined;
+}): Promise<PageQualityLoopOutcome> {
+  let draft = options.draft;
+  let report = options.report;
+  let pageBrief = options.pageBrief;
+  let revision = 1;
+  let best: DraftCandidate = { draft, revision, report };
+
+  while (!report.approved && revision < options.maxCandidates) {
+    const nextRevision = revision + 1;
+    await options.onRewrite?.(nextRevision);
+    if (options.repairBrief && shouldRepairPageBriefForRecovery(nextRevision, report, pageBrief)) {
+      pageBrief = await repairPageBriefForRecovery({
+        strategy: options.strategy,
+        input: options.input,
+        plan: options.plan,
+        chapter: options.chapter,
+        chapterBrief: options.chapterBrief,
+        chapterPageStart: options.chapterPageStart,
+        chapterPageEnd: options.chapterPageEnd,
+        chapterId: options.chapterId,
+        pageBrief,
+        pageIndex: options.pageIndex,
+        draft,
+        qualityReport: report,
+        previousPages: options.previousPages,
+        continuityNotes: options.continuityNotes,
+        textModel: options.textModel,
+        generationJobId: options.generationJobId,
+        context: options.reviseContext
+      });
+    }
+    draft = await revisePageDraftWithRestart({
+      strategy: options.strategy,
+      generationJobId: options.generationJobId,
+      ...(options.reviseProgress !== undefined ? { progress: options.reviseProgress } : {}),
+      context: options.reviseContext,
+      reviseOptions: {
+        input: options.input,
+        plan: options.plan,
+        chapter: options.chapter,
+        chapterBrief: options.chapterBrief,
+        pageBrief,
+        chapterPageStart: options.chapterPageStart,
+        chapterPageEnd: options.chapterPageEnd,
+        pageIndex: options.pageIndex,
+        draft,
+        report: pageRewriteReport(report, nextRevision, options.recoveryRevision ?? PAGE_QA_RECOVERY_CANDIDATE),
+        previousPages: options.previousPages,
+        continuityNotes: options.continuityNotes,
+        textModel: options.textModel
+      }
+    });
+    revision = nextRevision;
+    report = await options.strategy.reviewPageDraft({
+      input: options.input,
+      plan: options.plan,
+      chapter: options.chapter,
+      chapterBrief: options.chapterBrief,
+      pageBrief,
+      chapterPageStart: options.chapterPageStart,
+      chapterPageEnd: options.chapterPageEnd,
+      pageIndex: options.pageIndex,
+      draft,
+      previousPages: options.previousPages,
+      continuityNotes: options.continuityNotes,
+      textModel: options.textModel
+    });
+    best = bestDraftCandidate(best, { draft, revision, report });
+  }
+
+  if (report.approved) {
+    return { approved: true, draft, report, revision, attempts: revision };
+  }
+  return { approved: false, draft: best.draft, report: best.report, revision: best.revision, attempts: revision };
+}
+
 export async function reviewAndSaveGeneratedPage(options: {
   projectId: string;
   planId: string;
@@ -58,11 +183,9 @@ export async function reviewAndSaveGeneratedPage(options: {
   previousPages: PriorPageContext[];
   generationJobId?: string | undefined;
 }): Promise<PriorPageContext> {
-  let pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
+  const pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
   const continuityNotes = await loadContinuityNotes(options.projectId);
-  let revision = 1;
-  let draft: PageDraft = options.draft;
-  let qualityReport = await options.strategy.reviewPageDraft({
+  const initialReport = await options.strategy.reviewPageDraft({
     input: options.input,
     plan: options.plan,
     chapter: options.chapter,
@@ -71,84 +194,43 @@ export async function reviewAndSaveGeneratedPage(options: {
     chapterPageStart: options.chapterPageStart,
     chapterPageEnd: options.chapterPageEnd,
     pageIndex: options.draft.index,
-    draft,
+    draft: options.draft,
     previousPages: options.previousPages,
     continuityNotes,
     textModel: options.providers.text
   });
-  let best = { draft, revision, report: qualityReport };
 
-  while (!qualityReport.approved && revision < MAX_PAGE_QA_CANDIDATES) {
-    const nextRevision = revision + 1;
-    await updateJobProgress(options.generationJobId, {
-      message: pageRevisionMessage(options.draft.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
-    });
-    if (shouldRepairPageBriefForRecovery(nextRevision, qualityReport, pageBrief)) {
-      pageBrief = await repairPageBriefForRecovery({
-        strategy: options.strategy,
-        input: options.input,
-        plan: options.plan,
-        chapter: options.chapter,
-        chapterBrief: options.chapterBrief,
-        chapterPageStart: options.chapterPageStart,
-        chapterPageEnd: options.chapterPageEnd,
-        chapterId: options.chapterId,
-        pageBrief,
-        pageIndex: options.draft.index,
-        draft,
-        qualityReport,
-        previousPages: options.previousPages,
-        continuityNotes,
-        textModel: options.providers.text,
-        generationJobId: options.generationJobId,
-        context: `Page ${options.draft.index}`
-      });
-    }
-    draft = await revisePageDraftWithRestart({
-      strategy: options.strategy,
-      generationJobId: options.generationJobId,
-      context: `Page ${options.draft.index}`,
-      reviseOptions: {
-        input: options.input,
-        plan: options.plan,
-        chapter: options.chapter,
-        chapterBrief: options.chapterBrief,
-        pageBrief,
-        chapterPageStart: options.chapterPageStart,
-        chapterPageEnd: options.chapterPageEnd,
-        pageIndex: options.draft.index,
-        draft,
-        report: pageRewriteReport(qualityReport, nextRevision),
-        previousPages: options.previousPages,
-        continuityNotes,
-        textModel: options.providers.text
-      }
-    });
-    revision = nextRevision;
-    qualityReport = await options.strategy.reviewPageDraft({
-      input: options.input,
-      plan: options.plan,
-      chapter: options.chapter,
-      chapterBrief: options.chapterBrief,
-      pageBrief,
-      chapterPageStart: options.chapterPageStart,
-      chapterPageEnd: options.chapterPageEnd,
-      pageIndex: options.draft.index,
-      draft,
-      previousPages: options.previousPages,
-      continuityNotes,
-      textModel: options.providers.text
-    });
-    best = bestDraftCandidate(best, { draft, revision, report: qualityReport });
-  }
+  const outcome = await runPageQualityLoop({
+    strategy: options.strategy,
+    input: options.input,
+    plan: options.plan,
+    chapter: options.chapter,
+    chapterBrief: options.chapterBrief,
+    pageBrief,
+    chapterPageStart: options.chapterPageStart,
+    chapterPageEnd: options.chapterPageEnd,
+    chapterId: options.chapterId,
+    pageIndex: options.draft.index,
+    draft: options.draft,
+    report: initialReport,
+    previousPages: options.previousPages,
+    continuityNotes,
+    textModel: options.providers.text,
+    generationJobId: options.generationJobId,
+    maxCandidates: MAX_PAGE_QA_CANDIDATES,
+    repairBrief: true,
+    reviseContext: `Page ${options.draft.index}`,
+    onRewrite: (nextRevision) =>
+      updateJobProgress(options.generationJobId, {
+        message: pageRevisionMessage(options.draft.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
+      })
+  });
+  const { draft, revision, report: qualityReport } = outcome;
 
   if (!qualityReport.approved) {
     // Page-level failure isolation: keep the best draft with its honest
     // report, flag the page, and let the rest of the book continue. The
     // compile-time final review repairs FAILED_QA pages before export.
-    draft = best.draft;
-    revision = best.revision;
-    qualityReport = best.report;
     await updateJobProgress(options.generationJobId, {
       message: `Page ${options.draft.index} kept its best draft but failed quality review; the final review will repair it. ${formatQualityFailure(options.draft.index, qualityReport)}`
     });

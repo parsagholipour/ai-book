@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
     generationJob: { update: vi.fn() }
   },
   revisePageDraftWithRestart: vi.fn(),
-  pageRewriteReport: vi.fn(),
   pageReportFromFinalQa: vi.fn(),
   loadPagesForExport: vi.fn(),
   storeEmbedding: vi.fn(),
@@ -39,8 +38,10 @@ vi.mock("../generation/bookHelpers.js", () => ({
 vi.mock("../generation/pageReview.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/pageReview.js")>("../generation/pageReview.js");
   return {
-    bestDraftCandidate: actual.bestDraftCandidate,
-    pageRewriteReport: mocks.pageRewriteReport,
+    // The loop is the real one — the merge target this suite characterizes.
+    // Only the initial rewrite helper is mocked; loop rewrites go through the
+    // strategy's revisePageDraft.
+    runPageQualityLoop: actual.runPageQualityLoop,
     revisePageDraftWithRestart: mocks.revisePageDraftWithRestart
   };
 });
@@ -55,7 +56,7 @@ import {
   repairPagesFromFinalQa,
   runBoundedChapterQualityReview
 } from "./compileExport.js";
-import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
+import { MAX_FINAL_QA_REVISIONS_PER_PAGE } from "../generation/tuning.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 
 const report = (score: number, approved = false): PageQualityReport =>
@@ -87,7 +88,7 @@ const finalQa = (repairPageIndexes: number[]): FinalBookQa =>
   ({ approved: repairPageIndexes.length === 0, issues: [], repairPageIndexes }) as unknown as FinalBookQa;
 
 describe("repairPagesFromFinalQa", () => {
-  const strategy = { reviewPageDraft: vi.fn() };
+  const strategy = { reviewPageDraft: vi.fn(), revisePageDraft: vi.fn() };
 
   const baseOptions = (overrides: Record<string, unknown> = {}) =>
     ({
@@ -106,7 +107,6 @@ describe("repairPagesFromFinalQa", () => {
     vi.clearAllMocks();
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.pageReportFromFinalQa.mockReturnValue(report(30));
-    mocks.pageRewriteReport.mockImplementation((qaReport: unknown) => qaReport);
     mocks.loadPagesForExport.mockResolvedValue([exportPage(1), exportPage(2)]);
     mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
       ...exportPage(2),
@@ -167,8 +167,11 @@ describe("repairPagesFromFinalQa", () => {
   });
 
   it("keeps the best draft as FAILED_QA when no rewrite is approved", async () => {
+    // The first rewrite comes from the finalQa report; the loop's rewrites go
+    // through the strategy. One counter covers both.
     let rewrite = 0;
     mocks.revisePageDraftWithRestart.mockImplementation(async () => draftNamed(`Rewrite ${(rewrite += 1)}`));
+    strategy.revisePageDraft.mockImplementation(async () => draftNamed(`Rewrite ${(rewrite += 1)}`));
     strategy.reviewPageDraft
       .mockResolvedValueOnce(report(40))
       .mockResolvedValueOnce(report(70))
@@ -194,14 +197,27 @@ describe("repairPagesFromFinalQa", () => {
 
   it("enters recovery one attempt earlier than the page loops, because it counts from the first rewrite", async () => {
     mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Rewrite"));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
     strategy.reviewPageDraft.mockResolvedValue(report(40));
 
     await repairPagesFromFinalQa(baseOptions());
 
-    for (const call of mocks.pageRewriteReport.mock.calls) {
-      expect(call[2]).toBe(PAGE_QA_RECOVERY_CANDIDATE - 1);
-    }
-    expect(mocks.pageRewriteReport.mock.calls.map((call) => call[1])).toEqual([2, 3, 4, 5, 6]);
+    // Loop rewrites are attempts 2..6. This loop counts attempts from the
+    // first rewrite — one later than the page loops count candidates — so the
+    // recovery escalation must land on attempt PAGE_QA_RECOVERY_CANDIDATE - 1
+    // (the third rewrite), not one rewrite later.
+    const escalated = strategy.revisePageDraft.mock.calls.map((call) =>
+      (call[0] as { report: { issues: string[] } }).report.issues.includes(
+        "Earlier generated replacements for this page were still rejected by QA."
+      )
+    );
+    expect(escalated).toEqual([
+      false, // attempt 2
+      true, // attempt 3 = PAGE_QA_RECOVERY_CANDIDATE - 1
+      true,
+      true,
+      true
+    ]);
   });
 });
 

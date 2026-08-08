@@ -1,14 +1,6 @@
 import { formatQualityFailure, getProjectOrThrow, parseChapterBrief, strategyForInput, toPriorPageContext } from "../generation/bookHelpers.js";
 import { loadResearchNotesForGeneration } from "../generation/generationContext.js";
-import {
-  bestDraftCandidate,
-  pageRevisionMessage,
-  pageRewriteReport,
-  repairPageBriefForRecovery,
-  replacePageBriefInChapterBrief,
-  revisePageDraftWithRestart,
-  shouldRepairPageBriefForRecovery
-} from "../generation/pageReview.js";
+import { pageRevisionMessage, runPageQualityLoop } from "../generation/pageReview.js";
 import {
   RECENT_PAGE_WINDOW,
   loadEntityStateLines,
@@ -60,8 +52,8 @@ export async function generatePage(job: Job) {
   const chapterPlan = plan.chapters.find((chapter) => chapter.index === page.chapter?.index);
   const orderedPreviousPages = previousPages.reverse();
   const priorPageContext = orderedPreviousPages.map(toPriorPageContext);
-  let chapterBrief = parseChapterBrief(page.chapter?.productionBrief);
-  let pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === page.index);
+  const chapterBrief = parseChapterBrief(page.chapter?.productionBrief);
+  const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === page.index);
 
   const semanticQueryText = [
     pageBrief ? `${pageBrief.purpose} ${pageBrief.beat}` : "",
@@ -92,7 +84,6 @@ export async function generatePage(job: Job) {
     30,
     candidateCount > 1 ? `Drafting page ${page.index} (${candidateCount} candidates)` : `Drafting page ${page.index}`
   );
-  let revision = 1;
   const draftOptions = {
     input,
     plan,
@@ -108,7 +99,7 @@ export async function generatePage(job: Job) {
     entityState,
     textModel: providers.text
   };
-  let draft =
+  const initialDraft =
     candidateCount > 1
       ? await generateBestOfPageDrafts({
           draftPage: strategy.generatePageDraft,
@@ -118,90 +109,47 @@ export async function generatePage(job: Job) {
         })
       : await strategy.generatePageDraft(draftOptions);
   await advanceJobStep(generationJobId, "qa", 55, `Reviewing page ${page.index}`);
-  let qualityReport = await strategy.reviewPageDraft({
+  const initialReport = await strategy.reviewPageDraft({
     input,
     plan,
     chapter: chapterPlan,
     chapterBrief,
     pageBrief,
     pageIndex: page.index,
-    draft,
+    draft: initialDraft,
     previousPages: priorPageContext,
     continuityNotes: continuity.map((note) => note.body),
     textModel: providers.text
   });
-  let best = { draft, revision, report: qualityReport };
 
-  while (!qualityReport.approved && revision < MAX_PAGE_QA_CANDIDATES) {
-    const nextRevision = revision + 1;
-    await advanceJobStep(
-      generationJobId,
-      "revise",
-      70,
-      pageRevisionMessage(page.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
-    );
-    if (shouldRepairPageBriefForRecovery(nextRevision, qualityReport, pageBrief)) {
-      pageBrief = await repairPageBriefForRecovery({
-        strategy,
-        input,
-        plan,
-        chapter: chapterPlan,
-        chapterBrief,
-        chapterId: page.chapterId,
-        pageBrief,
-        pageIndex: page.index,
-        draft,
-        qualityReport,
-        previousPages: priorPageContext,
-        continuityNotes: continuity.map((note) => note.body),
-        textModel: providers.text,
-        generationJobId,
-        context: `Page ${page.index}`
-      });
-      chapterBrief = replacePageBriefInChapterBrief(chapterBrief, pageBrief);
-    }
-    draft = await revisePageDraftWithRestart({
-      strategy,
-      generationJobId,
-      progress: 70,
-      context: `Page ${page.index}`,
-      reviseOptions: {
-        input,
-        plan,
-        chapter: chapterPlan,
-        chapterBrief,
-        pageBrief,
-        pageIndex: page.index,
-        draft,
-        report: pageRewriteReport(qualityReport, nextRevision),
-        previousPages: priorPageContext,
-        continuityNotes: continuity.map((note) => note.body),
-        textModel: providers.text
-      }
-    });
-    revision = nextRevision;
-    qualityReport = await strategy.reviewPageDraft({
-      input,
-      plan,
-      chapter: chapterPlan,
-      chapterBrief,
-      pageBrief,
-      pageIndex: page.index,
-      draft,
-      previousPages: priorPageContext,
-      continuityNotes: continuity.map((note) => note.body),
-      textModel: providers.text
-    });
-    best = bestDraftCandidate(best, { draft, revision, report: qualityReport });
-  }
+  const outcome = await runPageQualityLoop({
+    strategy,
+    input,
+    plan,
+    chapter: chapterPlan,
+    chapterBrief,
+    pageBrief,
+    chapterId: page.chapterId,
+    pageIndex: page.index,
+    draft: initialDraft,
+    report: initialReport,
+    previousPages: priorPageContext,
+    continuityNotes: continuity.map((note) => note.body),
+    textModel: providers.text,
+    generationJobId,
+    maxCandidates: MAX_PAGE_QA_CANDIDATES,
+    repairBrief: true,
+    reviseContext: `Page ${page.index}`,
+    reviseProgress: 70,
+    onRewrite: (nextRevision) =>
+      advanceJobStep(generationJobId, "revise", 70, pageRevisionMessage(page.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS))
+  });
+  const { draft, revision, report: qualityReport } = outcome;
 
   if (!qualityReport.approved) {
     // Page-level failure isolation: keep the best draft with its honest
     // report, flag the page, and let the rest of the book continue. The page
     // can be retried individually and the final review can still repair it.
-    draft = best.draft;
-    revision = best.revision;
-    qualityReport = best.report;
     await prisma.page.update({
       where: { id: pageId },
       data: {

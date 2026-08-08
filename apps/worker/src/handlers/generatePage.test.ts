@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   },
   reviewPageDraft: vi.fn(),
   generatePageDraft: vi.fn(),
-  revisePageDraftWithRestart: vi.fn(),
+  revisePageDraft: vi.fn(),
   enqueueNextPageIfReady: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
   enqueueWorkerJob: vi.fn(),
@@ -32,7 +32,10 @@ vi.mock("../generation/semanticMemory.js", () => ({
   storeEmbedding: mocks.storeEmbedding,
   updateEntityStateFromPage: vi.fn()
 }));
-vi.mock("../generation/generationContext.js", () => ({ loadResearchNotesForGeneration: async () => [] }));
+vi.mock("../generation/generationContext.js", () => ({
+  loadContinuityNotes: async () => [],
+  loadResearchNotesForGeneration: async () => []
+}));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ mediaSettings: {} }) }));
 vi.mock("../generation/bookHelpers.js", () => ({
   formatQualityFailure: () => "",
@@ -41,25 +44,20 @@ vi.mock("../generation/bookHelpers.js", () => ({
   strategyForInput: () => ({
     generatePageDraft: mocks.generatePageDraft,
     reviewPageDraft: mocks.reviewPageDraft,
+    revisePageDraft: mocks.revisePageDraft,
     shouldIllustratePage: () => false
   }),
   toPriorPageContext: (page: unknown) => page
 }));
 // Three candidates keep the test loop short; the real ceiling only changes how
-// many rewrites run, not which draft is kept.
-vi.mock("../generation/tuning.js", () => ({ MAX_PAGE_QA_CANDIDATES: 3, MAX_PAGE_QA_REWRITE_ATTEMPTS: 2 }));
-vi.mock("../generation/pageReview.js", async () => {
-  const actual = await vi.importActual<typeof import("../generation/pageReview.js")>("../generation/pageReview.js");
-  return {
-    bestDraftCandidate: actual.bestDraftCandidate,
-    pageRevisionMessage: () => "",
-    pageRewriteReport: (report: unknown) => report,
-    repairPageBriefForRecovery: vi.fn(),
-    replacePageBriefInChapterBrief: vi.fn(),
-    revisePageDraftWithRestart: mocks.revisePageDraftWithRestart,
-    shouldRepairPageBriefForRecovery: () => false
-  };
-});
+// many rewrites run, not which draft is kept. The review loop itself is the
+// real runPageQualityLoop — only the strategy underneath is mocked.
+vi.mock("../generation/tuning.js", () => ({
+  MAX_PAGE_QA_CANDIDATES: 3,
+  MAX_PAGE_QA_REWRITE_ATTEMPTS: 2,
+  MAX_PAGE_REVISE_RESTARTS: 1,
+  PAGE_QA_RECOVERY_CANDIDATE: 4
+}));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
@@ -102,7 +100,7 @@ describe("generatePage quality loop", () => {
 
   it("saves the highest-scoring draft when no rewrite is approved, not the last one", async () => {
     mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
-    mocks.revisePageDraftWithRestart
+    mocks.revisePageDraft
       .mockResolvedValueOnce(draftNamed("Second"))
       .mockResolvedValueOnce(draftNamed("Third"));
     // Scores 40 → 70 → 55: the sixth-rewrite-worse-than-second shape in miniature.
@@ -136,6 +134,6 @@ describe("generatePage quality loop", () => {
       .map((call) => (call[0] as { data: Record<string, unknown> }).data)
       .find((data) => data.status === "COMPLETED");
     expect(completedSave).toMatchObject({ title: "First", revision: 1 });
-    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
+    expect(mocks.revisePageDraft).not.toHaveBeenCalled();
   });
 });

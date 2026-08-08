@@ -9,7 +9,7 @@ import {
   toPriorPageContext,
   formatQualityFailure
 } from "../generation/bookHelpers.js";
-import { bestDraftCandidate, pageRewriteReport, revisePageDraftWithRestart } from "../generation/pageReview.js";
+import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
 import { researchCitationsForExport } from "../generation/researchLinks.js";
 import { storeEmbedding } from "../generation/semanticMemory.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
@@ -485,7 +485,7 @@ export async function repairPagesFromFinalQa(options: {
       }
     });
 
-    let qualityReport = await options.strategy.reviewPageDraft({
+    const initialReport = await options.strategy.reviewPageDraft({
       input: options.input,
       plan: options.plan,
       chapter: chapterPlan,
@@ -497,53 +497,34 @@ export async function repairPagesFromFinalQa(options: {
       continuityNotes,
       textModel: options.providers.text
     });
-    let revisionAttempts = 1;
-    let best = { draft, revision: revisionAttempts, report: qualityReport };
-
-    while (!qualityReport.approved && revisionAttempts < MAX_FINAL_QA_REVISIONS_PER_PAGE) {
-      const nextRevisionAttempt = revisionAttempts + 1;
-      draft = await revisePageDraftWithRestart({
-        strategy: options.strategy,
-        generationJobId: options.generationJobId,
-        context: `Final QA repair for page ${pageIndex}`,
-        reviseOptions: {
-          input: options.input,
-          plan: options.plan,
-          chapter: chapterPlan,
-          chapterBrief,
-          pageBrief,
-          pageIndex,
-          draft,
-          // This loop counts attempts from the first rewrite; the page loops
-          // count candidates from the original draft, one earlier. Both enter
-          // recovery mode at the third rewrite.
-          report: pageRewriteReport(qualityReport, nextRevisionAttempt, PAGE_QA_RECOVERY_CANDIDATE - 1),
-          previousPages,
-          continuityNotes,
-          textModel: options.providers.text
-        }
-      });
-      revisionAttempts = nextRevisionAttempt;
-      qualityReport = await options.strategy.reviewPageDraft({
-        input: options.input,
-        plan: options.plan,
-        chapter: chapterPlan,
-        chapterBrief,
-        pageBrief,
-        pageIndex,
-        draft,
-        previousPages,
-        continuityNotes,
-        textModel: options.providers.text
-      });
-      best = bestDraftCandidate(best, { draft, revision: revisionAttempts, report: qualityReport });
-    }
+    const outcome = await runPageQualityLoop({
+      strategy: options.strategy,
+      input: options.input,
+      plan: options.plan,
+      chapter: chapterPlan,
+      chapterBrief,
+      pageBrief,
+      pageIndex,
+      draft,
+      report: initialReport,
+      previousPages,
+      continuityNotes,
+      textModel: options.providers.text,
+      generationJobId: options.generationJobId,
+      maxCandidates: MAX_FINAL_QA_REVISIONS_PER_PAGE,
+      // This loop counts attempts from the first rewrite; the page loops
+      // count candidates from the original draft, one earlier. Both enter
+      // recovery mode at the third rewrite.
+      recoveryRevision: PAGE_QA_RECOVERY_CANDIDATE - 1,
+      reviseContext: `Final QA repair for page ${pageIndex}`
+    });
+    draft = outcome.draft;
+    const qualityReport = outcome.report;
+    const revisionAttempts = outcome.attempts;
 
     if (!qualityReport.approved) {
       // Keep the best draft and an honest report; the page stays flagged but
       // does not block the rest of the export.
-      draft = best.draft;
-      qualityReport = best.report;
       await prisma.page.update({
         where: { id: page.id },
         data: {
