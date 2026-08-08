@@ -221,9 +221,9 @@ export async function findPendingProposalById(
 
 export async function findPendingScopeClarification(
   projectId: string,
-  currentMessage: string
+  currentMessage: string,
+  currentScope: BookEditScope = bookEditScopeFromMessage(currentMessage)
 ): Promise<PendingEditState | null> {
-  const currentScope = bookEditScopeFromMessage(currentMessage);
   const messages = (await loadActiveProjectChatMessages(projectId)).reverse().slice(0, 24);
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;

@@ -1,10 +1,4 @@
-import {
-  bookEditScopeFromMessage,
-  classifyProjectChatMessage,
-  messageWithFollowUp,
-  messageWithScope,
-  type BookEditIntent
-} from "../../bookEditIntent.js";
+import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import {
   applyOrCancelEditProposal,
@@ -13,7 +7,6 @@ import {
   findPendingScopeClarification,
   handleProjectChatIntent,
   isPendingEditCancellationMessage,
-  isPendingEditConfirmationMessage,
   isPendingEditNudgeMessage,
   pendingEditMetadataFromState,
   pendingScopeRecoveryMessage,
@@ -21,6 +14,7 @@ import {
 } from "../bookEditIntents.js";
 import { type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "../dto.js";
 import { hasOpenProjectWork } from "../editOperations.js";
+import { resolvePendingEditTurn } from "../pendingEditTurn.js";
 import { hitAuthenticatedLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import { undoLastBookEdit } from "../manualEdits.js";
 import {
@@ -151,54 +145,14 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const parentId = editedMessage
         ? activeEditedMessage?.parentId ?? editedMessage.parentId ?? null
         : activeProjectChatLeafId(activeMessages);
-      const pendingScope = editMessageId ? null : await findPendingScopeClarification(id, parsed.data.message);
       const currentScope = bookEditScopeFromMessage(parsed.data.message);
-      const pendingResolutionScope = currentScope !== "none" ? currentScope : pendingScope?.scope ?? "none";
-      // Busy-queued edits and priced proposals carry their full target
-      // already; a bare confirmation ("apply it") is enough to resume them.
-      // Scope clarifications still need an actual scope answer.
-      const pendingCarriesFullRequest =
-        pendingScope?.clarification === "busy" || pendingScope?.clarification === "confirm";
-      const resolvesPendingScope = Boolean(
-        pendingScope &&
-          (pendingCarriesFullRequest
-            ? isPendingEditConfirmationMessage(parsed.data.message) || currentScope !== "none"
-            : currentScope !== "none" ||
-              (pendingResolutionScope !== "none" && isPendingEditConfirmationMessage(parsed.data.message)))
-      );
-      const resolvedPendingEdit =
-        pendingScope && resolvesPendingScope
-          ? {
-              request: pendingScope.request,
-              scope: pendingResolutionScope,
-              scopeMessage: parsed.data.message
-            }
-          : null;
-      // One clarifying question per request. A scope clarification whose scope
-      // is still "none" can never be resolved by the gate above — no reply
-      // satisfies it — so an answer that adds no scope would be met with the
-      // same question forever. Route it as a forced decision instead, carrying
-      // the original request so the router sees more than the fragment.
-      const clarifyExhausted = Boolean(
-        pendingScope &&
-          pendingScope.clarification === "scope" &&
-          !resolvesPendingScope &&
-          !isPendingEditCancellationMessage(parsed.data.message)
-      );
-      const resolvedMessage = resolvedPendingEdit
-        ? pendingCarriesFullRequest && resolvedPendingEdit.scope === "none"
-          ? resolvedPendingEdit.request
-          : messageWithScope(resolvedPendingEdit.request, resolvedPendingEdit.scope)
-        : clarifyExhausted && pendingScope
-          ? messageWithFollowUp(pendingScope.request, parsed.data.message)
-          : parsed.data.message;
-      // A pure confirmation of a priced proposal executes it; any other reply
-      // (new scope, refined request) goes back through routing and re-pricing.
-      const confirmedPendingEdit = Boolean(
-        resolvedPendingEdit &&
-          pendingScope?.clarification === "confirm" &&
-          isPendingEditConfirmationMessage(parsed.data.message)
-      );
+      const pendingScope = editMessageId
+        ? null
+        : await findPendingScopeClarification(id, parsed.data.message, currentScope);
+      // The one-question rule's whole turn resolution lives in
+      // resolvePendingEditTurn; this handler only consumes the verdict.
+      const { resolvedPendingEdit, clarifyExhausted, resolvedMessage, confirmedPendingEdit, pendingScopeIsRecoverable, resolvesPendingScope } =
+        resolvePendingEditTurn(pendingScope, parsed.data.message, { currentScope });
 
       let userMessage: MobileProjectChatMessageRecord;
       try {
@@ -245,9 +199,6 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       // recover — a stranded scope or a priced proposal. For a bare scope
       // clarification that message is itself another question, so an insistent
       // follow-up falls through to the forced decision below instead.
-      const pendingScopeIsRecoverable = Boolean(
-        pendingScope && (pendingCarriesFullRequest || pendingScope.scope !== "none")
-      );
       if (
         pendingScope &&
         pendingScopeIsRecoverable &&
