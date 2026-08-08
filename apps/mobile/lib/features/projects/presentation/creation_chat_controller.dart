@@ -5,6 +5,7 @@ import '../data/creation_repository.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
 import 'chat_reply_quote.dart';
+import 'creation_chat_helpers.dart';
 import 'creation_chat_state.dart';
 import 'creation_labels.dart';
 import 'creation_preset_merge.dart';
@@ -14,25 +15,6 @@ import 'pending_chat_sessions.dart';
 // re-exported so the screen and its part files keep importing one file.
 export 'creation_chat_state.dart';
 
-const _localGreetingText =
-    'Hi! Tell me about the book you want to make. Describe your idea in a sentence or two, or tap an example to start.';
-
-const _localGreetingTurn = MobileCreationTurn(
-  assistantMessage: _localGreetingText,
-  brief: MobileBookRecipe(lane: 'auto'),
-  presets: defaultCreationPresets,
-  detectedLane: 'auto',
-  quickReplies: <String>[
-    'Bedtime story for 5 year olds',
-    'Lead magnet about pricing',
-    'Workbook for new coaches',
-    'Short story about a garden mystery',
-  ],
-  readiness: emptyCreationReadiness,
-  titleSuggestions: <String>[],
-  shapePreview: <String>['Clear reader promise'],
-  warnings: <String>[],
-);
 
 class CreationChatController extends Notifier<CreationChatState> {
   int _initRequestId = 0;
@@ -110,7 +92,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         return;
       }
       _applyConversation(
-        const MobileCreationConversationResponse(turn: _localGreetingTurn),
+        const MobileCreationConversationResponse(turn: creationChatLocalGreetingTurn),
         initializing: false,
       );
     } catch (error) {
@@ -1011,7 +993,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (output == null) {
       return state.outputs;
     }
-    return _mergeOutputsInto(state.outputs, [output]);
+    return mergeCreationOutputsInto(state.outputs, [output]);
   }
 
   Future<void> _syncOutputsForDraft(String draftId) async {
@@ -1026,7 +1008,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     if (outputs.isEmpty) {
       return;
     }
-    final mergedOutputs = _mergeOutputsInto(state.outputs, outputs);
+    final mergedOutputs = mergeCreationOutputsInto(state.outputs, outputs);
     _cacheSyncedOutputs(
       draftId: draftId,
       response: response,
@@ -1041,24 +1023,6 @@ class CreationChatController extends Notifier<CreationChatState> {
     );
   }
 
-  List<MobileCreationOutput> _mergeOutputsInto(
-    List<MobileCreationOutput> current,
-    Iterable<MobileCreationOutput> incoming,
-  ) {
-    final next = [...current];
-    for (final output in incoming) {
-      final index = next.indexWhere(
-        (existing) => existing.projectId == output.projectId,
-      );
-      if (index == -1) {
-        next.add(output);
-      } else {
-        next[index] = output;
-      }
-    }
-    next.sort((a, b) => a.sequence.compareTo(b.sequence));
-    return next;
-  }
 
   void _cacheSyncedOutputs({
     required String draftId,
@@ -1150,7 +1114,7 @@ class CreationChatController extends Notifier<CreationChatState> {
         !state.userChoices.contains(CreationChoice.language);
     final pendingAttachments = session == null
         ? state.pendingAttachments
-        : _reconcilePendingAttachments(session);
+        : reconcilePendingCreationAttachments(session, state.pendingAttachments);
     final attachmentUrls = session == null
         ? state.attachmentUrls
         : {
@@ -1198,44 +1162,6 @@ class CreationChatController extends Notifier<CreationChatState> {
     _lastSyncedPresets = turn.presets;
   }
 
-  /// Keeps composer chips in sync with the server: files uploaded but not yet
-  /// sent with a message reappear as ready chips (also across app restarts),
-  /// while local uploads still in flight are preserved.
-  List<PendingCreationAttachment> _reconcilePendingAttachments(
-    MobileCreationSession session,
-  ) {
-    final referencedIds = <String>{
-      for (final message in session.messages)
-        for (final attachment in message.attachments) attachment.id,
-    };
-    final serverIds = session.attachments
-        .map((attachment) => attachment.id)
-        .toSet();
-    final localByServerId = <String, PendingCreationAttachment>{
-      for (final pending in state.pendingAttachments)
-        if (pending.attachment != null) pending.attachment!.id: pending,
-    };
-    return [
-      for (final attachment in session.attachments)
-        if (!referencedIds.contains(attachment.id))
-          localByServerId[attachment.id] ??
-              PendingCreationAttachment(
-                localId: 'server_${attachment.id}',
-                name: attachment.name,
-                kind: attachment.kind,
-                status: PendingAttachmentStatus.ready,
-                attachment: attachment,
-              ),
-      // Local entries the server response does not know about yet: uploads in
-      // flight, failures awaiting retry, and just-finished uploads racing a
-      // stale response.
-      for (final pending in state.pendingAttachments)
-        if (pending.attachment == null ||
-            (!serverIds.contains(pending.attachment!.id) &&
-                !referencedIds.contains(pending.attachment!.id)))
-          pending,
-    ];
-  }
 
   MobileCreationPresets? _lastSyncedPresets;
 }

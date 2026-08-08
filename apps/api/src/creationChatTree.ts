@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { MobileCreationMessage } from "./mobileCreation.js";
+import type { MobileCreationMessage } from "./mobileCreationSchemas.js";
 
 export type CreationChatBranchDto = {
   index: number;

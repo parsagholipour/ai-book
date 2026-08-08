@@ -1,7 +1,4 @@
 import {
-  CREATION_ATTACHMENT_MAX_COUNT,
-  creationAttachmentKindSchema,
-  creationAttachmentSchema,
   explicitLanguageRequest,
   explicitTargetPagesFromText,
   generateJsonWithRetry,
@@ -15,7 +12,7 @@ import {
   type ToolLoopTool
 } from "@book-maker/core";
 import { z } from "zod";
-import { CHAT_REPLY_EXCERPT_MAX, chatReplyQuoteLabel } from "./chatReplyQuote.js";
+import { chatReplyQuoteLabel } from "./chatReplyQuote.js";
 import { withTimeout } from "./withTimeout.js";
 import { linearizeCreationMessages } from "./creationChatTree.js";
 import {
@@ -24,329 +21,56 @@ import {
   type MobileCreationTurnQuestion
 } from "./creationQuestion.js";
 
-const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_story"]);
-export const mobileBookTypeChoiceSchema = z.enum([
-  "auto",
-  "lead_magnet",
-  "practical_guide",
-  "offer_guide",
-  "workbook",
-  "client_tool",
-  "short_story",
-  "adult_story",
-  "children_story"
-]);
-const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
-const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium"]);
-export const mobilePageCountModeSchema = z.enum(["auto", "custom"]);
-export const mobilePageCountSourceSchema = z.enum(["chat", "settings", "recommended", "legacy"]);
-export const mobileTargetPagesSchema = z.coerce.number().int().min(1).max(600);
 
-export const mobileCreationIntentSchema = z.enum([
-  "collect_leads",
-  "teach_practice",
-  "support_clients",
-  "explain_offer",
-  "short_story"
-]);
-
-export const mobileCreationLaneSchema = z.enum([
-  "auto",
-  "lead_magnet",
-  "workbook",
-  "client_tool",
-  "offer_guide",
-  "practical_guide",
-  "adult_story",
-  "children_story"
-]);
-
-const optionalText = (max: number) =>
-  z
-    .string()
-    .trim()
-    .max(max)
-    .default("");
-
-const optionalNamedText = (min: number, max: number) =>
-  z.preprocess(
-    (value) => {
-      if (typeof value !== "string") {
-        return value;
-      }
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : undefined;
-    },
-    z.string().trim().min(min).max(max).optional()
-  );
-
-export const mobileCreationBriefSchema = z
-  .object({
-    intent: mobileCreationIntentSchema.default("collect_leads"),
-    topic: optionalText(280),
-    audience: optionalText(280),
-    readerProblem: optionalText(500),
-    desiredOutcome: optionalText(500),
-    tone: optionalText(180),
-    mustInclude: optionalText(1200),
-    distributionUse: optionalText(220),
-    title: optionalNamedText(2, 160),
-    authorName: optionalNamedText(1, 120),
-    sourceNotes: optionalText(12000)
-  })
-  .strict();
-
-export const mobileCreationPresetsInputSchema = z
-  .object({
-    bookType: mobileBookTypeSchema,
-    bookTypeChoice: mobileBookTypeChoiceSchema.optional(),
-    lengthPreset: mobileLengthPresetSchema,
-    qualityPreset: mobileQualityPresetSchema,
-    /** @deprecated Send coverEnabled and illustrationsEnabled instead. */
-    imagesEnabled: z.boolean().optional(),
-    coverEnabled: z.boolean().optional(),
-    illustrationsEnabled: z.boolean().optional(),
-    pageCountMode: mobilePageCountModeSchema.optional(),
-    targetPages: mobileTargetPagesSchema.optional(),
-    pageCountSource: mobilePageCountSourceSchema.optional()
-  })
-  .strict();
-
-export type MobileCreationPresetsInput = z.input<typeof mobileCreationPresetsInputSchema>;
-
-/**
- * The one resolution of the image trio: either split field wins for itself,
- * the legacy `imagesEnabled` aggregate covers both, then the `base` (stored
- * presets when applying a change; on when creating). Every consumer routes
- * through here — a re-typed copy of this chain is how the fields drift.
- */
-export function resolveMobileImageSettings(
-  input: {
-    imagesEnabled?: boolean | undefined;
-    coverEnabled?: boolean | undefined;
-    illustrationsEnabled?: boolean | undefined;
-  },
-  base?: { coverEnabled?: boolean | undefined; illustrationsEnabled?: boolean | undefined } | undefined
-): { imagesEnabled: boolean; coverEnabled: boolean; illustrationsEnabled: boolean } {
-  const coverEnabled = input.coverEnabled ?? input.imagesEnabled ?? base?.coverEnabled ?? true;
-  const illustrationsEnabled = input.illustrationsEnabled ?? input.imagesEnabled ?? base?.illustrationsEnabled ?? true;
-  return {
-    coverEnabled,
-    illustrationsEnabled,
-    imagesEnabled: coverEnabled || illustrationsEnabled
-  };
-}
-
-export const mobileCreationPresetsSchema = mobileCreationPresetsInputSchema.transform((presets) => ({
-  ...presets,
-  ...resolveMobileImageSettings(presets)
-}));
-
-/**
- * Merge a complete preset echo onto a stored split media choice. Old clients
- * only know `imagesEnabled`; when they echo the unchanged aggregate, retain
- * the exact stored pair. Changing the aggregate still intentionally changes
- * both choices, while either new field always wins for that field.
- */
-export function mergeMobileCreationPresets(
-  stored: MobileCreationPresets | undefined,
-  incoming: MobileCreationPresetsInput
-): MobileCreationPresets {
-  const parsed = mobileCreationPresetsInputSchema.parse(incoming);
-  const normalized = mobileCreationPresetsSchema.parse(parsed);
-  if (!stored) {
-    return normalized;
-  }
-  const hasCover = Object.hasOwn(parsed, "coverEnabled");
-  const hasIllustrations = Object.hasOwn(parsed, "illustrationsEnabled");
-  const hasLegacyAggregate = Object.hasOwn(parsed, "imagesEnabled");
-  const aggregateChanged = hasLegacyAggregate && parsed.imagesEnabled !== stored.imagesEnabled;
-  const aggregateChoice = aggregateChanged ? parsed.imagesEnabled! : undefined;
-  const coverEnabled = hasCover ? parsed.coverEnabled! : aggregateChoice ?? stored.coverEnabled;
-  const illustrationsEnabled = hasIllustrations
-    ? parsed.illustrationsEnabled!
-    : aggregateChoice ?? stored.illustrationsEnabled;
-  return {
-    ...normalized,
-    coverEnabled,
-    illustrationsEnabled,
-    imagesEnabled: coverEnabled || illustrationsEnabled
-  };
-}
-
-export const mobileCreationOptionalDetailsSchema = z
-  .object({
-    title: optionalNamedText(2, 160),
-    authorName: optionalNamedText(1, 120),
-    mustInclude: optionalText(1200),
-    tone: optionalText(180)
-  })
-  .strict();
-
-export const mobileBookRecipeSchema = z
-  .object({
-    lane: mobileCreationLaneSchema,
-    title: optionalText(160),
-    artifact: optionalText(120),
-    audience: optionalText(280),
-    promise: optionalText(500),
-    tone: optionalText(180),
-    mainCharacter: optionalText(280),
-    conflict: optionalText(500),
-    ending: optionalText(400),
-    theme: optionalText(400),
-    nextStep: optionalText(400),
-    exercises: optionalText(500),
-    mustInclude: optionalText(1200)
-  })
-  .strict();
-
-export const mobileCreationMessageRoleSchema = z.enum(["user", "assistant"]);
-
-export const mobileCreationResearchSourceSchema = z
-  .object({
-    title: z.string().trim().min(1).max(240),
-    url: z.string().url().max(2000).optional(),
-    summary: z.string().trim().max(700),
-    publishedAt: z.string().trim().max(80).optional()
-  })
-  .strict();
-
-export const mobileCreationResearchSchema = z
-  .object({
-    query: z.string().trim().min(1).max(600),
-    summary: z.string().trim().min(1).max(4000),
-    sources: z.array(mobileCreationResearchSourceSchema).max(6).default([])
-  })
-  .strict();
-
-/**
- * The localized controls that accompanied an assistant message. Keeping this
- * small snapshot on the message lets branch navigation restore the exact
- * question without another model call or an English deterministic fallback.
- */
-const mobileCreationMessageTurnUiSchema = z
-  .object({
-    quickReplies: z.array(z.string().trim().min(1).max(80)).max(4).default([]),
-    question: creationTurnQuestionSchema.nullable().default(null)
-  })
-  .strict();
-
-/** Lightweight reference from a chat message to an uploaded attachment. */
-export const mobileCreationMessageAttachmentSchema = z
-  .object({
-    id: z.string().trim().min(1).max(64),
-    kind: creationAttachmentKindSchema,
-    name: z.string().trim().min(1).max(200)
-  })
-  .strict();
-
-export const mobileCreationMessageSchema = z
-  .object({
-    role: mobileCreationMessageRoleSchema,
-    // Attachment-only messages carry empty text, so emptiness is checked below.
-    content: z.string().trim().max(4000),
-    attachments: z.array(mobileCreationMessageAttachmentSchema).max(6).optional(),
-    // Grounded web research attached to an assistant answer. It travels with
-    // the branch so edited-away research cannot leak into the active book.
-    research: mobileCreationResearchSchema.optional(),
-    // Branching fields (optional so legacy flat transcripts keep parsing).
-    // Ids are server-generated; siblings under one parent are alternative
-    // branches and isActiveChild marks the selected one.
-    id: z.string().trim().min(1).max(64).optional(),
-    requestId: z.string().trim().min(8).max(64).optional(),
-    parentId: z.string().trim().min(1).max(64).nullable().optional(),
-    isActiveChild: z.boolean().optional(),
-    // The earlier message this turn replies to, snapshotted at send time so it
-    // still renders after the transcript cap folds the original into the
-    // summary. See chatReplyQuote.ts.
-    replyTo: z
-      .object({
-        messageId: z.string().trim().min(1).max(64),
-        role: z.enum(["user", "assistant"]),
-        excerpt: z.string().trim().min(1).max(CHAT_REPLY_EXCERPT_MAX)
-      })
-      .strict()
-      .optional(),
-    // Server-only UI state for restoring a branch. It is deliberately not
-    // included in the serialized message DTO sent to the mobile client.
-    turnUi: mobileCreationMessageTurnUiSchema.optional()
-  })
-  .strict()
-  .refine((message) => message.content.length > 0 || (message.attachments?.length ?? 0) > 0, {
-    message: "A chat message needs text or an attachment."
-  });
-
-export const mobileCreationDraftPayloadSchema = z
-  .object({
-    // Version 2 = wizard drafts, version 3 = conversational (chat) drafts. Both resume.
-    payloadVersion: z.union([z.literal(2), z.literal(3)]).default(2),
-    rawIdea: optionalText(2000),
-    optionalDetails: mobileCreationOptionalDetailsSchema.default({
-      mustInclude: "",
-      tone: ""
-    }),
-    sourceNotes: optionalText(12000),
-    detectedLane: mobileCreationLaneSchema.optional(),
-    recipe: mobileBookRecipeSchema.optional(),
-    selectedPresets: mobileCreationPresetsSchema.optional(),
-    // Book language detected from chat or chosen in settings ("fa", "es", ...).
-    language: z.string().trim().min(2).max(40).optional(),
-    // Compact summary of chat turns that were dropped past the transcript cap.
-    conversationSummary: z.string().trim().max(2400).optional(),
-    // Server-set time of the last conversation turn. The sessions list sorts
-    // by this, so builds/copies touching the row don't reorder the drawer.
-    lastMessageAt: z.iso.datetime().optional(),
-    // Chat transcript tree for the conversational Book Studio (version 3
-    // payloads). Holds all branches; the active path is capped separately.
-    messages: z.array(mobileCreationMessageSchema).max(240).optional(),
-    // Files uploaded into the chat, already digested into text at upload time.
-    attachments: z.array(creationAttachmentSchema).max(CREATION_ATTACHMENT_MAX_COUNT).optional(),
-    // Legacy V2 payloads are accepted so active drafts made before V3 can resume.
-    brief: mobileCreationBriefSchema.optional()
-  })
-  .strict();
-
-export const mobileBookAdvisorBodySchema = mobileCreationDraftPayloadSchema;
-
-export const mobileBookAdvisorResponseSchema = z
-  .object({
-    recommendation: mobileCreationPresetsSchema,
-    detectedLane: mobileCreationLaneSchema,
-    recipe: mobileBookRecipeSchema,
-    briefScore: z.number().int().min(0).max(100),
-    missingFields: z.array(z.string()).default([]),
-    warnings: z.array(z.string()).default([]),
-    followUpSuggestions: z.array(z.string()).max(5).default([]),
-    bookShapePreview: z.array(z.string()).min(1).max(8),
-    titleSuggestions: z.array(z.string()).max(5).default([]),
-    rationale: z.string().max(600)
-  })
-  .strict();
-
-const aiAdvisorPatchSchema = z
-  .object({
-    recipe: mobileBookRecipeSchema.optional(),
-    warnings: z.array(z.string()).max(5).optional(),
-    followUpSuggestions: z.array(z.string()).max(5).optional(),
-    bookShapePreview: z.array(z.string()).min(1).max(8).optional(),
-    titleSuggestions: z.array(z.string()).max(5).optional(),
-    rationale: z.string().max(600).optional()
-  })
-  .strict();
-
-export type MobileCreationBrief = z.infer<typeof mobileCreationBriefSchema>;
-export type MobileCreationLane = z.infer<typeof mobileCreationLaneSchema>;
-export type MobileBookRecipe = z.infer<typeof mobileBookRecipeSchema>;
-export type MobileCreationPresets = z.infer<typeof mobileCreationPresetsSchema>;
-export type MobileBookTypeChoice = z.infer<typeof mobileBookTypeChoiceSchema>;
-export type MobilePageCountMode = z.infer<typeof mobilePageCountModeSchema>;
-export type MobilePageCountSource = z.infer<typeof mobilePageCountSourceSchema>;
-export type MobileCreationOptionalDetails = z.infer<typeof mobileCreationOptionalDetailsSchema>;
-export type MobileCreationMessage = z.infer<typeof mobileCreationMessageSchema>;
-export type MobileCreationMessageAttachment = z.infer<typeof mobileCreationMessageAttachmentSchema>;
-export type MobileCreationDraftPayload = z.infer<typeof mobileCreationDraftPayloadSchema>;
-export type MobileBookAdvisorResponse = z.infer<typeof mobileBookAdvisorResponseSchema>;
+import {
+  artifactForLane,
+  audienceFallback,
+  audienceFor,
+  cleanTitlePart,
+  conflictFallback,
+  endingFallback,
+  exercisesFallback,
+  fallbackTopic,
+  intentForLane,
+  laneForLegacyIntent,
+  laneFromBookTypeChoice,
+  laneFromProductBookType,
+  laneLabel,
+  looksFactualOrCurrent,
+  mainCharacterFor,
+  nextStepFallback,
+  productBookTypeForLane,
+  promiseFallback,
+  themeFallback,
+  titleFromIdea,
+  toneFallback,
+  wordCount
+} from "./mobileCreationLanes.js";
+export * from "./mobileCreationSchemas.js";
+import {
+  aiAdvisorPatchSchema,
+  mobileBookAdvisorResponseSchema,
+  mobileBookRecipeSchema,
+  mobileBookTypeChoiceSchema,
+  mobileCreationBriefSchema,
+  mobileCreationDraftPayloadSchema,
+  mobileCreationLaneSchema,
+  mobileCreationPresetsSchema,
+  mobileCreationResearchSchema,
+  mobileCreationResearchSourceSchema,
+  mobileTargetPagesSchema,
+  resolveMobileImageSettings,
+  type MobileBookAdvisorResponse,
+  type MobileBookRecipe,
+  type MobileBookTypeChoice,
+  type MobileCreationBrief,
+  type MobileCreationDraftPayload,
+  type MobileCreationLane,
+  type MobileCreationMessage,
+  type MobileCreationMessageAttachment,
+  type MobileCreationOptionalDetails,
+  type MobileCreationPresets
+} from "./mobileCreationSchemas.js";
 
 type AdvisorOptions = {
   enrich?: ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => Promise<Partial<MobileBookAdvisorResponse>>) | undefined;
@@ -2338,199 +2062,4 @@ function pageCountSearchText(payload: MobileCreationDraftPayload): string {
     .filter(Boolean)
     .join("\n")
     .slice(-6000);
-}
-
-function audienceFor(rawIdea: string, lane: MobileCreationLane): string {
-  const age = rawIdea.match(/\b([2-9]|10|11|12)\s*(-| )?(year|yr)s?\s*olds?\b/i)?.[0];
-  if (age) {
-    return age.replace(/\s+/g, " ");
-  }
-  const forMatch = rawIdea.match(/\bfor\s+([^,.!?;]+)/i)?.[1]?.trim();
-  if (forMatch) {
-    return forMatch;
-  }
-  return audienceFallback(lane);
-}
-
-function audienceFallback(lane: MobileCreationLane): string {
-  return {
-    auto: "readers implied by the idea",
-    children_story: "young children",
-    adult_story: "adult fiction readers",
-    workbook: "learners",
-    client_tool: "clients",
-    offer_guide: "prospective clients",
-    lead_magnet: "ideal readers",
-    practical_guide: "readers who want a practical next step"
-  }[lane];
-}
-
-function titleFromIdea(rawIdea: string, lane: MobileCreationLane): string {
-  const cleaned = cleanTitlePart(rawIdea);
-  if (cleaned) {
-    return cleaned;
-  }
-  return fallbackTopic(lane === "workbook" || lane === "client_tool" ? "workbook" : lane.includes("story") ? "short_story" : "lead_magnet");
-}
-
-function artifactForLane(lane: MobileCreationLane): string {
-  return {
-    auto: "Book",
-    children_story: "Children's story",
-    adult_story: "Short story",
-    workbook: "Workbook",
-    client_tool: "Client workbook",
-    offer_guide: "Offer guide",
-    lead_magnet: "Lead magnet",
-    practical_guide: "Practical guide"
-  }[lane];
-}
-
-function toneFallback(lane: MobileCreationLane): string {
-  return {
-    auto: "clear and fitted to the intended book shape",
-    children_story: "warm, simple, and read-aloud friendly",
-    adult_story: "immersive and emotionally clear",
-    workbook: "clear, encouraging, and practical",
-    client_tool: "supportive and action-oriented",
-    offer_guide: "polished and credible",
-    lead_magnet: "concise, useful, and confident",
-    practical_guide: "plainspoken and helpful"
-  }[lane];
-}
-
-function promiseFallback(rawIdea: string, lane: MobileCreationLane): string {
-  if (lane === "auto") return `become the best-fitting book for ${cleanTitlePart(rawIdea).toLowerCase() || "the idea"}`;
-  if (lane === "children_story") return "a gentle story children can follow and enjoy";
-  if (lane === "adult_story") return "a compact story with a clear emotional turn";
-  if (lane === "workbook" || lane === "client_tool") return "complete useful practice and leave with a next step";
-  if (lane === "offer_guide") return "understand the offer and decide what to do next";
-  return `get a useful first step for ${cleanTitlePart(rawIdea).toLowerCase() || "the topic"}`;
-}
-
-function mainCharacterFor(rawIdea: string, lane: MobileCreationLane): string {
-  if (lane === "children_story") return "a curious child or gentle animal";
-  if (lane === "adult_story") return "a character facing a meaningful choice";
-  return "";
-}
-
-function conflictFallback(lane: MobileCreationLane): string {
-  if (lane === "children_story") return "a small worry, surprise, or adventure";
-  if (lane === "adult_story") return "a problem that forces a choice";
-  return "";
-}
-
-function endingFallback(lane: MobileCreationLane): string {
-  if (lane === "children_story") return "warm, reassuring, and memorable";
-  if (lane === "adult_story") return "satisfying with a clear final image";
-  return "";
-}
-
-function themeFallback(lane: MobileCreationLane): string {
-  if (lane === "children_story") return "kindness, courage, curiosity, or bedtime calm";
-  if (lane === "adult_story") return "change, repair, courage, or second chances";
-  return "";
-}
-
-function nextStepFallback(lane: MobileCreationLane): string {
-  if (lane === "lead_magnet") return "invite the reader to take one clear next step";
-  if (lane === "offer_guide") return "book a call, compare options, or understand the method";
-  if (lane === "workbook" || lane === "client_tool") return "finish a checklist or action plan";
-  return "";
-}
-
-function exercisesFallback(lane: MobileCreationLane): string {
-  if (lane === "workbook" || lane === "client_tool") return "short exercises, reflection prompts, and a recap checklist";
-  return "";
-}
-
-function laneForLegacyIntent(intent: MobileCreationBrief["intent"]): MobileCreationLane {
-  const lanes = {
-    collect_leads: "lead_magnet",
-    teach_practice: "workbook",
-    support_clients: "client_tool",
-    explain_offer: "offer_guide",
-    short_story: "adult_story"
-  } as const satisfies Record<MobileCreationBrief["intent"], MobileCreationLane>;
-  return lanes[intent];
-}
-
-function laneFromBookTypeChoice(choice: MobileBookTypeChoice | undefined): MobileCreationLane | undefined {
-  if (!choice || choice === "auto") {
-    return undefined;
-  }
-  if (choice === "short_story") {
-    return "adult_story";
-  }
-  return choice;
-}
-
-function laneFromProductBookType(bookType: MobileCreationPresets["bookType"]): MobileCreationLane {
-  if (bookType === "workbook") {
-    return "workbook";
-  }
-  if (bookType === "short_story") {
-    return "adult_story";
-  }
-  return "lead_magnet";
-}
-
-function productBookTypeForLane(lane: MobileCreationLane): MobileCreationPresets["bookType"] {
-  if (lane === "workbook" || lane === "client_tool") {
-    return "workbook";
-  }
-  if (lane === "adult_story" || lane === "children_story") {
-    return "short_story";
-  }
-  return "lead_magnet";
-}
-
-function intentForLane(lane: MobileCreationLane): MobileCreationBrief["intent"] {
-  if (lane === "workbook") return "teach_practice";
-  if (lane === "client_tool") return "support_clients";
-  if (lane === "offer_guide") return "explain_offer";
-  if (lane === "adult_story" || lane === "children_story") return "short_story";
-  return "collect_leads";
-}
-
-function laneLabel(lane: MobileCreationLane): string {
-  return {
-    auto: "Auto",
-    children_story: "Children's story",
-    adult_story: "Short story",
-    workbook: "Workbook",
-    client_tool: "Client tool",
-    offer_guide: "Offer guide",
-    lead_magnet: "Lead magnet",
-    practical_guide: "Practical guide"
-  }[lane];
-}
-
-function wordCount(value: string): number {
-  return value.trim().split(/\s+/).filter(Boolean).length;
-}
-
-function looksFactualOrCurrent(value: string): boolean {
-  return /\b(research|study|studies|statistics|current|recent|latest|medical|legal|financial|law|health|science|evidence)\b/i.test(value);
-}
-
-function cleanTitlePart(value: string): string {
-  const cleaned = value
-    .replace(/^create\s+(an?|the)?\s*/i, "")
-    .replace(/\b(book|ebook|guide|workbook|story|lead magnet|bedtime)\b/gi, "")
-    .replace(/\bfor\s+([2-9]|10|11|12)\s*(-| )?(year|yr)s?\s*olds?\b/gi, "")
-    .replace(/\bfor\s+[^,.!?;]+/i, "")
-    .trim();
-  if (!cleaned) {
-    return "";
-  }
-  return cleaned
-    .split(/\s+/)
-    .slice(0, 6)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function fallbackTopic(bookType: MobileCreationPresets["bookType"]): string {
-  return bookType === "workbook" ? "Practice" : bookType === "short_story" ? "Moon Garden" : "Starter";
 }
