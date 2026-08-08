@@ -116,15 +116,21 @@ export async function serializeProjectDetail(
     prompt: project.prompt,
     language: project.language,
     plan: project.currentPlan ? serializePlan(project.currentPlan) : null,
-    pages: (project.pages ?? []).map((page) => ({
-      id: page.id,
-      index: page.index,
-      title: page.title,
-      summary: page.summary,
-      previewText: generatedPagePreview(page.markdown, page.summary),
-      status: page.status.toLowerCase(),
-      image: serializeImage(page.images?.[0] ?? null, "page_visual", `Visual for ${page.title}`)
-    })),
+    pages: (project.pages ?? []).map((page) => {
+      const image = serializeImage(page.images?.[0] ?? null, "page_visual", `Visual for ${page.title}`);
+      return {
+        id: page.id,
+        index: page.index,
+        title: page.title,
+        summary: page.summary,
+        previewText: generatedPagePreview(page.markdown, page.summary),
+        status: page.status.toLowerCase(),
+        image,
+        // The reason code stays server-side; the app only needs "this page
+        // lost its illustration", and only while no image exists to show.
+        imageFailed: image === null && Boolean(page.imageFailureReason)
+      };
+    }),
     quality: normalizeProjectQuality(latestCompile?.qualityReport)
   };
 }

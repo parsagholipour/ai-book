@@ -126,9 +126,35 @@ class _GeneratedPagePreview extends StatelessWidget {
             const SizedBox(height: 8),
             _ReportVisualButton(onPressed: () => onReportImage!(page.image!)),
           ],
+        ] else if (page.imageFailed) ...[
+          const SizedBox(height: 10),
+          const _IllustrationLostNote(),
         ],
         const SizedBox(height: 8),
         Text(preview, maxLines: 8, overflow: TextOverflow.ellipsis),
+      ],
+    );
+  }
+}
+
+class _IllustrationLostNote extends StatelessWidget {
+  const _IllustrationLostNote();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Icon(Icons.image_not_supported_outlined, size: 18, color: colors.outline),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'The illustration for this page could not be generated.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ),
       ],
     );
   }

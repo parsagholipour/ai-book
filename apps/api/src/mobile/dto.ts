@@ -246,6 +246,11 @@ export type MobileProjectPageDto = {
   previewText: string;
   status: string;
   image: MobileProjectImageDto | null;
+  /**
+   * True when a planned illustration failed and the book finished without it.
+   * A page designed without an image has `image: null` and `imageFailed: false`.
+   */
+  imageFailed: boolean;
 };
 
 export type MobileProjectImageDto = {
@@ -630,6 +635,7 @@ export type MobilePageRecord = {
   markdown: string;
   summary: string;
   status: string;
+  imageFailureReason?: string | null;
   images?: MobileImageRecord[];
 };
 

@@ -64,7 +64,9 @@ export async function generateImage(job: Job) {
     // image provider. Failing the job would mark the whole project FAILED and
     // refund FULL_BOOK_GENERATION for one lost image; record it and let the
     // book finish without this illustration instead. The provider failure is in
-    // the run log; the job row's message says what happened.
+    // the run log; the job row's message says what happened, and the Page row's
+    // imageFailureReason is the durable marker that lets the app tell a lost
+    // illustration from a page that was never meant to have one.
     console.warn("Interior illustration failed; continuing without it", {
       event: "generation.consistency_warning",
       warning: "interior_image_failed",
@@ -73,6 +75,11 @@ export async function generateImage(job: Job) {
       pageIndex: page.index,
       error: errorMessage(error)
     });
+    await prisma.page
+      .updateMany({ where: { id: pageId }, data: { imageFailureReason: "interior_image_failed" } })
+      .catch((markError: unknown) => {
+        console.error(`Failed to record the lost illustration on page ${pageId}`, markError);
+      });
     await updateJobProgress(generationJobId, {
       message: `Illustration for page ${page.index} failed; the book will finish without it`
     });
@@ -136,6 +143,12 @@ async function renderAndStorePageIllustration(options: {
   const filePath = join(projectImageDir, filename);
   await writeFile(filePath, optimizedImage.bytes);
 
+  // A later successful render (an edit's re-illustration) supersedes any
+  // earlier recorded loss.
+  await prisma.page.updateMany({
+    where: { id: pageId, NOT: { imageFailureReason: null } },
+    data: { imageFailureReason: null }
+  });
   await prisma.imageAsset.create({
     data: {
       projectId,

@@ -400,6 +400,7 @@ export function mobileProjectDetailInclude() {
         markdown: true,
         summary: true,
         status: true,
+        imageFailureReason: true,
         images: {
           select: { id: true, projectId: true, pageId: true, type: true, path: true, metadata: true },
           orderBy: { createdAt: "asc" }

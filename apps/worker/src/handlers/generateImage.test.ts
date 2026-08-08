@@ -3,7 +3,7 @@ import type { Job } from "bullmq";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    page: { findUnique: vi.fn() },
+    page: { findUnique: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
     imageAsset: { create: vi.fn() }
   },
@@ -62,6 +62,7 @@ describe("generateImage interior rescue", () => {
     });
     mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", inputSnapshot: {}, planningPackage: {} });
     mocks.prisma.imageAsset.create.mockResolvedValue({});
+    mocks.prisma.page.updateMany.mockResolvedValue({ count: 1 });
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -76,6 +77,11 @@ describe("generateImage interior rescue", () => {
     await generateImage(job);
 
     expect(mocks.prisma.imageAsset.create).toHaveBeenCalledTimes(1);
+    // A successful render clears any earlier recorded loss for this page.
+    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith({
+      where: { id: "page-1", NOT: { imageFailureReason: null } },
+      data: { imageFailureReason: null }
+    });
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
@@ -87,6 +93,12 @@ describe("generateImage interior rescue", () => {
     await expect(generateImage(job)).resolves.toBeUndefined();
 
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
+    // The durable marker is what lets the app tell a lost illustration from a
+    // page that was never meant to have one.
+    expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: { imageFailureReason: "interior_image_failed" }
+    });
     expect(mocks.updateJobProgress).toHaveBeenCalledWith(undefined, {
       message: "Illustration for page 3 failed; the book will finish without it"
     });
@@ -98,6 +110,8 @@ describe("generateImage interior rescue", () => {
 
     await expect(generateImage(job)).rejects.toThrow(StopRequestedError);
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
+    // A user stop is not a lost illustration; the page keeps a clean slate.
+    expect(mocks.prisma.page.updateMany).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
   });
 });

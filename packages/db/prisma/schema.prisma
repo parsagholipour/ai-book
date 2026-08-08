@@ -709,6 +709,10 @@ model Page {
   markdown      String
   summary       String
   imagePrompt   String?
+  // Set when a planned interior illustration failed after every provider was
+  // tried and the book finished without it; null means the page either has its
+  // image or was never meant to have one.
+  imageFailureReason String?
   qualityReport Json?
   status        String   @default("PENDING")
   revision      Int      @default(1)

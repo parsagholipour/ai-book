@@ -175,6 +175,17 @@ describe("mobile project listing, detail and status", () => {
                 metadata: { mimeType: "image/png", model: "hidden" }
               }
             ]
+          },
+          {
+            id: "page-2",
+            projectId: "project-a",
+            index: 2,
+            title: "Show the first win",
+            markdown: "## Show the first win\n\nGive the reader a result within the first session.",
+            summary: "The reader ships something small.",
+            status: "COMPLETED",
+            imageFailureReason: "interior_image_failed",
+            images: []
           }
         ],
         images: [
@@ -203,12 +214,16 @@ describe("mobile project listing, detail and status", () => {
     expect(project.pages[0]).toMatchObject({
       title: "Set the promise",
       previewText: expect.stringContaining("A strong promise names the reader"),
+      imageFailed: false,
       image: {
         id: "image-page",
         url: "/api/mobile/projects/project-a/assets/image-page",
         contentType: "image/png"
       }
     });
+    // A lost illustration is reported as a flag, never as the reason code.
+    expect(project.pages[1]).toMatchObject({ title: "Show the first win", image: null, imageFailed: true });
+    expect(JSON.stringify(project)).not.toContain("interior_image_failed");
     expect(project.coverImage).toMatchObject({
       id: "image-cover",
       role: "cover",

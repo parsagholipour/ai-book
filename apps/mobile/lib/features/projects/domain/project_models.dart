@@ -289,6 +289,7 @@ class MobileProjectPage {
     required this.status,
     this.previewText = '',
     this.image,
+    this.imageFailed = false,
   });
 
   final String id;
@@ -298,6 +299,10 @@ class MobileProjectPage {
   final String previewText;
   final String status;
   final MobileProjectImage? image;
+
+  /// True when this page's planned illustration failed and the book finished
+  /// without it — distinct from a page that was never meant to have one.
+  final bool imageFailed;
 
   factory MobileProjectPage.fromJson(Map<String, dynamic> json) {
     return MobileProjectPage(
@@ -310,6 +315,7 @@ class MobileProjectPage {
       image: json['image'] == null
           ? null
           : MobileProjectImage.fromJson(json['image'] as Map<String, dynamic>),
+      imageFailed: json['imageFailed'] as bool? ?? false,
     );
   }
 }
