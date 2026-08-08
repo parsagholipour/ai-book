@@ -5,7 +5,7 @@ import { config } from "../runtime/config.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { jsonInputValue, jsonPayloadToRecord, safePathPart } from "../runtime/serialization.js";
-import { selectReferenceImagePaths, toWorkerImageAsset } from "./generateCover.js";
+import { selectReferenceImagePaths, toWorkerImageAsset } from "../generation/characterReferences.js";
 import {
   bookPlanSchema,
   buildCharacterProfileImagePrompt,

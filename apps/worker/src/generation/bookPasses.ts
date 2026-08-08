@@ -9,8 +9,8 @@ import {
   rebuildChapterSetupsFromStored,
   reportAcceptedWholeBookDraft,
   resetBookForDirectGeneration
-} from "../handlers/generateBook.js";
-import { ensureCharacterReferenceAssets } from "../handlers/generateCover.js";
+} from "./bookState.js";
+import { ensureCharacterReferenceAssets } from "./characterReferences.js";
 import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup, type IndexedPageDraft } from "../runtime/jobTypes.js";

@@ -9,9 +9,9 @@ import { errorMessage, jsonPayloadToRecord } from "../runtime/serialization.js";
 import {
   characterReferencePromptInstruction,
   ensureCharacterReferenceAssets,
-  generateCover,
   selectReferenceImagePaths
-} from "./generateCover.js";
+} from "../generation/characterReferences.js";
+import { generateCover } from "./generateCover.js";
 import {
   bookPlanSchema,
   createProviders,

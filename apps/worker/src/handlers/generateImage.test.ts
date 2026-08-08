@@ -24,12 +24,12 @@ vi.mock("../generation/bookHelpers.js", () => ({
   imageStorageMetadata: () => ({}),
   strategyForInput: () => ({ generateImageBytes: mocks.generateImageBytes })
 }));
-vi.mock("./generateCover.js", () => ({
+vi.mock("../generation/characterReferences.js", () => ({
   characterReferencePromptInstruction: () => "",
   ensureCharacterReferenceAssets: async () => [],
-  generateCover: vi.fn(),
   selectReferenceImagePaths: () => []
 }));
+vi.mock("./generateCover.js", () => ({ generateCover: vi.fn() }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
