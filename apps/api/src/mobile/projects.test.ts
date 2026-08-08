@@ -287,12 +287,22 @@ describe("mobile project listing, detail and status", () => {
             { id: "job-audio-failed", type: "GENERATE_AUDIOBOOK", status: "FAILED", error: "Speech quota exhausted." },
             { id: "job-failed", type: "GENERATE_PAGE", status: "FAILED", error: "Page draft timed out." },
             { id: "job-active", type: "GENERATE_PAGE", status: "ACTIVE", error: null }
+          ],
+          generationAttempts: [
+            {
+              id: "attempt-failed",
+              commandKey: "mobile:plan-approval:plan-1",
+              status: "FAILED",
+              quotedCredits: 776,
+              refundPending: false
+            }
           ]
         },
         progress: {
           pages: { complete: 3, target: 10 },
           images: 1,
           resumableFailedJobs: 1,
+          resumableAttemptIds: ["attempt-failed"],
           pipeline: [
             { key: "plan", label: "Plan", status: "done" },
             { key: "pages", label: "Pages", status: "active", detail: "3/10 pages" },
@@ -334,6 +344,7 @@ describe("mobile project listing, detail and status", () => {
       progressPercent: 44,
       currentAction: "Writing page 4",
       retryAvailable: true,
+      recoveryQuote: { credits: 776, retryToken: expect.any(String) },
       pageProgress: { completed: 3, target: 10 },
       imageCount: 1
     });
@@ -346,6 +357,67 @@ describe("mobile project listing, detail and status", () => {
     expect(body.status.failureMessage).not.toContain("narrat");
     expect(body.status.failureMessage).not.toContain("GENERATE_PAGE");
     expect(JSON.stringify(body.status)).not.toMatch(/jobs|queue|tokens|cost|provider/);
+    await app.close();
+  });
+
+  it("quotes the failed paid retry, never the original attempt whose retry slot is spent", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          id: "project-1",
+          title: "Progress Book",
+          status: "FAILED",
+          updatedAt: new Date("2026-06-15T12:30:00.000Z"),
+          jobs: [{ id: "job-failed", type: "GENERATE_PAGE", status: "FAILED", error: "Page draft timed out." }],
+          generationAttempts: [
+            {
+              id: "attempt-original",
+              commandKey: "mobile:plan-approval:plan-1",
+              status: "FAILED",
+              quotedCredits: 776,
+              refundPending: false,
+              // Its paid retry exists — replaying it can never queue work again.
+              retryAttempt: { id: "attempt-paid-retry" }
+            },
+            {
+              id: "attempt-paid-retry",
+              commandKey: "mobile:generation-retry:attempt-original:req-1",
+              status: "FAILED",
+              quotedCredits: 776,
+              refundPending: false,
+              retryAttempt: null
+            }
+          ]
+        },
+        progress: {
+          resumableFailedJobs: 2,
+          // Job-creation order: the original attempt's jobs are older.
+          resumableAttemptIds: ["attempt-original", "attempt-paid-retry"]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.status.retryAvailable).toBe(true);
+    // The retry token must be derived from the failed retry, not the original.
+    const { generationRecoveryQuote } = await import("./generationRetryQuote.js");
+    expect(body.status.recoveryQuote).toEqual(
+      generationRecoveryQuote({
+        id: "attempt-paid-retry",
+        commandKey: "mobile:generation-retry:attempt-original:req-1",
+        quotedCredits: 776
+      })
+    );
     await app.close();
   });
 

@@ -796,7 +796,11 @@ class PlanProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobileProjectRecovery> resumeProject(String id) async {
+  Future<MobileProjectRecovery> resumeProject(
+    String id, {
+    String? requestId,
+    String? retryToken,
+  }) async {
     resumedProjectIds.add(id);
     final gate = resumeGate;
     resumeGate = null;

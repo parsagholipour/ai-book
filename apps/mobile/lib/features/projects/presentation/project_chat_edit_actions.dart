@@ -51,6 +51,15 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       );
       return;
     }
+    final quote = operation.recoveryQuote;
+    if (quote == null) return;
+    final confirmed = await confirmPaidGenerationRetry(
+      context,
+      ref,
+      projectId: operation.projectId,
+      quote: quote,
+    );
+    if (confirmed == null || !mounted) return;
     setState(() => _retryingOperationId = operation.id);
     try {
       await ref
@@ -59,6 +68,7 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
             projectId: widget.projectId,
             operationId: operation.id,
             requestId: createPlanRevisionRetryRequestId(operation.id),
+            retryToken: confirmed.retryToken,
           );
       if (!mounted) return;
       setState(() => _retryingOperationId = null);

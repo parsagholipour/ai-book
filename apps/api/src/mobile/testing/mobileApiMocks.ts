@@ -21,8 +21,24 @@ export const mockPrisma = ({
   pageEditSnapshot: { create: vi.fn() },
   planVersion: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   projectChatMessage: { create: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-  bookEditOperation: { create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+  bookEditOperation: {
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn()
+  },
   generationJob: { count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  generationAttempt: {
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn()
+  },
   creditLedgerEntry: { findMany: vi.fn(), update: vi.fn() },
   subscriptionState: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
@@ -56,8 +72,24 @@ export const mockBilling = (() => {
     }
   }
 
+  class MockGenerationAttemptConflictError extends Error {
+    readonly code = "GENERATION_COMMAND_CONFLICT";
+  }
+
+  class MockGenerationQuotaExceededError extends Error {
+    readonly code = "IMAGE_LIMIT_REACHED";
+    readonly claim: unknown;
+
+    constructor(claim: unknown) {
+      super("Image limit reached");
+      this.claim = claim;
+    }
+  }
+
   return {
     InsufficientCreditsError: MockInsufficientCreditsError,
+    GenerationAttemptConflictError: MockGenerationAttemptConflictError,
+    GenerationQuotaExceededError: MockGenerationQuotaExceededError,
     ensureDefaultProductCatalog: vi.fn(),
     getCreditBalance: vi.fn(),
     listActiveUserEntitlements: vi.fn(),
@@ -85,14 +117,20 @@ export const mockBilling = (() => {
     // Null is "no limit on this plan". Suites that want the free tier's limit
     // override this with a quota object.
     getImageQuota: vi.fn(async () => null),
-    consumeIllustratedBookUse: vi.fn(async () => ({
+    consumeIllustratedBookUse: vi.fn(async (_options?: unknown) => ({
       allowed: true,
       used: 1,
       limit: 3,
       periodKey: "2026-06",
       resetsAt: new Date("2026-07-01T00:00:00.000Z")
     })),
-    releaseIllustratedBookUse: vi.fn()
+    releaseIllustratedBookUse: vi.fn(),
+    startGenerationAttempt: vi.fn(),
+    getGenerationAttempt: vi.fn(),
+    markGenerationAttemptActive: vi.fn(),
+    markGenerationAttemptSucceeded: vi.fn(),
+    failGenerationAttempt: vi.fn(),
+    reconcileGenerationAttemptRefunds: vi.fn()
   };
 })();
 

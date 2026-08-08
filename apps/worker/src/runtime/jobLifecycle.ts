@@ -10,6 +10,9 @@ import {
 } from "@book-maker/core";
 import { Prisma, planRevisionRetryDelayMs, prisma } from "@book-maker/db";
 import {
+  failGenerationAttempt,
+  markGenerationAttemptActive,
+  markGenerationAttemptSucceeded,
   refundCreditLedgerEntry,
   refundLatestProjectOperationCredits,
   releaseManuscriptImportUse
@@ -280,6 +283,10 @@ export async function markActive(job: Job) {
       ...(steps.length ? { steps: steps as Prisma.InputJsonValue } : {})
     }
   });
+  const attemptId = generationAttemptIdFromJob(job);
+  if (attemptId) {
+    await markGenerationAttemptActive(attemptId);
+  }
   await markEditOperationActive(job);
 }
 
@@ -291,7 +298,7 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
   }
   const generationJob = await prisma.generationJob.findUnique({
     where: { id: generationJobId },
-    select: { projectId: true, type: true, contentRevision: true, status: true }
+    select: { projectId: true, type: true, contentRevision: true, status: true, attemptId: true }
   });
   if (!generationJob) {
     return "The durable generation job no longer exists.";
@@ -301,6 +308,22 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
   // work — while FAILED rows are legitimately re-run by BullMQ attempt retries.
   if (generationJob.status === "CANCELED") {
     return "The durable job was canceled before it could run.";
+  }
+  // A terminal attempt has already been refunded. Whatever route brought this
+  // job back — a shared resume endpoint requeueing the failed row, a sibling
+  // still queued when one child failure settled the whole attempt, a Bull
+  // retry racing the settlement — running it now would deliver work the user
+  // was paid back for. A paid retry replays these payloads under a *new*
+  // attempt on new rows, so this never blocks legitimate recovery.
+  const attemptId = generationJob.attemptId ?? generationAttemptIdFromJob(job);
+  if (attemptId) {
+    const attempt = await prisma.generationAttempt.findUnique({
+      where: { id: attemptId },
+      select: { status: true }
+    });
+    if (attempt && (attempt.status === "FAILED" || attempt.status === "CANCELED")) {
+      return "The paid attempt behind this job was already settled and refunded.";
+    }
   }
   const project = await prisma.project.findUnique({
     where: { id: payloadProjectId },
@@ -341,11 +364,17 @@ export async function cancelStaleGenerationJob(job: Job, reason: string): Promis
       }
     });
   }
+  const attemptId = generationAttemptIdFromJob(job);
+  if (attemptId) {
+    await failGenerationAttempt(attemptId, reason, "CANCELED").catch((error) => {
+      console.error(`Failed to settle stale-canceled attempt ${attemptId}`, error);
+    });
+  }
   // Only the run's root job: a stale-cancelled GENERATE_BOOK means the run it
   // was charged for is never going to finish, so its own payload entry comes
   // back (idempotent). A stale *child* proves nothing — a completed run can
   // leave a straggler behind — so children never touch the charge.
-  if (job.name === "generate-book" && typeof job.data.billingLedgerEntryId === "string") {
+  if (!attemptId && job.name === "generate-book" && typeof job.data.billingLedgerEntryId === "string") {
     await refundCreditLedgerEntry(job.data.billingLedgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund stale-cancelled generation for job ${generationJobId ?? "?"}`, error);
     });
@@ -358,7 +387,7 @@ export async function cancelStaleGenerationJob(job: Job, reason: string): Promis
     where: { id: operationId },
     select: { ledgerEntryId: true }
   });
-  if (operation?.ledgerEntryId) {
+  if (!attemptId && operation?.ledgerEntryId) {
     await refundCreditLedgerEntry(operation.ledgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund canceled edit operation ${operationId}`, error);
     });
@@ -393,6 +422,10 @@ export async function markCompleted(job: Job) {
     where: { id: generationJobId },
     data: { status: "COMPLETED", finishedAt: new Date(), message: completionMessage, progress: 100 }
   });
+  const attemptId = generationAttemptIdFromJob(job);
+  if (attemptId && attemptCompletesWithJob(job.name)) {
+    await markGenerationAttemptSucceeded(attemptId);
+  }
   await markEditOperationCompleted(job);
 }
 
@@ -400,6 +433,7 @@ export async function markFailed(job: Job, error: unknown) {
   const generationJobId = job.data.generationJobId as string | undefined;
   const projectId = job.data.projectId as string | undefined;
   const editOperationId = editOperationIdFromJob(job);
+  const attemptId = generationAttemptIdFromJob(job);
   if (generationJobId) {
     await failActiveJobStep(generationJobId);
     await prisma.generationJob.update({
@@ -412,7 +446,13 @@ export async function markFailed(job: Job, error: unknown) {
       }
     });
   }
-  const recoverablePlanRevision = job.name === "revise-plan" && isRecoverableNetworkError(error) && Boolean(editOperationId);
+  if (attemptId) {
+    await failGenerationAttempt(attemptId, errorMessage(error)).catch((settlementError) => {
+      console.error(`Failed to settle generation attempt ${attemptId}`, settlementError);
+    });
+  }
+  const recoverablePlanRevision =
+    !attemptId && job.name === "revise-plan" && isRecoverableNetworkError(error) && Boolean(editOperationId);
   if (editOperationId) {
     if (recoverablePlanRevision) {
       const operation = await prisma.bookEditOperation.findUnique({
@@ -434,7 +474,7 @@ export async function markFailed(job: Job, error: unknown) {
           })
           .catch(() => undefined);
       } else {
-        await failEditOperation(editOperationId, errorMessage(error));
+        await failEditOperation(editOperationId, errorMessage(error), { refund: !attemptId });
       }
       console.warn("Plan revision durable retry decision", {
         event: "plan_revision.retry_scheduled",
@@ -445,7 +485,7 @@ export async function markFailed(job: Job, error: unknown) {
         retryAvailable
       });
     } else {
-      await failEditOperation(editOperationId, errorMessage(error));
+      await failEditOperation(editOperationId, errorMessage(error), { refund: !attemptId });
     }
     if (projectId && job.name === "revise-plan") {
       if (await restoreProjectAfterFailedPlanRevision(prisma, projectId)) {
@@ -512,7 +552,10 @@ async function failAudiobookForJob(job: Job, reason: string): Promise<void> {
   const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
   const projectId = job.data.projectId as string | undefined;
 
-  if (ledgerEntryId) {
+  const attemptId = generationAttemptIdFromJob(job);
+  if (attemptId) {
+    // The attempt boundary already refunded its immutable ledger link.
+  } else if (ledgerEntryId) {
     await refundCreditLedgerEntry(ledgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund audiobook ${audiobookId ?? "?"}`, error);
     });
@@ -538,6 +581,9 @@ async function failAudiobookForJob(job: Job, reason: string): Promise<void> {
 async function refundPlanGenerationForJob(job: Job, reason: string): Promise<void> {
   const projectId = job.data.projectId as string | undefined;
   const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
+  if (generationAttemptIdFromJob(job)) {
+    return;
+  }
   if (ledgerEntryId) {
     await refundCreditLedgerEntry(ledgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund plan generation for project ${projectId ?? "?"}`, error);
@@ -575,12 +621,16 @@ export async function markEditOperationCompleted(job: Job): Promise<void> {
     .catch(() => ({ count: 0 }));
 }
 
-export async function failEditOperation(operationId: string, reason: string): Promise<void> {
+export async function failEditOperation(
+  operationId: string,
+  reason: string,
+  options: { refund?: boolean } = {}
+): Promise<void> {
   const operation = await prisma.bookEditOperation.findUnique({
     where: { id: operationId },
     select: { ledgerEntryId: true }
   });
-  if (operation?.ledgerEntryId) {
+  if (options.refund !== false && operation?.ledgerEntryId) {
     await refundCreditLedgerEntry(operation.ledgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund edit operation ${operationId}`, error);
     });
@@ -601,6 +651,7 @@ export function editOperationIdFromJob(job: Job): string | null {
 export async function markStopped(job: Job) {
   const generationJobId = job.data.generationJobId as string | undefined;
   const projectId = job.data.projectId as string | undefined;
+  const attemptId = generationAttemptIdFromJob(job);
   if (generationJobId) {
     await failActiveJobStep(generationJobId, { allowStopped: true });
     await prisma.generationJob.update({
@@ -613,6 +664,11 @@ export async function markStopped(job: Job) {
       }
     });
   }
+  if (attemptId) {
+    await failGenerationAttempt(attemptId, STOPPED_JOB_ERROR, "CANCELED").catch((settlementError) => {
+      console.error(`Failed to settle stopped generation attempt ${attemptId}`, settlementError);
+    });
+  }
   if (job.name === "generate-audiobook") {
     await failAudiobookForJob(job, STOPPED_JOB_ERROR);
     return;
@@ -621,7 +677,7 @@ export async function markStopped(job: Job) {
   // ledger entry, never the project's book charge — the book is still there.
   const editOperationId = editOperationIdFromJob(job);
   if (editOperationId) {
-    await failEditOperation(editOperationId, STOPPED_JOB_ERROR);
+    await failEditOperation(editOperationId, STOPPED_JOB_ERROR, { refund: !attemptId });
     if (projectId && job.name === "revise-plan") {
       if (await restoreProjectAfterFailedPlanRevision(prisma, projectId)) {
         return;
@@ -656,6 +712,9 @@ export async function markStopped(job: Job) {
 }
 
 export async function refundFailedProjectCredits(job: Job, projectId: string, reason: string): Promise<void> {
+  if (generationAttemptIdFromJob(job)) {
+    return;
+  }
   try {
     const entryId = await bookGenerationLedgerEntryId(job, projectId);
     if (entryId) {
@@ -670,6 +729,22 @@ export async function refundFailedProjectCredits(job: Job, projectId: string, re
   } catch (error) {
     console.error(`Failed to refund credits for project ${projectId}`, error);
   }
+}
+
+function generationAttemptIdFromJob(job: Job): string | null {
+  const attemptId = job.data.attemptId;
+  return typeof attemptId === "string" && attemptId ? attemptId : null;
+}
+
+function attemptCompletesWithJob(jobName: string): boolean {
+  return [
+    "plan-book",
+    "revise-plan",
+    "compile-export",
+    "apply-book-edit",
+    "continue-book",
+    "generate-audiobook"
+  ].includes(jobName);
 }
 
 /**

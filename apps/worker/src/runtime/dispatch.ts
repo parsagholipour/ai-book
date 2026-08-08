@@ -14,6 +14,7 @@ import { inputForPlanVersion } from "../generation/projectInput.js";
 import { config } from "./config.js";
 import { queue } from "./queue.js";
 import { errorMessage, jsonPayloadToRecord } from "./serialization.js";
+import { currentGenerationAttemptId } from "./generationAttemptContext.js";
 
 /**
  * Queue dispatch and generation fan-out.
@@ -52,8 +53,12 @@ export async function enqueueWorkerJob(options: {
     return;
   }
 
-  if (options.dedupeKey) {
-    const existing = await prisma.generationJob.findUnique({ where: { dedupeKey: options.dedupeKey } });
+  const attemptId = currentGenerationAttemptId();
+  const dedupeKey =
+    options.dedupeKey && attemptId ? `${options.dedupeKey}:attempt:${attemptId}` : options.dedupeKey;
+
+  if (dedupeKey) {
+    const existing = await prisma.generationJob.findUnique({ where: { dedupeKey } });
     if (existing) {
       if (existing.status === "QUEUED" && !existing.bullJobId) {
         await dispatchWorkerGenerationJob(existing.id);
@@ -70,16 +75,17 @@ export async function enqueueWorkerJob(options: {
         status: "QUEUED",
         progress: 0,
         message: "Queued",
-        ...(options.dedupeKey ? { dedupeKey: options.dedupeKey } : {}),
+        ...(dedupeKey ? { dedupeKey } : {}),
+        ...(attemptId ? { attemptId } : {}),
         ...(options.contentRevision !== undefined ? { contentRevision: options.contentRevision } : {}),
         payload: options.payload as Prisma.InputJsonValue
       }
     });
   } catch (error) {
-    if (!(options.dedupeKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
+    if (!(dedupeKey && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
       throw error;
     }
-    generationJob = await prisma.generationJob.findUnique({ where: { dedupeKey: options.dedupeKey } });
+    generationJob = await prisma.generationJob.findUnique({ where: { dedupeKey } });
     if (!generationJob) throw error;
   }
   await dispatchWorkerGenerationJob(generationJob.id);
@@ -108,7 +114,12 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
   try {
     const bullJob = await queue.add(
       name,
-      { ...payload, projectId: generationJob.projectId, generationJobId: generationJob.id },
+      {
+        ...payload,
+        projectId: generationJob.projectId,
+        generationJobId: generationJob.id,
+        ...(generationJob.attemptId ? { attemptId: generationJob.attemptId } : {})
+      },
       { ...jobOptionsForName(name), jobId: generationJob.id }
     );
     return prisma.generationJob.update({

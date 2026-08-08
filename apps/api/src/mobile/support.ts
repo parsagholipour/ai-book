@@ -23,6 +23,24 @@ export function hashString(value: string): string {
   return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }
 
+export function fingerprintGenerationRequest(value: unknown): string {
+  return hashString(JSON.stringify(sortJsonValue(value)));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, sortJsonValue(entry)])
+    );
+  }
+  return value;
+}
+
 export function cleanTargetLanguage(language: string | null | undefined): string | null {
   const trimmed = language?.trim();
   return trimmed ? trimmed.slice(0, 40) : null;

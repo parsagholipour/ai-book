@@ -320,6 +320,7 @@ export type MobileBookEditOperationDto = {
   nextRetryAt: string | null;
   retryState: "scheduled" | "available" | "exhausted" | null;
   retryMessage: string | null;
+  recoveryQuote: MobileGenerationRecoveryQuoteDto | null;
   submittedText: string | null;
   requestId: string | null;
   createdAt: string;
@@ -417,6 +418,11 @@ export type MobileProjectRecoveryDto = {
   stoppingActions: number;
 };
 
+export type MobileGenerationRecoveryQuoteDto = {
+  retryToken: string;
+  credits: number;
+};
+
 export type MobileQueuedJobDto = {
   id: string;
   status: "queued" | "active" | "completed" | "failed" | "canceled";
@@ -477,6 +483,7 @@ export type MobileProjectStatusDto = {
   } | null;
   failureMessage: string | null;
   retryAvailable: boolean;
+  recoveryQuote: MobileGenerationRecoveryQuoteDto | null;
   steps: Array<{
     key: "plan" | "write" | "visuals" | "export";
     label: string;

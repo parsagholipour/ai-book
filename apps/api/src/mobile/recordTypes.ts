@@ -141,6 +141,15 @@ export type MobileBookEditOperationRecord = {
   retryRequestId?: string | null;
   error?: string | null;
   generationJob?: { id: string; status: string } | null;
+  /** Newest first when selected; the latest failed attempt supplies the exact retry quote. */
+  generationAttempts?: Array<{
+    id: string;
+    commandKey: string;
+    status: string;
+    operation: string;
+    quotedCredits: number;
+    refundPending: boolean;
+  }>;
   /**
    * The credit entry this operation spent against, when the query asked for it.
    * A reserved entry is refunded in place (`REFUNDED`); a settled one is

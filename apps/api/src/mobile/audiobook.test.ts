@@ -305,7 +305,7 @@ describe("mobile audiobook routes", () => {
           operation: "AUDIOBOOK_GENERATION",
           // 80 base + 60 pages × 12.
           amountCredits: 800,
-          idempotencyKey: "mobile:audiobook:project-1:3:Zephyr:new",
+          idempotencyKey: "generation-attempt:attempt-mobile-audiobook-start-project-1-3-new",
           metadata: expect.objectContaining({ pageCount: 60, voice: "Zephyr" })
         })
       );
@@ -335,7 +335,7 @@ describe("mobile audiobook routes", () => {
       await app.close();
     });
 
-    it("refunds when the job cannot be queued", async () => {
+    it("rolls back the charge when the durable job cannot be created", async () => {
       vi.mocked(enqueueGenerationJob).mockRejectedValueOnce(new Error("queue down"));
       const app = await buildMobileApp();
 
@@ -348,7 +348,7 @@ describe("mobile audiobook routes", () => {
         })
       ).resolves.toMatchObject({ statusCode: 500 });
 
-      expect(vi.mocked(refundCreditLedgerEntry)).toHaveBeenCalledWith("spend-1", expect.any(String));
+      expect(vi.mocked(refundCreditLedgerEntry)).not.toHaveBeenCalled();
       await app.close();
     });
 
@@ -378,7 +378,9 @@ describe("mobile audiobook routes", () => {
       });
 
       expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
-        expect.objectContaining({ idempotencyKey: "mobile:audiobook:project-1:request-abc123" })
+        expect.objectContaining({
+          idempotencyKey: "generation-attempt:attempt-mobile-audiobook-start-project-1-request-abc123"
+        })
       );
       await app.close();
     });
@@ -472,14 +474,13 @@ describe("mobile audiobook routes", () => {
         payload: { voice: "Zephyr" }
       });
 
-      // A key stable across attempts would find the first attempt's refunded
-      // entry, and committing an already-settled row is a no-op — so the retry
-      // narrated the whole book for nothing. Naming the run being superseded is
-      // what makes this a second charge.
+      // Naming the run being superseded makes this a distinct attempt while
+      // still converging concurrent starts for the same narration state.
       expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
         expect.objectContaining({
           amountCredits: 800,
-          idempotencyKey: "mobile:audiobook:project-1:3:Zephyr:job-1"
+          idempotencyKey:
+            "generation-attempt:attempt-mobile-audiobook-start-project-1-3-job-1"
         })
       );
       await app.close();
@@ -497,7 +498,10 @@ describe("mobile audiobook routes", () => {
       });
 
       expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(
-        expect.objectContaining({ idempotencyKey: "mobile:audiobook:project-1:3:Zephyr:job-1" })
+        expect.objectContaining({
+          idempotencyKey:
+            "generation-attempt:attempt-mobile-audiobook-start-project-1-3-job-1"
+        })
       );
       await app.close();
     });

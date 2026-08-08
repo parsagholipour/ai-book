@@ -275,12 +275,17 @@ class SlowPlanRepository implements ProjectsRepository {
     required String projectId,
     required String operationId,
     String? requestId,
+    String? retryToken,
   }) {
     throw UnimplementedError();
   }
 
   @override
-  Future<MobileProjectRecovery> resumeProject(String id) async {
+  Future<MobileProjectRecovery> resumeProject(
+    String id, {
+    String? requestId,
+    String? retryToken,
+  }) async {
     return MobileProjectRecovery(
       projectId: id,
       status: 'recovery_started',

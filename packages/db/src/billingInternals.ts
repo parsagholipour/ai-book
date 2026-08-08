@@ -69,7 +69,7 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
-export type BillingTx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$use" | "$extends">;
+export type BillingTx = Prisma.TransactionClient;
 
 export type LedgerContext = {
   userId: string;

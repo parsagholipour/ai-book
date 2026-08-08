@@ -43,6 +43,7 @@ import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'progress_step_row.dart';
+import 'generation_retry_confirmation.dart';
 import 'project_chat_bubbles.dart';
 import 'project_export_actions.dart';
 import 'saved_export_card.dart';
@@ -544,6 +545,15 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       );
       return;
     }
+    final quote = operation.recoveryQuote;
+    if (quote == null) return;
+    final confirmed = await confirmPaidGenerationRetry(
+      context,
+      ref,
+      projectId: operation.projectId,
+      quote: quote,
+    );
+    if (confirmed == null || !mounted) return;
     setState(() => _planBusyAction = 'retry-${operation.id}');
     try {
       final retried = await ref
@@ -552,6 +562,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
             projectId: operation.projectId,
             operationId: operation.id,
             requestId: createPlanRevisionRetryRequestId(operation.id),
+            retryToken: confirmed.retryToken,
           );
       if (!mounted) return;
       setState(() {

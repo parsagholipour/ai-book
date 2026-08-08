@@ -13,6 +13,7 @@ import {
   mockProjectStatus,
   mockQueue
 } from "./mobileApiMocks.js";
+import { installGenerationAttemptMock } from "./mobileApiGenerationAttemptMock.js";
 
 /**
  * Shared harness for the mobile API suites in this directory.
@@ -35,7 +36,8 @@ export const state = {
   planVersions: [] as any[],
   bookEditOperations: [] as any[],
   pages: [] as any[],
-  pageEditSnapshots: [] as any[]
+  pageEditSnapshots: [] as any[],
+  generationAttempts: [] as any[]
 };
 
 export const originalEnv = { ...process.env };
@@ -90,6 +92,7 @@ export function resetMobileHarness(): void {
     status: "SETTLED",
     idempotencyKey: `test-${id}`
   }));
+  installGenerationAttemptMock({ mockBilling, mockPrisma, state });
   mockBilling.refundCreditLedgerEntry.mockResolvedValue(null);
   mockBilling.grantProjectEntitlement.mockResolvedValue({
     id: "entitlement-export",
@@ -125,8 +128,11 @@ export function resetMobileHarness(): void {
     subscriptionStatus: null,
     entitlementType: null
   });
+  // The approval guard reads the count of the conditional APPROVED write; a
+  // bare vi.fn() resolving undefined would fail every approval in every suite.
+  mockPrisma.planVersion.updateMany.mockResolvedValue({ count: 1 });
   mockQueue.enqueueGenerationJob.mockResolvedValue(jobRecord());
-  mockQueue.dispatchGenerationJob.mockResolvedValue(jobRecord());
+  mockQueue.dispatchGenerationJob.mockImplementation(async (id: string) => jobRecord({ id }));
   // Compensation paths refund only when the cancel claims the row; an
   // undispatched row in these tests is always claimable.
   mockQueue.cancelUndispatchedGenerationJob.mockResolvedValue(true);
@@ -155,6 +161,7 @@ export function resetMobileHarness(): void {
   state.projectChatMessages = [];
   state.planVersions = [];
   state.bookEditOperations = [];
+  state.generationAttempts = [];
   mockPrisma.projectChatMessage.create.mockImplementation(async ({ data }: { data: Record<string, any> }) => {
     const record = {
       id: `chat-${state.projectChatMessages.length + 1}`,
@@ -258,6 +265,19 @@ export function resetMobileHarness(): void {
     return typeof take === "number" ? sorted.slice(0, take) : sorted;
   });
   mockPrisma.bookEditOperation.create.mockImplementation(async ({ data }: { data: Record<string, any> }) => {
+    // Production's @@unique([projectId, requestId]) is what settles a raced
+    // Apply; without it here the loser path could never be exercised.
+    if (
+      data.requestId &&
+      state.bookEditOperations.some(
+        (operation) => operation.projectId === data.projectId && operation.requestId === data.requestId
+      )
+    ) {
+      throw new MockPrismaKnownRequestError(
+        "Unique constraint failed on the fields: (`projectId`,`requestId`)",
+        { code: "P2002" }
+      );
+    }
     const record = {
       id: `operation-${state.bookEditOperations.length + 1}`,
       projectId: data.projectId,
@@ -292,7 +312,10 @@ export function resetMobileHarness(): void {
     if (!record) {
       throw new Error(`Operation not found: ${where.id}`);
     }
-    Object.assign(record, data, { updatedAt: new Date("2026-06-15T13:59:00.000Z") });
+    const { automaticRetryCount, ...rest } = data;
+    Object.assign(record, rest, { updatedAt: new Date("2026-06-15T13:59:00.000Z") });
+    if (typeof automaticRetryCount === "number") record.automaticRetryCount = automaticRetryCount;
+    if (automaticRetryCount?.increment) record.automaticRetryCount += automaticRetryCount.increment;
     if (data.generationJobId) {
       record.generationJob = { id: data.generationJobId, status: "QUEUED" };
     }
@@ -321,6 +344,11 @@ export function resetMobileHarness(): void {
   mockPrisma.bookEditOperation.findUnique.mockImplementation(async ({ where }: { where: { id?: string } }) =>
     state.bookEditOperations.find((operation) => operation.id === where.id) ?? null
   );
+  mockPrisma.bookEditOperation.findUniqueOrThrow.mockImplementation(async ({ where }: { where: { id?: string } }) => {
+    const operation = state.bookEditOperations.find((candidate) => candidate.id === where.id);
+    if (!operation) throw new Error(`Operation not found: ${where.id}`);
+    return operation;
+  });
   mockPrisma.bookEditOperation.updateMany.mockImplementation(async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
     const record = state.bookEditOperations.find((operation) => operation.id === where.id);
     if (!record || (where.status !== undefined && record.status !== where.status)) return { count: 0 };
@@ -337,6 +365,7 @@ export function resetMobileHarness(): void {
           (where.projectId === undefined || operation.projectId === where.projectId) &&
           (typeof where.id !== "string" || operation.id === where.id) &&
           (where.id?.not === undefined || operation.id !== where.id.not) &&
+          (where.requestId === undefined || operation.requestId === where.requestId) &&
           (where.userMessageId === undefined || operation.userMessageId === where.userMessageId) &&
           (where.kind === undefined || operation.kind === where.kind) &&
           (typeof where.status !== "string" || operation.status === where.status) &&
@@ -629,6 +658,18 @@ export function failedPlanRevisionOperationRecord(overrides: Record<string, unkn
       startedAt: new Date("2026-06-15T13:00:00.000Z"),
       updatedAt: new Date("2026-06-15T13:01:00.000Z")
     },
+    generationAttempts: [
+      {
+        id: "attempt-failed-revision",
+        commandKey: "mobile:edit-operation:operation-failed-revision",
+        status: "FAILED",
+        operation: "PLAN_REVISION",
+        quotedCredits: 40,
+        refundPending: false,
+        retryOfAttemptId: null,
+        createdAt: new Date("2026-06-15T13:00:00.000Z")
+      }
+    ],
     createdAt: new Date("2026-06-15T13:00:00.000Z"),
     updatedAt: new Date("2026-06-15T13:01:00.000Z"),
     appliedAt: null,
@@ -647,6 +688,9 @@ export function matchesProjectChatWhere(message: Record<string, any>, where: Rec
     return false;
   }
   if (where.requestId !== undefined && message.requestId !== where.requestId) {
+    return false;
+  }
+  if (where.operationId !== undefined && message.operationId !== where.operationId) {
     return false;
   }
   if (where.isActiveChild !== undefined && message.isActiveChild !== where.isActiveChild) {

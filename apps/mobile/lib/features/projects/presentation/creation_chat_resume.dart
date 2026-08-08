@@ -24,6 +24,12 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
 
   Future<void> _retryPlanGeneration(String projectId) async {
     if (_planBusyAction != null) return;
+    final status =
+        ref.read(projectStatusProvider(projectId)).value ??
+        await ref.read(projectStatusProvider(projectId).future);
+    if (status == null || !mounted) return;
+    final quote = await confirmGenerationRetry(context, ref, status);
+    if (quote == null || !mounted) return;
     final retryRequest = Object();
     setState(() {
       _planBusyAction = 'retry-plan';
@@ -32,7 +38,12 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
     try {
       final recovery = await ref
           .read(projectsRepositoryProvider)
-          .resumeProject(projectId);
+          .resumeProject(
+            projectId,
+            requestId:
+                'generation-retry-${DateTime.now().microsecondsSinceEpoch}',
+            retryToken: quote.retryToken,
+          );
       if (!mounted) return;
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
@@ -58,10 +69,21 @@ mixin _CreationChatResume on ConsumerState<CreationChatScreen> {
   /// status stream stop themselves on `failed`, so nothing would notice the
   /// book moving again.
   Future<void> _retryBookGeneration(String projectId) async {
+    final status =
+        ref.read(projectStatusProvider(projectId)).value ??
+        await ref.read(projectStatusProvider(projectId).future);
+    if (status == null || !mounted) return;
+    final quote = await confirmGenerationRetry(context, ref, status);
+    if (quote == null || !mounted) return;
     try {
       final recovery = await ref
           .read(projectsRepositoryProvider)
-          .resumeProject(projectId);
+          .resumeProject(
+            projectId,
+            requestId:
+                'generation-retry-${DateTime.now().microsecondsSinceEpoch}',
+            retryToken: quote.retryToken,
+          );
       if (!mounted) return;
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);

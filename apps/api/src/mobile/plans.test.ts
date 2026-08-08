@@ -16,6 +16,7 @@ import {
 import { DEFAULT_CREDIT_COSTS } from "@book-maker/core";
 
 import { enqueueGenerationJob, requeueGenerationJob } from "../queue.js";
+import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import {
   bearer,
   buildMobileApp,
@@ -24,6 +25,7 @@ import {
   mockPrisma,
   projectRecord,
   resetMobileHarness,
+  state,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 
@@ -133,7 +135,7 @@ describe("mobile plan lifecycle", () => {
     await app.close();
   });
 
-  it("retries recoverable mobile generation failures without returning queue internals", async () => {
+  it("rejects a legacy no-body generation retry without charging", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValueOnce(
       projectRecord({
@@ -162,34 +164,14 @@ describe("mobile plan lifecycle", () => {
       url: "/api/mobile/projects/project-1/resume",
       headers: bearer("token-a")
     });
-    const body = response.json();
-
-    expect(response.statusCode).toBe(202);
-    expect(body).toEqual({
-      projectId: "project-1",
-      status: "recovery_started",
-      currentAction: "Picking up your book generation.",
-      resumedActions: 1,
-      skippedActions: 0,
-      stoppingActions: 0
-    });
-    expect(mockPrisma.project.update).toHaveBeenCalledWith({
-      where: { id: "project-1" },
-      data: { status: "GENERATING" }
-    });
-    expect(vi.mocked(requeueGenerationJob)).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "job-failed-page",
-        projectId: "project-1",
-        type: "GENERATE_PAGE",
-        payload: { pageId: "page-1", planId: "plan-1" }
-      })
-    );
-    expect(JSON.stringify(body)).not.toMatch(/jobs|queue|provider|model|temperature/);
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("RETRY_CONFIRMATION_REQUIRED");
+    expect(vi.mocked(requeueGenerationJob)).not.toHaveBeenCalled();
+    expect(reserveCredits).not.toHaveBeenCalled();
     await app.close();
   });
 
-  it("requeues a failed initial plan as a planning recovery", async () => {
+  it("does not requeue a refunded initial-plan ledger from a legacy request", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValueOnce(
       projectRecord({
@@ -227,25 +209,294 @@ describe("mobile plan lifecycle", () => {
       headers: bearer("token-a")
     });
 
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("RETRY_CONFIRMATION_REQUIRED");
+    expect(vi.mocked(requeueGenerationJob)).not.toHaveBeenCalled();
+    expect(reserveCredits).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("uses a confirmed quote to create a fresh charged recovery attempt", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const sourceAttempt = {
+      id: "attempt-source",
+      userId: "user-a",
+      commandKey: "mobile:plan-approval:plan-1",
+      requestFingerprint: "source-fingerprint",
+      status: "FAILED",
+      operation: "FULL_BOOK_GENERATION",
+      quotedCredits: 776,
+      projectId: "project-1",
+      refundPending: false
+    };
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        currentPlanId: "plan-1",
+        currentPlan: { id: "plan-1", createdAt: new Date("2026-06-15T12:00:00.000Z") }
+      })
+    );
+    mockPrisma.generationJob.findMany
+      .mockResolvedValueOnce([
+        jobRecord({
+          id: "job-failed-page",
+          projectId: "project-1",
+          type: "GENERATE_PAGE",
+          status: "FAILED",
+          attemptId: sourceAttempt.id,
+          payload: {
+            pageId: "page-1",
+            planId: "plan-1",
+            billingLedgerEntryId: "refunded-ledger"
+          }
+        })
+      ])
+      .mockResolvedValueOnce([{ id: "job-paid-retry", status: "QUEUED" }]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([{ id: "page-1" }]);
+    mockPrisma.generationAttempt.findMany.mockResolvedValueOnce([sourceAttempt]);
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-paid-retry", type: "GENERATE_PAGE" })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/resume",
+      headers: bearer("token-a"),
+      payload: {
+        requestId: "generation-retry-0001",
+        retryToken: generationRecoveryQuote(sourceAttempt).retryToken
+      }
+    });
+
     expect(response.statusCode).toBe(202);
-    expect(response.json()).toEqual({
+    expect(response.json()).toMatchObject({ resumedActions: 1, currentAction: "Picking up your book generation." });
+    expect(reserveCredits).toHaveBeenCalledWith(
+      expect.objectContaining({ operation: "FULL_BOOK_GENERATION", amountCredits: 776 })
+    );
+    expect(enqueueGenerationJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: expect.stringContaining("attempt-mobile-generation-retry-attempt-source"),
+        payload: expect.objectContaining({
+          pageId: "page-1",
+          billingLedgerEntryId: "ledger-FULL_BOOK_GENERATION"
+        })
+      })
+    );
+    // The retry re-charges the full package, so it re-grants what the refund
+    // revoked: exports stay unlocked on the delivered book.
+    expect(vi.mocked(grantProjectEntitlement)).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-a", type: "EXPORT_UNLOCK" })
+    );
+    await app.close();
+  });
+
+  it("re-claims the illustrated-book slot on a confirmed full-book retry", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const sourceAttempt = {
+      id: "attempt-source",
+      userId: "user-a",
+      commandKey: "mobile:plan-approval:plan-1",
+      requestFingerprint: "source-fingerprint",
+      status: "FAILED",
+      operation: "FULL_BOOK_GENERATION",
+      quotedCredits: 776,
       projectId: "project-1",
-      status: "recovery_started",
-      currentAction: "Retrying your book plan.",
-      resumedActions: 1,
-      skippedActions: 0,
-      stoppingActions: 0
+      refundPending: false
+    };
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        currentPlanId: "plan-1",
+        currentPlan: { id: "plan-1", createdAt: new Date("2026-06-15T12:00:00.000Z") }
+      })
+    );
+    mockPrisma.generationJob.findMany
+      .mockResolvedValueOnce([
+        jobRecord({
+          id: "job-failed-page",
+          projectId: "project-1",
+          type: "GENERATE_PAGE",
+          status: "FAILED",
+          attemptId: sourceAttempt.id,
+          payload: { pageId: "page-1", planId: "plan-1" }
+        })
+      ])
+      .mockResolvedValueOnce([{ id: "job-paid-retry", status: "QUEUED" }]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([{ id: "page-1" }]);
+    mockPrisma.generationAttempt.findMany.mockResolvedValueOnce([sourceAttempt]);
+    vi.mocked(getImageQuota).mockResolvedValueOnce({
+      used: 1,
+      limit: 3,
+      periodKey: "2026-06",
+      resetsAt: new Date("2026-07-01T00:00:00.000Z")
     });
-    expect(mockPrisma.project.update).toHaveBeenCalledWith({
-      where: { id: "project-1" },
-      data: { status: "PLANNING" }
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/resume",
+      headers: bearer("token-a"),
+      payload: {
+        requestId: "generation-retry-0002",
+        retryToken: generationRecoveryQuote(sourceAttempt).retryToken
+      }
     });
-    expect(vi.mocked(requeueGenerationJob)).toHaveBeenCalledWith({
-      id: "job-failed-plan",
+
+    // The refund of the failed attempt released the slot, so the paid retry of
+    // an illustrated package claims it again rather than bypassing the budget.
+    expect(response.statusCode).toBe(202);
+    expect(vi.mocked(consumeIllustratedBookUse)).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-a", limit: 3 })
+    );
+    await app.close();
+  });
+
+  it("rejects a confirmed retry whose paid retry already ran instead of replaying it as a 202", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const sourceAttempt = {
+      id: "attempt-source",
+      userId: "user-a",
+      commandKey: "mobile:plan-approval:plan-1",
+      requestFingerprint: "source-fingerprint",
+      status: "FAILED",
+      operation: "FULL_BOOK_GENERATION",
+      quotedCredits: 776,
       projectId: "project-1",
-      type: "PLAN_BOOK",
-      payload: failedPlanPayload
+      refundPending: false
+    };
+    // The paid retry of that attempt exists and has itself already failed.
+    state.generationAttempts.push({
+      id: "attempt-paid-retry",
+      userId: "user-a",
+      commandKey: "mobile:generation-retry:attempt-source:generation-retry-0001",
+      requestFingerprint: "retry-fingerprint",
+      status: "FAILED",
+      operation: "FULL_BOOK_GENERATION",
+      quotedCredits: 776,
+      projectId: "project-1",
+      retryOfAttemptId: "attempt-source",
+      refundPending: false,
+      primaryJobId: "job-paid-retry",
+      ledgerEntryId: null,
+      editOperationId: null,
+      error: null,
+      createdAt: new Date("2026-06-15T13:00:00.000Z")
     });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        currentPlanId: "plan-1",
+        currentPlan: { id: "plan-1", createdAt: new Date("2026-06-15T12:00:00.000Z") }
+      })
+    );
+    mockPrisma.generationJob.findMany
+      .mockResolvedValueOnce([
+        jobRecord({
+          id: "job-failed-page",
+          projectId: "project-1",
+          type: "GENERATE_PAGE",
+          status: "FAILED",
+          attemptId: sourceAttempt.id,
+          payload: { pageId: "page-1", planId: "plan-1" }
+        })
+      ])
+      .mockResolvedValueOnce([{ id: "job-paid-retry", status: "FAILED" }]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([{ id: "page-1" }]);
+    mockPrisma.generationAttempt.findMany.mockResolvedValueOnce([sourceAttempt]);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/resume",
+      headers: bearer("token-a"),
+      payload: {
+        requestId: "generation-retry-0002",
+        retryToken: generationRecoveryQuote(sourceAttempt).retryToken
+      }
+    });
+
+    // Replaying the spent retry queues nothing; a 202 would strand the app on
+    // a dead quote. The refreshed status now quotes the failed retry itself.
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("RETRY_NOT_AVAILABLE");
+    expect(reserveCredits).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("replays a pre-migration approval instead of charging a second package", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
+      id: "plan-1",
+      projectId: "project-1",
+      status: "APPROVED",
+      project: projectRecord({ id: "project-1" })
+    });
+    // The generation job from before migration 000039: it owns the approval
+    // dedupe key but carries no attempt, so a charge-first re-approval would
+    // debit again and then be handed this same job.
+    mockPrisma.generationJob.findUnique.mockResolvedValueOnce(
+      jobRecord({ id: "job-legacy-book", type: "GENERATE_BOOK", status: "COMPLETED", attemptId: null })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-1/approve",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({ status: "generation_queued", job: { id: "job-legacy-book" } });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rejects approving a superseded plan version without charging", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
+      id: "plan-old",
+      projectId: "project-1",
+      status: "SUPERSEDED",
+      project: projectRecord({ id: "project-1" })
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-old/approve",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("PLAN_SUPERSEDED");
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rolls the charge back when a concurrent approval supersedes the plan mid-transaction", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
+      id: "plan-1",
+      projectId: "project-1",
+      status: "DRAFT",
+      project: projectRecord({ id: "project-1" })
+    });
+    // The conditional APPROVED write matches nothing: the racing approval of
+    // another version already superseded this plan inside its own transaction.
+    mockPrisma.planVersion.updateMany.mockResolvedValueOnce({ count: 0 });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-1/approve",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("GENERATION_COMMAND_CONFLICT");
     await app.close();
   });
 
@@ -482,7 +733,7 @@ describe("free tier illustrated book limit", () => {
     await app.close();
   });
 
-  it("hands the slot back when the charge never lands", async () => {
+  it("rolls quota and credit writes back together when the charge cannot land", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     draftPlanForApproval();
     vi.mocked(getImageQuota).mockResolvedValueOnce(freeQuota(0));
@@ -499,8 +750,9 @@ describe("free tier illustrated book limit", () => {
     });
 
     expect(response.statusCode).toBe(402);
-    // Running out of credits must not also cost one of the three slots.
-    expect(releaseIllustratedBookUse).toHaveBeenCalledWith("user-a", "2026-06");
+    // The quota claim and debit share one transaction; there is no separate
+    // release call (and therefore no crash window between the two actions).
+    expect(releaseIllustratedBookUse).not.toHaveBeenCalled();
     await app.close();
   });
 

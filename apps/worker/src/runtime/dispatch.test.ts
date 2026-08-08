@@ -51,6 +51,7 @@ import {
   reconcileUndispatchedWorkerJobs,
   workerJobNameForType
 } from "./dispatch.js";
+import { runWithGenerationAttempt } from "./generationAttemptContext.js";
 
 type Row = {
   id: string;
@@ -147,6 +148,38 @@ describe("enqueueWorkerJob", () => {
         where: { id: "gj-1" },
         data: expect.objectContaining({ bullJobId: "bull-1", nextDispatchAt: null })
       })
+    );
+  });
+
+  it("scopes descendant dedupe and queue payloads to the paid attempt", async () => {
+    mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+      const row = { ...generationRow(), ...data };
+      mocks.prisma.generationJob.findUnique.mockResolvedValue(row);
+      return row;
+    });
+
+    await runWithGenerationAttempt("attempt-1", () =>
+      enqueueWorkerJob({
+        projectId: "project-1",
+        type: "GENERATE_IMAGE",
+        name: "generate-image",
+        dedupeKey: "page-image:page-1",
+        payload: { pageId: "page-1" }
+      })
+    );
+
+    expect(mocks.prisma.generationJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          attemptId: "attempt-1",
+          dedupeKey: "page-image:page-1:attempt:attempt-1"
+        })
+      })
+    );
+    expect(mocks.queueAdd).toHaveBeenCalledWith(
+      "generate-image",
+      expect.objectContaining({ attemptId: "attempt-1", pageId: "page-1" }),
+      expect.any(Object)
     );
   });
 

@@ -6,6 +6,7 @@
 import { PLAN_ENTITLEMENT_TYPES, creditCostForOperation } from "@book-maker/core";
 import { prisma } from "./client.ts";
 import {
+  type BillingTx,
   type CreditLedgerEntryRecord,
   type UserEntitlementRecord,
   activeEntitlementWhere,
@@ -35,7 +36,24 @@ export async function grantProjectEntitlement(options: {
   expiresAt?: Date | null | undefined;
   metadata?: Record<string, unknown> | undefined;
 }): Promise<UserEntitlementRecord> {
-  const existing = await prisma.userEntitlement.findFirst({
+  return grantProjectEntitlementTx(prisma, options);
+}
+
+export async function grantProjectEntitlementTx(
+  tx: BillingTx,
+  options: {
+    userId: string;
+    projectId: string;
+    type: ProjectEntitlementType;
+    source: string;
+    creditsCost: number;
+    relatedLedgerEntryId?: string | null | undefined;
+    purchaseRecordId?: string | null | undefined;
+    expiresAt?: Date | null | undefined;
+    metadata?: Record<string, unknown> | undefined;
+  }
+): Promise<UserEntitlementRecord> {
+  const existing = await tx.userEntitlement.findFirst({
     where: {
       userId: options.userId,
       projectId: options.projectId,
@@ -49,7 +67,7 @@ export async function grantProjectEntitlement(options: {
     return existing;
   }
 
-  return prisma.userEntitlement.create({
+  return tx.userEntitlement.create({
     data: {
       userId: options.userId,
       projectId: options.projectId,

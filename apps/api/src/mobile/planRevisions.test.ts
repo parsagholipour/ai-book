@@ -8,14 +8,15 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 import { reserveCredits } from "@book-maker/db/billing";
 
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import {
-  MockPrismaKnownRequestError,
   approvedPlanRecord,
   bearer,
   buildMobileApp,
   failedPlanRevisionOperationRecord,
   jobRecord,
   mockAccessTokens,
+  mockBilling,
   mockPrisma,
   projectRecord,
   resetMobileHarness,
@@ -69,7 +70,66 @@ describe("mobile plan revision retries and operations", () => {
     await app.close();
   });
 
-  it("retries one failed plan revision idempotently without charging again", async () => {
+  it("requires a quote and creates a newly charged attempt for a failed revision", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const failed = failedPlanRevisionOperationRecord();
+    state.bookEditOperations.push(failed);
+    const sourceAttempt = failed.generationAttempts[0]!;
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(
+      jobRecord({ id: "job-paid-retry", type: "REVISE_PLAN" })
+    );
+    const app = await buildMobileApp();
+
+    const unconfirmed = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+    expect(unconfirmed.statusCode).toBe(400);
+    expect(unconfirmed.json().error.code).toBe("RETRY_CONFIRMATION_REQUIRED");
+    expect(reserveCredits).not.toHaveBeenCalled();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
+      headers: bearer("token-a"),
+      payload: {
+        requestId: "retry-paid-0001",
+        retryToken: generationRecoveryQuote(sourceAttempt).retryToken
+      }
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json().operation).toMatchObject({
+      id: "operation-failed-revision",
+      status: "queued"
+    });
+    expect(reserveCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "PLAN_REVISION",
+        amountCredits: 40,
+        idempotencyKey:
+          "generation-attempt:attempt-mobile-plan-revision-retry-attempt-failed-revision-retry-paid-0001"
+      })
+    );
+    expect(enqueueGenerationJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "REVISE_PLAN",
+        attemptId:
+          "attempt-mobile-plan-revision-retry-attempt-failed-revision-retry-paid-0001",
+        payload: expect.objectContaining({
+          retryOfGenerationJobId: "job-failed-revision",
+          billingLedgerEntryId: "ledger-PLAN_REVISION"
+        })
+      })
+    );
+    expect(dispatchGenerationJob).toHaveBeenCalledWith("job-paid-retry");
+    await app.close();
+  });
+
+  it("creates a fresh charged job for a confirmed failed revision", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const failed = failedPlanRevisionOperationRecord({
       automaticRetryCount: 0,
@@ -99,7 +159,10 @@ describe("mobile plan revision retries and operations", () => {
       method: "POST",
       url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-request-0001" }
+      payload: {
+        requestId: "retry-request-0001",
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+      }
     });
 
     expect(response.statusCode).toBe(202);
@@ -107,21 +170,20 @@ describe("mobile plan revision retries and operations", () => {
     expect(enqueueGenerationJob).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "REVISE_PLAN",
-        dedupeKey: "plan-revision-retry:operation-failed-revision:1",
+        dedupeKey: expect.stringContaining("plan-revision-retry:attempt-mobile-plan-revision-retry"),
         dispatch: false,
         payload: expect.objectContaining({
           billingLedgerEntryId: "ledger-PLAN_REVISION",
-          retryOfGenerationJobId: "job-failed-revision",
-          retryNumber: 1
+          retryOfGenerationJobId: "job-failed-revision"
         })
       })
     );
     expect(dispatchGenerationJob).toHaveBeenCalledWith("job-retry-1");
-    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(reserveCredits).toHaveBeenCalledTimes(1);
     await app.close();
   });
 
-  it("queues a second recovery when the first recovery fails and the command ID changes", async () => {
+  it("allows another confirmed charge only after the first retry also fails", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const failed = failedPlanRevisionOperationRecord();
     state.bookEditOperations.push(failed);
@@ -135,7 +197,10 @@ describe("mobile plan revision retries and operations", () => {
       method: "POST",
       url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-command-1" }
+      payload: {
+        requestId: "retry-command-1",
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+      }
     });
     expect(first.statusCode).toBe(202);
 
@@ -156,20 +221,24 @@ describe("mobile plan revision retries and operations", () => {
       },
       error: "The first recovery also failed."
     });
+    failed.generationAttempts[0]!.status = "FAILED";
 
     const second = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-command-2" }
+      payload: {
+        requestId: "retry-command-2",
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+      }
     });
 
     expect(second.statusCode).toBe(202);
     expect(second.json().operation).toMatchObject({ status: "queued" });
     expect(enqueueGenerationJob).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        dedupeKey: "plan-revision-retry:operation-failed-revision:2",
-        payload: expect.objectContaining({ retryNumber: 2, retryOfGenerationJobId: "job-retry-1" })
+        dedupeKey: expect.stringContaining("plan-revision-retry:attempt-mobile-plan-revision-retry"),
+        payload: expect.objectContaining({ retryOfGenerationJobId: "job-retry-1" })
       })
     );
     expect(dispatchGenerationJob).toHaveBeenLastCalledWith("job-retry-2");
@@ -194,7 +263,10 @@ describe("mobile plan revision retries and operations", () => {
       method: "POST",
       url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-while-busy" }
+      payload: {
+        requestId: "retry-while-busy",
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+      }
     });
 
     expect(response.statusCode).toBe(409);
@@ -203,7 +275,7 @@ describe("mobile plan revision retries and operations", () => {
     await app.close();
   });
 
-  it("converts a partial-unique retry race into a conflict instead of a server error", async () => {
+  it("maps a concurrent attempt-claim conflict to a retry conflict", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const failed = failedPlanRevisionOperationRecord();
     const competing = failedPlanRevisionOperationRecord({
@@ -224,8 +296,8 @@ describe("mobile plan revision retries and operations", () => {
       return null;
     });
     mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
-    mockPrisma.$transaction.mockRejectedValueOnce(
-      new MockPrismaKnownRequestError("open operation conflict", { code: "P2002" })
+    mockBilling.startGenerationAttempt.mockRejectedValueOnce(
+      new mockBilling.GenerationAttemptConflictError("That retry was already claimed.")
     );
     const app = await buildMobileApp();
 
@@ -233,16 +305,19 @@ describe("mobile plan revision retries and operations", () => {
       method: "POST",
       url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-race" }
+      payload: {
+        requestId: "retry-race",
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+      }
     });
 
     expect(response.statusCode).toBe(409);
     expect(response.json().error).toMatchObject({ code: "RETRY_NOT_AVAILABLE" });
-    expect(openOperationChecks).toBe(2);
+    expect(openOperationChecks).toBe(1);
     await app.close();
   });
 
-  it("continues automatic retry reconciliation after one operation throws", async () => {
+  it("does not run the former automatic paid-retry sweep", async () => {
     const first = failedPlanRevisionOperationRecord({ id: "operation-retry-error", projectId: "project-error" });
     const second = failedPlanRevisionOperationRecord({ id: "operation-retry-ok", projectId: "project-ok" });
     state.bookEditOperations.push(first, second);
@@ -260,18 +335,12 @@ describe("mobile plan revision retries and operations", () => {
 
     const queued = await reconcileRetryablePlanRevisionOperations({ log });
 
-    expect(queued).toBe(1);
-    expect(dispatchGenerationJob).toHaveBeenCalledWith("job-reconciled");
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        warning: "retry_reconciliation_failed",
-        operationId: "operation-retry-error"
-      }),
-      "Plan revision retry reconciliation skipped one operation"
-    );
+    expect(queued).toBe(0);
+    expect(dispatchGenerationJob).not.toHaveBeenCalled();
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
-  it("retires a superseded plan revision so the sweep stops re-rejecting it", async () => {
+  it("leaves superseded failures untouched for explicit recovery decisions", async () => {
     const superseded = failedPlanRevisionOperationRecord();
     state.bookEditOperations.push(superseded);
     mockPrisma.bookEditOperation.findMany.mockImplementation(async () =>
@@ -294,16 +363,12 @@ describe("mobile plan revision retries and operations", () => {
     expect(await reconcileRetryablePlanRevisionOperations({ log })).toBe(0);
     expect(await reconcileRetryablePlanRevisionOperations({ log })).toBe(0);
 
-    expect(superseded).toMatchObject({ automaticRetryCount: 2, nextRetryAt: null });
-    expect(log.warn).toHaveBeenCalledTimes(1);
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ warning: "stale_plan", operationId: "operation-failed-revision" }),
-      "Plan revision retry rejected because its plan is stale"
-    );
+    expect(superseded).toMatchObject({ automaticRetryCount: 0, nextRetryAt: null });
+    expect(log.warn).not.toHaveBeenCalled();
     expect(enqueueGenerationJob).not.toHaveBeenCalled();
   });
 
-  it("defers rather than retires a revision blocked by another open operation", async () => {
+  it("does not schedule a background retry for a blocked revision", async () => {
     const blocked = failedPlanRevisionOperationRecord();
     state.bookEditOperations.push(
       blocked,
@@ -327,13 +392,13 @@ describe("mobile plan revision retries and operations", () => {
 
     expect(blocked).toMatchObject({
       automaticRetryCount: 0,
-      nextRetryAt: new Date(now.getTime() + 30_000)
+      nextRetryAt: null
     });
     expect(log.info).not.toHaveBeenCalled();
     expect(enqueueGenerationJob).not.toHaveBeenCalled();
   });
 
-  it("keeps the legacy operation retry alias available", async () => {
+  it("keeps the legacy operation retry alias behind the same paid confirmation", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     state.bookEditOperations.push(failedPlanRevisionOperationRecord());
     mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1", currentPlanId: "plan-1" });
@@ -344,7 +409,10 @@ describe("mobile plan revision retries and operations", () => {
       method: "POST",
       url: "/api/mobile/book-edit-operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-request-alias" }
+      payload: {
+        requestId: "retry-request-alias",
+        retryToken: generationRecoveryQuote(state.bookEditOperations[0].generationAttempts[0]).retryToken
+      }
     });
 
     expect(response.statusCode).toBe(202);
@@ -352,7 +420,7 @@ describe("mobile plan revision retries and operations", () => {
     await app.close();
   });
 
-  it("retries an unbilled web plan revision without requiring a ledger", async () => {
+  it("does not silently convert an unbilled historical web revision into a paid retry", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     state.bookEditOperations.push(
       failedPlanRevisionOperationRecord({
@@ -360,6 +428,7 @@ describe("mobile plan revision retries and operations", () => {
         ledgerEntry: null,
         creditsCharged: 0,
         classifier: { kind: "plan_revision", source: "web" },
+        generationAttempts: [],
         generationJob: {
           id: "job-web-revision",
           status: "FAILED",
@@ -377,21 +446,16 @@ describe("mobile plan revision retries and operations", () => {
       method: "POST",
       url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-web-request" }
+      payload: { requestId: "retry-web-request", retryToken: "historical-web-retry-token" }
     });
 
-    expect(response.statusCode).toBe(202);
-    expect(enqueueGenerationJob).toHaveBeenCalledWith(
-      expect.objectContaining({
-        dispatch: false,
-        payload: expect.not.objectContaining({ billingLedgerEntryId: expect.any(String) })
-      })
-    );
+    expect(response.statusCode).toBe(409);
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
     expect(reserveCredits).not.toHaveBeenCalled();
     await app.close();
   });
 
-  it("restores a failed operation when durable retry job creation fails", async () => {
+  it("keeps a failed operation unchanged when atomic retry job creation fails", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const failed = failedPlanRevisionOperationRecord({ retryRequestId: null, automaticRetryCount: 0 });
     state.bookEditOperations.push(failed);
@@ -403,7 +467,10 @@ describe("mobile plan revision retries and operations", () => {
       method: "POST",
       url: "/api/mobile/projects/project-1/operations/operation-failed-revision/retry",
       headers: bearer("token-a"),
-      payload: { requestId: "retry-rollback-id" }
+      payload: {
+        requestId: "retry-rollback-id",
+        retryToken: generationRecoveryQuote(failed.generationAttempts[0]!).retryToken
+      }
     });
 
     expect(response.statusCode).toBe(500);
@@ -517,9 +584,10 @@ describe("mobile plan revision retries and operations", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().operations[0]).toMatchObject({
       retryAvailable: true,
-      nextRetryAt: "2026-06-15T13:05:00.000Z",
-      retryState: "scheduled",
-      retryMessage: "Retrying this plan revision automatically.",
+      nextRetryAt: null,
+      retryState: "available",
+      retryMessage: "Retry costs 40 credits. The failed attempt was refunded.",
+      recoveryQuote: { credits: 40, retryToken: expect.any(String) },
       submittedText: "Make it brighter.",
       requestId: "revision-stable-1"
     });

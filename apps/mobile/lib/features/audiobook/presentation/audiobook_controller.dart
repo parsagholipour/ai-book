@@ -250,10 +250,16 @@ class AudiobookController extends Notifier<AudiobookState> {
   /// leaves `error` meaning only "the narration could not be loaded".
   Future<String?> narrate({required String voice, bool replace = false}) async {
     state = state.copyWith(starting: true, clearError: true);
+    final requestId = 'audiobook-${DateTime.now().microsecondsSinceEpoch}';
     try {
       final audiobook = await ref
           .read(audiobookRepositoryProvider)
-          .start(projectId: projectId, voice: voice, replace: replace);
+          .start(
+            projectId: projectId,
+            voice: voice,
+            replace: replace,
+            requestId: requestId,
+          );
       ref.invalidate(billingProvider);
       if (_disposed) {
         return null;

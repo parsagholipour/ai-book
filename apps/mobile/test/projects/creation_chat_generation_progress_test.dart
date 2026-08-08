@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:tomeza/app/theme/app_theme.dart';
 import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
@@ -229,6 +230,11 @@ void main() {
     expect(find.text('The writer stopped partway through.'), findsOneWidget);
 
     await tester.tap(find.text('Retry generation'));
+    await _settleEnough(tester);
+
+    expect(find.textContaining('costs exactly 40 credits'), findsOneWidget);
+    expect(find.textContaining('you have 100 available'), findsOneWidget);
+    await tester.tap(find.text('Retry for 40'));
     await _settleEnough(tester);
 
     expect(projects.resumedProjectIds, ['project-1']);
@@ -458,6 +464,12 @@ MobileProjectStatus _status({
     nextRetryAt: nextRetryAt,
     retryState: retryState,
     retryMessage: retryMessage,
+    recoveryQuote: retryAvailable
+        ? const MobileGenerationRecoveryQuote(
+            retryToken: 'confirmed-retry-token',
+            credits: 40,
+          )
+        : null,
     steps: const [],
     pageProgress: const MobilePageProgress(completed: 3, target: 28),
     imageCount: 1,
@@ -502,7 +514,11 @@ class _StubProjectsRepository implements ProjectsRepository {
   int detailFetches = 0;
 
   @override
-  Future<MobileProjectRecovery> resumeProject(String id) async {
+  Future<MobileProjectRecovery> resumeProject(
+    String id, {
+    String? requestId,
+    String? retryToken,
+  }) async {
     resumedProjectIds.add(id);
     return const MobileProjectRecovery(
       projectId: 'project-1',
@@ -676,6 +692,21 @@ const _turnJson = {
 };
 
 class _StubBillingRepository implements BillingRepository {
+  @override
+  Future<MobileBilling> getBilling() async {
+    return const MobileBilling(
+      credits: CreditBalance(
+        available: 100,
+        reserved: 0,
+        lifetimeGranted: 100,
+        lifetimeSpent: 0,
+      ),
+      entitlements: [],
+      products: [],
+      creditCosts: {},
+    );
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) {
     throw UnimplementedError('Billing is not used in this test.');

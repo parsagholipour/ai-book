@@ -29,6 +29,7 @@ class MobileProjectStatus {
     this.nextRetryAt,
     this.retryState,
     this.retryMessage,
+    this.recoveryQuote,
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
        illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
        imageSettingsReported =
@@ -54,6 +55,7 @@ class MobileProjectStatus {
   final DateTime? nextRetryAt;
   final String? retryState;
   final String? retryMessage;
+  final MobileGenerationRecoveryQuote? recoveryQuote;
   final List<MobileProjectStatusStep> steps;
   final MobilePageProgress pageProgress;
   final int imageCount;
@@ -130,6 +132,11 @@ class MobileProjectStatus {
       retryState: json['retryState'] as String? ?? retry?['state'] as String?,
       retryMessage:
           json['retryMessage'] as String? ?? retry?['message'] as String?,
+      recoveryQuote: json['recoveryQuote'] is Map
+          ? MobileGenerationRecoveryQuote.fromJson(
+              (json['recoveryQuote'] as Map).cast<String, dynamic>(),
+            )
+          : null,
       steps: steps
           .map(
             (step) =>
@@ -160,6 +167,23 @@ class MobileProjectStatus {
   bool get requiresReview => status == 'review_required' || quality.isBlocked;
 
   bool get hasFailure => failureMessage != null && failureMessage!.isNotEmpty;
+}
+
+class MobileGenerationRecoveryQuote {
+  const MobileGenerationRecoveryQuote({
+    required this.retryToken,
+    required this.credits,
+  });
+
+  final String retryToken;
+  final int credits;
+
+  factory MobileGenerationRecoveryQuote.fromJson(Map<String, dynamic> json) {
+    return MobileGenerationRecoveryQuote(
+      retryToken: json['retryToken'] as String,
+      credits: json['credits'] as int,
+    );
+  }
 }
 
 class MobilePlanningProgress {

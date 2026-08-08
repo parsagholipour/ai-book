@@ -305,7 +305,14 @@ export async function consumeIllustratedBookUse(options: {
   limit: number;
   now?: Date | undefined;
 }): Promise<ConsumeUsageResult> {
-  return consumeMonthlyUse(ILLUSTRATED_BOOK_COUNTER, options);
+  return consumeMonthlyUse(prisma, ILLUSTRATED_BOOK_COUNTER, options);
+}
+
+export async function consumeIllustratedBookUseTx(
+  tx: BillingTx,
+  options: { userId: string; limit: number; now?: Date | undefined }
+): Promise<ConsumeUsageResult> {
+  return consumeMonthlyUse(tx, ILLUSTRATED_BOOK_COUNTER, options);
 }
 
 /** Claim one manuscript import against the free tier's monthly budget. */
@@ -314,10 +321,11 @@ export async function consumeManuscriptImportUse(options: {
   limit: number;
   now?: Date | undefined;
 }): Promise<ConsumeUsageResult> {
-  return consumeMonthlyUse(MANUSCRIPT_IMPORT_COUNTER, options);
+  return consumeMonthlyUse(prisma, MANUSCRIPT_IMPORT_COUNTER, options);
 }
 
 async function consumeMonthlyUse(
+  tx: BillingTx,
   kind: string,
   options: { userId: string; limit: number; now?: Date | undefined }
 ): Promise<ConsumeUsageResult> {
@@ -330,12 +338,12 @@ async function consumeMonthlyUse(
     return { allowed: false, used: 0, limit: options.limit, periodKey, resetsAt };
   }
 
-  await ensureUsageCounterRow(where);
-  const claimed = await prisma.usageCounter.updateMany({
+  await ensureUsageCounterRow(tx, where);
+  const claimed = await tx.usageCounter.updateMany({
     where: { ...where, used: { lt: options.limit } },
     data: { used: { increment: 1 } }
   });
-  const counter = await prisma.usageCounter.findUnique({
+  const counter = await tx.usageCounter.findUnique({
     where: { userId_kind_periodKey: where },
     select: { used: true }
   });
@@ -493,8 +501,11 @@ async function applyPlanPeriodTx(
   return { account, entry };
 }
 
-async function ensureUsageCounterRow(where: { userId: string; kind: string; periodKey: string }): Promise<void> {
-  const existing = await prisma.usageCounter.findUnique({
+async function ensureUsageCounterRow(
+  tx: BillingTx,
+  where: { userId: string; kind: string; periodKey: string }
+): Promise<void> {
+  const existing = await tx.usageCounter.findUnique({
     where: { userId_kind_periodKey: where },
     select: { id: true }
   });
@@ -502,7 +513,7 @@ async function ensureUsageCounterRow(where: { userId: string; kind: string; peri
     return;
   }
   try {
-    await prisma.usageCounter.create({ data: { ...where, used: 0 } });
+    await tx.usageCounter.create({ data: { ...where, used: 0 } });
   } catch (error) {
     // Another request created the same period's row first, which is the outcome
     // we wanted anyway.

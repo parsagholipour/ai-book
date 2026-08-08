@@ -16,6 +16,7 @@ import {
 } from "./dto.js";
 import { UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
 import { currentActionForEditOperation, normalizeJobStatus, serializePlan } from "./projectSerializers.js";
+import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { clipText, jsonInputValue, jsonRecord, jsonValue } from "./support.js";
 import { prisma } from "@book-maker/db";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
@@ -49,6 +50,18 @@ export async function loadProjectChatResponse(
       include: {
         generationJob: { select: { id: true, status: true } },
         ledgerEntry: { select: { status: true, reversedByEntry: { select: { id: true } } } },
+        generationAttempts: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            commandKey: true,
+            status: true,
+            operation: true,
+            quotedCredits: true,
+            refundPending: true
+          }
+        },
         _count: { select: { snapshots: true } }
       }
     })
@@ -63,9 +76,17 @@ export async function loadProjectChatResponse(
   const exposedMessages = activeChat.messages.slice(windowStart, windowEnd);
   const hasMore = windowStart > 0;
   const activeMessageIds = new Set(activeChat.messages.map((message) => message.id));
+  // A raced Apply's replay reply lives on the losing branch and references the
+  // winning operation only through its own `operationId` — the operation's
+  // stored user/assistant message ids belong to the winner's branch. Matching
+  // referenced operations keeps a charged edit visible from every branch that
+  // talks about it.
+  const activeOperationIds = new Set(
+    activeChat.messages.flatMap((message) => (message.operationId ? [message.operationId] : []))
+  );
   const exposedOperations = operations
     .filter((operation) => shouldExposeChatOperation(operation, planVersions))
-    .filter((operation) => shouldExposeChatOperationForBranch(operation, activeMessageIds));
+    .filter((operation) => shouldExposeChatOperationForBranch(operation, activeMessageIds, activeOperationIds));
   const latestUndoableId = exposedOperations.find((operation) => operationCanUndo(operation))?.id ?? null;
   return {
     messages: exposedMessages.map((message) => serializeProjectChatMessage(message, activeChat.branches.get(message.id) ?? null)),
@@ -89,9 +110,13 @@ export async function loadActiveProjectChatMessages(projectId: string): Promise<
 
 export function shouldExposeChatOperationForBranch(
   operation: MobileBookEditOperationRecord,
-  activeMessageIds: Set<string>
+  activeMessageIds: Set<string>,
+  activeOperationIds: Set<string> = new Set()
 ): boolean {
   if (activeMessageIds.size === 0) {
+    return true;
+  }
+  if (activeOperationIds.has(operation.id)) {
     return true;
   }
   const userMessageId = operation.userMessageId ?? null;
@@ -398,25 +423,24 @@ export function serializeBookEditOperation(
   operation: MobileBookEditOperationRecord,
   options?: { canUndo?: boolean }
 ): MobileBookEditOperationDto {
-  const retryLimit = operation.automaticRetryLimit ?? 0;
-  const retryCount = operation.automaticRetryCount ?? 0;
-  const retryBudgetAvailable = retryCount < retryLimit;
-  const retryScheduled = operation.status === "FAILED" && retryBudgetAvailable && Boolean(operation.nextRetryAt);
-  const retryAvailable = operation.kind === "PLAN_REVISION" && operation.status === "FAILED" && retryBudgetAvailable;
-  const retryState = retryScheduled
-    ? "scheduled"
-    : retryAvailable
-      ? "available"
-      : operation.kind === "PLAN_REVISION" && operation.status === "FAILED"
-        ? "exhausted"
-        : null;
-  const retryMessage = retryScheduled
-    ? "Retrying this plan revision automatically."
-    : retryAvailable
-      ? "This plan revision can be retried at no additional charge."
-      : retryState === "exhausted"
-        ? "This plan revision could not be recovered automatically."
-        : null;
+  const latestAttempt = operation.generationAttempts?.[0] ?? null;
+  const failedPlanRevision =
+    operation.kind === "PLAN_REVISION" && ["FAILED", "CANCELED"].includes(operation.status);
+  const retryableAttempt =
+    failedPlanRevision &&
+    latestAttempt &&
+    ["FAILED", "CANCELED"].includes(latestAttempt.status) &&
+    !latestAttempt.refundPending
+      ? latestAttempt
+      : null;
+  const recoveryQuote = retryableAttempt ? generationRecoveryQuote(retryableAttempt) : null;
+  const retryAvailable = recoveryQuote !== null;
+  const retryState = retryAvailable ? "available" : failedPlanRevision ? "exhausted" : null;
+  const retryMessage = retryAvailable
+    ? `Retry costs ${recoveryQuote.credits} credits. The failed attempt was refunded.`
+    : retryState === "exhausted"
+      ? "Refresh to check whether this plan revision can be retried."
+      : null;
   return {
     id: operation.id,
     projectId: operation.projectId,
@@ -434,9 +458,10 @@ export function serializeBookEditOperation(
         }
       : null,
     retryAvailable,
-    nextRetryAt: operation.nextRetryAt?.toISOString() ?? null,
+    nextRetryAt: null,
     retryState,
     retryMessage,
+    recoveryQuote,
     submittedText: typeof operation.request === "string" ? operation.request : null,
     requestId: operation.requestId ?? null,
     createdAt: operation.createdAt.toISOString(),

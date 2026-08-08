@@ -512,12 +512,17 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String operationId,
     String? requestId,
+    String? retryToken,
   }) {
     throw UnimplementedError();
   }
 
   @override
-  Future<MobileProjectRecovery> resumeProject(String id) async {
+  Future<MobileProjectRecovery> resumeProject(
+    String id, {
+    String? requestId,
+    String? retryToken,
+  }) async {
     return MobileProjectRecovery(
       projectId: id,
       status: 'recovery_started',
@@ -563,7 +568,6 @@ class FakeBillingRepository implements BillingRepository {
 
   @override
   Future<MobileBilling> cancelSubscription() async => fakeBilling();
-
 
   @override
   Future<GooglePlayVerificationResult> verifyGooglePlayPurchase({

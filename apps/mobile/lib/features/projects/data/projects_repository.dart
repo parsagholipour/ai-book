@@ -93,12 +93,17 @@ abstract interface class ProjectsRepository {
     String? requestId,
   });
 
-  Future<MobileProjectRecovery> resumeProject(String id);
+  Future<MobileProjectRecovery> resumeProject(
+    String id, {
+    String? requestId,
+    String? retryToken,
+  });
 
   Future<MobileBookEditOperation> retryOperation({
     required String projectId,
     required String operationId,
     String? requestId,
+    String? retryToken,
   });
 
   Future<ProjectDeletionReceipt> deleteProject(String id);
@@ -404,9 +409,14 @@ class MobileProjectsRepository implements ProjectsRepository {
   }
 
   @override
-  Future<MobileProjectRecovery> resumeProject(String id) async {
+  Future<MobileProjectRecovery> resumeProject(
+    String id, {
+    String? requestId,
+    String? retryToken,
+  }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$id/resume',
+      data: {'requestId': ?requestId, 'retryToken': ?retryToken},
     );
     return MobileProjectRecovery.fromJson(
       response.data as Map<String, dynamic>,
@@ -418,10 +428,11 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String projectId,
     required String operationId,
     String? requestId,
+    String? retryToken,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/operations/$operationId/retry',
-      data: {'requestId': ?requestId},
+      data: {'requestId': ?requestId, 'retryToken': ?retryToken},
     );
     final data = response.data as Map<String, dynamic>;
     final operation = data['operation'];

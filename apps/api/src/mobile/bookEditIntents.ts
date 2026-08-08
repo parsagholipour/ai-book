@@ -8,17 +8,9 @@ import {
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
 import { applyBackMatterEdit } from "./backMatterEdits.js";
 import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
-import {
-  affectedPagesForIntent,
-  continuationNewPageCount,
-  exactReplacementFromMessage
-} from "./bookEditScope.js";
+import { affectedPagesForIntent, continuationNewPageCount, exactReplacementFromMessage } from "./bookEditScope.js";
 import { exactReplacementPreviewCard, planExactReplacement } from "./exactReplacementPreview.js";
-import {
-  type MobileBookEditOperationRecord,
-  type MobileProjectChatMessageRecord,
-  type MobileProjectChatMessageResponseDto
-} from "./dto.js";
+import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord, type MobileProjectChatMessageResponseDto } from "./dto.js";
 import { hasOpenProjectWork, queueChatBookEdit, queueChatPlanRevision } from "./editOperations.js";
 import { sendMobileError } from "./httpErrors.js";
 import { undoLastBookEdit } from "./manualEdits.js";
@@ -37,15 +29,13 @@ import {
 } from "./projectChat.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 import { generateGroundedProjectAnswer } from "./groundedAnswer.js";
+import { replayClaimedProposal } from "./proposalExecutionClaims.js";
 import { isPrismaUniqueConflict, jsonRecord, languageDisplayName } from "./support.js";
 import { bookPlanSchema, type ReplanSettings, type TextModelAdapter } from "@book-maker/core";
 import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 
-/**
- * Classifies a chat message into a book-edit intent, prices it, and builds the
- * proposal/confirmation replies.
- */
+/** Classifies chat into a book-edit intent, price, and confirmation reply. */
 
 export type PendingEditClarification = "scope" | "busy" | "confirm";
 
@@ -81,6 +71,11 @@ export async function applyOrCancelEditProposal(options: {
   const project = await loadProjectForChat(userId, projectId);
   if (!project) {
     return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+  }
+
+  if (action === "apply") {
+    const claimed = await replayClaimedProposal(projectId, proposalId);
+    if (claimed) return claimed;
   }
 
   const pending = await findPendingProposalById(projectId, proposalId);
@@ -144,7 +139,8 @@ export async function applyOrCancelEditProposal(options: {
     message: pending.request,
     intent: pending.intent,
     textModel,
-    executeProposal: true
+    executeProposal: true,
+    executionCommandId: proposalId
   });
 
   return {
@@ -461,6 +457,8 @@ export async function handleProjectChatIntent(options: {
   textModel?: TextModelAdapter | undefined;
   /** When true, a previously priced proposal is executed immediately. */
   executeProposal?: boolean | undefined;
+  /** Stable claim shared by typed confirmation and the proposal Apply button. */
+  executionCommandId?: string | undefined;
   /**
    * What the user originally asked for, when `message` is that request merged
    * with a follow-up. Stored as the resumable request so a clarification chain
@@ -540,7 +538,14 @@ export async function handleProjectChatIntent(options: {
   }
 
   if (options.executeProposal) {
-    return queueChatBookEdit({ userId, project, userMessageId, message, intent });
+    return queueChatBookEdit({
+      userId,
+      project,
+      userMessageId,
+      message,
+      intent,
+      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {})
+    });
   }
   return proposeBookEdit({ project, userMessageId, message, intent, pendingRequest });
 }

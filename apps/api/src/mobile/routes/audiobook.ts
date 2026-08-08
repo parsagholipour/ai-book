@@ -1,11 +1,9 @@
 import { estimateAudiobookCreditCost, isAudiobookNarratorVoice } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import {
+  GenerationAttemptConflictError,
   InsufficientCreditsError,
-  commitReservedCredits,
-  refundCreditLedgerEntry,
-  reserveCredits,
-  type CreditLedgerEntryRecord
+  startGenerationAttempt
 } from "@book-maker/db/billing";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { readFile } from "node:fs/promises";
@@ -16,6 +14,7 @@ import { serializeAudiobook, serializeNarratorVoices } from "../audiobookSeriali
 import type { MobileAudiobookDto, MobileNarratorVoiceDto } from "../dto.js";
 import { hitTieredLimit, requireMobileAuth, sendInsufficientCredits, sendMobileError } from "../httpErrors.js";
 import type { MobileRouteContext } from "../routeContext.js";
+import { fingerprintGenerationRequest } from "../support.js";
 import {
   idParamsSchema,
   mobileAudiobookChapterParamsSchema,
@@ -132,115 +131,127 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
         return sendMobileError(reply, 409, "BOOK_NOT_READY", "Finish the book before narrating it.");
       }
 
+      const pageCount = await prisma.page.count({ where: { projectId: id, status: "COMPLETED" } });
+      if (pageCount === 0) {
+        return sendMobileError(reply, 409, "BOOK_NOT_READY", "Finish the book before narrating it.");
+      }
+      const requestFingerprint = fingerprintGenerationRequest({
+        projectId: id,
+        contentRevision: project.contentRevision,
+        pageCount,
+        voice: body.data.voice,
+        replace: body.data.replace === true
+      });
       const existing = await loadAudiobook(id);
       if (existing?.status === "GENERATING") {
+        const existingAttempt = existing.generationJobId
+          ? await prisma.generationAttempt.findUnique({
+              where: { primaryJobId: existing.generationJobId },
+              select: { requestFingerprint: true }
+            })
+          : null;
+        const existingFingerprint = existingAttempt?.requestFingerprint;
+        if (
+          existing.voice !== body.data.voice ||
+          (existingFingerprint !== undefined && existingFingerprint !== requestFingerprint)
+        ) {
+          return sendMobileError(
+            reply,
+            409,
+            "GENERATION_COMMAND_CONFLICT",
+            "This audiobook command is already running with different settings."
+          );
+        }
         return reply.code(202).send({ audiobook: serializeAudiobook(existing, project.contentRevision) });
       }
       if (existing?.status === "COMPLETE" && !body.data.replace) {
         return sendMobileError(reply, 409, "AUDIOBOOK_EXISTS", "This book already has an audiobook.");
       }
 
-      const pageCount = await prisma.page.count({ where: { projectId: id, status: "COMPLETED" } });
-      if (pageCount === 0) {
-        return sendMobileError(reply, 409, "BOOK_NOT_READY", "Finish the book before narrating it.");
-      }
       const estimate = estimateAudiobookCreditCost(pageCount);
 
-      let reservation: CreditLedgerEntryRecord | null = null;
-      let spend: CreditLedgerEntryRecord | null = null;
       try {
-        reservation = await reserveCredits({
+        const sourceRun = existing?.generationJobId ?? existing?.id ?? "new";
+        const started = await startGenerationAttempt({
           userId: auth.user.id,
+          commandKey: body.data.requestId
+            ? `mobile:audiobook-start:${id}:${body.data.requestId}`
+            : `mobile:audiobook-start:${id}:${project.contentRevision}:${sourceRun}`,
+          requestFingerprint,
           projectId: id,
           operation: "AUDIOBOOK_GENERATION",
-          amountCredits: estimate.totalCredits,
-          // Naming the run being superseded is what makes each real attempt a
-          // new charge. A refund leaves its entry SETTLED and does not release
-          // the key, so a key stable across attempts meant `reserveCredits`
-          // handed back the refunded row and `commitReservedCredits`
-          // short-circuited on it — every retry and every replacement narrated
-          // a whole book for free. Two concurrent submits still see the same
-          // `existing` and so still pay once; `generationJobId` is null only in
-          // the window before it is written back below, where the audiobook's
-          // own id is just as distinct.
-          idempotencyKey: body.data.requestId
-            ? `mobile:audiobook:${id}:${body.data.requestId}`
-            : `mobile:audiobook:${id}:${project.contentRevision}:${body.data.voice}:${existing?.generationJobId ?? existing?.id ?? "new"}`,
+          quotedCredits: estimate.totalCredits,
           description: "Mobile audiobook narration",
           // The per-page half of the price is only recoverable from here, which
           // is what the pricing dashboard's drivers report reads back.
-          metadata: { pageCount, voice: body.data.voice, creditEstimate: estimate }
-        });
-        spend = reservation ? await commitReservedCredits(reservation.id) : null;
+          metadata: { pageCount, voice: body.data.voice, creditEstimate: estimate },
 
-        // A narration that died half way through keeps its row, and with it the
-        // chapters already on disk: the worker skips every READY chapter, so
-        // restarting picks up where it stopped instead of re-reading the first
-        // half. Only when it is the same book read by the same narrator — any
-        // other change is a different audiobook and starts clean.
-        const resumable =
-          existing?.status === "FAILED" &&
-          existing.voice === body.data.voice &&
-          existing.contentRevision === project.contentRevision
-            ? existing
-            : null;
+          // A narration that died half way through keeps its row, and with it the
+          // chapters already on disk: the worker skips every READY chapter, so
+          // restarting picks up where it stopped instead of re-reading the first
+          // half. Only when it is the same book read by the same narrator — any
+          // other change is a different audiobook and starts clean.
+          create: async (tx, { attemptId, ledgerEntry }) => {
+            const resumable =
+              existing?.status === "FAILED" &&
+              existing.voice === body.data.voice &&
+              existing.contentRevision === project.contentRevision
+                ? existing
+                : null;
 
-        const created = await prisma.$transaction(async (tx) => {
-          // Replacing drops the old chapters with it; the worker clears the
-          // superseded files from disk once the new narration lands.
-          if (!resumable) {
-            await tx.audiobook.deleteMany({ where: { projectId: id } });
-          }
-          const audiobook = resumable
-            ? await tx.audiobook.update({
-                where: { id: resumable.id },
-                data: { status: "GENERATING", error: null, contentRevision: project.contentRevision }
-              })
-            : await tx.audiobook.create({
-                data: {
-                  projectId: id,
-                  voice: body.data.voice,
-                  status: "GENERATING",
-                  contentRevision: project.contentRevision
-                }
-              });
-          const job = await enqueueGenerationJob({
-            projectId: id,
-            type: "GENERATE_AUDIOBOOK",
-            // A resume reuses the audiobook id, so that alone would match the
-            // failed run's job row and enqueue nothing at all. Naming the run
-            // being resumed makes the key new for each attempt; a double-submit
-            // is caught earlier, by the GENERATING check.
-            dedupeKey: `generate-audiobook:${id}:${audiobook.id}:${resumable?.generationJobId ?? "new"}`,
-            transaction: tx,
-            dispatch: false,
-            payload: {
-              audiobookId: audiobook.id,
-              ...(spend ? { billingLedgerEntryId: spend.id } : {})
+            // Replacing drops the old chapters with it; the worker clears the
+            // superseded files from disk once the new narration lands.
+            if (!resumable) {
+              await tx.audiobook.deleteMany({ where: { projectId: id } });
             }
-          });
-          await tx.audiobook.update({ where: { id: audiobook.id }, data: { generationJobId: job.id } });
-          if (spend) {
-            await tx.creditLedgerEntry.update({
-              where: { id: spend.id },
-              data: { projectId: id, generationJobId: job.id }
+            const audiobook = resumable
+              ? await tx.audiobook.update({
+                  where: { id: resumable.id },
+                  data: { status: "GENERATING", error: null, contentRevision: project.contentRevision }
+                })
+              : await tx.audiobook.create({
+                  data: {
+                    projectId: id,
+                    voice: body.data.voice,
+                    status: "GENERATING",
+                    contentRevision: project.contentRevision
+                  }
+                });
+            const job = await enqueueGenerationJob({
+              projectId: id,
+              type: "GENERATE_AUDIOBOOK",
+              // A resume reuses the audiobook id, so that alone would match the
+              // failed run's job row and enqueue nothing at all. Naming the run
+              // being resumed makes the key new for each attempt; a double-submit
+              // is caught earlier, by the GENERATING check.
+              dedupeKey: `generate-audiobook:${id}:${audiobook.id}:${resumable?.generationJobId ?? "new"}`,
+              transaction: tx,
+              dispatch: false,
+              attemptId,
+              payload: {
+                audiobookId: audiobook.id,
+                ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
+              }
             });
+            await tx.audiobook.update({ where: { id: audiobook.id }, data: { generationJobId: job.id } });
+            return { projectId: id, primaryJobId: job.id };
           }
-          return { job, audiobookId: audiobook.id };
         });
 
-        await dispatchGenerationJob(created.job.id);
+        if (!started.attempt.primaryJobId) {
+          throw new Error("Audiobook attempt has no primary job.");
+        }
+        await dispatchGenerationJob(started.attempt.primaryJobId);
         const queued = await loadAudiobook(id);
         return reply.code(202).send({
           audiobook: queued ? serializeAudiobook(queued, project.contentRevision) : null
         });
       } catch (error) {
-        const entryToRefund = spend ?? reservation;
-        if (entryToRefund) {
-          await refundCreditLedgerEntry(entryToRefund.id, "Narration could not be queued.");
-        }
         if (error instanceof InsufficientCreditsError) {
           return sendInsufficientCredits(reply, error);
+        }
+        if (error instanceof GenerationAttemptConflictError) {
+          return sendMobileError(reply, 409, error.code, error.message);
         }
         throw error;
       }

@@ -111,11 +111,35 @@ export async function buildProjectStatus(projectId: string) {
       status: "FAILED",
       type: { in: generationFailureJobTypes }
     },
-    select: { type: true, payload: true, createdAt: true }
+    orderBy: { createdAt: "asc" },
+    select: { type: true, payload: true, createdAt: true, attemptId: true }
   });
-  const resumableFailedJobs = failedGenerationJobs.filter((job) =>
+  const recoveryCandidates = failedGenerationJobs.filter((job) =>
     canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
-  ).length;
+  );
+  const planningRecoveryCandidates = recoveryCandidates.filter((job) =>
+    retryablePlanningJobTypes.includes(job.type as GenerationJobType)
+  );
+  const jobsForRecovery = planningRecoveryCandidates.length > 0 ? planningRecoveryCandidates : recoveryCandidates;
+  const resumableAttemptIds = [
+    ...new Set(jobsForRecovery.flatMap((job) => (job.attemptId ? [job.attemptId] : [])))
+  ];
+  const generationAttempts = resumableAttemptIds.length
+    ? await prisma.generationAttempt.findMany({
+        where: { id: { in: resumableAttemptIds } },
+        select: {
+          id: true,
+          commandKey: true,
+          status: true,
+          quotedCredits: true,
+          refundPending: true,
+          // An attempt that already has a paid retry must never be quoted
+          // again: replaying it queues nothing. The retry itself, when it
+          // failed, is the quotable attempt.
+          retryAttempt: { select: { id: true } }
+        }
+      })
+    : [];
 
   const [openImageJobs, compileJobs] = await Promise.all([
     prisma.generationJob.count({
@@ -182,14 +206,15 @@ export async function buildProjectStatus(projectId: string) {
   );
 
   return {
-    project: { ...project, jobs: jobsWithSteps },
+    project: { ...project, jobs: jobsWithSteps, generationAttempts },
     quality: latestQuality,
     progress: {
       pages: pageProgress,
       images: visibleImageCount,
       research: project._count.research,
       failedJobs,
-      resumableFailedJobs,
+      resumableFailedJobs: recoveryCandidates.length,
+      resumableAttemptIds,
       // Image work still owed and whether an export has ever been compiled:
       // both already drive the pipeline steps, and the mobile generation
       // progress needs them to size its illustration and finish bands.

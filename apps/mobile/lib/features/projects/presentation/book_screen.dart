@@ -20,6 +20,7 @@ import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
 import 'project_export_actions.dart';
 import 'project_route_error.dart';
+import 'generation_retry_confirmation.dart';
 
 /// One book, one page.
 ///
@@ -251,6 +252,15 @@ class _BookScreenState extends ConsumerState<BookScreen> {
       _restoreFailedRevision(operation);
       return;
     }
+    final quote = operation.recoveryQuote;
+    if (quote == null) return;
+    final confirmed = await confirmPaidGenerationRetry(
+      context,
+      ref,
+      projectId: operation.projectId,
+      quote: quote,
+    );
+    if (confirmed == null || !mounted) return;
     await _runPlanAction(
       action: 'retry-revision',
       future: () => ref
@@ -259,6 +269,7 @@ class _BookScreenState extends ConsumerState<BookScreen> {
             projectId: operation.projectId,
             operationId: operation.id,
             requestId: createPlanRevisionRetryRequestId(operation.id),
+            retryToken: confirmed.retryToken,
           )
           .then(
             (operation) => MobilePlanOperation(
@@ -368,11 +379,22 @@ class _BookScreenState extends ConsumerState<BookScreen> {
   }
 
   Future<void> _resumeGeneration() async {
+    final status =
+        ref.read(projectStatusProvider(widget.projectId)).value ??
+        await ref.read(projectStatusProvider(widget.projectId).future);
+    if (status == null || !mounted) return;
+    final quote = await confirmGenerationRetry(context, ref, status);
+    if (quote == null || !mounted) return;
     setState(() => _busyAction = 'resume');
     try {
       final recovery = await ref
           .read(projectsRepositoryProvider)
-          .resumeProject(widget.projectId);
+          .resumeProject(
+            widget.projectId,
+            requestId:
+                'generation-retry-${DateTime.now().microsecondsSinceEpoch}',
+            retryToken: quote.retryToken,
+          );
       _watchNewWork();
       if (!mounted) {
         return;

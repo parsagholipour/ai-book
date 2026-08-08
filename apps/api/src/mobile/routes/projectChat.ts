@@ -284,6 +284,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         intent,
         textModel: routingTextModel,
         executeProposal: Boolean(confirmedProposal),
+        ...(confirmedProposal?.proposalId ? { executionCommandId: confirmedProposal.proposalId } : {}),
         ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {}),
         ...(replyTo ? { replyTo } : {})
       });

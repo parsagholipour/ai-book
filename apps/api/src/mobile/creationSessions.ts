@@ -286,13 +286,15 @@ export async function updateCreationDraftCas(options: {
   draft: { id: string; userId: string; revision?: number };
   expectedRevision?: number | undefined;
   data: Prisma.MobileCreationDraftUpdateInput;
+  transaction?: Prisma.TransactionClient | undefined;
 }) {
   const currentRevision = options.draft.revision ?? 1;
   if (options.expectedRevision !== undefined && options.expectedRevision !== currentRevision) {
     return null;
   }
   try {
-    return await prisma.mobileCreationDraft.update({
+    const db = options.transaction ?? prisma;
+    return await db.mobileCreationDraft.update({
       where: {
         id: options.draft.id,
         userId: options.draft.userId,

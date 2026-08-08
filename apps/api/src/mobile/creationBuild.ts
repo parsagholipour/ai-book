@@ -10,7 +10,7 @@ import {
   type MobileBookAdvisorResponse,
   type MobileCreationDraftPayload,
 } from "../mobileCreation.js";
-import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   _chatTitleForPayload,
   conversationMessagesFromPayload,
@@ -43,7 +43,7 @@ import { inputSnapshotFromProject, planOperation, serializeProjectDetail } from 
 import {
   mobilePageCountRecommendationAiSchema
 } from "./schemas.js";
-import { jsonInputValue, promiseWithTimeout } from "./support.js";
+import { fingerprintGenerationRequest, jsonInputValue, promiseWithTimeout } from "./support.js";
 import {
   createFastRoutingTextModel,
   creditCostForOperation,
@@ -51,15 +51,20 @@ import {
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import {
+  GenerationAttemptConflictError,
   InsufficientCreditsError,
-  commitReservedCredits,
-  refundCreditLedgerEntry,
-  reserveCredits,
-  type CreditLedgerEntryRecord
+  startGenerationAttempt
 } from "@book-maker/db/billing";
 import { type FastifyReply } from "fastify";
 import type { MobileRouteContext } from "./routeContext.js";
 import { assessCurrentContentRestrictions } from "../contentRestrictions.js";
+
+class CreationSessionConflictError extends Error {
+  constructor() {
+    super("Creation session changed before the build started.");
+    this.name = "CreationSessionConflictError";
+  }
+}
 
 /**
  * The creation "build" step: turn an accepted creation draft into a real
@@ -180,24 +185,6 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
 
     const { draft } = prepared;
     const buildRequestId = overrides.requestId ?? `legacy-build-${draftId}-${draft.revision ?? 1}`;
-    const replayedOutput = (draft.outputs ?? []).find((output) => output.requestId === buildRequestId);
-    if (replayedOutput) {
-      const replayedProject = await loadMobileProjectDetail(userId, replayedOutput.projectId);
-      if (replayedProject) {
-        const replayedJob = await prisma.generationJob.findUnique({
-          where: { dedupeKey: `plan-book:${replayedProject.id}` }
-        });
-        return {
-          ok: true,
-          project: await serializeProjectDetail(replayedProject, appConfig, userId),
-          output: serializeCreationOutput(replayedOutput),
-          operation: replayedJob
-            ? planOperation("planning_queued", replayedProject.id, replayedProject.currentPlanId, replayedJob, "Creating your book plan.")
-            : null,
-          sessionRevision: draft.revision ?? 1
-        };
-      }
-    }
     const selectedPresets = presetsWithResolvedPageCount(prepared.selectedPresets, prepared.pageCount);
     const finalPayload = mobileCreationDraftPayloadSchema.parse({
       ...prepared.finalPayload,
@@ -228,117 +215,106 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       advisor: finalAdvisor
     });
     const planCost = creditCostForOperation("PLAN_GENERATION");
-    let reservation: CreditLedgerEntryRecord | null = null;
     let project: MobileProjectRecord | null = null;
+    let output: MobileCreationOutputRecord;
+    let operation: MobilePlanOperationDto | null = null;
+    let createdOutput: MobileCreationOutputRecord | null = null;
+    let claimedRevision: number | null = null;
     try {
-      reservation = await reserveCredits({
+      const started = await startGenerationAttempt({
         userId,
+        commandKey: `mobile:creation-build:${draftId}:${buildRequestId}`,
+        requestFingerprint: fingerprintGenerationRequest({ draftId, buildRequestId, input }),
         operation: "PLAN_GENERATION",
-        amountCredits: planCost,
-        idempotencyKey: `mobile:creation:${draftId}:${buildRequestId}:plan`,
+        quotedCredits: planCost,
         description: "Mobile plan generation",
-        metadata: { draftId, buildRequestId }
+        metadata: { draftId, buildRequestId },
+        create: async (tx, { attemptId, ledgerEntry }) => {
+          const claimed = await updateCreationDraftCas({
+            draft,
+            expectedRevision: overrides.expectedRevision,
+            data: {
+              status: "ACTIVE",
+              advisorSnapshot: jsonInputValue(finalAdvisor),
+              payload: jsonInputValue(finalPayload)
+            },
+            transaction: tx
+          });
+          if (!claimed) {
+            throw new CreationSessionConflictError();
+          }
+          claimedRevision = claimed.revision;
+          const createdProject = await createMobileProjectRecord(userId, input, tx);
+          project = createdProject;
+          createdOutput = await createCreationOutputForProject({
+            draftId,
+            projectId: createdProject.id,
+            requestId: buildRequestId,
+            title: createdProject.title,
+            existingOutputs: creationOutputsForDraft(draft, finalPayload),
+            transaction: tx
+          });
+          await tx.project.update({ where: { id: createdProject.id }, data: { status: "PLANNING" } });
+          const durableJob = await enqueueGenerationJob({
+            projectId: createdProject.id,
+            type: "PLAN_BOOK",
+            dedupeKey: `plan-book:${createdProject.id}`,
+            transaction: tx,
+            dispatch: false,
+            attemptId,
+            payload: {
+              inputSnapshot: inputSnapshotFromProject(createdProject),
+              ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
+            }
+          });
+          await tx.mobileCreationDraft.update({
+            where: { id: draftId },
+            data: {
+              status: "ACTIVE",
+              advisorSnapshot: jsonInputValue(finalAdvisor),
+              createdProjectId: createdProject.id,
+              revision: { increment: 1 }
+            }
+          });
+          return { projectId: createdProject.id, primaryJobId: durableJob.id };
+        }
       });
+      if (!started.attempt.projectId || !started.attempt.primaryJobId) {
+        throw new Error("Creation attempt is missing its project or primary job.");
+      }
+      project = project ?? (await loadMobileProjectDetail(userId, started.attempt.projectId));
+      if (!project) {
+        throw new Error("Created project could not be loaded.");
+      }
+      const loadedOutput =
+        createdOutput ??
+        (await prisma.mobileCreationOutput.findFirst({
+          where: { draftId, requestId: buildRequestId },
+          include: { project: { select: { title: true, updatedAt: true } } }
+        }));
+      if (!loadedOutput) {
+        throw new Error("Created output could not be loaded.");
+      }
+      output = loadedOutput;
+      const durableJob = await dispatchGenerationJob(started.attempt.primaryJobId);
+      if (!durableJob) {
+        throw new Error("Creation attempt has no durable job.");
+      }
+      operation = planOperation("planning_queued", project.id, null, durableJob, "Creating your book plan.");
     } catch (error) {
       if (error instanceof InsufficientCreditsError) {
         return { ok: false, insufficient: error };
       }
-      throw error;
-    }
-
-    const claimed = await updateCreationDraftCas({
-      draft,
-      expectedRevision: overrides.expectedRevision,
-      data: {
-        status: "ACTIVE",
-        advisorSnapshot: jsonInputValue(finalAdvisor),
-        payload: jsonInputValue(finalPayload)
+      if (error instanceof GenerationAttemptConflictError) {
+        return { ok: false, status: 409, code: error.code, message: error.message };
       }
-    });
-    if (!claimed) {
-      if (reservation) {
-        await refundCreditLedgerEntry(reservation.id, "Creation session changed before the build started.");
-      }
-      return {
-        ok: false,
-        status: 409,
-        code: "SESSION_CONFLICT",
-        message: "This chat changed elsewhere. Reload it before building."
-      };
-    }
-
-    let output: MobileCreationOutputRecord;
-    let operation: MobilePlanOperationDto | null = null;
-    let durableJobId: string | null = null;
-    try {
-      const transactionResult = await prisma.$transaction(async (tx) => {
-        const createdProject = await createMobileProjectRecord(userId, input, tx);
-        const createdOutput = await createCreationOutputForProject({
-          draftId,
-          projectId: createdProject.id,
-          requestId: buildRequestId,
-          title: createdProject.title,
-          existingOutputs: creationOutputsForDraft(draft, finalPayload),
-          transaction: tx
-        });
-        await tx.project.update({ where: { id: createdProject.id }, data: { status: "PLANNING" } });
-        const durableJob = await enqueueGenerationJob({
-          projectId: createdProject.id,
-          type: "PLAN_BOOK",
-          dedupeKey: `plan-book:${createdProject.id}`,
-          transaction: tx,
-          dispatch: false,
-          payload: {
-            inputSnapshot: inputSnapshotFromProject(createdProject),
-            ...(reservation ? { billingLedgerEntryId: reservation.id } : {})
-          }
-        });
-        if (reservation) {
-          await tx.creditLedgerEntry.update({
-            where: { id: reservation.id },
-            data: { projectId: createdProject.id, generationJobId: durableJob.id }
-          });
-        }
-        await tx.mobileCreationDraft.update({
-          where: { id: draftId },
-          data: {
-            status: "ACTIVE",
-            advisorSnapshot: jsonInputValue(finalAdvisor),
-            createdProjectId: createdProject.id,
-            revision: { increment: 1 }
-          }
-        });
-        return { createdProject, createdOutput, durableJob };
-      });
-      project = transactionResult.createdProject;
-      output = transactionResult.createdOutput;
-      durableJobId = transactionResult.durableJob.id;
-      if (reservation) {
-        await commitReservedCredits(reservation.id);
-      }
-      await dispatchGenerationJob(durableJobId);
-      operation = planOperation("planning_queued", project.id, null, transactionResult.durableJob, "Creating your book plan.");
-    } catch (error) {
-      // The committed job row must be dead before any money moves back: a
-      // QUEUED row the reconcilers can still publish is refunded work that
-      // still runs. When the cancel cannot claim the row, the job will run,
-      // so the charge stands.
-      const jobProvablyDead = durableJobId
-        ? await cancelUndispatchedGenerationJob(durableJobId, "Creation build failed before dispatch.").catch(() => false)
-        : true;
-      if (reservation) {
-        if (jobProvablyDead) {
-          await refundCreditLedgerEntry(reservation.id, "Plan generation could not be prepared.").catch(() => undefined);
-        } else {
-          console.error("Creation build compensation kept the charge: the queued plan job could not be canceled", {
-            draftId,
-            generationJobId: durableJobId,
-            reservationId: reservation.id
-          });
-        }
-      }
-      if (project) {
-        await prisma.project.delete({ where: { id: project.id } }).catch(() => undefined);
+      if (error instanceof CreationSessionConflictError) {
+        return {
+          ok: false,
+          status: 409,
+          code: "SESSION_CONFLICT",
+          message: "This chat changed elsewhere. Reload it before building."
+        };
       }
       throw error;
     }
@@ -352,7 +328,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       project: await serializeProjectDetail(refreshedProject, appConfig, userId),
       output: serializeCreationOutput(output),
       operation,
-      sessionRevision: latestDraft?.revision ?? claimed.revision
+      sessionRevision: latestDraft?.revision ?? claimedRevision ?? draft.revision ?? 1
     };
   }
 

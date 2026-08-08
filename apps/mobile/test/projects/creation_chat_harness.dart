@@ -289,6 +289,12 @@ MobileProjectStatus projectStatus({
     generationProgress: generationProgress,
     failureMessage: failureMessage,
     retryAvailable: retryAvailable,
+    recoveryQuote: retryAvailable
+        ? const MobileGenerationRecoveryQuote(
+            retryToken: 'confirmed-retry-token',
+            credits: 40,
+          )
+        : null,
     steps: [
       const MobileProjectStatusStep(key: 'plan', label: 'Plan', status: 'done'),
       MobileProjectStatusStep(

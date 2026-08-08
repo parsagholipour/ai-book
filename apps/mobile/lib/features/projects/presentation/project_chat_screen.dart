@@ -14,6 +14,7 @@ import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'chat_reply_quote.dart';
 import 'chat_thinking_bubble.dart';
+import 'generation_retry_confirmation.dart';
 import 'plan_revision_retry.dart';
 import 'project_chat_bubbles.dart';
 import 'project_chat_composer.dart';

@@ -7,6 +7,7 @@ import {
 import { buildProjectStatus, normalizeProjectQuality, type PipelineStep } from "../projectStatus.js";
 import { serializeEditProgress } from "./editProgress.js";
 import { serializeGenerationProgress } from "./generationProgress.js";
+import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { imageSettingsFromMediaSettings } from "./imageSettings.js";
 import { type GenerationJobType } from "../queue.js";
 import { projectExportAvailability, type ProjectExportFormat } from "../routes/projects.js";
@@ -283,6 +284,26 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   const editProgress = serializeEditProgress(status);
   const progressPercent = statusProgressPercent(status, generationProgress, editProgress);
   const planningProgress = serializePlanningProgress(status);
+  // Newest eligible attempt first: `resumableAttemptIds` follows the failed
+  // jobs' creation order, so after a paid retry fails the retry's id is the
+  // later one — and it, not the original, is what can be retried again. An
+  // attempt that already has a retry is excluded outright: confirming its
+  // quote would replay that retry and queue nothing, forever.
+  const resumableAttempts = [...(status.progress.resumableAttemptIds ?? [])]
+    .reverse()
+    .flatMap((attemptId) => {
+      const attempt = (project.generationAttempts ?? []).find((candidate) => candidate.id === attemptId);
+      return attempt ? [attempt] : [];
+    });
+  const failedAttempt =
+    resumableAttempts.find(
+      (attempt) =>
+        (attempt.status === "FAILED" || attempt.status === "CANCELED") &&
+        !attempt.refundPending &&
+        !attempt.retryAttempt &&
+        attempt.quotedCredits >= 0
+    ) ?? null;
+  const recoveryQuote = failedAttempt ? generationRecoveryQuote(failedAttempt) : null;
 
   return {
     projectId: project.id,
@@ -300,7 +321,8 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
     generationProgress,
     editProgress,
     failureMessage: failedJob ? failureMessageForJob(failedJob.type as GenerationJobType, failedJob.error) : null,
-    retryAvailable: status.progress.resumableFailedJobs > 0,
+    retryAvailable: status.progress.resumableFailedJobs > 0 && recoveryQuote !== null,
+    recoveryQuote,
     steps,
     pageProgress: {
       completed: status.progress.pages.complete,

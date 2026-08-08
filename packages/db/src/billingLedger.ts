@@ -90,6 +90,19 @@ export async function reserveCredits(options: LedgerContext & {
   idempotencyKey: string;
   now?: Date | undefined;
 }): Promise<CreditLedgerEntryRecord | null> {
+  return runSerializable((tx) => reserveCreditsTx(tx, options));
+}
+
+/** Transaction-aware form used by the generation-attempt boundary. */
+export async function reserveCreditsTx(
+  tx: BillingTx,
+  options: LedgerContext & {
+    amountCredits: number;
+    operation: BillingOperation;
+    idempotencyKey: string;
+    now?: Date | undefined;
+  }
+): Promise<CreditLedgerEntryRecord | null> {
   if (options.amountCredits === 0) {
     return null;
   }
@@ -98,78 +111,80 @@ export async function reserveCredits(options: LedgerContext & {
   }
   const now = options.now ?? new Date();
 
-  return runSerializable(async (tx) => {
-    const existing = await tx.creditLedgerEntry.findUnique({
-      where: { idempotencyKey: options.idempotencyKey },
-      select: ledgerSelect
-    });
+  const existing = await tx.creditLedgerEntry.findUnique({
+    where: { idempotencyKey: options.idempotencyKey },
+    select: ledgerSelect
+  });
     // An idempotency key is a promise that this charge happens *once ever*, not
     // once per attempt: refunding leaves the entry SETTLED and never releases
     // the key, so a caller that reuses one after a refund gets the reversed row
     // back and `commitReservedCredits` short-circuits on it — the work is then
     // done for free. Any priced operation a user can retry has to vary its key
     // per attempt (see the audiobook route, which names the run it supersedes).
-    if (existing) {
-      return existing;
-    }
+  if (existing) {
+    return existing;
+  }
 
     // Anyone about to spend is owed their allowance first — this is what grants
     // the free month, and it is deliberately on the charging path rather than a
     // cron so no user can be missed.
-    const account = await ensureCurrentPlanPeriodTx(tx, options.userId, now);
-    const spendable = spendableCredits(account, now);
-    if (spendable < options.amountCredits) {
-      throw new InsufficientCreditsError({
-        requiredCredits: options.amountCredits,
-        availableCredits: spendable,
-        reservedCredits: account.reservedCredits
-      });
-    }
-
-    const fromPlan = Math.min(effectivePlanCredits(account, now), options.amountCredits);
-    const fromPurchased = options.amountCredits - fromPlan;
-    const updated = await tx.userCreditAccount.updateMany({
-      where: {
-        userId: options.userId,
-        planCredits: { gte: fromPlan },
-        availableCredits: { gte: fromPurchased }
-      },
-      data: {
-        planCredits: { decrement: fromPlan },
-        availableCredits: { decrement: fromPurchased },
-        reservedCredits: { increment: options.amountCredits }
-      }
+  const account = await ensureCurrentPlanPeriodTx(tx, options.userId, now);
+  const spendable = spendableCredits(account, now);
+  if (spendable < options.amountCredits) {
+    throw new InsufficientCreditsError({
+      requiredCredits: options.amountCredits,
+      availableCredits: spendable,
+      reservedCredits: account.reservedCredits
     });
-    if (updated.count !== 1) {
-      const latest = await ensureCreditAccountRow(tx, options.userId);
-      throw new InsufficientCreditsError({
-        requiredCredits: options.amountCredits,
-        availableCredits: spendableCredits(latest, now),
-        reservedCredits: latest.reservedCredits
-      });
-    }
+  }
 
-    return tx.creditLedgerEntry.create({
-      data: ledgerData({
-        ...options,
-        entryType: "RESERVE",
-        status: "RESERVED",
-        amountCredits: -options.amountCredits,
-        planCreditsDelta: -fromPlan,
-        balanceAfterCredits: spendable - options.amountCredits,
-        // Which allowance period this drew on, so a refund knows whether that
-        // period is still the one in force.
-        ...(fromPlan > 0 && account.planPeriodKey
-          ? { metadata: { ...options.metadata, planPeriodKey: account.planPeriodKey } }
-          : {})
-      }),
-      select: ledgerSelect
+  const fromPlan = Math.min(effectivePlanCredits(account, now), options.amountCredits);
+  const fromPurchased = options.amountCredits - fromPlan;
+  const updated = await tx.userCreditAccount.updateMany({
+    where: {
+      userId: options.userId,
+      planCredits: { gte: fromPlan },
+      availableCredits: { gte: fromPurchased }
+    },
+    data: {
+      planCredits: { decrement: fromPlan },
+      availableCredits: { decrement: fromPurchased },
+      reservedCredits: { increment: options.amountCredits }
+    }
+  });
+  if (updated.count !== 1) {
+    const latest = await ensureCreditAccountRow(tx, options.userId);
+    throw new InsufficientCreditsError({
+      requiredCredits: options.amountCredits,
+      availableCredits: spendableCredits(latest, now),
+      reservedCredits: latest.reservedCredits
     });
+  }
+
+  return tx.creditLedgerEntry.create({
+    data: ledgerData({
+      ...options,
+      entryType: "RESERVE",
+      status: "RESERVED",
+      amountCredits: -options.amountCredits,
+      planCreditsDelta: -fromPlan,
+      balanceAfterCredits: spendable - options.amountCredits,
+      // Which allowance period this drew on, so a refund knows whether that
+      // period is still the one in force.
+      ...(fromPlan > 0 && account.planPeriodKey
+        ? { metadata: { ...options.metadata, planPeriodKey: account.planPeriodKey } }
+        : {})
+    }),
+    select: ledgerSelect
   });
 }
 
 export async function commitReservedCredits(entryId: string): Promise<CreditLedgerEntryRecord> {
-  return runSerializable(async (tx) => {
+  return runSerializable((tx) => commitReservedCreditsTx(tx, entryId));
+}
+
+/** Transaction-aware form used by the generation-attempt boundary. */
+export async function commitReservedCreditsTx(tx: BillingTx, entryId: string): Promise<CreditLedgerEntryRecord> {
     const entry = await tx.creditLedgerEntry.findUnique({
       where: { id: entryId },
       select: ledgerSelect
@@ -201,7 +216,7 @@ export async function commitReservedCredits(entryId: string): Promise<CreditLedg
     }
     const account = await ensureCreditAccountRow(tx, entry.userId);
 
-    return tx.creditLedgerEntry.update({
+  return tx.creditLedgerEntry.update({
       where: { id: entry.id },
       data: {
         entryType: "SPEND",
@@ -209,7 +224,6 @@ export async function commitReservedCredits(entryId: string): Promise<CreditLedg
         balanceAfterCredits: spendableCredits(account)
       },
       select: ledgerSelect
-    });
   });
 }
 
@@ -241,7 +255,16 @@ export async function refundCreditLedgerEntry(
   reason: string,
   now: Date = new Date()
 ): Promise<CreditLedgerEntryRecord | null> {
-  return runSerializable(async (tx) => {
+  return runSerializable((tx) => refundCreditLedgerEntryTx(tx, entryId, reason, now));
+}
+
+/** Transaction-aware form used when a failed attempt and its refund settle together. */
+export async function refundCreditLedgerEntryTx(
+  tx: BillingTx,
+  entryId: string,
+  reason: string,
+  now: Date = new Date()
+): Promise<CreditLedgerEntryRecord | null> {
     const entry = await tx.creditLedgerEntry.findUnique({
       where: { id: entryId },
       select: ledgerRefundSelect
@@ -280,7 +303,7 @@ export async function refundCreditLedgerEntry(
       }
       await revokeEntitlementsForLedgerEntryTx(tx, entry.id);
       await releaseUsageForEntryTx(tx, entry);
-      return tx.creditLedgerEntry.update({
+    return tx.creditLedgerEntry.update({
         where: { id: entry.id },
         data: {
           entryType: "RELEASE",
@@ -291,7 +314,7 @@ export async function refundCreditLedgerEntry(
           description: reason
         },
         select: ledgerSelect
-      });
+    });
     }
 
     if (entry.status !== "SETTLED") {
@@ -317,7 +340,7 @@ export async function refundCreditLedgerEntry(
     await revokeEntitlementsForLedgerEntryTx(tx, entry.id);
     await releaseUsageForEntryTx(tx, entry);
 
-    return tx.creditLedgerEntry.create({
+  return tx.creditLedgerEntry.create({
       data: {
         userId: entry.userId,
         ...(entry.projectId ? { projectId: entry.projectId } : {}),
@@ -333,7 +356,6 @@ export async function refundCreditLedgerEntry(
         metadata: jsonInput({ reason, refundedToPlanCredits: toPlan, refundedToPurchasedCredits: toPurchased })
       },
       select: ledgerSelect
-    });
   });
 }
 

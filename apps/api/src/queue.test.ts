@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
   updateMany: vi.fn(),
   projectUpdate: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
-  refundLatestProjectOperationCredits: vi.fn()
+  refundLatestProjectOperationCredits: vi.fn(),
+  failGenerationAttempt: vi.fn()
 }));
 
 vi.mock("bullmq", () => ({
@@ -45,7 +46,8 @@ vi.mock("@book-maker/db", () => ({
 }));
 vi.mock("@book-maker/db/billing", () => ({
   refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
-  refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits
+  refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits,
+  failGenerationAttempt: mocks.failGenerationAttempt
 }));
 
 import { dispatchGenerationJob, reconcileUndispatchedGenerationJobs, stopProjectGenerationJobs } from "./queue.js";
@@ -119,6 +121,7 @@ describe("stopping a run", () => {
     mocks.updateMany.mockResolvedValue({ count: 1 });
     mocks.refundCreditLedgerEntry.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
+    mocks.failGenerationAttempt.mockResolvedValue(undefined);
   });
 
   it("refunds the charge stamped on the stopped run's own GENERATE_BOOK payload", async () => {
@@ -169,5 +172,55 @@ describe("stopping a run", () => {
       operation: "FULL_BOOK_GENERATION",
       reason: "Stopped by user"
     });
+  });
+
+  it("settles each stopped attempt through the attempt ledger instead of the legacy charge walk", async () => {
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-book",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "GENERATE_BOOK",
+        payload: { planId: "plan-1", billingLedgerEntryId: "entry-book" },
+        attemptId: "attempt-book"
+      },
+      {
+        id: "job-page",
+        bullJobId: null,
+        status: "QUEUED",
+        type: "GENERATE_PAGE",
+        payload: { planId: "plan-1" },
+        attemptId: "attempt-book"
+      },
+      {
+        id: "job-audiobook",
+        bullJobId: null,
+        status: "QUEUED",
+        type: "GENERATE_AUDIOBOOK",
+        payload: { audiobookId: "audio-1", billingLedgerEntryId: "entry-audio" },
+        attemptId: "attempt-audiobook"
+      }
+    ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    // One settlement per distinct attempt: the attempt refunds its own entry,
+    // so the API must not also refund from the payload or the latest charge.
+    expect(mocks.failGenerationAttempt.mock.calls).toEqual([
+      ["attempt-book", "Stopped by user", "CANCELED"],
+      ["attempt-audiobook", "Stopped by user", "CANCELED"]
+    ]);
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("does not refund anything when a stop cancels no open jobs", async () => {
+    mocks.findMany.mockResolvedValue([]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 });

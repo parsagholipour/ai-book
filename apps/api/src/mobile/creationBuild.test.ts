@@ -113,7 +113,7 @@ describe("mobile creation build and outputs", () => {
     await app.close();
   });
 
-  it("cancels the committed plan job before refunding when dispatch fails", async () => {
+  it("leaves the committed durable job for outbox reconciliation when dispatch fails", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     const payload = creationPayload();
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "draft-1", payload }));
@@ -138,17 +138,9 @@ describe("mobile creation build and outputs", () => {
     });
 
     expect(response.statusCode).toBeGreaterThanOrEqual(500);
-    // The QUEUED row is what the reconcilers re-publish; it must be dead
-    // before the money moves back, or the refunded build still runs.
-    expect(vi.mocked(cancelUndispatchedGenerationJob)).toHaveBeenCalledWith("job-plan", expect.any(String));
-    expect(vi.mocked(refundCreditLedgerEntry)).toHaveBeenCalledWith(
-      "ledger-plan",
-      "Plan generation could not be prepared."
-    );
-    const cancelOrder = vi.mocked(cancelUndispatchedGenerationJob).mock.invocationCallOrder[0]!;
-    const refundOrder = vi.mocked(refundCreditLedgerEntry).mock.invocationCallOrder[0]!;
-    expect(cancelOrder).toBeLessThan(refundOrder);
-    expect(mockPrisma.project.delete).toHaveBeenCalledWith({ where: { id: "project-from-draft" } });
+    expect(vi.mocked(cancelUndispatchedGenerationJob)).not.toHaveBeenCalled();
+    expect(vi.mocked(refundCreditLedgerEntry)).not.toHaveBeenCalled();
+    expect(mockPrisma.project.delete).not.toHaveBeenCalled();
     await app.close();
   });
 

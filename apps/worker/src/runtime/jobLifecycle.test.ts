@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   bookEditOperationUpdate: vi.fn(),
   bookEditOperationUpdateMany: vi.fn(),
   pageFindUnique: vi.fn(),
+  generationAttemptFindUnique: vi.fn(),
+  failGenerationAttempt: vi.fn(),
+  markGenerationAttemptActive: vi.fn(),
+  markGenerationAttemptSucceeded: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn()
 }));
@@ -36,11 +40,15 @@ vi.mock("@book-maker/db", () => ({
       update: mocks.bookEditOperationUpdate,
       updateMany: mocks.bookEditOperationUpdateMany
     },
-    page: { findUnique: mocks.pageFindUnique }
+    page: { findUnique: mocks.pageFindUnique },
+    generationAttempt: { findUnique: mocks.generationAttemptFindUnique }
   }
 }));
 
 vi.mock("@book-maker/db/billing", () => ({
+  failGenerationAttempt: mocks.failGenerationAttempt,
+  markGenerationAttemptActive: mocks.markGenerationAttemptActive,
+  markGenerationAttemptSucceeded: mocks.markGenerationAttemptSucceeded,
   refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits
 }));
@@ -61,6 +69,9 @@ describe("job lifecycle ownership", () => {
     mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 0 });
     mocks.refundCreditLedgerEntry.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
+    mocks.failGenerationAttempt.mockResolvedValue(undefined);
+    mocks.markGenerationAttemptActive.mockResolvedValue(undefined);
+    mocks.markGenerationAttemptSucceeded.mockResolvedValue(undefined);
   });
 
   it("requeues audiobook work without moving the completed book back to generating", async () => {
@@ -86,6 +97,20 @@ describe("job lifecycle ownership", () => {
     });
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
     expect(mocks.projectUpdate).not.toHaveBeenCalled();
+  });
+
+  it("settles an attempt-aware descendant by attempt and never by a mutable payload ledger", async () => {
+    await markFailed(
+      job("generate-page", {
+        attemptId: "attempt-1",
+        billingLedgerEntryId: "legacy-ledger"
+      }),
+      new Error("page failed")
+    );
+
+    expect(mocks.failGenerationAttempt).toHaveBeenCalledWith("attempt-1", "page failed");
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 
   it("stops and refunds an audiobook without changing the book", async () => {
@@ -206,6 +231,34 @@ describe("job lifecycle ownership", () => {
       status: "FAILED"
     });
     await expect(staleGenerationJobReason(job("plan-book"))).resolves.toBeNull();
+  });
+
+  it("treats a job whose attempt was settled as stale so refunded work never runs", async () => {
+    // One failed page settled and refunded the whole attempt; its queued
+    // siblings — or the same row requeued by a shared resume route — must
+    // cancel on arrival instead of delivering work the user was paid back for.
+    mocks.projectFindUnique.mockResolvedValue({ currentPlanId: "plan-1", contentRevision: 0 });
+    mocks.generationJobFindUnique.mockResolvedValue({
+      projectId: "project-1",
+      type: "GENERATE_PAGE",
+      contentRevision: null,
+      status: "QUEUED",
+      attemptId: "attempt-1"
+    });
+    mocks.generationAttemptFindUnique.mockResolvedValue({ status: "FAILED" });
+
+    await expect(staleGenerationJobReason(job("generate-page", { planId: "plan-1" }))).resolves.toBe(
+      "The paid attempt behind this job was already settled and refunded."
+    );
+
+    // A live attempt keeps running its own children.
+    mocks.generationAttemptFindUnique.mockResolvedValue({ status: "ACTIVE" });
+    await expect(staleGenerationJobReason(job("generate-page", { planId: "plan-1" }))).resolves.toBeNull();
+
+    // A SUCCEEDED attempt is not a refund; stragglers stay governed by the
+    // plan/page staleness rules alone.
+    mocks.generationAttemptFindUnique.mockResolvedValue({ status: "SUCCEEDED" });
+    await expect(staleGenerationJobReason(job("generate-page", { planId: "plan-1" }))).resolves.toBeNull();
   });
 
   it("preserves project recovery, failure and stop transitions for book jobs", async () => {

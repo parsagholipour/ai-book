@@ -13,7 +13,11 @@ import {
   type GenerationJobType
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
+import {
+  failGenerationAttempt,
+  refundCreditLedgerEntry,
+  refundLatestProjectOperationCredits
+} from "@book-maker/db/billing";
 
 // The job-name table, retry budgets, backoff, and stop constants are shared
 // with the worker through @book-maker/core/jobDispatch — one definition on
@@ -45,6 +49,7 @@ export async function enqueueGenerationJob(options: {
   payload: Record<string, unknown>;
   dedupeKey?: string | undefined;
   contentRevision?: number | undefined;
+  attemptId?: string | undefined;
   transaction?: Prisma.TransactionClient | undefined;
   dispatch?: boolean | undefined;
 }) {
@@ -67,6 +72,7 @@ export async function enqueueGenerationJob(options: {
         payload: options.payload as Prisma.InputJsonValue,
         ...(options.dedupeKey ? { dedupeKey: options.dedupeKey } : {}),
         ...(options.contentRevision !== undefined ? { contentRevision: options.contentRevision } : {}),
+        ...(options.attemptId ? { attemptId: options.attemptId } : {}),
         status: "QUEUED",
         progress: 0,
         message: "Queued"
@@ -115,7 +121,8 @@ export async function dispatchGenerationJob(generationJobId: string) {
       {
         ...payload,
         projectId: generationJob.projectId,
-        generationJobId: generationJob.id
+        generationJobId: generationJob.id,
+        ...(generationJob.attemptId ? { attemptId: generationJob.attemptId } : {})
       },
       { ...jobOptionsForType(generationJob.type as GenerationJobType), jobId: generationJob.id }
     );
@@ -229,7 +236,7 @@ export async function stopProjectGenerationJobs(projectId: string) {
 
   const openJobs = await prisma.generationJob.findMany({
     where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } },
-    select: { id: true, bullJobId: true, status: true, type: true, payload: true }
+    select: { id: true, bullJobId: true, status: true, type: true, payload: true, attemptId: true }
   });
   let removedQueueJobs = 0;
 
@@ -265,15 +272,37 @@ export async function stopProjectGenerationJobs(projectId: string) {
       finishedAt
     }
   });
-  const chargedEntryId = await stoppedRunLedgerEntryId(projectId, openJobs);
-  if (chargedEntryId) {
-    await refundCreditLedgerEntry(chargedEntryId, STOPPED_JOB_ERROR);
-  } else {
-    await refundLatestProjectOperationCredits({
-      projectId,
-      operation: "FULL_BOOK_GENERATION",
-      reason: STOPPED_JOB_ERROR
+  // Every stopped job that belongs to a paid attempt settles through the
+  // attempt state machine: terminalizing the attempt refunds its own ledger
+  // entry (plan, edit, audiobook or book — whichever paid for it) exactly once,
+  // and marks the attempt CANCELED so its rows can never be resumed for free.
+  // This is idempotent against the worker noticing the stop on an active job
+  // and settling the same attempt itself.
+  const attemptIds = [...new Set(openJobs.flatMap((job) => (job.attemptId ? [job.attemptId] : [])))];
+  for (const attemptId of attemptIds) {
+    await failGenerationAttempt(attemptId, STOPPED_JOB_ERROR, "CANCELED").catch((error) => {
+      // failGenerationAttempt left refundPending set; the worker's refund
+      // reconciler finishes the settlement.
+      console.error(`Failed to settle stopped generation attempt ${attemptId}`, error);
     });
+  }
+
+  // Only rows enqueued before the attempt ledger existed still resolve through
+  // the legacy charge walk — and only when such rows were actually stopped.
+  // Running the fallback unconditionally refunded the latest full-book charge
+  // for stops that cancelled nothing but attempt-tracked work.
+  const legacyJobs = openJobs.filter((job) => !job.attemptId);
+  if (legacyJobs.length > 0) {
+    const chargedEntryId = await stoppedRunLedgerEntryId(projectId, legacyJobs);
+    if (chargedEntryId) {
+      await refundCreditLedgerEntry(chargedEntryId, STOPPED_JOB_ERROR);
+    } else {
+      await refundLatestProjectOperationCredits({
+        projectId,
+        operation: "FULL_BOOK_GENERATION",
+        reason: STOPPED_JOB_ERROR
+      });
+    }
   }
 
   return {

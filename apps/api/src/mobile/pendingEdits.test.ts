@@ -19,6 +19,7 @@ import {
   jobRecord,
   mockAccessTokens,
   mockPrisma,
+  mockQueue,
   projectRecord,
   resetMobileHarness,
   state,
@@ -683,7 +684,7 @@ describe("proposal settlement", () => {
     await app.close();
   });
 
-  it("answers a second Apply tap with 404 instead of running the edit twice", async () => {
+  it("returns the permanent proposal winner without running or charging twice", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     state.pages = editablePages();
     mockPrisma.project.findFirst.mockResolvedValue(completeProject());
@@ -708,8 +709,8 @@ describe("proposal settlement", () => {
       payload: { proposalId, requestId: "req-apply-2" }
     });
 
-    expect(second.statusCode).toBe(404);
-    expect(second.json().error.code).toBe("PROPOSAL_NOT_FOUND");
+    expect(second.statusCode).toBe(200);
+    expect(second.json().operation).toMatchObject({ id: first.json().operation.id });
     expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledTimes(1);
     await app.close();
   });
@@ -745,6 +746,98 @@ describe("proposal settlement", () => {
     expect(retried.statusCode).toBe(200);
     expect(retried.json().operation).not.toBeNull();
     expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("keeps a committed edit queued when dispatch fails after the charge landed", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-1", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+    const proposalId = await proposeExactEdit(app);
+
+    // The attempt, debit and durable job committed; only the push to the queue
+    // failed. The reconciler will publish the row, so the operation must stay
+    // QUEUED — a FAILED here invites a second paid submission for work that
+    // still runs.
+    mockQueue.dispatchGenerationJob.mockRejectedValueOnce(new Error("Queue unavailable"));
+    const applied = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId, requestId: "req-apply-1" }
+    });
+
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().operation).not.toBeNull();
+    const operation = state.bookEditOperations.find((candidate) => candidate.requestId === proposalId);
+    expect(operation?.status).toBe("QUEUED");
+    await app.close();
+  });
+
+  it("surfaces the winner's charged operation to a raced Apply that lost the insert", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const app = await buildMobileApp();
+    const proposalId = await proposeExactEdit(app);
+
+    // The typed Apply commits between the button Apply's claim check and its
+    // insert: the button request passed every check while no operation existed
+    // yet, and production's unique [projectId, requestId] index settles the
+    // race at the insert. hasOpenProjectWork is the loser's last read before
+    // that insert, so the winner lands exactly there.
+    mockPrisma.generationJob.count.mockImplementationOnce(async () => {
+      state.bookEditOperations.push({
+        id: "operation-winner",
+        projectId: "project-1",
+        requestId: proposalId,
+        // The winner's messages live on the typed-Apply branch, which the
+        // button Apply's branch never contains.
+        userMessageId: "chat-typed-apply",
+        assistantMessageId: "chat-typed-apply-reply",
+        generationJobId: "job-1",
+        ledgerEntryId: null,
+        kind: "LOCAL_PATCH",
+        status: "QUEUED",
+        request: "Replace rabbit with fly throughout the whole book.",
+        classifier: {},
+        affectedPageIndexes: [1, 2],
+        creditsCharged: 0,
+        automaticRetryCount: 0,
+        automaticRetryLimit: 2,
+        nextRetryAt: null,
+        lastRetryAt: null,
+        lastRetryReason: null,
+        retryRequestId: null,
+        error: null,
+        generationJob: { id: "job-1", status: "QUEUED" },
+        createdAt: new Date("2026-06-15T13:30:00.000Z"),
+        updatedAt: new Date("2026-06-15T13:30:00.000Z"),
+        appliedAt: null
+      });
+      return 0;
+    });
+
+    const raced = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId, requestId: "req-apply-button" }
+    });
+
+    expect(raced.statusCode).toBe(200);
+    // The loser is handed the winning operation, runs nothing and charges nothing.
+    expect(raced.json().operation).toMatchObject({ id: "operation-winner" });
+    expect(raced.json().reply.metadata).toMatchObject({ replayedOperation: true, charged: false });
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    // And the charge stays visible: the loser's branch exposes the operation
+    // through the replay reply even though the winner's messages are elsewhere.
+    expect(raced.json().operations).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "operation-winner" })])
+    );
     await app.close();
   });
 });

@@ -2,7 +2,6 @@ import {
   dispatchGenerationJob,
   enqueueGenerationJob,
   isBullJobActive,
-  requeueGenerationJob,
   type GenerationJobType
 } from "../../queue.js";
 import { type MobileProjectRecoveryDto } from "../dto.js";
@@ -16,6 +15,7 @@ import {
   sendMobileError
 } from "../httpErrors.js";
 import { serializeBookEditOperation } from "../projectChat.js";
+import { isValidGenerationRetryToken } from "../generationRetryQuote.js";
 import { queueInitialMobilePlan } from "../projectRecords.js";
 import {
   canRecoverGenerationJob,
@@ -27,29 +27,26 @@ import {
 import {
   emptyMobilePlanBodySchema,
   generationFailureJobTypes,
+  generationRetryBodySchema,
   idParamsSchema,
   mobileAuthError,
   mobileOperationRetryOpenApiBody,
+  mobileGenerationRetryOpenApiBody,
   mobilePlanApprovalBodySchema,
   mobilePlanApprovalOpenApiBody,
   mobilePlanRevisionBodySchema,
   mobilePlanRevisionOpenApiBody,
   operationRetryBodySchema
 } from "../schemas.js";
-import { hashString, jsonRecord } from "../support.js";
-import { randomUUID } from "node:crypto";
+import { fingerprintGenerationRequest, hashString, jsonRecord } from "../support.js";
 import { createProjectSchema, estimateFullBookCreditCost } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import {
+  GenerationAttemptConflictError,
+  GenerationQuotaExceededError,
   InsufficientCreditsError,
-  commitReservedCredits,
-  consumeIllustratedBookUse,
   getImageQuota,
-  grantProjectEntitlement,
-  refundCreditLedgerEntry,
-  releaseIllustratedBookUse,
-  reserveCredits,
-  type CreditLedgerEntryRecord
+  startGenerationAttempt
 } from "@book-maker/db/billing";
 import { type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -186,16 +183,33 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
     const params = z.object({ id: z.string().min(1), projectId: z.string().min(1).optional() }).parse(request.params);
     const parsed = operationRetryBodySchema.safeParse(request.body);
     if (!parsed.success) {
-      return sendMobileError(reply, 400, "VALIDATION_ERROR", "Provide an idempotency request ID.");
+      return sendMobileError(
+        reply,
+        400,
+        "RETRY_CONFIRMATION_REQUIRED",
+        "Refresh the project and confirm the current retry price before retrying."
+      );
     }
-    const result = await retryPlanRevisionOperation({
-      userId: auth.user.id,
-      ...(params.projectId ? { projectId: params.projectId } : {}),
-      operationId: params.id,
-      requestId: parsed.data.requestId,
-      automatic: false,
-      log: request.log
-    });
+    let result;
+    try {
+      result = await retryPlanRevisionOperation({
+        userId: auth.user.id,
+        ...(params.projectId ? { projectId: params.projectId } : {}),
+        operationId: params.id,
+        requestId: parsed.data.requestId,
+        retryToken: parsed.data.retryToken,
+        automatic: false,
+        log: request.log
+      });
+    } catch (error) {
+      if (error instanceof InsufficientCreditsError) {
+        return sendInsufficientCredits(reply, error);
+      }
+      if (error instanceof GenerationAttemptConflictError) {
+        return sendMobileError(reply, 409, "RETRY_NOT_AVAILABLE", error.message);
+      }
+      throw error;
+    }
     if (result.kind === "not_found") {
       return sendMobileError(reply, 404, "OPERATION_NOT_FOUND", "Plan revision operation not found.");
     }
@@ -239,15 +253,28 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!plan) {
         return sendMobileError(reply, 404, "PLAN_NOT_FOUND", "Plan not found.");
       }
+      // Approving a superseded version would charge a second full-book package
+      // for a project that already committed to another plan. The in-transaction
+      // guard below is the authoritative check; this is the readable answer.
+      if (plan.status === "SUPERSEDED") {
+        return sendMobileError(reply, 409, "PLAN_SUPERSEDED", "A newer plan replaced this one. Approve the latest plan instead.");
+      }
 
       const approvalDedupeKey = `generate-book:${plan.projectId}:${id}`;
-      const existingApprovalJob = await prisma.generationJob.findUnique({
-        where: { dedupeKey: approvalDedupeKey }
-      });
-      if (existingApprovalJob) {
+
+      // A plan approved before the attempt ledger existed (migration 000039
+      // backfills nothing) already owns this dedupe key with no attempt behind
+      // it. Re-approving must replay that job — charging first and then finding
+      // the existing job would debit a second time for no new work.
+      const legacyApprovalJob = await prisma.generationJob.findUnique({ where: { dedupeKey: approvalDedupeKey } });
+      if (legacyApprovalJob && !legacyApprovalJob.attemptId) {
+        const job =
+          legacyApprovalJob.status === "QUEUED" && !legacyApprovalJob.bullJobId
+            ? (await dispatchGenerationJob(legacyApprovalJob.id)) ?? legacyApprovalJob
+            : legacyApprovalJob;
         return reply
           .code(202)
-          .send(planOperation("generation_queued", plan.projectId, id, existingApprovalJob, "Full book generation is already scheduled."));
+          .send(planOperation("generation_queued", plan.projectId, id, job, "Starting full book generation."));
       }
 
       // An explicit "continue without illustrations" choice, made when the
@@ -260,26 +287,13 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (approvalBody.data.disableIllustrations) {
         const rawSettings = { ...jsonRecord(plan.project.mediaSettings), fullIllustrations: false };
         const rawSnapshot = plan.inputSnapshot ? jsonRecord(plan.inputSnapshot) : null;
-        await prisma.$transaction([
-          prisma.project.update({
-            where: { id: plan.projectId },
-            data: { mediaSettings: rawSettings as Prisma.InputJsonValue }
-          }),
-          ...(rawSnapshot
-            ? [
-                prisma.planVersion.update({
-                  where: { id },
-                  data: {
-                    inputSnapshot: {
-                      ...rawSnapshot,
-                      mediaSettings: { ...jsonRecord(rawSnapshot.mediaSettings), fullIllustrations: false }
-                    } as Prisma.InputJsonValue
-                  }
-                })
-              ]
-            : [])
-        ]);
         plan.project.mediaSettings = rawSettings as Prisma.JsonValue;
+        if (rawSnapshot) {
+          plan.inputSnapshot = {
+            ...rawSnapshot,
+            mediaSettings: { ...jsonRecord(rawSnapshot.mediaSettings), fullIllustrations: false }
+          } as Prisma.JsonValue;
+        }
       }
 
       const generationInput = createProjectSchema.parse(inputSnapshotFromProject(plan.project));
@@ -288,105 +302,84 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       }
       const creditEstimate = estimateFullBookCreditCost(generationInput);
 
-      // This is the only route that starts an illustrated generation, so it is
-      // the only place the free tier's monthly image budget has to be claimed.
-      // Claimed before the charge, and handed back with it if the refund path
-      // ever runs — see `metadata.imageQuota` below.
-      let quotaPeriodKey: string | null = null;
-      if (creditEstimate.assumptions.estimatedInteriorImages > 0) {
-        const quota = await getImageQuota(auth.user.id);
-        if (quota) {
-          const claim = await consumeIllustratedBookUse({ userId: auth.user.id, limit: quota.limit });
-          if (!claim.allowed) {
-            return sendImageLimitReached(reply, claim);
-          }
-          quotaPeriodKey = claim.periodKey;
-        }
-      }
-
-      let reservation: CreditLedgerEntryRecord | null = null;
-      let spend: CreditLedgerEntryRecord | null = null;
+      const imageQuota =
+        creditEstimate.assumptions.estimatedInteriorImages > 0 ? await getImageQuota(auth.user.id) : null;
       try {
-        reservation = await reserveCredits({
+        const started = await startGenerationAttempt({
           userId: auth.user.id,
+          commandKey: `mobile:plan-approval:${id}`,
+          requestFingerprint: fingerprintGenerationRequest({ planId: id, generationInput }),
           projectId: plan.projectId,
           operation: "FULL_BOOK_GENERATION",
-          amountCredits: creditEstimate.totalCredits,
-          // A fixed fallback key recreates the documented reserve-after-refund
-          // hazard (see reserveCredits): approve → fail → refund → retry found
-          // the reversed row and did the work for free. A client that sends no
-          // requestId gets a fresh key — no replay protection, but no free run.
-          idempotencyKey: `mobile:plan:${id}:approve:${approvalBody.data.requestId ?? randomUUID()}`,
+          quotedCredits: creditEstimate.totalCredits,
           description: "Mobile full book generation package",
-          metadata: {
-            creditEstimate,
-            ...(quotaPeriodKey ? { imageQuota: { periodKey: quotaPeriodKey } } : {})
-          }
-        });
-
-        spend = reservation ? await commitReservedCredits(reservation.id) : null;
-        if (spend) {
-          await grantProjectEntitlement({
-            userId: auth.user.id,
-            projectId: plan.projectId,
-            type: "EXPORT_UNLOCK",
-            source: "full_generation_credits",
-            creditsCost: creditEstimate.totalCredits,
-            relatedLedgerEntryId: spend.id,
-            metadata: {
-              planId: id,
-              includedInFullGenerationPackage: true
+          metadata: { planId: id, creditEstimate },
+          imageQuotaLimit: imageQuota?.limit ?? null,
+          grantExportEntitlement: true,
+          create: async (tx, { attemptId, ledgerEntry }) => {
+            if (approvalBody.data.disableIllustrations) {
+              await tx.project.update({
+                where: { id: plan.projectId },
+                data: { mediaSettings: plan.project.mediaSettings as Prisma.InputJsonValue }
+              });
+              if (plan.inputSnapshot) {
+                await tx.planVersion.update({
+                  where: { id },
+                  data: { inputSnapshot: plan.inputSnapshot as Prisma.InputJsonValue }
+                });
+              }
             }
-          });
-        }
-
-        const transactionResult = await prisma.$transaction(async (tx) => {
-          const job = await enqueueGenerationJob({
-            projectId: plan.projectId,
-            type: "GENERATE_BOOK",
-            dedupeKey: approvalDedupeKey,
-            transaction: tx,
-            dispatch: false,
-            payload: {
-              planId: id,
-              ...(spend ? { billingLedgerEntryId: spend.id } : {})
-            }
-          });
-          await tx.planVersion.updateMany({
-            where: { projectId: plan.projectId, id: { not: id } },
-            data: { status: "SUPERSEDED" }
-          });
-          await tx.planVersion.update({
-            where: { id },
-            data: { status: "APPROVED", approvedAt: new Date() }
-          });
-          await tx.project.update({
-            where: { id: plan.projectId },
-            data: { currentPlanId: id, status: "GENERATING" }
-          });
-          if (spend) {
-            await tx.creditLedgerEntry.update({
-              where: { id: spend.id },
-              data: { projectId: plan.projectId, generationJobId: job.id }
+            const job = await enqueueGenerationJob({
+              projectId: plan.projectId,
+              type: "GENERATE_BOOK",
+              dedupeKey: approvalDedupeKey,
+              transaction: tx,
+              dispatch: false,
+              attemptId,
+              payload: {
+                planId: id,
+                ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
+              }
             });
+            // The conditional write is the one-approval-per-project guard:
+            // concurrent approvals of two versions each supersede the other, so
+            // under the serializable transaction the loser matches zero rows
+            // here and rolls its charge back instead of committing a second
+            // full-book package for the same project.
+            const approved = await tx.planVersion.updateMany({
+              where: { id, status: { not: "SUPERSEDED" } },
+              data: { status: "APPROVED", approvedAt: new Date() }
+            });
+            if (approved.count !== 1) {
+              throw new GenerationAttemptConflictError("A newer plan replaced this one. Approve the latest plan instead.");
+            }
+            await tx.planVersion.updateMany({
+              where: { projectId: plan.projectId, id: { not: id } },
+              data: { status: "SUPERSEDED" }
+            });
+            await tx.project.update({
+              where: { id: plan.projectId },
+              data: { currentPlanId: id, status: "GENERATING" }
+            });
+            return { projectId: plan.projectId, primaryJobId: job.id };
           }
-          return { job };
         });
-        await dispatchGenerationJob(transactionResult.job.id);
-        return reply.code(202).send(planOperation("generation_queued", plan.projectId, id, transactionResult.job, "Starting full book generation."));
+        const job = started.attempt.primaryJobId
+          ? await dispatchGenerationJob(started.attempt.primaryJobId)
+          : null;
+        if (!job) {
+          throw new Error("Generation attempt has no primary job.");
+        }
+        return reply.code(202).send(planOperation("generation_queued", plan.projectId, id, job, "Starting full book generation."));
       } catch (error) {
-        const entryToRefund = spend ?? reservation;
-        if (entryToRefund) {
-          // The refund releases the quota slot too, because the entry carries
-          // the period it was claimed against.
-          await refundCreditLedgerEntry(entryToRefund.id, "Full generation could not be queued.");
-        } else if (quotaPeriodKey) {
-          // Nothing was ever charged — the reservation itself threw — so the
-          // slot has to be handed back here.
-          await releaseIllustratedBookUse(auth.user.id, quotaPeriodKey);
+        if (error instanceof GenerationQuotaExceededError) {
+          return sendImageLimitReached(reply, error.claim);
         }
         if (error instanceof InsufficientCreditsError) {
           return sendInsufficientCredits(reply, error);
+        }
+        if (error instanceof GenerationAttemptConflictError) {
+          return sendMobileError(reply, 409, error.code, error.message);
         }
         throw error;
       }
@@ -395,13 +388,29 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
 
   fastify.post(
     "/api/mobile/projects/:id/resume",
-    { schema: { tags: ["mobile"], response: { 202: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileGenerationRetryOpenApiBody,
+        response: { 202: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError }
+      }
+    },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
+      const retryBody = generationRetryBodySchema.safeParse(request.body ?? {});
+      if (!retryBody.success) {
+        return sendMobileError(
+          reply,
+          409,
+          "RETRY_CONFIRMATION_REQUIRED",
+          "Confirm the displayed retry price before retrying generation."
+        );
+      }
       const project = await prisma.project.findFirst({
         where: { id, userId: auth.user.id },
         include: { currentPlan: true }
@@ -455,24 +464,132 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         );
       }
 
+      const sourceAttemptIds = [...new Set(jobsReadyToResume.flatMap((job) => (job.attemptId ? [job.attemptId] : [])))];
+      if (sourceAttemptIds.length === 0) {
+        return sendMobileError(
+          reply,
+          409,
+          "RETRY_CONFIRMATION_REQUIRED",
+          "This older generation cannot be charged again without a confirmed retry quote."
+        );
+      }
+      const sourceAttempts = await prisma.generationAttempt.findMany({
+        where: {
+          id: { in: sourceAttemptIds },
+          userId: auth.user.id,
+          projectId: id,
+          status: { in: ["FAILED", "CANCELED"] },
+          refundPending: false
+        }
+      });
+      const sourceAttempt = sourceAttempts.find((attempt) =>
+        isValidGenerationRetryToken(attempt, retryBody.data.retryToken)
+      );
+      if (!sourceAttempt) {
+        return sendMobileError(reply, 409, "RETRY_QUOTE_INVALID", "Refresh the book and confirm the current retry price.");
+      }
+
+      const sourceJobs = jobsReadyToResume.filter((job) => job.attemptId === sourceAttempt.id);
+      if (sourceJobs.length === 0) {
+        return sendMobileError(reply, 409, "RECOVERY_NOT_AVAILABLE", "There is nothing ready to retry for this book.");
+      }
       const nextStatus = jobsReadyToResume.every((job) => isPlanningRecoveryJob(job.type as GenerationJobType))
         ? "PLANNING"
         : "GENERATING";
-      await prisma.project.update({ where: { id }, data: { status: nextStatus } });
-      for (const job of jobsReadyToResume) {
-        await requeueGenerationJob({
-          id: job.id,
-          projectId: job.projectId,
-          type: job.type as GenerationJobType,
-          payload: recoveryPayload(job.type as GenerationJobType, job.payload, project.currentPlanId)
+      // A confirmed retry re-charges the full package, so it must also carry
+      // the package's benefits: refunding the failed attempt revoked the export
+      // entitlement and released the illustrated-book slot, and a retry that
+      // skipped them would deliver a paid book with locked exports while
+      // bypassing the free tier's image budget.
+      const isFullBookRetry = sourceAttempt.operation === "FULL_BOOK_GENERATION";
+      let imageQuotaLimit: number | null = null;
+      if (isFullBookRetry) {
+        const generationInput = createProjectSchema.parse(inputSnapshotFromProject(project));
+        if (estimateFullBookCreditCost(generationInput).assumptions.estimatedInteriorImages > 0) {
+          imageQuotaLimit = (await getImageQuota(auth.user.id))?.limit ?? null;
+        }
+      }
+      let started;
+      try {
+        started = await startGenerationAttempt({
+          userId: auth.user.id,
+          commandKey: `mobile:generation-retry:${sourceAttempt.id}:${retryBody.data.requestId}`,
+          requestFingerprint: fingerprintGenerationRequest({
+            sourceAttemptId: sourceAttempt.id,
+            jobs: sourceJobs.map((job) => ({ id: job.id, type: job.type, payload: job.payload }))
+          }),
+          projectId: id,
+          retryOfAttemptId: sourceAttempt.id,
+          operation: sourceAttempt.operation,
+          quotedCredits: sourceAttempt.quotedCredits,
+          description: "Confirmed mobile generation retry",
+          metadata: { sourceAttemptId: sourceAttempt.id, retryRequestId: retryBody.data.requestId },
+          imageQuotaLimit,
+          grantExportEntitlement: isFullBookRetry,
+          create: async (tx, { attemptId, ledgerEntry }) => {
+            let primaryJobId: string | null = null;
+            for (const sourceJob of sourceJobs) {
+              const payload = recoveryPayload(sourceJob.type as GenerationJobType, sourceJob.payload, project.currentPlanId);
+              delete payload.billingLedgerEntryId;
+              const job = await enqueueGenerationJob({
+                projectId: id,
+                type: sourceJob.type as GenerationJobType,
+                dedupeKey: `generation-retry:${sourceAttempt.id}:${sourceJob.id}`,
+                transaction: tx,
+                dispatch: false,
+                attemptId,
+                payload: { ...payload, ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {}) }
+              });
+              primaryJobId ??= job.id;
+            }
+            if (!primaryJobId) {
+              throw new Error("Confirmed retry created no generation job.");
+            }
+            await tx.project.update({ where: { id }, data: { status: nextStatus } });
+            return { projectId: id, primaryJobId };
+          }
         });
+      } catch (error) {
+        if (error instanceof GenerationQuotaExceededError) {
+          return sendImageLimitReached(reply, error.claim);
+        }
+        if (error instanceof InsufficientCreditsError) {
+          return sendInsufficientCredits(reply, error);
+        }
+        if (error instanceof GenerationAttemptConflictError) {
+          return sendMobileError(reply, 409, error.code, error.message);
+        }
+        throw error;
+      }
+      const attemptJobs = await prisma.generationJob.findMany({
+        where: { attemptId: started.attempt.id },
+        select: { id: true, status: true }
+      });
+      const retryJobs = attemptJobs.filter((job) => job.status === "QUEUED");
+      for (const job of retryJobs) {
+        await dispatchGenerationJob(job.id);
+      }
+      // A replayed retry with nothing left to run is spent — its jobs already
+      // failed or finished. A 202 here would strand the app on a quote whose
+      // confirmation queues zero actions forever.
+      if (
+        started.replayed &&
+        retryJobs.length === 0 &&
+        !attemptJobs.some((job) => job.status === "ACTIVE")
+      ) {
+        return sendMobileError(
+          reply,
+          409,
+          "RETRY_NOT_AVAILABLE",
+          "That retry already ran. Refresh the book to see the current retry option."
+        );
       }
 
       return reply.code(202).send({
         projectId: id,
         status: "recovery_started",
         currentAction: nextStatus === "PLANNING" ? "Retrying your book plan." : "Picking up your book generation.",
-        resumedActions: jobsReadyToResume.length,
+        resumedActions: retryJobs.length,
         skippedActions: failedJobs.length - jobsForRecovery.length,
         stoppingActions: stoppingJobs
       } satisfies MobileProjectRecoveryDto);

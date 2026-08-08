@@ -9,7 +9,6 @@ import {
   type MobilePageCountSource
 } from "../mobileCreation.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
-import { randomUUID } from "node:crypto";
 import { createCreationOutputForProject, creationOutputsForDraft, mobileCreationDraftOutputsInclude } from "./creationSessions.js";
 import {
   type MobileCreateProjectInput,
@@ -32,7 +31,7 @@ import {
   mobilePageCountRecommendationSchema,
   mobileProjectCreateBodySchema
 } from "./schemas.js";
-import { cleanTargetLanguage, jsonInputValue, jsonRecord, jsonValue } from "./support.js";
+import { cleanTargetLanguage, fingerprintGenerationRequest, jsonInputValue, jsonRecord, jsonValue } from "./support.js";
 import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   createProjectSchema,
@@ -43,7 +42,7 @@ import {
   type ReplanSettings
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { commitReservedCredits, refundCreditLedgerEntry, reserveCredits, type CreditLedgerEntryRecord } from "@book-maker/db/billing";
+import { startGenerationAttempt } from "@book-maker/db/billing";
 import { z } from "zod";
 
 /**
@@ -298,6 +297,8 @@ export async function createReplanProjectCopy(options: {
    * describes itself as the length nobody asked for.
    */
   settings?: ReplanSettings | null;
+  transaction?: Prisma.TransactionClient | undefined;
+  attachToCreationSession?: boolean | undefined;
 }): Promise<MobileProjectRecord> {
   const source = options.sourceProject;
   const targetLanguage = cleanTargetLanguage(options.targetLanguage);
@@ -315,7 +316,8 @@ export async function createReplanProjectCopy(options: {
       ...(targetLanguage ? { revisionTargetLanguage: targetLanguage } : {})
     }
   });
-  const copy = (await prisma.project.create({
+  const db = options.transaction ?? prisma;
+  const copy = (await db.project.create({
     data: {
       userId: options.userId,
       title: revisedCopyTitle(source.title),
@@ -336,11 +338,13 @@ export async function createReplanProjectCopy(options: {
     include: mobileProjectDetailInclude()
   })) as MobileProjectRecord;
 
-  await attachReplanCopyToCreationSession({
-    sourceProjectId: source.id,
-    copyProjectId: copy.id,
-    copyTitle: copy.title
-  });
+  if (options.attachToCreationSession !== false) {
+    await attachReplanCopyToCreationSession({
+      sourceProjectId: source.id,
+      copyProjectId: copy.id,
+      copyTitle: copy.title
+    });
+  }
   return copy;
 }
 
@@ -415,62 +419,40 @@ export function mobileProjectDetailInclude() {
 export async function queueInitialMobilePlan(
   userId: string,
   projectId: string,
-  inputSnapshot: Record<string, unknown>,
-  options: {
-    reservation?: CreditLedgerEntryRecord | null | undefined;
-    idempotencyKey?: string | undefined;
-  } = {}
+  inputSnapshot: Record<string, unknown>
 ): Promise<MobilePlanOperationDto> {
   const planCost = creditCostForOperation("PLAN_GENERATION");
-  let planReservation: CreditLedgerEntryRecord | null = options.reservation ?? null;
-  let committedPlanCharge: CreditLedgerEntryRecord | null = null;
-  try {
-    if (!planReservation) {
-      planReservation = await reserveCredits({
-        userId,
-        projectId,
-        operation: "PLAN_GENERATION",
-        amountCredits: planCost,
-        // Never a fixed fallback: a key reused after a refund gets the
-        // reversed row back and the work runs for free (see reserveCredits).
-        idempotencyKey: options.idempotencyKey ?? `mobile:project:${projectId}:plan:${randomUUID()}`,
-        description: "Mobile plan generation"
-      });
-    } else {
-      await prisma.creditLedgerEntry.update({
-        where: { id: planReservation.id },
-        data: { projectId }
-      });
-    }
-    committedPlanCharge = planReservation ? await commitReservedCredits(planReservation.id) : null;
-    const transactionResult = await prisma.$transaction(async (tx) => {
+  const started = await startGenerationAttempt({
+    userId,
+    commandKey: `mobile:project-initial-plan:${projectId}`,
+    requestFingerprint: fingerprintGenerationRequest({ projectId, inputSnapshot }),
+    projectId,
+    operation: "PLAN_GENERATION",
+    quotedCredits: planCost,
+    description: "Mobile plan generation",
+    metadata: { initialPlan: true },
+    create: async (tx, { attemptId, ledgerEntry }) => {
       const job = await enqueueGenerationJob({
         projectId,
         type: "PLAN_BOOK",
         dedupeKey: `plan-book:${projectId}`,
         transaction: tx,
         dispatch: false,
+        attemptId,
         payload: {
           inputSnapshot,
-          ...(committedPlanCharge ? { billingLedgerEntryId: committedPlanCharge.id } : {})
+          ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
         }
       });
       await tx.project.update({ where: { id: projectId }, data: { status: "PLANNING" } });
-      if (committedPlanCharge) {
-        await tx.creditLedgerEntry.update({
-          where: { id: committedPlanCharge.id },
-          data: { generationJobId: job.id, projectId }
-        });
-      }
-      return { job };
-    });
-    await dispatchGenerationJob(transactionResult.job.id);
-    return planOperation("planning_queued", projectId, null, transactionResult.job, "Creating your book plan.");
-  } catch (error) {
-    const entryToRefund = committedPlanCharge ?? planReservation;
-    if (entryToRefund) {
-      await refundCreditLedgerEntry(entryToRefund.id, "Plan generation could not be queued.");
+      return { projectId, primaryJobId: job.id };
     }
-    throw error;
+  });
+  const job = started.attempt.primaryJobId
+    ? await dispatchGenerationJob(started.attempt.primaryJobId)
+    : null;
+  if (!job) {
+    throw new Error("Generation attempt has no primary job.");
   }
+  return planOperation("planning_queued", projectId, null, job, "Creating your book plan.");
 }

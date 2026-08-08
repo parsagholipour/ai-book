@@ -38,6 +38,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
+import { settledGenerationAttemptIds } from "@book-maker/db/billing";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
 import { deleteProjectStorage } from "../projectStorage.js";
@@ -603,8 +604,17 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       existingPages: pages.length,
       pageIds: new Set(pages.map((page) => page.id))
     };
-    const recoveryCandidates = failedJobs.filter((job) =>
-      canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
+    // A job whose attempt was settled was already refunded; requeueing the row
+    // would run that refunded work for free (and the worker cancels it on
+    // arrival anyway). Those books recover through the mobile paid-retry route.
+    // Attempt-less rows — the console's own unbilled jobs — stay resumable.
+    const settledAttemptIds = await settledGenerationAttemptIds([
+      ...new Set(failedJobs.flatMap((job) => (job.attemptId ? [job.attemptId] : [])))
+    ]);
+    const recoveryCandidates = failedJobs.filter(
+      (job) =>
+        (!job.attemptId || !settledAttemptIds.has(job.attemptId)) &&
+        canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
     );
     const planningRecoveryCandidates = recoveryCandidates.filter((job) =>
       isPlanningRecoveryJob(job.type as GenerationJobType)

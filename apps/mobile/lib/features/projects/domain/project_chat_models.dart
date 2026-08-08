@@ -264,7 +264,9 @@ class MobileEditProposal {
           : 'Apply this edit',
       affectedChapterIndex: json['affectedChapterIndex'] as int?,
       targetLanguage: json['targetLanguage'] as String?,
-      preview: MobileEditPreview.fromJson(json['preview'] as Map<String, dynamic>?),
+      preview: MobileEditPreview.fromJson(
+        json['preview'] as Map<String, dynamic>?,
+      ),
     );
   }
 
@@ -307,6 +309,7 @@ class MobileBookEditOperation {
     this.nextRetryAt,
     this.retryState,
     this.retryMessage,
+    this.recoveryQuote,
     this.submittedText,
     this.requestId,
     this.anchorMessageId,
@@ -332,6 +335,7 @@ class MobileBookEditOperation {
   final DateTime? nextRetryAt;
   final String? retryState;
   final String? retryMessage;
+  final MobileGenerationRecoveryQuote? recoveryQuote;
 
   /// Original user input and idempotency key, when returned by newer servers.
   final String? submittedText;
@@ -392,6 +396,11 @@ class MobileBookEditOperation {
       retryState: json['retryState'] as String? ?? retry?['state'] as String?,
       retryMessage:
           json['retryMessage'] as String? ?? retry?['message'] as String?,
+      recoveryQuote: json['recoveryQuote'] is Map
+          ? MobileGenerationRecoveryQuote.fromJson(
+              (json['recoveryQuote'] as Map).cast<String, dynamic>(),
+            )
+          : null,
       submittedText: submittedText is String ? submittedText : null,
       requestId: json['requestId'] as String?,
       anchorMessageId:

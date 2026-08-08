@@ -1,5 +1,6 @@
 import { UnrecoverableError, Worker } from "bullmq";
 import { prisma } from "@book-maker/db";
+import { reconcileGenerationAttemptRefunds } from "@book-maker/db/billing";
 import {
   maybeCompileAfterCompletedJob,
   reconcileUndispatchedWorkerJobs
@@ -40,11 +41,14 @@ import { generatePage } from "./handlers/generatePage.js";
 import { importBook } from "./handlers/importBook.js";
 import { planBook, revisePlan } from "./handlers/planning.js";
 import { replanBook } from "./handlers/replanBook.js";
+import { runWithGenerationAttempt } from "./runtime/generationAttemptContext.js";
 
 
 const worker = new Worker(
   BOOK_QUEUE_NAME,
-  async (job) => {
+  async (job) => runWithGenerationAttempt(
+    typeof job.data.attemptId === "string" ? job.data.attemptId : null,
+    async () => {
     const runLogger = createRunLogger(job);
     await runLogger.append("job.start", {
       payload: job.data,
@@ -138,7 +142,8 @@ const worker = new Worker(
       }
       throw error;
     }
-  },
+    }
+  ),
   {
     connection,
     concurrency: Math.max(config.MAX_PARALLEL_PAGE_JOBS, config.MAX_PARALLEL_IMAGE_JOBS)
@@ -149,10 +154,16 @@ const queueReconcileTimer = setInterval(() => {
   void reconcileUndispatchedWorkerJobs().catch((error) => {
     console.error("Generation queue reconciliation failed", error);
   });
+  void reconcileGenerationAttemptRefunds().catch((error) => {
+    console.error("Generation attempt refund reconciliation failed", error);
+  });
 }, 5_000);
 queueReconcileTimer.unref();
 void reconcileUndispatchedWorkerJobs().catch((error) => {
   console.error("Initial generation queue reconciliation failed", error);
+});
+void reconcileGenerationAttemptRefunds().catch((error) => {
+  console.error("Initial generation attempt refund reconciliation failed", error);
 });
 
 worker.on("ready", () => {

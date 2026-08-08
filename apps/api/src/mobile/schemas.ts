@@ -57,7 +57,23 @@ export const creationMutationQuerySchema = z.object({
 
 export const requestIdSchema = z.string().trim().min(8).max(64);
 
-export const operationRetryBodySchema = z.object({ requestId: requestIdSchema }).strict();
+export const operationRetryBodySchema = z
+  .object({ requestId: requestIdSchema, retryToken: z.string().trim().min(16).max(128) })
+  .strict();
+
+export const generationRetryBodySchema = z
+  .object({ requestId: requestIdSchema, retryToken: z.string().trim().min(16).max(128) })
+  .strict();
+
+export const mobileGenerationRetryOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    retryToken: { type: "string", minLength: 16, maxLength: 128 }
+  },
+  required: ["requestId", "retryToken"]
+} as const;
 
 export const mobileAssetFilenameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/);
 
@@ -479,9 +495,10 @@ export const mobileOperationRetryOpenApiBody = {
   type: "object",
   additionalProperties: false,
   properties: {
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    retryToken: { type: "string", minLength: 16, maxLength: 128 }
   },
-  required: ["requestId"]
+  required: ["requestId", "retryToken"]
 } as const;
 
 export const mobilePlanRevisionOpenApiBody = {
