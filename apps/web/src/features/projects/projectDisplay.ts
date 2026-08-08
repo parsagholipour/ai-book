@@ -15,6 +15,7 @@ import {
   textModelLabel,
   textModelThinkingEffortValue,
   textModelSelectionFromOption,
+  resolveCoverArtSource,
   textModelSelectionFromValue,
   toneProfileFromValue,
   type GenerationStrategyOption,
@@ -95,12 +96,7 @@ export function projectUsesImageModel(project: Project): boolean {
       ? mediaSettings.fullIllustrations
       : true;
   // A bundled design draws itself, so only generated cover art needs a model.
-  const generatedCover =
-    mediaSettings.coverArtSource === undefined
-      ? typeof mediaSettings.includeCover === "boolean"
-        ? mediaSettings.includeCover
-        : true
-      : mediaSettings.coverArtSource === "ai";
+  const generatedCover = resolveCoverArtSource(mediaSettings) === "ai";
   return fullIllustrations || generatedCover;
 }
 

@@ -90,4 +90,33 @@ describe("selectCoverDesign", () => {
     expect(choice.selectedBy).toBe("fallback");
     expect(coverDesign(choice.design.id)).toBeDefined();
   });
+
+  it("re-throws errors the caller's bailOnError claims instead of falling back", async () => {
+    // The worker passes its stop-signal predicate here: a swallowed stop used
+    // to finish the cover and compile a user-stopped run to COMPLETE.
+    const stop = new Error("Stop requested");
+    const generateJson = vi.fn(async () => {
+      throw stop;
+    });
+
+    await expect(
+      selectCoverDesign({
+        textModel: textModel(generateJson as unknown as TextModelAdapter["generateJson"]),
+        input,
+        plan,
+        seed: "project-1",
+        bailOnError: (error) => error === stop
+      })
+    ).rejects.toBe(stop);
+
+    // An unclaimed error still falls back.
+    const choice = await selectCoverDesign({
+      textModel: textModel(generateJson as unknown as TextModelAdapter["generateJson"]),
+      input,
+      plan,
+      seed: "project-1",
+      bailOnError: () => false
+    });
+    expect(choice.selectedBy).toBe("fallback");
+  });
 });

@@ -447,7 +447,7 @@ async function requireMobileAuth(request: FastifyRequest, reply: FastifyReply): 
   return auth;
 }
 
-async function requireOperatorAuth(request: FastifyRequest, reply: FastifyReply): Promise<OperatorAuthContext | null> {
+async function requireOperatorAuth(request: FastifyRequest, _reply: FastifyReply): Promise<OperatorAuthContext | null> {
   if (request.operatorAuth) {
     return request.operatorAuth;
   }

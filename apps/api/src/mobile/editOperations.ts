@@ -1,5 +1,5 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
-import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   affectedPagesForIntent,
   busyEditReply,
@@ -22,18 +22,10 @@ import {
   hashString,
   isPrismaUniqueConflict,
   jsonInputValue,
-  jsonRecord,
   languageDisplayName
 } from "./support.js";
 import { creditCostForOperation } from "@book-maker/core";
-import {
-  PLAN_REVISION_AUTOMATIC_RETRY_LIMIT,
-  Prisma,
-  canClaimPlanRevisionRetry,
-  planRevisionRetryDelayMs,
-  prisma,
-  retryRequestKey
-} from "@book-maker/db";
+import { PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import {
   InsufficientCreditsError,
   commitReservedCredits,
@@ -566,6 +558,7 @@ export async function queueChargedPlanRevision(options: {
   const amountCredits = creditCostForOperation("PLAN_REVISION");
   let reservation: CreditLedgerEntryRecord | null = null;
   let spend: CreditLedgerEntryRecord | null = null;
+  let queuedJobId: string | null = null;
   try {
     reservation = await reserveCredits({
       userId: options.userId,
@@ -613,12 +606,37 @@ export async function queueChargedPlanRevision(options: {
       await tx.project.update({ where: { id: options.projectId }, data: { status: "PLANNING" } });
       return { job };
     });
-    await dispatchGenerationJob(transactionResult.job.id);
+    queuedJobId = transactionResult.job.id;
+    await dispatchGenerationJob(queuedJobId);
     return { job: transactionResult.job, ledgerEntry: spend };
   } catch (error) {
+    // Once the transaction committed, the job row exists and the reconcilers
+    // will publish it — so the refund is only safe after the cancel provably
+    // claimed the row. A row that was already dispatched will run; the charge
+    // must stand then.
+    const jobProvablyDead = queuedJobId
+      ? await cancelUndispatchedGenerationJob(queuedJobId, "Plan revision could not be queued.").catch(() => false)
+      : true;
+    if (queuedJobId && jobProvablyDead) {
+      // The committed transaction moved the project to PLANNING for a revision
+      // that is now not coming; put it back the same way the worker's failure
+      // path does (restoreProjectAfterFailedPlanRevision).
+      await prisma.project
+        .updateMany({
+          where: { id: options.projectId, status: "PLANNING", currentPlanId: { not: null } },
+          data: { status: "PLAN_READY" }
+        })
+        .catch(() => ({ count: 0 }));
+    }
     const entryToRefund = spend ?? reservation;
-    if (entryToRefund) {
+    if (entryToRefund && jobProvablyDead) {
       await refundCreditLedgerEntry(entryToRefund.id, "Plan revision could not be queued.");
+    } else if (entryToRefund) {
+      console.error("Plan revision compensation kept the charge: the queued job could not be canceled", {
+        projectId: options.projectId,
+        generationJobId: queuedJobId,
+        ledgerEntryId: entryToRefund.id
+      });
     }
     throw error;
   }

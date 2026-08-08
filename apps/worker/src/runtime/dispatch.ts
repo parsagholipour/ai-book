@@ -88,7 +88,19 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
     return generationJob;
   }
   const payload = jsonPayloadToRecord(generationJob.payload);
-  const name = workerJobNameForType(generationJob.type);
+  // Inside the try: an unmapped type must count as a deferred dispatch, not a
+  // rejection that poisons every reconciliation sweep.
+  let name: string;
+  try {
+    name = workerJobNameForType(generationJob.type);
+  } catch (error) {
+    console.error("Generation job has no worker job name; leaving it undispatched", {
+      generationJobId: generationJob.id,
+      type: generationJob.type,
+      error: errorMessage(error)
+    });
+    return generationJob;
+  }
   try {
     const bullJob = await queue.add(
       name,
@@ -137,7 +149,14 @@ export async function reconcileUndispatchedWorkerJobs(limit = 50): Promise<numbe
     take: limit,
     select: { id: true }
   });
-  await Promise.all(jobs.map((job) => dispatchWorkerGenerationJob(job.id)));
+  // allSettled, not all: one undispatchable row must not abort the sweep for
+  // every other stranded job, every interval, forever.
+  const results = await Promise.allSettled(jobs.map((job) => dispatchWorkerGenerationJob(job.id)));
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Worker job reconciliation failed for a row", result.reason);
+    }
+  }
   return jobs.length;
 }
 
@@ -229,12 +248,14 @@ export function parallelPageWaveSize(input: CreateProjectInput): number {
  * completion tops the wave back up by one, so the number of concurrent page
  * jobs stays at the initial wave size.
  */
-export async function enqueueNextPageIfReady(projectId: string, planId: string, _completedPageIndex?: number) {
+export async function enqueueNextPageIfReady(projectId: string, planId: string) {
   const [pendingPages, openJobs] = await Promise.all([
     prisma.page.findMany({
       where: { projectId, status: "PENDING" },
       orderBy: { index: "asc" },
-      take: 8,
+      // One more than the wave can hold in flight, or a wave larger than the
+      // fetch finds every fetched page already claimed and shrinks for good.
+      take: Math.max(1, config.MAX_PARALLEL_PAGE_JOBS) + 1,
       select: { id: true, index: true }
     }),
     prisma.generationJob.findMany({
@@ -259,18 +280,6 @@ export async function enqueueNextPageIfReady(projectId: string, planId: string, 
     payload: { pageId: nextPage.id, planId },
     dedupeKey: `generate-page:${nextPage.id}:${planId}`
   });
-}
-
-export async function hasOpenGeneratePageJob(projectId: string, pageId: string): Promise<boolean> {
-  const openJobs = await prisma.generationJob.findMany({
-    where: {
-      projectId,
-      type: "GENERATE_PAGE",
-      status: { in: ["QUEUED", "ACTIVE"] }
-    },
-    select: { payload: true }
-  });
-  return openJobs.some((job) => jsonPayloadToRecord(job.payload).pageId === pageId);
 }
 
 export async function maybeEnqueueCompile(

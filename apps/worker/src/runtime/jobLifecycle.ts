@@ -283,10 +283,16 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
   }
   const generationJob = await prisma.generationJob.findUnique({
     where: { id: generationJobId },
-    select: { projectId: true, type: true, contentRevision: true }
+    select: { projectId: true, type: true, contentRevision: true, status: true }
   });
   if (!generationJob) {
     return "The durable generation job no longer exists.";
+  }
+  // Strictly CANCELED, never FAILED: a compensation path cancels a row it
+  // refunded, and a Bull job that slipped out anyway must not run refunded
+  // work — while FAILED rows are legitimately re-run by BullMQ attempt retries.
+  if (generationJob.status === "CANCELED") {
+    return "The durable job was canceled before it could run.";
   }
   const project = await prisma.project.findUnique({
     where: { id: payloadProjectId },
@@ -325,6 +331,15 @@ export async function cancelStaleGenerationJob(job: Job, reason: string): Promis
         message: "Canceled because newer book state exists",
         error: reason
       }
+    });
+  }
+  // Only the run's root job: a stale-cancelled GENERATE_BOOK means the run it
+  // was charged for is never going to finish, so its own payload entry comes
+  // back (idempotent). A stale *child* proves nothing — a completed run can
+  // leave a straggler behind — so children never touch the charge.
+  if (job.name === "generate-book" && typeof job.data.billingLedgerEntryId === "string") {
+    await refundCreditLedgerEntry(job.data.billingLedgerEntryId, reason).catch((error) => {
+      console.error(`Failed to refund stale-cancelled generation for job ${generationJobId ?? "?"}`, error);
     });
   }
   const operationId = editOperationIdFromJob(job);
@@ -445,8 +460,15 @@ export async function markFailed(job: Job, error: unknown) {
     await failAudiobookForJob(job, errorMessage(error));
     return;
   }
+  if (job.name === "plan-book") {
+    await refundPlanGenerationForJob(job, errorMessage(error));
+    if (projectId) {
+      await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
+    }
+    return;
+  }
   if (projectId && workerJobControlsProjectStatus(job.name)) {
-    await refundFailedProjectCredits(projectId, errorMessage(error));
+    await refundFailedProjectCredits(job, projectId, errorMessage(error));
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
 }
@@ -477,6 +499,26 @@ async function failAudiobookForJob(job: Job, reason: string): Promise<void> {
     await prisma.audiobook
       .updateMany({ where: { id: audiobookId, status: "GENERATING" }, data: { status: "FAILED", error: reason } })
       .catch(() => ({ count: 0 }));
+  }
+}
+
+/**
+ * A failed plan refunds its own charge. `PLAN_GENERATION` is stamped on the
+ * payload by both queue sites; the project-level fallback below refunds only
+ * `FULL_BOOK_GENERATION`, which a plan-only project has never paid, so without
+ * this branch a dead plan kept the money.
+ */
+async function refundPlanGenerationForJob(job: Job, reason: string): Promise<void> {
+  const projectId = job.data.projectId as string | undefined;
+  const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
+  if (ledgerEntryId) {
+    await refundCreditLedgerEntry(ledgerEntryId, reason).catch((error) => {
+      console.error(`Failed to refund plan generation for project ${projectId ?? "?"}`, error);
+    });
+  } else if (projectId) {
+    await refundLatestProjectOperationCredits({ projectId, operation: "PLAN_GENERATION", reason }).catch((error) => {
+      console.error(`Failed to refund plan credits for project ${projectId}`, error);
+    });
   }
 }
 
@@ -548,20 +590,88 @@ export async function markStopped(job: Job) {
     await failAudiobookForJob(job, STOPPED_JOB_ERROR);
     return;
   }
+  // A stopped edit settles like a failed one: refund the operation's own
+  // ledger entry, never the project's book charge — the book is still there.
+  const editOperationId = editOperationIdFromJob(job);
+  if (editOperationId) {
+    await failEditOperation(editOperationId, STOPPED_JOB_ERROR);
+    if (projectId && job.name === "revise-plan") {
+      if (await restoreProjectAfterFailedPlanRevision(prisma, projectId)) {
+        return;
+      }
+    }
+    if (projectId) {
+      await prisma.project
+        .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: "COMPLETE" } })
+        .catch(() => ({ count: 0 }));
+    }
+    return;
+  }
+  if (projectId && job.name === "revise-plan") {
+    if (await restoreProjectAfterFailedPlanRevision(prisma, projectId)) {
+      return;
+    }
+  }
+  if (job.name === "plan-book") {
+    await refundPlanGenerationForJob(job, STOPPED_JOB_ERROR);
+    if (projectId) {
+      await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
+    }
+    return;
+  }
   if (projectId && workerJobControlsProjectStatus(job.name)) {
-    await refundFailedProjectCredits(projectId, STOPPED_JOB_ERROR);
+    await refundFailedProjectCredits(job, projectId, STOPPED_JOB_ERROR);
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
 }
 
-export async function refundFailedProjectCredits(projectId: string, reason: string): Promise<void> {
-  await refundLatestProjectOperationCredits({
-    projectId,
-    operation: "FULL_BOOK_GENERATION",
-    reason
-  }).catch((error) => {
+export async function refundFailedProjectCredits(job: Job, projectId: string, reason: string): Promise<void> {
+  try {
+    const entryId = await bookGenerationLedgerEntryId(job, projectId);
+    if (entryId) {
+      await refundCreditLedgerEntry(entryId, reason);
+      return;
+    }
+    await refundLatestProjectOperationCredits({
+      projectId,
+      operation: "FULL_BOOK_GENERATION",
+      reason
+    });
+  } catch (error) {
     console.error(`Failed to refund credits for project ${projectId}`, error);
+  }
+}
+
+/**
+ * The charge that paid for the run this job belongs to. GENERATE_BOOK carries
+ * the ledger entry on its own payload; fan-out children carry only the planId,
+ * so resolve it through the GENERATE_BOOK row for that plan. The latest-charge
+ * fallback keeps rows enqueued before the stamp refundable, but it can claw
+ * back a *newer* run's charge — a straggler page job from a replaced run used
+ * to refund the replacement — which is why resolution comes first.
+ */
+async function bookGenerationLedgerEntryId(job: Job, projectId: string): Promise<string | null> {
+  const own = job.data.billingLedgerEntryId;
+  if (typeof own === "string" && own) {
+    return own;
+  }
+  const planId = job.data.planId;
+  if (typeof planId !== "string" || !planId) {
+    return null;
+  }
+  const rows = await prisma.generationJob.findMany({
+    where: { projectId, type: "GENERATE_BOOK" },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+    select: { payload: true }
   });
+  for (const row of rows) {
+    const payload = jsonPayloadToRecord(row.payload);
+    if (payload.planId === planId && typeof payload.billingLedgerEntryId === "string" && payload.billingLedgerEntryId) {
+      return payload.billingLedgerEntryId;
+    }
+  }
+  return null;
 }
 
 export async function markRecovering(job: Job, error: unknown) {

@@ -113,10 +113,11 @@ export async function pagesMatchingQuotedText(message: string, projectId: string
  * Full-text needle matching runs in the database so chat never loads every
  * page's markdown.
  *
- * Deliberately case-**insensitive**, which is why anything that later replaces
- * the text has to match the same way — see `hasExactMatch`. A literal
- * `String.includes` check downstream disagrees with this search and quietly
- * sends the pages it selected to the model instead.
+ * Deliberately case-**insensitive**. `hasExactMatch` itself is literal unless
+ * `preserveCase` is set — it is `planExactReplacement` falling back to
+ * `preserveCase` when the literal text appears nowhere that restores the
+ * agreement with this search. A bare `String.includes` downstream still
+ * disagrees with it and quietly sends the pages it selected to the model.
  */
 export async function pagesMatchingNeedle(needleSource: string, projectId: string): Promise<number[]> {
   const needle = needleSource.trim();

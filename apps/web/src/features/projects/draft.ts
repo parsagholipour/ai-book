@@ -406,11 +406,7 @@ export function draftFromSavedInputs(project: Project): DraftProject {
       2
     ),
     fullIllustrations: firstBoolean(mediaSettings.fullIllustrations, initialDraft.fullIllustrations),
-    coverArtSource: isCoverArtSource(mediaSettings.coverArtSource)
-      ? mediaSettings.coverArtSource
-      : firstBoolean(mediaSettings.includeCover, true)
-        ? "ai"
-        : "design",
+    coverArtSource: resolveCoverArtSource(mediaSettings),
     finalReview: firstBoolean(mediaSettings.finalReview, initialDraft.finalReview),
     audienceAgeRange:
       category === "KIDS" ? audienceAgeRangeFromValue(mediaSettings.audienceAgeRange) : initialDraft.audienceAgeRange,
@@ -447,6 +443,21 @@ export function draftSubcategoryFromValue(
 
 export function isCoverArtSource(value: unknown): value is CoverArtSource {
   return value === "ai" || value === "design" || value === "none";
+}
+
+/**
+ * The console's copy of `coverArtSourceFor` in packages/core (apps/web does not
+ * depend on the workspace packages): a validated `coverArtSource` wins, and the
+ * legacy `includeCover` resolves `false` to a designed cover, never to none.
+ */
+export function resolveCoverArtSource(mediaSettings: {
+  coverArtSource?: unknown;
+  includeCover?: unknown;
+}): CoverArtSource {
+  if (isCoverArtSource(mediaSettings.coverArtSource)) {
+    return mediaSettings.coverArtSource;
+  }
+  return (typeof mediaSettings.includeCover === "boolean" ? mediaSettings.includeCover : true) ? "ai" : "design";
 }
 
 export function coverTemplateFromValue(value: string): DraftProject["coverTemplate"] {

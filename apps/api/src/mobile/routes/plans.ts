@@ -29,12 +29,15 @@ import {
   generationFailureJobTypes,
   idParamsSchema,
   mobileAuthError,
+  mobileOperationRetryOpenApiBody,
   mobilePlanApprovalBodySchema,
+  mobilePlanApprovalOpenApiBody,
   mobilePlanRevisionBodySchema,
   mobilePlanRevisionOpenApiBody,
   operationRetryBodySchema
 } from "../schemas.js";
 import { hashString } from "../support.js";
+import { randomUUID } from "node:crypto";
 import { createProjectSchema, estimateFullBookCreditCost } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import {
@@ -204,7 +207,7 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
 
   fastify.post(
     "/api/mobile/projects/:projectId/operations/:id/retry",
-    { schema: { tags: ["mobile"] } },
+    { attachValidation: true, schema: { tags: ["mobile"], body: mobileOperationRetryOpenApiBody } },
     retryOperationHandler
   );
 
@@ -212,13 +215,13 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
   // by project in the public mobile API.
   fastify.post(
     "/api/mobile/book-edit-operations/:id/retry",
-    { schema: { tags: ["mobile"] } },
+    { attachValidation: true, schema: { tags: ["mobile"], body: mobileOperationRetryOpenApiBody } },
     retryOperationHandler
   );
 
   fastify.post(
     "/api/mobile/plans/:id/approve",
-    { attachValidation: true, schema: { tags: ["mobile"] } },
+    { attachValidation: true, schema: { tags: ["mobile"], body: mobilePlanApprovalOpenApiBody } },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
@@ -277,9 +280,11 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           projectId: plan.projectId,
           operation: "FULL_BOOK_GENERATION",
           amountCredits: creditEstimate.totalCredits,
-          idempotencyKey: approvalBody.data.requestId
-            ? `mobile:plan:${id}:approve:${approvalBody.data.requestId}`
-            : `mobile:plan:${id}:approve`,
+          // A fixed fallback key recreates the documented reserve-after-refund
+          // hazard (see reserveCredits): approve → fail → refund → retry found
+          // the reversed row and did the work for free. A client that sends no
+          // requestId gets a fresh key — no replay protection, but no free run.
+          idempotencyKey: `mobile:plan:${id}:approve:${approvalBody.data.requestId ?? randomUUID()}`,
           description: "Mobile full book generation package",
           metadata: {
             creditEstimate,

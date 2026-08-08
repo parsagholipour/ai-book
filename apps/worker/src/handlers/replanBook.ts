@@ -20,6 +20,8 @@ import {
   applyExactReplacement,
   bookPlanSchema,
   createProviders,
+  inputWithReplanSettings,
+  mediaSettingsRowWriteback,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
@@ -76,11 +78,16 @@ export async function replanBook(job: Job) {
   const requestedPages =
     typeof targetPages === "number" && Number.isInteger(targetPages) && targetPages > 0 ? targetPages : null;
   const sourceInput = inputWithMessageMediaPreferences(inputForPlanVersion(sourceProject, planVersion.inputSnapshot), request);
-  const input = {
-    ...sourceInput,
-    ...(requestedPages === null ? {} : { targetPages: requestedPages }),
-    ...(requestedLanguage ? { language: requestedLanguage } : {})
-  };
+  // Through the shared applier, so a resize also lands in
+  // `mediaSettings.mobile.targetPages` — the number the app's settings sheet
+  // reads — rather than only on the top-level field.
+  const input = inputWithReplanSettings(
+    {
+      ...sourceInput,
+      ...(requestedLanguage ? { language: requestedLanguage } : {})
+    },
+    requestedPages === null ? null : { targetPages: requestedPages }
+  );
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const currentPlan = bookPlanSchema.parse(planVersion.planningPackage);
@@ -124,6 +131,13 @@ export async function replanBook(job: Job) {
       }
     });
     newPlanId = newPlan.id;
+    // Merged over the live row, never a wholesale replacement: the row owns
+    // presentation preferences (and, for a replan copy, its provenance
+    // markers) that the plan snapshot has stripped or never had.
+    const liveProject = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { mediaSettings: true }
+    });
     await tx.project.update({
       where: { id: projectId },
       data: {
@@ -134,7 +148,10 @@ export async function replanBook(job: Job) {
         // Written alongside the snapshot the plan was made from, so the row a
         // later edit prices and replans off cannot drift from the book on disk.
         targetPages: input.targetPages,
-        mediaSettings: planMediaSettingsSnapshot(input)
+        mediaSettings: mediaSettingsRowWriteback(
+          liveProject?.mediaSettings,
+          planMediaSettingsSnapshot(input) as Record<string, unknown>
+        ) as Prisma.InputJsonValue
       }
     });
     await replaceProjectPlanReferenceRecords(tx, projectId, revised);

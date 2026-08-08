@@ -98,7 +98,8 @@ export async function generateCover(job: Job) {
       plan,
       seed: projectId,
       title: metadata.title,
-      subtitle: metadata.subtitle
+      subtitle: metadata.subtitle,
+      bailOnError: isStopRequestedError
     });
     await advanceJobStep(generationJobId, "render", 45, `Rendering the ${choice.design.name} cover`);
     const artwork = await coverDesignArtwork(choice.design);

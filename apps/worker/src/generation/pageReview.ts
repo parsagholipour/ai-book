@@ -31,6 +31,17 @@ import { Prisma, prisma } from "@book-maker/db";
  * Page quality review loop: score a draft, revise it, and save the best candidate.
  */
 
+export type DraftCandidate = { draft: PageDraft; revision: number; report: PageQualityReport };
+
+/**
+ * A rewrite is not guaranteed to improve: the sixth attempt can score below the
+ * second. Every review loop keeps its keeper through this one comparison so a
+ * failed page is saved at its strongest draft, not its latest.
+ */
+export function bestDraftCandidate(best: DraftCandidate, candidate: DraftCandidate): DraftCandidate {
+  return candidate.report.score > best.report.score ? candidate : best;
+}
+
 export async function reviewAndSaveGeneratedPage(options: {
   projectId: string;
   planId: string;
@@ -128,9 +139,7 @@ export async function reviewAndSaveGeneratedPage(options: {
       continuityNotes,
       textModel: options.providers.text
     });
-    if (qualityReport.score > best.report.score) {
-      best = { draft, revision, report: qualityReport };
-    }
+    best = bestDraftCandidate(best, { draft, revision, report: qualityReport });
   }
 
   if (!qualityReport.approved) {

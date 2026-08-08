@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import {
-  COVER_DESIGN_IDS,
   COVER_DESIGN_SELECTION_PURPOSE,
   coverDesign,
   coverDesignCatalogLines,
@@ -26,6 +25,12 @@ export type SelectCoverDesignOptions = {
   seed: string;
   title?: string | null | undefined;
   subtitle?: string | null | undefined;
+  /**
+   * Errors this returns true for are re-thrown instead of falling back. Core
+   * knows nothing about the worker's stop signal, but swallowing one here let
+   * a user-stopped run finish its cover and compile to COMPLETE.
+   */
+  bailOnError?: ((error: unknown) => boolean) | undefined;
 };
 
 const coverDesignSelectionSchema = z.object({
@@ -37,8 +42,9 @@ const coverDesignSelectionSchema = z.object({
  * Picks the bundled cover for a book.
  *
  * This runs at the very end of a book that has already been paid for and fully
- * written, so it never throws: any model failure, timeout or unknown id falls
- * through to `fallbackCoverDesign`, which always answers. The id is validated
+ * written, so it does not throw: any model failure, timeout or unknown id falls
+ * through to `fallbackCoverDesign`, which always answers — except for errors the
+ * caller's `bailOnError` claims, which must propagate. The id is validated
  * against the catalog here rather than with a 50-member `z.enum`, so a model
  * that invents one is a fallback rather than a repair loop.
  */
@@ -98,12 +104,10 @@ export async function selectCoverDesign(options: SelectCoverDesignOptions): Prom
       selectedBy: "model",
       ...(result.data.reason ? { reason: result.data.reason } : {})
     };
-  } catch {
+  } catch (error) {
+    if (options.bailOnError?.(error)) {
+      throw error;
+    }
     return fallback();
   }
-}
-
-/** Every id the model may answer with. Exported for the mock adapter and tests. */
-export function coverDesignSelectionIds(): readonly string[] {
-  return COVER_DESIGN_IDS;
 }

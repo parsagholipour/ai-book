@@ -60,24 +60,6 @@ export function chatReplyQuoteFor(message: {
   };
 }
 
-/** Reads a snapshot back off stored JSON, tolerating rows written by hand. */
-export function parseChatReplyQuote(value: unknown): ChatReplyQuote | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  const messageId = typeof record.messageId === "string" ? record.messageId.trim() : "";
-  const excerpt = typeof record.excerpt === "string" ? record.excerpt.trim() : "";
-  if (!messageId || !excerpt) {
-    return null;
-  }
-  return {
-    messageId,
-    role: record.role === "user" ? "user" : "assistant",
-    excerpt: clipExcerpt(excerpt)
-  };
-}
-
 /**
  * The shape handed to a model. Only the role and the text matter to it — the id
  * is ours — and dropping it keeps the id out of anything the model might echo.

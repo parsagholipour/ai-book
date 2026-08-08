@@ -127,6 +127,9 @@ export function resetMobileHarness(): void {
   });
   mockQueue.enqueueGenerationJob.mockResolvedValue(jobRecord());
   mockQueue.dispatchGenerationJob.mockResolvedValue(jobRecord());
+  // Compensation paths refund only when the cancel claims the row; an
+  // undispatched row in these tests is always claimable.
+  mockQueue.cancelUndispatchedGenerationJob.mockResolvedValue(true);
   mockQueue.isBullJobActive.mockResolvedValue(false);
   mockQueue.requeueGenerationJob.mockResolvedValue(jobRecord({ id: "job-resumed", status: "QUEUED" }));
   mockProjectStatus.buildProjectStatus.mockResolvedValue(statusRecord());

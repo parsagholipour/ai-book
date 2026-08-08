@@ -117,6 +117,28 @@ describe("applyBookEdit in exact mode", () => {
     });
   });
 
+  it("patches a page whose only match is the title instead of skipping it", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([{ ...page(1, "Nothing to see here."), title: "Rabbit Learns" }]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Replace rabbit with fly",
+        affectedPageIndexes: [1],
+        planId: "plan-1",
+        exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+        mode: "exact"
+      })
+    );
+
+    // The preview priced this page on its title match, so the apply must take
+    // the free patch path rather than the skip branch.
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.page.update.mock.calls[0]?.[0].data.title).toBe("Fly Learns");
+  });
+
   it("still falls back to a rewrite when no exact mode was promised", async () => {
     mocks.prisma.page.findMany.mockResolvedValue([page(1, "Nothing to see here.")]);
     mocks.rewritePageForUserRequest.mockResolvedValue({

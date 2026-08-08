@@ -3,8 +3,9 @@ import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
-import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import { jsonPayloadToRecord } from "../runtime/serialization.js";
+import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { isStopRequestedError } from "../runtime/jobTypes.js";
+import { errorMessage, jsonPayloadToRecord } from "../runtime/serialization.js";
 import {
   characterReferencePromptInstruction,
   ensureCharacterReferenceAssets,
@@ -52,6 +53,47 @@ export async function generateImage(job: Job) {
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
+  try {
+    await renderAndStorePageIllustration({ projectId, pageId, planId, prompt, generationJobId, input, strategy, providers, plan, page });
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
+    // An interior illustration is decoration on a page that is already written
+    // and paid for, and this only fires after the provider fallback tried every
+    // image provider. Failing the job would mark the whole project FAILED and
+    // refund FULL_BOOK_GENERATION for one lost image; record it and let the
+    // book finish without this illustration instead. The provider failure is in
+    // the run log; the job row's message says what happened.
+    console.warn("Interior illustration failed; continuing without it", {
+      event: "generation.consistency_warning",
+      warning: "interior_image_failed",
+      projectId,
+      pageId,
+      pageIndex: page.index,
+      error: errorMessage(error)
+    });
+    await updateJobProgress(generationJobId, {
+      message: `Illustration for page ${page.index} failed; the book will finish without it`
+    });
+  }
+
+  await maybeEnqueueCompile(projectId, planId);
+}
+
+async function renderAndStorePageIllustration(options: {
+  projectId: string;
+  pageId: string;
+  planId: string;
+  prompt: string;
+  generationJobId: string | undefined;
+  input: ReturnType<typeof inputForPlanVersion>;
+  strategy: ReturnType<typeof strategyForInput>;
+  providers: ReturnType<typeof createLoggedProviders>;
+  plan: ReturnType<typeof bookPlanSchema.parse>;
+  page: { index: number; title: string; summary: string; markdown: string };
+}) {
+  const { projectId, pageId, planId, prompt, generationJobId, input, strategy, providers, plan, page } = options;
   const characterReferences = await ensureCharacterReferenceAssets({
     projectId,
     planId,
@@ -111,6 +153,4 @@ export async function generateImage(job: Job) {
       }
     }
   });
-
-  await maybeEnqueueCompile(projectId, planId);
 }

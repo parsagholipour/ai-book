@@ -88,13 +88,6 @@ async function prepareMarkdownImagesForPdf(
   };
 }
 
-export async function prepareMarkdownForPdf(
-  markdown: string,
-  options: { imageStorageDir: string; publicApiUrl: string }
-): Promise<string> {
-  return (await prepareMarkdownForPdfDocument(markdown, options)).markdown;
-}
-
 export function insertCoverPageBreak(markdown: string): string {
   if (/^<div\b[^>]*class=["'][^"']*\bpdf-cover-page\b/i.test(markdown.trimStart())) {
     return markdown;

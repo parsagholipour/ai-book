@@ -40,7 +40,6 @@ const nodemonPath = resolvePackageBin("nodemon", "bin/nodemon.js");
 const tsxPath = resolvePackageBin("tsx", "dist/cli.mjs");
 
 const appDir = process.cwd();
-const entry = resolve(appDir, entryArg);
 const watchDirs = [
   join(appDir, "src"),
   join(workspaceRoot, "packages/core/src"),

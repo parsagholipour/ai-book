@@ -1,6 +1,7 @@
 import { formatQualityFailure, getProjectOrThrow, parseChapterBrief, strategyForInput, toPriorPageContext } from "../generation/bookHelpers.js";
 import { loadResearchNotesForGeneration } from "../generation/generationContext.js";
 import {
+  bestDraftCandidate,
   pageRevisionMessage,
   pageRewriteReport,
   repairPageBriefForRecovery,
@@ -129,6 +130,7 @@ export async function generatePage(job: Job) {
     continuityNotes: continuity.map((note) => note.body),
     textModel: providers.text
   });
+  let best = { draft, revision, report: qualityReport };
 
   while (!qualityReport.approved && revision < MAX_PAGE_QA_CANDIDATES) {
     const nextRevision = revision + 1;
@@ -190,12 +192,16 @@ export async function generatePage(job: Job) {
       continuityNotes: continuity.map((note) => note.body),
       textModel: providers.text
     });
+    best = bestDraftCandidate(best, { draft, revision, report: qualityReport });
   }
 
   if (!qualityReport.approved) {
     // Page-level failure isolation: keep the best draft with its honest
     // report, flag the page, and let the rest of the book continue. The page
     // can be retried individually and the final review can still repair it.
+    draft = best.draft;
+    revision = best.revision;
+    qualityReport = best.report;
     await prisma.page.update({
       where: { id: pageId },
       data: {
@@ -211,7 +217,7 @@ export async function generatePage(job: Job) {
     await updateJobProgress(generationJobId, {
       message: `Page ${page.index} kept its best draft but failed quality review; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
     });
-    await enqueueNextPageIfReady(projectId, planId, page.index);
+    await enqueueNextPageIfReady(projectId, planId);
     await maybeEnqueueCompile(projectId, planId);
     return;
   }
@@ -254,6 +260,6 @@ export async function generatePage(job: Job) {
     });
   }
 
-  await enqueueNextPageIfReady(projectId, planId, page.index);
+  await enqueueNextPageIfReady(projectId, planId);
   await maybeEnqueueCompile(projectId, planId);
 }

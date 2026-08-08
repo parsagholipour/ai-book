@@ -122,8 +122,13 @@ export async function applyBookEdit(job: Job) {
     await reportPage(page, offset, "draft");
     // Through the shared matcher, not `includes`: the pages were chosen with a
     // case-insensitive search, so a literal check here disagreed with the search
-    // that selected them and sent those pages to the model instead.
-    const patchable = Boolean(exactReplacement && hasExactMatch(page.markdown, exactReplacement));
+    // that selected them and sent those pages to the model instead. The title
+    // counts too — the preview prices title-only pages, and `locallyPatchedPage`
+    // patches the title, so a markdown-only gate skipped a promised rename.
+    const patchable = Boolean(
+      exactReplacement &&
+        (hasExactMatch(page.markdown, exactReplacement) || hasExactMatch(page.title, exactReplacement))
+    );
     if (mode === "exact" && !patchable) {
       // The page changed between the quote and the apply. Nothing to replace,
       // and rewriting it is not what was approved.

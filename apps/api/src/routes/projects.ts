@@ -1,6 +1,5 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import {
-  assertBookLikeMarkdown,
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   bookGenerationStrategies,
   createLanguageDetectionTextModel,
@@ -12,9 +11,7 @@ import {
   detectPromptLanguage,
   estimateFullBookCreditCost,
   estimateProviderCostForProject,
-  generateBookEpub,
   generateGeminiVoiceConversationTranscript,
-  getBookGenerationStrategy,
   imageModelOptions,
   isEnglishLanguage,
   loadConfig,
@@ -27,7 +24,6 @@ import {
   reinforceRealtimeCharacterRoleplay,
   resolveBookGenerationStrategy,
   resolveVoiceRtcConfig,
-  resolvePublicImageUrl,
   synthesizeGeminiTtsConversation,
   textModelOptions,
   voiceConversationCharacterSnapshots,
@@ -43,8 +39,8 @@ import {
   type VoiceChatProviderId
 } from "@book-maker/core";
 import { createHash, randomUUID } from "node:crypto";
-import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
@@ -63,8 +59,7 @@ import {
   projectExportAvailability,
   sanitizeDownloadFilename,
   sendProjectEpubExport,
-  sendProjectPdfExport,
-  strategyForMediaSettings
+  sendProjectPdfExport
 } from "./projectExports.js";
 
 // The compiled-book helpers moved to ./projectExports.js; re-exported here
@@ -95,7 +90,6 @@ const planMessageBodySchema = z.object({
   respondedQuestionPrompts: z.array(z.string().min(1).max(1000)).max(40).optional()
 });
 const voiceProfilePatchSchema = voiceProfileSchema.partial();
-const voiceProviderIdSchema = z.enum(["openai_realtime", "gemini_live"]);
 const voiceCallReconnectContextSchema = z.string().trim().max(2000).optional();
 const voiceCallModelSchema = z.string().trim().min(1).max(120).optional();
 const voiceCallBodySchema = z.union([

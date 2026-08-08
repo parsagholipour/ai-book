@@ -559,7 +559,6 @@ export function failureMessageForJob(type: GenerationJobType, rawError: string |
     REPLAN_BOOK: "rebuilding your book plan",
     PREPARE_CHARACTER_CANDIDATES: "preparing voice characters",
     BUILD_CHARACTER_PERSONA: "building a voice character",
-    RESEARCH: "checking research",
     IMPORT_BOOK: "importing your book",
     CONTINUE_BOOK: "writing new chapters",
     GENERATE_AUDIOBOOK: "narrating your book"

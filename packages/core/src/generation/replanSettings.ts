@@ -32,13 +32,40 @@ export type NegativeMediaPreference = {
 };
 
 /**
+ * The machine-generated plan-question answer messages, by their fixed headers.
+ *
+ * Those messages routinely put "no" next to a media noun without meaning it —
+ * "Skipped questions with no preference:" followed by a prompt that mentions
+ * illustrations, or "Answer: No preference." before one that mentions the
+ * cover — and a false positive here is an unpriced, silent de-illustration of
+ * a book the user already paid an illustrated price to plan.
+ */
+export function isPlanQuestionResponseMessage(message: string): boolean {
+  return (
+    /^\s*planning question responses:/i.test(message) ||
+    /^\s*please revise the plan using these planning answers:/i.test(message) ||
+    /\bskipped questions with no preference:/i.test(message)
+  );
+}
+
+/**
  * Reads "no pictures" out of a request. One-way by design: there is no positive
  * form, because turning images back on changes what a book costs and that
  * belongs to an explicit settings change rather than to a sentence.
+ *
+ * Never fires on structured question-answer messages: the planner model still
+ * reads those in full, so a genuine "no illustrations" answer shapes the plan —
+ * only the settings flip is withheld, because flipping it silently is a
+ * downgrade of something already priced.
  */
 export function negativeMediaPreferenceFromMessage(message: string): NegativeMediaPreference | null {
+  if (isPlanQuestionResponseMessage(message)) {
+    return null;
+  }
   const normalized = message.replace(/\s+/g, " ").trim();
-  const negativeMedia = /\b(?:i\s+(?:do\s+not|don't|dont)\s+want|no|without|skip|remove|disable|turn\s+off)\b.{0,80}\b(?:images?|covers?|visuals?|illustrations?|artwork|pictures?)\b/i.test(
+  // The negation must reach the media noun without crossing clause punctuation:
+  // "no preference. Keep the cover simple" is not a request to drop the cover.
+  const negativeMedia = /\b(?:i\s+(?:do\s+not|don't|dont)\s+want|no|without|skip|remove|disable|turn\s+off)\b[^.,;:!?،؛؟]{0,80}\b(?:images?|covers?|visuals?|illustrations?|artwork|pictures?)\b/i.test(
     normalized
   );
   if (!negativeMedia) {
@@ -264,6 +291,55 @@ export function mediaSettingsWithReplanSettings(
           }
         })
   });
+}
+
+/**
+ * Fields the live project row owns outright: written by free presentation
+ * edits (`applyPresentationPreference`) and read from the row at compile time,
+ * never legitimately changed by a plan revision. `chapterHeadingStyle` and
+ * `chapterHeadingLabel` are not even fields of `mediaSettingsSchema`, so any
+ * snapshot that passed through it has already silently dropped them.
+ */
+const ROW_OWNED_MEDIA_SETTINGS = ["includeSources", "chapterHeadingStyle", "chapterHeadingLabel"] as const;
+
+/**
+ * The mediaSettings a plan revision or replan may write back to the project
+ * row.
+ *
+ * A plan version's snapshot is both stale (taken when the version was created)
+ * and schema-stripped (parsed through `mediaSettingsSchema`, which drops
+ * unknown keys), so replacing the row with it reverted free presentation
+ * preferences set after the snapshot. The generation settings the revision
+ * legitimately changed win; everything the row owns survives — unknown keys
+ * generically, so future row-only fields are safe by default, and the named
+ * row-owned fields only when the row actually has them, so a stale snapshot
+ * value can never resurrect a preference the row no longer holds.
+ */
+export function mediaSettingsRowWriteback(
+  liveRow: unknown,
+  snapshot: Record<string, unknown>
+): Record<string, unknown> {
+  const row = jsonRecord(liveRow);
+  const merged: Record<string, unknown> = { ...snapshot };
+  const schemaKeys = new Set(Object.keys(mediaSettingsSchema.shape));
+  for (const [key, value] of Object.entries(row)) {
+    if (!schemaKeys.has(key)) {
+      merged[key] = value;
+    }
+  }
+  for (const key of ROW_OWNED_MEDIA_SETTINGS) {
+    delete merged[key];
+    if (key in row) {
+      merged[key] = row[key];
+    }
+  }
+  // `mobile` merges per key: the revision's values win where it spoke, but
+  // row-only markers survive — a replan copy's provenance
+  // (`revisionOfProjectId` and friends) lives here, not at the top level.
+  if (row.mobile !== undefined || snapshot.mobile !== undefined) {
+    merged.mobile = { ...jsonRecord(row.mobile), ...jsonRecord(snapshot.mobile) };
+  }
+  return merged;
 }
 
 /** The same settings applied to the input the planner and the cost estimate read. */

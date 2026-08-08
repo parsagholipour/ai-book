@@ -17,10 +17,10 @@ import {
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { advanceJobStep, editOperationIdFromJob } from "../runtime/jobLifecycle.js";
-import { type JobCompletion } from "../runtime/jobTypes.js";
+import { isStopRequestedError, type JobCompletion } from "../runtime/jobTypes.js";
 import { jsonPayloadToRecord } from "../runtime/serialization.js";
-import { bookPlanSchema, createProviders } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { bookPlanSchema, createProviders, mediaSettingsRowWriteback } from "@book-maker/core";
+import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
 /**
@@ -113,7 +113,18 @@ export async function planBook(job: Job): Promise<JobCompletion> {
       });
     }
   });
-  await embedResearchSourcesForProject(projectId, providers.embedding);
+  // Best-effort: the plan is already committed, and a failure past this point
+  // marks the project FAILED in a state `canRecoverGenerationJob` refuses to
+  // resume — the plan is newer than the job. Missing embeddings only degrade
+  // semantic recall, and page generation re-embeds as it goes.
+  try {
+    await embedResearchSourcesForProject(projectId, providers.embedding);
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
+    console.warn(`Research embedding failed after plan save for project ${projectId}`, error);
+  }
   return {
     afterJobCompleted: async () => {
       await prisma.project.update({
@@ -211,13 +222,25 @@ export async function revisePlan(job: Job) {
         messages: [...priorMessages, { role: "user", content: message, at: new Date().toISOString() }]
       }
     });
+    // Merged over the live row, never a wholesale replacement: the row owns
+    // presentation preferences (chapter headings, the Sources toggle) that the
+    // plan snapshot has stripped or that changed after it was taken. Read
+    // inside the transaction so a presentation edit landing mid-revision is
+    // not reverted.
+    const liveProject = await tx.project.findUnique({
+      where: { id: projectId },
+      select: { mediaSettings: true }
+    });
     await tx.project.update({
       where: { id: projectId },
       data: {
         currentPlanId: newPlan.id,
         status: "PLAN_READY",
         title: revised.title,
-        mediaSettings: planMediaSettingsSnapshot(input)
+        mediaSettings: mediaSettingsRowWriteback(
+          liveProject?.mediaSettings,
+          planMediaSettingsSnapshot(input) as Record<string, unknown>
+        ) as Prisma.InputJsonValue
       }
     });
   });

@@ -16,6 +16,7 @@ import {
 } from "@book-maker/core";
 import { z } from "zod";
 import { CHAT_REPLY_EXCERPT_MAX, chatReplyQuoteLabel } from "./chatReplyQuote.js";
+import { withTimeout } from "./withTimeout.js";
 import { linearizeCreationMessages } from "./creationChatTree.js";
 import {
   creationTurnQuestionSchema,
@@ -113,13 +114,22 @@ export const mobileCreationPresetsInputSchema = z
 
 export type MobileCreationPresetsInput = z.input<typeof mobileCreationPresetsInputSchema>;
 
-export function resolveMobileImageSettings(input: {
-  imagesEnabled?: boolean | undefined;
-  coverEnabled?: boolean | undefined;
-  illustrationsEnabled?: boolean | undefined;
-}): { imagesEnabled: boolean; coverEnabled: boolean; illustrationsEnabled: boolean } {
-  const coverEnabled = input.coverEnabled ?? input.imagesEnabled ?? true;
-  const illustrationsEnabled = input.illustrationsEnabled ?? input.imagesEnabled ?? true;
+/**
+ * The one resolution of the image trio: either split field wins for itself,
+ * the legacy `imagesEnabled` aggregate covers both, then the `base` (stored
+ * presets when applying a change; on when creating). Every consumer routes
+ * through here — a re-typed copy of this chain is how the fields drift.
+ */
+export function resolveMobileImageSettings(
+  input: {
+    imagesEnabled?: boolean | undefined;
+    coverEnabled?: boolean | undefined;
+    illustrationsEnabled?: boolean | undefined;
+  },
+  base?: { coverEnabled?: boolean | undefined; illustrationsEnabled?: boolean | undefined } | undefined
+): { imagesEnabled: boolean; coverEnabled: boolean; illustrationsEnabled: boolean } {
+  const coverEnabled = input.coverEnabled ?? input.imagesEnabled ?? base?.coverEnabled ?? true;
+  const illustrationsEnabled = input.illustrationsEnabled ?? input.imagesEnabled ?? base?.illustrationsEnabled ?? true;
   return {
     coverEnabled,
     illustrationsEnabled,
@@ -899,14 +909,7 @@ function applyCreationToolSideEffects(
     presets &&
     (settings.imagesEnabled !== undefined || settings.coverEnabled !== undefined || settings.illustrationsEnabled !== undefined)
   ) {
-    const coverEnabled = settings.coverEnabled ?? settings.imagesEnabled ?? presets.coverEnabled;
-    const illustrationsEnabled = settings.illustrationsEnabled ?? settings.imagesEnabled ?? presets.illustrationsEnabled;
-    presets = {
-      ...presets,
-      coverEnabled,
-      illustrationsEnabled,
-      imagesEnabled: coverEnabled || illustrationsEnabled
-    };
+    presets = { ...presets, ...resolveMobileImageSettings(settings, presets) };
   }
   if (presets && settings.targetPages !== undefined) {
     presets = {
@@ -1347,13 +1350,9 @@ function requestWithChatSettings(request: MobileCreationTurnRequest): MobileCrea
       coverEnabled: true,
       illustrationsEnabled: true
     };
-  const coverEnabled = changes.coverEnabled ?? changes.imagesEnabled ?? basePresets.coverEnabled;
-  const illustrationsEnabled = changes.illustrationsEnabled ?? changes.imagesEnabled ?? basePresets.illustrationsEnabled;
   const presets: MobileCreationPresets = {
     ...basePresets,
-    coverEnabled,
-    illustrationsEnabled,
-    imagesEnabled: coverEnabled || illustrationsEnabled,
+    ...resolveMobileImageSettings(changes, basePresets),
     ...(changes.bookTypeChoice
       ? {
           bookTypeChoice: changes.bookTypeChoice,
@@ -1392,8 +1391,9 @@ function chatSettingsAcknowledgement(
       parts.push(`I've switched this to a ${laneLabel(lane).toLowerCase()}`);
     }
   }
-  const beforeCover = before?.coverEnabled ?? before?.imagesEnabled ?? true;
-  const beforeIllustrations = before?.illustrationsEnabled ?? before?.imagesEnabled ?? true;
+  const { coverEnabled: beforeCover, illustrationsEnabled: beforeIllustrations } = resolveMobileImageSettings(
+    before ?? {}
+  );
   if (after && (after.coverEnabled !== beforeCover || after.illustrationsEnabled !== beforeIllustrations)) {
     parts.push(
       after.coverEnabled && after.illustrationsEnabled
@@ -2226,25 +2226,14 @@ function payloadHasEnoughSubstance(payload: MobileCreationDraftPayload): boolean
   return [payload.rawIdea, payload.sourceNotes, payload.optionalDetails.mustInclude].join(" ").trim().length >= 80;
 }
 
+/**
+ * Unlike the shared `withTimeout` helper, this one *wants* its rejection to
+ * read as a network timeout: the enrichment loop treats an over-budget tool
+ * call like a transient provider failure and falls back to the base turn.
+ */
 function withRecoverableTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error(`${label} request timed out.`)), timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timeout);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      }
-    );
-  });
-}
-
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Advisor timed out.")), timeoutMs);
     promise.then(
       (value) => {
         clearTimeout(timeout);

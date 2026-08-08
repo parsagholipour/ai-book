@@ -12,7 +12,7 @@ import 'package:tomeza/features/reader/presentation/reader_document_loader.dart'
 import 'package:tomeza/features/reader/presentation/reader_view.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 
-import '../billing/billing_paywall_test.dart'
+import '../billing/billing_paywall_harness.dart'
     show EmptyCreditLogRepository, FakeBillingRepository, FakeStoreBillingClient;
 import 'book_reader_screen_test.dart'
     show FakeReaderRepository, pdfExport, statusWith, stubViewer;

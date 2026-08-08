@@ -64,8 +64,21 @@ export function normalizePlanQuestion(question: unknown, index: number): Normali
     record.choices,
     record.premadeAnswers
   );
-  const allowCustom = typeof record.allowCustom === "boolean" ? record.allowCustom : true;
-  return makeNormalizedPlanQuestion(index, prompt, options, allowCustom, record.answerKind);
+  const allowCustom =
+    [record.allowCustom, record.customAnswer, record.custom].find((value) => typeof value === "boolean") as
+      | boolean
+      | undefined ?? true;
+  // The same alias set core's planQuestionSchema accepts: this normalizer reads
+  // raw un-normalized records, so dropping an alias silently downgrades a
+  // multi question to a single choice.
+  const declaredKind = firstString(record.answerKind, record.answerType)?.trim().toLowerCase();
+  const multiple =
+    [record.multiSelect, record.multiple, record.allowMultiple, record.selectMultiple].some(
+      (value) => value === true
+    ) ||
+    declaredKind === "multi" ||
+    declaredKind === "multiple";
+  return makeNormalizedPlanQuestion(index, prompt, options, allowCustom, multiple ? "multi" : declaredKind);
 }
 
 export function makeNormalizedPlanQuestion(
@@ -76,14 +89,17 @@ export function makeNormalizedPlanQuestion(
   answerKind?: unknown
 ): NormalizedPlanQuestion {
   const distinctOptions = [...new Set(options.map((option) => option.trim()).filter(Boolean))];
+  // Fewer than two options is open whatever the plan says: one option is
+  // neither a choice nor a set to combine.
+  const kind: NormalizedPlanQuestion["answerKind"] =
+    distinctOptions.length < 2 ? "open" : answerKind === "multi" ? "multi" : "choice";
   return {
     id: `${index}-${prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 48)}`,
     prompt,
     options: distinctOptions,
-    // Fewer than two options is open whatever the plan says: one option is
-    // neither a choice nor a set to combine.
-    answerKind: distinctOptions.length < 2 ? "open" : answerKind === "multi" ? "multi" : "choice",
-    allowCustom
+    answerKind: kind,
+    // An open question without a text box is unanswerable except by Skip.
+    allowCustom: kind === "open" ? true : allowCustom
   };
 }
 

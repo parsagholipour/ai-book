@@ -33,7 +33,11 @@ const STEP_LABELS: Omit<Record<GenerationStepKey, string>, "illustrate"> = {
  */
 export const EXPECTED_PAGE_OUTPUT_TOKENS = 900;
 
-/** Where the GENERATE_BOOK job's own progress column tops out (its `enqueue` step). */
+/**
+ * Where the GENERATE_BOOK job's own progress column tops out. True for the
+ * sequential fan-out (its `enqueue` step); the direct whole-book modes report
+ * up to ~90, which the clamp below simply saturates a few points early.
+ */
 const PREPARE_PROGRESS_CEILING = 85;
 
 /** Where the COMPILE_EXPORT job's own progress column tops out (its `epub` step). */

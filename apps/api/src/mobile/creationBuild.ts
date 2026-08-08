@@ -10,7 +10,7 @@ import {
   type MobileBookAdvisorResponse,
   type MobileCreationDraftPayload,
 } from "../mobileCreation.js";
-import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   _chatTitleForPayload,
   conversationMessagesFromPayload,
@@ -269,6 +269,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
 
     let output: MobileCreationOutputRecord;
     let operation: MobilePlanOperationDto | null = null;
+    let durableJobId: string | null = null;
     try {
       const transactionResult = await prisma.$transaction(async (tx) => {
         const createdProject = await createMobileProjectRecord(userId, input, tx);
@@ -311,14 +312,30 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       });
       project = transactionResult.createdProject;
       output = transactionResult.createdOutput;
+      durableJobId = transactionResult.durableJob.id;
       if (reservation) {
         await commitReservedCredits(reservation.id);
       }
-      await dispatchGenerationJob(transactionResult.durableJob.id);
+      await dispatchGenerationJob(durableJobId);
       operation = planOperation("planning_queued", project.id, null, transactionResult.durableJob, "Creating your book plan.");
     } catch (error) {
+      // The committed job row must be dead before any money moves back: a
+      // QUEUED row the reconcilers can still publish is refunded work that
+      // still runs. When the cancel cannot claim the row, the job will run,
+      // so the charge stands.
+      const jobProvablyDead = durableJobId
+        ? await cancelUndispatchedGenerationJob(durableJobId, "Creation build failed before dispatch.").catch(() => false)
+        : true;
       if (reservation) {
-        await refundCreditLedgerEntry(reservation.id, "Plan generation could not be prepared.").catch(() => undefined);
+        if (jobProvablyDead) {
+          await refundCreditLedgerEntry(reservation.id, "Plan generation could not be prepared.").catch(() => undefined);
+        } else {
+          console.error("Creation build compensation kept the charge: the queued plan job could not be canceled", {
+            draftId,
+            generationJobId: durableJobId,
+            reservationId: reservation.id
+          });
+        }
       }
       if (project) {
         await prisma.project.delete({ where: { id: project.id } }).catch(() => undefined);

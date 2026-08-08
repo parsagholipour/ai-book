@@ -9,6 +9,7 @@ import {
   type MobilePageCountSource
 } from "../mobileCreation.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { randomUUID } from "node:crypto";
 import { createCreationOutputForProject, creationOutputsForDraft, mobileCreationDraftOutputsInclude } from "./creationSessions.js";
 import {
   type MobileCreateProjectInput,
@@ -36,6 +37,7 @@ import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   createProjectSchema,
   creditCostForOperation,
+  includeCoverForSource,
   mediaSettingsSchema,
   mediaSettingsWithReplanSettings,
   type ReplanSettings
@@ -129,12 +131,13 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
   if (!parsed.title) {
     mobileMetadata.titleSource = MOBILE_TITLE_SOURCE_PLANNER_PENDING;
   }
+  // Declining the AI cover buys a bundled design rather than no cover.
+  const coverArtSource = parsed.coverEnabled ? "ai" : "design";
   const baseMediaSettings = mediaSettingsSchema.parse({
     fullIllustrations: parsed.illustrationsEnabled,
     illustrationCadence: parsed.illustrationsEnabled ? "template-driven" : "manual",
-    includeCover: parsed.coverEnabled,
-    // Declining the AI cover buys a bundled design rather than no cover.
-    coverArtSource: parsed.coverEnabled ? "ai" : "design",
+    includeCover: includeCoverForSource(coverArtSource),
+    coverArtSource,
     coverTemplate: bookType.coverTemplate,
     finalReview: quality.finalReview,
     toneProfile: bookType.toneProfile,
@@ -427,7 +430,9 @@ export async function queueInitialMobilePlan(
         projectId,
         operation: "PLAN_GENERATION",
         amountCredits: planCost,
-        idempotencyKey: options.idempotencyKey ?? `mobile:project:${projectId}:plan`,
+        // Never a fixed fallback: a key reused after a refund gets the
+        // reversed row back and the work runs for free (see reserveCredits).
+        idempotencyKey: options.idempotencyKey ?? `mobile:project:${projectId}:plan:${randomUUID()}`,
         description: "Mobile plan generation"
       });
     } else {

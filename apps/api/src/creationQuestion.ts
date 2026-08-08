@@ -1,9 +1,10 @@
 import { z } from "zod";
 
 /**
- * A single-answer question is still capped at four, which is what fits above the
- * keyboard; a multi-answer question is allowed the six a real set of themes or
- * topics needs, because the reader reads them as a list rather than a fork.
+ * The hard ceiling for any question's options — the six a real set of themes or
+ * topics needs, read as a list rather than a fork. The "two to four" guidance
+ * for single-answer questions lives in the interviewer's prompt text alone;
+ * nothing here trims a choice question down to four.
  */
 export const CREATION_QUESTION_OPTION_MAX = 6;
 

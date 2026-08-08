@@ -1,4 +1,5 @@
 import { linearizeCreationMessages, normalizeCreationMessageIds } from "../creationChatTree.js";
+import { normalizeCreationQuestion } from "../creationQuestion.js";
 import {
   deterministicCreationTurn,
   greetingCreationTurn,
@@ -261,7 +262,10 @@ export function creationBranchTurn(
   const turnUi = [...messages]
     .reverse()
     .find((message) => message.role === "assistant" && message.turnUi)?.turnUi;
-  const question = turnUi?.question ?? null;
+  // Through the normalizer even though the snapshot was normalized when it was
+  // written: a legacy snapshot with one option would otherwise come back as a
+  // one-button "choice".
+  const question = normalizeCreationQuestion(turnUi?.question ?? null);
   return {
     ...derived,
     assistantMessage: "",

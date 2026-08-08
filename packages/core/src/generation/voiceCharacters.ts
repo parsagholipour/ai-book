@@ -277,29 +277,6 @@ export async function buildVoiceCharacterPersona(options: {
   };
 }
 
-export function deterministicVoiceCharacterPersona(candidate: VoiceCharacterCandidate, plan: BookPlan): VoiceCharacterPersona {
-  const persona: VoiceCharacterPersona = {
-    name: candidate.name,
-    role: candidate.role,
-    description: candidate.description,
-    traits: candidate.traits,
-    visualRules: candidate.visualRules,
-    personality: candidate.traits.length ? candidate.traits : [candidate.description],
-    goals: [`Stay faithful to the character's role in ${plan.title}.`],
-    relationships: [],
-    knownFacts: [candidate.description],
-    speakingStyle: [`Speak in the spirit of ${plan.title}.`],
-    spoilerBoundaries: ["Do not reveal events beyond what the user has already discussed unless they ask for spoilers."],
-    greeting: greetingForCandidate(candidate),
-    voiceProfile: normalizeVoiceProfile(candidate.voiceProfile),
-    instructions: ""
-  };
-  return {
-    ...persona,
-    instructions: buildRealtimeCharacterInstructions(persona, plan)
-  };
-}
-
 export function buildCharacterProfileImagePrompt(options: {
   plan: BookPlan;
   candidate: {

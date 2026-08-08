@@ -5,7 +5,9 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { enqueueGenerationJob } from "../queue.js";
+import { refundCreditLedgerEntry, reserveCredits } from "@book-maker/db/billing";
+
+import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   bearer,
   buildMobileApp,
@@ -108,6 +110,74 @@ describe("mobile creation build and outputs", () => {
       data: expect.objectContaining({ status: "ACTIVE", createdProjectId: "project-from-draft" })
     });
     expect(JSON.stringify(response.json().project)).not.toMatch(/SECRET SOURCE NOTES|provider|model|mediaSettings|temperature/);
+    await app.close();
+  });
+
+  it("cancels the committed plan job before refunding when dispatch fails", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = creationPayload();
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "draft-1", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockResolvedValue(projectRecord({ id: "project-from-draft" }));
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "draft-1", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    // Plan generation is free by default; this test prices it, the way an
+    // operator can from the pricing dashboard, so a reservation exists.
+    vi.mocked(reserveCredits).mockResolvedValueOnce({ id: "ledger-plan", status: "RESERVED" } as never);
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    vi.mocked(dispatchGenerationJob).mockRejectedValueOnce(new Error("redis unavailable"));
+    const app = await buildMobileApp({ advisorEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-drafts/draft-1/create-project",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBeGreaterThanOrEqual(500);
+    // The QUEUED row is what the reconcilers re-publish; it must be dead
+    // before the money moves back, or the refunded build still runs.
+    expect(vi.mocked(cancelUndispatchedGenerationJob)).toHaveBeenCalledWith("job-plan", expect.any(String));
+    expect(vi.mocked(refundCreditLedgerEntry)).toHaveBeenCalledWith(
+      "ledger-plan",
+      "Plan generation could not be prepared."
+    );
+    const cancelOrder = vi.mocked(cancelUndispatchedGenerationJob).mock.invocationCallOrder[0]!;
+    const refundOrder = vi.mocked(refundCreditLedgerEntry).mock.invocationCallOrder[0]!;
+    expect(cancelOrder).toBeLessThan(refundOrder);
+    expect(mockPrisma.project.delete).toHaveBeenCalledWith({ where: { id: "project-from-draft" } });
+    await app.close();
+  });
+
+  it("keeps the charge when the queued job cannot be proven dead", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    const payload = creationPayload();
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(creationDraftRecord({ id: "draft-1", payload }));
+    mockPrisma.template.findFirst.mockResolvedValue({ id: "template-workbook" });
+    mockPrisma.project.create.mockResolvedValue(projectRecord({ id: "project-from-draft" }));
+    mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      creationDraftRecord({ id: "draft-1", payload, ...data })
+    );
+    mockPrisma.project.update.mockResolvedValue({});
+    vi.mocked(reserveCredits).mockResolvedValueOnce({ id: "ledger-plan", status: "RESERVED" } as never);
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+    vi.mocked(dispatchGenerationJob).mockRejectedValueOnce(new Error("row update lost after queue.add"));
+    // The row was already claimed: the work will run, so the charge stands.
+    vi.mocked(cancelUndispatchedGenerationJob).mockResolvedValueOnce(false);
+    const app = await buildMobileApp({ advisorEnrichment: false });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/creation-drafts/draft-1/create-project",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBeGreaterThanOrEqual(500);
+    expect(vi.mocked(refundCreditLedgerEntry)).not.toHaveBeenCalled();
     await app.close();
   });
 

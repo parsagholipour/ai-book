@@ -9,6 +9,7 @@ import { reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
+import { planExactReplacement } from "./exactReplacementPreview.js";
 import {
   approvedPlanRecord,
   bearer,
@@ -100,6 +101,70 @@ describe("deterministic exact-replacement edits", () => {
       })
     );
     await app.close();
+  });
+
+  it("keeps a page whose only match is the title and previews the rename", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // Page 2's markdown and summary no longer mention the term; only the title does.
+    state.pages = editablePages().map((page) =>
+      page.index === 2
+        ? { ...page, markdown: "Turtle keeps walking to the finish line.", summary: "Turtle finishes." }
+        : page
+    );
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Replace rabbit with fly throughout the whole book." }
+    });
+    const proposal = response.json().reply.metadata.editProposal;
+
+    expect(response.statusCode).toBe(200);
+    expect(proposal).toMatchObject({ kind: "local_patch", credits: 0 });
+    // The worker's exact-mode gate must agree, or this promised rename would be
+    // silently skipped at apply time.
+    expect(proposal.preview.samples).toContainEqual({
+      pageIndex: 2,
+      before: "Rabbit Learns",
+      after: "Fly Learns"
+    });
+    await app.close();
+  });
+
+  it("ignores a match spanning the markdown/title seam when deciding case preservation", async () => {
+    // Page 1 only "matches" if markdown and title are glued together; page 2
+    // holds a real case-variant. The literal probe must not see the seam match,
+    // or it would suppress the preserveCase fallback and lose page 2.
+    state.pages = [
+      {
+        id: "page-1",
+        projectId: "project-1",
+        index: 1,
+        title: "Glow Stories",
+        markdown: "Watch the sunset",
+        summary: "Evening.",
+        revision: 1
+      },
+      {
+        id: "page-2",
+        projectId: "project-1",
+        index: 2,
+        title: "Night Sky",
+        markdown: "The Sunsetglow shimmered over the lake.",
+        summary: "Night.",
+        revision: 1
+      }
+    ];
+
+    const plan = await planExactReplacement("project-1", { from: "sunsetGlow", to: "dusklight" }, [1, 2]);
+
+    expect(plan).toMatchObject({
+      replacement: { from: "sunsetGlow", to: "dusklight", preserveCase: true },
+      pageIndexes: [2]
+    });
   });
 
   it("asks instead of quoting a price when the text appears nowhere", async () => {

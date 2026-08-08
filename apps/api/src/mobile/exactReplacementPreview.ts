@@ -58,7 +58,9 @@ export async function planExactReplacement(
   // text appears nowhere. Someone who types "replace rabbit with fly" about a
   // book that writes "Rabbit" means that book — and the alternative is not a
   // literal edit, it is a per-page regeneration they did not ask for.
-  const replacement = pages.some((page) => hasExactMatch(page.markdown + page.title, requested))
+  const replacement = pages.some(
+    (page) => hasExactMatch(page.markdown, requested) || hasExactMatch(page.title, requested)
+  )
     ? requested
     : { ...requested, preserveCase: true };
 

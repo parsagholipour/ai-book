@@ -10,16 +10,16 @@ import {
   toPriorPageContext,
   formatQualityFailure
 } from "../generation/bookHelpers.js";
-import { pageRewriteReport, revisePageDraftWithRestart } from "../generation/pageReview.js";
+import { bestDraftCandidate, pageRewriteReport, revisePageDraftWithRestart } from "../generation/pageReview.js";
 import { researchCitationsForExport } from "../generation/researchLinks.js";
 import { storeEmbedding } from "../generation/semanticMemory.js";
-import { MAX_FINAL_QA_REVISIONS_PER_PAGE } from "../generation/tuning.js";
+import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { parallelPageWaveSize } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
-import { type ExportPageForRepair } from "../runtime/jobTypes.js";
+import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import {
@@ -379,7 +379,10 @@ export async function runBoundedChapterQualityReview(options: {
       severity: "warning" as const,
       source: "model" as const
     }));
-  } catch {
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
     return [];
   }
 }
@@ -490,6 +493,7 @@ export async function repairPagesFromFinalQa(options: {
       textModel: options.providers.text
     });
     let revisionAttempts = 1;
+    let best = { draft, revision: revisionAttempts, report: qualityReport };
 
     while (!qualityReport.approved && revisionAttempts < MAX_FINAL_QA_REVISIONS_PER_PAGE) {
       const nextRevisionAttempt = revisionAttempts + 1;
@@ -505,7 +509,10 @@ export async function repairPagesFromFinalQa(options: {
           pageBrief,
           pageIndex,
           draft,
-          report: pageRewriteReport(qualityReport, nextRevisionAttempt, 3),
+          // This loop counts attempts from the first rewrite; the page loops
+          // count candidates from the original draft, one earlier. Both enter
+          // recovery mode at the third rewrite.
+          report: pageRewriteReport(qualityReport, nextRevisionAttempt, PAGE_QA_RECOVERY_CANDIDATE - 1),
           previousPages,
           continuityNotes,
           textModel: options.providers.text
@@ -524,11 +531,14 @@ export async function repairPagesFromFinalQa(options: {
         continuityNotes,
         textModel: options.providers.text
       });
+      best = bestDraftCandidate(best, { draft, revision: revisionAttempts, report: qualityReport });
     }
 
     if (!qualityReport.approved) {
       // Keep the best draft and an honest report; the page stays flagged but
       // does not block the rest of the export.
+      draft = best.draft;
+      qualityReport = best.report;
       await prisma.page.update({
         where: { id: page.id },
         data: {

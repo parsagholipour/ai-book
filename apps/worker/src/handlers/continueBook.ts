@@ -23,6 +23,7 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
+import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { bookPlanSchema, createProviders, generateJsonWithRetry, type BookPlan, type TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
@@ -296,6 +297,9 @@ export async function continuationOutlineWithModel(options: {
       return { chapters: result.data.chapters.slice(0, options.chapterCount) };
     }
   } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
     console.warn(`Continuation outline model call failed; using fallback`, error);
   }
   return fallbackContinuationOutline(options.request, options.chapterCount);

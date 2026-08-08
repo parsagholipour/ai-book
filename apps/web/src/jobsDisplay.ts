@@ -1,5 +1,7 @@
 import type { GenerationJobRow, JobStep, JobStepStatus, PipelineStep, ProjectStatus } from "./api.js";
 
+// Fallback step labels for rows without server-provided steps — mirror
+// JOB_STEP_TEMPLATES in apps/worker/src/runtime/jobLifecycle.ts.
 const JOB_STEP_LABELS: Record<string, string[]> = {
   PLAN_BOOK: ["Research", "Create plan", "Save plan"],
   REVISE_PLAN: ["Revise plan", "Save revision"],
@@ -7,9 +9,13 @@ const JOB_STEP_LABELS: Record<string, string[]> = {
   GENERATE_PAGE: ["Prepare context", "Draft page", "Quality review", "Revise draft", "Save page"],
   GENERATE_IMAGE: ["Build prompt", "Render image", "Store asset"],
   COMPILE_EXPORT: ["Final review", "Compile markdown", "Write Markdown", "Generate PDF", "Generate EPUB"],
+  APPLY_BOOK_EDIT: ["Prepare edit", "Snapshot pages", "Apply edits", "Refresh exports"],
+  REPLAN_BOOK: ["Revise plan", "Save approved plan", "Queue regeneration"],
   PREPARE_CHARACTER_CANDIDATES: ["Detect characters", "Save candidates"],
   BUILD_CHARACTER_PERSONA: ["Build persona", "Create profile picture", "Save character"],
-  RESEARCH: ["Gather sources", "Summarize"]
+  IMPORT_BOOK: ["Read manuscript", "Split into chapters", "Learn writing style", "Save your book"],
+  CONTINUE_BOOK: ["Outline new chapters", "Write new pages", "Save chapters", "Refresh exports"],
+  GENERATE_AUDIOBOOK: ["Prepare narration", "Narrate chapters", "Finish audiobook"]
 };
 
 export function parseJobSteps(value: unknown): JobStep[] {

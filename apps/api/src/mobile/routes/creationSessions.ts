@@ -54,10 +54,13 @@ import {
   idParamsSchema,
   mobileAuthError,
   mobileCreationBranchBodySchema,
+  mobileCreationBranchOpenApiBody,
   mobileCreationBuildBodySchema,
+  mobileCreationBuildOpenApiBody,
   mobileCreationMessageBodySchema,
+  mobileCreationMessageOpenApiBody,
   mobileCreationSessionStartBodySchema,
-  mobileProjectChatBranchOpenApiBody
+  mobileCreationSessionStartOpenApiBody
 } from "../schemas.js";
 import { jsonInputValue } from "../support.js";
 import {
@@ -187,7 +190,10 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
 
   fastify.post(
     "/api/mobile/creation-sessions",
-    { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError } } },
+    {
+      attachValidation: true,
+      schema: { tags: ["mobile"], body: mobileCreationSessionStartOpenApiBody, response: { 201: {}, 401: mobileAuthError } }
+    },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
@@ -286,7 +292,14 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
 
   fastify.post(
     "/api/mobile/creation-sessions/:id/messages",
-    { attachValidation: true, schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileCreationMessageOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError }
+      }
+    },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
@@ -432,7 +445,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       attachValidation: true,
       schema: {
         tags: ["mobile"],
-        body: mobileProjectChatBranchOpenApiBody,
+        body: mobileCreationBranchOpenApiBody,
         response: { 401: mobileAuthError, 404: mobileAuthError }
       }
     },
@@ -761,7 +774,14 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
 
   fastify.post(
     "/api/mobile/creation-sessions/:id/preflight",
-    { attachValidation: true, schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileCreationBuildOpenApiBody,
+        response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError }
+      }
+    },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
@@ -792,7 +812,14 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
 
   fastify.post(
     "/api/mobile/creation-sessions/:id/build",
-    { attachValidation: true, schema: { tags: ["mobile"], response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    {
+      attachValidation: true,
+      schema: {
+        tags: ["mobile"],
+        body: mobileCreationBuildOpenApiBody,
+        response: { 201: {}, 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError }
+      }
+    },
     async (request, reply) => {
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {

@@ -3,6 +3,7 @@ import { createProjectSchema, mediaSettingsSchema } from "../schemas/book.js";
 import {
   explicitTargetPagesFromText,
   inputWithReplanSettings,
+  mediaSettingsRowWriteback,
   mediaSettingsWithReplanSettings,
   negativeMediaPreferenceFromMessage,
   replanSettingsFromMessage
@@ -110,6 +111,46 @@ describe("negativeMediaPreferenceFromMessage", () => {
     expect(negativeMediaPreferenceFromMessage("add illustrations to every chapter")).toBeNull();
     expect(replanSettingsFromMessage("add illustrations to every chapter")).toEqual({});
   });
+
+  it("never fires on the console's question-response message", () => {
+    // The real format from buildQuestionResponseMessage: "no preference" sits
+    // within 80 characters of a prompt naming the cover and illustrations. This
+    // used to de-illustrate a paid plan on Skip.
+    const message = [
+      "Planning question responses:",
+      "1. Should the book include illustrations on every page?",
+      "Answer: Yes, watercolor style",
+      "Skipped questions with no preference:",
+      "- What style should the cover art use?"
+    ].join("\n");
+    expect(negativeMediaPreferenceFromMessage(message)).toBeNull();
+    expect(replanSettingsFromMessage(message)).toEqual({});
+  });
+
+  it("never fires on the app's question-answer message", () => {
+    const message = [
+      "Please revise the plan using these planning answers:",
+      "- Should the illustrations be watercolor or ink? Answer: No preference.",
+      "- How detailed should the cover be? Answer: No preference."
+    ].join("\n");
+    expect(negativeMediaPreferenceFromMessage(message)).toBeNull();
+  });
+
+  it("keeps a free-typed negation inside its own clause", () => {
+    // Clause punctuation between the "no" and the media noun means the "no"
+    // was about something else entirely.
+    expect(negativeMediaPreferenceFromMessage("no preference. Keep the cover simple")).toBeNull();
+    expect(negativeMediaPreferenceFromMessage("no thanks, just fix the typos; the illustrations are fine")).toBeNull();
+    // Genuine requests still read as before.
+    expect(negativeMediaPreferenceFromMessage("make it without illustrations")).toEqual({
+      disableIllustrations: true,
+      disableCover: false
+    });
+    expect(negativeMediaPreferenceFromMessage("remove the pictures and shorten it")).toEqual({
+      disableIllustrations: true,
+      disableCover: true
+    });
+  });
 });
 
 describe("mediaSettingsWithReplanSettings", () => {
@@ -148,6 +189,54 @@ describe("mediaSettingsWithReplanSettings", () => {
     const settings = illustratedMediaSettings();
     expect(mediaSettingsWithReplanSettings(settings, {})).toBe(settings);
     expect(mediaSettingsWithReplanSettings(settings, null)).toBe(settings);
+  });
+});
+
+describe("mediaSettingsRowWriteback", () => {
+  it("lets the revision's generation settings win while row-owned preferences survive", () => {
+    const row = {
+      fullIllustrations: true,
+      includeCover: true,
+      // Free presentation edits write these onto the row; the schema strips
+      // them from every snapshot, so a replacement write reverted them.
+      chapterHeadingStyle: "title_only",
+      chapterHeadingLabel: "Part",
+      includeSources: false
+    };
+    const snapshot = { fullIllustrations: false, includeCover: false, coverArtSource: "design" };
+
+    expect(mediaSettingsRowWriteback(row, snapshot)).toEqual({
+      fullIllustrations: false,
+      includeCover: false,
+      coverArtSource: "design",
+      chapterHeadingStyle: "title_only",
+      chapterHeadingLabel: "Part",
+      includeSources: false
+    });
+  });
+
+  it("never resurrects a row-owned field from a stale snapshot", () => {
+    // The row no longer holds includeSources; a snapshot that still does must
+    // not bring it back.
+    expect(mediaSettingsRowWriteback({ fullIllustrations: true }, { includeSources: true, fullIllustrations: false })).toEqual({
+      fullIllustrations: false
+    });
+  });
+
+  it("preserves unknown row keys so future row-only fields are safe by default", () => {
+    expect(mediaSettingsRowWriteback({ someFutureRowField: 7 }, { includeCover: false })).toEqual({
+      includeCover: false,
+      someFutureRowField: 7
+    });
+  });
+
+  it("merges mobile metadata per key so a replan copy keeps its provenance", () => {
+    const row = { mobile: { revisionOfProjectId: "project-src", targetPages: 3, imagesEnabled: true } };
+    const snapshot = { mobile: { targetPages: 3, imagesEnabled: false } };
+
+    expect(mediaSettingsRowWriteback(row, snapshot)).toEqual({
+      mobile: { revisionOfProjectId: "project-src", targetPages: 3, imagesEnabled: false }
+    });
   });
 });
 

@@ -450,6 +450,17 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
       }
 
+      // Same gate as typing "undo" in chat: the undo rewrite and recompile
+      // must not race a running edit over the same pages.
+      if (await hasOpenProjectWork(id)) {
+        return sendMobileError(
+          reply,
+          409,
+          "PROJECT_BUSY",
+          "This book is still being worked on. Try the undo again once the current job finishes."
+        );
+      }
+
       const activeMessages = await loadActiveProjectChatMessages(id);
       let userMessage: MobileProjectChatMessageRecord;
       try {

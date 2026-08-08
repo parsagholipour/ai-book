@@ -12,7 +12,6 @@ import {
   pageIndexesFromMessage,
   pageIndexesMatchingSubject,
   pageIndexesMatchingText,
-  quotedTexts,
   replacementTermsFromMessage,
   replanSettingsFromEditMessage,
   showContentTargetFromMessage,

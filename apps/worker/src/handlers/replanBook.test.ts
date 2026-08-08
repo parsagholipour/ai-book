@@ -4,7 +4,7 @@ import type { Job } from "bullmq";
 const mocks = vi.hoisted(() => ({
   prisma: {
     bookEditOperation: { update: vi.fn() },
-    project: { update: vi.fn() },
+    project: { update: vi.fn(), findUnique: vi.fn() },
     planVersion: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     character: { deleteMany: vi.fn(), createMany: vi.fn() },
     location: { deleteMany: vi.fn(), createMany: vi.fn() },
@@ -27,7 +27,9 @@ vi.mock("../generation/bookHelpers.js", () => ({
   nextPlanVersion: mocks.nextPlanVersion,
   parseChapterBrief: () => null,
   planInputSnapshot: (input: { targetPages: number }) => ({ targetPages: input.targetPages }),
-  planMediaSettingsSnapshot: () => ({}),
+  // The real deep clone, not a stub: the mediaSettings write-back is exactly
+  // what these tests exist to observe.
+  planMediaSettingsSnapshot: (input: { mediaSettings: unknown }) => JSON.parse(JSON.stringify(input.mediaSettings)),
   strategyForInput: () => ({ revisePlan: mocks.revisePlan }),
   toPriorPageContext: (page: unknown) => page
 }));
@@ -51,7 +53,8 @@ const sourceSnapshot = {
     includeCover: true,
     coverTemplate: "auto",
     finalReview: true,
-    toneProfile: "neutral"
+    toneProfile: "neutral",
+    mobile: { targetPages: 12, imagesEnabled: true }
   }
 };
 
@@ -84,12 +87,13 @@ describe("replanBook page budget", () => {
           update: vi.fn(),
           create: async () => ({ id: "plan-2" })
         },
-        project: { update: mocks.prisma.project.update },
+        project: { update: mocks.prisma.project.update, findUnique: mocks.prisma.project.findUnique },
         character: mocks.prisma.character,
         location: mocks.prisma.location,
         researchSource: mocks.prisma.researchSource
       });
     });
+    mocks.prisma.project.findUnique.mockResolvedValue({ mediaSettings: null });
     mocks.nextPlanVersion.mockResolvedValue(2);
     mocks.revisePlan.mockResolvedValue({ title: "Revised", chapters: [], characters: [], locations: [], researchNotes: [] });
     mocks.enqueueWorkerJob.mockResolvedValue({ id: "job-generate" });
@@ -114,5 +118,41 @@ describe("replanBook page budget", () => {
     await replanBook(replanJob({}));
 
     expect(mocks.revisePlan).toHaveBeenCalledWith(expect.objectContaining({ targetPages: 12 }));
+  });
+
+  const writtenMediaSettings = () =>
+    mocks.prisma.project.update.mock.calls
+      .map((call) => (call[0] as { data: Record<string, unknown> }).data.mediaSettings)
+      .find((value) => value !== undefined) as Record<string, unknown>;
+
+  it("writes the resize into the mobile metadata the app's settings sheet reads", async () => {
+    await replanBook(replanJob({ targetPages: 3 }));
+
+    expect(writtenMediaSettings().mobile).toMatchObject({ targetPages: 3, lengthPreset: "custom", pageCountMode: "custom" });
+  });
+
+  it("merges over the live row instead of replacing it", async () => {
+    // The target row owns presentation preferences the plan snapshot has
+    // schema-stripped, and — for a replan copy — its provenance markers.
+    mocks.prisma.project.findUnique.mockResolvedValue({
+      mediaSettings: {
+        chapterHeadingStyle: "title_only",
+        chapterHeadingLabel: "Part",
+        includeSources: false,
+        mobile: { revisionOfProjectId: "project-1", targetPages: 3 }
+      }
+    });
+
+    await replanBook(replanJob({ targetPages: 3 }));
+
+    const written = writtenMediaSettings();
+    expect(written).toMatchObject({
+      chapterHeadingStyle: "title_only",
+      chapterHeadingLabel: "Part",
+      includeSources: false,
+      // The snapshot's generation settings still land.
+      fullIllustrations: true
+    });
+    expect(written.mobile).toMatchObject({ revisionOfProjectId: "project-1", targetPages: 3 });
   });
 });

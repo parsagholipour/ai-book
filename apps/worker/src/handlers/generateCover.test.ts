@@ -137,6 +137,21 @@ describe("generateCover", () => {
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
   });
 
+  it("hands the stop predicate to the design selection so a stop there surfaces too", async () => {
+    mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: false, coverArtSource: "design" }));
+    mocks.selectCoverDesign.mockImplementation(async (options: { bailOnError?: (error: unknown) => boolean }) => {
+      // The real selectCoverDesign re-throws errors this predicate claims; a
+      // selection wired without it swallowed the stop and compiled the book.
+      const stop = new StopRequestedError();
+      expect(options.bailOnError?.(stop)).toBe(true);
+      throw stop;
+    });
+
+    await expect(generateCover(job())).rejects.toThrow(StopRequestedError);
+    expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+  });
+
   it("stores the model's artwork when it succeeds", async () => {
     mocks.prisma.planVersion.findUnique.mockResolvedValue(planVersion({ includeCover: true }));
     mocks.generateImageBytes.mockResolvedValue({

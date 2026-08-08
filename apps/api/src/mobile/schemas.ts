@@ -448,6 +448,24 @@ export const mobileAudiobookStartOpenApiBody = {
   required: ["voice"]
 } as const;
 
+export const mobilePlanApprovalOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    // Idempotency key: send one and retries replay instead of re-charging.
+    requestId: { type: "string", minLength: 8, maxLength: 64 }
+  }
+} as const;
+
+export const mobileOperationRetryOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    requestId: { type: "string", minLength: 8, maxLength: 64 }
+  },
+  required: ["requestId"]
+} as const;
+
 export const mobilePlanRevisionOpenApiBody = {
   type: "object",
   additionalProperties: false,
@@ -478,6 +496,58 @@ export const mobileProjectChatBranchOpenApiBody = {
     direction: { type: "string", enum: ["previous", "next"] }
   },
   required: ["messageId", "direction"]
+} as const;
+
+export const mobileCreationBranchOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    messageId: { type: "string", minLength: 1, maxLength: 128 },
+    direction: { type: "string", enum: ["previous", "next"] },
+    expectedRevision: { type: "integer", minimum: 1 }
+  },
+  required: ["messageId", "direction"]
+} as const;
+
+export const mobileCreationSessionStartOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    message: { type: "string", minLength: 1, maxLength: 4000 },
+    presets: { type: "object" },
+    sourceNotes: { type: "string", maxLength: 12000 },
+    optionalDetails: { type: "object" },
+    requestId: { type: "string", minLength: 8, maxLength: 64 }
+  }
+} as const;
+
+export const mobileCreationMessageOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    message: { type: "string", maxLength: 4000 },
+    attachmentIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 6 },
+    presets: { type: "object" },
+    sourceNotes: { type: "string", maxLength: 12000 },
+    optionalDetails: { type: "object" },
+    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    expectedRevision: { type: "integer", minimum: 1 },
+    editMessageId: { type: "string", minLength: 1, maxLength: 64 },
+    replyToMessageId: { type: "string", minLength: 1, maxLength: 64 }
+  }
+} as const;
+
+export const mobileCreationBuildOpenApiBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    presets: { type: "object" },
+    sourceNotes: { type: "string", maxLength: 12000 },
+    optionalDetails: { type: "object" },
+    language: { type: "string", minLength: 2, maxLength: 40 },
+    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    expectedRevision: { type: "integer", minimum: 1 }
+  }
 } as const;
 
 export const mobileEditProposalActionOpenApiBody = {

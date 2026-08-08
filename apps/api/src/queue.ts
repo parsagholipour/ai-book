@@ -31,6 +31,10 @@ const DISPATCH_BACKOFF_MAX_MS = 5 * 60_000;
 const STOPPED_JOB_MESSAGE = "Stopped";
 const STOPPED_JOB_ERROR = "Stopped by user";
 
+// Every job the worker's dispatch switch actually handles — keep in sync with
+// `workerJobNameForType` in apps/worker/src/runtime/dispatch.ts. The Prisma
+// enum's RESEARCH is deliberately absent: nothing writes it and the worker
+// rejects it, so naming it here let the API dispatch a job that could only die.
 export const jobNames = {
   PLAN_BOOK: "plan-book",
   REVISE_PLAN: "revise-plan",
@@ -42,7 +46,6 @@ export const jobNames = {
   REPLAN_BOOK: "replan-book",
   PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
   BUILD_CHARACTER_PERSONA: "build-character-persona",
-  RESEARCH: "research",
   IMPORT_BOOK: "import-book",
   CONTINUE_BOOK: "continue-book",
   GENERATE_AUDIOBOOK: "generate-audiobook"
@@ -119,9 +122,17 @@ export async function dispatchGenerationJob(generationJobId: string) {
     return generationJob;
   }
   const payload = jsonPayloadToRecord(generationJob.payload);
+  const jobName = jobNames[generationJob.type as GenerationJobType];
+  if (!jobName) {
+    console.error("Generation job has no worker job name; leaving it undispatched", {
+      generationJobId: generationJob.id,
+      type: generationJob.type
+    });
+    return generationJob;
+  }
   try {
     const bullJob = await bookQueue.add(
-      jobNames[generationJob.type as GenerationJobType],
+      jobName,
       {
         ...payload,
         projectId: generationJob.projectId,
@@ -160,6 +171,23 @@ export async function dispatchGenerationJob(generationJobId: string) {
   }
 }
 
+/**
+ * Compensation for a charged enqueue that failed after its transaction
+ * committed. A QUEUED row without a bullJobId is exactly what the reconcilers
+ * re-publish, so a refund taken while the row survives pays back work that
+ * still runs. Flipping it to CANCELED atomically takes it away from both
+ * reconcilers; the conditional match is what makes "provably dead" true even
+ * when a reconciler races this call. Returns false when the row was already
+ * dispatched or claimed — then the work will run and the charge must stand.
+ */
+export async function cancelUndispatchedGenerationJob(generationJobId: string, reason: string): Promise<boolean> {
+  const result = await prisma.generationJob.updateMany({
+    where: { id: generationJobId, status: "QUEUED", bullJobId: null },
+    data: { status: "CANCELED", finishedAt: new Date(), message: "Canceled", error: reason }
+  });
+  return result.count === 1;
+}
+
 export async function reconcileUndispatchedGenerationJobs(limit = 50): Promise<number> {
   const jobs = await prisma.generationJob.findMany({
     where: {
@@ -171,7 +199,14 @@ export async function reconcileUndispatchedGenerationJobs(limit = 50): Promise<n
     take: limit,
     select: { id: true }
   });
-  await Promise.all(jobs.map((job) => dispatchGenerationJob(job.id)));
+  // allSettled, not all: one undispatchable row must not abort the sweep for
+  // every other stranded job, every interval, forever.
+  const results = await Promise.allSettled(jobs.map((job) => dispatchGenerationJob(job.id)));
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Generation job reconciliation failed for a row", result.reason);
+    }
+  }
   return jobs.length;
 }
 

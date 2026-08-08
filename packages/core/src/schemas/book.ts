@@ -739,12 +739,16 @@ export const planQuestionSchema = z.preprocess(
     }
 
     const options = stringArrayField(value, ["options", "suggestedAnswers", "answers", "choices", "premadeAnswers"]) ?? [];
+    const answerKind = planQuestionAnswerKind(value, options);
     return {
       ...value,
       prompt: stringField(value, ["prompt", "question", "text"]),
       options,
-      answerKind: planQuestionAnswerKind(value, options),
-      allowCustom: booleanField(value, ["allowCustom", "customAnswer", "custom"]) ?? true
+      answerKind,
+      // An open question with `allowCustom: false` renders no options and no
+      // text box on either picker — unanswerable except by Skip — so open
+      // always allows typing, whatever the model said.
+      allowCustom: answerKind === "open" ? true : booleanField(value, ["allowCustom", "customAnswer", "custom"]) ?? true
     };
   },
   z.object({
