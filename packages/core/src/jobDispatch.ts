@@ -125,3 +125,31 @@ export function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
   }
   return payload as Record<string, unknown>;
 }
+
+/*
+ * How the charge that paid for a book-generation run is found — shared by the
+ * worker's failed/stopped-run refunds (runtime/jobLifecycle.ts) and the API's
+ * user stop (apps/api/src/queue.ts). GENERATE_BOOK carries the ledger entry on
+ * its own payload; fan-out children carry only the planId, so their charge is
+ * resolved through the newest GENERATE_BOOK payload for that plan. Callers may
+ * still fall back to the project's latest FULL_BOOK_GENERATION charge when
+ * nothing resolves — that keeps rows enqueued before the stamp refundable, but
+ * it can claw back a *newer* run's charge, which is why resolution comes first.
+ */
+
+/** How many recent GENERATE_BOOK rows a caller should fetch for the plan walk. */
+export const BOOK_GENERATION_CHARGE_LOOKBACK = 10;
+
+/** The ledger entry stamped on the newest GENERATE_BOOK payload for this plan; rows newest-first. */
+export function bookGenerationChargeFromPayloads(
+  rows: ReadonlyArray<{ payload: unknown }>,
+  planId: string
+): string | null {
+  for (const row of rows) {
+    const payload = jsonPayloadToRecord(row.payload);
+    if (payload.planId === planId && typeof payload.billingLedgerEntryId === "string" && payload.billingLedgerEntryId) {
+      return payload.billingLedgerEntryId;
+    }
+  }
+  return null;
+}

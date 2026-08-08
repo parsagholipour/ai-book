@@ -5,7 +5,11 @@ const mocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   findMany: vi.fn(),
   create: vi.fn(),
-  update: vi.fn()
+  update: vi.fn(),
+  updateMany: vi.fn(),
+  projectUpdate: vi.fn(),
+  refundCreditLedgerEntry: vi.fn(),
+  refundLatestProjectOperationCredits: vi.fn()
 }));
 
 vi.mock("bullmq", () => ({
@@ -33,13 +37,18 @@ vi.mock("@book-maker/db", () => ({
       findUnique: mocks.findUnique,
       findMany: mocks.findMany,
       create: mocks.create,
-      update: mocks.update
-    }
+      update: mocks.update,
+      updateMany: mocks.updateMany
+    },
+    project: { update: mocks.projectUpdate }
   }
 }));
-vi.mock("@book-maker/db/billing", () => ({ refundLatestProjectOperationCredits: vi.fn() }));
+vi.mock("@book-maker/db/billing", () => ({
+  refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
+  refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits
+}));
 
-import { dispatchGenerationJob, reconcileUndispatchedGenerationJobs } from "./queue.js";
+import { dispatchGenerationJob, reconcileUndispatchedGenerationJobs, stopProjectGenerationJobs } from "./queue.js";
 
 describe("durable generation outbox", () => {
   const durableJob = {
@@ -100,5 +109,65 @@ describe("durable generation outbox", () => {
 
     const options = mocks.add.mock.calls.at(-1)![2] as Record<string, unknown>;
     expect(options.attempts).toBeUndefined();
+  });
+});
+
+describe("stopping a run", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.projectUpdate.mockResolvedValue({});
+    mocks.updateMany.mockResolvedValue({ count: 1 });
+    mocks.refundCreditLedgerEntry.mockResolvedValue({});
+    mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
+  });
+
+  it("refunds the charge stamped on the stopped run's own GENERATE_BOOK payload", async () => {
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-book",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "GENERATE_BOOK",
+        payload: { planId: "plan-1", billingLedgerEntryId: "entry-own" }
+      }
+    ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("entry-own", "Stopped by user");
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("resolves a fan-out job's charge through its plan's GENERATE_BOOK row, never a newer run's", async () => {
+    mocks.findMany
+      .mockResolvedValueOnce([
+        { id: "job-page", bullJobId: null, status: "QUEUED", type: "GENERATE_PAGE", payload: { planId: "plan-1" } }
+      ])
+      .mockResolvedValueOnce([
+        { payload: { planId: "plan-2", billingLedgerEntryId: "entry-2" } },
+        { payload: { planId: "plan-1", billingLedgerEntryId: "entry-1" } }
+      ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("entry-1", "Stopped by user");
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the latest FULL_BOOK_GENERATION charge when no payload is stamped", async () => {
+    mocks.findMany
+      .mockResolvedValueOnce([
+        { id: "job-page", bullJobId: null, status: "QUEUED", type: "GENERATE_PAGE", payload: { planId: "plan-1" } }
+      ])
+      .mockResolvedValueOnce([{ payload: { planId: "plan-1" } }]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).toHaveBeenCalledWith({
+      projectId: "project-1",
+      operation: "FULL_BOOK_GENERATION",
+      reason: "Stopped by user"
+    });
   });
 });

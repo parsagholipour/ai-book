@@ -1,5 +1,7 @@
 import type { Job } from "bullmq";
 import {
+  BOOK_GENERATION_CHARGE_LOOKBACK,
+  bookGenerationChargeFromPayloads,
   isRecoverableNetworkError,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
   shouldRecoverJobAttempt as retryPolicyShouldRecover,
@@ -671,12 +673,11 @@ export async function refundFailedProjectCredits(job: Job, projectId: string, re
 }
 
 /**
- * The charge that paid for the run this job belongs to. GENERATE_BOOK carries
- * the ledger entry on its own payload; fan-out children carry only the planId,
- * so resolve it through the GENERATE_BOOK row for that plan. The latest-charge
- * fallback keeps rows enqueued before the stamp refundable, but it can claw
- * back a *newer* run's charge — a straggler page job from a replaced run used
- * to refund the replacement — which is why resolution comes first.
+ * The charge that paid for the run this job belongs to — the shared resolution
+ * order lives with `bookGenerationChargeFromPayloads` in @book-maker/core.
+ * A straggler page job from a replaced run used to refund the *replacement's*
+ * charge through the latest-charge fallback, which is why resolution comes
+ * first.
  */
 async function bookGenerationLedgerEntryId(job: Job, projectId: string): Promise<string | null> {
   const own = job.data.billingLedgerEntryId;
@@ -690,16 +691,10 @@ async function bookGenerationLedgerEntryId(job: Job, projectId: string): Promise
   const rows = await prisma.generationJob.findMany({
     where: { projectId, type: "GENERATE_BOOK" },
     orderBy: { createdAt: "desc" },
-    take: 10,
+    take: BOOK_GENERATION_CHARGE_LOOKBACK,
     select: { payload: true }
   });
-  for (const row of rows) {
-    const payload = jsonPayloadToRecord(row.payload);
-    if (payload.planId === planId && typeof payload.billingLedgerEntryId === "string" && payload.billingLedgerEntryId) {
-      return payload.billingLedgerEntryId;
-    }
-  }
-  return null;
+  return bookGenerationChargeFromPayloads(rows, planId);
 }
 
 export async function markRecovering(job: Job, error: unknown) {

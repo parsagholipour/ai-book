@@ -1,8 +1,10 @@
 import { Queue, type JobsOptions } from "bullmq";
 import { Redis } from "ioredis";
 import {
+  BOOK_GENERATION_CHARGE_LOOKBACK,
   STOPPED_JOB_ERROR,
   STOPPED_JOB_MESSAGE,
+  bookGenerationChargeFromPayloads,
   dispatchBackoffMs,
   jobNames,
   jsonPayloadToRecord,
@@ -11,7 +13,7 @@ import {
   type GenerationJobType
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
-import { refundLatestProjectOperationCredits } from "@book-maker/db/billing";
+import { refundCreditLedgerEntry, refundLatestProjectOperationCredits } from "@book-maker/db/billing";
 
 // The job-name table, retry budgets, backoff, and stop constants are shared
 // with the worker through @book-maker/core/jobDispatch — one definition on
@@ -227,7 +229,7 @@ export async function stopProjectGenerationJobs(projectId: string) {
 
   const openJobs = await prisma.generationJob.findMany({
     where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } },
-    select: { id: true, bullJobId: true, status: true }
+    select: { id: true, bullJobId: true, status: true, type: true, payload: true }
   });
   let removedQueueJobs = 0;
 
@@ -263,17 +265,56 @@ export async function stopProjectGenerationJobs(projectId: string) {
       finishedAt
     }
   });
-  await refundLatestProjectOperationCredits({
-    projectId,
-    operation: "FULL_BOOK_GENERATION",
-    reason: STOPPED_JOB_ERROR
-  });
+  const chargedEntryId = await stoppedRunLedgerEntryId(projectId, openJobs);
+  if (chargedEntryId) {
+    await refundCreditLedgerEntry(chargedEntryId, STOPPED_JOB_ERROR);
+  } else {
+    await refundLatestProjectOperationCredits({
+      projectId,
+      operation: "FULL_BOOK_GENERATION",
+      reason: STOPPED_JOB_ERROR
+    });
+  }
 
   return {
     stoppedJobs: stoppedJobs.count,
     activeJobs: openJobs.filter((job) => job.status === "ACTIVE").length,
     removedQueueJobs
   };
+}
+
+/**
+ * The charge that paid for the run being stopped, resolved the same way the
+ * worker settles a failed run (its runtime/jobLifecycle.ts): the GENERATE_BOOK
+ * payload's own ledger entry first, then the plan walk shared through
+ * `bookGenerationChargeFromPayloads`. Null falls back to the latest
+ * FULL_BOOK_GENERATION charge, which keeps runs enqueued before the payload
+ * stamp refundable.
+ */
+async function stoppedRunLedgerEntryId(
+  projectId: string,
+  openJobs: ReadonlyArray<{ type: string; payload: unknown }>
+): Promise<string | null> {
+  let planId: string | null = null;
+  for (const job of openJobs) {
+    const payload = jsonPayloadToRecord(job.payload);
+    if (job.type === "GENERATE_BOOK" && typeof payload.billingLedgerEntryId === "string" && payload.billingLedgerEntryId) {
+      return payload.billingLedgerEntryId;
+    }
+    if (!planId && typeof payload.planId === "string" && payload.planId) {
+      planId = payload.planId;
+    }
+  }
+  if (!planId) {
+    return null;
+  }
+  const rows = await prisma.generationJob.findMany({
+    where: { projectId, type: "GENERATE_BOOK" },
+    orderBy: { createdAt: "desc" },
+    take: BOOK_GENERATION_CHARGE_LOOKBACK,
+    select: { payload: true }
+  });
+  return bookGenerationChargeFromPayloads(rows, planId);
 }
 
 export async function isBullJobActive(bullJobId: string | null): Promise<boolean> {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bookGenerationChargeFromPayloads,
   dispatchBackoffMs,
   jobNames,
   jsonPayloadToRecord,
@@ -80,5 +81,26 @@ describe("jsonPayloadToRecord", () => {
     expect(jsonPayloadToRecord(null)).toEqual({});
     expect(jsonPayloadToRecord([1, 2])).toEqual({});
     expect(jsonPayloadToRecord("nope")).toEqual({});
+  });
+});
+
+describe("bookGenerationChargeFromPayloads", () => {
+  it("returns the entry of its own run's GENERATE_BOOK payload, never a newer run's", () => {
+    const rows = [
+      { payload: { planId: "plan-2", billingLedgerEntryId: "entry-2" } },
+      { payload: { planId: "plan-1", billingLedgerEntryId: "entry-1" } }
+    ];
+    expect(bookGenerationChargeFromPayloads(rows, "plan-1")).toBe("entry-1");
+    expect(bookGenerationChargeFromPayloads(rows, "plan-2")).toBe("entry-2");
+  });
+
+  it("skips unstamped and malformed payloads and reports nothing rather than guessing", () => {
+    const rows = [
+      { payload: { planId: "plan-1" } },
+      { payload: { planId: "plan-1", billingLedgerEntryId: "" } },
+      { payload: null }
+    ];
+    expect(bookGenerationChargeFromPayloads(rows, "plan-1")).toBeNull();
+    expect(bookGenerationChargeFromPayloads([], "plan-1")).toBeNull();
   });
 });
