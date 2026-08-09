@@ -774,13 +774,24 @@ class _BuildButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    // Keep the primary fill while loading so the spinner can sit on it in
+    // onPrimary (white) — the default disabled wash leaves a dark primary
+    // indicator on a muted gray button.
     return FilledButton.icon(
       onPressed: canBuild && !building ? () => onBuild() : null,
+      style: building
+          ? FilledButton.styleFrom(
+              disabledBackgroundColor: colors.primary,
+              disabledForegroundColor: colors.onPrimary,
+            )
+          : null,
       icon: building
-          ? const SizedBox.square(
+          ? SizedBox.square(
               dimension: 18,
               child: CircularProgressIndicator(
                 strokeWidth: 2,
+                color: colors.onPrimary,
                 semanticsLabel: 'Building the plan',
               ),
             )
