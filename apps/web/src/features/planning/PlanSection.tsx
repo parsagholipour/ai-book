@@ -1,5 +1,6 @@
-import { Loader2, MessageSquareText, Play, RefreshCcw, Send } from "lucide-react";
+import { MessageSquareText, Play, RefreshCcw, Send } from "lucide-react";
 import type { BookPlan } from "../../api.js";
+import { Button } from "../shared/Button.js";
 import { PlanQuestionStepper } from "./PlanQuestionStepper.js";
 import type { NormalizedPlanQuestion, QuestionResponse } from "./planQuestions.js";
 
@@ -35,18 +36,27 @@ export function PlanSection(props: {
       <div className="section-title">
         <MessageSquareText size={18} />
         <h3>Plan</h3>
-        <button
-          className="icon-text-button"
+        <Button
+          size="sm"
           onClick={props.onCreatePlan}
           disabled={props.createPlanBusy || !props.selectedId || props.draftPrompt.length < 10}
+          loading={props.createPlanBusy}
+          loadingLabel="Regenerating…"
+          startIcon={<RefreshCcw />}
         >
-          {props.createPlanBusy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
           Regenerate
-        </button>
-        <button className="icon-text-button accent" onClick={props.onApprovePlan} disabled={props.approvePlanDisabled}>
-          {props.approveBusy || props.hasActivePlanRevision ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-          {props.approveBusy || props.hasActivePlanRevision ? "Loading" : "Approve"}
-        </button>
+        </Button>
+        <Button
+          variant="accent"
+          size="sm"
+          onClick={props.onApprovePlan}
+          disabled={props.approvePlanDisabled}
+          loading={props.approveBusy || props.hasActivePlanRevision}
+          loadingLabel="Approving…"
+          startIcon={<Play />}
+        >
+          Approve
+        </Button>
       </div>
       {props.plan ? (
         <div className="plan-grid">
@@ -114,10 +124,18 @@ export function PlanSection(props: {
           onChange={(event) => props.onPlanMessageChange(event.target.value)}
           placeholder="Ask for outline, character, style, or illustration changes before approval."
         />
-        <button className="primary-button compact" onClick={props.onRevisePlan} disabled={props.revisionBusy || !props.planMessage.trim()}>
-          {props.revisionBusy ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+        <Button
+          className="revision-submit"
+          variant="primary"
+          compact
+          onClick={props.onRevisePlan}
+          disabled={props.revisionBusy || !props.planMessage.trim()}
+          loading={props.revisionBusy}
+          loadingLabel="Sending…"
+          startIcon={<Send />}
+        >
           Send
-        </button>
+        </Button>
       </div>
     </section>
   );

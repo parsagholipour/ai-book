@@ -18,6 +18,7 @@ import {
   hasProviderDuration
 } from "../shared/formatters.js";
 import type { GenerationStrategyOption } from "../projects/draft.js";
+import { Button } from "../shared/Button.js";
 
 export function JobsSection(props: {
   selectedStatus: ProjectStatus | null;
@@ -32,6 +33,7 @@ export function JobsSection(props: {
   onResumeProject: () => void;
 }) {
   const recoveryLabel = props.canRetryPlanning ? "Retry" : "Resume";
+  const recoveryLoadingLabel = props.canRetryPlanning ? "Retrying…" : "Resuming…";
 
   return (
     <section className="work-section">
@@ -41,16 +43,30 @@ export function JobsSection(props: {
         {props.canStopProject || props.canResumeProject ? (
           <div className="job-controls">
             {props.canStopProject ? (
-              <button className="icon-text-button danger" onClick={props.onStopProject} disabled={props.stopBusy || !props.selectedId}>
-                {props.stopBusy ? <Loader2 className="spin" size={16} /> : <CircleStop size={16} />}
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={props.onStopProject}
+                disabled={props.stopBusy || !props.selectedId}
+                loading={props.stopBusy}
+                loadingLabel="Stopping…"
+                startIcon={<CircleStop />}
+              >
                 Stop
-              </button>
+              </Button>
             ) : null}
             {props.canResumeProject ? (
-              <button className="icon-text-button accent" onClick={props.onResumeProject} disabled={props.resumeBusy || !props.selectedId}>
-                {props.resumeBusy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
+              <Button
+                variant="accent"
+                size="sm"
+                onClick={props.onResumeProject}
+                disabled={props.resumeBusy || !props.selectedId}
+                loading={props.resumeBusy}
+                loadingLabel={recoveryLoadingLabel}
+                startIcon={<RefreshCcw />}
+              >
                 {recoveryLabel}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}

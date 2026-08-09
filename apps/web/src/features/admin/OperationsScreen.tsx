@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { compactCount, count, duration, percent, usd, usdFine } from "./format.js";
 import { useAdminOperations } from "./useAdminData.js";
 import type { AdminOperationEconomics, CostUsage, ModelCost, OperationEconomics, UnbilledSpend } from "./types.js";
@@ -33,18 +34,12 @@ export function OperationsScreen() {
   return (
     <div className={`admin-page${operations.stale ? " is-stale" : ""}`}>
       <div className="admin-filter-row">
-        <div className="admin-range" role="group" aria-label="Time range">
-          {RANGES.map((range) => (
-            <button
-              key={range}
-              type="button"
-              className={`admin-range-option${days === range ? " is-active" : ""}`}
-              onClick={() => setDays(range)}
-            >
-              {range}d
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Time range"
+          options={RANGES.map((range) => ({ value: range, label: `${range}d` }))}
+          value={days}
+          onChange={setDays}
+        />
         {operations.stale ? (
           <span className="muted admin-refreshing">
             <Loader2 className="spin" size={14} aria-hidden /> refreshing

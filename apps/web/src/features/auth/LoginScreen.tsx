@@ -1,7 +1,8 @@
 import type { FormEvent } from "react";
-import { Loader2, LockKeyhole } from "lucide-react";
+import { LockKeyhole } from "lucide-react";
 import { AuthShell } from "./AuthShell.js";
 import { AppLogo } from "../shared/AppLogo.js";
+import { Button } from "../shared/Button.js";
 
 export function LoginScreen(props: {
   password: string;
@@ -32,10 +33,17 @@ export function LoginScreen(props: {
           />
         </label>
         {props.error ? <div className="error-banner">{props.error}</div> : null}
-        <button className="primary-button" type="submit" disabled={props.busy || !props.password.trim()}>
-          {props.busy ? <Loader2 className="spin" size={18} /> : <LockKeyhole size={18} />}
+        <Button
+          variant="primary"
+          fullWidth
+          type="submit"
+          disabled={props.busy || !props.password.trim()}
+          loading={props.busy}
+          loadingLabel="Unlocking…"
+          startIcon={<LockKeyhole />}
+        >
           Unlock
-        </button>
+        </Button>
       </form>
     </AuthShell>
   );

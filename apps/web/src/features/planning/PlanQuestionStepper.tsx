@@ -2,10 +2,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Loader2,
   Send,
   SkipForward
 } from "lucide-react";
+import { Button, IconButton } from "../shared/Button.js";
 import type { NormalizedPlanQuestion, QuestionResponse } from "./planQuestions.js";
 
 /** A multi-answer question keeps its picks in `picked`; the answer is their join. */
@@ -113,48 +113,49 @@ export function PlanQuestionStepper(props: {
           </label>
         ) : null}
         <div className="question-actions">
-          <button
-            className="icon-button"
-            type="button"
+          <IconButton
+            label="Previous question"
+            size="sm"
             onClick={() => props.onGoTo(activeIndex - 1)}
             disabled={activeIndex === 0 || controlsBusy}
-            title="Previous question"
           >
-            <ChevronLeft size={16} />
-          </button>
-          <button className="icon-text-button" type="button" onClick={props.onSkip} disabled={controlsBusy}>
-            <SkipForward size={16} />
+            <ChevronLeft />
+          </IconButton>
+          <Button size="sm" onClick={props.onSkip} disabled={controlsBusy} startIcon={<SkipForward />}>
             Skip
-          </button>
-          <button
-            className="icon-button"
-            type="button"
+          </Button>
+          <IconButton
+            label="Next question"
+            size="sm"
             onClick={() => props.onGoTo(activeIndex + 1)}
             disabled={activeIndex === props.questions.length - 1 || controlsBusy}
-            title="Next question"
           >
-            <ChevronRight size={16} />
-          </button>
+            <ChevronRight />
+          </IconButton>
           {activeQuestion.allowCustom ? (
-            <button
-              className="primary-button compact"
-              type="button"
+            <Button
+              variant="primary"
+              size="sm"
+              compact
               onClick={() => props.onAnswer(props.customAnswer)}
               disabled={controlsBusy || !props.customAnswer.trim()}
+              startIcon={<Send />}
             >
-              <Send size={16} />
               Answer
-            </button>
+            </Button>
           ) : null}
-          <button
-            className="icon-text-button accent"
-            type="button"
+          <Button
+            className="question-submit"
+            variant="accent"
+            size="sm"
             onClick={props.onSubmit}
             disabled={controlsBusy || props.responsesSubmitted || responseCount === 0}
+            loading={props.revisionPending}
+            loadingLabel={submitLabel}
+            startIcon={<CheckCircle2 />}
           >
-            {props.revisionPending ? <Loader2 className="spin" size={16} /> : <CheckCircle2 size={16} />}
             {submitLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </section>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowLeft, Loader2, X } from "lucide-react";
+import { Button } from "../shared/Button.js";
 import { BreakdownBars } from "./charts.js";
 import { count, dateTime, duration, percent, relative, titleCase, usd } from "./format.js";
 import { useAdminProjectDetail, useAdminUserDetail } from "./useAdminData.js";
@@ -21,16 +22,14 @@ export function InspectorPanel(props: { userId: string; onClose: () => void }) {
     <section className="work-section inspector">
       <div className="section-title">
         {projectId ? (
-          <button className="icon-text-button" type="button" onClick={() => setProjectId(null)}>
-            <ArrowLeft size={16} aria-hidden />
+          <Button size="sm" onClick={() => setProjectId(null)} startIcon={<ArrowLeft />}>
             Account
-          </button>
+          </Button>
         ) : null}
         <h3>{projectId ? project.data?.project.title ?? "Book" : user.data?.user.email ?? "Loading…"}</h3>
-        <button className="icon-text-button" type="button" onClick={props.onClose} aria-label="Close inspector">
-          <X size={16} aria-hidden />
+        <Button size="sm" onClick={props.onClose} startIcon={<X />}>
           Close
-        </button>
+        </Button>
       </div>
 
       {user.error ? <div className="error-banner">{user.error}</div> : null}
@@ -60,7 +59,7 @@ function UserBody(props: {
 
   return (
     <>
-      <div className="stat-grid compact">
+      <div className="stat-grid stat-grid-dense">
         <MiniStat
           label="Credits available"
           value={count(credits.available)}
@@ -180,7 +179,7 @@ function ProjectBody(props: { detail: NonNullable<ReturnType<typeof useAdminProj
 
   return (
     <>
-      <div className="stat-grid compact">
+      <div className="stat-grid stat-grid-dense">
         <MiniStat label="Revenue" value={usd(economics.revenueUsd)} note={`${count(economics.creditsCharged)} credits`} />
         <MiniStat label="Provider cost" value={usd(economics.providerUsd)} note={`${count(economics.unpricedCalls)} unpriced calls`} />
         <MiniStat label="Margin" value={usd(economics.marginUsd)} note={percent(economics.marginPercent)} />

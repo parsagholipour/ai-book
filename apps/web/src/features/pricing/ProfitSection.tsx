@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, Loader2, TrendingUp } from "lucide-react";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { PRICING_FIELD_GROUPS } from "./pricingFields.js";
 import type { CreditPricingKey, CreditPricingValues } from "./types.js";
 import { revenueAt, useProfitDrivers, type PricingDrivers } from "./useProfitDrivers.js";
@@ -32,18 +33,13 @@ export function ProfitSection(props: {
       <div className="section-title">
         <TrendingUp size={18} aria-hidden />
         <h3>Projected profit</h3>
-        <div className="admin-range profit-range" role="group" aria-label="Projection window">
-          {RANGES.map((range) => (
-            <button
-              key={range}
-              type="button"
-              className={`admin-range-option${days === range ? " is-active" : ""}`}
-              onClick={() => setDays(range)}
-            >
-              {range === 365 ? "1y" : `${range}d`}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          className="profit-range"
+          label="Projection window"
+          options={RANGES.map((range) => ({ value: range, label: range === 365 ? "1y" : `${range}d` }))}
+          value={days}
+          onChange={setDays}
+        />
       </div>
 
       {report.error ? <div className="error-banner">{report.error}</div> : null}
@@ -121,7 +117,7 @@ function ProfitBody(props: {
             ) : null}
           </div>
 
-          <div className="stat-grid compact profit-tiles">
+          <div className="stat-grid stat-grid-dense profit-tiles">
             <Tile label="Revenue" value={money(proposed.revenueUsd)} note={`${fmtInt(proposed.credits)} credits`} />
             <Tile label="Provider cost" value={money(providerUsd)} note="actually billed, settled calls" />
             <Tile

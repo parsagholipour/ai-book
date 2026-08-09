@@ -1,10 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Link } from "react-router";
 import {
   BarChart3,
   Info,
   ListChecks,
-  Loader2,
   LogOut,
   Plus,
   RefreshCcw,
@@ -44,6 +42,7 @@ import {
   type ProjectHoverState
 } from "./projectDisplay.js";
 import { AppLogo } from "../shared/AppLogo.js";
+import { Button, ButtonLink, IconButton } from "../shared/Button.js";
 import { ADMIN_PATH } from "./routing.js";
 
 export function ProjectSidebar(props: {
@@ -79,15 +78,21 @@ export function ProjectSidebar(props: {
         </div>
       </div>
       <div className="sidebar-nav">
-        <Link className="icon-text-button" to={ADMIN_PATH}>
-          <BarChart3 size={16} aria-hidden />
+        <ButtonLink to={ADMIN_PATH} size="sm" startIcon={<BarChart3 />}>
           Operations
-        </Link>
+        </ButtonLink>
         {props.authEnabled ? (
-          <button className="icon-text-button auth-logout" type="button" onClick={props.onLogout} disabled={props.authBusy}>
-            {props.authBusy ? <Loader2 className="spin" size={16} /> : <LogOut size={16} />}
+          <Button
+            className="auth-logout"
+            size="sm"
+            onClick={props.onLogout}
+            disabled={props.authBusy}
+            loading={props.authBusy}
+            loadingLabel="Logging out…"
+            startIcon={<LogOut />}
+          >
             Log out
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -410,19 +415,26 @@ export function ProjectSidebar(props: {
           />
           Final review before export
         </label>
-        <button className="primary-button" onClick={props.onCreateProject} disabled={props.createProjectBusy || props.draft.prompt.length < 10}>
-          {props.createProjectBusy ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
+        <Button
+          variant="primary"
+          fullWidth
+          onClick={props.onCreateProject}
+          disabled={props.createProjectBusy || props.draft.prompt.length < 10}
+          loading={props.createProjectBusy}
+          loadingLabel="Creating project…"
+          startIcon={<Sparkles />}
+        >
           Create & Plan
-        </button>
+        </Button>
       </section>
 
       <section className="project-list">
         <div className="panel-title">
           <ListChecks size={18} aria-hidden />
           <h2>Projects</h2>
-          <button className="icon-button" onClick={props.onRefreshProjects} title="Refresh projects">
-            <RefreshCcw size={16} />
-          </button>
+          <IconButton label="Refresh projects" size="sm" onClick={props.onRefreshProjects}>
+            <RefreshCcw />
+          </IconButton>
         </div>
         {props.projects.map((project) => (
           <button

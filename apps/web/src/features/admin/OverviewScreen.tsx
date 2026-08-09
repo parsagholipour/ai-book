@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { BreakdownBars, ColumnChart, SERIES_COLORS, TimeChart } from "./charts.js";
 import { count, percent, usd, usdShort } from "./format.js";
 import { useAdminOverview } from "./useAdminData.js";
@@ -15,18 +16,12 @@ export function OverviewScreen() {
     <div className={`admin-page${overview.stale ? " is-stale" : ""}`}>
       {/* One filter row, above everything it scopes — never per card. */}
       <div className="admin-filter-row">
-        <div className="admin-range" role="group" aria-label="Time range">
-          {RANGES.map((range) => (
-            <button
-              key={range}
-              type="button"
-              className={`admin-range-option${days === range ? " is-active" : ""}`}
-              onClick={() => setDays(range)}
-            >
-              {range}d
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Time range"
+          options={RANGES.map((range) => ({ value: range, label: `${range}d` }))}
+          value={days}
+          onChange={setDays}
+        />
         {overview.stale ? (
           <span className="muted admin-refreshing">
             <Loader2 className="spin" size={14} aria-hidden /> refreshing

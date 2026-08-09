@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
+import { Button } from "../shared/Button.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { dateTime, relative, titleCase } from "./format.js";
 import { useModerationReports } from "./useAdminData.js";
 import type { ModerationReport } from "./types.js";
@@ -28,18 +30,15 @@ export function ModerationScreen() {
   return (
     <div className={`admin-page${reports.stale ? " is-stale" : ""}`}>
       <div className="admin-filter-row">
-        <div className="admin-range" role="group" aria-label="Filter by status">
-          {FILTERS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={`admin-range-option${filter === option ? " is-active" : ""}`}
-              onClick={() => setFilter(option)}
-            >
-              {option === "pending" && pendingCount > 0 ? `Pending (${pendingCount})` : titleCase(option)}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Filter by status"
+          options={FILTERS.map((option) => ({
+            value: option,
+            label: option === "pending" && pendingCount > 0 ? `Pending (${pendingCount})` : titleCase(option)
+          }))}
+          value={filter}
+          onChange={setFilter}
+        />
       </div>
 
       {reports.error ? <div className="error-banner">{reports.error}</div> : null}
@@ -58,7 +57,8 @@ export function ModerationScreen() {
             <ReportCard
               key={report.id}
               report={report}
-              busy={reports.saving === report.id}
+              busy={reports.saving?.id === report.id}
+              busyDecision={reports.saving?.id === report.id ? reports.saving.status : null}
               onReview={(status, notes) => void reports.review(report.id, status, notes)}
             />
           ))}
@@ -71,6 +71,7 @@ export function ModerationScreen() {
 function ReportCard(props: {
   report: ModerationReport;
   busy: boolean;
+  busyDecision: string | null;
   onReview: (status: string, notes: string) => void;
 }) {
   const [notes, setNotes] = useState(props.report.reviewNotes ?? "");
@@ -119,18 +120,22 @@ function ReportCard(props: {
       </label>
 
       <div className="pricing-actions">
-        {DECISIONS.map((decision) => (
-          <button
-            key={decision.value}
-            className={decision.value === "actioned" ? "icon-text-button danger" : "icon-text-button"}
-            type="button"
-            disabled={props.busy}
-            onClick={() => props.onReview(decision.value, notes)}
-          >
-            {props.busy ? <Loader2 className="spin" size={14} aria-hidden /> : null}
-            {decision.label}
-          </button>
-        ))}
+        {DECISIONS.map((decision) => {
+          const loading = props.busyDecision === decision.value;
+          return (
+            <Button
+              key={decision.value}
+              variant={decision.value === "actioned" ? "danger" : "secondary"}
+              size="sm"
+              disabled={props.busy}
+              loading={loading}
+              loadingLabel={`${decision.label}…`}
+              onClick={() => props.onReview(decision.value, notes)}
+            >
+              {decision.label}
+            </Button>
+          );
+        })}
       </div>
     </section>
   );

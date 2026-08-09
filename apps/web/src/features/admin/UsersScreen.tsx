@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
+import { Button } from "../shared/Button.js";
+import { SegmentedControl } from "../shared/SegmentedControl.js";
 import { count, relative, usd } from "./format.js";
 import { InspectorPanel } from "./InspectorPanel.js";
 import { useAdminUsers, useDebounced } from "./useAdminData.js";
@@ -40,21 +42,15 @@ export function UsersScreen() {
             }}
           />
         </label>
-        <div className="admin-range" role="group" aria-label="Sort by">
-          {SORTS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`admin-range-option${sort === option.value ? " is-active" : ""}`}
-              onClick={() => {
-                setSort(option.value);
-                setOffset(0);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          label="Sort by"
+          options={SORTS}
+          value={sort}
+          onChange={(value) => {
+            setSort(value);
+            setOffset(0);
+          }}
+        />
       </div>
 
       {users.error ? <div className="error-banner">{users.error}</div> : null}
@@ -118,27 +114,25 @@ export function UsersScreen() {
 
         {total > PAGE_SIZE ? (
           <div className="admin-pager">
-            <button
-              className="icon-text-button"
-              type="button"
+            <Button
+              size="sm"
               disabled={offset === 0}
               onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
+              startIcon={<ChevronLeft />}
             >
-              <ChevronLeft size={16} aria-hidden />
               Previous
-            </button>
+            </Button>
             <span className="muted">
               {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {count(total)}
             </span>
-            <button
-              className="icon-text-button"
-              type="button"
+            <Button
+              size="sm"
               disabled={offset + PAGE_SIZE >= total}
               onClick={() => setOffset(offset + PAGE_SIZE)}
+              endIcon={<ChevronRight />}
             >
               Next
-              <ChevronRight size={16} aria-hidden />
-            </button>
+            </Button>
           </div>
         ) : null}
       </section>

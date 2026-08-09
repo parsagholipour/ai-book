@@ -1,6 +1,7 @@
 import { ArrowLeft, BarChart3, Coins, Receipt, Settings, ShieldAlert, Users, Workflow } from "lucide-react";
-import { Link, NavLink, Outlet } from "react-router";
+import { NavLink, Outlet } from "react-router";
 import { AppLogo } from "../shared/AppLogo.js";
+import { ButtonLink } from "../shared/Button.js";
 
 export const ADMIN_TABS = [
   { to: "/admin", label: "Overview", icon: BarChart3, end: true },
@@ -30,10 +31,9 @@ export function AdminLayout() {
             <p>Revenue, usage, and the levers behind them</p>
           </div>
         </div>
-        <Link className="icon-text-button" to="/">
-          <ArrowLeft size={16} aria-hidden />
+        <ButtonLink to="/" size="sm" startIcon={<ArrowLeft />}>
           Back to console
-        </Link>
+        </ButtonLink>
       </header>
 
       <nav className="admin-tabs" aria-label="Dashboard sections">

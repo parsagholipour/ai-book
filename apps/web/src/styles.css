@@ -1,6 +1,22 @@
 :root {
   color: #17201f;
   background: #f6f4ef;
+  --action-primary: #23665d;
+  --action-primary-hover: #1d5951;
+  --action-primary-pressed: #184b45;
+  --action-secondary: #fffefa;
+  --action-secondary-hover: #f6f4ef;
+  --action-secondary-pressed: #ece7dc;
+  --action-secondary-border: #c8c1b5;
+  --action-accent: #8e3c2f;
+  --action-accent-hover: #7a3428;
+  --action-accent-pressed: #672c22;
+  --action-danger: #b42318;
+  --action-danger-hover: #981b12;
+  --action-danger-pressed: #7f1710;
+  --action-disabled-opacity: 0.56;
+  --interaction-focus-color: #23665d;
+  --interaction-focus-ring: 0 0 0 3px rgba(35, 102, 93, 0.28);
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
@@ -489,9 +505,6 @@ textarea {
   overflow-wrap: anywhere;
 }
 
-.primary-button,
-.icon-text-button,
-.icon-button,
 .project-button {
   border: 1px solid transparent;
   border-radius: 6px;
@@ -501,54 +514,171 @@ textarea {
   gap: 8px;
 }
 
-.primary-button {
+.action-control {
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #17201f;
+  font-weight: 750;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 80ms ease;
+}
+
+.action-control--sm {
+  height: 34px;
+  padding: 0 10px;
+  font-size: 0.85rem;
+}
+
+.action-control--md {
+  height: 40px;
+  padding: 0 12px;
+  font-size: 0.9rem;
+}
+
+.action-control--full-width {
   width: 100%;
-  padding: 11px 12px;
-  background: #23665d;
-  color: white;
-  font-weight: 800;
 }
 
-.primary-button:disabled,
-.icon-text-button:disabled,
-.icon-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.compact {
-  width: auto;
+.action-control--compact {
   min-width: 112px;
 }
 
-.icon-button {
-  width: 32px;
-  height: 32px;
-  margin-left: auto;
-  background: #fffefa;
-  border-color: #c8c1b5;
+.action-control--primary {
+  border-color: var(--action-primary);
+  background: var(--action-primary);
+  color: #fffefa;
 }
 
-.icon-text-button {
-  min-height: 34px;
-  padding: 7px 10px;
-  background: #fffefa;
-  border-color: #c8c1b5;
+.action-control--primary:hover:not(:disabled) {
+  border-color: var(--action-primary-hover);
+  background: var(--action-primary-hover);
+}
+
+.action-control--primary:active:not(:disabled) {
+  border-color: var(--action-primary-pressed);
+  background: var(--action-primary-pressed);
+}
+
+.action-control--secondary {
+  border-color: var(--action-secondary-border);
+  background: var(--action-secondary);
   color: #17201f;
-  text-decoration: none;
-  font-weight: 700;
 }
 
-.icon-text-button.accent {
-  background: #8e3c2f;
-  color: #fffefa;
-  border-color: #8e3c2f;
+.action-control--secondary:hover:not(:disabled) {
+  border-color: #aaa295;
+  background: var(--action-secondary-hover);
 }
 
-.icon-text-button.danger {
-  background: #b42318;
+.action-control--secondary:active:not(:disabled) {
+  background: var(--action-secondary-pressed);
+}
+
+.action-control--accent {
+  border-color: var(--action-accent);
+  background: var(--action-accent);
   color: #fffefa;
-  border-color: #b42318;
+}
+
+.action-control--accent:hover:not(:disabled) {
+  border-color: var(--action-accent-hover);
+  background: var(--action-accent-hover);
+}
+
+.action-control--accent:active:not(:disabled) {
+  border-color: var(--action-accent-pressed);
+  background: var(--action-accent-pressed);
+}
+
+.action-control--danger {
+  border-color: var(--action-danger);
+  background: var(--action-danger);
+  color: #fffefa;
+}
+
+.action-control--danger:hover:not(:disabled) {
+  border-color: var(--action-danger-hover);
+  background: var(--action-danger-hover);
+}
+
+.action-control--danger:active:not(:disabled) {
+  border-color: var(--action-danger-pressed);
+  background: var(--action-danger-pressed);
+}
+
+.action-control:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.action-control:disabled,
+.project-button:disabled,
+.question-step:disabled,
+.answer-option:disabled,
+.cost-expander:disabled,
+.admin-linkish:disabled,
+.voice-provider-option:disabled,
+.voice-model-option:disabled {
+  cursor: not-allowed;
+  opacity: var(--action-disabled-opacity);
+}
+
+.action-control[aria-busy="true"] {
+  cursor: wait;
+}
+
+.action-control-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+}
+
+.action-control--sm .action-control-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.action-control-icon > svg,
+.action-icon-button > svg {
+  width: 100%;
+  height: 100%;
+}
+
+.action-icon-button {
+  width: 40px;
+  padding: 0;
+}
+
+.action-icon-button.action-control--sm {
+  width: 34px;
+}
+
+.action-icon-button > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.action-icon-button.action-control--sm > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.action-spinner {
+  width: 100%;
+  height: 100%;
+  animation: spin 0.9s linear infinite;
 }
 
 .project-list {
@@ -765,12 +895,16 @@ textarea {
   font-weight: 800;
 }
 
-.section-title .icon-text-button:first-of-type {
+.section-title .action-control:first-of-type {
   margin-left: auto;
 }
 
-.section-title .job-controls .icon-text-button:first-of-type {
+.section-title .job-controls .action-control:first-of-type {
   margin-left: 0;
+}
+
+.panel-title > .action-icon-button {
+  margin-left: auto;
 }
 
 .plan-grid {
@@ -941,7 +1075,7 @@ li {
   flex-wrap: wrap;
 }
 
-.question-actions .icon-text-button.accent {
+.question-actions .question-submit {
   margin-left: auto;
 }
 
@@ -978,6 +1112,10 @@ li {
   gap: 10px;
   margin-top: 14px;
   align-items: stretch;
+}
+
+.revision-submit {
+  align-self: center;
 }
 
 .pipeline-stepper {
@@ -2017,7 +2155,7 @@ figcaption {
     margin-left: 0;
   }
 
-  .question-actions .icon-text-button.accent {
+  .question-actions .question-submit {
     margin-left: 0;
   }
 
@@ -2034,7 +2172,7 @@ figcaption {
   gap: 8px;
 }
 
-.sidebar-nav .icon-text-button {
+.sidebar-nav .action-control {
   text-decoration: none;
 }
 
@@ -2063,7 +2201,7 @@ figcaption {
   font-size: 0.85rem;
 }
 
-.admin-header .icon-text-button {
+.admin-header .action-control {
   text-decoration: none;
 }
 
@@ -2118,32 +2256,53 @@ figcaption {
   flex-wrap: wrap;
 }
 
-.admin-range {
+.segmented-control {
+  height: 34px;
+  max-width: 100%;
+  min-width: 0;
   display: inline-flex;
   gap: 2px;
   padding: 3px;
   border-radius: 9px;
   background: #ece7dc;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
 }
 
-.admin-range-option {
+.segmented-control::-webkit-scrollbar {
+  display: none;
+}
+
+.segmented-control-option {
+  height: 28px;
   border: 0;
   background: transparent;
   border-radius: 7px;
-  padding: 6px 12px;
+  padding: 0 12px;
   font-size: 0.85rem;
+  line-height: 1;
   color: #52514e;
 }
 
-.admin-range-option:hover {
+.segmented-control-option:hover:not(:disabled) {
   background: #f6f4ef;
 }
 
-.admin-range-option.is-active {
+.segmented-control-option:active:not(:disabled) {
+  background: #e2ddd2;
+}
+
+.segmented-control-option.is-selected {
   background: #fffdf8;
   color: #23665d;
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(11, 11, 11, 0.08);
+}
+
+.segmented-control-option:disabled {
+  cursor: not-allowed;
+  opacity: var(--action-disabled-opacity);
 }
 
 .admin-search {
@@ -2617,7 +2776,7 @@ figcaption {
   text-overflow: ellipsis;
 }
 
-.stat-grid.compact .stat-value {
+.stat-grid.stat-grid-dense .stat-value {
   font-size: 1.2rem;
 }
 
@@ -2801,7 +2960,7 @@ figcaption {
   font-size: 0.85rem;
 }
 
-.pricing-revision-head .icon-text-button {
+.pricing-revision-head .action-control {
   margin-left: auto;
 }
 
@@ -2891,4 +3050,21 @@ figcaption {
     padding-left: 0;
     border-left: 0;
   }
+}
+
+/* Keep the shared keyboard ring last so selected/active surface shadows cannot
+   hide it in the cascade. */
+.action-control:focus-visible,
+.segmented-control-option:focus-visible,
+.project-button:focus-visible,
+.question-step:focus-visible,
+.answer-option:focus-visible,
+.cost-expander:focus-visible,
+.admin-linkish:focus-visible,
+.voice-provider-option:focus-visible,
+.voice-model-option:focus-visible,
+.strategy-info-trigger:focus-visible {
+  outline: 2px solid var(--interaction-focus-color);
+  outline-offset: 2px;
+  box-shadow: var(--interaction-focus-ring);
 }

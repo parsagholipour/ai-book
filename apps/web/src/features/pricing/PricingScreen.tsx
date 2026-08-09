@@ -1,4 +1,5 @@
 import { Coins, History, Loader2, RotateCcw, Save, Undo2 } from "lucide-react";
+import { Button } from "../shared/Button.js";
 import { PRICING_FIELD_GROUPS } from "./pricingFields.js";
 import { ProfitSection } from "./ProfitSection.js";
 import type { CreditPricingKey, PricingPreview, PricingRevision } from "./types.js";
@@ -95,28 +96,28 @@ export function PricingScreen() {
                 <p className="pricing-invalid">Every price must be a whole number of credits, zero or more.</p>
               ) : null}
               <div className="pricing-actions">
-                <button
-                  className="primary-button"
-                  type="button"
+                <Button
+                  variant="primary"
+                  fullWidth
                   disabled={!canSave}
+                  loading={pricing.saving}
+                  loadingLabel={`Saving${pricing.dirtyKeys.length > 0 ? ` (${pricing.dirtyKeys.length})` : ""}…`}
+                  startIcon={<Save />}
                   onClick={() => void pricing.save()}
                 >
-                  {pricing.saving ? <Loader2 className="spin" size={16} /> : <Save size={16} />}
                   Save {pricing.dirtyKeys.length > 0 ? `(${pricing.dirtyKeys.length})` : ""}
-                </button>
-                <button
-                  className="icon-text-button"
-                  type="button"
+                </Button>
+                <Button
+                  size="sm"
                   disabled={pricing.dirtyKeys.length === 0}
                   onClick={pricing.resetToSaved}
+                  startIcon={<Undo2 />}
                 >
-                  <Undo2 size={16} aria-hidden />
                   Discard
-                </button>
-                <button className="icon-text-button" type="button" onClick={pricing.resetToDefaults}>
-                  <RotateCcw size={16} aria-hidden />
+                </Button>
+                <Button size="sm" onClick={pricing.resetToDefaults} startIcon={<RotateCcw />}>
                   Load defaults
-                </button>
+                </Button>
               </div>
             </section>
 
@@ -192,15 +193,14 @@ function HistoryPanel(props: { revisions: PricingRevision[]; busy: boolean; onRe
                 <div className="pricing-revision-head">
                   <strong>v{revision.version}</strong>
                   <span className="muted">{formatWhen(revision.createdAt)}</span>
-                  <button
-                    className="icon-text-button"
-                    type="button"
+                  <Button
+                    size="sm"
                     disabled={props.busy}
                     onClick={() => props.onRevert(revision.version)}
+                    startIcon={<Undo2 />}
                   >
-                    <Undo2 size={14} aria-hidden />
                     Revert to this
-                  </button>
+                  </Button>
                 </div>
                 {revision.note ? <p className="pricing-revision-note">{revision.note}</p> : null}
                 <ul className="pricing-lines">

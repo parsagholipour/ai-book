@@ -1,6 +1,7 @@
 import { Loader2, Save, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { apiGet, apiPatch } from "../../api.js";
+import { Button } from "../shared/Button.js";
 import { readError } from "../shared/formatters.js";
 
 type SafetySettings = {
@@ -106,10 +107,17 @@ export function SafetySettingsScreen() {
                 onChange={(event) => setNote(event.target.value)}
               />
             </label>
-            <button className="primary-button" type="button" disabled={!changed || busy} onClick={() => void save()}>
-              {busy ? <Loader2 className="spin" size={16} aria-hidden /> : <Save size={16} aria-hidden />}
+            <Button
+              variant="primary"
+              fullWidth
+              disabled={!changed || busy}
+              loading={busy}
+              loadingLabel="Saving setting…"
+              startIcon={<Save />}
+              onClick={() => void save()}
+            >
               Save setting
-            </button>
+            </Button>
           </section>
         </div>
       )}

@@ -1,5 +1,6 @@
-import { BookOpen, Download, Images, Loader2, MessageSquareText, RefreshCcw } from "lucide-react";
+import { BookOpen, Download, Images, MessageSquareText, RefreshCcw } from "lucide-react";
 import { apiUrl, type Project, type ProjectDetails } from "../../api.js";
+import { Button, ButtonLink } from "../shared/Button.js";
 
 export function PreviewsSection(props: {
   selectedProject: Project;
@@ -34,14 +35,16 @@ export function PreviewsSection(props: {
           <div className="section-title">
             <Images size={18} />
             <h3>Cover</h3>
-            <button
-              className="icon-text-button"
+            <Button
+              size="sm"
               onClick={props.onRegenerateCover}
               disabled={props.coverBusy || !props.selectedId || !props.selectedDetails?.currentPlan}
+              loading={props.coverBusy}
+              loadingLabel="Regenerating…"
+              startIcon={<RefreshCcw />}
             >
-              {props.coverBusy ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
               Regenerate
-            </button>
+            </Button>
           </div>
           {coverImage ? (
             <figure className="cover-preview">
@@ -88,20 +91,29 @@ export function PreviewsSection(props: {
         <div className="section-title">
           <BookOpen size={18} />
           <h3>{props.selectedPdfAvailable ? "PDF Preview" : "Markdown Preview"}</h3>
-          <a className="icon-text-button" href={apiUrl(`/api/projects/${props.selectedProject.id}/export/readme`)}>
-            <Download size={16} />
+          <ButtonLink
+            href={apiUrl(`/api/projects/${props.selectedProject.id}/export/readme`)}
+            size="sm"
+            startIcon={<Download />}
+          >
             Markdown
-          </a>
+          </ButtonLink>
           {props.selectedProject.status === "COMPLETE" || props.selectedPdfAvailable ? (
             <>
-              <a className="icon-text-button" href={apiUrl(`/api/projects/${props.selectedProject.id}/export/pdf`)}>
-                <Download size={16} />
+              <ButtonLink
+                href={apiUrl(`/api/projects/${props.selectedProject.id}/export/pdf`)}
+                size="sm"
+                startIcon={<Download />}
+              >
                 PDF
-              </a>
-              <a className="icon-text-button" href={apiUrl(`/api/projects/${props.selectedProject.id}/export/epub`)}>
-                <Download size={16} />
+              </ButtonLink>
+              <ButtonLink
+                href={apiUrl(`/api/projects/${props.selectedProject.id}/export/epub`)}
+                size="sm"
+                startIcon={<Download />}
+              >
                 EPUB
-              </a>
+              </ButtonLink>
             </>
           ) : null}
         </div>

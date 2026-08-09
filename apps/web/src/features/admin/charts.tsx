@@ -1,4 +1,5 @@
 import { useId, useMemo, useRef, useState } from "react";
+import { Button } from "../shared/Button.js";
 import { count, shortDate, usdShort } from "./format.js";
 import type { NamedTotal } from "./types.js";
 
@@ -390,9 +391,9 @@ function ChartFrame(props: {
       <div className="section-title">
         <h3>{props.title}</h3>
         {props.onToggleTable ? (
-          <button className="icon-text-button chart-table-toggle" type="button" onClick={props.onToggleTable}>
+          <Button className="chart-table-toggle" size="sm" onClick={props.onToggleTable}>
             {props.showTable ? "Chart" : "Table"}
-          </button>
+          </Button>
         ) : null}
       </div>
       {props.subtitle ? <p className="muted chart-subtitle">{props.subtitle}</p> : null}

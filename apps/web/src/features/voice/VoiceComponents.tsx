@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   FileAudio,
-  Loader2,
   MessageSquareText,
   Mic,
   MicOff,
@@ -25,6 +24,7 @@ import {
   type ProjectStatus
 } from "../../api.js";
 import { voiceCharacterActionKey } from "../projects/actionKeys.js";
+import { Button, IconButton } from "../shared/Button.js";
 import { formatDuration, formatRelativeTime, initialsForName, labelCase, readError } from "../shared/formatters.js";
 import {
   VOICE_AGE_BAND_OPTIONS,
@@ -168,19 +168,21 @@ export function VoiceCharactersPanel(props: {
                   <strong>Group voice</strong>
                   <small>{selectedRoomCharacters.length}/4 selected</small>
                 </div>
-                <button
-                  className="icon-text-button accent"
-                  type="button"
+                <Button
+                  variant="accent"
+                  size="sm"
                   disabled={!canStartRoom}
                   onClick={() => props.onStartRoom(selectedRoomCharacters)}
+                  startIcon={<Users />}
                 >
-                  <Users size={16} />
                   Start room
-                </button>
-                <button
-                  className="icon-text-button"
-                  type="button"
+                </Button>
+                <Button
+                  size="sm"
                   disabled={!canMakeConversation}
+                  loading={creatingConversation}
+                  loadingLabel="Creating conversation…"
+                  startIcon={<Sparkles />}
                   onClick={() => {
                     setConversationError(null);
                     setConversationContinuationTarget(null);
@@ -188,9 +190,8 @@ export function VoiceCharactersPanel(props: {
                   }}
                   title={geminiConfigured ? "Generate a saved scripted voice conversation" : "Gemini is not configured"}
                 >
-                  {creatingConversation ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
                   Make conversation
-                </button>
+                </Button>
               </div>
               <div className="voice-room-picks">
                 {readyCharacters.map((character) => {
@@ -317,22 +318,42 @@ function VoiceCharacterCard(props: {
       {character.error ? <small className="voice-character-error">{character.error}</small> : null}
       <div className="voice-character-actions">
         {needsBuild || building ? (
-          <button className="icon-text-button accent" onClick={() => props.onApprove(character)} disabled={buildBusy}>
-            {buildBusy ? <Loader2 className="spin" size={16} /> : <MessageSquareText size={16} />}
+          <Button
+            variant="accent"
+            size="sm"
+            onClick={() => props.onApprove(character)}
+            disabled={buildBusy}
+            loading={buildBusy}
+            loadingLabel={building ? "Building chat" : "Starting build…"}
+            startIcon={<MessageSquareText />}
+          >
             {building ? "Building chat" : character.status === "FAILED" ? "Retry chat build" : "Build chat"}
-          </button>
+          </Button>
         ) : null}
         {needsBuild ? (
-          <button className="icon-text-button danger" onClick={() => props.onReject(character)} disabled={rejecting || building}>
-            {rejecting ? <Loader2 className="spin" size={16} /> : <XCircle size={16} />}
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => props.onReject(character)}
+            disabled={rejecting || building}
+            loading={rejecting}
+            loadingLabel="Rejecting…"
+            startIcon={<XCircle />}
+          >
             Reject
-          </button>
+          </Button>
         ) : null}
         {ready ? (
-          <button className="primary-button compact" onClick={() => props.onCall(character)} disabled={props.active || props.callDisabled}>
-            <Phone size={16} />
+          <Button
+            variant="primary"
+            size="sm"
+            compact
+            onClick={() => props.onCall(character)}
+            disabled={props.active || props.callDisabled}
+            startIcon={<Phone />}
+          >
             {props.active ? "In chat" : props.inRoom ? "In room" : "Voice chat"}
-          </button>
+          </Button>
         ) : null}
       </div>
       <VoiceProfileControls
@@ -390,13 +411,20 @@ function VoiceConversationDialog(props: {
         </label>
         {props.error ? <small className="voice-character-error">{props.error}</small> : null}
         <div className="voice-conversation-dialog-actions">
-          <button className="icon-text-button" type="button" disabled={props.busy} onClick={props.onCancel}>
+          <Button size="sm" disabled={props.busy} onClick={props.onCancel}>
             Cancel
-          </button>
-          <button className="icon-text-button accent" type="submit" disabled={!props.canSubmit || props.busy}>
-            {props.busy ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />}
+          </Button>
+          <Button
+            variant="accent"
+            size="sm"
+            type="submit"
+            disabled={!props.canSubmit || props.busy}
+            loading={props.busy}
+            loadingLabel="Generating…"
+            startIcon={<Sparkles />}
+          >
             Generate & play
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -444,15 +472,14 @@ function VoiceConversationList(props: {
               ))}
             </div>
           </details>
-          <button
-            className="icon-text-button"
-            type="button"
+          <Button
+            size="sm"
             disabled={props.continuationDisabled}
             onClick={() => props.onContinue(conversation)}
+            startIcon={<Sparkles />}
           >
-            <Sparkles size={16} />
             Continue
-          </button>
+          </Button>
         </article>
       ))}
     </div>
@@ -589,13 +616,17 @@ export function VoiceCallBar(props: {
         </div>
       </div>
       <div className="voice-call-actions">
-        <button className="icon-button" type="button" onClick={props.onToggleMute} disabled={!props.call.client}>
-          {props.call.muted ? <MicOff size={16} /> : <Mic size={16} />}
-        </button>
-        <button className="icon-text-button danger" type="button" onClick={props.onEnd}>
-          <PhoneOff size={16} />
+        <IconButton
+          label={props.call.muted ? "Unmute microphone" : "Mute microphone"}
+          size="sm"
+          onClick={props.onToggleMute}
+          disabled={!props.call.client}
+        >
+          {props.call.muted ? <MicOff /> : <Mic />}
+        </IconButton>
+        <Button variant="danger" size="sm" onClick={props.onEnd} startIcon={<PhoneOff />}>
           End
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -630,13 +661,17 @@ export function VoiceRoomBar(props: {
         </div>
       </div>
       <div className="voice-call-actions">
-        <button className="icon-button" type="button" onClick={props.onToggleMute} disabled={!props.room.client}>
-          {props.room.muted ? <MicOff size={16} /> : <Mic size={16} />}
-        </button>
-        <button className="icon-text-button danger" type="button" onClick={props.onEnd}>
-          <PhoneOff size={16} />
+        <IconButton
+          label={props.room.muted ? "Unmute microphone" : "Mute microphone"}
+          size="sm"
+          onClick={props.onToggleMute}
+          disabled={!props.room.client}
+        >
+          {props.room.muted ? <MicOff /> : <Mic />}
+        </IconButton>
+        <Button variant="danger" size="sm" onClick={props.onEnd} startIcon={<PhoneOff />}>
           End
-        </button>
+        </Button>
       </div>
     </section>
   );

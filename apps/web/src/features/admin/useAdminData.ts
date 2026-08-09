@@ -82,11 +82,11 @@ export function useAdminProjectDetail(projectId: string | null) {
 
 export function useModerationReports() {
   const resource = useResource<{ reports: ModerationReport[] }>("/api/admin/moderation/reports");
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState<{ id: string; status: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function review(id: string, status: string, reviewNotes: string) {
-    setSaving(id);
+    setSaving({ id, status });
     try {
       await apiPatch(`/api/admin/moderation/reports/${encodeURIComponent(id)}`, {
         status: status.toLowerCase(),
