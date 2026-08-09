@@ -22,7 +22,12 @@ vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../runtime/dispatch.js", () => ({ parallelPageWaveSize: () => 1 }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {}, embedding: {} }) }));
-vi.mock("../generation/semanticMemory.js", () => ({ storeEmbedding: mocks.storeEmbedding }));
+vi.mock("../generation/semanticMemory.js", () => ({
+  storeEmbedding: mocks.storeEmbedding,
+  // Mirrors the real predicate so fixtures choose their mode explicitly.
+  strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
+    strategy?.executionMode === "sequential-pages"
+}));
 vi.mock("../generation/researchLinks.js", () => ({ researchCitationsForExport: async () => [] }));
 vi.mock("./characters.js", () => ({ maybeEnqueueCharacterCandidatePreparation: vi.fn() }));
 vi.mock("../generation/bookHelpers.js", () => ({
@@ -88,7 +93,9 @@ const finalQa = (repairPageIndexes: number[]): FinalBookQa =>
   ({ approved: repairPageIndexes.length === 0, issues: [], repairPageIndexes }) as unknown as FinalBookQa;
 
 describe("repairPagesFromFinalQa", () => {
-  const strategy = { reviewPageDraft: vi.fn(), revisePageDraft: vi.fn() };
+  // Sequential-pages so the repaired-page embedding write is exercised; other
+  // modes skip it because nothing ever reads their embeddings.
+  const strategy = { executionMode: "sequential-pages", reviewPageDraft: vi.fn(), revisePageDraft: vi.fn() };
 
   const baseOptions = (overrides: Record<string, unknown> = {}) =>
     ({

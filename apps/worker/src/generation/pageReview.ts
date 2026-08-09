@@ -4,7 +4,7 @@ import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { uniqueStrings } from "../runtime/serialization.js";
 import { loadContinuityNotes } from "./generationContext.js";
-import { storeEmbedding, updateEntityStateFromPage } from "./semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
 import {
   MAX_PAGE_QA_CANDIDATES,
   MAX_PAGE_QA_REWRITE_ATTEMPTS,
@@ -288,10 +288,16 @@ export async function reviewAndSaveGeneratedPage(options: {
         tags: ["page", String(options.draft.index), options.strategy.id]
       }))
     });
-    await updateEntityStateFromPage(options.projectId, options.draft.index, draft.continuityNotes);
   }
 
-  await storeEmbedding(options.projectId, `page:${options.draft.index}`, page.id, draft.summary, options.providers.embedding);
+  // Embeddings and entity state are only read by sequential-pages jobs; the
+  // direct modes writing them paid one embedding per page for nothing.
+  if (strategyUsesSemanticMemory(options.strategy)) {
+    if (draft.continuityNotes.length > 0) {
+      await updateEntityStateFromPage(options.projectId, options.draft.index, draft.continuityNotes);
+    }
+    await storeEmbedding(options.projectId, `page:${options.draft.index}`, page.id, draft.summary, options.providers.embedding);
+  }
 
   if (options.illustrate !== false && draft.imagePrompt && options.strategy.shouldIllustratePage(options.input, options.plan, options.draft.index)) {
     await enqueueWorkerJob({

@@ -21,7 +21,11 @@ vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnque
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn() }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ embedding: {} }) }));
-vi.mock("../generation/semanticMemory.js", () => ({ storeEmbedding: mocks.storeEmbedding }));
+vi.mock("../generation/semanticMemory.js", () => ({
+  storeEmbedding: mocks.storeEmbedding,
+  // The fixture strategy is not sequential-pages, so edits skip the embedding.
+  strategyUsesSemanticMemory: () => false
+}));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({}) }));
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: async () => ({ id: "project-1", currentPlanId: "plan-1" }),

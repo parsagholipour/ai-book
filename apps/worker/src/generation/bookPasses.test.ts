@@ -65,7 +65,11 @@ vi.mock("./generationContext.js", async () => {
 vi.mock("./pageReview.js", () => ({ reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage }));
 vi.mock("./semanticMemory.js", () => ({
   storeEmbedding: mocks.storeEmbedding,
-  updateEntityStateFromPage: mocks.updateEntityStateFromPage
+  updateEntityStateFromPage: mocks.updateEntityStateFromPage,
+  // Mirrors the real predicate: the direct passes are never sequential-pages,
+  // so their books skip semantic-memory writes nothing would ever read.
+  strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
+    strategy?.executionMode === "sequential-pages"
 }));
 
 import {
@@ -391,7 +395,9 @@ describe("generateBookWholePass", () => {
     await generateBookWholePass(baseOptions(strategy));
 
     expect(txPageCreate).toHaveBeenCalledTimes(2);
-    expect(mocks.storeEmbedding).toHaveBeenCalledTimes(2);
+    // The whole-book pass never runs page jobs, so its embeddings were pure
+    // write-only cost; the pass now skips them.
+    expect(mocks.storeEmbedding).not.toHaveBeenCalled();
     // Only page 1 carries an image prompt, so only it gets an image job.
     const imageJobs = mocks.enqueueWorkerJob.mock.calls
       .map((call) => call[0] as { type: string; payload: Record<string, unknown> })

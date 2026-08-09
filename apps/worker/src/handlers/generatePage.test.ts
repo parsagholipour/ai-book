@@ -28,6 +28,7 @@ vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {}, embedding: {} }) }));
 vi.mock("../generation/semanticMemory.js", () => ({
   RECENT_PAGE_WINDOW: 6,
+  embedSemanticQuery: async () => undefined,
   loadEntityStateLines: async () => [],
   retrieveSemanticPageMemory: async () => [],
   storeEmbedding: mocks.storeEmbedding,

@@ -18,7 +18,7 @@ import { range } from "../runtime/serialization.js";
 import { chapterSetupsForPlan, reviewWholeBookDraftPages } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { reviewAndSaveGeneratedPage } from "./pageReview.js";
-import { storeEmbedding, updateEntityStateFromPage } from "./semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
 import {
   type BookGenerationStrategy,
   type BookPlan,
@@ -634,11 +634,15 @@ export async function generateBookWholePass(options: {
     return pages;
   });
 
-  for (const page of savedPages) {
-    await storeEmbedding(options.projectId, `page:${page.index}`, page.id, page.summary, options.providers.embedding);
-  }
-  for (const reviewedPage of reviewedPages) {
-    await updateEntityStateFromPage(options.projectId, reviewedPage.draft.index, reviewedPage.draft.continuityNotes);
+  // Semantic memory is only ever read by sequential-pages jobs; the direct
+  // passes writing it paid one embedding per page for rows nothing queries.
+  if (strategyUsesSemanticMemory(options.strategy)) {
+    for (const page of savedPages) {
+      await storeEmbedding(options.projectId, `page:${page.index}`, page.id, page.summary, options.providers.embedding);
+    }
+    for (const reviewedPage of reviewedPages) {
+      await updateEntityStateFromPage(options.projectId, reviewedPage.draft.index, reviewedPage.draft.continuityNotes);
+    }
   }
 
   await advanceJobStep(options.generationJobId, "enqueue", 88, "Queueing images and export");

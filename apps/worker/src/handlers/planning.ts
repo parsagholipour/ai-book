@@ -5,7 +5,7 @@ import {
   planMediaSettingsSnapshot,
   strategyForInput
 } from "../generation/bookHelpers.js";
-import { embedResearchSourcesForProject } from "../generation/semanticMemory.js";
+import { embedResearchSourcesForProject, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { planRevisionConsistencyWarning } from "../generation/planRevisionSafety.js";
 import {
   inputForPlanVersion,
@@ -116,14 +116,18 @@ export async function planBook(job: Job): Promise<JobCompletion> {
   // Best-effort: the plan is already committed, and a failure past this point
   // marks the project FAILED in a state `canRecoverGenerationJob` refuses to
   // resume — the plan is newer than the job. Missing embeddings only degrade
-  // semantic recall, and page generation re-embeds as it goes.
-  try {
-    await embedResearchSourcesForProject(projectId, providers.embedding);
-  } catch (error) {
-    if (isStopRequestedError(error)) {
-      throw error;
+  // semantic recall, and page generation re-embeds as it goes. Only the
+  // sequential-pages strategy ever queries these embeddings, so other modes
+  // skip the calls entirely.
+  if (strategyUsesSemanticMemory(strategy)) {
+    try {
+      await embedResearchSourcesForProject(projectId, providers.embedding);
+    } catch (error) {
+      if (isStopRequestedError(error)) {
+        throw error;
+      }
+      console.warn(`Research embedding failed after plan save for project ${projectId}`, error);
     }
-    console.warn(`Research embedding failed after plan save for project ${projectId}`, error);
   }
   return {
     afterJobCompleted: async () => {

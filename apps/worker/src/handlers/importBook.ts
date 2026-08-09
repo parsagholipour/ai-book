@@ -1,5 +1,5 @@
-import { getProjectOrThrow, nextPlanVersion, planInputSnapshot } from "../generation/bookHelpers.js";
-import { storeEmbedding } from "../generation/semanticMemory.js";
+import { getProjectOrThrow, nextPlanVersion, planInputSnapshot, strategyForInput } from "../generation/bookHelpers.js";
+import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { importChapterRows, importStats, mediaSettingsWithImportStyle, normalizeImportedLanguage } from "./importBookSupport.js";
 import { inputFromProject } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -139,8 +139,12 @@ export async function importBook(job: Job) {
       select: { id: true, index: true, summary: true },
       orderBy: { index: "asc" }
     });
-    for (const page of savedPages) {
-      await storeEmbedding(projectId, `page:${page.index}`, page.id, page.summary, providers.embedding);
+    // Only sequential-pages jobs query page embeddings; imported books whose
+    // size routes elsewhere skip one embedding call per imported page.
+    if (strategyUsesSemanticMemory(strategyForInput(input))) {
+      for (const page of savedPages) {
+        await storeEmbedding(projectId, `page:${page.index}`, page.id, page.summary, providers.embedding);
+      }
     }
 
     await prisma.project.update({ where: { id: projectId }, data: { status: "COMPLETE" } });

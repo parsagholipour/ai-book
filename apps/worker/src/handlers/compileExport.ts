@@ -11,7 +11,7 @@ import {
 } from "../generation/bookHelpers.js";
 import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
 import { researchCitationsForExport } from "../generation/researchLinks.js";
-import { storeEmbedding } from "../generation/semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -569,7 +569,9 @@ export async function repairPagesFromFinalQa(options: {
       });
     }
 
-    await storeEmbedding(options.projectId, `page:${page.index}`, page.id, draft.summary, options.providers.embedding);
+    if (strategyUsesSemanticMemory(options.strategy)) {
+      await storeEmbedding(options.projectId, `page:${page.index}`, page.id, draft.summary, options.providers.embedding);
+    }
     pages = pages.map((candidate) => (candidate.index === page.index ? updatedPage : candidate));
   }
 

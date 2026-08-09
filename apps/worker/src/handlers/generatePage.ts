@@ -3,6 +3,7 @@ import { loadResearchNotesForGeneration } from "../generation/generationContext.
 import { pageRevisionMessage, runPageQualityLoop } from "../generation/pageReview.js";
 import {
   RECENT_PAGE_WINDOW,
+  embedSemanticQuery,
   loadEntityStateLines,
   retrieveSemanticPageMemory,
   storeEmbedding,
@@ -62,9 +63,13 @@ export async function generatePage(job: Job) {
   ]
     .filter(Boolean)
     .join("\n");
+  // Embedded once: the research retrieval and the page-memory retrieval share
+  // this vector instead of paying two embedding calls for the same string.
+  const semanticQueryVector = await embedSemanticQuery(providers.embedding, semanticQueryText, projectId);
   const researchNotes = await loadResearchNotesForGeneration(projectId, strategy, chapterPlan, {
     embedding: providers.embedding,
-    queryText: semanticQueryText
+    queryText: semanticQueryText,
+    ...(semanticQueryVector ? { vector: semanticQueryVector } : {})
   });
   const semanticMemory =
     page.index > RECENT_PAGE_WINDOW + 1
@@ -72,7 +77,8 @@ export async function generatePage(job: Job) {
           projectId,
           queryText: semanticQueryText,
           embedding: providers.embedding,
-          excludePageIndexes: orderedPreviousPages.map((previousPage) => previousPage.index)
+          excludePageIndexes: orderedPreviousPages.map((previousPage) => previousPage.index),
+          ...(semanticQueryVector ? { vector: semanticQueryVector } : {})
         })
       : [];
   const entityState = await loadEntityStateLines(projectId, plan);

@@ -19,7 +19,10 @@ vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorker
 vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: mocks.updateJobProgress }));
 vi.mock("./semanticMemory.js", () => ({
   storeEmbedding: mocks.storeEmbedding,
-  updateEntityStateFromPage: mocks.updateEntityStateFromPage
+  updateEntityStateFromPage: mocks.updateEntityStateFromPage,
+  // Mirrors the real predicate so fixtures choose their mode explicitly.
+  strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
+    strategy?.executionMode === "sequential-pages"
 }));
 vi.mock("./generationContext.js", () => ({ loadContinuityNotes: mocks.loadContinuityNotes }));
 vi.mock("./bookHelpers.js", () => ({
@@ -322,6 +325,9 @@ describe("revisePageDraftWithRestart", () => {
 describe("reviewAndSaveGeneratedPage", () => {
   const strategy = {
     id: "test-strategy",
+    // Sequential-pages: the one mode whose jobs read semantic memory, so the
+    // embedding/entity-state assertions below exercise a real write path.
+    executionMode: "sequential-pages",
     reviewPageDraft: vi.fn(),
     revisePageDraft: vi.fn(),
     repairPageBrief: vi.fn(),

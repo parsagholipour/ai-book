@@ -1,5 +1,5 @@
 import { getProjectOrThrow, invalidateProjectExports, strategyForInput } from "../generation/bookHelpers.js";
-import { storeEmbedding } from "../generation/semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -187,7 +187,9 @@ export async function applyBookEdit(job: Job) {
         }))
       });
     }
-    await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
+    if (strategyUsesSemanticMemory(strategy)) {
+      await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
+    }
     updatedPageIndexes.push(page.index);
   }
 

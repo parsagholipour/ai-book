@@ -17,6 +17,42 @@ export const SEMANTIC_MEMORY_MIN_SIMILARITY = 0.25;
 export const RECENT_PAGE_WINDOW = 18;
 
 /**
+ * Only the sequential-pages strategy ever *reads* this memory — page jobs are
+ * the one consumer of `retrieveSemanticPageMemory`, `loadEntityStateLines`,
+ * and the semantic research branch. Every other mode (which covers every book
+ * inside the mobile page ceiling) used to pay an embedding call per page plus
+ * per-entity writes for rows nothing would ever query. Writers gate on this.
+ */
+export function strategyUsesSemanticMemory(strategy: { executionMode: string }): boolean {
+  return strategy.executionMode === "sequential-pages";
+}
+
+/**
+ * Best-effort embed of a page's semantic query so one vector can serve both
+ * the research and the page-memory retrieval. Failures degrade to undefined —
+ * the retrievals then fall back to embedding (or failing) on their own.
+ */
+export async function embedSemanticQuery(
+  embedding: EmbeddingAdapter,
+  queryText: string,
+  projectId: string
+): Promise<number[] | undefined> {
+  const query = queryText.trim();
+  if (!query) {
+    return undefined;
+  }
+  try {
+    return await embedding.embed(query);
+  } catch (error) {
+    if (isStopRequestedError(error)) {
+      throw error;
+    }
+    console.warn(`Semantic query embedding failed for project ${projectId}`, error);
+    return undefined;
+  }
+}
+
+/**
  * Vector search over stored page-summary embeddings for long-range continuity
  * that falls outside the recency window. Best effort: failures degrade to an
  * empty result instead of failing the page job.
@@ -26,13 +62,15 @@ export async function retrieveSemanticPageMemory(options: {
   queryText: string;
   embedding: EmbeddingAdapter;
   excludePageIndexes: number[];
+  /** Precomputed query vector, so one embedding call serves both retrievals. */
+  vector?: number[] | undefined;
 }): Promise<string[]> {
   const query = options.queryText.trim();
   if (!query) {
     return [];
   }
   try {
-    const vector = await options.embedding.embed(query);
+    const vector = options.vector ?? (await options.embedding.embed(query));
     const rows = await retrieveSimilarEmbeddings({
       projectId: options.projectId,
       vector,
@@ -247,13 +285,15 @@ export async function retrieveSemanticResearchNotes(options: {
   queryText: string;
   embedding: EmbeddingAdapter;
   topK: number;
+  /** Precomputed query vector, so one embedding call serves both retrievals. */
+  vector?: number[] | undefined;
 }): Promise<string[]> {
   const query = options.queryText.trim();
   if (!query) {
     return [];
   }
   try {
-    const vector = await options.embedding.embed(query);
+    const vector = options.vector ?? (await options.embedding.embed(query));
     const rows = await retrieveSimilarEmbeddings({
       projectId: options.projectId,
       vector,

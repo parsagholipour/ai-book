@@ -20,7 +20,7 @@ export async function loadResearchNotesForGeneration(
   projectId: string,
   strategy: BookGenerationStrategy,
   chapter?: ChapterPlan | undefined,
-  semantic?: { embedding: EmbeddingAdapter; queryText: string } | undefined
+  semantic?: { embedding: EmbeddingAdapter; queryText: string; vector?: number[] | undefined } | undefined
 ): Promise<string[]> {
   const take = strategy.researchDepth ? strategy.researchDepth + 12 : 12;
 
@@ -29,7 +29,8 @@ export async function loadResearchNotesForGeneration(
       projectId,
       queryText: semantic.queryText,
       embedding: semantic.embedding,
-      topK: take
+      topK: take,
+      ...(semantic.vector ? { vector: semantic.vector } : {})
     });
     if (retrieved.length > 0) {
       return retrieved;

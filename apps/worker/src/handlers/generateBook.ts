@@ -7,7 +7,7 @@ import {
 } from "../generation/bookPasses.js";
 import { prepareChapterSetups } from "../generation/bookState.js";
 import { ensureCharacterReferenceAssets } from "../generation/characterReferences.js";
-import { embedResearchSourcesForProject } from "../generation/semanticMemory.js";
+import { embedResearchSourcesForProject, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -279,5 +279,9 @@ export async function maybeExpandStrategyResearch(options: {
       publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
     }))
   });
-  await embedResearchSourcesForProject(options.projectId, options.providers.embedding);
+  // Research embeddings feed the semantic branch of page-context loading,
+  // which only sequential-pages jobs use.
+  if (strategyUsesSemanticMemory(options.strategy)) {
+    await embedResearchSourcesForProject(options.projectId, options.providers.embedding);
+  }
 }
