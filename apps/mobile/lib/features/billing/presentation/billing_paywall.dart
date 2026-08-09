@@ -166,6 +166,42 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
     unawaited(controller.buy(product));
   }
 
+  /// Opens the amount picker, then leaves this sheet if the purchase closed the
+  /// shortfall that brought the reader here. A purchase that still leaves them
+  /// short keeps the arithmetic on screen so they can buy again or upgrade.
+  Future<void> _openBuyCredits(
+    BuildContext context, {
+    int? shortfall,
+    VoidCallback? onSeePlans,
+  }) async {
+    final success = await showBuyCreditsSheet(
+      context,
+      projectId: widget.projectId,
+      shortfall: shortfall,
+      onSeePlans: onSeePlans,
+    );
+    if (!mounted || success == null) {
+      return;
+    }
+    final creditsNeeded = widget.creditsNeeded;
+    if (creditsNeeded == null) {
+      return;
+    }
+    final available = ref
+        .read(billingControllerProvider(widget.projectId))
+        .state
+        .billing
+        ?.credits
+        .available;
+    if (creditsNeeded.shortfallFrom(available) != 0) {
+      return;
+    }
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    }
+  }
+
   GlobalKey _planAnchor(String sku) =>
       _planAnchors.putIfAbsent(sku, GlobalKey.new);
 
@@ -256,12 +292,15 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                       onClose: () => Navigator.of(context).pop(),
                       onBuyCredits: controller.topUps.isEmpty
                           ? null
-                          : () => showBuyCreditsSheet(
-                              context,
-                              projectId: widget.projectId,
-                              shortfall: creditsNeeded.shortfallFrom(available),
-                              onSeePlans: () =>
-                                  _revealSection(context, _plansAnchor),
+                          : () => unawaited(
+                              _openBuyCredits(
+                                context,
+                                shortfall: creditsNeeded.shortfallFrom(
+                                  available,
+                                ),
+                                onSeePlans: () =>
+                                    _revealSection(context, _plansAnchor),
+                              ),
                             ),
                       onUpgradePlan: plans.isEmpty
                           ? null
@@ -365,11 +404,12 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
                       key: const ValueKey('paywall-choose-amount'),
-                      onPressed: () => showBuyCreditsSheet(
-                        context,
-                        projectId: widget.projectId,
-                        shortfall: creditsNeeded?.shortfallFrom(
-                          state.billing?.credits.available,
+                      onPressed: () => unawaited(
+                        _openBuyCredits(
+                          context,
+                          shortfall: creditsNeeded?.shortfallFrom(
+                            state.billing?.credits.available,
+                          ),
                         ),
                       ),
                       icon: const Icon(Icons.calculate_outlined, size: 18),

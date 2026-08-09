@@ -21,7 +21,9 @@ import 'billing_purchase_success_dialog.dart';
 /// 900, and a store can only sell whole packs — so the number is theirs to type
 /// and the arithmetic is ours: what it would cost at the best rate on offer,
 /// which pack actually covers it, and what is left over afterwards.
-Future<void> showBuyCreditsSheet(
+/// Returns the verified purchase when one completed, so a paywall that opened
+/// this for a shortfall can dismiss itself once the balance covers it.
+Future<BillingPurchaseSuccess?> showBuyCreditsSheet(
   BuildContext context, {
   String? projectId,
   int? shortfall,
@@ -46,6 +48,7 @@ Future<void> showBuyCreditsSheet(
   if (success != null && context.mounted) {
     await showBillingPurchaseSuccessDialog(context, success);
   }
+  return success;
 }
 
 class BuyCreditsSheet extends ConsumerStatefulWidget {

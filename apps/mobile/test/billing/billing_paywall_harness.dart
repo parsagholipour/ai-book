@@ -42,6 +42,7 @@ Widget testPaywall({
 Widget testPaywallLauncher({
   required FakeStoreBillingClient store,
   required FakeBillingRepository repository,
+  PaywallCreditsNeeded? creditsNeeded,
 }) {
   return ProviderScope(
     overrides: [
@@ -58,7 +59,8 @@ Widget testPaywallLauncher({
               onPressed: () => showBillingPaywall(
                 context,
                 projectId: 'project-1',
-                title: null,
+                title: creditsNeeded == null ? null : 'Credits needed',
+                creditsNeeded: creditsNeeded,
               ),
               child: const Text('Open billing'),
             ),

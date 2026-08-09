@@ -70,12 +70,14 @@ void main() {
     final store = FakeStoreBillingClient();
     final repository = FakeBillingRepository();
     await tester.pumpWidget(
-      testPaywall(
+      testPaywallLauncher(
         store: store,
         repository: repository,
         creditsNeeded: const PaywallCreditsNeeded(credits: 500),
       ),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('paywall-buy-credits')));
     await tester.pumpAndSettle();
@@ -159,7 +161,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('You have enough credits'), findsOneWidget);
+    // Enough credits now — the shortfall sheet has nothing left to ask for.
+    expect(find.byType(BillingPaywall), findsNothing);
+    expect(find.text('You have enough credits'), findsNothing);
     expect(find.text('1000 credits added.'), findsNothing);
   });
 
