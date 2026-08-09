@@ -171,6 +171,25 @@ export async function generatePage(job: Job) {
   }
 
   await advanceJobStep(generationJobId, "save", 88, `Saving page ${page.index}`);
+  // Enqueued before the page is marked COMPLETED, not after: a sibling page's
+  // own maybeEnqueueCompile call reads "is this page terminal, are there open
+  // image jobs" as two separate queries with nothing serializing them against
+  // this function's writes. Saving the page as COMPLETED first opened a window
+  // where a concurrent reader could see this page as done with zero open image
+  // jobs for it — because the job to make its illustration didn't exist yet —
+  // and fire the compile before this page's picture was even queued. Creating
+  // that job first closes the window: by the time this page is observably
+  // terminal to anyone else, its image job is already there to be counted.
+  const willIllustrate = Boolean(draft.imagePrompt) && strategy.shouldIllustratePage(input, plan, page.index);
+  if (willIllustrate) {
+    await enqueueWorkerJob({
+      projectId,
+      type: "GENERATE_IMAGE",
+      name: "generate-image",
+      payload: { pageId, planId, prompt: draft.imagePrompt },
+      dedupeKey: `generate-image:${pageId}:${planId}:${revision}`
+    });
+  }
   await prisma.page.update({
     where: { id: pageId },
     data: {
@@ -197,16 +216,6 @@ export async function generatePage(job: Job) {
   }
 
   await storeEmbedding(projectId, `page:${page.index}`, pageId, draft.summary, providers.embedding);
-
-  if (draft.imagePrompt && strategy.shouldIllustratePage(input, plan, page.index)) {
-    await enqueueWorkerJob({
-      projectId,
-      type: "GENERATE_IMAGE",
-      name: "generate-image",
-      payload: { pageId, planId, prompt: draft.imagePrompt },
-      dedupeKey: `generate-image:${pageId}:${planId}:${revision}`
-    });
-  }
 
   await enqueueNextPageIfReady(projectId, planId);
   await maybeEnqueueCompile(projectId, planId);

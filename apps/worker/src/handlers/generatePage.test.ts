@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   enqueueNextPageIfReady: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
   enqueueWorkerJob: vi.fn(),
-  storeEmbedding: vi.fn()
+  storeEmbedding: vi.fn(),
+  strategyOverrides: { shouldIllustratePage: (): boolean => false }
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -45,7 +46,8 @@ vi.mock("../generation/bookHelpers.js", () => ({
     generatePageDraft: mocks.generatePageDraft,
     reviewPageDraft: mocks.reviewPageDraft,
     revisePageDraft: mocks.revisePageDraft,
-    shouldIllustratePage: () => false
+    shouldIllustratePage: (...args: unknown[]) =>
+      (mocks.strategyOverrides.shouldIllustratePage as (...args: unknown[]) => boolean)(...args)
   }),
   toPriorPageContext: (page: unknown) => page
 }));
@@ -95,6 +97,7 @@ describe("generatePage quality loop", () => {
     mocks.prisma.page.findMany.mockResolvedValue([]);
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.prisma.page.update.mockResolvedValue({});
+    mocks.strategyOverrides.shouldIllustratePage = () => false;
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -135,5 +138,42 @@ describe("generatePage quality loop", () => {
       .find((data) => data.status === "COMPLETED");
     expect(completedSave).toMatchObject({ title: "First", revision: 1 });
     expect(mocks.revisePageDraft).not.toHaveBeenCalled();
+  });
+
+  it("queues the illustration before saving the page as COMPLETED", async () => {
+    // A sibling page's maybeEnqueueCompile call must never observe this page
+    // as terminal with no open image job behind it — the image job has to
+    // exist strictly before the COMPLETED write lands.
+    mocks.strategyOverrides.shouldIllustratePage = () => true;
+    mocks.generatePageDraft.mockResolvedValue({ ...draftNamed("First"), imagePrompt: "A robin on a branch" });
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+    const callOrder: string[] = [];
+    mocks.enqueueWorkerJob.mockImplementation(async () => callOrder.push("enqueue-image"));
+    mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+      if (data.status === "COMPLETED") {
+        callOrder.push("save-completed");
+      }
+      return {};
+    });
+
+    await generatePage(job);
+
+    expect(callOrder).toEqual(["enqueue-image", "save-completed"]);
+    expect(mocks.enqueueWorkerJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "GENERATE_IMAGE",
+        payload: { pageId: "page-1", planId: "plan-1", prompt: "A robin on a branch" }
+      })
+    );
+  });
+
+  it("does not enqueue an illustration for a page the strategy won't illustrate", async () => {
+    mocks.strategyOverrides.shouldIllustratePage = () => false;
+    mocks.generatePageDraft.mockResolvedValue({ ...draftNamed("First"), imagePrompt: "A robin on a branch" });
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
   });
 });
