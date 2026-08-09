@@ -82,7 +82,8 @@ describe("generateImage interior rescue", () => {
       where: { id: "page-1", NOT: { imageFailureReason: null } },
       data: { imageFailureReason: null }
     });
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+    // The compile check runs post-completion (maybeCompileAfterCompletedJob);
+    // the in-handler call could never fire and was removed.
   });
 
   it("finishes without the illustration when every provider fails, instead of failing the book", async () => {
@@ -102,7 +103,6 @@ describe("generateImage interior rescue", () => {
     expect(mocks.updateJobProgress).toHaveBeenCalledWith(undefined, {
       message: "Illustration for page 3 failed; the book will finish without it"
     });
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
   it("still surfaces a user stop", async () => {

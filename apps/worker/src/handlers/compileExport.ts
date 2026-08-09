@@ -98,22 +98,28 @@ export async function compileExport(job: Job) {
       (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1));
   if (runFinalReview) {
     await advanceJobStep(generationJobId, "qa", 25);
-    modelQualityIssues = await runBoundedChapterQualityReview({
-      input,
-      plan,
-      pages,
-      textModel: providers.text,
-      projectId
-    });
-    let finalQa = await strategy.runFinalBookQa({
-      input,
-      plan,
-      pages: pages.map(toFinalQaPage),
-      researchNotes: strategy.researchDepth
-        ? project.research.map((source) => `${source.title}: ${source.summary}`)
-        : undefined,
-      textModel: providers.text
-    });
+    // Independent reads of the same unmodified pages — their results only
+    // meet in the merged issue list below — so they run concurrently instead
+    // of paying two model latencies in series.
+    let finalQa: FinalBookQa;
+    [modelQualityIssues, finalQa] = await Promise.all([
+      runBoundedChapterQualityReview({
+        input,
+        plan,
+        pages,
+        textModel: providers.text,
+        projectId
+      }),
+      strategy.runFinalBookQa({
+        input,
+        plan,
+        pages: pages.map(toFinalQaPage),
+        researchNotes: strategy.researchDepth
+          ? project.research.map((source) => `${source.title}: ${source.summary}`)
+          : undefined,
+        textModel: providers.text
+      })
+    ]);
     if (!finalQa.approved || failedQaPageIndexes.length > 0) {
       const repairedPages = await repairPagesFromFinalQa({
         projectId,

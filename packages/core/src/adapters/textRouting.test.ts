@@ -88,6 +88,7 @@ describe("RoutingTextModelAdapter", () => {
         "../generation/pages.ts",
         "../generation/bestOf.ts",
         "../generation/readerChapters.ts",
+        "../generation/coverDesigns.ts",
         "../ingestion/manuscriptImport.ts"
       ].map((path) =>
         readFile(new URL(path, import.meta.url), "utf8")
@@ -95,7 +96,13 @@ describe("RoutingTextModelAdapter", () => {
     );
     const combined = sources.join("\n");
 
+    // Emitted by apps/worker (compileExport.ts), which this core test cannot
+    // read; the worker's own suites exercise the call that carries it.
+    const usedOutsideCore = new Set(["book.final_qa.chapter_transitions"]);
     for (const purpose of MECHANICAL_TEXT_PURPOSES) {
+      if (usedOutsideCore.has(purpose)) {
+        continue;
+      }
       expect(combined, `purpose "${purpose}" is no longer used by generation code`).toContain(`"${purpose}"`);
     }
   });

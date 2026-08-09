@@ -6,6 +6,7 @@ import { type ChapterSetup } from "../runtime/jobTypes.js";
 import { jsonInputValue, range } from "../runtime/serialization.js";
 import {
   chapterBriefSchema,
+  mapWithConcurrency,
   normalizePlanPageTargets,
   type BookGenerationStrategy,
   type BookPlan,
@@ -50,13 +51,16 @@ export async function prepareChapterSetups(options: {
     }));
   }
 
-  const chapterSetups: ChapterSetup[] = [];
-  for (const [chapterIndex, setup] of chapterRanges.entries()) {
+  // Each chapter's brief depends only on the plan and that chapter, so a
+  // small pool replaces one model latency per chapter in series. Progress
+  // reports the brief being *started*; order can interleave, the results
+  // cannot — mapWithConcurrency preserves positions.
+  const briefs = await mapWithConcurrency(chapterRanges, 3, async (setup, chapterIndex) => {
     await updateJobProgress(options.generationJobId, {
       progress: 15 + Math.round((chapterIndex / Math.max(chapterRanges.length, 1)) * 40),
       message: `Chapter brief ${chapterIndex + 1}/${chapterRanges.length}`
     });
-    const brief = await options.strategy.generateChapterBrief({
+    return options.strategy.generateChapterBrief({
       input: options.input,
       plan: options.plan,
       chapter: setup.chapter,
@@ -64,9 +68,8 @@ export async function prepareChapterSetups(options: {
       chapterPageEnd: setup.endPage,
       textModel: options.providers.text
     });
-    chapterSetups.push({ ...setup, brief });
-  }
-  return chapterSetups;
+  });
+  return chapterRanges.map((setup, index) => ({ ...setup, brief: briefs[index]! }));
 }
 
 export function requireBriefForChapter(briefs: ChapterBrief[], setup: ChapterSetup): ChapterBrief {

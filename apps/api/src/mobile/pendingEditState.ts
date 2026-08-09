@@ -56,9 +56,12 @@ export function settlesPendingEdit(message: { role: string; metadata: unknown })
 
 export async function findPendingProposalById(
   projectId: string,
-  proposalId: string
+  proposalId: string,
+  preloadedMessages?: MobileProjectChatMessageRecord[] | undefined
 ): Promise<PendingEditState | null> {
-  const messages = (await loadActiveProjectChatMessages(projectId)).reverse().slice(0, 40);
+  const messages = [...(preloadedMessages ?? (await loadActiveProjectChatMessages(projectId)))]
+    .reverse()
+    .slice(0, 40);
   let newer: (typeof messages)[number] | null = null;
   for (const message of messages) {
     if (settlesPendingEdit(message)) {
@@ -105,9 +108,13 @@ export async function findPendingProposalById(
 export async function findPendingScopeClarification(
   projectId: string,
   currentMessage: string,
-  currentScope: BookEditScope = bookEditScopeFromMessage(currentMessage)
+  currentScope: BookEditScope = bookEditScopeFromMessage(currentMessage),
+  /** The turn's already-loaded active messages; saves a full transcript re-read. */
+  preloadedMessages?: MobileProjectChatMessageRecord[] | undefined
 ): Promise<PendingEditState | null> {
-  const messages = (await loadActiveProjectChatMessages(projectId)).reverse().slice(0, 24);
+  const messages = [...(preloadedMessages ?? (await loadActiveProjectChatMessages(projectId)))]
+    .reverse()
+    .slice(0, 24);
   // Set once the walk passes an assistant message that is *not* the pending
   // edit's own presentation. Recovery cards and busy replies re-present the
   // pending edit with its full metadata, so they are found and returned before

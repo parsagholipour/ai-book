@@ -70,12 +70,12 @@ export async function applyOrCancelEditProposal(options: {
     if (claimed) return claimed;
   }
 
-  const pending = await findPendingProposalById(projectId, proposalId);
+  // Loaded once for both the proposal lookup and the leaf resolution below.
+  const activeMessages = await loadActiveProjectChatMessages(projectId);
+  const pending = await findPendingProposalById(projectId, proposalId, activeMessages);
   if (!pending?.intent || pending.clarification !== "confirm") {
     return sendMobileError(reply, 404, "PROPOSAL_NOT_FOUND", "That edit proposal is no longer available.");
   }
-
-  const activeMessages = await loadActiveProjectChatMessages(projectId);
   let userMessage: MobileProjectChatMessageRecord;
   try {
     userMessage = await createUserProjectChatMessage({
@@ -207,13 +207,22 @@ export async function handleProjectChatIntent(options: {
    * what an edit costs or which pages it rewrites.
    */
   replyTo?: ChatReplyQuote | undefined;
+  /** The turn's already-loaded active messages; saves the grounded answer a re-read. */
+  activeMessages?: MobileProjectChatMessageRecord[] | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const pendingRequest = options.pendingRequest?.trim() || message;
   if (intent.kind === "answer" || intent.kind === "clarify") {
     const answer =
       intent.kind === "answer"
-        ? await generateGroundedProjectAnswer(project, message, intent.assistantMessage, options.textModel, options.replyTo)
+        ? await generateGroundedProjectAnswer(
+            project,
+            message,
+            intent.assistantMessage,
+            options.textModel,
+            options.replyTo,
+            options.activeMessages
+          )
         : intent.assistantMessage;
     const reply = await createAssistantChatMessage({
       projectId: project.id,

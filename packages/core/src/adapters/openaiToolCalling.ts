@@ -120,6 +120,15 @@ function serializeToolArguments(args: unknown): string {
   }
 }
 
+/**
+ * OpenAI-SDK per-request options carrying the caller's abort signal, so a
+ * user stop can tear down the in-flight HTTP request instead of waiting out
+ * the full generation. Undefined when no signal was given.
+ */
+export function openAiRequestOptions(options: { signal?: AbortSignal }): { signal: AbortSignal } | undefined {
+  return options.signal ? { signal: options.signal } : undefined;
+}
+
 export async function generateWithToolsViaOpenAi(context: {
   client: OpenAI;
   model: string;
@@ -137,7 +146,7 @@ export async function generateWithToolsViaOpenAi(context: {
     tools: toOpenAiTools(options.tools),
     tool_choice: options.toolChoice ?? "auto",
     ...context.extraParams
-  } as never);
+  } as never, openAiRequestOptions(options));
 
   const completion = response as OpenAI.Chat.Completions.ChatCompletion;
   const message = completion.choices[0]?.message;

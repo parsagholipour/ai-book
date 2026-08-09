@@ -125,7 +125,6 @@ describe("generatePage quality loop", () => {
     });
     expect((failedSave!.qualityReport as { score: number }).score).toBe(70);
     expect(mocks.enqueueNextPageIfReady).toHaveBeenCalledWith("project-1", "plan-1", expect.anything());
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
   it("saves an approved draft as-is", async () => {

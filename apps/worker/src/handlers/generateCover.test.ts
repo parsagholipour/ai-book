@@ -102,7 +102,6 @@ describe("generateCover", () => {
       // Free work, and saying so keeps it out of the Costs tab's unpriced bucket.
       costUsd: 0
     });
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 
   it("gives a designed cover its own typography rather than the book type's", async () => {
@@ -125,8 +124,9 @@ describe("generateCover", () => {
     const asset = storedAsset();
     expect(asset?.provider).toBe(BUNDLED_COVER_PROVIDER);
     expect(asset?.metadata).toMatchObject({ coverArtSource: "design", coverFallbackReason: "ai_cover_failed" });
-    // The book is written and paid for; failing here would refund the whole run.
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
+    // The book is written and paid for; failing here would refund the whole
+    // run. The compile itself fires from maybeCompileAfterCompletedJob once
+    // this job's row is COMPLETED — the handler finishing cleanly is the point.
   });
 
   it("still surfaces a user stop instead of quietly producing a design", async () => {
@@ -176,7 +176,6 @@ describe("generateCover", () => {
 
     expect(mocks.prisma.imageAsset.create).not.toHaveBeenCalled();
     expect(mocks.generateImageBytes).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1");
   });
 });
 

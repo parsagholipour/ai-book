@@ -149,7 +149,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const currentScope = bookEditScopeFromMessage(parsed.data.message);
       const pendingScope = editMessageId
         ? null
-        : await findPendingScopeClarification(id, parsed.data.message, currentScope);
+        : await findPendingScopeClarification(id, parsed.data.message, currentScope, activeMessages);
       // The one-question rule's whole turn resolution lives in
       // resolvePendingEditTurn; this handler only consumes the verdict.
       const { resolvedPendingEdit, clarifyExhausted, resolvedMessage, confirmedPendingEdit, pendingScopeIsRecoverable, resolvesPendingScope } =
@@ -306,7 +306,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         ...(confirmedProposal?.proposalId ? { executionCommandId: confirmedProposal.proposalId } : {}),
         ...(confirmedProposal?.credits !== undefined ? { quotedCredits: confirmedProposal.credits } : {}),
         ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {}),
-        ...(replyTo ? { replyTo } : {})
+        ...(replyTo ? { replyTo } : {}),
+        activeMessages
       });
 
       return {

@@ -27,6 +27,13 @@ export type GenerateTextOptions = {
   purpose?: string;
   projectId?: string;
   onOutputTextChunk?: (chunk: string) => void | Promise<void>;
+  /**
+   * Best-effort cancellation of the in-flight provider request. Adapters that
+   * can pass it to their HTTP client do; the rest ignore it. Without this a
+   * user stop was only observed *between* calls, so a 64k-token whole-book
+   * draft ran to completion — and was billed — after the stop landed.
+   */
+  signal?: AbortSignal;
 };
 
 export type GenerateJsonOptions<T> = GenerateTextOptions & {

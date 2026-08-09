@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ImageAdapter, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
+import { mapWithConcurrency } from "../concurrency.js";
 import { buildContextPack } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
@@ -205,6 +206,22 @@ function compactPageBriefForScope(page: PageProductionBeat) {
     beat: page.beat,
     endingPressure: page.endingPressure
   };
+}
+
+/**
+ * The chapter brief as serialized next to a `pageScope` payload: everything
+ * but its `pages` array. pageScope already carries those beats windowed
+ * around the current page (compact previous/future plus the authoritative
+ * pageBrief), so sending the full array again put every chapter beat in the
+ * prompt twice — re-serialized on every candidate of the quality loop.
+ * Callers without a pageScope (whole-chapter drafts) keep the full brief.
+ */
+function chapterBriefPayloadForPageScope(brief: ChapterBrief | undefined) {
+  if (!brief) {
+    return undefined;
+  }
+  const { pages: _pages, ...rest } = brief;
+  return rest;
 }
 
 export type GenerateImageBytesOptions = {
@@ -538,7 +555,7 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
               subcategory: options.input.subcategory,
               styleGuidance: styleGuidancePayload(options.input)
             },
-            chapterBrief: options.chapterBrief,
+            chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageBrief: options.pageBrief,
             pageScope: pageScopePayload(options),
             characters: options.plan.characters,
@@ -885,7 +902,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
                 styleGuidance: styleGuidancePayload(options.input)
               },
               chapter: options.chapter,
-              chapterBrief: options.chapterBrief,
+              chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
               pageBrief: options.pageBrief,
               pageScope: pageScopePayload(options),
               pageIndex: options.pageIndex,
@@ -983,7 +1000,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
               styleGuidance: styleGuidancePayload(options.input)
             },
             chapter: options.chapter,
-            chapterBrief: options.chapterBrief,
+            chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageBrief: options.pageBrief,
             pageScope: pageScopePayload(options),
             pageIndex: options.pageIndex,
@@ -1046,7 +1063,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
               styleGuidance: styleGuidancePayload(options.input)
             },
             chapter: options.chapter,
-            chapterBrief: options.chapterBrief,
+            chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageIndex: options.pageIndex,
             pageScope: pageScopePayload(options),
             originalPageBrief: options.pageBrief,
@@ -1507,20 +1524,21 @@ function normalizePageMapPages(
 
 async function generateChunkedPageMap(options: GeneratePageMapOptions): Promise<ChapterBrief[]> {
   const chapterSetups = chapterRangesForPlan(options.plan, options.input.targetPages);
-  const briefs: ChapterBrief[] = [];
-  for (const setup of chapterSetups) {
-    const brief = await generateChapterBrief({
+  // Each chapter's brief depends only on the plan and that chapter, so the
+  // chunks run in a small pool instead of one model latency per chapter.
+  return mapWithConcurrency(chapterSetups, CHAPTER_BRIEF_CONCURRENCY, (setup) =>
+    generateChapterBrief({
       input: options.input,
       plan: options.plan,
       chapter: setup.chapter,
       chapterPageStart: setup.startPage,
       chapterPageEnd: setup.endPage,
       textModel: options.textModel
-    });
-    briefs.push(brief);
-  }
-  return briefs;
+    })
+  );
 }
+
+const CHAPTER_BRIEF_CONCURRENCY = 3;
 
 function pageMapForRange(chapterBriefs: ChapterBrief[], pageStart: number, pageEnd: number): PageProductionBeat[] {
   return chapterBriefs

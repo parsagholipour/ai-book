@@ -46,10 +46,21 @@ export async function planExactReplacement(
   if (!requested?.from || candidatePageIndexes.length === 0) {
     return null;
   }
-  // Only the pages already in scope, so this stays bounded by the edit rather
-  // than by the size of the book.
+  // Bounded twice: by the pages already in scope, and by a case-insensitive
+  // database match on the text itself. Without the second bound a whole-book
+  // scope ("replace X with Y everywhere") loaded every page's markdown into
+  // the API — twice, once at proposal and once at apply. The insensitive
+  // match is a strict superset of both matchers below (literal and
+  // case-preserving), so no page they could match is filtered out here.
   const pages = await prisma.page.findMany({
-    where: { projectId, index: { in: candidatePageIndexes } },
+    where: {
+      projectId,
+      index: { in: candidatePageIndexes },
+      OR: [
+        { markdown: { contains: requested.from, mode: "insensitive" } },
+        { title: { contains: requested.from, mode: "insensitive" } }
+      ]
+    },
     orderBy: { index: "asc" },
     select: { index: true, title: true, markdown: true }
   });

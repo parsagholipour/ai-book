@@ -107,45 +107,79 @@ async function generateCharacterReferenceAssets(
 
   const projectImageDir = join(config.IMAGE_STORAGE_DIR, options.projectId);
   await mkdir(projectImageDir, { recursive: true });
-  const created: WorkerImageAsset[] = [];
 
-  for (const [index, character] of options.plan.characters.entries()) {
-    await updateJobProgress(options.generationJobId, {
-      message: `Rendering character reference ${index + 1}/${options.plan.characters.length}: ${character.name}`
-    });
-    const prompt = buildCharacterReferencePrompt({
-      input: options.input,
-      plan: options.plan,
-      character
-    });
-    const image = await options.strategy.generateImageBytes({
-      image: options.providers.image,
-      prompt,
-      projectId: options.projectId,
-      aspectRatio: "4:3"
-    });
-    const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
-    const ext = optimizedImage.extension;
-    const filename = `character-reference-${characterSlug(character.name)}.${ext}`;
-    const filePath = join(projectImageDir, filename);
-    await writeFile(filePath, optimizedImage.bytes);
+  // The renders are independent, so a small worker pool runs them
+  // concurrently instead of paying one image-model latency per character in
+  // series — this whole section sits inside the advisory-lock transaction's
+  // timeout. Workers stop picking up new characters after the first failure
+  // (a rejected Promise.all cannot cancel siblings, and renders nobody will
+  // keep spend the same image budget the retry needs). The transaction's row
+  // writes stay sequential below: an interactive transaction client must not
+  // run queries concurrently.
+  const characters = options.plan.characters;
+  type RenderedReference = {
+    character: (typeof characters)[number];
+    prompt: string;
+    image: Awaited<ReturnType<typeof options.strategy.generateImageBytes>>;
+    optimizedImage: Awaited<ReturnType<typeof optimizeImageForStorage>>;
+    filename: string;
+  };
+  const rendered = Array.from({ length: characters.length }) as RenderedReference[];
+  let cursor = 0;
+  let failed = false;
+  const renderWorker = async () => {
+    while (!failed && cursor < characters.length) {
+      const index = cursor;
+      cursor += 1;
+      const character = characters[index]!;
+      try {
+        await updateJobProgress(options.generationJobId, {
+          message: `Rendering character reference ${index + 1}/${characters.length}: ${character.name}`
+        });
+        const prompt = buildCharacterReferencePrompt({
+          input: options.input,
+          plan: options.plan,
+          character
+        });
+        const image = await options.strategy.generateImageBytes({
+          image: options.providers.image,
+          prompt,
+          projectId: options.projectId,
+          aspectRatio: "4:3"
+        });
+        const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
+        const filename = `character-reference-${characterSlug(character.name)}.${optimizedImage.extension}`;
+        await writeFile(join(projectImageDir, filename), optimizedImage.bytes);
+        rendered[index] = { character, prompt, image, optimizedImage, filename };
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(CHARACTER_REFERENCE_RENDER_CONCURRENCY, Math.max(characters.length, 1)) }, renderWorker)
+  );
+
+  const created: WorkerImageAsset[] = [];
+  for (const item of rendered) {
     const asset = await tx.imageAsset.create({
       data: {
         projectId: options.projectId,
         type: "CHARACTER_REFERENCE",
-        prompt,
-        provider: image.provider,
-        path: publicAssetUrl(config.PUBLIC_API_URL, `/assets/images/${options.projectId}/${filename}`),
+        prompt: item.prompt,
+        provider: item.image.provider,
+        path: publicAssetUrl(config.PUBLIC_API_URL, `/assets/images/${options.projectId}/${item.filename}`),
         metadata: {
           planId: options.planId,
-          characterName: character.name,
-          role: character.role,
-          visualRules: character.visualRules,
-          model: image.model,
-          ...imageStorageMetadata(optimizedImage),
-          revisedPrompt: image.revisedPrompt,
-          ...imageGenerationMetadata(image),
-          fileName: filename
+          characterName: item.character.name,
+          role: item.character.role,
+          visualRules: item.character.visualRules,
+          model: item.image.model,
+          ...imageStorageMetadata(item.optimizedImage),
+          revisedPrompt: item.image.revisedPrompt,
+          ...imageGenerationMetadata(item.image),
+          fileName: item.filename
         }
       }
     });
@@ -154,6 +188,8 @@ async function generateCharacterReferenceAssets(
 
   return created;
 }
+
+const CHARACTER_REFERENCE_RENDER_CONCURRENCY = 3;
 
 export function selectReferenceImagePaths(options: {
   input: CreateProjectInput;

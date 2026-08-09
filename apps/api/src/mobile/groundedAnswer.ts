@@ -5,6 +5,7 @@ import {
   loadChatPageBodies,
   type ProjectForChat
 } from "./projectChat.js";
+import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { clipText } from "./support.js";
 import { withRecoverableNetworkRetry, type TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -24,7 +25,9 @@ export async function generateGroundedProjectAnswer(
   message: string,
   fallback: string,
   textModel: TextModelAdapter | undefined,
-  replyTo?: ChatReplyQuote | undefined
+  replyTo?: ChatReplyQuote | undefined,
+  /** The turn's already-loaded active messages; saves a full transcript re-read. */
+  preloadedMessages?: MobileProjectChatMessageRecord[] | undefined
 ): Promise<string> {
   if (!textModel) {
     return fallback;
@@ -66,7 +69,7 @@ export async function generateGroundedProjectAnswer(
     .slice(0, 4)
     .map(({ source }) => source);
   const [recentMessages, recentOperations] = await Promise.all([
-    loadActiveProjectChatMessages(project.id),
+    preloadedMessages ? Promise.resolve(preloadedMessages) : loadActiveProjectChatMessages(project.id),
     prisma.bookEditOperation.findMany({
       where: { projectId: project.id },
       orderBy: { createdAt: "desc" },

@@ -191,7 +191,10 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       action: z.enum(actions),
       confidence: z.number().min(0).max(1),
       reasoning: z.string().trim().min(1).max(600),
-      assistantMessage: z.string().trim().min(1).max(1200),
+      // 600, not more: for answers this text is only the fallback behind the
+      // grounded pass, and for edits the proposal card carries the details —
+      // the router was spending output tokens on prose that was discarded.
+      assistantMessage: z.string().trim().min(1).max(600),
       clarification: z.enum(["none", "scope"]).default("none"),
       /** Required when action is propose_edit. */
       editTarget: z
@@ -728,6 +731,7 @@ function routerSystemPrompt(
         ];
   const closing = [
     "For change actions, write assistantMessage as a short confirmation of the specific change that will be proposed or made.",
+    "For action answer, keep assistantMessage to two or three concise sentences: a separate grounded pass with the book's full context writes the final answer and only falls back to yours.",
     "Write assistantMessage in the same language the user's message is written in, even when the book's pages are in a different language.",
     "pages may be a sample of a longer book; pageContext reports totalPages and whether the list was truncated, and pages not listed still exist.",
     "Never include provider, model, chain-of-thought, or internal routing details in assistantMessage."

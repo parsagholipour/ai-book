@@ -30,7 +30,7 @@ import {
 } from "@book-maker/core";
 import { config } from "../runtime/config.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
-import { assertJobNotStopped } from "../runtime/jobLifecycle.js";
+import { assertJobNotStopped, hasStoppedGenerationJob } from "../runtime/jobLifecycle.js";
 import { serializeError } from "../runtime/serialization.js";
 import {
   attachProviderLogContext,
@@ -184,6 +184,9 @@ export function createImageAdapterForSelection(selection: ImageModelSelection): 
   });
 }
 
+/** How often an in-flight provider call re-checks the job's stop flag. */
+const STOP_ABORT_POLL_MS = 2_500;
+
 class LoggingTextModelAdapter implements TextModelAdapter {
   constructor(
     private readonly delegate: TextModelAdapter,
@@ -199,6 +202,47 @@ class LoggingTextModelAdapter implements TextModelAdapter {
       return { provider: selection.provider, model: selection.model };
     }
     return this.textModel;
+  }
+
+  /**
+   * Runs the delegate call with an abort signal wired to the job's stop flag,
+   * polled every few seconds. Without it a stop was only observed *between*
+   * provider calls, so a 64k-token whole-book draft ran to completion — and
+   * was billed — after the user pressed stop. One controller covers every
+   * retry attempt: a stop is permanent, so an aborted retry failing fast is
+   * the point, and the catch paths' `assertJobNotStopped` converts the abort
+   * error into the StopRequestedError the lifecycle expects.
+   */
+  private async withStopAbort<TOptions extends GenerateTextOptions, TResult>(
+    options: TOptions,
+    run: (options: TOptions) => Promise<TResult>
+  ): Promise<TResult> {
+    if (!this.generationJobId) {
+      return run(options);
+    }
+    const generationJobId = this.generationJobId;
+    const controller = new AbortController();
+    const upstream = options.signal;
+    const onUpstreamAbort = () => controller.abort();
+    if (upstream?.aborted) {
+      controller.abort();
+    }
+    upstream?.addEventListener("abort", onUpstreamAbort);
+    const poll = setInterval(() => {
+      void hasStoppedGenerationJob(generationJobId)
+        .then((stopped) => {
+          if (stopped) {
+            controller.abort();
+          }
+        })
+        .catch(() => {});
+    }, STOP_ABORT_POLL_MS);
+    try {
+      return await run({ ...options, signal: controller.signal });
+    } finally {
+      clearInterval(poll);
+      upstream?.removeEventListener("abort", onUpstreamAbort);
+    }
   }
 
   async generateText(options: GenerateTextOptions) {
@@ -228,9 +272,11 @@ class LoggingTextModelAdapter implements TextModelAdapter {
     });
     try {
       await assertJobNotStopped(this.generationJobId);
-      const result = await withRecoverableNetworkRetry(
-        () => this.delegate.generateText(monitoredOptions),
-        providerRetryOptions(this.logger, this.generationJobId, "text.generateText", options.purpose)
+      const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
+        withRecoverableNetworkRetry(
+          () => this.delegate.generateText(abortableOptions),
+          providerRetryOptions(this.logger, this.generationJobId, "text.generateText", options.purpose)
+        )
       );
       const responseAt = await this.logger.append("text.generateText.response", { callId, result });
       await recordProviderUsage({
@@ -287,9 +333,11 @@ class LoggingTextModelAdapter implements TextModelAdapter {
     });
     try {
       await assertJobNotStopped(this.generationJobId);
-      const result = await withRecoverableNetworkRetry(
-        () => this.delegate.generateJson(monitoredOptions),
-        providerRetryOptions(this.logger, this.generationJobId, "text.generateJson", options.purpose)
+      const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
+        withRecoverableNetworkRetry(
+          () => this.delegate.generateJson(abortableOptions),
+          providerRetryOptions(this.logger, this.generationJobId, "text.generateJson", options.purpose)
+        )
       );
       const responseAt = await this.logger.append("text.generateJson.response", { callId, result });
       await recordProviderUsage({
@@ -352,9 +400,11 @@ class LoggingTextModelAdapter implements TextModelAdapter {
     });
     try {
       await assertJobNotStopped(this.generationJobId);
-      const result = await withRecoverableNetworkRetry(
-        () => this.delegate.generateWithTools(options),
-        providerRetryOptions(this.logger, this.generationJobId, "text.generateWithTools", options.purpose)
+      const result = await this.withStopAbort(options, (abortableOptions) =>
+        withRecoverableNetworkRetry(
+          () => this.delegate.generateWithTools(abortableOptions),
+          providerRetryOptions(this.logger, this.generationJobId, "text.generateWithTools", options.purpose)
+        )
       );
       const responseAt = await this.logger.append("text.generateWithTools.response", { callId, result });
       await recordProviderUsage({

@@ -67,6 +67,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       config: {
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens
       }
@@ -89,6 +90,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       config: {
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens,
         tools: [{ functionDeclarations: options.tools.map(geminiFunctionDeclaration) }],
@@ -122,6 +124,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       config: {
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens,
         responseMimeType: "application/json",
@@ -142,6 +145,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       config: {
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens
       }
@@ -176,6 +180,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       config: {
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens,
         responseMimeType: "application/json",
@@ -234,6 +239,7 @@ export class GeminiTextAdapter implements TextModelAdapter {
       config: {
         ...prompt.config,
         ...geminiThinkingConfig(this.model, this.thinkingBudget, this.thinkingEnabled, this.thinkingEffort),
+        ...(options.signal ? { abortSignal: options.signal } : {}),
         temperature: options.temperature,
         maxOutputTokens: options.maxTokens
       }
