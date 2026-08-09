@@ -159,7 +159,7 @@ class ChatComposerContextBanner extends StatelessWidget {
   }) : replyTarget = target;
 
   final ChatReplyTarget? replyTarget;
-  final VoidCallback? onOpen;
+  final VoidCallback onOpen;
   final VoidCallback onCancel;
 
   @override

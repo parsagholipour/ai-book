@@ -9,6 +9,18 @@ import 'package:tomeza/features/projects/domain/creation_models.dart';
 import 'package:tomeza/features/projects/presentation/chat_history_drawer.dart';
 
 void main() {
+  testWidgets('new book button uses a pen-on-paper icon', (tester) async {
+    await tester.pumpWidget(_app(sessions: const [], activeDraftId: ''));
+    await tester.pumpAndSettle();
+
+    final button = find.widgetWithText(FilledButton, 'New book');
+    expect(button, findsOneWidget);
+    expect(
+      find.descendant(of: button, matching: find.byIcon(Icons.edit_document)),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('drawer load errors offer retry', (tester) async {
     await tester.pumpWidget(
       ProviderScope(

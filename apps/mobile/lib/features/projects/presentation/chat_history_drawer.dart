@@ -135,7 +135,7 @@ class _NewBookButton extends StatelessWidget {
           Navigator.of(context).pop();
           context.go(newBookChatLocation());
         },
-        icon: const Icon(Icons.edit_outlined),
+        icon: const Icon(Icons.edit_document),
         label: const Text('New book'),
         style: FilledButton.styleFrom(alignment: Alignment.centerLeft),
       ),
