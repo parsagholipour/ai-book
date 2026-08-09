@@ -20,6 +20,7 @@ mixin _CreationComposerContext on _OutputChatSend {
 
   // Provided by the screen this mixin is applied to.
   ScrollController get _scrollController;
+  FocusNode get _composerFocusNode;
   void _stopFollowingTranscript();
 
   /// The message the composer is quoting, for either stage of this screen.
@@ -47,6 +48,7 @@ mixin _CreationComposerContext on _OutputChatSend {
         offset: _composerController.text.length,
       );
     });
+    _focusComposerForEdit();
   }
 
   void _cancelCreationMessageEdit() {
@@ -87,6 +89,16 @@ mixin _CreationComposerContext on _OutputChatSend {
       _composerController.selection = TextSelection.collapsed(
         offset: _composerController.text.length,
       );
+    });
+    _focusComposerForEdit();
+  }
+
+  void _focusComposerForEdit() {
+    // Entering edit mode can swap the pre-build footer for the output-stage
+    // footer. Wait until that rebuild has attached the shared focus node to
+    // the visible field before opening the keyboard.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _composerFocusNode.requestFocus();
     });
   }
 

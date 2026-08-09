@@ -6,6 +6,7 @@ part of 'creation_chat_screen.dart';
 class _ProjectChatFooter extends StatelessWidget {
   const _ProjectChatFooter({
     required this.controller,
+    required this.focusNode,
     required this.enabled,
     required this.lockedLabel,
     required this.projectStatus,
@@ -13,6 +14,7 @@ class _ProjectChatFooter extends StatelessWidget {
   });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final bool enabled;
   final String? lockedLabel;
   final String projectStatus;
@@ -43,6 +45,7 @@ class _ProjectChatFooter extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: controller,
+                  focusNode: focusNode,
                   enabled: open,
                   minLines: 1,
                   maxLines: 5,
@@ -650,7 +653,9 @@ class _PlanQuestionPanelState extends State<_PlanQuestionPanel> {
                     })
                   : null,
               onSkip: widget.onSkip,
-              openAnswerHint: _showCustomField ? null : 'Type your answer below.',
+              openAnswerHint: _showCustomField
+                  ? null
+                  : 'Type your answer below.',
             ),
           ),
         ],

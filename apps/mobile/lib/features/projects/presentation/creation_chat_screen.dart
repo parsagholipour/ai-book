@@ -98,6 +98,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         _LiveOutputRefresh {
   @override
   final _composerController = TextEditingController();
+  @override
+  final _composerFocusNode = FocusNode();
   final _revisionController = TextEditingController();
   @override
   final _scrollController = ScrollController();
@@ -144,6 +146,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     _planRefreshTimer?.cancel();
     _stickScrollTimer?.cancel();
     _composerController.dispose();
+    _composerFocusNode.dispose();
     _revisionController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -480,6 +483,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                             state: state,
                             keyboardOpen: keyboardOpen,
                             composerController: _composerController,
+                            composerFocusNode: _composerFocusNode,
                             onSend: _send,
                             onQuickReply: _send,
                             onAnswerOption: _send,
@@ -775,6 +779,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         if (plan.isApproved) {
           return _ProjectChatFooter(
             controller: _composerController,
+            focusNode: _composerFocusNode,
             enabled: !_projectChatSending,
             lockedLabel: _outputMessagingLockLabel(
               projectStatus: project.status,

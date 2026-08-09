@@ -383,6 +383,7 @@ void main() {
     expect(find.text('Editing message'), findsOneWidget);
     final composer = tester.widget<TextField>(find.byType(TextField).first);
     expect(composer.controller?.text, 'A kids book');
+    expect(composer.focusNode?.hasFocus, isTrue);
 
     await tester.enterText(find.byType(TextField).first, 'A space adventure');
     await tester.tap(find.byTooltip('Send'));
@@ -2369,6 +2370,7 @@ void main() {
       expect(find.text('Editing message'), findsOneWidget);
       final composer = tester.widget<TextField>(find.byType(TextField).first);
       expect(composer.controller?.text, 'Original brainstorm idea');
+      expect(composer.focusNode?.hasFocus, isTrue);
 
       await tester.enterText(
         find.byType(TextField).first,

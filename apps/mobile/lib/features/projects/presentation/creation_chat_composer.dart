@@ -160,6 +160,7 @@ class _ConversationFooter extends StatefulWidget {
     required this.state,
     required this.keyboardOpen,
     required this.composerController,
+    required this.composerFocusNode,
     required this.onSend,
     required this.onQuickReply,
     required this.onAnswerOption,
@@ -172,6 +173,7 @@ class _ConversationFooter extends StatefulWidget {
   final CreationChatState state;
   final bool keyboardOpen;
   final TextEditingController composerController;
+  final FocusNode composerFocusNode;
   final ValueChanged<String> onSend;
   final ValueChanged<String> onQuickReply;
   final ValueChanged<String> onAnswerOption;
@@ -266,6 +268,7 @@ class _ConversationFooterState extends State<_ConversationFooter> {
                 ),
               _Composer(
                 controller: widget.composerController,
+                focusNode: widget.composerFocusNode,
                 enabled: !disabled,
                 hasQuestion: question != null,
                 hasAttachments: widget.state.pendingAttachments.isNotEmpty,
@@ -655,6 +658,7 @@ class _ChipRowState extends State<_ChipRow> {
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
+    required this.focusNode,
     required this.enabled,
     required this.hasQuestion,
     required this.hasAttachments,
@@ -665,6 +669,7 @@ class _Composer extends StatelessWidget {
   });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final bool enabled;
   final bool hasQuestion;
   final bool hasAttachments;
@@ -694,6 +699,7 @@ class _Composer extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
+            focusNode: focusNode,
             enabled: enabled,
             minLines: 1,
             maxLines: 5,
