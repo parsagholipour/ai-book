@@ -103,7 +103,12 @@ describe("mobile creation drafts and advisor", () => {
     expect(patched.statusCode).toBe(200);
     expect(mockPrisma.mobileCreationDraft.update).toHaveBeenCalledWith({
       where: { id: "draft-created" },
-      data: { payload: expect.objectContaining({ brief: expect.objectContaining({ audience: "online teachers" }) }) }
+      data: {
+        payload: expect.objectContaining({ brief: expect.objectContaining({ audience: "online teachers" }) }),
+        // The legacy overwrite now moves the revision like the session routes,
+        // so stale advisor snapshots and CAS readers see the change.
+        revision: { increment: 1 }
+      }
     });
     expect(JSON.stringify({ active: active.json(), created: created.json(), patched: patched.json() })).not.toMatch(
       /provider|model|generationStrategy|billing/

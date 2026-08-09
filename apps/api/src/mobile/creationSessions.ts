@@ -131,7 +131,13 @@ export function serializeCreationDraft(draft: {
   if (!payload.success) {
     return null;
   }
-  const advisor = mobileBookAdvisorResponseSchema.safeParse(draft.advisorSnapshot);
+  // Newer snapshots are wrapped with the revision stamp they were computed
+  // at; older rows stored the advisor bare. The legacy DTO wants the advisor
+  // either way.
+  const snapshotRecord = jsonRecord(draft.advisorSnapshot);
+  const advisor = mobileBookAdvisorResponseSchema.safeParse(
+    snapshotRecord.advisor !== undefined ? snapshotRecord.advisor : draft.advisorSnapshot
+  );
   return {
     id: draft.id,
     revision: draft.revision ?? 1,
@@ -395,7 +401,14 @@ export function persistedPresetsForTurn(payload: MobileCreationDraftPayload): Mo
 
 export function userTextFromMessages(messages: MobileCreationMessage[]): string {
   return messages
-    .filter((message) => message.role === "user")
+    // A question-skip tap is a UI action, not book intent: unmarked it landed
+    // in rawIdea and from there in the composed book prompt as "Original
+    // idea: … Skip this for now." The literal check covers messages written
+    // by clients shipped before the marker existed.
+    .filter(
+      (message) =>
+        message.role === "user" && message.skippedQuestion !== true && message.content.trim() !== "Skip this for now."
+    )
     .map((message) => message.content.trim())
     .filter(Boolean)
     .join("\n")

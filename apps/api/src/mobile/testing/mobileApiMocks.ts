@@ -12,7 +12,7 @@ export const mockPrisma = ({
   $transaction: vi.fn(),
   user: { upsert: vi.fn() },
   mobileSession: { findUnique: vi.fn() },
-  mobileCreationDraft: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
+  mobileCreationDraft: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   mobileCreationOutput: { create: vi.fn(), findFirst: vi.fn() },
   template: { findFirst: vi.fn(), findMany: vi.fn() },
   productCatalog: { findUnique: vi.fn() },

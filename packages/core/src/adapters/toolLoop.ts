@@ -27,6 +27,14 @@ import type {
 export type ToolLoopTool<TArgs = unknown> = ToolDefinition<TArgs> & {
   /** Returns the tool result; non-string results are JSON-serialized. Throwing produces an error result. */
   execute: (args: TArgs) => Promise<unknown> | unknown;
+  /**
+   * A pure side-effect tool's result only echoes its input (update a setting,
+   * set a flag) — nothing the model's answer needs to reflect. When every
+   * work call in a round is pure, a finish call in the same round is accepted
+   * instead of deferred, saving the extra model round trip the deferral
+   * exists to buy for result-bearing tools like search.
+   */
+  pure?: boolean | undefined;
 };
 
 export type ToolLoopToolEvent = {
@@ -131,14 +139,33 @@ export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFi
 
     // Execute regular tool calls first; a finish alongside pending work is
     // premature (its answer cannot reflect the tool results), so it is
-    // deferred to the next turn.
+    // deferred to the next turn — unless every work call is a pure
+    // side-effect tool, whose result carries nothing the answer needs.
     if (workCalls.length > 0) {
+      const finishAlongsidePure =
+        finishCalls.length > 0 && workCalls.every((call) => toolsByName.get(call.name)?.pure === true);
       messages.push({ role: "assistant", content: result.text, toolCalls: workCalls });
+      let anyToolError = false;
       for (const call of workCalls) {
         const event = await executeToolCall(call, toolsByName.get(call.name), maxToolResultChars);
+        anyToolError ||= event.isError;
         toolEvents.push(event);
         await options.onToolResult?.(event);
         messages.push({ role: "tool", content: event.resultContent, toolCallId: call.id, toolName: call.name });
+      }
+      if (finishAlongsidePure && !anyToolError) {
+        const parsed = options.finishTool!.parameters.safeParse(finishCalls[0]!.arguments);
+        if (parsed.success) {
+          return {
+            status: "finished",
+            finish: parsed.data,
+            finalText,
+            modelCalls: modelCall,
+            ...state()
+          };
+        }
+        // Invalid finish arguments fall through to the next round, where the
+        // model sees the executed tool results and finishes properly.
       }
       continue;
     }

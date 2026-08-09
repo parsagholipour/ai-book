@@ -429,6 +429,9 @@ class MobileCreationQuestion {
     required this.options,
     required this.allowCustom,
     this.answerKind = QuestionAnswerKind.choice,
+    this.skipLabel,
+    this.openAnswerHint,
+    this.multiSelectHint,
   });
 
   final String prompt;
@@ -437,6 +440,13 @@ class MobileCreationQuestion {
 
   /// Whether one of the options answers this, several of them do, or none can.
   final QuestionAnswerKind answerKind;
+
+  /// Panel chrome in the conversation language, when the server supplied it.
+  /// English fallbacks live at the point of use — a Persian conversation gets
+  /// a Persian skip button, an old payload keeps working.
+  final String? skipLabel;
+  final String? openAnswerHint;
+  final String? multiSelectHint;
 
   factory MobileCreationQuestion.fromJson(Map<String, dynamic> json) {
     final options = _stringList(json['options']);
@@ -448,6 +458,9 @@ class MobileCreationQuestion {
         json['answerKind'],
         optionCount: options.length,
       ),
+      skipLabel: json['skipLabel'] as String?,
+      openAnswerHint: json['openAnswerHint'] as String?,
+      multiSelectHint: json['multiSelectHint'] as String?,
     );
   }
 }

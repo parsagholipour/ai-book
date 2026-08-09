@@ -47,6 +47,7 @@ abstract interface class CreationRepository {
     String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
+    bool skippedQuestion = false,
   });
 
   Future<MobileCreationConversationResponse> switchConversationBranch({
@@ -237,6 +238,7 @@ class MobileCreationRepository implements CreationRepository {
     String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
+    bool skippedQuestion = false,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/creation-sessions/$draftId/messages',
@@ -251,6 +253,7 @@ class MobileCreationRepository implements CreationRepository {
         'replyToMessageId': ?replyToMessageId,
         'requestId': ?requestId,
         'expectedRevision': ?expectedRevision,
+        if (skippedQuestion) 'skippedQuestion': true,
       },
       receiveTimeout: llmReceiveTimeout,
     );

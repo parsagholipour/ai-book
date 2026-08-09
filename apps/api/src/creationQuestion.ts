@@ -33,7 +33,31 @@ export const creationTurnQuestionSchema = z
       .describe(
         'Tappable answers, each a complete reply the user could send as-is. Must be empty when answerKind is "open". Never an option that only describes how the user will answer ("I will type it here", "a Persian name").'
       ),
-    allowCustom: z.boolean().default(true)
+    allowCustom: z.boolean().default(true),
+    // The question panel's chrome, in the conversation language. The app falls
+    // back to English when absent, so a model that skips them costs nothing —
+    // but a Persian conversation deserves a Persian skip button.
+    skipLabel: z
+      .string()
+      .trim()
+      .min(1)
+      .max(60)
+      .optional()
+      .describe('The "skip this question" action, as a short sentence in the same language as the prompt (English example: "Skip this for now.").'),
+    openAnswerHint: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe('For "open" questions: a short hint telling the user to type their answer, in the prompt\'s language.'),
+    multiSelectHint: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe('For "multi" questions: a short hint that they can pick several options, in the prompt\'s language.')
   })
   .strict();
 
@@ -57,7 +81,14 @@ export function normalizeCreationQuestion(
   }
   const options = question.options.map((option) => option.trim()).filter(Boolean);
   if (question.answerKind === "open" || options.length < 2) {
-    return { prompt: question.prompt, answerKind: "open", options: [], allowCustom: true };
+    return {
+      prompt: question.prompt,
+      answerKind: "open",
+      options: [],
+      allowCustom: true,
+      ...(question.skipLabel ? { skipLabel: question.skipLabel } : {}),
+      ...(question.openAnswerHint ? { openAnswerHint: question.openAnswerHint } : {})
+    };
   }
   return { ...question, options };
 }

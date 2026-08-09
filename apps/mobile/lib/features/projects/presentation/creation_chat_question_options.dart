@@ -22,6 +22,7 @@ class _QuestionOptionList extends StatefulWidget {
     this.multiSelect = false,
     this.onCustom,
     this.openAnswerHint,
+    this.multiSelectHint,
   });
 
   final List<String> options;
@@ -33,6 +34,9 @@ class _QuestionOptionList extends StatefulWidget {
 
   /// Shown in place of the choices when there are none.
   final String? openAnswerHint;
+
+  /// Localized "pick several" hint; falls back to English when absent.
+  final String? multiSelectHint;
 
   @override
   State<_QuestionOptionList> createState() => _QuestionOptionListState();
@@ -88,7 +92,7 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
           ),
         if (multi) ...[
           Text(
-            'Pick as many as you like.',
+            widget.multiSelectHint ?? 'Pick as many as you like.',
             style: theme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
           ),
           const SizedBox(height: 6),

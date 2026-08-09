@@ -72,7 +72,7 @@ import {
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
-import { createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuild.js";
+import { advisorSnapshotForStorage, createCreationBuildHelpers, sendFinalizeOutcome } from "../creationBuild.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
 
@@ -341,6 +341,15 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         }
       }
 
+      // The write-time CAS below still decides the race; this early compare —
+      // after the replay branch, whose retries legitimately carry a stale
+      // revision — refuses a request that has already lost *before* the model
+      // turn runs, instead of discovering the conflict after up to 85 seconds
+      // of enrichment whose result gets thrown away.
+      if (parsedBody.data.expectedRevision !== undefined && parsedBody.data.expectedRevision !== draft.revision) {
+        return sendCreationSessionConflict(reply, auth.user.id, id);
+      }
+
       const attachmentPool = parsedPayload.data.attachments ?? [];
       const requestedAttachmentIds = parsedBody.data.attachmentIds ?? [];
       const attachedNow = requestedAttachmentIds.map((attachmentId) =>
@@ -370,6 +379,7 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         content: parsedBody.data.message,
         ...(parsedBody.data.requestId ? { requestId: parsedBody.data.requestId } : {}),
         ...(attachmentRefs.length > 0 ? { attachments: attachmentRefs } : {}),
+        ...(parsedBody.data.skippedQuestion ? { skippedQuestion: true } : {}),
         ...(replyTo ? { replyTo } : {})
       };
       let treeWithUser: MobileCreationMessage[];
@@ -799,6 +809,18 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       if (!prepared.ok) {
         return sendMobileError(reply, prepared.status, prepared.code, prepared.message);
       }
+      // Persist the advisor stamped with the revision and preset context it
+      // was computed from, so the build tap that follows reuses it instead of
+      // paying for the same calls again. Conditioned on the revision so a
+      // concurrent chat message wins; losing this write only costs a recompute.
+      await prisma.mobileCreationDraft.updateMany({
+        where: { id, revision: prepared.draft.revision },
+        data: {
+          advisorSnapshot: jsonInputValue(
+            advisorSnapshotForStorage(prepared.finalAdvisor, prepared.draft.revision, prepared.advisorContextFingerprint)
+          )
+        }
+      });
       const recommendations = await pageCountRecommendationsForPreflight(prepared.finalPayload, prepared.finalAdvisor);
       return {
         requiresPageCount: !prepared.pageCount.resolved,

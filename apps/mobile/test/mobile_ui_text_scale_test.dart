@@ -322,6 +322,7 @@ class _FakeCreationRepository implements CreationRepository {
     String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
+    bool skippedQuestion = false,
   }) async {
     return fakeCreationConversation(withSession: true);
   }

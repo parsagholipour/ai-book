@@ -164,6 +164,7 @@ class _ConversationFooter extends StatefulWidget {
     required this.onSend,
     required this.onQuickReply,
     required this.onAnswerOption,
+    required this.onSkipQuestion,
     required this.onAttach,
     required this.onRetryAttachment,
     required this.onRemoveAttachment,
@@ -177,6 +178,10 @@ class _ConversationFooter extends StatefulWidget {
   final ValueChanged<String> onSend;
   final ValueChanged<String> onQuickReply;
   final ValueChanged<String> onAnswerOption;
+
+  /// Sends the localized skip text flagged as a question-skip, so the server
+  /// keeps it out of the book prompt.
+  final ValueChanged<String> onSkipQuestion;
   final VoidCallback onAttach;
   final ValueChanged<String> onRetryAttachment;
   final ValueChanged<String> onRemoveAttachment;
@@ -239,6 +244,7 @@ class _ConversationFooterState extends State<_ConversationFooter> {
                             onMinimizedChanged: (minimized) =>
                                 setState(() => _questionMinimized = minimized),
                             onSelect: widget.onAnswerOption,
+                            onSkipQuestion: widget.onSkipQuestion,
                           )
                         else if (widget.state.quickReplies.isNotEmpty)
                           Visibility(
@@ -497,6 +503,7 @@ class _QuestionPanel extends StatelessWidget {
     required this.enabled,
     required this.onMinimizedChanged,
     required this.onSelect,
+    required this.onSkipQuestion,
   });
 
   final MobileCreationQuestion question;
@@ -508,6 +515,7 @@ class _QuestionPanel extends StatelessWidget {
   final bool enabled;
   final ValueChanged<bool> onMinimizedChanged;
   final ValueChanged<String> onSelect;
+  final ValueChanged<String> onSkipQuestion;
 
   @override
   Widget build(BuildContext context) {
@@ -552,8 +560,13 @@ class _QuestionPanel extends StatelessWidget {
             multiSelect: question.answerKind.allowsMultiple,
             enabled: enabled,
             onSelect: onSelect,
-            onSkip: () => onSelect('Skip this for now.'),
-            openAnswerHint: 'Type your answer below.',
+            // The server supplies these in the conversation language; the
+            // English strings are the fallback for older payloads.
+            onSkip: () =>
+                onSkipQuestion(question.skipLabel ?? 'Skip this for now.'),
+            openAnswerHint:
+                question.openAnswerHint ?? 'Type your answer below.',
+            multiSelectHint: question.multiSelectHint,
           ),
         ],
       ],

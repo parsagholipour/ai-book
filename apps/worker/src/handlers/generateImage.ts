@@ -2,7 +2,6 @@ import { getProjectOrThrow, imageGenerationMetadata, imageStorageMetadata, strat
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { errorMessage, jsonPayloadToRecord } from "../runtime/serialization.js";
@@ -84,8 +83,9 @@ export async function generateImage(job: Job) {
       message: `Illustration for page ${page.index} failed; the book will finish without it`
     });
   }
-
-  await maybeEnqueueCompile(projectId, planId);
+  // The compile check runs after this job's row is COMPLETED
+  // (maybeCompileAfterCompletedJob); from in here the gate always counted this
+  // job as open and could never fire.
 }
 
 async function renderAndStorePageIllustration(options: {

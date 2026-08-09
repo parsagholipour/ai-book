@@ -12,7 +12,7 @@ import { MAX_PAGE_QA_CANDIDATES, MAX_PAGE_QA_REWRITE_ATTEMPTS } from "../generat
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { enqueueNextPageIfReady, enqueueWorkerJob, maybeEnqueueCompile } from "../runtime/dispatch.js";
+import { enqueueNextPageIfReady, enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { bestOfCandidateCount, bookPlanSchema, createProviders, generateBestOfPageDrafts } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -165,8 +165,10 @@ export async function generatePage(job: Job) {
     await updateJobProgress(generationJobId, {
       message: `Page ${page.index} kept its best draft but failed quality review; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
     });
+    // No maybeEnqueueCompile here: this job's own row is still ACTIVE, so the
+    // open-jobs gate can never pass from inside the handler. The compile check
+    // that actually fires is maybeCompileAfterCompletedJob in processJob.ts.
     await enqueueNextPageIfReady(projectId, planId, input);
-    await maybeEnqueueCompile(projectId, planId);
     return;
   }
 
@@ -218,5 +220,4 @@ export async function generatePage(job: Job) {
   await storeEmbedding(projectId, `page:${page.index}`, pageId, draft.summary, providers.embedding);
 
   await enqueueNextPageIfReady(projectId, planId, input);
-  await maybeEnqueueCompile(projectId, planId);
 }

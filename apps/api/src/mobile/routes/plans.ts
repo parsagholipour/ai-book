@@ -161,7 +161,10 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           projectId: plan.projectId,
           planId: id,
           message: parsed.data.message,
-          requestId: parsed.data.requestId ?? hashString(parsed.data.message)
+          requestId: parsed.data.requestId ?? hashString(parsed.data.message),
+          ...(parsed.data.respondedQuestionPrompts?.length
+            ? { respondedQuestionPrompts: parsed.data.respondedQuestionPrompts }
+            : {})
         });
         request.log.info(
           { event: "plan_revision.queued", projectId: plan.projectId, operationId: operation.id, generationJobId: job.id, source: "direct" },

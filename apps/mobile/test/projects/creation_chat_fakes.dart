@@ -209,6 +209,7 @@ class ScriptedCreationRepository implements CreationRepository {
     String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
+    bool skippedQuestion = false,
   }) async {
     await sendGate;
     final error = sendError;

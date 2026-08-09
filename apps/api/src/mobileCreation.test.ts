@@ -518,7 +518,10 @@ describe("composed project prompt budget", () => {
     // Headroom has to survive for the worker's source-material injection.
     expect(COMPOSED_PROJECT_PROMPT_MAX).toBeLessThan(PROJECT_PROMPT_MAX_LENGTH);
     // Trimming shortens the evidence; it never drops the sections themselves.
-    expect(prompt).toContain("Original idea");
+    // "Original idea" is deliberately absent: it is the join of the same user
+    // messages the transcript already prints, so with a transcript present it
+    // only paid the ceiling twice for one intent.
+    expect(prompt).not.toContain("Original idea");
     expect(prompt).toContain("Creation chat");
     expect(prompt).toContain("Untrusted web evidence");
   });

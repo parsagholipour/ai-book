@@ -8,7 +8,6 @@ import {
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { coverImageSelectionForInput, createImageAdapterForSelection, createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import {
   bookPlanSchema,
@@ -56,8 +55,9 @@ export async function generateCover(job: Job) {
   const input = inputForPlanVersion(project, planVersion.inputSnapshot);
   const coverArtSource = coverArtSourceFor(input.mediaSettings);
   if (coverArtSource === "none") {
+    // The compile check fires from maybeCompileAfterCompletedJob once this
+    // job's row is COMPLETED; from in here it always counted itself as open.
     await advanceJobStep(generationJobId, "store", 90, "Cover disabled");
-    await maybeEnqueueCompile(projectId, planId);
     return;
   }
 
@@ -218,8 +218,6 @@ export async function generateCover(job: Job) {
       }
     })
   ]);
-
-  await maybeEnqueueCompile(projectId, planId);
 }
 
 /** `ImageAsset.provider` for a cover that came from the catalog, not a model. */

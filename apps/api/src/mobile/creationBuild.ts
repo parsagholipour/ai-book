@@ -43,7 +43,7 @@ import { inputSnapshotFromProject, planOperation, serializeProjectDetail } from 
 import {
   mobilePageCountRecommendationAiSchema
 } from "./schemas.js";
-import { fingerprintGenerationRequest, jsonInputValue, promiseWithTimeout } from "./support.js";
+import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord, promiseWithTimeout } from "./support.js";
 import {
   createFastRoutingTextModel,
   creditCostForOperation,
@@ -64,6 +64,46 @@ class CreationSessionConflictError extends Error {
     super("Creation session changed before the build started.");
     this.name = "CreationSessionConflictError";
   }
+}
+
+/**
+ * The stored advisor snapshot, stamped with the draft revision and preset
+ * context it was computed from. A bare snapshot used to be reused forever, so
+ * a rebuild after twenty more chat messages planned against stale advice; and
+ * the preflight's advisor was thrown away, so every build tap paid for the
+ * same calls twice. The stamp makes the snapshot safe to reuse exactly when
+ * nothing it depends on has moved, and worthless the moment anything has.
+ */
+export function advisorSnapshotForStorage(
+  advisor: MobileBookAdvisorResponse,
+  revision: number,
+  contextFingerprint: string
+): Record<string, unknown> {
+  return { snapshotRevision: revision, contextFingerprint, advisor };
+}
+
+function storedAdvisorForBuild(
+  draft: { advisorSnapshot: unknown; revision: number },
+  contextFingerprint: string
+): MobileBookAdvisorResponse | null {
+  const record = jsonRecord(draft.advisorSnapshot);
+  if (record.snapshotRevision !== draft.revision || record.contextFingerprint !== contextFingerprint) {
+    // Legacy bare snapshots land here too: with no stamp there is no way to
+    // know what they were computed from, and stale advice priced a real book.
+    return null;
+  }
+  const parsed = mobileBookAdvisorResponseSchema.safeParse(record.advisor);
+  return parsed.success ? parsed.data : null;
+}
+
+function advisorContextFingerprintFor(payload: MobileCreationDraftPayload): string {
+  return hashString(
+    JSON.stringify({
+      presets: payload.selectedPresets ?? null,
+      sourceNotes: payload.sourceNotes ?? "",
+      optionalDetails: payload.optionalDetails ?? null
+    })
+  );
 }
 
 /**
@@ -127,16 +167,21 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
         message: restriction.message
       };
     }
-    const advisorFromDraft = mobileBookAdvisorResponseSchema.safeParse(draft.advisorSnapshot);
-    const advisor = advisorFromDraft.success
-      ? advisorFromDraft.data
-      : await adviseMobileBook(mergedPayload, {
-          enrich: advisorEnrichment,
-          timeoutMs: options.advisorTimeoutMs
-        });
+    const advisorContextFingerprint = advisorContextFingerprintFor(mergedPayload);
+    // A snapshot stamped with the current revision and preset context was
+    // computed by this very function moments ago (the preflight); reusing it
+    // skips both advisor calls. Anything else — older revision, different
+    // presets, a legacy unstamped snapshot — is recomputed.
+    const storedAdvisor = storedAdvisorForBuild(draft, advisorContextFingerprint);
+    const advisor =
+      storedAdvisor ??
+      (await adviseMobileBook(mergedPayload, {
+        enrich: advisorEnrichment,
+        timeoutMs: options.advisorTimeoutMs
+      }));
     const selectedPresets = mergedPayload.selectedPresets ?? advisor.recommendation;
     const unresolvedAuto = selectedPresets.bookTypeChoice === "auto";
-    const effectiveAdvisor = unresolvedAuto && advisor.detectedLane !== "auto"
+    const effectiveAdvisor = !storedAdvisor && unresolvedAuto && advisor.detectedLane !== "auto"
       ? await adviseMobileBook(
           mobileCreationDraftPayloadSchema.parse({
             ...mergedPayload,
@@ -165,6 +210,7 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
       selectedPresets,
       finalPayload,
       finalAdvisor,
+      advisorContextFingerprint,
       pageCount: resolveMobilePageCount(finalPayload, selectedPresets)
     };
   }
@@ -235,7 +281,9 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
             expectedRevision: overrides.expectedRevision,
             data: {
               status: "ACTIVE",
-              advisorSnapshot: jsonInputValue(finalAdvisor),
+              advisorSnapshot: jsonInputValue(
+                advisorSnapshotForStorage(finalAdvisor, draft.revision, prepared.advisorContextFingerprint)
+              ),
               payload: jsonInputValue(finalPayload)
             },
             transaction: tx
@@ -271,7 +319,9 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
             where: { id: draftId },
             data: {
               status: "ACTIVE",
-              advisorSnapshot: jsonInputValue(finalAdvisor),
+              advisorSnapshot: jsonInputValue(
+                advisorSnapshotForStorage(finalAdvisor, draft.revision, prepared.advisorContextFingerprint)
+              ),
               createdProjectId: createdProject.id,
               revision: { increment: 1 }
             }

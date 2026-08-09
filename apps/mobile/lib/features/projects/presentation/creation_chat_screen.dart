@@ -490,6 +490,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                             onSend: _send,
                             onQuickReply: _send,
                             onAnswerOption: _send,
+                            onSkipQuestion: _sendQuestionSkip,
                             onAttach: () => _openAttachMenu(state),
                             onRetryAttachment: (localId) => unawaited(
                               ref
@@ -876,6 +877,18 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         curve: Curves.easeOutCubic,
       );
     });
+  }
+
+  /// A question-skip tap: sends the localized skip text as a normal chat
+  /// message, flagged so the server keeps it out of the composed book prompt.
+  Future<void> _sendQuestionSkip(String text) async {
+    AppHaptics.tap();
+    _resumeStickToBottom();
+    try {
+      await ref
+          .read(creationChatControllerProvider.notifier)
+          .sendMessage(text, skippedQuestion: true);
+    } catch (_) {}
   }
 
   Future<void> _send(String text) async {

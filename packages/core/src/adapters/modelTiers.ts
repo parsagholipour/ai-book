@@ -12,12 +12,17 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "review-page",
   "judge-page-drafts",
   "final-book-qa",
+  // The chapter-transition sibling of final-book-qa: a strict-schema issue
+  // list, not prose. Left off this list it ran on the premium prose model.
+  "book.final_qa.chapter_transitions",
   "chapterize-export",
   "repair-page-brief",
   "generate-page-map",
   "generate-chapter-brief",
   "import-chapterize",
-  "import-style-profile"
+  "import-style-profile",
+  // A 300-token pick from a fixed catalog (coverDesigns.ts).
+  "select-cover-design"
 ]);
 
 export type ModelTierTextSelections = {

@@ -179,6 +179,7 @@ class FakeCreationRepository implements CreationRepository {
     String? replyToMessageId,
     String? requestId,
     int? expectedRevision,
+    bool skippedQuestion = false,
   }) async {
     return fakeGreetingConversation(withSession: true);
   }

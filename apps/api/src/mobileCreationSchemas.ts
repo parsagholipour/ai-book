@@ -246,6 +246,10 @@ export const mobileCreationMessageSchema = z
     requestId: z.string().trim().min(8).max(64).optional(),
     parentId: z.string().trim().min(1).max(64).nullable().optional(),
     isActiveChild: z.boolean().optional(),
+    // The user tapped "skip" on a question; the visible text is the localized
+    // skip label, and this marker is what keeps it out of rawIdea and the
+    // composed book prompt.
+    skippedQuestion: z.boolean().optional(),
     // The earlier message this turn replies to, snapshotted at send time so it
     // still renders after the transcript cap folds the original into the
     // summary. See chatReplyQuote.ts.

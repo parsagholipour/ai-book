@@ -3,8 +3,10 @@ import {
   mergeMobileCreationPresets,
   mobileBookAdvisorBodySchema,
   mobileCreationDraftPayloadSchema,
+  type MobileCreationDraftPayload,
   type MobileCreationPresetsInput
 } from "../../mobileCreation.js";
+import { enforceContentRestrictions } from "../../contentRestrictions.js";
 import { serializeCreationDraft } from "../creationSessions.js";
 import { type MobileBookAdvisorResponseDto, type MobileCreationDraftResponseDto } from "../dto.js";
 import { hitAuthenticatedLimit, hitTieredLimit, requireMobileAuth, sendMobileError } from "../httpErrors.js";
@@ -18,6 +20,21 @@ import type { MobileRouteContext } from "../routeContext.js";
 /**
  * Legacy single-draft creation flow plus the book advisor.
  */
+
+/**
+ * Everything writable through these legacy routes that later reaches the
+ * composed book prompt. The build re-screens only rawIdea/sourceNotes/details,
+ * never the messages transcript — so an unscreened transcript written here
+ * would flow into `composeMobileProjectPrompt` unchecked.
+ */
+function creationDraftScreenText(payload: MobileCreationDraftPayload): string {
+  return [
+    payload.rawIdea ?? "",
+    payload.sourceNotes ?? "",
+    JSON.stringify(payload.optionalDetails ?? {}),
+    ...(payload.messages ?? []).filter((message) => message.role === "user").map((message) => message.content)
+  ].join("\n");
+}
 
 export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance, context: MobileRouteContext): Promise<void> {
   const { generationLimiter, advisorLimiter, draftLimiter, advisorEnrichment, options } = context;
@@ -53,6 +70,9 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
       const parsed = mobileCreationDraftPayloadSchema.safeParse(request.body);
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send a valid creation brief.");
+      }
+      if (!(await enforceContentRestrictions(reply, creationDraftScreenText(parsed.data)))) {
+        return;
       }
       const draft = await prisma.mobileCreationDraft.create({
         data: {
@@ -102,9 +122,16 @@ export async function registerMobileCreationDraftRoutes(fastify: FastifyInstance
               )
             })
           : parsed.data;
+      // Screened and revision-bumped like the session routes: this overwrite
+      // replaces the whole payload — messages transcript included — and the
+      // build path only re-screens the brief fields. The bump also invalidates
+      // any advisor snapshot computed from the replaced content.
+      if (!(await enforceContentRestrictions(reply, creationDraftScreenText(payload)))) {
+        return;
+      }
       const draft = await prisma.mobileCreationDraft.update({
         where: { id },
-        data: { payload: jsonInputValue(payload) }
+        data: { payload: jsonInputValue(payload), revision: { increment: 1 } }
       });
       return { draft: serializeCreationDraft(draft) } satisfies MobileCreationDraftResponseDto;
     }

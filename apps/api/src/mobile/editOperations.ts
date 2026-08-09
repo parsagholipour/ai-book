@@ -27,7 +27,7 @@ import {
   jsonRecord,
   languageDisplayName
 } from "./support.js";
-import { creditCostForOperation } from "@book-maker/core";
+import { bookPlanSchema, creditCostForOperation } from "@book-maker/core";
 import { PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,
@@ -227,6 +227,17 @@ async function queueAttemptChatOperation(options: {
   return { reply, operation: updated as MobileBookEditOperationRecord };
 }
 
+/** The current plan's question prompts that appear verbatim in the message. */
+function planQuestionPromptsInMessage(project: ProjectForChat, message: string): string[] {
+  const parsed = bookPlanSchema.safeParse(project.currentPlan?.planningPackage);
+  if (!parsed.success) {
+    return [];
+  }
+  return parsed.data.questions
+    .map((question) => question.prompt)
+    .filter((prompt) => prompt.trim().length > 0 && message.includes(prompt));
+}
+
 export async function queueChatPlanRevision(options: {
   userId: string;
   project: ProjectForChat;
@@ -237,6 +248,11 @@ export async function queueChatPlanRevision(options: {
   const { userId, project, userMessageId, message, intent } = options;
   const planId = project.currentPlan!.id;
   const credits = creditCostForOperation("PLAN_REVISION");
+  // Both plan-question surfaces answer through chat by embedding each
+  // question's prompt verbatim ("- {prompt}: {answer}"), so the answered
+  // prompts are recovered from the message itself — this is what lets the
+  // reviser drop them instead of re-asking, without a new chat field.
+  const respondedQuestionPrompts = planQuestionPromptsInMessage(project, message);
   const operation = await createOpenBookEditOperation({
     projectId: project.id,
     requestId: userMessageId,
@@ -267,7 +283,8 @@ export async function queueChatPlanRevision(options: {
       planId,
       message,
       operationId: operation.id,
-      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:plan-revision`
+      idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:plan-revision`,
+      ...(respondedQuestionPrompts.length ? { respondedQuestionPrompts } : {})
     });
   } catch (error) {
     // Conditional on the job linkage: a post-commit read failure inside
@@ -684,6 +701,7 @@ export async function queueDirectPlanRevision(options: {
   planId: string;
   message: string;
   requestId: string;
+  respondedQuestionPrompts?: string[] | undefined;
 }): Promise<{
   operation: MobileBookEditOperationRecord;
   job: Awaited<ReturnType<typeof enqueueGenerationJob>>;
@@ -728,7 +746,10 @@ export async function queueDirectPlanRevision(options: {
       planId: options.planId,
       message: options.message,
       operationId: operation.id,
-      idempotencyKey: `mobile:plan:${options.planId}:revision:${options.requestId}`
+      idempotencyKey: `mobile:plan:${options.planId}:revision:${options.requestId}`,
+      ...(options.respondedQuestionPrompts?.length
+        ? { respondedQuestionPrompts: options.respondedQuestionPrompts }
+        : {})
     });
   } catch (error) {
     // Same job-linkage guard as the chat paths: only a row whose attempt never
@@ -784,6 +805,8 @@ export async function queueChargedPlanRevision(options: {
   message: string;
   idempotencyKey: string;
   operationId?: string | undefined;
+  /** Plan question prompts this revision answers; the reviser won't re-ask them. */
+  respondedQuestionPrompts?: string[] | undefined;
 }): Promise<{ job: Awaited<ReturnType<typeof enqueueGenerationJob>>; ledgerEntry: CreditLedgerEntryRecord | null }> {
   const amountCredits = creditCostForOperation("PLAN_REVISION");
   const started = await startGenerationAttempt({
@@ -794,7 +817,10 @@ export async function queueChargedPlanRevision(options: {
     requestFingerprint: fingerprintGenerationRequest({
       projectId: options.projectId,
       planId: options.planId,
-      message: options.message
+      message: options.message,
+      ...(options.respondedQuestionPrompts?.length
+        ? { respondedQuestionPrompts: options.respondedQuestionPrompts }
+        : {})
     }),
     projectId: options.projectId,
     operation: "PLAN_REVISION",
@@ -815,6 +841,9 @@ export async function queueChargedPlanRevision(options: {
           payload: {
             planId: options.planId,
             message: options.message,
+            ...(options.respondedQuestionPrompts?.length
+              ? { respondedQuestionPrompts: options.respondedQuestionPrompts }
+              : {}),
             ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {}),
             ...(options.operationId ? { editOperationId: options.operationId } : {})
           }

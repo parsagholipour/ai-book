@@ -115,6 +115,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     String text, {
     String? editMessageId,
     ChatReplyTarget? replyTo,
+    bool skippedQuestion = false,
   }) async {
     final trimmed = text.trim();
     final draftId = state.draftId;
@@ -242,6 +243,7 @@ class CreationChatController extends Notifier<CreationChatState> {
               replyToMessageId: replyTo?.messageId,
               requestId: serverRequestId,
               expectedRevision: state.sessionRevision,
+              skippedQuestion: skippedQuestion,
             );
       cache.write(response);
       final createdDraftId = response.session?.draftId;

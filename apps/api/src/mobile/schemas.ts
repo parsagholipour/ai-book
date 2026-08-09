@@ -164,7 +164,14 @@ export const mobileComposedProjectCreateSchema = z
 export const mobilePlanRevisionBodySchema = z
   .object({
     message: z.string().trim().min(1).max(5000),
-    requestId: requestIdSchema.optional()
+    requestId: requestIdSchema.optional(),
+    /**
+     * The plan questions this revision answers, by their prompt text. The
+     * reviser filters them from the next version's questions so the reader is
+     * never re-asked something they already answered — the web operator path
+     * has always sent this; without it the guarantee was prompt-only here.
+     */
+    respondedQuestionPrompts: z.array(z.string().trim().min(1).max(1000)).max(40).optional()
   })
   .strict();
 
@@ -268,7 +275,9 @@ export const mobileCreationMessageBodySchema = z
     // When set, the message replaces a prior user message as a new branch.
     editMessageId: z.string().trim().min(1).max(64).optional(),
     // When set, the message is a reply quoting an earlier turn of either role.
-    replyToMessageId: z.string().trim().min(1).max(64).optional()
+    replyToMessageId: z.string().trim().min(1).max(64).optional(),
+    // The message is a question-skip tap; excluded from rawIdea server-side.
+    skippedQuestion: z.boolean().optional()
   })
   .strict()
   .refine((body) => body.message.length > 0 || (body.attachmentIds?.length ?? 0) > 0, {
@@ -508,7 +517,12 @@ export const mobilePlanRevisionOpenApiBody = {
   additionalProperties: false,
   properties: {
     message: { type: "string", minLength: 1, maxLength: 5000 },
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    respondedQuestionPrompts: {
+      type: "array",
+      maxItems: 40,
+      items: { type: "string", minLength: 1, maxLength: 1000 }
+    }
   },
   required: ["message"]
 } as const;
@@ -570,7 +584,8 @@ export const mobileCreationMessageOpenApiBody = {
     requestId: { type: "string", minLength: 8, maxLength: 64 },
     expectedRevision: { type: "integer", minimum: 1 },
     editMessageId: { type: "string", minLength: 1, maxLength: 64 },
-    replyToMessageId: { type: "string", minLength: 1, maxLength: 64 }
+    replyToMessageId: { type: "string", minLength: 1, maxLength: 64 },
+    skippedQuestion: { type: "boolean" }
   }
 } as const;
 
