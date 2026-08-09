@@ -131,31 +131,36 @@ describe("billing credit assumptions", () => {
     expect(legacy(true).totalCredits - legacy(false).totalCredits).toBe(DEFAULT_CREDIT_COSTS.imageGeneration);
   });
 
-  it("adds premium review credits when the mobile preset uses best-of drafting", () => {
-    const input = createProjectSchema.parse({
-      prompt: "Create a premium guide about pricing consulting retainers.",
-      category: "BUSINESS",
-      subcategory: "Lead Magnet Ebook",
-      targetPages: 24,
-      complexity: 6,
-      temperature: 0.55,
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "template-driven",
-        includeCover: true,
-        coverTemplate: "business",
-        finalReview: true,
-        toneProfile: "confident",
-        draftCandidates: 2
-      }
-    });
+  it("adds premium review credits for the premium preset, not for an inert best-of knob", () => {
+    const inputWith = (mediaExtras: Record<string, unknown>) =>
+      createProjectSchema.parse({
+        prompt: "Create a premium guide about pricing consulting retainers.",
+        category: "BUSINESS",
+        subcategory: "Lead Magnet Ebook",
+        targetPages: 24,
+        complexity: 6,
+        temperature: 0.55,
+        mediaSettings: {
+          fullIllustrations: true,
+          illustrationCadence: "template-driven",
+          includeCover: true,
+          coverTemplate: "business",
+          finalReview: true,
+          toneProfile: "confident",
+          ...mediaExtras
+        }
+      });
 
-    const estimate = estimateFullBookCreditCost(input);
-
-    expect(estimate.assumptions.includesPremiumReview).toBe(true);
-    expect(estimate.lineItems).toContainEqual(
+    const premium = estimateFullBookCreditCost(inputWith({ mobile: { qualityPreset: "premium" } }));
+    expect(premium.assumptions.includesPremiumReview).toBe(true);
+    expect(premium.lineItems).toContainEqual(
       expect.objectContaining({ code: "PREMIUM_REVIEW", credits: DEFAULT_CREDIT_COSTS.premiumReview })
     );
+
+    // `draftCandidates` alone no longer prices premium review: mobile lengths
+    // route to strategies that never read the knob, so it charged for nothing.
+    const knobOnly = estimateFullBookCreditCost(inputWith({ draftCandidates: 2 }));
+    expect(knobOnly.assumptions.includesPremiumReview).toBe(false);
   });
 
   it("adjusts provider cost assumptions per model tier without changing credit prices", () => {

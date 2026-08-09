@@ -9,7 +9,7 @@ import {
   toPriorPageContext
 } from "../generation/bookHelpers.js";
 import { loadContinuityNotes } from "../generation/generationContext.js";
-import { revisePageDraftWithRestart } from "../generation/pageReview.js";
+import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
 import { inputForPlanVersion, inputWithMessageMediaPreferences, inputWithMobileSourceMaterial } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -339,7 +339,7 @@ export async function rewritePageForUserRequest(options: {
     }
   });
   await options.onPhase?.("review");
-  const qualityReport = await options.strategy.reviewPageDraft({
+  const initialReport = await options.strategy.reviewPageDraft({
     input: options.input,
     plan: options.plan,
     chapter: chapterPlan,
@@ -351,5 +351,47 @@ export async function rewritePageForUserRequest(options: {
     continuityNotes,
     textModel: options.providers.text
   });
-  return { ...draft, qualityReport };
+  if (initialReport.approved) {
+    return { ...draft, qualityReport: initialReport };
+  }
+  // A rejected rewrite used to be stored as-is with its report ignored. Give
+  // it the same bounded revise → re-review loop a generated page gets, with a
+  // smaller budget — the requested edit is already in the draft, so revisions
+  // must repair quality without undoing it, which is what the injected
+  // required revision pins down.
+  const outcome = await runPageQualityLoop({
+    strategy: options.strategy,
+    input: options.input,
+    plan: options.plan,
+    chapter: chapterPlan,
+    chapterBrief,
+    pageBrief,
+    pageIndex: options.page.index,
+    draft,
+    report: {
+      ...initialReport,
+      requiredRevisions: [
+        `Keep the user's requested edit applied: ${options.request}`,
+        ...initialReport.requiredRevisions
+      ]
+    },
+    previousPages: priorPageContext,
+    continuityNotes,
+    textModel: options.providers.text,
+    generationJobId: options.generationJobId,
+    maxCandidates: USER_EDIT_MAX_CANDIDATES,
+    repairBrief: false,
+    reviseContext: `User edit page ${options.page.index}`,
+    reviseProgress: 62,
+    onRewrite: async () => {
+      await options.onPhase?.("draft");
+    }
+  });
+  return { ...outcome.draft, qualityReport: outcome.report };
 }
+
+/**
+ * Smaller than a generated page's budget: the edit was priced as one rewrite,
+ * so a stubborn page gets two extra attempts, not six.
+ */
+const USER_EDIT_MAX_CANDIDATES = 3;

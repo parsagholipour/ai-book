@@ -182,6 +182,11 @@ export async function reviewAndSaveGeneratedPage(options: {
   chapterPageEnd?: number | undefined;
   previousPages: PriorPageContext[];
   generationJobId?: string | undefined;
+  /**
+   * Callers whose charge never priced images (book continuation) opt out; the
+   * page is still reviewed and saved identically.
+   */
+  illustrate?: boolean | undefined;
 }): Promise<PriorPageContext> {
   const pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
   const continuityNotes = await loadContinuityNotes(options.projectId);
@@ -288,7 +293,7 @@ export async function reviewAndSaveGeneratedPage(options: {
 
   await storeEmbedding(options.projectId, `page:${options.draft.index}`, page.id, draft.summary, options.providers.embedding);
 
-  if (draft.imagePrompt && options.strategy.shouldIllustratePage(options.input, options.plan, options.draft.index)) {
+  if (options.illustrate !== false && draft.imagePrompt && options.strategy.shouldIllustratePage(options.input, options.plan, options.draft.index)) {
     await enqueueWorkerJob({
       projectId: options.projectId,
       type: "GENERATE_IMAGE",

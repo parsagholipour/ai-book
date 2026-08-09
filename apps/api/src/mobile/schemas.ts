@@ -411,8 +411,10 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     complexity: 6,
     temperature: 0.55,
     finalReview: true,
-    draftCandidates: 2,
-    parallelPageGeneration: false,
+    // Not 2: every mobile length routes to a strategy that never reads
+    // best-of drafting, so the knob only distorted the premium price. The
+    // tier's value is the premium model routing, which applies everywhere.
+    draftCandidates: 1,
     modelTier: "premium"
   }
 };

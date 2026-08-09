@@ -115,6 +115,14 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.prisma.pageEditSnapshot.deleteMany).toHaveBeenCalledWith({
       where: { operationId: "op-1", pageIndex: { in: [2] } }
     });
+    // The queued reply promised page 2, so the operation records the skip for
+    // the serializer to surface — silence here left the transcript claiming an
+    // edit that never happened.
+    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ classifier: expect.objectContaining({ skippedPageIndexes: [2] }) })
+      })
+    );
   });
 
   it("patches a page whose only match is the title instead of skipping it", async () => {
@@ -146,7 +154,7 @@ describe("applyBookEdit in exact mode", () => {
       markdown: "Rewritten.",
       summary: "Summary.",
       continuityNotes: [],
-      qualityReport: {}
+      qualityReport: { approved: true }
     });
 
     await applyBookEdit(
@@ -160,6 +168,34 @@ describe("applyBookEdit in exact mode", () => {
     );
 
     expect(mocks.rewritePageForUserRequest).toHaveBeenCalledTimes(1);
-    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: false });
+    // The rewrite was reviewed per page with the user's request in context;
+    // the recompile never re-runs the whole-book QA pass for an edit.
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
+  });
+
+  it("saves a rewrite whose best candidate still failed review as FAILED_QA", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Nothing to see here.")]);
+    mocks.rewritePageForUserRequest.mockResolvedValue({
+      title: "Page 1",
+      markdown: "Rewritten.",
+      summary: "Summary.",
+      continuityNotes: [],
+      qualityReport: { approved: false, score: 40 }
+    });
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Make page 1 funnier",
+        affectedPageIndexes: [1],
+        planId: "plan-1"
+      })
+    );
+
+    const savedPage = mocks.prisma.page.update.mock.calls
+      .map((call) => (call[0] as { data: Record<string, unknown> }).data)
+      .find((data) => data.markdown === "Rewritten.");
+    expect(savedPage).toMatchObject({ status: "FAILED_QA" });
   });
 });

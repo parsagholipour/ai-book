@@ -264,9 +264,13 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
 
       // Answering questions and reading content are always allowed while a job
       // runs; edit requests get saved as the project's one pending edit and can
-      // be applied with a quick confirmation once the work settles.
+      // be applied with a quick confirmation once the work settles. The free
+      // presentation toggles ride along: they only write a mediaSettings field
+      // and queue a deduped recompile, so deflecting them into the pending-edit
+      // machinery would make a zero-cost, idempotent switch wait on a job it
+      // does not race.
       const openEditBlocked = await hasOpenProjectWork(id);
-      const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content"];
+      const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content", "back_matter", "chapter_heading"];
       if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
         // A typed confirmation racing the Apply button: when the "busy" job is
         // the button's own execution of this very proposal, saving the request

@@ -3,7 +3,7 @@ import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
-import { createPlanningPackage, revisePlanningPackage } from "./planner.js";
+import { createPlanningPackage, normalizePlanPageTargets, revisePlanningPackage } from "./planner.js";
 
 describe("createPlanningPackage", () => {
   it("reports real planning phases around research and generation", async () => {
@@ -418,6 +418,45 @@ describe("revisePlanningPackage", () => {
     });
 
     expect(revised.questions.map((question) => question.prompt)).toEqual([necessaryPrompt]);
+  });
+});
+
+describe("normalizePlanPageTargets", () => {
+  const chapterAt = (index: number, targetPages = 1) => ({
+    index,
+    title: `Beat ${index}`,
+    summary: `What happens in beat ${index}.`,
+    targetPages,
+    keyBeats: [`Beat ${index} happens.`]
+  });
+
+  it("merges a one-chapter-per-page plan for a book long enough to print chapters", () => {
+    const base = makeFallbackPlan(testInput({ targetPages: 12 }));
+    const plan = { ...base, chapters: Array.from({ length: 12 }, (_, offset) => chapterAt(offset + 1)) } as BookPlan;
+
+    const normalized = normalizePlanPageTargets(plan, 12);
+
+    // The prompt forbids one chapter per page; the old guard only fired when
+    // chapters *exceeded* the page count, so exactly-one-per-page slipped by.
+    expect(normalized.chapters.length).toBeLessThanOrEqual(6);
+    expect(normalized.chapters.length).toBeGreaterThan(1);
+    const total = normalized.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0);
+    expect(total).toBe(12);
+    // Merging is pairwise-adjacent, so no single chapter swallows the tail.
+    expect(Math.max(...normalized.chapters.map((chapter) => chapter.targetPages))).toBeLessThanOrEqual(4);
+    expect(normalized.chapters.map((chapter) => chapter.index)).toEqual(
+      normalized.chapters.map((_, offset) => offset + 1)
+    );
+  });
+
+  it("leaves a short book's one-page chapters alone — they are a writing scaffold", () => {
+    const base = makeFallbackPlan(testInput({ targetPages: 3 }));
+    const plan = { ...base, chapters: [chapterAt(1), chapterAt(2), chapterAt(3)] } as BookPlan;
+
+    const normalized = normalizePlanPageTargets(plan, 3);
+
+    expect(normalized.chapters).toHaveLength(3);
+    expect(normalized.chapters.every((chapter) => chapter.targetPages === 1)).toBe(true);
   });
 });
 

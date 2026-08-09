@@ -415,7 +415,12 @@ export function estimateInteriorImageCount(input: CreateProjectInput): number {
 
 export function isPremiumProject(input: CreateProjectInput): boolean {
   const mobile = mobileMetadata(input.mediaSettings);
-  return mobile?.qualityPreset === "premium" || (input.mediaSettings.draftCandidates ?? 1) > 1;
+  // The preset alone, deliberately not `draftCandidates`: best-of drafting is
+  // consumed only by the sequential-pages strategy (books past the mobile
+  // ceiling), so pricing on the knob charged premium review for a setting the
+  // routed strategy never read. The preset's real value — premium model
+  // routing — applies to every strategy.
+  return mobile?.qualityPreset === "premium";
 }
 
 function mobileMetadata(mediaSettings: CreateProjectInput["mediaSettings"]): {

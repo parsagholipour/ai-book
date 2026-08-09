@@ -727,6 +727,10 @@ function describeEditPages(indexes: number[]): string {
   return `${pages.length} pages`;
 }
 
+function capitalizeFirst(text: string): string {
+  return text.length > 0 ? text[0]!.toUpperCase() + text.slice(1) : text;
+}
+
 export function currentActionForEditOperation(operation: MobileBookEditOperationRecord): string {
   if (operation.status === "FAILED") {
     if (operation.kind === "PLAN_REVISION") {
@@ -735,6 +739,19 @@ export function currentActionForEditOperation(operation: MobileBookEditOperation
     return "Edit failed.";
   }
   if (operation.status === "APPLIED") {
+    // The worker records pages it skipped because their text had changed
+    // between the quote and the apply; the card is where that has to be said,
+    // because the queued chat reply already promised those pages.
+    const skipped = jsonRecord(operation.classifier)
+      .skippedPageIndexes as unknown;
+    const skippedPages = Array.isArray(skipped)
+      ? skipped.filter((index): index is number => Number.isInteger(index) && (index as number) > 0)
+      : [];
+    if (skippedPages.length > 0) {
+      return operation.affectedPageIndexes.length === 0
+        ? `Nothing was changed: ${describeEditPages(skippedPages)} no longer contained that text.`
+        : `Edit applied. ${capitalizeFirst(describeEditPages(skippedPages))} no longer contained that text and ${skippedPages.length === 1 ? "was" : "were"} left unchanged.`;
+    }
     return "Edit applied.";
   }
   if (operation.kind === "BOOK_REPLAN") {

@@ -495,17 +495,22 @@ export async function queueChatBookEdit(options: {
     return { reply, operation: null };
   }
   if (affectedPageIndexes.length === 0) {
+    // Only confirmed proposals reach this function, so a question here would
+    // be the second one the one-question rule forbids — and it would arrive
+    // *after* Apply. The book changed since the card: settle the proposal as
+    // obsolete for free instead.
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
       content:
         intent.kind === "chapter_regenerate"
-          ? `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book. Which chapter or pages should I rewrite?`.replace("  ", " ")
-          : "Which page or exact phrase should I edit?",
+          ? `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book any more, so nothing was changed or charged.`.replace("  ", " ")
+          : "I couldn’t find the pages that edit targeted any more, so nothing was changed or charged.",
       metadata: {
-        intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "scope" },
-        pendingEdit: { request: message, clarification: "scope" },
-        charged: false
+        intent,
+        charged: false,
+        pendingEditCancelled: true,
+        ...(options.executionCommandId ? { proposalId: options.executionCommandId } : {})
       }
     });
     return { reply, operation: null };

@@ -141,7 +141,9 @@ export function buildMobileCreateProjectInput(input: MobileProjectCreateRequestD
     finalReview: quality.finalReview,
     toneProfile: bookType.toneProfile,
     generationStrategy: AUTO_BOOK_GENERATION_STRATEGY_ID,
-    parallelPageGeneration: quality.parallelPageGeneration,
+    ...(quality.parallelPageGeneration !== undefined
+      ? { parallelPageGeneration: quality.parallelPageGeneration }
+      : {}),
     draftCandidates: quality.draftCandidates,
     modelTier: quality.modelTier
   });

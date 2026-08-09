@@ -240,7 +240,17 @@ function compactPlanForRevisionPrompt(plan: BookPlan): Omit<BookPlan, "researchN
 
 export function normalizePlanPageTargets(plan: BookPlan, targetPages: number): BookPlan {
   const pageTarget = Math.max(1, Math.floor(targetPages));
-  const sourceChapters = plan.chapters.length > pageTarget ? mergeOverflowChapters(plan.chapters, pageTarget) : plan.chapters;
+  // Above the size where chapter apparatus actually prints (~8 pages), a
+  // chapter that averages under two pages is a heading over a paragraph. The
+  // prompt already forbids one-chapter-per-page plans; this is the guarantee —
+  // the old guard only merged when chapters *exceeded* the page count, so a
+  // plan with exactly one chapter per page sailed through untouched. Short
+  // books keep their one-page chapters deliberately: they are a writing
+  // scaffold, and `chapterPresentationFor` already sizes the printed
+  // apparatus to the finished book.
+  const chapterLimit = pageTarget >= 8 ? Math.max(1, Math.floor(pageTarget / 2)) : pageTarget;
+  const sourceChapters =
+    plan.chapters.length > chapterLimit ? mergeAdjacentChapters(plan.chapters, chapterLimit) : plan.chapters;
   const chapterCount = Math.max(1, Math.min(sourceChapters.length, pageTarget));
   const chapters = sourceChapters.slice(0, chapterCount);
   const targetPageCounts = distributeTargetPages(chapters, pageTarget);
@@ -255,35 +265,38 @@ export function normalizePlanPageTargets(plan: BookPlan, targetPages: number): B
   };
 }
 
-function mergeOverflowChapters(chapters: ChapterPlan[], chapterLimit: number): ChapterPlan[] {
-  const kept = chapters.slice(0, chapterLimit);
-  const overflow = chapters.slice(chapterLimit);
-  const last = kept[kept.length - 1];
-  if (!last || overflow.length === 0) {
-    return kept;
-  }
-
-  const overflowSummaries = overflow
-    .map((chapter) => `${chapter.title}: ${chapter.summary}`.trim())
-    .filter(Boolean);
-  const overflowBeats = overflow.flatMap((chapter) => [
-    `Fold in ${chapter.title}.`,
-    ...chapter.keyBeats
-  ]);
-  const overflowIllustrationPrompts = overflow.flatMap((chapter) => chapter.illustrationPrompts ?? []);
-
-  return [
-    ...kept.slice(0, -1),
-    {
-      ...last,
-      summary: [last.summary, overflowSummaries.length ? `Also covers ${overflowSummaries.join(" ")}` : ""]
-        .filter(Boolean)
-        .join(" "),
-      targetPages: last.targetPages + sumChapterTargetPages(overflow),
-      keyBeats: [...last.keyBeats, ...overflowBeats].slice(0, 20),
-      illustrationPrompts: [...(last.illustrationPrompts ?? []), ...overflowIllustrationPrompts].slice(0, 12)
+/**
+ * Merges the smallest adjacent pair until the plan fits the limit. Adjacent,
+ * not overflow-into-last: folding every extra chapter into the final one
+ * turned a twelve-beat outline into five thin chapters and one bloated tail,
+ * while pairwise merging keeps the narrative order and the sizes balanced.
+ */
+function mergeAdjacentChapters(chapters: ChapterPlan[], chapterLimit: number): ChapterPlan[] {
+  const merged = [...chapters];
+  while (merged.length > Math.max(1, chapterLimit)) {
+    let bestIndex = 0;
+    let bestSize = Number.POSITIVE_INFINITY;
+    for (let index = 0; index + 1 < merged.length; index += 1) {
+      const size =
+        Math.max(1, Math.floor(merged[index]!.targetPages)) + Math.max(1, Math.floor(merged[index + 1]!.targetPages));
+      if (size < bestSize) {
+        bestSize = size;
+        bestIndex = index;
+      }
     }
-  ];
+    merged.splice(bestIndex, 2, mergeChapterPair(merged[bestIndex]!, merged[bestIndex + 1]!));
+  }
+  return merged;
+}
+
+function mergeChapterPair(first: ChapterPlan, second: ChapterPlan): ChapterPlan {
+  return {
+    ...first,
+    summary: [first.summary, `Also covers ${second.title}: ${second.summary}`.trim()].filter(Boolean).join(" "),
+    targetPages: Math.max(1, Math.floor(first.targetPages)) + Math.max(1, Math.floor(second.targetPages)),
+    keyBeats: [...first.keyBeats, `Fold in ${second.title}.`, ...second.keyBeats].slice(0, 20),
+    illustrationPrompts: [...(first.illustrationPrompts ?? []), ...(second.illustrationPrompts ?? [])].slice(0, 12)
+  };
 }
 
 function distributeTargetPages(chapters: ChapterPlan[], targetPages: number): number[] {

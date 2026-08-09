@@ -6,7 +6,7 @@ import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
-import { bookPlanSchema, createProviders, hasExactMatch, type ExactReplacement } from "@book-maker/core";
+import { bookPlanSchema, createProviders, hasExactMatch, jsonPayloadToRecord, type ExactReplacement } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
@@ -157,7 +157,10 @@ export async function applyBookEdit(job: Job) {
         markdown: updated.markdown,
         summary: updated.summary,
         imagePrompt: updated.imagePrompt ?? page.imagePrompt,
-        status: "COMPLETED",
+        // The rewrite loop's verdict is saved honestly: a page whose best
+        // candidate still failed review stays flagged, so a later full
+        // compile's repair pass can target it instead of it passing silently.
+        status: updated.qualityReport.approved ? "COMPLETED" : "FAILED_QA",
         revision: { increment: 1 },
         qualityReport: updated.qualityReport as Prisma.InputJsonValue
       }
@@ -204,6 +207,12 @@ export async function applyBookEdit(job: Job) {
     data: {
       status: "APPLIED",
       affectedPageIndexes: updatedPageIndexes,
+      // The queued reply already promised these pages, so a page skipped
+      // because its text changed has to be named somewhere the reader sees —
+      // the serializer reads this to say what was and wasn't touched.
+      ...(skippedPageIndexes.length > 0
+        ? { classifier: { ...jsonPayloadToRecord(operation.classifier), skippedPageIndexes } as Prisma.InputJsonValue }
+        : {}),
       appliedAt: new Date()
     }
   });
@@ -211,8 +220,11 @@ export async function applyBookEdit(job: Job) {
     where: { id: projectId },
     data: { contentRevision: { increment: 1 } }
   });
-  // A mechanical edit changed only the strings the user approved, so the
-  // compile's QA repair pass has nothing to fix and no business rewriting pages
-  // around them — the same reasoning as a manual Edit Mode save.
-  await maybeEnqueueCompile(projectId, effectivePlanVersion.id, { skipFinalReview: mode === "exact" });
+  // The recompile after an edit never runs the whole-book QA pass: an exact
+  // patch changed only approved strings, and a model rewrite was reviewed per
+  // page inside the edit — with the user's request in context, which the QA
+  // repair pass would not have. Rewriting surrounding pages the user never
+  // asked about is the same hazard the manual Edit Mode skip exists for, and
+  // the per-page price never modeled a book-sized review.
+  await maybeEnqueueCompile(projectId, effectivePlanVersion.id, { skipFinalReview: true });
 }

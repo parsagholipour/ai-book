@@ -15,8 +15,8 @@ import {
   strategyForInput,
   toPriorPageContext
 } from "../generation/bookHelpers.js";
-import { loadContinuityNotes } from "../generation/generationContext.js";
-import { storeEmbedding } from "../generation/semanticMemory.js";
+import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generation/generationContext.js";
+import { reviewAndSaveGeneratedPage } from "../generation/pageReview.js";
 import { importStyleProfileFromMediaSettings } from "./importBookSupport.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -165,6 +165,7 @@ export async function continueBook(job: Job) {
       const chapter = await prisma.chapter.findUnique({
         where: { projectId_index: { projectId, index: chapterPlan.index } }
       });
+      const researchNotes = await loadResearchNotesForGeneration(projectId, strategy, chapterPlan);
       for (let offset = 0; offset < chapterPlan.targetPages; offset += 1) {
         const pageIndex = newPageIndexes[drafted]!;
         await advanceJobStep(
@@ -182,30 +183,28 @@ export async function continueBook(job: Job) {
           previousSummaries: [...previousSummaries, ...previousPages.map((page) => page.summary)].slice(-40),
           previousPages: previousPages.slice(-6),
           continuityNotes,
-          researchNotes: [],
+          researchNotes,
           textModel: providers.text
         });
-        const saved = await prisma.page.update({
-          where: { projectId_index: { projectId, index: pageIndex } },
-          data: {
-            title: draft.title,
-            markdown: draft.markdown,
-            summary: draft.summary,
-            status: "COMPLETED"
-          }
+        // The same review → revise loop, honest FAILED_QA status, continuity
+        // notes and entity state every generated page gets — a continuation
+        // used to skip all of it and save drafts sight unseen. Illustration
+        // stays off: the continuation charge never priced images.
+        const saved = await reviewAndSaveGeneratedPage({
+          projectId,
+          planId: newPlanVersion.id,
+          input,
+          plan: extendedPlan,
+          providers,
+          strategy,
+          draft: { ...draft, index: pageIndex },
+          chapterId: chapter?.id ?? null,
+          chapter: chapterPlan,
+          previousPages: previousPages.slice(-18),
+          generationJobId,
+          illustrate: false
         });
-        if (draft.continuityNotes.length > 0) {
-          await prisma.continuityNote.createMany({
-            data: draft.continuityNotes.map((body) => ({
-              projectId,
-              scope: `page:${pageIndex}:continue:${operationId}`,
-              body,
-              tags: ["page", String(pageIndex), "continue"]
-            }))
-          });
-        }
-        await storeEmbedding(projectId, `page:${pageIndex}`, saved.id, saved.summary, providers.embedding);
-        previousPages.push({ index: pageIndex, title: saved.title, markdown: saved.markdown, summary: saved.summary });
+        previousPages.push(saved);
         drafted += 1;
       }
       if (chapter) {

@@ -325,7 +325,7 @@ describe("mobile creation session project build", () => {
         fullIllustrations: true,
         includeCover: true,
         finalReview: true,
-        draftCandidates: 2,
+        draftCandidates: 1,
         generationStrategy: "auto",
         mobile: expect.objectContaining({
           bookType: "lead_magnet",
@@ -425,6 +425,8 @@ describe("mobile creation session project build", () => {
       temperature: 0.65,
       mediaSettings: expect.objectContaining({ finalReview: true, draftCandidates: 1, modelTier: "balanced" })
     });
+    // Premium's value is the model tier; best-of drafting stays off because no
+    // mobile length routes to the strategy that reads it.
     expect(premium).toMatchObject({
       category: "BUSINESS",
       targetPages: 24,
@@ -432,11 +434,11 @@ describe("mobile creation session project build", () => {
       temperature: 0.55,
       mediaSettings: expect.objectContaining({
         finalReview: true,
-        draftCandidates: 2,
-        parallelPageGeneration: false,
+        draftCandidates: 1,
         modelTier: "premium"
       })
     });
+    expect((premium.mediaSettings as Record<string, unknown>).parallelPageGeneration).toBeUndefined();
     // Mobile inputs carry a tier name, never a concrete provider/model selection.
     expect(JSON.stringify({ fast, balanced, premium })).not.toMatch(/provider|textModel|imageModel/);
   });

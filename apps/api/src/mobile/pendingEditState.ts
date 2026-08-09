@@ -333,8 +333,10 @@ export function isPendingEditCancellationMessage(message: string): boolean {
 
 export function isPendingEditNudgeMessage(message: string): boolean {
   const normalized = normalizeShortFollowUpMessage(message);
+  // No bare "why": the normalizer strips the question mark, so a genuine
+  // "why?" about the book would get the recovery card instead of an answer.
   return isPendingEditConfirmationMessage(message) ||
-    /^(?:wow|come on|seriously|same thing|again|i already said it|i said it|why)$/i.test(normalized) ||
+    /^(?:wow|come on|seriously|same thing|again|i already said it|i said it)$/i.test(normalized) ||
     /^i\s+(?:already\s+)?said\b/i.test(normalized);
 }
 

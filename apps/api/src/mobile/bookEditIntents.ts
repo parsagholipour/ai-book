@@ -197,6 +197,11 @@ export async function handleProjectChatIntent(options: {
    */
   pendingRequest?: string | undefined;
   /**
+   * True when this request already spent its one clarifying question. The
+   * proposal path then widens an unresolvable scope instead of asking again.
+   */
+  clarifyExhausted?: boolean | undefined;
+  /**
    * The message this turn replies to. Only the grounded answer reads it — the
    * priced paths take their target from `message`, so a quote cannot change
    * what an edit costs or which pages it rewrites.
@@ -279,7 +284,14 @@ export async function handleProjectChatIntent(options: {
       ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {})
     });
   }
-  return proposeBookEdit({ project, userMessageId, message, intent, pendingRequest });
+  return proposeBookEdit({
+    project,
+    userMessageId,
+    message,
+    intent,
+    pendingRequest,
+    ...(options.clarifyExhausted ? { clarifyExhausted: true } : {})
+  });
 }
 
 /**
@@ -294,8 +306,11 @@ export async function proposeBookEdit(options: {
   intent: BookEditIntent;
   /** The originally requested change when `message` also carries a follow-up. */
   pendingRequest?: string | undefined;
+  /** The one clarifying question was already asked; never ask a second. */
+  clarifyExhausted?: boolean | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
-  const { project, userMessageId, message, intent } = options;
+  const { project, userMessageId, message } = options;
+  let intent = options.intent;
   const pendingRequest = options.pendingRequest?.trim() || message;
   const proposalId = randomUUID();
   if (intent.kind === "continue_book") {
@@ -365,7 +380,34 @@ export async function proposeBookEdit(options: {
   }
 
   let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
+  if (affectedPageIndexes.length === 0 && options.clarifyExhausted && intent.kind !== "chapter_regenerate") {
+    // The one clarifying question is spent, so an unresolvable scope widens to
+    // the whole book — the same default forcedDecision applies — instead of
+    // firing the question a second time. Safe for the same reason that default
+    // is: nothing runs until the proposal card is applied.
+    const widened: BookEditIntent = { ...intent, scope: "all_pages" };
+    const widenedPages = await affectedPagesForIntent(widened, message, project);
+    if (widenedPages.length > 0) {
+      intent = widened;
+      affectedPageIndexes = widenedPages;
+    }
+  }
   if (affectedPageIndexes.length === 0) {
+    if (options.clarifyExhausted && intent.kind === "chapter_regenerate") {
+      // No second question: name what exists, settle the stale pending edit so
+      // it stops resurfacing, and invite a self-contained instruction.
+      const reply = await createAssistantChatMessage({
+        projectId: project.id,
+        parentId: userMessageId,
+        content: `I couldn’t find chapter ${intent.affectedChapterIndex ?? ""} in this book — it has ${project.chapters.length} chapter${project.chapters.length === 1 ? "" : "s"}. Nothing was changed or charged. To go ahead, tell me which one — for example “rewrite chapter 2”.`.replace("  ", " "),
+        metadata: {
+          intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "none" },
+          pendingEditCancelled: true,
+          charged: false
+        }
+      });
+      return { reply, operation: null };
+    }
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,

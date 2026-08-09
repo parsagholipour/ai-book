@@ -137,8 +137,11 @@ describe("deterministic dry run", () => {
       research: new FakeResearchAdapter()
     });
 
-    expect(plan.chapters).toHaveLength(7);
-    expect(plan.chapters.map((chapter) => chapter.targetPages)).toEqual([2, 2, 2, 1, 1, 1, 1]);
+    // Seven chapters over ten pages averaged under two pages each — the thin
+    // heading-over-a-paragraph shape the prompt forbids — so normalization now
+    // merges adjacent chapters until the average holds, then distributes.
+    expect(plan.chapters).toHaveLength(5);
+    expect(plan.chapters.map((chapter) => chapter.targetPages)).toEqual([3, 3, 2, 1, 1]);
     expect(plan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0)).toBe(input.targetPages);
   });
 
@@ -152,7 +155,9 @@ describe("deterministic dry run", () => {
       targetPages: input.targetPages
     });
 
-    expect(plan.chapters.map((chapter) => chapter.targetPages)).toEqual([2, 2, 2, 1, 1, 1, 1]);
+    // Same merge rule as planning: a revision cannot reintroduce the
+    // one-page-chapter shape either.
+    expect(plan.chapters.map((chapter) => chapter.targetPages)).toEqual([3, 3, 2, 1, 1]);
     expect(plan.chapters.reduce((sum, chapter) => sum + chapter.targetPages, 0)).toBe(input.targetPages);
   });
 
