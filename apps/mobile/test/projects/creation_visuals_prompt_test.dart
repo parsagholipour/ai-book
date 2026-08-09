@@ -200,8 +200,13 @@ void main() {
 
     expect((await prefs.load()).visualsPromptSuppressed, isTrue);
 
-    await tester.tap(find.byTooltip('New output in this chat'));
-    await tester.pump();
+    await tester.teardownScreen();
+    await tester.pumpWidget(
+      app(creation: creation, projects: PlanProjectsRepository(), prefs: prefs),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));

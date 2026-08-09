@@ -2660,34 +2660,38 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('one chat can build multiple outputs and selects the latest', (
-    tester,
-  ) async {
-    final creation = ScriptedCreationRepository();
+  testWidgets('plus opens a blank chat from the output stage', (tester) async {
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed idea',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] =
+        'Original completed chat transcript';
     await tester.pumpWidget(
-      app(creation: creation, projects: PlanProjectsRepository()),
+      routerApp(
+        creation: creation,
+        projects: PlanProjectsRepository(),
+        initialLocation: '/books/chat/draft-done',
+      ),
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('A kids book'));
+    expect(find.text('Original completed chat transcript'), findsOneWidget);
+    expect(find.text(planTitle), findsOneWidget);
+
+    await tester.tap(find.byTooltip('New book chat'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
-    await tester.continuePastVisualsPrompt();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
 
-    await tester.tap(find.byTooltip('New output in this chat'));
-    await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
-    await tester.continuePastVisualsPrompt();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 50));
-
-    final chips = tester.widgetList<FilterChip>(find.byType(FilterChip));
-    expect(creation.buildCount, 2);
-    expect(chips, hasLength(2));
-    expect(chips.last.selected, isTrue);
-    expect(find.text(planTitle), findsWidgets);
+    expect(find.text('Original completed chat transcript'), findsNothing);
+    expect(find.text(planTitle), findsNothing);
+    expect(find.textContaining('Tell me about the book'), findsOneWidget);
+    expect(find.byTooltip('New book chat'), findsOneWidget);
 
     await tester.teardownScreen();
   });

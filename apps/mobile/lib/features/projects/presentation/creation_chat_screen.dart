@@ -290,20 +290,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
             leading: EasyDrawerButton(controllerKey: _drawerKey),
             title: Text(screenTitle),
             actions: [
+              IconButton(
+                tooltip: 'New book chat',
+                onPressed: () => context.go(newBookChatLocation()),
+                icon: const Icon(Icons.add_circle_outline),
+              ),
               if (isInOutputStage) ...[
-                IconButton(
-                  tooltip: 'New output in this chat',
-                  onPressed: () {
-                    setState(() {
-                      _projectId = null;
-                      _resetPlanReviewState();
-                    });
-                    ref
-                        .read(creationChatControllerProvider.notifier)
-                        .startNewOutput();
-                  },
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
                 IconButton(
                   tooltip: 'Book progress',
                   onPressed: () => context.push('/projects/$activeProjectId'),
@@ -315,11 +307,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                   icon: const Icon(Icons.refresh),
                 ),
               ] else ...[
-                IconButton(
-                  tooltip: 'New book chat',
-                  onPressed: () => context.go(newBookChatLocation()),
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
                 IconButton(
                   tooltip: 'Advanced settings',
                   onPressed: !state.initializing ? openAdvancedSheet : null,

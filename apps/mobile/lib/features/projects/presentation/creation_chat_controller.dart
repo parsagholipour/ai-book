@@ -905,10 +905,6 @@ class CreationChatController extends Notifier<CreationChatState> {
     }
   }
 
-  void startNewOutput() {
-    state = state.copyWith(composingNewOutput: true, activeProjectId: null);
-  }
-
   void selectOutput(String projectId) {
     if (projectId.trim().isEmpty) return;
     state = state.copyWith(
