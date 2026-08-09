@@ -1167,6 +1167,59 @@ void main() {
     await tester.teardownScreen();
   });
 
+  // Regression: GoRouter treats navigating to the exact location you're
+  // already on as a no-op (no rebuild at all), and this screen is on
+  // `/books/new?fresh=true` for the rest of a conversation once it's reached
+  // that route — build, edit, look at the book, all without the location
+  // changing. Tapping "New book" again used to just close the drawer.
+  testWidgets(
+    'New book resets the chat even when already on a fresh chat location',
+    (tester) async {
+      final creation = ScriptedCreationRepository();
+      await tester.pumpWidget(
+        routerApp(
+          creation: creation,
+          projects: PlanProjectsRepository(),
+          initialLocation: '/books/new?fresh=true&r=already-fresh',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Tell me about the book'), findsOneWidget);
+
+      await tester.enterText(
+        find.byType(TextField).last,
+        'A workbook for new coaches',
+      );
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send'));
+      await tester.pumpAndSettle();
+
+      // Reach the output stage, same as generating a book and looking at it.
+      await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+      await tester.continuePastVisualsPrompt();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(find.text(planTitle), findsOneWidget);
+
+      // Already sitting on /books/new?fresh=true (the initial location):
+      // tapping "New book" targets that same path+fresh flag again, differing
+      // only by the nonce a real tap always mints.
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('New book'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(planTitle), findsNothing);
+      expect(find.text('A workbook for new coaches'), findsNothing);
+      expect(find.textContaining('Tell me about the book'), findsOneWidget);
+
+      await tester.teardownScreen();
+    },
+  );
+
   testWidgets('completed drawer chat opens chat history with the plan', (
     tester,
   ) async {

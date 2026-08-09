@@ -26,6 +26,7 @@ class _Transcript extends StatelessWidget {
     this.onApplyEditProposal,
     this.onCancelEditProposal,
     this.onUndoProjectEdit,
+    this.undoingProjectEdit = false,
     this.onRetryFailedMessage,
     this.onDismissFailedMessage,
     this.onRetryFailedOperation,
@@ -62,6 +63,9 @@ class _Transcript extends StatelessWidget {
   final void Function(String proposalId)? onApplyEditProposal;
   final void Function(String proposalId)? onCancelEditProposal;
   final VoidCallback? onUndoProjectEdit;
+
+  /// Whether the undo the card offered is still in flight.
+  final bool undoingProjectEdit;
   final ValueChanged<String>? onRetryFailedMessage;
   final ValueChanged<String>? onDismissFailedMessage;
   final void Function(MobileBookEditOperation operation)?
@@ -165,17 +169,28 @@ class _Transcript extends StatelessWidget {
       }
       final operation = item.operation;
       if (operation != null) {
-        return _OutputOperationBubble(
+        // The same card the book chat draws, so an applied edit offers the
+        // same follow-ups here: Open book, See changes, the charge, Undo.
+        return ProjectChatOperationBubble(
+          projectId: operation.projectId,
           operation: operation,
-          onRetry: operation.isFailed && onRetryFailedOperation != null
-              ? () => onRetryFailedOperation!(operation)
-              : null,
-          onUndo: operation.canUndo ? onUndoProjectEdit : null,
+          retrying: planBusyAction == 'retry-${operation.id}',
+          undoing: undoingProjectEdit,
+          onRetry: onRetryFailedOperation == null
+              ? null
+              : () => onRetryFailedOperation!(operation),
+          onUndo: onUndoProjectEdit,
         );
       }
       return _ProjectChatMessageBubble(
         key: messageAnchorKey(item.message!.id),
         message: item.message!,
+        // While the edit runs it has no card yet, so the reply itself carries
+        // the charge; once the card appears it owns the number.
+        showCreditCost: !projectItems.any(
+          (candidate) =>
+              candidate.operation?.anchorMessageId == item.message!.id,
+        ),
         switchingBranch: switchingProjectBranch,
         activeProjectId: activeProjectId,
         onSwitchBranch: onSwitchProjectBranch,

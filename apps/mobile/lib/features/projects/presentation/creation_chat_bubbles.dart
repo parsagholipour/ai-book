@@ -14,6 +14,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.onOpenReplanCopy,
     this.onOpenPaywall,
     this.showProposalActions = false,
+    this.showCreditCost = true,
     this.onApplyProposal,
     this.onCancelProposal,
     super.key,
@@ -21,6 +22,11 @@ class _ProjectChatMessageBubble extends StatelessWidget {
 
   final MobileProjectChatMessage message;
   final bool switchingBranch;
+
+  /// False when this turn's edit already has an operation card in the
+  /// transcript: that card carries the charge (and knows whether it was
+  /// refunded), so the bubble would only be repeating the number.
+  final bool showCreditCost;
   final String? activeProjectId;
   final void Function(MobileProjectChatMessage message, String direction)?
   onSwitchBranch;
@@ -40,7 +46,9 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     final foreground = isUser ? colors.onPrimary : colors.onSurface;
     final contentCard = message.isAssistant ? message.contentCard : null;
     final editProposal = message.isAssistant ? message.editProposal : null;
-    final creditsCharged = message.isAssistant ? message.creditsCharged : null;
+    final creditsCharged = message.isAssistant && showCreditCost
+        ? message.creditsCharged
+        : null;
     final branch = message.branch;
     final timestamp = _formatChatTimestamp(message.createdAt);
     final replanCopyTargetProjectId = message.isAssistant
@@ -253,142 +261,9 @@ class _ContentCardBubbleState extends State<_ContentCardBubble> {
   }
 }
 
-class _OutputOperationBubble extends StatelessWidget {
-  const _OutputOperationBubble({
-    required this.operation,
-    this.onRetry,
-    this.onUndo,
-  });
-
-  final MobileBookEditOperation operation;
-  final VoidCallback? onRetry;
-  final VoidCallback? onUndo;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final waitingForRetry = operation.isAutomaticRetryPending;
-    final isFailed = operation.isFailed && !waitingForRetry;
-    final applied = operation.isApplied && !isFailed;
-    final label = waitingForRetry
-        ? operation.displayAction
-        : isFailed && operation.isPlanRevision
-        ? 'Plan revision failed. Your current plan is unchanged.'
-        : operation.displayAction;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 5),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.sizeOf(context).width * 0.82,
-        ),
-        decoration: BoxDecoration(
-          color: isFailed ? colors.errorContainer : colors.secondaryContainer,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
-            bottomLeft: Radius.circular(4),
-            bottomRight: Radius.circular(16),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isFailed)
-                  Icon(
-                    Icons.error_outline,
-                    size: 18,
-                    color: colors.onErrorContainer,
-                    semanticLabel: operation.currentAction,
-                  )
-                else if (applied)
-                  Icon(
-                    Icons.check_circle_outline,
-                    size: 18,
-                    color: colors.primary,
-                    semanticLabel: operation.currentAction,
-                  )
-                else
-                  SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: colors.primary,
-                      semanticsLabel: operation.currentAction,
-                    ),
-                  ),
-                const SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    label,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: isFailed ? colors.onErrorContainer : null,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (isFailed || onUndo != null) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  if (onRetry != null)
-                    TextButton.icon(
-                      onPressed: onRetry,
-                      icon: Icon(
-                        operation.retryAvailable
-                            ? Icons.refresh
-                            : Icons.edit_outlined,
-                        size: 18,
-                      ),
-                      label: Text(
-                        operation.retryAvailable
-                            ? operation.isPlanRevision
-                                  ? 'Retry revision'
-                                  : 'Retry update'
-                            : 'Edit request',
-                      ),
-                      style: TextButton.styleFrom(
-                        foregroundColor: colors.onErrorContainer,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  if (onUndo != null)
-                    TextButton.icon(
-                      onPressed: onUndo,
-                      icon: const Icon(Icons.undo, size: 18),
-                      label: const Text('Undo'),
-                      style: TextButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  if (isFailed && operation.isPlanRevision)
-                    TextButton.icon(
-                      onPressed: () =>
-                          context.push('/projects/${operation.projectId}'),
-                      icon: const Icon(Icons.article_outlined, size: 18),
-                      label: const Text('View current plan'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: colors.onErrorContainer,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
+// The edit operation card lives in `project_chat_operations.dart`: the book
+// chat draws the same one, which is what keeps an applied edit offering the
+// same follow-ups on both surfaces.
 
 // The assistant-side "thinking" bubble lives in `chat_thinking_bubble.dart`:
 // the post-generation book chat needs the same one, and it cannot reach a

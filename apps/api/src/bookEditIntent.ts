@@ -128,6 +128,23 @@ export type BookEditIntent = {
 export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
 
 /**
+ * Charged edit kinds that a completed book prices as a proposal card before
+ * anything is reserved or written. The card is itself the confirmation step,
+ * so demoting one of these to clarify protects nothing — and it actively
+ * misleads: a propose_edit's assistantMessage is written as a confirmation
+ * ("I'll rewrite the final page…"), so the demoted reply promised an edit
+ * while proposing nothing, and the user's only way out was to insist ("Do
+ * it") until the spent clarification forced the edit through.
+ */
+const PROPOSAL_GATED_EDIT_KINDS: ReadonlySet<BookEditIntentKind> = new Set([
+  "local_patch",
+  "page_rewrite",
+  "chapter_regenerate",
+  "book_replan",
+  "continue_book"
+]);
+
+/**
  * Actions the router may pick, scoped to the project stage so the model never
  * sees (or picks) actions that cannot run right now. Charged book edits go
  * through propose_edit; the server maps that to a priced intent kind.
@@ -614,28 +631,33 @@ export function intentFromProposeEdit(
           ? "explicit_pages"
           : "none";
 
+  // A pageless "pages" target keeps its edit kind rather than becoming a
+  // clarify: the model committed to an edit and wrote assistantMessage as a
+  // confirmation of it, so surfacing that text as a clarify reply promises an
+  // edit while proposing nothing. proposeBookEdit resolves the target from the
+  // message (quoted text) or asks the one real "which page?" question itself.
   if (style === "exact_replace") {
     return {
-      kind: scope === "none" ? "clarify" : "local_patch",
+      kind: "local_patch",
       confidence: decision.confidence,
       reasoning: decision.reasoning,
       affectedPageIndexes: pageIndexes,
       assistantMessage: decision.assistantMessage,
       scope,
       impact: "small_text",
-      clarification: scope === "none" ? "scope" : "none"
+      clarification: "none"
     };
   }
 
   return {
-    kind: scope === "none" ? "clarify" : "page_rewrite",
+    kind: "page_rewrite",
     confidence: decision.confidence,
     reasoning: decision.reasoning,
     affectedPageIndexes: pageIndexes,
     assistantMessage: decision.assistantMessage,
     scope,
     impact: "style_rewrite",
-    clarification: scope === "none" ? "scope" : "none"
+    clarification: "none"
   };
 }
 
@@ -746,7 +768,12 @@ function normalizeIntentForStage(
     // would rebuild the very loop this flag exists to break.
     return forcedDecision(bounded, stage);
   }
-  if (bounded.confidence < BOOK_EDIT_CONFIDENCE_THRESHOLD && bounded.kind !== "answer" && bounded.kind !== "show_content") {
+  if (
+    bounded.confidence < BOOK_EDIT_CONFIDENCE_THRESHOLD &&
+    bounded.kind !== "answer" &&
+    bounded.kind !== "show_content" &&
+    !(stage === "complete" && PROPOSAL_GATED_EDIT_KINDS.has(bounded.kind))
+  ) {
     return {
       ...bounded,
       kind: "clarify",
@@ -771,6 +798,16 @@ function normalizeIntentForStage(
 function forcedDecision(intent: BookEditIntent, stage: BookEditProjectStage): BookEditIntent {
   const confidence = Math.max(intent.confidence, BOOK_EDIT_CONFIDENCE_THRESHOLD);
   if (intent.kind !== "clarify") {
+    // A pageless page edit must not reach proposeBookEdit's "which page?"
+    // question with the budget spent — that would be the second question this
+    // function exists to prevent. Widen it the same way a forced clarify is.
+    if (
+      (intent.kind === "page_rewrite" || intent.kind === "local_patch") &&
+      intent.scope === "none" &&
+      intent.affectedPageIndexes.length === 0
+    ) {
+      return { ...intent, confidence, scope: "all_pages", clarification: "none" };
+    }
     return { ...intent, confidence };
   }
   if (stage === "plan_ready" || stage === "approved_plan") {

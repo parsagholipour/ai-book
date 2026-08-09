@@ -60,8 +60,8 @@ class ProjectChatOperationBubble extends StatelessWidget {
     required this.operation,
     required this.retrying,
     required this.undoing,
-    required this.onRetry,
-    required this.onUndo,
+    this.onRetry,
+    this.onUndo,
     super.key,
   });
 
@@ -69,8 +69,8 @@ class ProjectChatOperationBubble extends StatelessWidget {
   final MobileBookEditOperation operation;
   final bool retrying;
   final bool undoing;
-  final VoidCallback onRetry;
-  final VoidCallback onUndo;
+  final VoidCallback? onRetry;
+  final VoidCallback? onUndo;
 
   @override
   Widget build(BuildContext context) {

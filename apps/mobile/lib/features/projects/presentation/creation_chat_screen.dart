@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'chat_history_drawer.dart';
+import 'creation_chat_navigation.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
@@ -45,6 +46,7 @@ import 'plan_revision_retry.dart';
 import 'progress_step_row.dart';
 import 'generation_retry_confirmation.dart';
 import 'project_chat_bubbles.dart';
+import 'project_chat_operations.dart';
 import 'project_export_actions.dart';
 import 'saved_export_card.dart';
 
@@ -68,10 +70,21 @@ part 'creation_chat_resume.dart';
 part 'creation_chat_liveness.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
-  const CreationChatScreen({super.key, this.startFresh = false, this.draftId});
+  const CreationChatScreen({
+    super.key,
+    this.startFresh = false,
+    this.draftId,
+    this.resetToken,
+  });
 
   final bool startFresh;
   final String? draftId;
+
+  /// A per-navigation nonce carried from [newBookChatLocation]. `startFresh`
+  /// and `draftId` alone are `true`/`null` on every "New book" tap, so
+  /// [didUpdateWidget] would otherwise think nothing changed on the second
+  /// tap of a chat session and skip the reset entirely.
+  final String? resetToken;
 
   @override
   ConsumerState<CreationChatScreen> createState() => _CreationChatScreenState();
@@ -118,7 +131,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   void didUpdateWidget(covariant CreationChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.startFresh == widget.startFresh &&
-        oldWidget.draftId == widget.draftId) {
+        oldWidget.draftId == widget.draftId &&
+        oldWidget.resetToken == widget.resetToken) {
       return;
     }
     _resetLocalConversationState();
@@ -299,7 +313,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
               ] else ...[
                 IconButton(
                   tooltip: 'New book chat',
-                  onPressed: () => context.go('/books/new?fresh=true'),
+                  onPressed: () => context.go(newBookChatLocation()),
                   icon: const Icon(Icons.add_circle_outline),
                 ),
                 IconButton(
@@ -400,6 +414,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                       projectId: activeProjectId,
                                     ),
                                   ),
+                            undoingProjectEdit: _undoingProjectEdit,
                             onRetryFailedMessage: (localId) => unawaited(
                               ref
                                   .read(creationChatControllerProvider.notifier)
@@ -1354,8 +1369,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
 
 String _planKey(MobilePlan plan) => '${plan.id}:${plan.version}';
 
+// Applied stays visible even once it can no longer be undone — the book chat
+// keeps every applied and failed card as the book's history, and this
+// transcript must read the same.
 bool _showsOperationInTranscript(MobileBookEditOperation operation) =>
-    operation.isRunning || operation.isFailed || operation.canUndo;
+    operation.isRunning || operation.isFailed || operation.isApplied;
 
 String _planSnapshotLabel(MobilePlan plan) {
   if (plan.isSuperseded) return 'Previous plan';

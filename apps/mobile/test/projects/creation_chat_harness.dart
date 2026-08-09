@@ -88,8 +88,13 @@ Widget routerApp({
     routes: [
       GoRoute(
         path: '/books/new',
-        builder: (context, state) =>
-            const Scaffold(body: Text('New book route')),
+        // Mirrors app_router.dart's real route (fresh + the reset nonce),
+        // rather than a placeholder, so tests can exercise the "New book"
+        // button through real GoRouter navigation.
+        builder: (context, state) => CreationChatScreen(
+          startFresh: state.uri.queryParameters['fresh'] == 'true',
+          resetToken: state.uri.queryParameters['r'],
+        ),
       ),
       GoRoute(
         path: '/books/chat/:draftId',

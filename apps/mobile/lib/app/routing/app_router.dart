@@ -155,7 +155,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/books/new',
         pageBuilder: (context, state) {
           final fresh = state.uri.queryParameters['fresh'] == 'true';
-          return _appPage(state, CreationChatScreen(startFresh: fresh));
+          return _appPage(
+            state,
+            CreationChatScreen(
+              startFresh: fresh,
+              // Carries the nonce from newBookChatLocation() so the screen's
+              // didUpdateWidget can tell two "New book" taps apart even
+              // though startFresh/draftId are identical both times.
+              resetToken: state.uri.queryParameters['r'],
+            ),
+          );
         },
       ),
       GoRoute(

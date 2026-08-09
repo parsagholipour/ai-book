@@ -214,7 +214,14 @@ tells you when a listed file has dropped under the default so the entry can be d
   coercion covers a router timeout and the model-free heuristics, whose catch-all is a clarify.
   Defaulting this aggressively is safe **only** because a completed book prices every edit as a
   proposal card first — nothing is reserved or written until Apply, so a wrong guess is one Cancel
-  away. Every `clarify` records `clarification: "scope"` even when the model reports `"none"`
+  away. For the same reason the confidence demotion never applies to the proposal-gated edit kinds
+  on a finished book (`PROPOSAL_GATED_EDIT_KINDS`): a propose_edit's `assistantMessage` is written
+  as a *confirmation* of the edit, so a demoted one replied "I'll rewrite the final page…" with no
+  Apply card and no question — a dead end escaped only by insisting. The card is the confirmation,
+  so a hesitant or pageless edit flows to `proposeBookEdit` (which resolves quoted targets or asks
+  the one real "which page?" question), and `forcedDecision` widens a still-pageless edit to
+  `all_pages` once the budget is spent rather than letting that question fire a second time.
+  Every `clarify` records `clarification: "scope"` even when the model reports `"none"`
   (`intentFromDecideAction`), because that is what makes `handleProjectChatIntent` store the
   resumable `pendingEdit`; "fixing" that tautology strands the next turn with a bare fragment.
   `bookEditIntent.ts` splits into `bookEditMessage.ts` (reading a message: pages, quotes, scope,

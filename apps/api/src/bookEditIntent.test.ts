@@ -783,3 +783,92 @@ describe("clarification budget", () => {
     expect(messageWithFollowUp("Just add", "just add")).toBe("just add");
   });
 });
+
+describe("hesitant edit decisions on a finished book", () => {
+  it("keeps a below-threshold propose_edit as the edit instead of a promise with nothing to apply", async () => {
+    // Regression: the router targeted the final page at confidence 0.7 — just
+    // under the threshold — and the demotion re-labelled it clarify while
+    // keeping the confirmation-style assistantMessage. The reply read "I'll
+    // rewrite the final page…" with no proposal card, and only a second "Do
+    // it" (spending the clarification budget) surfaced Apply.
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.7,
+      reasoning: "The ending is page 2; rewrite it as asked.",
+      assistantMessage: "I'll rewrite the final page so the ending changes as you asked.",
+      clarification: "none",
+      editTarget: "pages",
+      editStyle: "rewrite",
+      pageIndexes: [2],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Change the ending",
+      stage: "complete",
+      pages,
+      textModel: model
+    });
+
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.affectedPageIndexes).toEqual([2]);
+    expect(intent.clarification).toBe("none");
+  });
+
+  it("keeps a pageless propose_edit as an edit for the proposal flow to target", () => {
+    const intent = intentFromProposeEdit(
+      {
+        action: "propose_edit",
+        confidence: 0.85,
+        reasoning: "Rewrite where the phrase appears.",
+        assistantMessage: "I'll rewrite the part with the old phrase.",
+        clarification: "none",
+        editTarget: "pages",
+        editStyle: "rewrite",
+        pageIndexes: [],
+        chapterIndex: null,
+        targetLanguage: null
+      },
+      'Get rid of "the old phrase"',
+      chapters
+    );
+
+    // proposeBookEdit resolves the target from the quoted text, or asks its
+    // own real "which page?" question — a clarify here would surface the
+    // confirmation message above as a reply that promises an edit and
+    // proposes nothing.
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("none");
+    expect(intent.clarification).toBe("none");
+  });
+
+  it("widens a pageless edit to the whole book once the clarification budget is spent", async () => {
+    const model = fakeDecideModel({
+      action: "propose_edit",
+      confidence: 0.6,
+      reasoning: "Add Kaka wherever it fits.",
+      assistantMessage: "I'll add Kaka to the story.",
+      clarification: "none",
+      editTarget: "pages",
+      editStyle: "rewrite",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Add Kaka in the match\n\nFollow-up from the user: Just add",
+      stage: "complete",
+      pages,
+      textModel: model,
+      clarifyExhausted: true
+    });
+
+    // Without the widening, proposeBookEdit would resolve zero pages and ask
+    // "which page?" — a second question after the budget was already spent.
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("all_pages");
+    expect(intent.clarification).toBe("none");
+  });
+});

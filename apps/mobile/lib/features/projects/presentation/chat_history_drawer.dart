@@ -12,6 +12,7 @@ import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'book_shelf.dart';
 import 'creation_chat_controller.dart';
+import 'creation_chat_navigation.dart';
 import 'pending_chat_sessions.dart';
 
 class ChatHistoryDrawer extends ConsumerWidget {
@@ -132,7 +133,7 @@ class _NewBookButton extends StatelessWidget {
         onPressed: () {
           AppHaptics.tap();
           Navigator.of(context).pop();
-          context.go('/books/new?fresh=true');
+          context.go(newBookChatLocation());
         },
         icon: const Icon(Icons.edit_outlined),
         label: const Text('New book'),
