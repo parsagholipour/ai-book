@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import 'voice_call_controller.dart';
@@ -89,14 +90,14 @@ Future<void> downloadCallRecording({
                   'never uploaded.',
       ),
       actions: [
-        TextButton(
+        AppButton.text(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        FilledButton(
+        AppButton.primary(
           key: const ValueKey('call-recording-proceed'),
           onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Proceed'),
+          label: 'Proceed',
         ),
       ],
     ),

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
-import '../../../app/theme/app_theme.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
 
@@ -236,7 +236,7 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: grey.withValues(alpha: opacity),
-          borderRadius: BorderRadius.circular(TomezaRadii.chip),
+          borderRadius: BorderRadius.circular(AppRadii.pill),
         ),
         child: Center(
           child: Icon(
@@ -263,7 +263,7 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
     return Material(
       color: colors.inverseSurface,
       elevation: 3,
-      borderRadius: BorderRadius.circular(TomezaRadii.control),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(

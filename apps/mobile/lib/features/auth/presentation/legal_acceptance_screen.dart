@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../domain/legal_gate.dart';
 import 'auth_controller.dart';
@@ -23,8 +24,7 @@ class LegalAcceptanceScreen extends ConsumerStatefulWidget {
       _LegalAcceptanceScreenState();
 }
 
-class _LegalAcceptanceScreenState
-    extends ConsumerState<LegalAcceptanceScreen> {
+class _LegalAcceptanceScreenState extends ConsumerState<LegalAcceptanceScreen> {
   bool _busy = false;
   String? _error;
 
@@ -69,15 +69,15 @@ class _LegalAcceptanceScreenState
                         alignment: WrapAlignment.center,
                         spacing: 8,
                         children: [
-                          TextButton.icon(
+                          AppButton.text(
                             onPressed: () => _open(config.termsOfServiceUrl),
-                            icon: const Icon(Icons.open_in_new, size: 16),
-                            label: const Text('Terms'),
+                            leading: const Icon(Icons.open_in_new, size: 16),
+                            label: 'Terms',
                           ),
-                          TextButton.icon(
+                          AppButton.text(
                             onPressed: () => _open(config.privacyPolicyUrl),
-                            icon: const Icon(Icons.open_in_new, size: 16),
-                            label: const Text('Privacy Policy'),
+                            leading: const Icon(Icons.open_in_new, size: 16),
+                            label: 'Privacy Policy',
                           ),
                         ],
                       ),
@@ -90,30 +90,28 @@ class _LegalAcceptanceScreenState
                         ),
                       ],
                       const SizedBox(height: 18),
-                      FilledButton.icon(
+                      AppButton.primary(
                         onPressed: _busy ? null : _accept,
-                        icon: _busy
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.check),
-                        label: const Text('Agree and continue'),
+                        loading: _busy,
+                        loadingLabel: 'Agreeing and continuing',
+                        leading: const Icon(Icons.check),
+                        label: 'Agree and continue',
+                        expanded: true,
                       ),
                       const SizedBox(height: 10),
-                      OutlinedButton(
+                      AppButton.outlined(
                         onPressed: _busy ? null : _notNow,
-                        child: const Text('Not now'),
+                        label: 'Not now',
+                        expanded: true,
                       ),
-                      TextButton(
+                      AppButton.text(
                         onPressed: _busy
                             ? null
                             : () => ref
                                   .read(authControllerProvider.notifier)
                                   .logout(),
-                        child: const Text('Log out'),
+                        label: 'Log out',
+                        expanded: true,
                       ),
                     ],
                   ),
@@ -153,7 +151,8 @@ class _LegalAcceptanceScreenState
   }
 
   Future<void> _open(Uri uri) async {
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
       ScaffoldMessenger.of(context).showAppSnackBar(
         const SnackBar(content: Text('That legal page could not be opened.')),
       );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../domain/project_models.dart';
 import 'credit_cost_badge.dart';
 
@@ -70,22 +71,25 @@ class EditProposalCard extends StatelessWidget {
           ],
           if (onApply != null || onCancel != null) ...[
             const SizedBox(height: 12),
-            Row(
-              children: [
-                if (onApply != null)
-                  FilledButton(
-                    onPressed: enabled ? onApply : null,
-                    child: const Text('Apply'),
-                  ),
-                if (onApply != null && onCancel != null)
-                  const SizedBox(width: 8),
-                if (onCancel != null)
-                  TextButton(
-                    onPressed: enabled ? onCancel : null,
-                    child: const Text('Cancel'),
-                  ),
-              ],
-            ),
+            if (onApply != null)
+              AppActionGroup(
+                primary: AppButton.primary(
+                  onPressed: enabled ? onApply : null,
+                  label: 'Apply',
+                ),
+                secondary: [
+                  if (onCancel != null)
+                    AppButton.text(
+                      onPressed: enabled ? onCancel : null,
+                      label: 'Cancel',
+                    ),
+                ],
+              )
+            else if (onCancel != null)
+              AppButton.text(
+                onPressed: enabled ? onCancel : null,
+                label: 'Cancel',
+              ),
           ],
         ],
       ),
@@ -168,7 +172,9 @@ class _PreviewLine extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Expanded(child: Text(text, style: style?.copyWith(color: color))),
+        Expanded(
+          child: Text(text, style: style?.copyWith(color: color)),
+        ),
       ],
     );
   }

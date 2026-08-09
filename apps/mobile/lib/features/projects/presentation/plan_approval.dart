@@ -169,19 +169,18 @@ Future<_ImageLimitChoice?> _askImageLimitChoice(
         'in-book illustrations, or upgrade for unlimited.',
       ),
       actions: [
-        TextButton(
+        AppButton.text(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        TextButton(
-          onPressed: () =>
-              Navigator.of(context).pop(_ImageLimitChoice.upgrade),
-          child: const Text('See upgrades'),
+        AppButton.text(
+          onPressed: () => Navigator.of(context).pop(_ImageLimitChoice.upgrade),
+          label: 'See upgrades',
         ),
-        FilledButton(
+        AppButton.primary(
           onPressed: () =>
               Navigator.of(context).pop(_ImageLimitChoice.withoutIllustrations),
-          child: const Text('Write without illustrations'),
+          label: 'Write without illustrations',
         ),
       ],
     ),

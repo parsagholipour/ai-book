@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/projects_repository.dart';
@@ -59,8 +60,9 @@ class _ImportBookScreenState extends ConsumerState<ImportBookScreen> {
 
   Future<void> _pickManuscript() async {
     try {
-      final file = await (widget.pickFileOverride?.call() ??
-          openFile(acceptedTypeGroups: const [_manuscriptTypeGroup]));
+      final file =
+          await (widget.pickFileOverride?.call() ??
+              openFile(acceptedTypeGroups: const [_manuscriptTypeGroup]));
       if (file == null || !mounted) return;
       final bytes = await file.readAsBytes();
       if (!mounted) return;
@@ -173,13 +175,14 @@ class _ImportBookScreenState extends ConsumerState<ImportBookScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            OutlinedButton.icon(
+            AppButton.outlined(
               key: const ValueKey('import-pick-file'),
               onPressed: _importing ? null : _pickManuscript,
-              icon: const Icon(Icons.upload_file_outlined),
-              label: Text(
-                file == null ? 'Choose manuscript' : 'Choose a different file',
-              ),
+              leading: const Icon(Icons.upload_file_outlined),
+              label: file == null
+                  ? 'Choose manuscript'
+                  : 'Choose a different file',
+              expanded: true,
             ),
             if (file != null) ...[
               const SizedBox(height: 12),
@@ -223,16 +226,14 @@ class _ImportBookScreenState extends ConsumerState<ImportBookScreen> {
               ),
             ],
             const SizedBox(height: 24),
-            FilledButton.icon(
+            AppButton.primary(
               key: const ValueKey('import-submit'),
               onPressed: file == null || _importing ? null : _import,
-              icon: _importing
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_stories_outlined),
-              label: Text(_importing ? 'Importing…' : 'Import book'),
+              loading: _importing,
+              loadingLabel: 'Importing…',
+              leading: const Icon(Icons.auto_stories_outlined),
+              label: 'Import book',
+              expanded: true,
             ),
           ],
         ),

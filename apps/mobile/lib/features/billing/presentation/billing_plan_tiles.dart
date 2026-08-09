@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../app/theme/app_theme.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../domain/billing_models.dart';
 import 'billing_tier_style.dart';
@@ -34,7 +34,7 @@ class BillingPlanBanner extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: accent.withValues(alpha: 0.26)),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -190,7 +190,7 @@ class BillingPlanCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         boxShadow: _featured
             ? [
                 BoxShadow(
@@ -203,7 +203,7 @@ class BillingPlanCard extends StatelessWidget {
             : null,
       ),
       foregroundDecoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(
           color: _featured || isCurrentPlan
               ? accent.withValues(alpha: 0.55)
@@ -212,7 +212,7 @@ class BillingPlanCard extends StatelessWidget {
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: _featured ? null : colors.surfaceContainerLowest,
@@ -314,6 +314,8 @@ class BillingPlanCard extends StatelessWidget {
                     const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
+                      // Billing tiers intentionally keep their own accent so
+                      // the CTA remains visually tied to the selected plan.
                       child: FilledButton(
                         style: FilledButton.styleFrom(
                           backgroundColor: _featured
@@ -329,7 +331,7 @@ class BillingPlanCard extends StatelessWidget {
                             : null,
                         child: pending
                             ? const SizedBox.square(
-                                dimension: 18,
+                                dimension: AppSizes.buttonProgressIndicator,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
                                   semanticsLabel: 'Purchase pending',
@@ -439,17 +441,11 @@ class BillingTopUpTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            FilledButton.tonal(
+            AppButton.tonal(
               onPressed: storeProduct != null && !pending ? onBuy : null,
-              child: pending
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        semanticsLabel: 'Purchase pending',
-                      ),
-                    )
-                  : Text(storeProduct?.price ?? fallbackPrice(product)),
+              loading: pending,
+              loadingLabel: 'Purchase pending',
+              label: storeProduct?.price ?? fallbackPrice(product),
             ),
           ],
         ),
@@ -481,7 +477,7 @@ class BillingPlanSkeleton extends StatelessWidget {
                   height: 210,
                   decoration: BoxDecoration(
                     color: colors.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(TomezaRadii.card),
+                    borderRadius: BorderRadius.circular(AppRadii.card),
                   ),
                 ),
                 if (index != cards - 1) const SizedBox(height: 14),
@@ -530,7 +526,7 @@ class _TierPill extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: style.accentContainer(colors),
-        borderRadius: BorderRadius.circular(TomezaRadii.chip),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -579,7 +575,11 @@ class _CardRibbon extends StatelessWidget {
 
 /// One ticked line of what a plan includes. Shared with the free rung.
 class BillingBenefitRow extends StatelessWidget {
-  const BillingBenefitRow({required this.label, required this.accent, super.key});
+  const BillingBenefitRow({
+    required this.label,
+    required this.accent,
+    super.key,
+  });
 
   final String label;
   final Color accent;
@@ -619,7 +619,7 @@ class _SavingsChip extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(TomezaRadii.chip),
+        borderRadius: BorderRadius.circular(AppRadii.pill),
         border: Border.all(color: accent.withValues(alpha: 0.3)),
       ),
       child: Padding(
@@ -660,9 +660,7 @@ class _BannerFootnote extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: tone),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: tone),
           ),
         ),
       ],
@@ -715,9 +713,7 @@ String _paidPlanLine(MobileSubscriptionPlan? plan) {
   }
   final local = endsAt.toLocal();
   final date = '${local.day}/${local.month}/${local.year}';
-  return plan.cancelAtPeriodEnd
-      ? 'Ends $date · then Free'
-      : 'Renews $date';
+  return plan.cancelAtPeriodEnd ? 'Ends $date · then Free' : 'Renews $date';
 }
 
 String _resetSuffix(DateTime? resetsAt) {

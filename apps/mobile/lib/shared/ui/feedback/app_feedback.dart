@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../app_components.dart';
+
 class AppLoadingState extends StatelessWidget {
   const AppLoadingState({this.message = 'Loading', super.key});
 
@@ -98,10 +100,10 @@ class AppErrorState extends StatelessWidget {
                 ),
                 if (onRetry != null) ...[
                   const SizedBox(height: 14),
-                  OutlinedButton.icon(
+                  AppButton.outlined(
                     onPressed: onRetry,
-                    icon: Icon(actionIcon),
-                    label: Text(actionLabel),
+                    leading: Icon(actionIcon),
+                    label: actionLabel,
                   ),
                 ],
               ],
@@ -174,7 +176,7 @@ class AppEmptyState extends StatelessWidget {
                 ),
                 if (actionLabel != null && onAction != null) ...[
                   const SizedBox(height: 14),
-                  FilledButton(onPressed: onAction, child: Text(actionLabel!)),
+                  AppButton.primary(onPressed: onAction, label: actionLabel!),
                 ],
               ],
             ),

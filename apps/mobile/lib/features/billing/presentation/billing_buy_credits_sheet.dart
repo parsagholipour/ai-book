@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../domain/billing_models.dart';
@@ -309,20 +308,20 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
                         '${formatCredits(quote.betterPlan!.creditAmount)} '
                         'credits every month for '
                         '${quote.betterPlanPriceLabel}, and it renews.',
-                    tone: AppNoticeTone.info,
+                    tone: AppTone.info,
                   ),
                   if (widget.onSeePlans != null) ...[
                     const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
+                      child: AppButton.text(
                         key: const ValueKey('buy-credits-see-plans'),
                         onPressed: () {
                           Navigator.of(context).pop();
                           widget.onSeePlans!();
                         },
-                        icon: const Icon(Icons.trending_up, size: 18),
-                        label: const Text('See plans'),
+                        leading: const Icon(Icons.trending_up, size: 18),
+                        label: 'See plans',
                       ),
                     ),
                   ],
@@ -365,7 +364,7 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
                     icon: Icons.check_circle_outline,
                     title: 'Purchase update',
                     message: state.message!,
-                    tone: AppNoticeTone.success,
+                    tone: AppTone.success,
                   ),
                 ],
                 if (state.error != null) ...[
@@ -374,7 +373,7 @@ class _BuyCreditsSheetState extends ConsumerState<BuyCreditsSheet> {
                     icon: Icons.error_outline,
                     title: 'Purchase issue',
                     message: state.error!,
-                    tone: AppNoticeTone.error,
+                    tone: AppTone.error,
                   ),
                 ],
               ],
@@ -411,7 +410,7 @@ class _QuotePanel extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: colors.primary.withValues(alpha: 0.32)),
       ),
       padding: const EdgeInsets.all(16),
@@ -453,26 +452,16 @@ class _QuotePanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              key: const ValueKey('buy-credits-buy'),
-              onPressed: pending ? null : onBuy,
-              icon: pending
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        semanticsLabel: 'Purchase pending',
-                      ),
-                    )
-                  : const Icon(Icons.add_card_outlined, size: 18),
-              label: Text(
-                multiple
-                    ? 'Buy one — ${best.unitLabel}'
-                    : 'Buy — ${best.unitLabel}',
-              ),
-            ),
+          AppButton.primary(
+            key: const ValueKey('buy-credits-buy'),
+            onPressed: pending ? null : onBuy,
+            loading: pending,
+            loadingLabel: 'Purchase pending',
+            leading: const Icon(Icons.add_card_outlined, size: 18),
+            label: multiple
+                ? 'Buy one — ${best.unitLabel}'
+                : 'Buy — ${best.unitLabel}',
+            expanded: true,
           ),
         ],
       ),

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import 'auth_controller.dart';
 import 'sample_book_screen.dart';
@@ -124,23 +125,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    TextButton(
+                    AppButton.text(
                       onPressed: isSubmitting ? null : _toggleMode,
-                      child: Text(
-                        _isSignUp
-                            ? 'I already have an account'
-                            : 'Create account',
-                      ),
+                      label: _isSignUp
+                          ? 'I already have an account'
+                          : 'Create account',
                     ),
                     // Only when the server publishes one; a probe failure
                     // simply draws nothing.
                     if (ref.watch(sampleBookAvailableProvider).value ?? false)
-                      TextButton.icon(
+                      AppButton.text(
                         onPressed: isSubmitting
                             ? null
                             : () => context.push('/sample-book'),
-                        icon: const Icon(Icons.menu_book_outlined, size: 18),
-                        label: const Text('See a sample book first'),
+                        leading: const Icon(Icons.menu_book_outlined, size: 18),
+                        label: 'See a sample book first',
                       ),
                   ],
                 ),
@@ -273,20 +272,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               ],
             ],
             const SizedBox(height: 22),
-            FilledButton.icon(
+            AppButton.primary(
               onPressed: isSubmitting ? null : _submit,
-              icon: isSubmitting
-                  ? SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        semanticsLabel: _isSignUp
-                            ? 'Creating account'
-                            : 'Signing in',
-                      ),
-                    )
-                  : Icon(_isSignUp ? Icons.person_add_alt_1 : Icons.login),
-              label: Text(_isSignUp ? 'Create account' : 'Sign in'),
+              loading: isSubmitting,
+              loadingLabel: _isSignUp ? 'Creating account' : 'Signing in',
+              leading: Icon(_isSignUp ? Icons.person_add_alt_1 : Icons.login),
+              label: _isSignUp ? 'Create account' : 'Sign in',
+              expanded: true,
             ),
           ],
         ),
@@ -323,7 +315,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   }
 
   Future<void> _openLegalUrl(Uri uri) async {
-    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) && mounted) {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication) &&
+        mounted) {
       ScaffoldMessenger.of(context).showAppSnackBar(
         const SnackBar(content: Text('That legal page could not be opened.')),
       );

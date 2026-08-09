@@ -120,15 +120,9 @@ class ProjectPlanReview extends StatelessWidget {
           onAction: busyAction == null && onApprovePlan != null
               ? () => onApprovePlan!()
               : null,
-          actionIcon: busyAction == 'approve'
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    semanticsLabel: 'Approving plan',
-                  ),
-                )
-              : const Icon(Icons.check_circle_outline),
+          actionIcon: const Icon(Icons.check_circle_outline),
+          loading: busyAction == 'approve',
+          loadingLabel: 'Approving plan',
         ),
       ],
     );
@@ -222,15 +216,10 @@ class NoPlanCard extends StatelessWidget {
       icon: Icons.auto_awesome_outlined,
       actionLabel: isPlanning ? 'Plan requested' : 'Create book plan',
       onAction: isPlanning ? null : () => onGeneratePlan(),
-      actionIcon: isPlanning
-          ? const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                semanticsLabel: 'Creating book plan',
-              ),
-            )
-          : const Icon(Icons.auto_awesome_outlined),
+      actionIcon: const Icon(Icons.auto_awesome_outlined),
+      // Keep "Plan requested" on the button; the panel title already says
+      // the plan is being created.
+      loading: isPlanning,
     );
   }
 }
@@ -273,21 +262,18 @@ class PlanRevisionFailedBanner extends StatelessWidget {
               runSpacing: 8,
               children: [
                 if (operation.retryAvailable && onRetry != null)
-                  FilledButton.tonalIcon(
+                  AppButton.tonal(
                     onPressed: busy ? null : () => onRetry!(),
-                    icon: busy
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh),
-                    label: const Text('Retry revision'),
+                    loading: busy,
+                    loadingLabel: 'Retrying revision',
+                    leading: const Icon(Icons.refresh),
+                    label: 'Retry revision',
                   ),
                 if (onEditRequest != null)
-                  TextButton.icon(
+                  AppButton.text(
                     onPressed: onEditRequest,
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('Edit request'),
+                    leading: const Icon(Icons.edit_outlined),
+                    label: 'Edit request',
                   ),
               ],
             ),
@@ -398,17 +384,19 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
             ),
           ],
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton(
+          AppActionGroup(
+            primary: AppButton.primary(
+              onPressed: widget.isBusy ? null : _saveAndGoNext,
+              label: _index == questions.length - 1 ? 'Save answer' : 'Next',
+            ),
+            secondary: [
+              AppButton.outlined(
                 onPressed: _index == 0 || widget.isBusy
                     ? null
                     : () => _goToQuestion(_index - 1),
-                child: const Text('Previous'),
+                label: 'Previous',
               ),
-              OutlinedButton(
+              AppButton.outlined(
                 onPressed: widget.isBusy
                     ? null
                     : () {
@@ -416,31 +404,20 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
                         _answers[_index] = 'No preference.';
                         _goToNextOrStay();
                       },
-                child: const Text('Skip'),
-              ),
-              FilledButton(
-                onPressed: widget.isBusy ? null : _saveAndGoNext,
-                child: Text(
-                  _index == questions.length - 1 ? 'Save answer' : 'Next',
-                ),
+                label: 'Skip',
               ),
             ],
           ),
           const SizedBox(height: 12),
-          FilledButton.icon(
+          AppButton.primary(
             onPressed: widget.isBusy || _answers.isEmpty
                 ? null
                 : () => widget.onSubmitAnswers(_answersMessage()),
-            icon: widget.isBusy
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      semanticsLabel: 'Revising plan',
-                    ),
-                  )
-                : const Icon(Icons.auto_fix_high_outlined),
-            label: const Text('Revise with answers'),
+            loading: widget.isBusy,
+            loadingLabel: 'Revising plan',
+            leading: const Icon(Icons.auto_fix_high_outlined),
+            label: 'Revise with answers',
+            expanded: true,
           ),
         ],
       ),
@@ -458,7 +435,9 @@ class _PlanQuestionsCardState extends State<PlanQuestionsCard> {
       } else if (!picks.remove(option)) {
         picks.add(option);
       }
-      final answer = joinQuestionAnswers(question.options.where(picks.contains));
+      final answer = joinQuestionAnswers(
+        question.options.where(picks.contains),
+      );
       if (answer.isEmpty) {
         _answers.remove(_index);
       } else {
@@ -652,7 +631,7 @@ class _RevisionRequestCard extends StatelessWidget {
             maxLines: 6,
           ),
           const SizedBox(height: 12),
-          OutlinedButton.icon(
+          AppButton.outlined(
             onPressed: isBusy
                 ? null
                 : () {
@@ -661,16 +640,10 @@ class _RevisionRequestCard extends StatelessWidget {
                       onSubmit(message);
                     }
                   },
-            icon: isBusy
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      semanticsLabel: 'Sending revision',
-                    ),
-                  )
-                : const Icon(Icons.send_outlined),
-            label: const Text('Send revision'),
+            loading: isBusy,
+            loadingLabel: 'Sending revision',
+            leading: const Icon(Icons.send_outlined),
+            label: 'Send revision',
           ),
         ],
       ),

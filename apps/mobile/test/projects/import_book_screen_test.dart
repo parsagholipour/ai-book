@@ -12,6 +12,7 @@ import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/import_book_screen.dart';
 import 'package:tomeza/shared/api/api_error.dart';
+import 'package:tomeza/shared/ui/app_components.dart';
 
 void main() {
   testWidgets('imports a manuscript and navigates to the handoff screen', (
@@ -33,11 +34,9 @@ void main() {
     // No file picked yet: submit stays disabled.
     expect(
       tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey('import-submit')),
-          )
-          .onPressed,
-      isNull,
+          .widget<AppButton>(find.byKey(const ValueKey('import-submit')))
+          .enabled,
+      isFalse,
     );
 
     await tester.tap(find.byKey(const ValueKey('import-pick-file')));
@@ -130,7 +129,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('import-submit')));
     await tester.pumpAndSettle();
 
-    expect(find.text('No readable text was found in that file.'), findsOneWidget);
+    expect(
+      find.text('No readable text was found in that file.'),
+      findsOneWidget,
+    );
     expect(find.text('book-screen'), findsNothing);
   });
 }

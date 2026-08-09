@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../billing/domain/billing_models.dart';
 import '../domain/export_models.dart';
 import 'project_export_actions.dart';
@@ -53,14 +54,12 @@ class ProjectExportPanel extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             if (editBookProjectId != null && exports.pdf.available) ...[
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () =>
-                      context.push('/projects/$editBookProjectId/read'),
-                  icon: const Icon(Icons.auto_stories_outlined),
-                  label: const Text('Read in Tomeza'),
-                ),
+              AppButton.primary(
+                onPressed: () =>
+                    context.push('/projects/$editBookProjectId/read'),
+                leading: const Icon(Icons.auto_stories_outlined),
+                label: 'Read in Tomeza',
+                expanded: true,
               ),
               const SizedBox(height: 12),
             ],
@@ -97,11 +96,11 @@ class ProjectExportPanel extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  OutlinedButton.icon(
+                  AppButton.outlined(
                     onPressed: () =>
                         context.push('/projects/$editBookProjectId/edit'),
-                    icon: const Icon(Icons.edit_note_outlined),
-                    label: const Text('Edit book'),
+                    leading: const Icon(Icons.edit_note_outlined),
+                    label: 'Edit book',
                   ),
                 ],
               ),
@@ -177,40 +176,28 @@ class _ExportFormatTile extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton.icon(
+            AppButton.primary(
               onPressed: canAct
                   ? () => needsCredits ? onOpenPaywall(export) : onOpen(export)
                   : null,
-              icon: isOpening
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        semanticsLabel: 'Opening export',
-                      ),
-                    )
-                  : Icon(
-                      export.unlocked
-                          ? Icons.open_in_new_outlined
-                          : needsCredits
-                          ? Icons.add_card_outlined
-                          : Icons.lock_open_outlined,
-                    ),
-              label: Text(projectExportDownloadLabel(export, needsCredits)),
+              loading: isOpening,
+              loadingLabel: 'Opening export',
+              leading: Icon(
+                export.unlocked
+                    ? Icons.open_in_new_outlined
+                    : needsCredits
+                    ? Icons.add_card_outlined
+                    : Icons.lock_open_outlined,
+              ),
+              label: projectExportDownloadLabel(export, needsCredits),
             ),
             if (export.unlocked)
-              OutlinedButton.icon(
+              AppButton.outlined(
                 onPressed: canAct ? () => onDownload(export) : null,
-                icon: isDownloading
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          semanticsLabel: 'Downloading export',
-                        ),
-                      )
-                    : const Icon(Icons.download_outlined),
-                label: const Text('Download'),
+                loading: isDownloading,
+                loadingLabel: 'Downloading export',
+                leading: const Icon(Icons.download_outlined),
+                label: 'Download',
               ),
           ],
         ),

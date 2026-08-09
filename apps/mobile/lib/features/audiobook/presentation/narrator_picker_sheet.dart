@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
-import '../../../app/theme/app_theme.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
@@ -280,7 +280,7 @@ class _PickerHero extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: colors.primary.withValues(alpha: 0.22)),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -353,14 +353,14 @@ class _NarratorCard extends StatelessWidget {
       color: selected
           ? colors.primaryContainer.withValues(alpha: 0.55)
           : colors.surfaceContainerLowest,
-      borderRadius: BorderRadius.circular(TomezaRadii.card),
+      borderRadius: BorderRadius.circular(AppRadii.card),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onSelect,
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(TomezaRadii.card),
+            borderRadius: BorderRadius.circular(AppRadii.card),
             border: Border.all(
               color: selected ? colors.primary : colors.outlineVariant,
               width: selected ? 1.5 : 1,
@@ -506,26 +506,22 @@ class _PickerFooter extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: canAfford
-                ? FilledButton.icon(
-                    onPressed: enabled ? onConfirm : null,
-                    icon: busy
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.headphones),
-                    label: Text(busy ? 'Starting…' : 'Start narrating'),
-                  )
-                : FilledButton.icon(
-                    onPressed: onTopUp,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add credits'),
-                  ),
-          ),
+          if (canAfford)
+            AppButton.primary(
+              label: 'Start narrating',
+              loadingLabel: 'Starting…',
+              loading: busy,
+              onPressed: enabled ? onConfirm : null,
+              leading: const Icon(Icons.headphones),
+              expanded: true,
+            )
+          else
+            AppButton.primary(
+              label: 'Add credits',
+              onPressed: onTopUp,
+              leading: const Icon(Icons.add),
+              expanded: true,
+            ),
         ],
       ),
     );

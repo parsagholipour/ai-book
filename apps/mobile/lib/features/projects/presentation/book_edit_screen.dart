@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../billing/data/billing_repository.dart';
@@ -203,51 +204,31 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
   }
 
   Future<void> _showConflictDialog() async {
-    final reload = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Book changed'),
-        content: const Text(
+    final reload = await showAppConfirmationDialog(
+      context,
+      title: 'Book changed',
+      message:
           'This book was changed somewhere else while you were editing. '
           'Reload it to keep editing the latest version. Your unsaved edits '
           'here will be lost.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Keep my draft'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Reload book'),
-          ),
-        ],
-      ),
+      cancelLabel: 'Keep my draft',
+      confirmLabel: 'Reload book',
+      destructive: true,
     );
-    if (reload == true && mounted) {
+    if (reload && mounted) {
       await _loadBook();
     }
   }
 
   Future<bool> _confirmDiscard() async {
-    final discard = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Discard edits?'),
-        content: const Text('You have unsaved changes to this book.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Keep editing'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Discard'),
-          ),
-        ],
-      ),
+    return showAppConfirmationDialog(
+      context,
+      title: 'Discard edits?',
+      message: 'You have unsaved changes to this book.',
+      cancelLabel: 'Keep editing',
+      confirmLabel: 'Discard',
+      destructive: true,
     );
-    return discard == true;
   }
 
   @override
@@ -284,15 +265,12 @@ class _BookEditScreenState extends ConsumerState<BookEditScreen> {
           actions: [
             Padding(
               padding: const EdgeInsets.only(right: 12),
-              child: FilledButton.icon(
+              child: AppButton.primary(
                 onPressed: _hasChanges && !_saving ? _save : null,
-                icon: _saving
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined, size: 18),
-                label: Text(_saving ? 'Saving' : 'Save'),
+                loading: _saving,
+                loadingLabel: 'Saving',
+                leading: const Icon(Icons.save_outlined, size: 18),
+                label: 'Save',
               ),
             ),
           ],

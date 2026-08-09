@@ -97,7 +97,7 @@ class _PlanBubbleState extends State<_PlanBubble> {
             icon: Icons.error_outline,
             title: 'Plan generation failed',
             message: message,
-            tone: AppNoticeTone.error,
+            tone: AppTone.error,
           ),
         ),
       ),
@@ -198,7 +198,7 @@ class _PlanBubbleState extends State<_PlanBubble> {
                             AppStatusBadge(
                               label: chapterLabel,
                               icon: Icons.format_list_numbered,
-                              tone: AppNoticeTone.success,
+                              tone: AppTone.success,
                             ),
                             Text(
                               'Tap to open your book',
@@ -277,7 +277,7 @@ class _PlanBubbleState extends State<_PlanBubble> {
                   AppStatusBadge(
                     label: '${plan.chapters.length} ch.',
                     icon: Icons.format_list_numbered,
-                    tone: AppNoticeTone.success,
+                    tone: AppTone.success,
                   ),
                   const SizedBox(width: 4),
                   Icon(

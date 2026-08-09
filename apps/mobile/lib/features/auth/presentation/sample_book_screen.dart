@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../reader/presentation/book_reader_screen.dart'
     show readerViewerBuilderProvider;
@@ -52,9 +53,7 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
     try {
       final directory = await getTemporaryDirectory();
       final path = '${directory.path}/tomeza-sample-book.pdf';
-      await ref
-          .read(dioProvider)
-          .download('/api/mobile/sample-book', path);
+      await ref.read(dioProvider).download('/api/mobile/sample-book', path);
       if (mounted) setState(() => _path = path);
     } catch (_) {
       if (mounted) setState(() => _failed = true);
@@ -88,10 +87,11 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-                    child: FilledButton.icon(
+                    child: AppButton.primary(
                       onPressed: () => context.go('/auth/sign-up'),
-                      icon: const Icon(Icons.auto_stories_outlined),
-                      label: const Text('Create a book like this'),
+                      leading: const Icon(Icons.auto_stories_outlined),
+                      label: 'Create a book like this',
+                      expanded: true,
                     ),
                   ),
                 ],

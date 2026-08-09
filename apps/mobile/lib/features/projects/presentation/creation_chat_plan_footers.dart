@@ -268,30 +268,18 @@ class _PlanFailedFooter extends StatelessWidget {
                 ? 'Your plan needs a retry'
                 : 'Your plan needs attention',
             message: message,
-            actionLabel: retrying
-                ? 'Retrying…'
-                : retryAvailable
-                ? 'Retry plan'
-                : 'Check again',
-            actionIcon: retrying
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      semanticsLabel: 'Retrying plan generation',
-                    ),
-                  )
-                : Icon(
-                    retryAvailable
-                        ? Icons.replay_outlined
-                        : Icons.refresh_outlined,
-                  ),
+            actionLabel: retryAvailable ? 'Retry plan' : 'Check again',
+            actionIcon: Icon(
+              retryAvailable ? Icons.replay_outlined : Icons.refresh_outlined,
+            ),
+            loading: retrying,
+            loadingLabel: 'Retrying…',
             onAction: retrying
                 ? null
                 : retryAvailable
                 ? onRetry
                 : onRefresh,
-            tone: AppNoticeTone.error,
+            tone: AppTone.error,
           ),
         ),
       ),
@@ -781,18 +769,12 @@ class _ApproveButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.icon(
+    return AppButton.primary(
       onPressed: onApprove,
-      icon: approving
-          ? const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                semanticsLabel: 'Approving',
-              ),
-            )
-          : const Icon(Icons.check_circle_outline),
-      label: Text(approving ? 'Approving…' : 'Approve and start writing'),
+      loading: approving,
+      loadingLabel: 'Approving…',
+      leading: const Icon(Icons.check_circle_outline),
+      label: 'Approve and start writing',
     );
   }
 }

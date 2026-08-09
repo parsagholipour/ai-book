@@ -1,12 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Shared corner radii so every surface in the app lands on the same scale.
-abstract final class TomezaRadii {
-  static const double control = 14;
-  static const double card = 18;
-  static const double sheet = 28;
-  static const double chip = 999;
-}
+import '../../shared/ui/design_system/app_tokens.dart';
+import '../../shared/ui/design_system/app_tones.dart';
 
 /// The fill and text color of a chat bubble the reader sent.
 ///
@@ -104,10 +99,10 @@ ThemeData buildTomezaDarkTheme() {
 ThemeData _themeFromScheme(ColorScheme scheme) {
   final isLight = scheme.brightness == Brightness.light;
   final controlShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(TomezaRadii.control),
+    borderRadius: BorderRadius.circular(AppRadii.control),
   );
   final cardShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.circular(TomezaRadii.card),
+    borderRadius: BorderRadius.circular(AppRadii.card),
   );
   final baseTheme = ThemeData(
     useMaterial3: true,
@@ -120,7 +115,9 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
 
   return baseTheme.copyWith(
     colorScheme: scheme,
+    extensions: [AppSemanticColors.fromScheme(scheme)],
     scaffoldBackgroundColor: scheme.surface,
+    focusColor: scheme.primary.withValues(alpha: 0.14),
     visualDensity: VisualDensity.standard,
     splashFactory: InkSparkle.splashFactory,
     textTheme: textTheme,
@@ -150,22 +147,22 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     ),
     inputDecorationTheme: InputDecorationTheme(
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         borderSide: BorderSide(color: scheme.outlineVariant),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         borderSide: BorderSide(color: scheme.primary, width: 1.6),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         borderSide: BorderSide(color: scheme.error),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         borderSide: BorderSide(color: scheme.error, width: 1.6),
       ),
       filled: true,
@@ -177,12 +174,15 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       hintStyle: textTheme.bodyMedium?.copyWith(
         color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.md,
+      ),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         shape: controlShape,
-        minimumSize: const Size(64, 52),
+        minimumSize: const Size(64, AppSizes.controlHeight),
         elevation: 0,
         textStyle: textTheme.labelLarge?.copyWith(
           fontWeight: FontWeight.w700,
@@ -193,7 +193,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         shape: controlShape,
-        minimumSize: const Size(64, 52),
+        minimumSize: const Size(64, AppSizes.controlHeight),
         elevation: 0,
         textStyle: textTheme.labelLarge?.copyWith(
           fontWeight: FontWeight.w700,
@@ -204,7 +204,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         shape: controlShape,
-        minimumSize: const Size(64, 52),
+        minimumSize: const Size(64, AppSizes.controlHeight),
         side: BorderSide(
           color: isLight
               ? scheme.outlineVariant
@@ -220,7 +220,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         shape: controlShape,
-        minimumSize: const Size(48, 48),
+        minimumSize: const Size.square(AppSizes.minimumTouchTarget),
         textStyle: textTheme.labelLarge?.copyWith(
           fontWeight: FontWeight.w700,
           letterSpacing: 0.1,
@@ -229,7 +229,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     ),
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(
-        minimumSize: const Size.square(48),
+        minimumSize: const Size.square(AppSizes.minimumTouchTarget),
         tapTargetSize: MaterialTapTargetSize.padded,
       ),
     ),
@@ -254,13 +254,13 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       linearTrackColor: scheme.surfaceContainerHighest,
       circularTrackColor: scheme.surfaceContainerHighest,
       linearMinHeight: 6,
-      borderRadius: BorderRadius.circular(999),
+      borderRadius: BorderRadius.circular(AppRadii.pill),
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: scheme.surfaceContainerLowest,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.sheet - 4),
+        borderRadius: BorderRadius.circular(AppRadii.sheet - AppSpacing.xxs),
       ),
       titleTextStyle: textTheme.titleLarge?.copyWith(
         fontWeight: FontWeight.w800,
@@ -278,7 +278,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       dragHandleColor: scheme.outlineVariant,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(TomezaRadii.sheet),
+          top: Radius.circular(AppRadii.sheet),
         ),
       ),
     ),
@@ -287,7 +287,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       surfaceTintColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.horizontal(
-          right: Radius.circular(TomezaRadii.sheet),
+          right: Radius.circular(AppRadii.sheet),
         ),
       ),
     ),
@@ -297,7 +297,7 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: isLight ? 0.16 : 0.5),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         side: BorderSide(color: scheme.outlineVariant),
       ),
       textStyle: textTheme.bodyMedium,
@@ -313,9 +313,27 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
         color: scheme.inverseSurface,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(AppRadii.compact),
       ),
       textStyle: textTheme.bodySmall?.copyWith(color: scheme.onInverseSurface),
+    ),
+    sliderTheme: baseTheme.sliderTheme.copyWith(
+      trackHeight: AppSpacing.xxs,
+      activeTrackColor: scheme.primary,
+      inactiveTrackColor: scheme.surfaceContainerHighest,
+      thumbColor: scheme.primary,
+      overlayColor: scheme.primary.withValues(alpha: 0.12),
+    ),
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      elevation: 2,
+      focusElevation: 2,
+      hoverElevation: 2,
+      highlightElevation: 2,
+      backgroundColor: scheme.primaryContainer,
+      foregroundColor: scheme.onPrimaryContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.control),
+      ),
     ),
   );
 }

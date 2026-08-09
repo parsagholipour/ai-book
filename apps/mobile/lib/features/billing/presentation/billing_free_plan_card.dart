@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../../app/theme/app_theme.dart';
+import '../../../shared/ui/app_components.dart';
 import '../domain/billing_models.dart';
 import 'billing_plan_tiles.dart';
 import 'billing_tier_style.dart';
@@ -37,9 +37,11 @@ class BillingFreePlanCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(
-          color: isCurrentPlan ? accent.withValues(alpha: 0.45) : colors.outlineVariant,
+          color: isCurrentPlan
+              ? accent.withValues(alpha: 0.45)
+              : colors.outlineVariant,
         ),
       ),
       padding: const EdgeInsets.all(18),
@@ -88,13 +90,11 @@ class BillingFreePlanCard extends StatelessWidget {
           ],
           if (!isCurrentPlan) ...[
             const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                key: const ValueKey('paywall-switch-to-free'),
-                onPressed: onSwitchToFree,
-                child: const Text('Switch to Free'),
-              ),
+            AppButton.outlined(
+              key: const ValueKey('paywall-switch-to-free'),
+              onPressed: onSwitchToFree,
+              label: 'Switch to Free',
+              expanded: true,
             ),
           ],
         ],

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import 'billing_plan_tiles.dart' show formatCredits;
 
@@ -96,7 +96,7 @@ class CreditsNeededCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: colors.primary.withValues(alpha: 0.28)),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -194,18 +194,18 @@ class CreditsNeededCard extends StatelessWidget {
                     // this sheet — so that becomes the button carrying the
                     // weight, and buying more stays available beside it.
                     if (covered)
-                      FilledButton.icon(
+                      AppButton.primary(
                         key: const ValueKey('paywall-credits-done'),
                         onPressed: onClose,
-                        icon: const Icon(Icons.check, size: 18),
-                        label: const Text('Done'),
+                        leading: const Icon(Icons.check, size: 18),
+                        label: 'Done',
                       ),
                     _buyButton(promoted: !covered),
-                    OutlinedButton.icon(
+                    AppButton.outlined(
                       key: const ValueKey('paywall-upgrade-plan'),
                       onPressed: onUpgradePlan,
-                      icon: const Icon(Icons.trending_up, size: 18),
-                      label: Text(upgradeLabel),
+                      leading: const Icon(Icons.trending_up, size: 18),
+                      label: upgradeLabel,
                     ),
                   ],
                 ),
@@ -220,19 +220,18 @@ class CreditsNeededCard extends StatelessWidget {
   Widget _buyButton({required bool promoted}) {
     const key = ValueKey('paywall-buy-credits');
     const icon = Icon(Icons.add_card_outlined, size: 18);
-    const label = Text('Buy credits');
     return promoted
-        ? FilledButton.icon(
+        ? AppButton.primary(
             key: key,
             onPressed: onBuyCredits,
-            icon: icon,
-            label: label,
+            leading: icon,
+            label: 'Buy credits',
           )
-        : OutlinedButton.icon(
+        : AppButton.outlined(
             key: key,
             onPressed: onBuyCredits,
-            icon: icon,
-            label: label,
+            leading: icon,
+            label: 'Buy credits',
           );
   }
 

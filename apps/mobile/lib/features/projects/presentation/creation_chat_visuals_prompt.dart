@@ -231,11 +231,11 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
         ),
       ),
       actions: [
-        TextButton(
+        AppButton.text(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        FilledButton(
+        AppButton.primary(
           onPressed: () => Navigator.of(context).pop(
             _VisualsPromptResult(
               coverEnabled: _coverEnabled,
@@ -243,7 +243,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
               dontShowAgain: _dontShowAgain,
             ),
           ),
-          child: const Text('Continue'),
+          label: 'Continue',
         ),
       ],
     );

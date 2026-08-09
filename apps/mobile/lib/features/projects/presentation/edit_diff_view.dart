@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../domain/project_models.dart';
 
 /// Colours for insertions and deletions.
@@ -124,10 +125,10 @@ class _CollapsedContextState extends State<_CollapsedContext> {
             ),
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
+            child: AppButton.text(
+              label: 'Hide $count unchanged paragraphs',
               onPressed: () => setState(() => _expanded = false),
-              icon: const Icon(Icons.unfold_less, size: 18),
-              label: Text('Hide $count unchanged paragraphs'),
+              leading: const Icon(Icons.unfold_less, size: 18),
             ),
           ),
         ],
@@ -149,9 +150,9 @@ class _CollapsedContextState extends State<_CollapsedContext> {
             Expanded(
               child: Text(
                 '$count unchanged paragraphs',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
               ),
             ),
           ],

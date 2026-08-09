@@ -103,10 +103,7 @@ class _CreditLogScreenState extends ConsumerState<CreditLogScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Credit log')),
-      body: RefreshIndicator(
-        onRefresh: _loadFirstPage,
-        child: _body(context),
-      ),
+      body: RefreshIndicator(onRefresh: _loadFirstPage, child: _body(context)),
     );
   }
 
@@ -166,7 +163,7 @@ class _CreditLogScreenState extends ConsumerState<CreditLogScreen> {
           icon: Icons.wifi_off_outlined,
           title: 'Could not load older entries',
           message: _moreError!,
-          tone: AppNoticeTone.warning,
+          tone: AppTone.warning,
           actionLabel: 'Try again',
           onAction: () {
             setState(() => _moreError = null);
@@ -329,8 +326,8 @@ class _CreditLogTile extends StatelessWidget {
                             ? Icons.undo
                             : Icons.hourglass_bottom,
                         tone: entry.refunded
-                            ? AppNoticeTone.success
-                            : AppNoticeTone.warning,
+                            ? AppTone.success
+                            : AppTone.warning,
                       ),
                     ],
                   ],

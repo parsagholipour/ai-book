@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../billing/data/billing_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
@@ -99,7 +100,8 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
     final rebuildingExports =
         status != null &&
         !status.isComplete &&
-        (exports == null || (!exports.pdf.available && !exports.epub.available));
+        (exports == null ||
+            (!exports.pdf.available && !exports.epub.available));
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _ensureExportRefresh(status),
     );
@@ -127,7 +129,11 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.edit_note_outlined, size: 20, color: colors.primary),
+                  Icon(
+                    Icons.edit_note_outlined,
+                    size: 20,
+                    color: colors.primary,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -168,12 +174,12 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
                     _exportButton(exports.pdf, availableCredits),
                     _exportButton(exports.epub, availableCredits),
                   ],
-                  OutlinedButton.icon(
+                  AppButton.outlined(
                     onPressed: () => context.push(
                       '/projects/$_projectId/edit?savedExportMessageId=${widget.message.id}',
                     ),
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Edit'),
+                    leading: const Icon(Icons.edit_outlined, size: 18),
+                    label: 'Edit',
                   ),
                 ],
               ),
@@ -188,25 +194,19 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
     final action = projectExportDownloadAction(export);
     final isDownloading = _busyAction == action;
     final needsCredits = projectExportNeedsCredits(export, availableCredits);
-    return FilledButton.tonalIcon(
+    return AppButton.tonal(
       onPressed: export.available && !isDownloading
           ? () => needsCredits ? _openPaywall(export) : _download(export)
           : null,
-      icon: isDownloading
-          ? const SizedBox.square(
-              dimension: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                semanticsLabel: 'Downloading export',
-              ),
-            )
-          : Icon(
-              export.format == 'pdf'
-                  ? Icons.picture_as_pdf_outlined
-                  : Icons.menu_book_outlined,
-              size: 18,
-            ),
-      label: Text(projectExportDownloadLabel(export, needsCredits)),
+      loading: isDownloading,
+      loadingLabel: 'Downloading export',
+      leading: Icon(
+        export.format == 'pdf'
+            ? Icons.picture_as_pdf_outlined
+            : Icons.menu_book_outlined,
+        size: 18,
+      ),
+      label: projectExportDownloadLabel(export, needsCredits),
     );
   }
 }

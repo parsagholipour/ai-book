@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/theme/app_theme.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/presentation/billing_paywall.dart';
 
@@ -136,7 +136,7 @@ class CreditCostSheet extends ConsumerWidget {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: colors.primaryContainer,
-                    borderRadius: BorderRadius.circular(TomezaRadii.control),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                   ),
                   child: Icon(
                     Icons.toll_outlined,
@@ -201,7 +201,7 @@ class CreditCostSheet extends ConsumerWidget {
                 ),
                 decoration: BoxDecoration(
                   color: colors.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(TomezaRadii.card),
+                  borderRadius: BorderRadius.circular(AppRadii.card),
                 ),
                 child: Row(
                   children: [
@@ -217,7 +217,8 @@ class CreditCostSheet extends ConsumerWidget {
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),
-                    TextButton(
+                    AppButton.text(
+                      label: 'Add credits',
                       onPressed: () {
                         // The paywall replaces this sheet, so it has to be
                         // opened from the navigator's own context: ours is
@@ -229,19 +230,16 @@ class CreditCostSheet extends ConsumerWidget {
                           title: 'Add credits',
                         );
                       },
-                      child: const Text('Add credits'),
                     ),
                   ],
                 ),
               ),
             ],
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('Got it'),
-              ),
+            AppButton.primary(
+              label: 'Got it',
+              onPressed: () => Navigator.of(context).pop(),
+              expanded: true,
             ),
           ],
         ),

@@ -223,40 +223,40 @@ class AccountPlanCard extends StatelessWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   if (nextPlan != null)
-                    FilledButton.icon(
+                    AppButton.primary(
                       key: const ValueKey('account-upgrade-plan'),
                       onPressed: onUpgrade,
-                      icon: const Icon(Icons.arrow_upward),
-                      label: const Text('Upgrade plan'),
+                      leading: const Icon(Icons.arrow_upward),
+                      label: 'Upgrade plan',
                     ),
-                  OutlinedButton.icon(
+                  AppButton.outlined(
                     key: const ValueKey('account-manage-subscription'),
                     onPressed: () => onManageSubscription(plan?.productSku),
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('Manage subscription'),
+                    leading: const Icon(Icons.open_in_new),
+                    label: 'Manage subscription',
                   ),
                   // Already cancelling: the only thing left to do in Play is
                   // change your mind, so the button says that instead.
                   if (cancelling)
-                    TextButton(
+                    AppButton.text(
                       key: const ValueKey('account-resume-subscription'),
                       onPressed: () => onManageSubscription(plan?.productSku),
-                      child: const Text('Resume in Play'),
+                      label: 'Resume in Play',
                     )
                   else if (value != null)
-                    TextButton(
+                    AppButton.text(
                       key: const ValueKey('account-cancel-subscription'),
                       onPressed: () => onCancelSubscription(value),
-                      child: const Text('Cancel subscription'),
+                      label: 'Cancel subscription',
                     ),
                 ],
               )
             else if (nextPlan != null)
-              FilledButton.icon(
+              AppButton.primary(
                 key: const ValueKey('account-upgrade-plan'),
                 onPressed: onUpgrade,
-                icon: const Icon(Icons.arrow_upward),
-                label: const Text('Upgrade plan'),
+                leading: const Icon(Icons.arrow_upward),
+                label: 'Upgrade plan',
               ),
           ],
         ),
@@ -317,15 +317,15 @@ class _AccountCreditsCard extends StatelessWidget {
             Text(balance, style: TextStyle(color: colors.onSurfaceVariant)),
             const SizedBox(height: 12),
             billing.hasError
-                ? OutlinedButton.icon(
+                ? AppButton.outlined(
                     onPressed: onRetry,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Retry'),
+                    leading: const Icon(Icons.refresh),
+                    label: 'Retry',
                   )
-                : FilledButton.icon(
+                : AppButton.primary(
                     onPressed: onAddCredits,
-                    icon: const Icon(Icons.add_card_outlined),
-                    label: const Text('Add credits'),
+                    leading: const Icon(Icons.add_card_outlined),
+                    label: 'Add credits',
                   ),
           ],
         ),
@@ -361,20 +361,14 @@ class _AccountSessionCard extends ConsumerWidget {
               style: TextStyle(color: colors.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
+            AppButton.outlined(
               onPressed: loggingOut
                   ? null
                   : () => ref.read(authControllerProvider.notifier).logout(),
-              icon: loggingOut
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        semanticsLabel: 'Logging out',
-                      ),
-                    )
-                  : const Icon(Icons.logout),
-              label: const Text('Log out'),
+              loading: loggingOut,
+              loadingLabel: 'Logging out',
+              leading: const Icon(Icons.logout),
+              label: 'Log out',
             ),
           ],
         ),
@@ -499,20 +493,14 @@ class AccountPrivacyControls extends StatelessWidget {
                   style: TextStyle(color: colors.onSurfaceVariant),
                 ),
                 const SizedBox(height: 12),
-                OutlinedButton.icon(
+                AppButton.outlined(
                   onPressed: requestingDeletion
                       ? null
                       : () => onRequestDeletion(),
-                  icon: requestingDeletion
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            semanticsLabel: 'Requesting account deletion',
-                          ),
-                        )
-                      : const Icon(Icons.delete_outline),
-                  label: const Text('Request account deletion'),
+                  loading: requestingDeletion,
+                  loadingLabel: 'Requesting account deletion',
+                  leading: const Icon(Icons.delete_outline),
+                  label: 'Request account deletion',
                 ),
               ],
             ),
@@ -555,13 +543,13 @@ class _AccountDeletionRequestDialogState
         maxLines: 5,
       ),
       actions: [
-        TextButton(
+        AppButton.text(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        FilledButton(
+        AppButton.primary(
           onPressed: () => Navigator.of(context).pop(_reasonController.text),
-          child: const Text('Send request'),
+          label: 'Send request',
         ),
       ],
     );

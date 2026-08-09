@@ -113,7 +113,7 @@ class GenerationProgressOverviewCard extends StatelessWidget {
                 message: status.retryMessage?.trim().isNotEmpty == true
                     ? status.retryMessage!
                     : 'Writing will continue automatically. You can leave this screen.',
-                tone: AppNoticeTone.info,
+                tone: AppTone.info,
               ),
             ] else if (status.hasFailure || status.status == 'failed') ...[
               const SizedBox(height: 12),
@@ -125,22 +125,16 @@ class GenerationProgressOverviewCard extends StatelessWidget {
                 message: status.failureMessage?.trim().isNotEmpty == true
                     ? status.failureMessage!
                     : status.effectiveAction,
-                tone: AppNoticeTone.error,
+                tone: AppTone.error,
               ),
               if (onResume != null) ...[
                 const SizedBox(height: 10),
-                FilledButton.icon(
+                AppButton.primary(
+                  label: 'Retry generation',
                   onPressed: busyAction == 'resume' ? null : () => onResume!(),
-                  icon: busyAction == 'resume'
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            semanticsLabel: 'Retrying generation',
-                          ),
-                        )
-                      : const Icon(Icons.replay_outlined),
-                  label: const Text('Retry generation'),
+                  loading: busyAction == 'resume',
+                  loadingLabel: 'Retrying generation',
+                  leading: const Icon(Icons.replay_outlined),
                 ),
               ],
             ],

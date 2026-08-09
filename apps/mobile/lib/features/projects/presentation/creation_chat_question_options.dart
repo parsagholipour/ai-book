@@ -121,28 +121,26 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
         Row(
           children: [
             if (widget.onCustom != null)
-              TextButton.icon(
+              AppButton.text(
                 onPressed: widget.enabled ? widget.onCustom : null,
-                icon: const Icon(Icons.edit_outlined, size: 16),
-                label: const Text('Custom…'),
+                leading: const Icon(Icons.edit_outlined, size: 16),
+                label: 'Custom…',
               ),
-            TextButton.icon(
+            AppButton.text(
               onPressed: widget.enabled ? widget.onSkip : null,
-              icon: const Icon(Icons.skip_next_outlined, size: 18),
-              label: const Text('Skip'),
+              leading: const Icon(Icons.skip_next_outlined, size: 18),
+              label: 'Skip',
             ),
             if (multi) ...[
               const Spacer(),
-              FilledButton.icon(
+              AppButton.primary(
                 onPressed: widget.enabled && _selected.isNotEmpty
                     ? () => widget.onSelect(_sendableAnswer())
                     : null,
-                icon: const Icon(Icons.send_rounded, size: 16),
-                label: Text(
-                  _selected.length <= 1
-                      ? 'Send answer'
-                      : 'Send ${_selected.length} answers',
-                ),
+                leading: const Icon(Icons.send_rounded, size: 16),
+                label: _selected.length <= 1
+                    ? 'Send answer'
+                    : 'Send ${_selected.length} answers',
               ),
             ],
           ],
@@ -153,9 +151,8 @@ class _QuestionOptionListState extends State<_QuestionOptionList> {
 
   /// The picks in the order they were offered, so the sent line reads like the
   /// question did rather than like the order they happened to be tapped in.
-  String _sendableAnswer() => joinQuestionAnswers(
-    widget.options.where(_selected.contains),
-  );
+  String _sendableAnswer() =>
+      joinQuestionAnswers(widget.options.where(_selected.contains));
 }
 
 class _QuestionOptionRow extends StatelessWidget {

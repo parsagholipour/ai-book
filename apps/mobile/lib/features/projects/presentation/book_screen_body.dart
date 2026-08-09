@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/motion.dart';
 import '../../billing/domain/billing_models.dart';
@@ -340,7 +339,7 @@ class BookReadyCard extends StatelessWidget {
               Color.lerp(colors.primary, colors.tertiary, 0.55)!,
             ],
           ),
-          borderRadius: BorderRadius.circular(TomezaRadii.card),
+          borderRadius: BorderRadius.circular(AppRadii.card),
         ),
         child: Padding(
           padding: const EdgeInsets.all(18),
@@ -411,18 +410,12 @@ class ProjectPrivacyActions extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: OutlinedButton.icon(
+      child: AppButton.outlined(
         onPressed: isDeleting ? null : () => onDeleteProject(),
-        icon: isDeleting
-            ? const SizedBox.square(
-                dimension: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  semanticsLabel: 'Deleting project',
-                ),
-              )
-            : const Icon(Icons.delete_outline),
-        label: const Text('Delete project'),
+        loading: isDeleting,
+        loadingLabel: 'Deleting project',
+        leading: const Icon(Icons.delete_outline),
+        label: 'Delete project',
       ),
     );
   }
@@ -517,16 +510,16 @@ class _QualityGateCard extends StatelessWidget {
               runSpacing: 8,
               children: [
                 if (quality.affectedPageIndexes.isNotEmpty)
-                  FilledButton.tonalIcon(
+                  AppButton.tonal(
                     onPressed: () =>
                         onOpenPage(quality.affectedPageIndexes.first),
-                    icon: const Icon(Icons.edit_outlined),
-                    label: const Text('Open Edit Mode'),
+                    leading: const Icon(Icons.edit_outlined),
+                    label: 'Open Edit Mode',
                   ),
-                OutlinedButton.icon(
+                AppButton.outlined(
                   onPressed: onRequestRegeneration,
-                  icon: const Icon(Icons.auto_fix_high_outlined),
-                  label: const Text('Request regeneration'),
+                  leading: const Icon(Icons.auto_fix_high_outlined),
+                  label: 'Request regeneration',
                 ),
               ],
             ),

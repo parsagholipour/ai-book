@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
@@ -246,7 +245,7 @@ class _FirstProjectCard extends StatelessWidget {
             Color.lerp(colors.primary, colors.tertiary, 0.55)!,
           ],
         ),
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         boxShadow: [
           BoxShadow(
             color: colors.primary.withValues(alpha: 0.3),
@@ -285,6 +284,7 @@ class _FirstProjectCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 18),
+            // The inverse hero CTA is the branded exception to AppButton.
             FilledButton.icon(
               onPressed: onStartBook,
               style: FilledButton.styleFrom(
@@ -312,7 +312,7 @@ class _SecondaryStartBookAction extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(color: colors.outlineVariant),
       ),
       child: Padding(
@@ -329,10 +329,10 @@ class _SecondaryStartBookAction extends StatelessWidget {
                 context,
               ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
-            OutlinedButton.icon(
+            AppButton.outlined(
               onPressed: onStartBook,
-              icon: const Icon(Icons.add),
-              label: const Text('Start another book'),
+              leading: const Icon(Icons.add),
+              label: 'Start another book',
             ),
           ],
         ),
@@ -358,7 +358,7 @@ class _ImportBookAction extends StatelessWidget {
     return Material(
       color: colors.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(TomezaRadii.control),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         side: BorderSide(color: colors.outlineVariant),
       ),
       child: ListTile(
@@ -478,10 +478,10 @@ class _BillingSummary extends StatelessWidget {
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: AppButton.text(
                 onPressed: onAddCredits,
-                icon: const Icon(Icons.add_card_outlined),
-                label: const Text('Add credits'),
+                leading: const Icon(Icons.add_card_outlined),
+                label: 'Add credits',
               ),
             ),
           ],
@@ -538,7 +538,7 @@ class ProjectCard extends StatelessWidget {
     return Card(
       shape: featured
           ? RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(TomezaRadii.card),
+              borderRadius: BorderRadius.circular(AppRadii.card),
               side: BorderSide(
                 color: colors.primary.withValues(alpha: 0.4),
                 width: 1.4,
@@ -546,7 +546,7 @@ class ProjectCard extends StatelessWidget {
             )
           : null,
       child: InkWell(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         onTap: () => context.push(action.pathFor(project)),
         child: Padding(
           padding: const EdgeInsets.all(18),
@@ -643,15 +643,15 @@ class ProjectCard extends StatelessWidget {
               Align(
                 alignment: Alignment.centerLeft,
                 child: featured
-                    ? FilledButton.icon(
+                    ? AppButton.primary(
                         onPressed: () => context.push(action.pathFor(project)),
-                        icon: Icon(action.buttonIcon),
-                        label: Text(action.buttonLabel),
+                        leading: Icon(action.buttonIcon),
+                        label: action.buttonLabel,
                       )
-                    : OutlinedButton.icon(
+                    : AppButton.outlined(
                         onPressed: () => context.push(action.pathFor(project)),
-                        icon: Icon(action.buttonIcon),
-                        label: Text(action.buttonLabel),
+                        leading: Icon(action.buttonIcon),
+                        label: action.buttonLabel,
                       ),
               ),
             ],

@@ -27,7 +27,9 @@ class _NowPlayingHeader extends StatelessWidget {
       width: size,
       height: size * 1.3,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(compact ? 10 : TomezaRadii.card),
+        borderRadius: BorderRadius.circular(
+          compact ? AppRadii.compact : AppRadii.card,
+        ),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

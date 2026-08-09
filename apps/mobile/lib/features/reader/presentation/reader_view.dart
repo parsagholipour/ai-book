@@ -625,6 +625,11 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       floatingActionButton: _immersive
           ? FloatingActionButton.small(
               tooltip: 'Exit full screen',
+              // Immersive chrome stays circular primary; the shared FAB theme
+              // is for ordinary app surfaces, not the reader's exit control.
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Theme.of(context).colorScheme.onPrimary,
+              shape: const CircleBorder(),
               onPressed: () => setState(() => _immersive = false),
               child: const Icon(Icons.fullscreen_exit),
             )

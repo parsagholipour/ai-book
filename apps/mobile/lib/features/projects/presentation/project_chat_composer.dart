@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
 import 'chat_reply_quote.dart';
 
 // The chat's text-entry widgets: the bottom composer with the strip that names
@@ -90,19 +91,16 @@ class InlineMessageEditor extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            TextButton(
+            AppButton.text(
               onPressed: submitting ? null : onCancel,
-              child: const Text('Cancel'),
+              label: 'Cancel',
             ),
-            FilledButton.icon(
+            AppButton.primary(
               onPressed: submitting ? null : onSubmit,
-              icon: submitting
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.send_outlined),
-              label: const Text('Save & Submit'),
+              loading: submitting,
+              loadingLabel: 'Saving & submitting',
+              leading: const Icon(Icons.send_outlined),
+              label: 'Save & Submit',
             ),
           ],
         ),
@@ -161,14 +159,24 @@ class ProjectChatComposer extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton(
-                onPressed: sending || locked ? null : onSend,
-                child: sending
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.send_outlined),
+              Tooltip(
+                message: 'Send message',
+                child: Semantics(
+                  label: sending ? 'Sending message' : 'Send message',
+                  child: FilledButton(
+                    // Compact icon-only composer control: its geometry is
+                    // intentionally distinct from ordinary labelled actions.
+                    onPressed: sending || locked ? null : onSend,
+                    child: sending
+                        ? const SizedBox.square(
+                            dimension: AppSizes.buttonProgressIndicator,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const ExcludeSemantics(
+                            child: Icon(Icons.send_outlined),
+                          ),
+                  ),
+                ),
               ),
             ],
           ),

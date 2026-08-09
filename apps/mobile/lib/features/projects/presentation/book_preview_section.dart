@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/config/app_config.dart';
+import '../../../shared/ui/app_components.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 
@@ -49,10 +50,10 @@ class GeneratedBookPreview extends StatelessWidget {
             ),
             if (onReportProject != null) ...[
               const SizedBox(height: 10),
-              OutlinedButton.icon(
+              AppButton.outlined(
                 onPressed: () => onReportProject!(),
-                icon: const Icon(Icons.flag_outlined),
-                label: const Text('Report book'),
+                leading: const Icon(Icons.flag_outlined),
+                label: 'Report book',
               ),
             ],
             const SizedBox(height: 12),
@@ -145,14 +146,18 @@ class _IllustrationLostNote extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Row(
       children: [
-        Icon(Icons.image_not_supported_outlined, size: 18, color: colors.outline),
+        Icon(
+          Icons.image_not_supported_outlined,
+          size: 18,
+          color: colors.outline,
+        ),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
             'The illustration for this page could not be generated.',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
           ),
         ),
       ],
@@ -265,10 +270,10 @@ class _ReportVisualButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
-      child: OutlinedButton.icon(
+      child: AppButton.outlined(
         onPressed: () => onPressed(),
-        icon: const Icon(Icons.flag_outlined),
-        label: const Text('Report visual'),
+        leading: const Icon(Icons.flag_outlined),
+        label: 'Report visual',
       ),
     );
   }
@@ -353,11 +358,11 @@ class _ContentReportDialogState extends State<ContentReportDialog> {
         ],
       ),
       actions: [
-        TextButton(
+        AppButton.text(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          label: 'Cancel',
         ),
-        FilledButton(
+        AppButton.primary(
           onPressed: () => Navigator.of(context).pop(
             ContentReportRequest(
               reason: _reason,
@@ -366,7 +371,7 @@ class _ContentReportDialogState extends State<ContentReportDialog> {
                   : _commentController.text.trim(),
             ),
           ),
-          child: const Text('Send report'),
+          label: 'Send report',
         ),
       ],
     );

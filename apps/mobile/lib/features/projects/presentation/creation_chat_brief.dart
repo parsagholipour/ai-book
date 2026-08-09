@@ -144,7 +144,7 @@ class _BriefDetails extends StatelessWidget {
           const AppStatusBadge(
             label: 'Your choices applied',
             icon: Icons.tune_outlined,
-            tone: AppNoticeTone.success,
+            tone: AppTone.success,
           ),
         ],
         for (final row in rows) ...[
@@ -198,7 +198,7 @@ class _ReadinessPill extends StatelessWidget {
       child: AppStatusBadge(
         label: ready ? 'Ready' : '${readiness.score}%',
         icon: ready ? Icons.check_circle_outline : Icons.timelapse_outlined,
-        tone: ready ? AppNoticeTone.success : AppNoticeTone.neutral,
+        tone: ready ? AppTone.success : AppTone.neutral,
       ),
     );
   }

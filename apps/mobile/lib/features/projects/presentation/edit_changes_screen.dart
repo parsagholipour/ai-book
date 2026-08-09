@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/app_components.dart';
 import '../data/projects_repository.dart';
 import '../domain/project_models.dart';
 import 'edit_diff_view.dart';
@@ -137,7 +138,9 @@ class _ChangesSummary extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    pageCount == 1 ? '1 page changed' : '$pageCount pages changed',
+                    pageCount == 1
+                        ? '1 page changed'
+                        : '$pageCount pages changed',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -203,11 +206,11 @@ class _PageChangeSection extends StatelessWidget {
               removedWords: page.removedWords,
             ),
             const SizedBox(width: 4),
-            TextButton(
+            AppButton.text(
               onPressed: () => context.push(
                 '/projects/$projectId/read?page=${page.pageIndex}',
               ),
-              child: const Text('Open'),
+              label: 'Open',
             ),
           ],
         ),

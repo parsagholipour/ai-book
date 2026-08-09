@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
@@ -180,7 +179,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
       shortfall: shortfall,
       onSeePlans: onSeePlans,
     );
-    if (!mounted || success == null) {
+    if (!mounted || !context.mounted || success == null) {
       return;
     }
     final creditsNeeded = widget.creditsNeeded;
@@ -402,7 +401,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                   // which is the question anyone who ran out actually has.
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
+                    child: AppButton.text(
                       key: const ValueKey('paywall-choose-amount'),
                       onPressed: () => unawaited(
                         _openBuyCredits(
@@ -412,8 +411,8 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                           ),
                         ),
                       ),
-                      icon: const Icon(Icons.calculate_outlined, size: 18),
-                      label: const Text('Choose an amount'),
+                      leading: const Icon(Icons.calculate_outlined, size: 18),
+                      label: 'Choose an amount',
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -444,7 +443,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                   icon: Icons.check_circle_outline,
                   title: 'Purchase update',
                   message: state.message!,
-                  tone: AppNoticeTone.success,
+                  tone: AppTone.success,
                 ),
               ],
               if (state.error != null) ...[
@@ -453,7 +452,7 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
                   icon: Icons.error_outline,
                   title: 'Purchase issue',
                   message: state.error!,
-                  tone: AppNoticeTone.error,
+                  tone: AppTone.error,
                 ),
               ],
               const SizedBox(height: 20),
@@ -503,7 +502,7 @@ class _PaywallHero extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(TomezaRadii.card),
+        borderRadius: BorderRadius.circular(AppRadii.card),
         border: Border.all(color: colors.primary.withValues(alpha: 0.22)),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
@@ -648,11 +647,11 @@ class _PaywallFooter extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     return Column(
       children: [
-        OutlinedButton.icon(
+        AppButton.outlined(
           key: const ValueKey('paywall-credit-log'),
           onPressed: () => _openCreditLog(context),
-          icon: const Icon(Icons.receipt_long_outlined, size: 18),
-          label: const Text('See credit logs'),
+          leading: const Icon(Icons.receipt_long_outlined, size: 18),
+          label: 'See credit logs',
         ),
         const SizedBox(height: 16),
         Row(
@@ -680,18 +679,12 @@ class _PaywallFooter extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        TextButton.icon(
+        AppButton.text(
           onPressed: restoring ? null : onRestore,
-          icon: restoring
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    semanticsLabel: 'Restoring purchases',
-                  ),
-                )
-              : const Icon(Icons.restore_outlined, size: 18),
-          label: const Text('Restore purchases'),
+          loading: restoring,
+          loadingLabel: 'Restoring purchases',
+          leading: const Icon(Icons.restore_outlined, size: 18),
+          label: 'Restore purchases',
         ),
       ],
     );

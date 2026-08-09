@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/api/api_error.dart';
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/haptics.dart';
 import '../data/voice_repository.dart';
@@ -27,7 +28,8 @@ Future<void> showCharacterCastSheet({
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (context) => _CharacterCastSheet(projectId: projectId, pageIndex: pageIndex),
+    builder: (context) =>
+        _CharacterCastSheet(projectId: projectId, pageIndex: pageIndex),
   );
 }
 
@@ -38,7 +40,8 @@ class _CharacterCastSheet extends ConsumerStatefulWidget {
   final int? pageIndex;
 
   @override
-  ConsumerState<_CharacterCastSheet> createState() => _CharacterCastSheetState();
+  ConsumerState<_CharacterCastSheet> createState() =>
+      _CharacterCastSheetState();
 }
 
 class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet> {
@@ -89,7 +92,8 @@ class _CharacterCastSheetState extends ConsumerState<_CharacterCastSheet> {
                 title: 'Characters unavailable',
                 message: userFacingError(error),
                 actionLabel: 'Retry',
-                onRetry: () => ref.invalidate(voiceCastProvider(widget.projectId)),
+                onRetry: () =>
+                    ref.invalidate(voiceCastProvider(widget.projectId)),
               ),
             ),
             data: (cast) => cast.isEmpty
@@ -128,12 +132,16 @@ class _CastList extends StatelessWidget {
       children: [
         Text(
           'Call a character',
-          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
           _costLine(cast),
-          style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 12),
         Flexible(
@@ -193,21 +201,25 @@ class _CastRow extends ConsumerWidget {
       ),
       title: Text(
         character.name,
-        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
       ),
       subtitle: Text(
         _subtitle(),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: colors.onSurfaceVariant,
+        ),
       ),
       trailing: Icon(
         Icons.call,
-        color: enabled ? colors.primary : colors.onSurfaceVariant.withValues(alpha: 0.4),
+        color: enabled
+            ? colors.primary
+            : colors.onSurfaceVariant.withValues(alpha: 0.4),
       ),
-      onTap: enabled
-          ? () => _placeCall(context, ref)
-          : null,
+      onTap: enabled ? () => _placeCall(context, ref) : null,
     );
   }
 
@@ -227,13 +239,13 @@ class _CastRow extends ConsumerWidget {
             'Your device will ask for microphone permission next.',
           ),
           actions: [
-            TextButton(
+            AppButton.text(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Not now'),
+              label: 'Not now',
             ),
-            FilledButton(
+            AppButton.primary(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Continue'),
+              label: 'Continue',
             ),
           ],
         ),
@@ -287,7 +299,9 @@ class _NoCharacters extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             'No one to call yet',
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 6),
           Text(

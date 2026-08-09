@@ -422,10 +422,10 @@ class _PlanErrorFooter extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
+              AppButton.outlined(
+                label: 'Retry',
                 onPressed: onRetry,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Retry'),
+                leading: const Icon(Icons.refresh, size: 18),
               ),
             ],
           ),

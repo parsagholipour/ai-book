@@ -166,33 +166,29 @@ class _PageCountPromptSheetState extends State<_PageCountPromptSheet> {
               },
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: _customController,
-                    builder: (context, value, child) {
-                      final pages = _customPages;
-                      return FilledButton(
-                        onPressed: pages == null
-                            ? null
-                            : () => Navigator.of(context).pop(
-                                _PageCountSelection(
-                                  targetPages: pages,
-                                  source: 'settings',
-                                ),
-                              ),
-                        child: const Text('Use custom'),
-                      );
-                    },
-                  ),
+            AppActionGroup(
+              primary: ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _customController,
+                builder: (context, value, child) {
+                  final pages = _customPages;
+                  return AppButton.primary(
+                    onPressed: pages == null
+                        ? null
+                        : () => Navigator.of(context).pop(
+                            _PageCountSelection(
+                              targetPages: pages,
+                              source: 'settings',
+                            ),
+                          ),
+                    label: 'Use custom',
+                    expanded: true,
+                  );
+                },
+              ),
+              secondary: [
+                AppButton.outlined(
+                  onPressed: () => Navigator.of(context).pop(),
+                  label: 'Cancel',
                 ),
               ],
             ),
@@ -244,20 +240,16 @@ class _SourceNotesSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.of(context).pop(''),
-                  child: const Text('Clear'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => Navigator.of(context).pop(controller.text),
-                  child: const Text('Attach'),
-                ),
+          AppActionGroup(
+            primary: AppButton.primary(
+              onPressed: () => Navigator.of(context).pop(controller.text),
+              label: 'Attach',
+              expanded: true,
+            ),
+            secondary: [
+              AppButton.outlined(
+                onPressed: () => Navigator.of(context).pop(''),
+                label: 'Clear',
               ),
             ],
           ),
@@ -396,9 +388,10 @@ class _AdvancedSheet extends ConsumerWidget {
               onChanged: controller.setAuthorName,
             ),
             const SizedBox(height: 18),
-            FilledButton(
+            AppButton.primary(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Done'),
+              label: 'Done',
+              expanded: true,
             ),
           ],
         ),

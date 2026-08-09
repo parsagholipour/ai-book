@@ -135,10 +135,10 @@ class _ProjectChatMessageBubble extends StatelessWidget {
             ],
             if (onOpenPaywall != null) ...[
               const SizedBox(height: 10),
-              FilledButton.icon(
+              AppButton.primary(
                 onPressed: () => onOpenPaywall!(message),
-                icon: const Icon(Icons.add_card_outlined),
-                label: const Text('Add credits'),
+                leading: const Icon(Icons.add_card_outlined),
+                label: 'Add credits',
               ),
             ],
             if (showReplanCopyLink) ...[

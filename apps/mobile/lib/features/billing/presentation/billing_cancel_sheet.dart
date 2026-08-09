@@ -109,38 +109,28 @@ class _CancelSubscriptionSheetState
                 if (controller.state.error != null) ...[
                   const SizedBox(height: 12),
                   AppInlineNotice(
-                    tone: AppNoticeTone.error,
+                    tone: AppTone.error,
                     icon: Icons.error_outline,
                     title: 'That did not work',
                     message: controller.state.error!,
                   ),
                 ],
                 const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: busy
-                            ? null
-                            : () => Navigator.of(context).pop(),
-                        child: Text('Keep $label'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: FilledButton(
-                        key: const ValueKey('cancel-subscription-confirm'),
-                        onPressed: busy ? null : () => _confirm(controller),
-                        child: busy
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  semanticsLabel: 'Working',
-                                ),
-                              )
-                            : Text(_actionLabel(plan)),
-                      ),
+                AppActionGroup(
+                  primary: AppButton.primary(
+                    key: const ValueKey('cancel-subscription-confirm'),
+                    onPressed: busy ? null : () => _confirm(controller),
+                    loading: busy,
+                    loadingLabel: 'Working',
+                    label: _actionLabel(plan),
+                    expanded: true,
+                  ),
+                  secondary: [
+                    AppButton.text(
+                      onPressed: busy
+                          ? null
+                          : () => Navigator.of(context).pop(),
+                      label: 'Keep $label',
                     ),
                   ],
                 ),

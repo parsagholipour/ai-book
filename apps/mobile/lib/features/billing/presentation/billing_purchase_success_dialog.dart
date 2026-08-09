@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/ui/app_components.dart';
 import 'billing_controller.dart';
 
 Future<void> showBillingPurchaseSuccessDialog(
@@ -26,9 +27,9 @@ class BillingPurchaseSuccessDialog extends StatelessWidget {
       title: const Text('Purchase successful'),
       content: Text(purchase.message),
       actions: [
-        FilledButton(
+        AppButton.primary(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Done'),
+          label: 'Done',
         ),
       ],
     );

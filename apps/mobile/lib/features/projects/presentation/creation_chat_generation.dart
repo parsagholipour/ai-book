@@ -152,7 +152,8 @@ class _GenerationProgressBubbleState
         // announce nor something to offer a second, competing retry for.
         final waitingForRetry = status.isAutomaticRetryPending;
         final isFailed =
-            !waitingForRetry && (status.status == 'failed' || status.hasFailure);
+            !waitingForRetry &&
+            (status.status == 'failed' || status.hasFailure);
         final canRetry =
             isFailed &&
             status.retryAvailable &&
@@ -306,14 +307,13 @@ class _GenerationProgressBubbleState
                     _EditBookButton(projectId: widget.projectId),
                   if (reviewRequired &&
                       status.quality.affectedPageIndexes.isNotEmpty)
-                    OutlinedButton.icon(
+                    AppButton.outlined(
                       onPressed: () => context.push(
                         '/projects/${widget.projectId}/edit?pageIndex=${status.quality.affectedPageIndexes.first}',
                       ),
-                      icon: const Icon(Icons.edit_note_outlined),
-                      label: Text(
-                        'Fix page ${status.quality.affectedPageIndexes.first}',
-                      ),
+                      leading: const Icon(Icons.edit_note_outlined),
+                      label:
+                          'Fix page ${status.quality.affectedPageIndexes.first}',
                     ),
                   _ViewProgressButton(projectId: widget.projectId),
                 ],
@@ -459,18 +459,12 @@ class _CompletionDownloadButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final action = projectExportDownloadAction(export);
     final isDownloading = busyAction == action;
-    return FilledButton.icon(
+    return AppButton.primary(
       onPressed: isDownloading ? null : () => onDownload(export),
-      icon: isDownloading
-          ? const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                semanticsLabel: 'Downloading export',
-              ),
-            )
-          : const Icon(Icons.open_in_new_outlined),
-      label: Text(projectExportDownloadLabel(export, false)),
+      loading: isDownloading,
+      loadingLabel: 'Downloading export',
+      leading: const Icon(Icons.open_in_new_outlined),
+      label: projectExportDownloadLabel(export, false),
     );
   }
 }
@@ -484,18 +478,12 @@ class _RetryGenerationButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.icon(
+    return AppButton.primary(
       onPressed: busy ? null : onRetry,
-      icon: busy
-          ? const SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                semanticsLabel: 'Retrying generation',
-              ),
-            )
-          : const Icon(Icons.replay_outlined),
-      label: const Text('Retry generation'),
+      loading: busy,
+      loadingLabel: 'Retrying generation',
+      leading: const Icon(Icons.replay_outlined),
+      label: 'Retry generation',
     );
   }
 }
@@ -508,10 +496,10 @@ class _ReadBookButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton.icon(
+    return AppButton.primary(
       onPressed: () => context.push('/projects/$projectId/read'),
-      icon: const Icon(Icons.auto_stories_outlined),
-      label: const Text('Read book'),
+      leading: const Icon(Icons.auto_stories_outlined),
+      label: 'Read book',
     );
   }
 }
@@ -524,10 +512,10 @@ class _ViewProgressButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextButton.icon(
+    return AppButton.text(
       onPressed: () => context.push('/projects/$projectId'),
-      icon: const Icon(Icons.menu_book_outlined),
-      label: const Text('View progress'),
+      leading: const Icon(Icons.menu_book_outlined),
+      label: 'View progress',
     );
   }
 }
@@ -540,10 +528,10 @@ class _EditBookButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
+    return AppButton.outlined(
       onPressed: () => context.push('/projects/$projectId/edit'),
-      icon: const Icon(Icons.edit_note_outlined),
-      label: const Text('Edit book'),
+      leading: const Icon(Icons.edit_note_outlined),
+      label: 'Edit book',
     );
   }
 }

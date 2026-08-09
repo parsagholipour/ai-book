@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
@@ -129,15 +130,16 @@ class _NewBookButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: FilledButton.icon(
+      child: AppButton.primary(
+        label: 'New book',
         onPressed: () {
           AppHaptics.tap();
           Navigator.of(context).pop();
           context.go(newBookChatLocation());
         },
-        icon: const Icon(Icons.edit_document),
-        label: const Text('New book'),
-        style: FilledButton.styleFrom(alignment: Alignment.centerLeft),
+        leading: const Icon(Icons.edit_document),
+        expanded: true,
+        alignStart: true,
       ),
     );
   }
@@ -519,13 +521,13 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
           onSubmitted: (_) => _doRename(ctx, controller.text),
         ),
         actions: [
-          TextButton(
+          AppButton.text(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            label: 'Cancel',
           ),
-          FilledButton(
+          AppButton.primary(
             onPressed: () => _doRename(ctx, controller.text),
-            child: const Text('Save'),
+            label: 'Save',
           ),
         ],
       ),
@@ -558,32 +560,18 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
     }
   }
 
-  void _confirmDelete(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete chat?'),
-        content: const Text('This chat will be permanently deleted.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
-              foregroundColor: Theme.of(context).colorScheme.onError,
-            ),
-            onPressed: () => _doDelete(ctx),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirmed = await showAppConfirmationDialog(
+      context,
+      title: 'Delete chat?',
+      message: 'This chat will be permanently deleted.',
+      confirmLabel: 'Delete',
+      destructive: true,
     );
+    if (confirmed && mounted) await _doDelete();
   }
 
-  Future<void> _doDelete(BuildContext ctx) async {
-    Navigator.of(ctx).pop();
+  Future<void> _doDelete() async {
     try {
       await ref
           .read(creationRepositoryProvider)
@@ -618,13 +606,13 @@ class _DrawerFooter extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
       child: Row(
         children: [
-          TextButton.icon(
+          AppButton.text(
+            label: 'Account',
             onPressed: () {
               Navigator.of(context).pop();
               context.push('/account');
             },
-            icon: const Icon(Icons.account_circle_outlined),
-            label: const Text('Account'),
+            leading: const Icon(Icons.account_circle_outlined),
           ),
           if (creditLabel != null) ...[
             const SizedBox(width: 8),
@@ -633,24 +621,36 @@ class _DrawerFooter extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: Padding(
                   padding: const EdgeInsets.only(right: 12),
-                  child: TextButton(
-                    onPressed: () {
-                      final navigator = Navigator.of(context);
-                      navigator.pop();
-                      showBillingPaywall(
-                        navigator.context,
-                        title: 'Add book credits',
-                        message:
-                            'Credits are used when you approve a full book or unlock finished exports.',
-                      );
-                    },
-                    child: Text(
-                      creditLabel,
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      textButtonTheme: TextButtonThemeData(
+                        style:
+                            (Theme.of(context).textButtonTheme.style ??
+                                    const ButtonStyle())
+                                .copyWith(
+                                  foregroundColor: WidgetStatePropertyAll(
+                                    colors.onSurfaceVariant,
+                                  ),
+                                  textStyle: WidgetStatePropertyAll(
+                                    Theme.of(context).textTheme.labelSmall,
+                                  ),
+                                ),
+                      ),
+                    ),
+                    child: AppButton.text(
+                      label: creditLabel,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
+                      onPressed: () {
+                        final navigator = Navigator.of(context);
+                        navigator.pop();
+                        showBillingPaywall(
+                          navigator.context,
+                          title: 'Add book credits',
+                          message:
+                              'Credits are used when you approve a full book or unlock finished exports.',
+                        );
+                      },
                     ),
                   ),
                 ),
