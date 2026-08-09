@@ -42,8 +42,11 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final isUser = message.isUser;
-    final background = isUser ? colors.primary : colors.surfaceContainerHighest;
-    final foreground = isUser ? colors.onPrimary : colors.onSurface;
+    final sent = userChatBubbleColors(colors);
+    final background = isUser
+        ? sent.background
+        : colors.surfaceContainerHighest;
+    final foreground = isUser ? sent.foreground : colors.onSurface;
     final contentCard = message.isAssistant ? message.contentCard : null;
     final editProposal = message.isAssistant ? message.editProposal : null;
     final creditsCharged = message.isAssistant && showCreditCost

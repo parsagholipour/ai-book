@@ -6,9 +6,14 @@ import '../domain/billing_models.dart';
 /// tiers against each other.
 ///
 /// A ladder only reads as a ladder if the rungs look different, so each tier
-/// borrows a different accent from the scheme — entry blue, brand teal for the
-/// one most people should land on, gold for the top — rather than repeating the
-/// same primary three times.
+/// takes a different accent — entry blue, brand teal for the one most people
+/// should land on, gold for the top — rather than repeating the same primary
+/// three times.
+///
+/// Only the top rung's gold is spelled out here. The other two are scheme
+/// roles, but `secondary` is also what every tonal control in the app is
+/// painted with, so gold cannot live there without turning up on buttons that
+/// mean nothing by it.
 class BillingTierStyle {
   const BillingTierStyle({
     required this.tier,
@@ -25,30 +30,48 @@ class BillingTierStyle {
   Color accent(ColorScheme colors) => switch (tier) {
     'creator' => colors.tertiary,
     'pro' => colors.primary,
-    'max' => colors.secondary,
+    'max' => _gold(colors).accent,
     _ => colors.onSurfaceVariant,
   };
 
   Color onAccent(ColorScheme colors) => switch (tier) {
     'creator' => colors.onTertiary,
     'pro' => colors.onPrimary,
-    'max' => colors.onSecondary,
+    'max' => _gold(colors).onAccent,
     _ => colors.surface,
   };
 
   Color accentContainer(ColorScheme colors) => switch (tier) {
     'creator' => colors.tertiaryContainer,
     'pro' => colors.primaryContainer,
-    'max' => colors.secondaryContainer,
+    'max' => _gold(colors).container,
     _ => colors.surfaceContainerHigh,
   };
 
   Color onAccentContainer(ColorScheme colors) => switch (tier) {
     'creator' => colors.onTertiaryContainer,
     'pro' => colors.onPrimaryContainer,
-    'max' => colors.onSecondaryContainer,
+    'max' => _gold(colors).onContainer,
     _ => colors.onSurface,
   };
+}
+
+({Color accent, Color onAccent, Color container, Color onContainer}) _gold(
+  ColorScheme colors,
+) {
+  return colors.brightness == Brightness.light
+      ? (
+          accent: const Color(0xFF8A5A1F),
+          onAccent: Colors.white,
+          container: const Color(0xFFF7E7CB),
+          onContainer: const Color(0xFF4E3005),
+        )
+      : (
+          accent: const Color(0xFFE5C186),
+          onAccent: const Color(0xFF3F2C08),
+          container: const Color(0xFF5A4423),
+          onContainer: const Color(0xFFF7E3C2),
+        );
 }
 
 const _freeStyle = BillingTierStyle(

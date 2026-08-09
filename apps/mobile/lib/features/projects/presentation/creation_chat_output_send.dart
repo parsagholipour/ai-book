@@ -31,6 +31,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
 
   // Provided by the screen this mixin is applied to.
   TextEditingController get _composerController;
+  ChatMessageAnchorController get _messageAnchors;
   // Declared without the screen's optional `refreshStatus`: everything here
   // wants the status stream re-armed, which is that parameter's default.
   void _refreshOutput(String projectId);
@@ -97,6 +98,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
         _projectChatSending = false;
         _pendingProjectEcho = null;
         _editingProjectMessageId = null;
+        _messageAnchors.forget();
       });
       if (result.operation != null) {
         _startPlanPoll();

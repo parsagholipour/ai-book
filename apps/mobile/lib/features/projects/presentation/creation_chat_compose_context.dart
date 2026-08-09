@@ -14,6 +14,7 @@ part of 'creation_chat_screen.dart';
 /// each and every entry point below drops the other two.
 mixin _CreationComposerContext on _OutputChatSend {
   String? _editingCreationMessageId;
+  @override
   final _messageAnchors = ChatMessageAnchorController(
     debugLabel: 'creation-chat',
   );
@@ -33,16 +34,26 @@ mixin _CreationComposerContext on _OutputChatSend {
     _messageAnchors.reveal(target: target, scrollController: _scrollController);
   }
 
+  void _scrollToEditTarget() {
+    final messageId = _editingProjectMessageId ?? _editingCreationMessageId;
+    if (messageId == null || !_scrollController.hasClients) return;
+    _stopFollowingTranscript();
+    _messageAnchors.revealMessage(
+      messageId: messageId,
+      scrollController: _scrollController,
+    );
+  }
+
   void _startCreationMessageEdit(MobileCreationMessage message) {
     final state = ref.read(creationChatControllerProvider);
     if (message.id == null || state.isBusy || state.switchingBranch) return;
+    _messageAnchors.rememberMessage(message.id!);
     setState(() {
       // Only one edit at a time: starting a brainstorm edit replaces any
       // in-progress project chat edit, and vice versa.
       _editingProjectMessageId = null;
       _editingCreationMessageId = message.id;
       _replyTarget = null;
-      _messageAnchors.forget();
       _composerController.text = message.content;
       _composerController.selection = TextSelection.collapsed(
         offset: _composerController.text.length,
@@ -54,6 +65,7 @@ mixin _CreationComposerContext on _OutputChatSend {
   void _cancelCreationMessageEdit() {
     setState(() {
       _editingCreationMessageId = null;
+      _messageAnchors.forget();
       _composerController.clear();
     });
   }
@@ -80,11 +92,11 @@ mixin _CreationComposerContext on _OutputChatSend {
 
   void _startProjectMessageEdit(MobileProjectChatMessage message) {
     if (_projectChatSending) return;
+    _messageAnchors.rememberMessage(message.id);
     setState(() {
       _editingCreationMessageId = null;
       _editingProjectMessageId = message.id;
       _replyTarget = null;
-      _messageAnchors.forget();
       _composerController.text = message.content;
       _composerController.selection = TextSelection.collapsed(
         offset: _composerController.text.length,
@@ -105,6 +117,7 @@ mixin _CreationComposerContext on _OutputChatSend {
   void _cancelProjectMessageEdit() {
     setState(() {
       _editingProjectMessageId = null;
+      _messageAnchors.forget();
       _composerController.clear();
     });
   }

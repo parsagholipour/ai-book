@@ -336,6 +336,111 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('the edit banner scrolls to its creation message', (
+    tester,
+  ) async {
+    const draftId = 'long-edit-chat';
+    final creation = ScriptedCreationRepository(
+      sessions: [chatSession(draftId: draftId, title: 'Long edit chat')],
+    );
+    creation.resumeMessages[draftId] = [
+      for (var index = 0; index < 40; index++)
+        {
+          'id': 'history-$index',
+          'role': index.isEven ? 'user' : 'assistant',
+          'content': 'History message $index',
+        },
+    ];
+    await tester.pumpWidget(app(creation: creation, draftId: draftId));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(bubbleText('History message 38'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+
+    final transcript = tester
+        .widgetList<ListView>(find.byType(ListView))
+        .firstWhere(
+          (list) =>
+              list.scrollDirection == Axis.vertical &&
+              list.controller?.hasClients == true &&
+              list.controller!.position.maxScrollExtent > 0,
+        );
+    final position = transcript.controller!.position;
+    expect(find.byTooltip('Go to edited message'), findsOneWidget);
+
+    position.jumpTo(position.minScrollExtent);
+    await tester.pump();
+    expect(position.pixels, position.minScrollExtent);
+
+    await tester.tap(find.byTooltip('Go to edited message'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(position.pixels, greaterThan(position.maxScrollExtent * 0.8));
+    await tester.teardownScreen();
+  });
+
+  testWidgets('the edit banner scrolls to its finished-book message', (
+    tester,
+  ) async {
+    const draftId = 'long-output-edit-chat';
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: draftId,
+          title: 'Long output edit chat',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages[draftId] = 'Book transcript';
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'complete', plan: approvedPlan()),
+    );
+    projects.chatMessages.addAll([
+      for (var index = 0; index < 40; index++)
+        MobileProjectChatMessage(
+          id: 'output-history-$index',
+          projectId: 'project-1',
+          role: index.isEven ? 'user' : 'assistant',
+          content: 'Output history message $index',
+          metadata: const {},
+          createdAt: DateTime.utc(2026, 6, 15, 12, index),
+        ),
+    ]);
+    await tester.pumpWidget(
+      app(creation: creation, projects: projects, draftId: draftId),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(bubbleText('Output history message 38'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Edit'));
+    await tester.pumpAndSettle();
+
+    final transcript = tester
+        .widgetList<ListView>(find.byType(ListView))
+        .firstWhere(
+          (list) =>
+              list.scrollDirection == Axis.vertical &&
+              list.controller?.hasClients == true &&
+              list.controller!.position.maxScrollExtent > 0,
+        );
+    final position = transcript.controller!.position;
+    position.jumpTo(position.minScrollExtent);
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('Go to edited message'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(position.pixels, greaterThan(position.maxScrollExtent * 0.8));
+    await tester.teardownScreen();
+  });
+
   testWidgets('starting an edit drops a pending reply', (tester) async {
     final creation = ScriptedCreationRepository();
     await tester.pumpWidget(app(creation: creation));

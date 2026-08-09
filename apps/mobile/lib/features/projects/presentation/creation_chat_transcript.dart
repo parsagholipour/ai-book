@@ -473,15 +473,16 @@ class _MessageBubble extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final isUser = message.isUser;
     final failed = message.isFailedSend;
+    final sent = userChatBubbleColors(colors);
     final background = failed
         ? colors.errorContainer
         : isUser
-        ? colors.primary
+        ? sent.background
         : colors.surfaceContainerHighest;
     final foreground = failed
         ? colors.onErrorContainer
         : isUser
-        ? colors.onPrimary
+        ? sent.foreground
         : colors.onSurface;
     final hasText = message.content.trim().isNotEmpty;
     final timestamp = _formatChatTimestamp(message.createdAt);

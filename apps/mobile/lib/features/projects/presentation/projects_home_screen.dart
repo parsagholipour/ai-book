@@ -560,16 +560,19 @@ class ProjectCard extends StatelessWidget {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
+                      // The unfeatured tile is neutral, not a second accent:
+                      // two accents side by side made the featured card the
+                      // quieter of the pair.
                       color: featured
                           ? colors.primaryContainer
-                          : colors.secondaryContainer,
+                          : colors.surfaceContainerHigh,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Icon(
                       action.icon,
                       color: featured
                           ? colors.onPrimaryContainer
-                          : colors.onSecondaryContainer,
+                          : colors.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(width: 12),

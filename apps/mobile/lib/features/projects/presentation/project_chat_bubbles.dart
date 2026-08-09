@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../app/theme/app_theme.dart';
 import '../../../shared/ui/motion.dart';
 
 import '../../../shared/ui/feedback/app_feedback.dart';
@@ -243,8 +244,11 @@ class PendingEchoBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final background = echo.failed ? colors.errorContainer : colors.primary;
-    final foreground = echo.failed ? colors.onErrorContainer : colors.onPrimary;
+    final sent = userChatBubbleColors(colors);
+    final background = echo.failed ? colors.errorContainer : sent.background;
+    final foreground = echo.failed
+        ? colors.onErrorContainer
+        : sent.foreground;
     return Align(
       alignment: Alignment.centerRight,
       child: ConstrainedBox(
@@ -376,15 +380,16 @@ class ProjectMessageBubble extends StatelessWidget {
     final creditsCharged = message.isAssistant && showCreditCost
         ? message.creditsCharged
         : null;
+    final sent = userChatBubbleColors(colors);
     final background = editing
         ? colors.surfaceContainerHighest
         : isUser
-        ? colors.primary
+        ? sent.background
         : colors.surfaceContainerHighest;
     final foreground = editing
         ? colors.onSurface
         : isUser
-        ? colors.onPrimary
+        ? sent.foreground
         : colors.onSurface;
     final replyTo = message.replyTo;
     final startReply = onReply == null || editing ? null : () => onReply!();

@@ -15,6 +15,7 @@ import 'chat_history_drawer.dart';
 import 'creation_chat_navigation.dart';
 
 import '../../../app/config/app_config.dart';
+import '../../../app/theme/app_theme.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/easy_drawer_open.dart';
@@ -454,10 +455,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       ),
                       if (_editingProjectMessageId != null)
                         ChatComposerContextBanner.editing(
+                          onOpen: _scrollToEditTarget,
                           onCancel: _cancelProjectMessageEdit,
                         )
                       else if (_editingCreationMessageId != null)
                         ChatComposerContextBanner.editing(
+                          onOpen: _scrollToEditTarget,
                           onCancel: _cancelCreationMessageEdit,
                         )
                       else if (_replyTarget != null)
@@ -949,7 +952,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   }
 
   Future<void> _sendCreationEdit(String message, String editMessageId) async {
-    setState(() => _editingCreationMessageId = null);
+    setState(() {
+      _editingCreationMessageId = null;
+      _messageAnchors.forget();
+    });
     _composerController.clear();
     _resumeStickToBottom();
     try {

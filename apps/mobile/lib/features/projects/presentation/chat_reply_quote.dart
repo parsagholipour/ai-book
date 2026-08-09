@@ -31,9 +31,12 @@ class ChatMessageAnchorController {
     () => GlobalKey(debugLabel: '$debugLabel-message-$messageId'),
   );
 
-  void remember(ChatReplyTarget target) {
-    final renderObject = _keys[target.messageId]?.currentContext
-        ?.findRenderObject();
+  void remember(ChatReplyTarget target) => rememberMessage(target.messageId);
+
+  /// Captures a row for composer contexts that only need its id, such as an
+  /// edit. Replies use [remember] because they already carry a quote target.
+  void rememberMessage(String messageId) {
+    final renderObject = _keys[messageId]?.currentContext?.findRenderObject();
     if (renderObject == null || !renderObject.attached) {
       _rememberedOffset = null;
       return;
@@ -53,9 +56,17 @@ class ChatMessageAnchorController {
   void reveal({
     required ChatReplyTarget target,
     required ScrollController scrollController,
+  }) => revealMessage(
+    messageId: target.messageId,
+    scrollController: scrollController,
+  );
+
+  void revealMessage({
+    required String messageId,
+    required ScrollController scrollController,
   }) {
     if (!scrollController.hasClients) return;
-    final targetContext = _keys[target.messageId]?.currentContext;
+    final targetContext = _keys[messageId]?.currentContext;
     final renderObject = targetContext?.findRenderObject();
     if (targetContext != null && renderObject?.attached == true) {
       unawaited(
@@ -134,9 +145,11 @@ class ChatQuotedMessage extends StatelessWidget {
 /// One widget for both modes because they are mutually exclusive: starting an
 /// edit clears the reply target and vice versa, so two strips can never stack.
 class ChatComposerContextBanner extends StatelessWidget {
-  const ChatComposerContextBanner.editing({required this.onCancel, super.key})
-    : replyTarget = null,
-      onOpen = null;
+  const ChatComposerContextBanner.editing({
+    required this.onOpen,
+    required this.onCancel,
+    super.key,
+  }) : replyTarget = null;
 
   const ChatComposerContextBanner.replying({
     required ChatReplyTarget target,
@@ -160,10 +173,10 @@ class ChatComposerContextBanner extends StatelessWidget {
           Expanded(
             child: Tooltip(
               message: target == null
-                  ? 'Editing message'
+                  ? 'Go to edited message'
                   : 'Go to replied message',
               child: InkWell(
-                onTap: target == null ? null : onOpen,
+                onTap: onOpen,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 6, 8, 6),
                   child: Row(

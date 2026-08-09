@@ -621,10 +621,18 @@ Future<bool> showAppConfirmationDialog(
       background: colors.primaryContainer,
       foreground: colors.onPrimaryContainer,
     ),
-    AppNoticeTone.warning => (
-      background: colors.secondaryContainer,
-      foreground: colors.onSecondaryContainer,
-    ),
+    // Amber is spelled out rather than borrowed from `secondary`, which is the
+    // fill of every tonal control and so has to stay in the brand's own family.
+    // A warning that matched an ordinary button would not read as a warning.
+    AppNoticeTone.warning => colors.brightness == Brightness.light
+        ? (
+            background: const Color(0xFFF7E7CB),
+            foreground: const Color(0xFF4E3005),
+          )
+        : (
+            background: const Color(0xFF5A4423),
+            foreground: const Color(0xFFF7E3C2),
+          ),
     AppNoticeTone.error => (
       background: colors.errorContainer,
       foreground: colors.onErrorContainer,

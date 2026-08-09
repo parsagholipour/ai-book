@@ -8,6 +8,28 @@ abstract final class TomezaRadii {
   static const double chip = 999;
 }
 
+/// The fill and text color of a chat bubble the reader sent.
+///
+/// Deliberately not `primary`: that is the fill of every primary button on
+/// screen, so a sent message read as something tappable — and a thread of them
+/// competed with the one button that actually wanted the tap. A lighter wash of
+/// the same hue still reads as "mine" while the assistant keeps
+/// `surfaceContainerHighest`, and the two stay far enough apart in both
+/// brightnesses to tell the speakers apart at a glance.
+({Color background, Color foreground}) userChatBubbleColors(
+  ColorScheme colors,
+) {
+  return colors.brightness == Brightness.light
+      ? (
+          background: const Color(0xFFC2E6D9),
+          foreground: const Color(0xFF08332B),
+        )
+      : (
+          background: const Color(0xFF215C50),
+          foreground: const Color(0xFFCBEFE3),
+        );
+}
+
 ThemeData buildTomezaLightTheme() {
   final scheme =
       ColorScheme.fromSeed(
@@ -18,9 +40,15 @@ ThemeData buildTomezaLightTheme() {
         onPrimary: Colors.white,
         primaryContainer: const Color(0xFFD5EEE5),
         onPrimaryContainer: const Color(0xFF0A3F35),
-        secondary: const Color(0xFF8A5A1F),
-        secondaryContainer: const Color(0xFFF7E7CB),
-        onSecondaryContainer: const Color(0xFF4E3005),
+        // Secondary is the default fill of every `FilledButton.tonal`, so it is
+        // spent on ordinary controls far more often than on anything that means
+        // "second accent". It stays in the brand's own family for that reason.
+        // The gold it used to hold now lives where gold says something: the Max
+        // tier in `billing_tier_style.dart` and the warning notice tone.
+        secondary: const Color(0xFF3D6158),
+        onSecondary: Colors.white,
+        secondaryContainer: const Color(0xFFCFE2DB),
+        onSecondaryContainer: const Color(0xFF16302A),
         tertiary: const Color(0xFF365B8C),
         tertiaryContainer: const Color(0xFFDCE7F8),
         onTertiaryContainer: const Color(0xFF16324F),
@@ -49,9 +77,10 @@ ThemeData buildTomezaDarkTheme() {
         onPrimary: const Color(0xFF00382E),
         primaryContainer: const Color(0xFF1B5348),
         onPrimaryContainer: const Color(0xFFB5EEDF),
-        secondary: const Color(0xFFE5C186),
-        secondaryContainer: const Color(0xFF5A4423),
-        onSecondaryContainer: const Color(0xFFF7E3C2),
+        secondary: const Color(0xFFA9CCC1),
+        onSecondary: const Color(0xFF12352D),
+        secondaryContainer: const Color(0xFF2C4A42),
+        onSecondaryContainer: const Color(0xFFC6E6DB),
         tertiary: const Color(0xFFA9C6F4),
         tertiaryContainer: const Color(0xFF2E4867),
         onTertiaryContainer: const Color(0xFFD6E4FB),
