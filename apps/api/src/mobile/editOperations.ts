@@ -1,5 +1,6 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
+import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import {
   affectedPagesForIntent,
   busyEditReply,
@@ -21,7 +22,6 @@ import {
   errorMessage,
   fingerprintGenerationRequest,
   hashString,
-  isPrismaUniqueConflict,
   jsonInputValue,
   jsonRecord,
   languageDisplayName
@@ -42,52 +42,9 @@ import {
  * book edit, continuation) and reconciles retryable ones.
  */
 
-/**
- * Creates the QUEUED operation row for a chat edit, or null when the partial
- * unique index ("BookEditOperation_one_open_per_project", migration 000026)
- * reports another open operation won the race. hasOpenProjectWork() is only a
- * fast-path check; this is the authoritative one-open-edit-at-a-time guard.
- */
-export async function createOpenBookEditOperation(
-  data: Prisma.BookEditOperationUncheckedCreateInput
-): Promise<MobileBookEditOperationRecord | null> {
-  try {
-    return await prisma.bookEditOperation.create({ data });
-  } catch (error) {
-    if (isPrismaUniqueConflict(error)) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-async function replayClaimedChatOperation(options: {
-  projectId: string;
-  requestId: string;
-  parentMessageId: string;
-  intent: BookEditIntent;
-}): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null } | null> {
-  const operation = await prisma.bookEditOperation.findFirst({
-    where: { projectId: options.projectId, requestId: options.requestId },
-    include: { generationJob: { select: { id: true, status: true } } }
-  });
-  if (!operation) {
-    return null;
-  }
-  const reply = await createAssistantChatMessage({
-    projectId: options.projectId,
-    parentId: options.parentMessageId,
-    operationId: operation.id,
-    content: "This edit request is already being handled.",
-    metadata: {
-      intent: options.intent,
-      charged: false,
-      replayedOperation: true,
-      creditsCharged: operation.creditsCharged
-    }
-  });
-  return { reply, operation: operation as MobileBookEditOperationRecord };
-}
+// The durable claim/replay pair lives in editOperationClaims.ts; re-exported
+// because callers and tests historically import it from this module.
+export { createOpenBookEditOperation } from "./editOperationClaims.js";
 
 /**
  * The one reserve → commit → enqueue → compensate skeleton every charged edit
@@ -210,8 +167,12 @@ async function queueAttemptChatOperation(options: {
   } catch (error) {
     // Nothing committed: the attempt transaction rolled the charge, the job
     // and the operation update back together, so FAILED is the truth here.
-    await prisma.bookEditOperation.update({
-      where: { id: options.operation.id },
+    // Conditional on the job linkage, because a rare failure *after* the
+    // commit (the replay read, a serialization retry read) reaches this catch
+    // too — and then the row carries its committed generationJobId and must
+    // not be failed over work that still runs.
+    await prisma.bookEditOperation.updateMany({
+      where: { id: options.operation.id, generationJobId: null },
       data: { status: "FAILED", error: errorMessage(error) }
     });
     if (error instanceof InsufficientCreditsError) {
@@ -308,8 +269,11 @@ export async function queueChatPlanRevision(options: {
       idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:plan-revision`
     });
   } catch (error) {
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
+    // Conditional on the job linkage: a post-commit read failure inside
+    // queueChargedPlanRevision lands here too, and the committed row already
+    // carries its generationJobId — failing it would disown a charged job.
+    await prisma.bookEditOperation.updateMany({
+      where: { id: operation.id, generationJobId: null },
       data: { status: "FAILED", error: errorMessage(error) }
     });
     if (error instanceof InsufficientCreditsError) {
@@ -708,7 +672,10 @@ export async function queueDirectPlanRevision(options: {
       const job = await prisma.generationJob.findUniqueOrThrow({ where: { id: winner.generationJob.id } });
       return { operation: winner as MobileBookEditOperationRecord, job };
     }
-    throw new Error("Another book edit operation is already in progress.");
+    // Either an unrelated edit holds the open-operation slot or a same-request
+    // winner has not committed inside the poll budget. Both are conflicts the
+    // client can retry, not server failures.
+    throw new GenerationAttemptConflictError("Another book edit operation is already in progress.");
   }
   let queued;
   try {
@@ -721,8 +688,10 @@ export async function queueDirectPlanRevision(options: {
       idempotencyKey: `mobile:plan:${options.planId}:revision:${options.requestId}`
     });
   } catch (error) {
-    await prisma.bookEditOperation.update({
-      where: { id: operation.id },
+    // Same job-linkage guard as the chat paths: only a row whose attempt never
+    // committed may be failed here.
+    await prisma.bookEditOperation.updateMany({
+      where: { id: operation.id, generationJobId: null },
       data: { status: "FAILED", error: errorMessage(error) }
     });
     throw error;

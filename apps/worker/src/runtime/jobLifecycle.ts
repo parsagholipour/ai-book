@@ -5,8 +5,7 @@ import {
   isRecoverableNetworkError,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
   shouldRecoverJobAttempt as retryPolicyShouldRecover,
-  workerJobControlsProjectStatus,
-  type JobStep
+  workerJobControlsProjectStatus
 } from "@book-maker/core";
 import { Prisma, planRevisionRetryDelayMs, prisma } from "@book-maker/db";
 import {
@@ -18,263 +17,51 @@ import {
   releaseManuscriptImportUse
 } from "@book-maker/db/billing";
 import { restoreProjectAfterFailedPlanRevision } from "./failureRecovery.js";
-import { staleGenerationTargetReason } from "./staleJobGuard.js";
 import {
-  STOPPED_JOB_ERROR,
-  STOPPED_JOB_MESSAGE,
-  StopRequestedError,
-  isStoppedGenerationJob
-} from "./jobTypes.js";
+  assertJobNotStopped,
+  buildStepTemplate,
+  completeAllJobSteps,
+  failActiveJobStep
+} from "./jobProgress.js";
+import { staleGenerationTargetReason } from "./staleJobGuard.js";
+import { STOPPED_JOB_ERROR, STOPPED_JOB_MESSAGE } from "./jobTypes.js";
 import { errorMessage, jsonPayloadToRecord } from "./serialization.js";
 
 /**
- * GenerationJob lifecycle: per-job step templates, progress reporting, and the
- * status transitions (active / completed / failed / stopped / recovering) that
- * keep the database in sync with BullMQ. Job handlers report progress through
- * here; the worker entry point drives the transitions.
+ * GenerationJob lifecycle: the status transitions (active / completed / failed
+ * / stopped / recovering) that keep the database in sync with BullMQ, and the
+ * settlement each one owes. Step templates and progress reporting live in
+ * jobProgress.ts and are re-exported here for their historical import path.
  */
 
-
-const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> = {
-  "plan-book": [
-    { key: "research", label: "Research" },
-    { key: "plan", label: "Create plan" },
-    { key: "save", label: "Save plan" }
-  ],
-  "revise-plan": [
-    { key: "revise", label: "Revise plan" },
-    { key: "save", label: "Save revision" }
-  ],
-  "generate-book": [
-    { key: "briefs", label: "Prepare book" },
-    { key: "setup", label: "Create pages" },
-    { key: "enqueue", label: "Queue follow-ups" }
-  ],
-  "generate-page": [
-    { key: "prepare", label: "Prepare context" },
-    { key: "draft", label: "Draft page" },
-    { key: "qa", label: "Quality review" },
-    { key: "revise", label: "Revise draft" },
-    { key: "save", label: "Save page" }
-  ],
-  "generate-image": [
-    { key: "prompt", label: "Build prompt" },
-    { key: "render", label: "Render image" },
-    { key: "store", label: "Store asset" }
-  ],
-  "compile-export": [
-    { key: "qa", label: "Final review" },
-    { key: "compile", label: "Compile markdown" },
-    { key: "write", label: "Write Markdown" },
-    { key: "pdf", label: "Generate PDF" },
-    { key: "epub", label: "Generate EPUB" }
-  ],
-  "apply-book-edit": [
-    { key: "prepare", label: "Prepare edit" },
-    { key: "snapshot", label: "Snapshot pages" },
-    { key: "apply", label: "Apply edits" },
-    { key: "export", label: "Refresh exports" }
-  ],
-  "replan-book": [
-    { key: "revise", label: "Revise plan" },
-    { key: "save", label: "Save approved plan" },
-    { key: "generate", label: "Queue regeneration" }
-  ],
-  "prepare-character-candidates": [
-    { key: "detect", label: "Detect characters" },
-    { key: "save", label: "Save candidates" }
-  ],
-  "build-character-persona": [
-    { key: "persona", label: "Build persona" },
-    { key: "portrait", label: "Create profile picture" },
-    { key: "save", label: "Save character" }
-  ],
-  "import-book": [
-    { key: "read", label: "Read manuscript" },
-    { key: "segment", label: "Split into chapters" },
-    { key: "analyze", label: "Learn writing style" },
-    { key: "save", label: "Save your book" }
-  ],
-  "continue-book": [
-    { key: "outline", label: "Outline new chapters" },
-    { key: "draft", label: "Write new pages" },
-    { key: "save", label: "Save chapters" },
-    { key: "export", label: "Refresh exports" }
-  ],
-  "generate-audiobook": [
-    { key: "prepare", label: "Prepare narration" },
-    { key: "synthesize", label: "Narrate chapters" },
-    { key: "finalize", label: "Finish audiobook" }
-  ]
-};
-
-export function buildStepTemplate(jobName: string): JobStep[] {
-  const template = JOB_STEP_TEMPLATES[jobName];
-  if (!template) {
-    return [];
-  }
-  return template.map((step, index) => ({
-    ...step,
-    status: index === 0 ? "active" : "pending"
-  }));
-}
-
-export function parseJobSteps(value: unknown): JobStep[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter(
-    (step): step is JobStep =>
-      typeof step === "object" &&
-      step !== null &&
-      typeof (step as JobStep).key === "string" &&
-      typeof (step as JobStep).label === "string" &&
-      ["pending", "active", "done", "failed"].includes((step as JobStep).status)
-  );
-}
-
-export async function updateJobProgress(
-  generationJobId: string | undefined,
-  update: { progress?: number; message?: string; steps?: JobStep[] },
-  options: { allowStopped?: boolean } = {}
-) {
-  if (!generationJobId) {
-    return;
-  }
-  if (!options.allowStopped) {
-    await assertJobNotStopped(generationJobId);
-  }
-  await prisma.generationJob.update({
-    where: { id: generationJobId },
-    data: {
-      ...(update.progress !== undefined ? { progress: update.progress } : {}),
-      ...(update.message !== undefined ? { message: update.message } : {}),
-      ...(update.steps !== undefined ? { steps: update.steps as Prisma.InputJsonValue } : {})
-    }
-  });
-}
+export {
+  advanceJobStep,
+  assertJobNotStopped,
+  buildStepTemplate,
+  completeAllJobSteps,
+  failActiveJobStep,
+  hasStoppedGenerationJob,
+  parseJobSteps,
+  updateJobProgress,
+  type JobStepCounters
+} from "./jobProgress.js";
 
 /**
- * Countable facts about the step being worked on, for the API to narrate.
- *
- * Deliberately numbers and tokens rather than sentences: `GenerationJob.message`
- * is internal text the mobile serializers must never forward, so anything the
- * reader is meant to see has to arrive as data they can phrase themselves.
+ * Claims the durable row for this delivery. QUEUED is the normal case, FAILED
+ * is a BullMQ attempt retry legitimately re-running its own row, and ACTIVE is
+ * a stalled delivery reclaimed mid-flight. COMPLETED and CANCELED are settled
+ * verdicts — one delivered and paid for, one refunded — that a redelivered
+ * Bull job must never resurrect, so the claim refuses them and returns false.
  */
-export type JobStepCounters = {
-  done?: number;
-  total?: number;
-  phase?: string;
-  pageIndex?: number;
-};
-
-function withCounters(step: JobStep, counters: JobStepCounters | undefined): JobStep {
-  if (!counters) {
-    return step;
-  }
-  return {
-    ...step,
-    ...(typeof counters.done === "number" ? { done: counters.done } : {}),
-    ...(typeof counters.total === "number" ? { total: counters.total } : {}),
-    ...(counters.phase ? { phase: counters.phase } : {}),
-    ...(typeof counters.pageIndex === "number" ? { pageIndex: counters.pageIndex } : {})
-  };
-}
-
-/**
- * Marks `activeKey` as the step being worked on, optionally with counters.
- *
- * Re-calling it for the step that is already active is the supported way to
- * report movement inside a long step — which page of an edit is being rewritten
- * and what is being done to it — because it is the same single write either way.
- */
-export async function advanceJobStep(
-  generationJobId: string | undefined,
-  activeKey: string,
-  progress?: number,
-  message?: string,
-  counters?: JobStepCounters
-) {
-  if (!generationJobId) {
-    return;
-  }
-  await assertJobNotStopped(generationJobId);
-  const job = await prisma.generationJob.findUnique({
-    where: { id: generationJobId },
-    select: { steps: true }
-  });
-  const steps = parseJobSteps(job?.steps);
-  if (!steps.length) {
-    return;
-  }
-  let foundActive = false;
-  const nextSteps = steps.map((step) => {
-    if (step.key === activeKey) {
-      foundActive = true;
-      return withCounters({ ...step, status: "active" as const }, counters);
-    }
-    if (!foundActive) {
-      return { ...step, status: "done" as const };
-    }
-    return { ...step, status: "pending" as const };
-  });
-  const active = nextSteps.find((step) => step.status === "active");
-  const stepMessage = message ?? active?.label;
-  await updateJobProgress(generationJobId, {
-    steps: nextSteps,
-    ...(progress !== undefined ? { progress } : {}),
-    ...(stepMessage ? { message: stepMessage } : {})
-  });
-}
-
-export async function completeAllJobSteps(generationJobId: string | undefined) {
-  if (!generationJobId) {
-    return;
-  }
-  const job = await prisma.generationJob.findUnique({
-    where: { id: generationJobId },
-    select: { steps: true }
-  });
-  const steps = parseJobSteps(job?.steps);
-  if (!steps.length) {
-    return;
-  }
-  await updateJobProgress(generationJobId, {
-    steps: steps.map((step) => ({ ...step, status: "done" as const }))
-  });
-}
-
-export async function failActiveJobStep(
-  generationJobId: string | undefined,
-  options: { allowStopped?: boolean } = {}
-) {
-  if (!generationJobId) {
-    return;
-  }
-  const job = await prisma.generationJob.findUnique({
-    where: { id: generationJobId },
-    select: { steps: true }
-  });
-  const steps = parseJobSteps(job?.steps);
-  if (!steps.length) {
-    return;
-  }
-  await updateJobProgress(generationJobId, {
-    steps: steps.map((step) =>
-      step.status === "active" ? { ...step, status: "failed" as const } : step
-    )
-  }, options);
-}
-
-export async function markActive(job: Job) {
+export async function markActive(job: Job): Promise<boolean> {
   const generationJobId = job.data.generationJobId as string | undefined;
   if (!generationJobId) {
-    return;
+    return true;
   }
   await assertJobNotStopped(generationJobId);
   const steps = buildStepTemplate(job.name);
-  await prisma.generationJob.update({
-    where: { id: generationJobId },
+  const claimed = await prisma.generationJob.updateMany({
+    where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE", "FAILED"] } },
     data: {
       status: "ACTIVE",
       startedAt: new Date(),
@@ -283,11 +70,15 @@ export async function markActive(job: Job) {
       ...(steps.length ? { steps: steps as Prisma.InputJsonValue } : {})
     }
   });
+  if (claimed.count !== 1) {
+    return false;
+  }
   const attemptId = generationAttemptIdFromJob(job);
   if (attemptId) {
     await markGenerationAttemptActive(attemptId);
   }
   await markEditOperationActive(job);
+  return true;
 }
 
 export async function staleGenerationJobReason(job: Job): Promise<string | null> {
@@ -354,8 +145,11 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
 export async function cancelStaleGenerationJob(job: Job, reason: string): Promise<void> {
   const generationJobId = job.data.generationJobId as string | undefined;
   if (generationJobId) {
-    await prisma.generationJob.update({
-      where: { id: generationJobId },
+    // Only an open row takes the CANCELED verdict. A row that is already
+    // FAILED keeps its own story — a user stop's markers must survive this —
+    // while the attempt settlement below is idempotent either way.
+    await prisma.generationJob.updateMany({
+      where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
       data: {
         status: "CANCELED",
         finishedAt: new Date(),
@@ -398,10 +192,10 @@ export async function cancelStaleGenerationJob(job: Job, reason: string): Promis
   });
 }
 
-export async function markCompleted(job: Job) {
+export async function markCompleted(job: Job): Promise<boolean> {
   const generationJobId = job.data.generationJobId as string | undefined;
   if (!generationJobId) {
-    return;
+    return true;
   }
   await assertJobNotStopped(generationJobId);
   await completeAllJobSteps(generationJobId);
@@ -418,15 +212,22 @@ export async function markCompleted(job: Job) {
         : qualityState === "passed"
           ? "Export complete. Quality checks passed."
           : "Completed";
-  await prisma.generationJob.update({
-    where: { id: generationJobId },
+  // Conditional: a stop or settlement that reached the row between the
+  // assertJobNotStopped read above and this write wins. Claiming success over
+  // it would deliver a run whose charge was just refunded.
+  const completed = await prisma.generationJob.updateMany({
+    where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
     data: { status: "COMPLETED", finishedAt: new Date(), message: completionMessage, progress: 100 }
   });
+  if (completed.count !== 1) {
+    return false;
+  }
   const attemptId = generationAttemptIdFromJob(job);
   if (attemptId && attemptCompletesWithJob(job.name)) {
     await markGenerationAttemptSucceeded(attemptId);
   }
   await markEditOperationCompleted(job);
+  return true;
 }
 
 export async function markFailed(job: Job, error: unknown) {
@@ -435,9 +236,12 @@ export async function markFailed(job: Job, error: unknown) {
   const editOperationId = editOperationIdFromJob(job);
   const attemptId = generationAttemptIdFromJob(job);
   if (generationJobId) {
-    await failActiveJobStep(generationJobId);
-    await prisma.generationJob.update({
-      where: { id: generationJobId },
+    // Conditional: COMPLETED means the work was delivered and paid for,
+    // CANCELED means a compensation path already settled and refunded it.
+    // Failing over either verdict would refund a finished run or settle the
+    // same charge twice, so when the claim misses no settlement runs at all.
+    const failed = await prisma.generationJob.updateMany({
+      where: { id: generationJobId, status: { notIn: ["COMPLETED", "CANCELED"] } },
       data: {
         status: "FAILED",
         finishedAt: new Date(),
@@ -445,11 +249,17 @@ export async function markFailed(job: Job, error: unknown) {
         error: error instanceof Error ? error.message : "Unknown error"
       }
     });
+    if (failed.count !== 1) {
+      console.warn(`Skipped failing generation job ${generationJobId}: the row already holds a settled verdict.`);
+      return;
+    }
+    await failActiveJobStep(generationJobId);
   }
   if (attemptId) {
     await failGenerationAttempt(attemptId, errorMessage(error)).catch((settlementError) => {
       console.error(`Failed to settle generation attempt ${attemptId}`, settlementError);
     });
+    await stopSiblingJobsForSettledAttempt(attemptId);
   }
   const recoverablePlanRevision =
     !attemptId && job.name === "revise-plan" && isRecoverableNetworkError(error) && Boolean(editOperationId);
@@ -626,21 +436,27 @@ export async function failEditOperation(
   reason: string,
   options: { refund?: boolean } = {}
 ): Promise<void> {
+  // Claim before refunding, like markEditOperationCompleted: an operation that
+  // is already APPLIED (or FAILED/CANCELED and settled with it) must not have
+  // its charge clawed back by a straggling failure path.
+  const claimed = await prisma.bookEditOperation
+    .updateMany({
+      where: { id: operationId, status: { in: ["QUEUED", "ACTIVE"] } },
+      data: { status: "FAILED", error: reason }
+    })
+    .catch(() => ({ count: 0 }));
+  if (claimed.count !== 1 || options.refund === false) {
+    return;
+  }
   const operation = await prisma.bookEditOperation.findUnique({
     where: { id: operationId },
     select: { ledgerEntryId: true }
   });
-  if (options.refund !== false && operation?.ledgerEntryId) {
+  if (operation?.ledgerEntryId) {
     await refundCreditLedgerEntry(operation.ledgerEntryId, reason).catch((error) => {
       console.error(`Failed to refund edit operation ${operationId}`, error);
     });
   }
-  await prisma.bookEditOperation
-    .update({
-      where: { id: operationId },
-      data: { status: "FAILED", error: reason }
-    })
-    .catch(() => undefined);
 }
 
 export function editOperationIdFromJob(job: Job): string | null {
@@ -653,9 +469,11 @@ export async function markStopped(job: Job) {
   const projectId = job.data.projectId as string | undefined;
   const attemptId = generationAttemptIdFromJob(job);
   if (generationJobId) {
-    await failActiveJobStep(generationJobId, { allowStopped: true });
-    await prisma.generationJob.update({
-      where: { id: generationJobId },
+    // Conditional for the same reason as markFailed: a COMPLETED row is a run
+    // that was delivered before the stop reached it, and a CANCELED row was
+    // already settled — a late stop must not refund either.
+    const stopped = await prisma.generationJob.updateMany({
+      where: { id: generationJobId, status: { notIn: ["COMPLETED", "CANCELED"] } },
       data: {
         status: "FAILED",
         finishedAt: new Date(),
@@ -663,6 +481,11 @@ export async function markStopped(job: Job) {
         error: STOPPED_JOB_ERROR
       }
     });
+    if (stopped.count !== 1) {
+      console.warn(`Skipped stopping generation job ${generationJobId}: the row already holds a settled verdict.`);
+      return;
+    }
+    await failActiveJobStep(generationJobId, { allowStopped: true });
   }
   if (attemptId) {
     await failGenerationAttempt(attemptId, STOPPED_JOB_ERROR, "CANCELED").catch((settlementError) => {
@@ -736,6 +559,31 @@ function generationAttemptIdFromJob(job: Job): string | null {
   return typeof attemptId === "string" && attemptId ? attemptId : null;
 }
 
+/**
+ * One terminal child failure settles — and refunds — the whole attempt, so the
+ * attempt's other open jobs must not keep delivering it: active siblings would
+ * spend provider money on a book nobody is paying for, and a queued sibling
+ * the stale guard later CANCELs is invisible to the paid retry, which copies
+ * FAILED rows only. Marking them FAILED with the stop markers makes running
+ * handlers bail at their next stop check and keeps every sibling
+ * retry-copyable. The failing row itself is already FAILED and unaffected.
+ */
+async function stopSiblingJobsForSettledAttempt(attemptId: string): Promise<void> {
+  await prisma.generationJob
+    .updateMany({
+      where: { attemptId, status: { in: ["QUEUED", "ACTIVE"] } },
+      data: {
+        status: "FAILED",
+        finishedAt: new Date(),
+        message: STOPPED_JOB_MESSAGE,
+        error: STOPPED_JOB_ERROR
+      }
+    })
+    .catch((error) => {
+      console.error(`Failed to stop sibling jobs for settled attempt ${attemptId}`, error);
+    });
+}
+
 function attemptCompletesWithJob(jobName: string): boolean {
   return [
     "plan-book",
@@ -780,8 +628,12 @@ export async function markRecovering(job: Job, error: unknown) {
   const message = `Network interruption during ${job.name}; retrying (${nextAttempt}/${maxAttempts}). ${errorMessage(error)}`;
 
   if (generationJobId) {
-    await prisma.generationJob.update({
-      where: { id: generationJobId },
+    // Only an ACTIVE row goes back to QUEUED. A stop that landed mid-flight
+    // wrote FAILED with the stop markers; re-queueing over it would erase the
+    // marker and let the retry run a stopped job — left alone, the retry's own
+    // assertJobNotStopped sees it and settles through markStopped instead.
+    const requeued = await prisma.generationJob.updateMany({
+      where: { id: generationJobId, status: "ACTIVE" },
       data: {
         status: "QUEUED",
         finishedAt: null,
@@ -789,6 +641,9 @@ export async function markRecovering(job: Job, error: unknown) {
         error: null
       }
     });
+    if (requeued.count !== 1) {
+      return;
+    }
   }
   if (projectId && workerJobControlsProjectStatus(job.name)) {
     await prisma.project.update({ where: { id: projectId }, data: { status: "GENERATING" } }).catch(() => undefined);
@@ -813,22 +668,6 @@ export function shouldBypassConfiguredRetries(job: Job, error: unknown): boolean
   });
 }
 
-export async function assertJobNotStopped(generationJobId: string | undefined) {
-  if (await hasStoppedGenerationJob(generationJobId)) {
-    throw new StopRequestedError();
-  }
-}
-
-export async function hasStoppedGenerationJob(generationJobId: string | undefined): Promise<boolean> {
-  if (!generationJobId) {
-    return false;
-  }
-  const job = await prisma.generationJob.findUnique({
-    where: { id: generationJobId },
-    select: { status: true, message: true, error: true }
-  });
-  return isStoppedGenerationJob(job);
-}
 export function jobMaxAttempts(job: Job): number {
   const attempts = job.opts.attempts;
   return typeof attempts === "number" && Number.isFinite(attempts) && attempts > 0 ? attempts : 1;

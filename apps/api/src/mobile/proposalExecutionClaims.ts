@@ -34,7 +34,12 @@ export async function replayClaimedProposal(
       projectId,
       parentId: activeProjectChatLeafId(await loadActiveProjectChatMessages(projectId))!,
       operationId: operation.id,
-      content: "This edit request is already being handled.",
+      // A cancel settlement also claims the proposal id; replaying it must
+      // read as the cancellation it was, not as running work.
+      content:
+        operation.status === "CANCELED"
+          ? "That request was cancelled before it ran. Nothing was changed or charged."
+          : "This edit request is already being handled.",
       metadata: { replayedOperation: true, charged: false, proposalId }
     }));
   return {

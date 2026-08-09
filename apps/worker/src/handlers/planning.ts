@@ -209,10 +209,18 @@ export async function revisePlan(job: Job) {
   const priorMessages = Array.isArray(planVersion.messages) ? planVersion.messages : [];
 
   await prisma.$transaction(async (tx) => {
-    await tx.planVersion.update({
-      where: { id: planId },
+    // CAS, not a blind write: an approval that committed while this revision
+    // was being drafted owns the plan now. Superseding it here would silently
+    // demote a committed approval and yank the project back to PLAN_READY
+    // underneath a paid GENERATE_BOOK. Losing the claim fails the revision
+    // instead, and its charge refunds through the normal failure path.
+    const superseded = await tx.planVersion.updateMany({
+      where: { id: planId, status: { notIn: ["APPROVED", "SUPERSEDED"] } },
       data: { status: "SUPERSEDED" }
     });
+    if (superseded.count !== 1) {
+      throw new Error("Plan revision lost to a concurrent approval");
+    }
     const newPlan = await tx.planVersion.create({
       data: {
         projectId,
@@ -231,8 +239,11 @@ export async function revisePlan(job: Job) {
       where: { id: projectId },
       select: { mediaSettings: true }
     });
-    await tx.project.update({
-      where: { id: projectId },
+    // Same claim on the project: only while the revised plan is still the
+    // current one may the revision move the project. `currentPlanId` pointing
+    // elsewhere means an approval (of a sibling version) won the race.
+    const claimedProject = await tx.project.updateMany({
+      where: { id: projectId, currentPlanId: planId },
       data: {
         currentPlanId: newPlan.id,
         status: "PLAN_READY",
@@ -243,6 +254,9 @@ export async function revisePlan(job: Job) {
         ) as Prisma.InputJsonValue
       }
     });
+    if (claimedProject.count !== 1) {
+      throw new Error("Plan revision lost to a concurrent approval");
+    }
   });
   await advanceJobStep(generationJobId, "save", 90);
 }

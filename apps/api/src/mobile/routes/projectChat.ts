@@ -46,6 +46,7 @@ import {
   mobileProjectChatMessageOpenApiBody,
   projectChatQuerySchema
 } from "../schemas.js";
+import { replayClaimedProposal } from "../proposalExecutionClaims.js";
 import { isPrismaUniqueConflict } from "../support.js";
 import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
@@ -177,6 +178,10 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           if (replay) {
             return replay;
           }
+          // The user row exists but its reply does not yet: the same requestId
+          // is still in flight, so answer with a retryable conflict rather
+          // than rethrowing the unique violation as a 500.
+          return sendMobileError(reply, 409, "REQUEST_IN_PROGRESS", "That request is still being processed. Try again in a moment.");
         }
         throw error;
       }
@@ -263,6 +268,13 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const openEditBlocked = await hasOpenProjectWork(id);
       const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content"];
       if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
+        // A typed confirmation racing the Apply button: when the "busy" job is
+        // the button's own execution of this very proposal, saving the request
+        // as a pending edit would let a later nudge rebuild and re-charge it.
+        if (confirmedProposal?.proposalId) {
+          const claimed = await replayClaimedProposal(id, confirmedProposal.proposalId);
+          if (claimed) return claimed;
+        }
         const replyMessage = await busyEditReply({
           projectId: id,
           parentMessageId: userMessage.id,
@@ -429,6 +441,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           if (replay) {
             return replay;
           }
+          // Same in-flight duplicate as the message route: conflict, not 500.
+          return sendMobileError(reply, 409, "REQUEST_IN_PROGRESS", "That request is still being processed. Try again in a moment.");
         }
         throw error;
       }

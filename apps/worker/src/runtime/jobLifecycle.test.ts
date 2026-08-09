@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   generationJobFindUnique: vi.fn(),
   generationJobFindMany: vi.fn(),
   generationJobUpdate: vi.fn(),
+  generationJobUpdateMany: vi.fn(),
   projectUpdate: vi.fn(),
   projectUpdateMany: vi.fn(),
   projectFindUnique: vi.fn(),
@@ -27,7 +28,8 @@ vi.mock("@book-maker/db", () => ({
     generationJob: {
       findUnique: mocks.generationJobFindUnique,
       findMany: mocks.generationJobFindMany,
-      update: mocks.generationJobUpdate
+      update: mocks.generationJobUpdate,
+      updateMany: mocks.generationJobUpdateMany
     },
     project: {
       findUnique: mocks.projectFindUnique,
@@ -53,7 +55,7 @@ vi.mock("@book-maker/db/billing", () => ({
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits
 }));
 
-import { markFailed, markRecovering, markStopped, staleGenerationJobReason } from "./jobLifecycle.js";
+import { markActive, markCompleted, markFailed, markRecovering, markStopped, staleGenerationJobReason } from "./jobLifecycle.js";
 
 describe("job lifecycle ownership", () => {
   beforeEach(() => {
@@ -61,12 +63,15 @@ describe("job lifecycle ownership", () => {
     mocks.generationJobFindUnique.mockResolvedValue({ steps: [] });
     mocks.generationJobFindMany.mockResolvedValue([]);
     mocks.generationJobUpdate.mockResolvedValue({});
+    // count 1 is the normal case: an open row takes the conditional
+    // transition. Tests for the settled-verdict guards override this to 0.
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
     mocks.projectUpdate.mockResolvedValue({});
     mocks.projectUpdateMany.mockResolvedValue({ count: 0 });
     mocks.audiobookUpdateMany.mockResolvedValue({ count: 1 });
     mocks.bookEditOperationFindUnique.mockResolvedValue(null);
     mocks.bookEditOperationUpdate.mockResolvedValue({});
-    mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 0 });
+    mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 1 });
     mocks.refundCreditLedgerEntry.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
     mocks.failGenerationAttempt.mockResolvedValue(undefined);
@@ -77,8 +82,11 @@ describe("job lifecycle ownership", () => {
   it("requeues audiobook work without moving the completed book back to generating", async () => {
     await markRecovering(job("generate-audiobook", { audiobookId: "audio-1" }), new Error("network interruption"));
 
-    expect(mocks.generationJobUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: "QUEUED" }) })
+    expect(mocks.generationJobUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: "ACTIVE" }),
+        data: expect.objectContaining({ status: "QUEUED" })
+      })
     );
     expect(mocks.projectUpdate).not.toHaveBeenCalled();
     expect(mocks.audiobookUpdateMany).not.toHaveBeenCalled();
@@ -111,6 +119,12 @@ describe("job lifecycle ownership", () => {
     expect(mocks.failGenerationAttempt).toHaveBeenCalledWith("attempt-1", "page failed");
     expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+    // The refund covers the whole fan-out, so every open sibling stops with it
+    // — as FAILED, which is what keeps them copyable by the paid retry.
+    expect(mocks.generationJobUpdateMany).toHaveBeenCalledWith({
+      where: { attemptId: "attempt-1", status: { in: ["QUEUED", "ACTIVE"] } },
+      data: expect.objectContaining({ status: "FAILED", error: "Stopped by user" })
+    });
   });
 
   it("stops and refunds an audiobook without changing the book", async () => {
@@ -128,11 +142,11 @@ describe("job lifecycle ownership", () => {
     for (const name of ["prepare-character-candidates", "build-character-persona"]) {
       vi.clearAllMocks();
       mocks.generationJobFindUnique.mockResolvedValue({ steps: [] });
-      mocks.generationJobUpdate.mockResolvedValue({});
+      mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
 
       await markFailed(job(name), new Error("character operation failed"));
 
-      expect(mocks.generationJobUpdate).toHaveBeenCalledWith(
+      expect(mocks.generationJobUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) })
       );
       expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
@@ -140,10 +154,10 @@ describe("job lifecycle ownership", () => {
 
       vi.clearAllMocks();
       mocks.generationJobFindUnique.mockResolvedValue({ steps: [] });
-      mocks.generationJobUpdate.mockResolvedValue({});
+      mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
       await markStopped(job(name));
 
-      expect(mocks.generationJobUpdate).toHaveBeenCalledWith(
+      expect(mocks.generationJobUpdateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) })
       );
       expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
@@ -197,8 +211,11 @@ describe("job lifecycle ownership", () => {
     await markStopped(job("apply-book-edit", { operationId: "op-1" }));
 
     expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("ledger-op", "Stopped by user");
-    expect(mocks.bookEditOperationUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "op-1" }, data: expect.objectContaining({ status: "FAILED" }) })
+    expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "op-1", status: { in: ["QUEUED", "ACTIVE"] } },
+        data: expect.objectContaining({ status: "FAILED" })
+      })
     );
     // The edit belongs to a COMPLETE book: restore EDITING, never fail the
     // project or touch its FULL_BOOK_GENERATION charge.
@@ -270,7 +287,7 @@ describe("job lifecycle ownership", () => {
 
     vi.clearAllMocks();
     mocks.generationJobFindUnique.mockResolvedValue({ steps: [] });
-    mocks.generationJobUpdate.mockResolvedValue({});
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
     mocks.projectUpdate.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
     await markFailed(job("generate-page"), new Error("page failed"));
@@ -283,11 +300,58 @@ describe("job lifecycle ownership", () => {
 
     vi.clearAllMocks();
     mocks.generationJobFindUnique.mockResolvedValue({ steps: [] });
-    mocks.generationJobUpdate.mockResolvedValue({});
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
     mocks.projectUpdate.mockResolvedValue({});
     mocks.refundLatestProjectOperationCredits.mockResolvedValue({});
     await markStopped(job("compile-export"));
     expect(mocks.projectUpdate).toHaveBeenCalledWith({ where: { id: "project-1" }, data: { status: "FAILED" } });
+  });
+
+  it("skips settlement entirely when the row already holds a settled verdict", async () => {
+    // A COMPLETED row means the run was delivered: a straggling failure — a
+    // throw in post-completion follow-ups, a redelivered Bull job — must not
+    // refund it or fail the project over it.
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 0 });
+
+    await markFailed(job("generate-book", { billingLedgerEntryId: "ledger-book" }), new Error("late failure"));
+    await markStopped(job("generate-book", { billingLedgerEntryId: "ledger-book" }));
+
+    expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+    expect(mocks.bookEditOperationUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses to resurrect a settled row as ACTIVE and reports the refusal", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({ status: "COMPLETED", message: null, error: null });
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(markActive(job("generate-page", { attemptId: "attempt-1" }))).resolves.toBe(false);
+    expect(mocks.markGenerationAttemptActive).not.toHaveBeenCalled();
+
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
+    await expect(markActive(job("generate-page", { attemptId: "attempt-1" }))).resolves.toBe(true);
+    expect(mocks.markGenerationAttemptActive).toHaveBeenCalledWith("attempt-1");
+  });
+
+  it("lets a stop that landed mid-completion win instead of burying it under COMPLETED", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({ steps: [], status: "ACTIVE", message: null, error: null });
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(markCompleted(job("compile-export", { attemptId: "attempt-1" }))).resolves.toBe(false);
+    expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+  });
+
+  it("never refunds an edit operation the completion path already settled", async () => {
+    // failEditOperation claims the open row before touching the charge; an
+    // operation that is already APPLIED loses the claim and keeps its money.
+    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: "ledger-op" });
+    mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 0 });
+
+    await markStopped(job("apply-book-edit", { operationId: "op-1" }));
+
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
   });
 });
 

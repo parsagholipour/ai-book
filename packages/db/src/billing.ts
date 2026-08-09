@@ -23,6 +23,7 @@ export {
   grantCredits,
   refundCreditLedgerEntry,
   refundLatestProjectOperationCredits,
+  refundedLedgerEntryIds,
   reserveCredits,
   spendCredits
 } from "./billingLedger.ts";

@@ -1,7 +1,7 @@
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { type MobileBookEditOperationRecord } from "./dto.js";
 import { isValidGenerationRetryToken } from "./generationRetryQuote.js";
-import { fingerprintGenerationRequest, jsonRecord } from "./support.js";
+import { fingerprintGenerationRequest, isPrismaUniqueConflict, jsonRecord } from "./support.js";
 import { prisma } from "@book-maker/db";
 import { startGenerationAttempt } from "@book-maker/db/billing";
 
@@ -162,7 +162,24 @@ export async function retryPlanRevisionOperation(options: {
       await tx.project.update({ where: { id: operation.projectId }, data: { status: "PLANNING" } });
       return { projectId: operation.projectId, primaryJobId: job.id, editOperationId: operation.id };
     }
+  }).catch((error) => {
+    // The competing-operation read above is only advisory: an edit claiming
+    // the one-open-per-project slot between that read and the QUEUED flip in
+    // the transaction surfaces here as a unique conflict, and the attempt row
+    // it raced was rolled back, so there is no winner to replay. That is a
+    // retryable conflict, not a server failure.
+    if (isPrismaUniqueConflict(error)) {
+      return null;
+    }
+    throw error;
   });
+  if (!started) {
+    return {
+      kind: "conflict",
+      reason: "Another book update is already in progress. Retry this revision when it finishes.",
+      terminal: false
+    };
+  }
 
   if (!started.attempt.primaryJobId) {
     throw new Error("The paid retry attempt has no generation job.");

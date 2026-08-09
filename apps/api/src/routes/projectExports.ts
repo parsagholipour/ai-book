@@ -10,10 +10,12 @@ import {
   resolvePublicImageUrl,
   type AppConfig
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { access, mkdir, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
+import { resolveProjectActor, type ProjectActor } from "../requestAuth.js";
 
 /**
  * The compiled book on disk: how it is named, how it is rebuilt from the
@@ -237,4 +239,123 @@ export function sanitizeDownloadFilename(title: string): string {
     .replace(/\s+/g, "-")
     .slice(0, 80);
   return clean || "book";
+}
+
+export function ownedProjectWhere(projectId: string, actor: ProjectActor): Prisma.ProjectWhereInput {
+  return { id: projectId, userId: actor.userId };
+}
+
+const idParamsSchema = z.object({ id: z.string().min(1) });
+const pdfExportQuerySchema = z.object({
+  disposition: z.enum(["attachment", "inline"]).optional()
+});
+
+/** The operator console's download surface for the compiled book. */
+export function registerProjectExportRoutes(fastify: FastifyInstance, appConfig: AppConfig): void {
+  fastify.get("/api/projects/:id/book", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
+    if (!markdown) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    reply.type("text/markdown");
+    return markdown;
+  });
+
+  fastify.get("/api/projects/:id/export/readme", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { title: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
+    if (!markdown) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    const filename = `${sanitizeDownloadFilename(project?.title ?? "book")}.md`;
+    reply.header("Content-Disposition", `attachment; filename="${filename}"`);
+    reply.type("text/markdown");
+    return markdown;
+  });
+
+  fastify.get("/api/projects/:id/export/pdf/status", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    return projectExportAvailability(appConfig, id, "pdf");
+  });
+
+  fastify.get("/api/projects/:id/export/pdf", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const { disposition = "attachment" } = pdfExportQuerySchema.parse(request.query);
+    const project = await prisma.project.findFirst({
+      where: ownedProjectWhere(id, actor),
+      select: { title: true, language: true, status: true, currentPlanId: true, mediaSettings: true }
+    });
+    if (!project) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    if (project.status === "REVIEW_REQUIRED") {
+      return reply.code(409).send({ error: "Fix the flagged manuscript issues before exporting." });
+    }
+
+    return sendProjectPdfExport({ request, reply, appConfig, projectId: id, project, disposition });
+  });
+
+  fastify.get("/api/projects/:id/export/epub/status", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    return projectExportAvailability(appConfig, id, "epub");
+  });
+
+  fastify.get("/api/projects/:id/export/epub", async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const actor = await resolveProjectActor(request, reply);
+    if (!actor) {
+      return;
+    }
+    const project = await prisma.project.findFirst({
+      where: ownedProjectWhere(id, actor),
+      select: { title: true, authorName: true, language: true, status: true, currentPlanId: true }
+    });
+    if (!project) {
+      return reply.code(404).send({ error: "Book not found" });
+    }
+    if (project.status === "REVIEW_REQUIRED") {
+      return reply.code(409).send({ error: "Fix the flagged manuscript issues before exporting." });
+    }
+
+    return sendProjectEpubExport({ request, reply, appConfig, projectId: id, project });
+  });
 }

@@ -237,13 +237,15 @@ export function parallelPageWaveSize(input: CreateProjectInput): number {
  * jobs stays at the initial wave size.
  */
 export async function enqueueNextPageIfReady(projectId: string, planId: string) {
+  const waveSize = Math.max(1, config.MAX_PARALLEL_PAGE_JOBS);
   const [pendingPages, openJobs] = await Promise.all([
     prisma.page.findMany({
       where: { projectId, status: "PENDING" },
       orderBy: { index: "asc" },
-      // One more than the wave can hold in flight, or a wave larger than the
-      // fetch finds every fetched page already claimed and shrinks for good.
-      take: Math.max(1, config.MAX_PARALLEL_PAGE_JOBS) + 1,
+      // Enough to refill the whole wave past every in-flight page, or a wave
+      // larger than the fetch finds every fetched page already claimed and
+      // shrinks for good.
+      take: waveSize * 2,
       select: { id: true, index: true }
     }),
     prisma.generationJob.findMany({
@@ -256,18 +258,25 @@ export async function enqueueNextPageIfReady(projectId: string, planId: string) 
       .map((job) => jsonPayloadToRecord(job.payload).pageId)
       .filter((pageId): pageId is string => typeof pageId === "string")
   );
-  const nextPage = pendingPages.find((page) => !inFlightPageIds.has(page.id));
-  if (!nextPage) {
-    return;
+  // Top the wave back up to size rather than by a fixed one: two pages
+  // finishing together both pick the same next page and the dedupe key
+  // collapses them into one job, so "+1 per completion" shrinks the wave by
+  // one forever. The caller still counts itself in flight here (its row is
+  // marked COMPLETED after this), hence the +1; the min keeps a serial wave
+  // (fiction) strictly one page at a time.
+  const deficit = Math.min(waveSize, Math.max(1, waveSize - inFlightPageIds.size + 1));
+  const nextPages = pendingPages
+    .filter((page) => !inFlightPageIds.has(page.id))
+    .slice(0, deficit);
+  for (const nextPage of nextPages) {
+    await enqueueWorkerJob({
+      projectId,
+      type: "GENERATE_PAGE",
+      name: "generate-page",
+      payload: { pageId: nextPage.id, planId },
+      dedupeKey: `generate-page:${nextPage.id}:${planId}`
+    });
   }
-
-  await enqueueWorkerJob({
-    projectId,
-    type: "GENERATE_PAGE",
-    name: "generate-page",
-    payload: { pageId: nextPage.id, planId },
-    dedupeKey: `generate-page:${nextPage.id}:${planId}`
-  });
 }
 
 export async function maybeEnqueueCompile(
@@ -336,6 +345,43 @@ export async function maybeEnqueueCompile(
       contentRevision
     });
   }
+}
+
+const STRANDED_GENERATION_GRACE_MS = 60_000;
+
+/**
+ * Recovers a run whose fan-in trigger was lost. The compile (or cover) is
+ * enqueued only after the last page/image job is marked COMPLETED, so a worker
+ * dying in between leaves a fully written, fully paid book GENERATING forever:
+ * every job row terminal, no COMPILE_EXPORT row, and nothing left to push it
+ * forward. `maybeEnqueueCompile` re-derives readiness from the rows and
+ * dedupes on content, so replaying it here is idempotent — projects that are
+ * merely unfinished no-op out of it.
+ */
+export async function reconcileStrandedGeneration(limit = 20): Promise<number> {
+  const cutoff = new Date(Date.now() - STRANDED_GENERATION_GRACE_MS);
+  const projects = await prisma.project.findMany({
+    where: {
+      status: "GENERATING",
+      currentPlanId: { not: null },
+      updatedAt: { lt: cutoff },
+      jobs: { none: { status: { in: ["QUEUED", "ACTIVE"] } } }
+    },
+    orderBy: { updatedAt: "asc" },
+    take: limit,
+    select: { id: true, currentPlanId: true }
+  });
+  const results = await Promise.allSettled(
+    projects.map((project) =>
+      project.currentPlanId ? maybeEnqueueCompile(project.id, project.currentPlanId) : Promise.resolve()
+    )
+  );
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Stranded generation reconciliation failed for a project", result.reason);
+    }
+  }
+  return projects.length;
 }
 
 export async function maybeCompileAfterCompletedJob(job: Job) {

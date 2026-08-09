@@ -33,13 +33,12 @@ const SKIP_DIRS = new Set(["node_modules", "generated", "dist", "build", ".dart_
 const GRANDFATHERED = {
   "packages/core/src/generation/pages.ts": 1910,
   "packages/core/src/generation/pages.test.ts": 2160,
-  "apps/api/src/routes/projects.ts": 1720,
+  "apps/api/src/routes/projects.ts": 1610,
   "apps/api/src/mobileCreation.ts": 2080,
   "apps/web/src/features/voice/BrowserVoiceRoomClient.ts": 1790,
   "apps/web/src/features/voice/BrowserVoiceCallClient.ts": 1360,
   "apps/api/src/routes/projects.test.ts": 1200,
   "packages/core/src/voiceConversations.ts": 1040,
-  "apps/api/src/mobile/bookEditIntents.ts": 985,
   "apps/mobile/lib/features/projects/presentation/creation_chat_screen.dart": 1480,
   "apps/mobile/lib/features/projects/presentation/creation_chat_controller.dart": 1185,
   "apps/mobile/test/projects/creation_chat_test.dart": 3470

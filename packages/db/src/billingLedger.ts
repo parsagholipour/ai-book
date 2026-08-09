@@ -258,6 +258,24 @@ export async function refundCreditLedgerEntry(
   return runSerializable((tx) => refundCreditLedgerEntryTx(tx, entryId, reason, now));
 }
 
+/**
+ * The subset of `entryIds` whose charge no longer stands: released
+ * reservations and settled spends that a reversal entry paid back. Work
+ * charged against these must never be delivered again for free.
+ */
+export async function refundedLedgerEntryIds(entryIds: string[]): Promise<Set<string>> {
+  if (entryIds.length === 0) {
+    return new Set();
+  }
+  const entries = await prisma.creditLedgerEntry.findMany({
+    where: { id: { in: entryIds } },
+    select: { id: true, status: true, reversedByEntry: { select: { id: true } } }
+  });
+  return new Set(
+    entries.filter((entry) => entry.status === "REFUNDED" || entry.reversedByEntry).map((entry) => entry.id)
+  );
+}
+
 /** Transaction-aware form used when a failed attempt and its refund settle together. */
 export async function refundCreditLedgerEntryTx(
   tx: BillingTx,

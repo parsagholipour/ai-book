@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     page: { upsert: vi.fn() },
     continuityNote: { createMany: vi.fn() },
-    chapter: { update: vi.fn() }
+    chapter: { findUnique: vi.fn(), updateMany: vi.fn() }
   },
   enqueueWorkerJob: vi.fn(),
   updateJobProgress: vi.fn(),
@@ -22,12 +22,16 @@ vi.mock("./semanticMemory.js", () => ({
   updateEntityStateFromPage: mocks.updateEntityStateFromPage
 }));
 vi.mock("./generationContext.js", () => ({ loadContinuityNotes: mocks.loadContinuityNotes }));
-vi.mock("./bookHelpers.js", () => ({ formatQualityFailure: () => "quality failure detail" }));
+vi.mock("./bookHelpers.js", () => ({
+  formatQualityFailure: () => "quality failure detail",
+  parseChapterBrief: (value: unknown) => (value ? value : undefined)
+}));
 
 import {
   bestDraftCandidate,
   pageRevisionMessage,
   pageRewriteReport,
+  repairPageBriefForRecovery,
   replacePageBriefInChapterBrief,
   reviewAndSaveGeneratedPage,
   revisePageDraftWithRestart,
@@ -176,6 +180,96 @@ describe("replacePageBriefInChapterBrief", () => {
     const updated = replacePageBriefInChapterBrief(chapterBrief, inserted);
 
     expect(updated?.pages.map((page) => page.pageIndex)).toEqual([0, 1, 2]);
+  });
+});
+
+describe("repairPageBriefForRecovery", () => {
+  const chapterBriefFixture = (): ChapterBrief =>
+    ({
+      chapterIndex: 1,
+      pages: [
+        { pageIndex: 5, requiredContinuity: [] },
+        { pageIndex: 6, requiredContinuity: [] }
+      ],
+      continuityFocus: []
+    }) as unknown as ChapterBrief;
+
+  const repairedBeat = (): PageProductionBeat =>
+    ({ pageIndex: 6, requiredContinuity: ["fresh angle"] }) as unknown as PageProductionBeat;
+
+  const strategy = { repairPageBrief: vi.fn() };
+
+  const callOptions = () =>
+    ({
+      strategy,
+      input: {},
+      plan: {},
+      chapterBrief: chapterBriefFixture(),
+      chapterId: "chapter-1",
+      pageBrief: { pageIndex: 6, requiredContinuity: [] },
+      pageIndex: 6,
+      draft: draftNamed("Six"),
+      qualityReport: report(40),
+      previousPages: [],
+      continuityNotes: [],
+      textModel: {},
+      context: "Page 6"
+    }) as never;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    strategy.repairPageBrief.mockResolvedValue(repairedBeat());
+  });
+
+  it("merges the repair into a freshly-read chapter brief and writes it back conditionally", async () => {
+    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: chapterBriefFixture() });
+    mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 1 });
+
+    await repairPageBriefForRecovery(callOptions());
+
+    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledWith({
+      where: { id: "chapter-1", productionBrief: { equals: chapterBriefFixture() } },
+      data: { productionBrief: expect.objectContaining({ pages: expect.arrayContaining([repairedBeat()]) }) }
+    });
+  });
+
+  it("retries against the winner's brief instead of clobbering it when a concurrent repair lands first", async () => {
+    // A sibling page's repair (for page 7) committed between our read and our
+    // write: the CAS misses, and the retry must fold page 6's repair onto the
+    // *winner's* brief — including page 7's repair — not overwrite it.
+    const staleBrief = chapterBriefFixture();
+    const winnerBrief: ChapterBrief = {
+      ...staleBrief,
+      pages: [...staleBrief.pages, { pageIndex: 7, requiredContinuity: ["sibling repair"] } as never]
+    };
+    mocks.prisma.chapter.findUnique
+      .mockResolvedValueOnce({ productionBrief: staleBrief })
+      .mockResolvedValueOnce({ productionBrief: winnerBrief });
+    mocks.prisma.chapter.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+
+    await repairPageBriefForRecovery(callOptions());
+
+    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledTimes(2);
+    const secondCall = mocks.prisma.chapter.updateMany.mock.calls[1]![0] as {
+      where: { productionBrief: { equals: ChapterBrief } };
+      data: { productionBrief: ChapterBrief };
+    };
+    expect(secondCall.where.productionBrief.equals).toBe(winnerBrief);
+    expect(secondCall.data.productionBrief.pages.map((page) => page.pageIndex)).toEqual([5, 6, 7]);
+  });
+
+  it("gives up and logs rather than looping forever when every attempt loses the race", async () => {
+    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: chapterBriefFixture() });
+    mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 0 });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const result = await repairPageBriefForRecovery(callOptions());
+
+    expect(result).toEqual(repairedBeat());
+    expect(mocks.prisma.chapter.updateMany).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("lost the CAS race"));
+    warn.mockRestore();
   });
 });
 

@@ -45,7 +45,9 @@ leaf: it must not import from `apps/*` or from `packages/db`.
 ### apps/worker
 
 One BullMQ queue (`book-maker`), one job per unit of work. `src/index.ts` is only the entry
-point: it builds the Worker, dispatches on `job.name`, and owns shutdown. Everything else:
+point: it builds the Worker and owns shutdown; `src/processJob.ts` is the processor — it guards
+each delivery (stale check before the ACTIVE claim, follow-ups after the COMPLETED write) and
+dispatches on `job.name`. Everything else:
 
 ```
 runtime/     config, queue handle, job lifecycle (status transitions + progress steps),
@@ -60,7 +62,7 @@ handlers/    one file per job type — planning, generateBook, generatePage, gen
 ```
 
 Job types live in `JobType` in the Prisma schema and must stay in sync with the `switch` in
-`src/index.ts` and with `JOB_STEP_TEMPLATES` in `runtime/jobLifecycle.ts`.
+`src/processJob.ts` and with `JOB_STEP_TEMPLATES` in `runtime/jobProgress.ts`.
 
 **Importing `runtime/queue.ts` opens a Redis connection.** Only the entry point and the dispatch
 layer should depend on it — that is why handlers never import it directly.

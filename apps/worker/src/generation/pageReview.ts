@@ -1,4 +1,4 @@
-import { formatQualityFailure } from "./bookHelpers.js";
+import { formatQualityFailure, parseChapterBrief } from "./bookHelpers.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
@@ -427,15 +427,54 @@ export async function repairPageBriefForRecovery(options: {
     textModel: options.textModel
   });
 
-  const updatedChapterBrief = replacePageBriefInChapterBrief(options.chapterBrief, repaired);
-  if (options.chapterId && updatedChapterBrief) {
-    await prisma.chapter.update({
-      where: { id: options.chapterId },
-      data: { productionBrief: updatedChapterBrief as Prisma.InputJsonValue }
-    });
+  // Local mutation for the rest of *this* page's own loop: the remaining
+  // rewrite/review calls below pass `options.chapterBrief` straight through,
+  // and they need to see the repaired beat regardless of what a concurrent
+  // sibling page does to the persisted row.
+  replacePageBriefInChapterBrief(options.chapterBrief, repaired);
+
+  if (options.chapterId) {
+    await casUpdateChapterProductionBrief(options.chapterId, repaired);
   }
 
   return repaired;
+}
+
+const CHAPTER_BRIEF_CAS_ATTEMPTS = 3;
+
+/**
+ * Chapters in the same wave can have several pages hit brief-repair recovery
+ * concurrently (one job per page). A blind `chapter.update` here would let
+ * whichever write lands second silently discard the first page's repair, so
+ * this merges the repaired beat into a freshly-read row and writes it back
+ * conditioned on the row still holding the state just read — retrying against
+ * the winner's brief on a miss, the same compare-and-swap shape used for
+ * per-entity continuity state in semanticMemory.ts.
+ */
+async function casUpdateChapterProductionBrief(chapterId: string, repaired: PageProductionBeat): Promise<void> {
+  let current = await prisma.chapter.findUnique({ where: { id: chapterId }, select: { productionBrief: true } });
+  for (let attempt = 0; attempt < CHAPTER_BRIEF_CAS_ATTEMPTS; attempt += 1) {
+    const currentBrief = parseChapterBrief(current?.productionBrief);
+    if (!currentBrief) {
+      return;
+    }
+    // A shallow copy, not `currentBrief` itself: `replacePageBriefInChapterBrief`
+    // mutates whatever object it's given, and `currentBrief` still has to serve
+    // as the untouched "expected previous state" for the CAS below.
+    const updated = replacePageBriefInChapterBrief({ ...currentBrief }, repaired);
+    if (!updated) {
+      return;
+    }
+    const claimed = await prisma.chapter.updateMany({
+      where: { id: chapterId, productionBrief: { equals: currentBrief as unknown as Prisma.InputJsonValue } },
+      data: { productionBrief: updated as Prisma.InputJsonValue }
+    });
+    if (claimed.count === 1) {
+      return;
+    }
+    current = await prisma.chapter.findUnique({ where: { id: chapterId }, select: { productionBrief: true } });
+  }
+  console.warn(`Chapter production brief update for ${chapterId} lost the CAS race ${CHAPTER_BRIEF_CAS_ATTEMPTS} times in a row`);
 }
 
 export function replacePageBriefInChapterBrief(

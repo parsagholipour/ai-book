@@ -170,6 +170,25 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
 
       const estimate = estimateAudiobookCreditCost(pageCount);
 
+      // Restarting a failed narration is a paid retry of the attempt that paid
+      // for it: naming the source blocks a fresh charge while the failed run's
+      // refund is still pending, and makes a duplicate start — whatever its
+      // requestId — replay the one retry instead of charging a second time.
+      // Rows narrated before the attempt ledger existed resolve to null and
+      // keep starting fresh.
+      const resumableSource =
+        existing?.status === "FAILED" &&
+        existing.voice === body.data.voice &&
+        existing.contentRevision === project.contentRevision
+          ? existing
+          : null;
+      const sourceAttempt = resumableSource?.generationJobId
+        ? await prisma.generationAttempt.findUnique({
+            where: { primaryJobId: resumableSource.generationJobId },
+            select: { id: true }
+          })
+        : null;
+
       try {
         const sourceRun = existing?.generationJobId ?? existing?.id ?? "new";
         const started = await startGenerationAttempt({
@@ -182,6 +201,7 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
           operation: "AUDIOBOOK_GENERATION",
           quotedCredits: estimate.totalCredits,
           description: "Mobile audiobook narration",
+          ...(sourceAttempt ? { retryOfAttemptId: sourceAttempt.id } : {}),
           // The per-page half of the price is only recoverable from here, which
           // is what the pricing dashboard's drivers report reads back.
           metadata: { pageCount, voice: body.data.voice, creditEstimate: estimate },
@@ -192,11 +212,21 @@ export async function registerMobileAudiobookRoutes(fastify: FastifyInstance, co
           // half. Only when it is the same book read by the same narrator — any
           // other change is a different audiobook and starts clean.
           create: async (tx, { attemptId, ledgerEntry }) => {
+            // Re-read inside the transaction: the route's snapshot is stale the
+            // moment a concurrent start commits, and a serializable retry
+            // re-runs this callback against the winner's committed state.
+            const current = await tx.audiobook.findUnique({
+              where: { projectId: id },
+              select: { id: true, status: true, voice: true, contentRevision: true, generationJobId: true }
+            });
+            if (current?.status === "GENERATING") {
+              throw new GenerationAttemptConflictError("This book is already being narrated.");
+            }
             const resumable =
-              existing?.status === "FAILED" &&
-              existing.voice === body.data.voice &&
-              existing.contentRevision === project.contentRevision
-                ? existing
+              current?.status === "FAILED" &&
+              current.voice === body.data.voice &&
+              current.contentRevision === project.contentRevision
+                ? current
                 : null;
 
             // Replacing drops the old chapters with it; the worker clears the

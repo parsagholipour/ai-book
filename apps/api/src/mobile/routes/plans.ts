@@ -172,6 +172,9 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         if (error instanceof InsufficientCreditsError) {
           return sendInsufficientCredits(reply, error);
         }
+        if (error instanceof GenerationAttemptConflictError) {
+          return sendMobileError(reply, 409, "EDIT_IN_PROGRESS", error.message);
+        }
         throw error;
       }
     }
@@ -253,10 +256,13 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
       if (!plan) {
         return sendMobileError(reply, 404, "PLAN_NOT_FOUND", "Plan not found.");
       }
-      // Approving a superseded version would charge a second full-book package
-      // for a project that already committed to another plan. The in-transaction
-      // guard below is the authoritative check; this is the readable answer.
-      if (plan.status === "SUPERSEDED") {
+      // Approving anything but the project's current plan would charge a
+      // second full-book package for a stale draft: SUPERSEDED catches
+      // versions displaced by an approval, the currentPlanId check catches
+      // older drafts a revision has replaced (the planner and every revision
+      // point currentPlanId at the newest version). The in-transaction guards
+      // below are authoritative; these are the readable answers.
+      if (plan.status === "SUPERSEDED" || (plan.project.currentPlanId && plan.project.currentPlanId !== id)) {
         return sendMobileError(reply, 409, "PLAN_SUPERSEDED", "A newer plan replaced this one. Approve the latest plan instead.");
       }
 
@@ -318,9 +324,23 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
           grantExportEntitlement: true,
           create: async (tx, { attemptId, ledgerEntry }) => {
             if (approvalBody.data.disableIllustrations) {
+              // Merged over the live row inside the transaction, mirroring the
+              // plan revision's writeback: the row owns presentation
+              // preferences (chapter headings, the Sources toggle) that can
+              // change between this request's read and its commit, and writing
+              // the pre-transaction merge wholesale would silently revert them.
+              const liveProject = await tx.project.findUnique({
+                where: { id: plan.projectId },
+                select: { mediaSettings: true }
+              });
               await tx.project.update({
                 where: { id: plan.projectId },
-                data: { mediaSettings: plan.project.mediaSettings as Prisma.InputJsonValue }
+                data: {
+                  mediaSettings: {
+                    ...jsonRecord(liveProject?.mediaSettings ?? plan.project.mediaSettings),
+                    fullIllustrations: false
+                  } as Prisma.InputJsonValue
+                }
               });
               if (plan.inputSnapshot) {
                 await tx.planVersion.update({
@@ -357,10 +377,18 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
               where: { projectId: plan.projectId, id: { not: id } },
               data: { status: "SUPERSEDED" }
             });
-            await tx.project.update({
-              where: { id: plan.projectId },
+            // CAS on the project's current plan: a revision that landed after
+            // this request read its snapshot moved currentPlanId to a newer
+            // version, and approving the old one anyway would charge for a
+            // plan the user already replaced. Null stays approvable — legacy
+            // rows from before the planner stamped currentPlanId.
+            const claimedProject = await tx.project.updateMany({
+              where: { id: plan.projectId, OR: [{ currentPlanId: id }, { currentPlanId: null }] },
               data: { currentPlanId: id, status: "GENERATING" }
             });
+            if (claimedProject.count !== 1) {
+              throw new GenerationAttemptConflictError("A newer plan replaced this one. Approve the latest plan instead.");
+            }
             return { projectId: plan.projectId, primaryJobId: job.id };
           }
         });

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BookPlan, EmbeddingAdapter } from "@book-maker/core";
-import { prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
+import { Prisma, prisma, retrieveSimilarEmbeddings } from "@book-maker/db";
 import { config } from "../runtime/config.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 
@@ -85,10 +85,19 @@ export function noteMentionsEntity(note: string, name: string): boolean {
   return trimmed.length > 1 && note.toLowerCase().includes(trimmed.toLowerCase());
 }
 
+const ENTITY_STATE_CAS_ATTEMPTS = 3;
+
 /**
  * Folds a saved page's continuity notes into per-character/location state so
  * later pages see each entity's latest condition even outside the recency
  * window. Deterministic (no extra model call).
+ *
+ * Pages generate in parallel waves (up to `MAX_PARALLEL_PAGE_JOBS`), so two
+ * pages that both mention the same entity can finish around the same time.
+ * A blind read-modify-write would let whichever `update` lands second silently
+ * discard the first page's note, so each entity's write is a compare-and-swap
+ * on its own `state` column: read, compute, write conditioned on the row still
+ * holding the state just read, and retry against the winner's state on a miss.
  */
 export async function updateEntityStateFromPage(projectId: string, pageIndex: number, continuityNotes: string[]) {
   if (continuityNotes.length === 0) {
@@ -105,11 +114,14 @@ export async function updateEntityStateFromPage(projectId: string, pageIndex: nu
       if (matches.length === 0) {
         continue;
       }
-      const previous = entityStateRecord(character.state);
-      const notes = [...(previous?.notes ?? []), ...matches].slice(-ENTITY_STATE_NOTE_LIMIT);
-      await prisma.character.update({
-        where: { id: character.id },
-        data: { state: { notes, updatedAtPage: pageIndex } }
+      await casUpdateEntityState({
+        read: () => prisma.character.findUnique({ where: { id: character.id }, select: { state: true } }),
+        write: (id, expectedState, data) =>
+          prisma.character.updateMany({ where: { id, state: { equals: expectedState } }, data }),
+        id: character.id,
+        initialState: character.state,
+        pageIndex,
+        matches
       });
     }
 
@@ -118,11 +130,14 @@ export async function updateEntityStateFromPage(projectId: string, pageIndex: nu
       if (matches.length === 0) {
         continue;
       }
-      const previous = entityStateRecord(location.state);
-      const notes = [...(previous?.notes ?? []), ...matches].slice(-ENTITY_STATE_NOTE_LIMIT);
-      await prisma.location.update({
-        where: { id: location.id },
-        data: { state: { notes, updatedAtPage: pageIndex } }
+      await casUpdateEntityState({
+        read: () => prisma.location.findUnique({ where: { id: location.id }, select: { state: true } }),
+        write: (id, expectedState, data) =>
+          prisma.location.updateMany({ where: { id, state: { equals: expectedState } }, data }),
+        id: location.id,
+        initialState: location.state,
+        pageIndex,
+        matches
       });
     }
   } catch (error) {
@@ -131,6 +146,42 @@ export async function updateEntityStateFromPage(projectId: string, pageIndex: nu
     }
     console.warn(`Entity state update failed for project ${projectId}`, error);
   }
+}
+
+async function casUpdateEntityState(options: {
+  read: () => Promise<{ state: unknown } | null>;
+  write: (
+    id: string,
+    expectedState: Prisma.InputJsonValue,
+    data: { state: Prisma.InputJsonValue }
+  ) => Promise<{ count: number }>;
+  id: string;
+  initialState: unknown;
+  pageIndex: number;
+  matches: string[];
+}): Promise<void> {
+  let currentState = options.initialState;
+  for (let attempt = 0; attempt < ENTITY_STATE_CAS_ATTEMPTS; attempt += 1) {
+    const previous = entityStateRecord(currentState);
+    const notes = [...(previous?.notes ?? []), ...options.matches].slice(-ENTITY_STATE_NOTE_LIMIT);
+    const nextState = { notes, updatedAtPage: options.pageIndex };
+    const claimed = await options.write(
+      options.id,
+      (currentState ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+      { state: nextState }
+    );
+    if (claimed.count === 1) {
+      return;
+    }
+    // Someone else's write landed first; read the winner's state and fold our
+    // note onto it instead of losing it.
+    const latest = await options.read();
+    if (!latest) {
+      return;
+    }
+    currentState = latest.state;
+  }
+  console.warn(`Entity state update for ${options.id} lost the CAS race ${ENTITY_STATE_CAS_ATTEMPTS} times in a row`);
 }
 
 /** Formats the current character/location state for the writer context pack. */

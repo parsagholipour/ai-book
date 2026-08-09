@@ -486,6 +486,66 @@ describe("mobile audiobook routes", () => {
       await app.close();
     });
 
+    it("names the failed attempt as the retry source so its refund state gates the new charge", async () => {
+      mockPrisma.audiobook.findUnique.mockResolvedValue(audiobookRecord({ status: "FAILED" }));
+      mockPrisma.audiobook.update.mockResolvedValue({ id: "audiobook-1" });
+      mockPrisma.generationAttempt.findUnique.mockResolvedValue({ id: "attempt-failed-audio" });
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Zephyr" }
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(mockPrisma.generationAttempt.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { primaryJobId: "job-1" } })
+      );
+      // The retry is anchored to the attempt that paid for the failed run:
+      // a still-pending refund now blocks the new charge instead of stacking.
+      expect(state.generationAttempts.at(-1)).toMatchObject({ retryOfAttemptId: "attempt-failed-audio" });
+      await app.close();
+    });
+
+    it("replays the one paid retry for a duplicate start with a different request id", async () => {
+      mockPrisma.audiobook.findUnique.mockResolvedValue(audiobookRecord({ status: "FAILED" }));
+      mockPrisma.generationAttempt.findUnique.mockResolvedValue({ id: "attempt-failed-audio" });
+      // The first confirmed retry already exists; a second tap must converge
+      // on it, whatever requestId the client generated.
+      state.generationAttempts.push({
+        id: "attempt-audio-retry",
+        userId: "user-a",
+        commandKey: "mobile:audiobook-start:project-1:earlier-request",
+        requestFingerprint: "earlier-fingerprint",
+        status: "QUEUED",
+        operation: "AUDIOBOOK_GENERATION",
+        quotedCredits: 800,
+        projectId: "project-1",
+        retryOfAttemptId: "attempt-failed-audio",
+        refundPending: false,
+        primaryJobId: "job-audiobook-retry",
+        ledgerEntryId: null,
+        editOperationId: null,
+        error: null,
+        createdAt: new Date("2026-06-15T14:00:00.000Z")
+      });
+      const app = await buildMobileApp();
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/audiobook",
+        headers: bearer("token-a"),
+        payload: { voice: "Zephyr", requestId: "request-second-tap" }
+      });
+
+      expect(response.statusCode).toBe(202);
+      expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+      expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+      await app.close();
+    });
+
     it("charges again when a finished audiobook is replaced with the same narrator", async () => {
       mockPrisma.audiobook.findUnique.mockResolvedValue(audiobookRecord());
       const app = await buildMobileApp();

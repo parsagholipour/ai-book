@@ -17,7 +17,7 @@ import {
   type ProviderSet
 } from "@book-maker/core";
 import { imageGenerationMetadata, imageStorageMetadata } from "./bookHelpers.js";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -50,17 +50,59 @@ export async function ensureCharacterReferenceAssets(options: {
     return [];
   }
 
-  const existing = await prisma.imageAsset.findMany({
-    where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" },
-    orderBy: { createdAt: "asc" }
-  });
-  const current = existing.filter((asset) => imageAssetPlanId(asset.metadata) === options.planId);
-  if (hasReferenceForEveryCharacter(current, options.plan)) {
-    return current.map(toWorkerImageAsset);
+  const existing = await currentCharacterReferences(options.projectId, options.planId);
+  if (hasReferenceForEveryCharacter(existing, options.plan)) {
+    return existing.map(toWorkerImageAsset);
   }
 
-  if (existing.length > 0) {
-    await prisma.imageAsset.deleteMany({ where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" } });
+  // Every illustrated page's `generate-image` job (and the cover job) calls
+  // this before the project has any character reference yet, and several run
+  // concurrently by design (`MAX_PARALLEL_IMAGE_JOBS`). Without a claim here,
+  // each one sees "nothing exists" and pays to generate a full set — this
+  // advisory lock, scoped to (projectId, planId), makes the expensive
+  // check-then-generate section run for one caller at a time; everyone else
+  // blocks, then finds the winner's rows already in place and returns those
+  // instead of generating again.
+  return prisma.$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`character-references:${options.projectId}:${options.planId}`}))`;
+      const claimed = await currentCharacterReferences(options.projectId, options.planId, tx);
+      if (hasReferenceForEveryCharacter(claimed, options.plan)) {
+        return claimed.map(toWorkerImageAsset);
+      }
+      return generateCharacterReferenceAssets(options, tx, claimed.length > 0);
+    },
+    { timeout: 5 * 60_000 }
+  );
+}
+
+async function currentCharacterReferences(
+  projectId: string,
+  planId: string,
+  client: Pick<typeof prisma, "imageAsset"> = prisma
+): Promise<Array<{ id: string; path: string; metadata: unknown }>> {
+  const existing = await client.imageAsset.findMany({
+    where: { projectId, type: "CHARACTER_REFERENCE" },
+    orderBy: { createdAt: "asc" }
+  });
+  return existing.filter((asset) => imageAssetPlanId(asset.metadata) === planId);
+}
+
+async function generateCharacterReferenceAssets(
+  options: {
+    projectId: string;
+    planId: string;
+    input: CreateProjectInput;
+    plan: BookPlan;
+    providers: ProviderSet;
+    strategy: BookGenerationStrategy;
+    generationJobId?: string | undefined;
+  },
+  tx: Prisma.TransactionClient,
+  hasExistingRows: boolean
+): Promise<WorkerImageAsset[]> {
+  if (hasExistingRows) {
+    await tx.imageAsset.deleteMany({ where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" } });
   }
 
   const projectImageDir = join(config.IMAGE_STORAGE_DIR, options.projectId);
@@ -87,7 +129,7 @@ export async function ensureCharacterReferenceAssets(options: {
     const filename = `character-reference-${characterSlug(character.name)}.${ext}`;
     const filePath = join(projectImageDir, filename);
     await writeFile(filePath, optimizedImage.bytes);
-    const asset = await prisma.imageAsset.create({
+    const asset = await tx.imageAsset.create({
       data: {
         projectId: options.projectId,
         type: "CHARACTER_REFERENCE",

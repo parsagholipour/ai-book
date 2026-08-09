@@ -16,7 +16,9 @@ const mocks = vi.hoisted(() => ({
   nextPlanVersion: vi.fn(),
   embedResearchSourcesForProject: vi.fn(),
   txPlanVersionCreate: vi.fn(),
-  txPlanVersionUpdate: vi.fn()
+  txPlanVersionUpdate: vi.fn(),
+  txPlanVersionUpdateMany: vi.fn(),
+  txProjectUpdateMany: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -105,9 +107,14 @@ function mockTransaction() {
     run({
       planVersion: {
         create: mocks.txPlanVersionCreate,
-        update: mocks.txPlanVersionUpdate
+        update: mocks.txPlanVersionUpdate,
+        updateMany: mocks.txPlanVersionUpdateMany
       },
-      project: { update: mocks.prisma.project.update, findUnique: mocks.prisma.project.findUnique },
+      project: {
+        update: mocks.prisma.project.update,
+        updateMany: mocks.txProjectUpdateMany,
+        findUnique: mocks.prisma.project.findUnique
+      },
       character: mocks.prisma.character,
       location: mocks.prisma.location,
       researchSource: mocks.prisma.researchSource
@@ -119,6 +126,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockTransaction();
   mocks.txPlanVersionCreate.mockResolvedValue({ id: "plan-2" });
+  mocks.txPlanVersionUpdateMany.mockResolvedValue({ count: 1 });
+  mocks.txProjectUpdateMany.mockResolvedValue({ count: 1 });
   mocks.prisma.planVersion.findUnique.mockResolvedValue({
     id: "plan-1",
     inputSnapshot,
@@ -215,8 +224,8 @@ describe("revisePlan persistence", () => {
   it("supersedes the old plan and installs the new one as current", async () => {
     await revisePlan(reviseJob());
 
-    expect(mocks.txPlanVersionUpdate).toHaveBeenCalledWith({
-      where: { id: "plan-1" },
+    expect(mocks.txPlanVersionUpdateMany).toHaveBeenCalledWith({
+      where: { id: "plan-1", status: { notIn: ["APPROVED", "SUPERSEDED"] } },
       data: { status: "SUPERSEDED" }
     });
     expect(mocks.txPlanVersionCreate).toHaveBeenCalledWith(
@@ -232,9 +241,9 @@ describe("revisePlan persistence", () => {
         })
       })
     );
-    expect(mocks.prisma.project.update).toHaveBeenCalledWith(
+    expect(mocks.txProjectUpdateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: "project-1" },
+        where: { id: "project-1", currentPlanId: "plan-1" },
         data: expect.objectContaining({
           currentPlanId: "plan-2",
           status: "PLAN_READY",
@@ -242,6 +251,24 @@ describe("revisePlan persistence", () => {
         })
       })
     );
+  });
+
+  it("fails instead of demoting a plan a concurrent approval committed", async () => {
+    // The route rejects revising an APPROVED plan, but an approval can commit
+    // while the revision is being drafted. Superseding it anyway would
+    // silently un-approve the plan and yank the project back to PLAN_READY
+    // underneath the paid GENERATE_BOOK the approval dispatched.
+    mocks.txPlanVersionUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(revisePlan(reviseJob())).rejects.toThrow("Plan revision lost to a concurrent approval");
+    expect(mocks.txPlanVersionCreate).not.toHaveBeenCalled();
+    expect(mocks.txProjectUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("fails when a sibling approval moved the project's current plan mid-revision", async () => {
+    mocks.txProjectUpdateMany.mockResolvedValue({ count: 0 });
+
+    await expect(revisePlan(reviseJob())).rejects.toThrow("Plan revision lost to a concurrent approval");
   });
 
   it("merges the snapshot's mediaSettings over the live row instead of replacing it", async () => {
@@ -259,7 +286,7 @@ describe("revisePlan persistence", () => {
 
     await revisePlan(reviseJob());
 
-    const written = mocks.prisma.project.update.mock.calls
+    const written = mocks.txProjectUpdateMany.mock.calls
       .map((call) => (call[0] as { data: Record<string, unknown> }).data.mediaSettings)
       .find((value) => value !== undefined) as Record<string, unknown>;
     expect(written).toMatchObject({

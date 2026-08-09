@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => {
     KnownRequestError,
     queueAdd: vi.fn(),
     prisma: {
-      project: { findUnique: vi.fn() },
+      project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
       page: { findMany: vi.fn() },
       imageAsset: { count: vi.fn() },
@@ -48,6 +48,7 @@ import {
   maybeEnqueueCompile,
   maybeEnqueueCover,
   parallelPageWaveSize,
+  reconcileStrandedGeneration,
   reconcileUndispatchedWorkerJobs,
   workerJobNameForType
 } from "./dispatch.js";
@@ -101,6 +102,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.input = projectInput();
   mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 0 });
+  mocks.prisma.project.findMany.mockResolvedValue([]);
   mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", inputSnapshot: {} });
   mocks.prisma.page.findMany.mockResolvedValue([]);
   mocks.prisma.imageAsset.count.mockResolvedValue(0);
@@ -450,6 +452,92 @@ describe("enqueueNextPageIfReady", () => {
     mocks.prisma.generationJob.findMany.mockResolvedValue([{ payload: { pageId: "page-1" } }]);
 
     await enqueueNextPageIfReady("project-1", "plan-1");
+
+    expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
+  });
+
+  it("refills the whole wave deficit, not a fixed one page", async () => {
+    // Two pages finishing together both compute the same next page and the
+    // dedupe key collapses them into one job, shrinking the wave. The next
+    // completion must be able to heal that by topping the wave back to size
+    // (3 under the mocked config): only the caller is in flight, so it may
+    // start waveSize - 1 + 1 = 3 pages.
+    mocks.prisma.page.findMany.mockResolvedValue([
+      { id: "page-2", index: 2 },
+      { id: "page-3", index: 3 },
+      { id: "page-4", index: 4 },
+      { id: "page-5", index: 5 }
+    ]);
+    mocks.prisma.generationJob.findMany.mockResolvedValue([{ payload: { pageId: "page-1" } }]);
+    mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      generationRow({ id: `gj-${(data.payload as { pageId: string }).pageId}`, payload: data.payload as Record<string, unknown> })
+    );
+
+    await enqueueNextPageIfReady("project-1", "plan-1");
+
+    const enqueuedPages = mocks.prisma.generationJob.create.mock.calls.map(
+      (call) => ((call[0] as { data: { payload: { pageId: string } } }).data.payload.pageId)
+    );
+    expect(enqueuedPages).toEqual(["page-2", "page-3", "page-4"]);
+  });
+
+  it("tops up by exactly one when the wave is at full size", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([
+      { id: "page-4", index: 4 },
+      { id: "page-5", index: 5 }
+    ]);
+    mocks.prisma.generationJob.findMany.mockResolvedValue([
+      { payload: { pageId: "page-1" } },
+      { payload: { pageId: "page-2" } },
+      { payload: { pageId: "page-3" } }
+    ]);
+    mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      generationRow({ id: "gj-next", payload: data.payload as Record<string, unknown> })
+    );
+
+    await enqueueNextPageIfReady("project-1", "plan-1");
+
+    expect(mocks.prisma.generationJob.create).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.generationJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ payload: { pageId: "page-4", planId: "plan-1" } }) })
+    );
+  });
+});
+
+describe("reconcileStrandedGeneration", () => {
+  it("replays the fan-in for a GENERATING project with no open jobs", async () => {
+    // The crash shape: the worker died between marking the last page COMPLETED
+    // and calling maybeCompileAfterCompletedJob, so every row is terminal and
+    // nothing will ever enqueue the compile.
+    mocks.prisma.project.findMany.mockResolvedValue([{ id: "project-1", currentPlanId: "plan-1" }]);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 4 });
+    mocks.prisma.page.findMany.mockResolvedValue([
+      { id: "page-1", index: 1, status: "COMPLETED", markdown: "One.", revision: 1 },
+      { id: "page-2", index: 2, status: "COMPLETED", markdown: "Two.", revision: 1 }
+    ]);
+    mocks.prisma.imageAsset.count.mockResolvedValue(1);
+    mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      generationRow({ id: "gj-compile", type: data.type as string, payload: data.payload as Record<string, unknown> })
+    );
+
+    await reconcileStrandedGeneration();
+
+    expect(mocks.prisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: "GENERATING",
+          jobs: { none: { status: { in: ["QUEUED", "ACTIVE"] } } }
+        })
+      })
+    );
+    const created = mocks.prisma.generationJob.create.mock.calls.map(
+      (call) => (call[0] as { data: { type: string } }).data.type
+    );
+    expect(created).toContain("COMPILE_EXPORT");
+  });
+
+  it("does nothing when no project is stranded", async () => {
+    await reconcileStrandedGeneration();
 
     expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
   });

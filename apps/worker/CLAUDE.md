@@ -6,8 +6,8 @@ Consumes the `book-maker` BullMQ queue. All book generation happens here; the AP
 
 1. Add the value to `enum JobType` in `packages/db/prisma/schema.prisma`, then `pnpm db:generate`.
 2. Add a handler in `src/handlers/`, exporting `async function myJob(job: Job)`.
-3. Register it in the `switch (job.name)` in `src/index.ts`.
-4. Add its progress steps to `JOB_STEP_TEMPLATES` in `src/runtime/jobLifecycle.ts` — the mobile
+3. Register it in the `switch (job.name)` in `src/processJob.ts`.
+4. Add its progress steps to `JOB_STEP_TEMPLATES` in `src/runtime/jobProgress.ts` — the mobile
    app renders those step labels, so a missing entry shows an empty progress list.
 5. Enqueue it through `enqueueWorkerJob` in `src/runtime/dispatch.ts`, never `queue.add` directly.
 

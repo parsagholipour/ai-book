@@ -38,7 +38,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
-import { settledGenerationAttemptIds } from "@book-maker/db/billing";
+import { jobsWithoutRefundedCharges } from "../resumeGuards.js";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
 import { deleteProjectStorage } from "../projectStorage.js";
@@ -51,13 +51,7 @@ import {
   type GenerationJobType
 } from "../queue.js";
 import { resolveProjectActor, sendProjectNotFound, type ProjectActor } from "../requestAuth.js";
-import {
-  compileProjectMarkdown,
-  projectExportAvailability,
-  sanitizeDownloadFilename,
-  sendProjectEpubExport,
-  sendProjectPdfExport
-} from "./projectExports.js";
+import { ownedProjectWhere, registerProjectExportRoutes } from "./projectExports.js";
 
 // The compiled-book helpers moved to ./projectExports.js; re-exported here
 // because the mobile routes and serializers import them from this module.
@@ -182,9 +176,6 @@ const voiceCallEventBodySchema = z
       .default({})
   })
   .strict();
-const pdfExportQuerySchema = z.object({
-  disposition: z.enum(["attachment", "inline"]).optional()
-});
 const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
@@ -568,9 +559,24 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     }
 
     await prisma.project.update({ where: { id }, data: { status: "GENERATING" } });
+    // Sequenced like the page-retry key rather than the worker's plain
+    // `generate-cover:project:plan` key: a dedupe row is adopted forever, so a
+    // stable key would make regenerating a finished cover impossible, while no
+    // key at all let a double-tap run two racing cover jobs. Terminal jobs
+    // advance the sequence; two rapid requests read the same count and
+    // collapse onto one row.
+    const priorCoverJobs = await prisma.generationJob.findMany({
+      where: { projectId: id, type: "GENERATE_IMAGE", status: { in: ["COMPLETED", "FAILED", "CANCELED"] } },
+      select: { payload: true }
+    });
+    const coverSequence = priorCoverJobs.filter((coverJob) => {
+      const payload = coverJob.payload as { assetType?: unknown } | null;
+      return payload?.assetType === "COVER";
+    }).length;
     const job = await enqueueGenerationJob({
       projectId: id,
       type: "GENERATE_IMAGE",
+      dedupeKey: `generate-cover:${id}:${project.currentPlanId}:regen-${coverSequence}`,
       payload: { planId: project.currentPlanId, assetType: "COVER" }
     });
     return reply.code(202).send(job);
@@ -604,17 +610,10 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
       existingPages: pages.length,
       pageIds: new Set(pages.map((page) => page.id))
     };
-    // A job whose attempt was settled was already refunded; requeueing the row
-    // would run that refunded work for free (and the worker cancels it on
-    // arrival anyway). Those books recover through the mobile paid-retry route.
-    // Attempt-less rows — the console's own unbilled jobs — stay resumable.
-    const settledAttemptIds = await settledGenerationAttemptIds([
-      ...new Set(failedJobs.flatMap((job) => (job.attemptId ? [job.attemptId] : [])))
-    ]);
-    const recoveryCandidates = failedJobs.filter(
-      (job) =>
-        (!job.attemptId || !settledAttemptIds.has(job.attemptId)) &&
-        canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
+    // Refunded rows recover through the mobile paid-retry route, never a free
+    // requeue; the guard's reasoning lives with jobsWithoutRefundedCharges.
+    const recoveryCandidates = (await jobsWithoutRefundedCharges(failedJobs)).filter((job) =>
+      canRecoverGenerationJob(job.type as GenerationJobType, job.payload, resumeContext, job.createdAt)
     );
     const planningRecoveryCandidates = recoveryCandidates.filter((job) =>
       isPlanningRecoveryJob(job.type as GenerationJobType)
@@ -1294,117 +1293,8 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     });
   });
 
-  fastify.get("/api/projects/:id/book", async (request, reply) => {
-    const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
-    if (!actor) {
-      return;
-    }
-    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
-    if (!project) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-    if (!markdown) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    reply.type("text/markdown");
-    return markdown;
-  });
-
-  fastify.get("/api/projects/:id/export/readme", async (request, reply) => {
-    const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
-    if (!actor) {
-      return;
-    }
-    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { title: true } });
-    if (!project) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    const markdown = await compileProjectMarkdown(id, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-    if (!markdown) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    const filename = `${sanitizeDownloadFilename(project?.title ?? "book")}.md`;
-    reply.header("Content-Disposition", `attachment; filename="${filename}"`);
-    reply.type("text/markdown");
-    return markdown;
-  });
-
-  fastify.get("/api/projects/:id/export/pdf/status", async (request, reply) => {
-    const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
-    if (!actor) {
-      return;
-    }
-    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
-    if (!project) {
-      return reply.code(404).send({ error: "Project not found" });
-    }
-
-    return projectExportAvailability(appConfig, id, "pdf");
-  });
-
-  fastify.get("/api/projects/:id/export/pdf", async (request, reply) => {
-    const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
-    if (!actor) {
-      return;
-    }
-    const { disposition = "attachment" } = pdfExportQuerySchema.parse(request.query);
-    const project = await prisma.project.findFirst({
-      where: ownedProjectWhere(id, actor),
-      select: { title: true, language: true, status: true, currentPlanId: true, mediaSettings: true }
-    });
-    if (!project) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    if (project.status === "REVIEW_REQUIRED") {
-      return reply.code(409).send({ error: "Fix the flagged manuscript issues before exporting." });
-    }
-
-    return sendProjectPdfExport({ request, reply, appConfig, projectId: id, project, disposition });
-  });
-
-  fastify.get("/api/projects/:id/export/epub/status", async (request, reply) => {
-    const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
-    if (!actor) {
-      return;
-    }
-    const project = await prisma.project.findFirst({ where: ownedProjectWhere(id, actor), select: { id: true } });
-    if (!project) {
-      return reply.code(404).send({ error: "Project not found" });
-    }
-
-    return projectExportAvailability(appConfig, id, "epub");
-  });
-
-  fastify.get("/api/projects/:id/export/epub", async (request, reply) => {
-    const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
-    if (!actor) {
-      return;
-    }
-    const project = await prisma.project.findFirst({
-      where: ownedProjectWhere(id, actor),
-      select: { title: true, authorName: true, language: true, status: true, currentPlanId: true }
-    });
-    if (!project) {
-      return reply.code(404).send({ error: "Book not found" });
-    }
-    if (project.status === "REVIEW_REQUIRED") {
-      return reply.code(409).send({ error: "Fix the flagged manuscript issues before exporting." });
-    }
-
-    return sendProjectEpubExport({ request, reply, appConfig, projectId: id, project });
-  });
+  registerProjectExportRoutes(fastify, appConfig);
 };
-
-function ownedProjectWhere(projectId: string, actor: ProjectActor): Prisma.ProjectWhereInput {
-  return { id: projectId, userId: actor.userId };
-}
 
 function projectBillingSummary(
   project: {

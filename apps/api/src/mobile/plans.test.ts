@@ -476,6 +476,31 @@ describe("mobile plan lifecycle", () => {
     await app.close();
   });
 
+  it("rejects approving a stale draft the project has revised past", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    // Still DRAFT — nothing superseded it because nothing was approved — but a
+    // revision has moved the project's current plan beyond it.
+    mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
+      id: "plan-1",
+      projectId: "project-1",
+      status: "DRAFT",
+      project: projectRecord({ id: "project-1", currentPlanId: "plan-2" })
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-1/approve",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("PLAN_SUPERSEDED");
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("rolls the charge back when a concurrent approval supersedes the plan mid-transaction", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.planVersion.findFirst.mockResolvedValueOnce({
@@ -612,6 +637,50 @@ describe("free tier illustrated book limit", () => {
     expect(projectUpdate.data.mediaSettings.fullIllustrations).toBe(false);
     expect(consumeIllustratedBookUse).not.toHaveBeenCalled();
     expect(reserveCredits).toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("merges the illustration opt-out over the live row instead of the stale pre-read", async () => {
+    // A presentation edit (chapter headings, the Sources toggle) can land on
+    // the project row between this request's read and its transaction. The
+    // opt-out must merge over what the transaction sees, not write back the
+    // request's stale copy and silently revert the edit.
+    mockAccessTokens({ "token-a": "user-a" });
+    draftPlanForApproval();
+    vi.mocked(getImageQuota).mockResolvedValue(freeQuota(0));
+    mockPrisma.project.findUnique.mockResolvedValueOnce({
+      mediaSettings: { fullIllustrations: true, chapterHeadingStyle: "title_only", includeSources: false }
+    });
+    vi.mocked(reserveCredits).mockResolvedValueOnce({
+      id: "ledger-1",
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "FULL_BOOK_GENERATION",
+      amountCredits: -500,
+      planCreditsDelta: -500,
+      entryType: "RESERVE",
+      status: "RESERVED",
+      idempotencyKey: "mobile:plan:plan-1:approve"
+    });
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-book" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/plans/plan-1/approve",
+      headers: bearer("token-a"),
+      payload: { disableIllustrations: true }
+    });
+    const projectUpdate = mockPrisma.project.update.mock.calls.at(0)?.[0] as {
+      data: { mediaSettings: Record<string, unknown> };
+    };
+
+    expect(response.statusCode).toBe(202);
+    expect(projectUpdate.data.mediaSettings).toMatchObject({
+      fullIllustrations: false,
+      chapterHeadingStyle: "title_only",
+      includeSources: false
+    });
     await app.close();
   });
 

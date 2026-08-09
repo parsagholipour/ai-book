@@ -128,9 +128,10 @@ export function resetMobileHarness(): void {
     subscriptionStatus: null,
     entitlementType: null
   });
-  // The approval guard reads the count of the conditional APPROVED write; a
-  // bare vi.fn() resolving undefined would fail every approval in every suite.
+  // The approval guards read the counts of their conditional writes; a bare
+  // vi.fn() resolving undefined would fail every approval in every suite.
   mockPrisma.planVersion.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.project.updateMany.mockResolvedValue({ count: 1 });
   mockQueue.enqueueGenerationJob.mockResolvedValue(jobRecord());
   mockQueue.dispatchGenerationJob.mockImplementation(async (id: string) => jobRecord({ id }));
   // Compensation paths refund only when the cancel claims the row; an
@@ -351,7 +352,12 @@ export function resetMobileHarness(): void {
   });
   mockPrisma.bookEditOperation.updateMany.mockImplementation(async ({ where, data }: { where: Record<string, any>; data: Record<string, any> }) => {
     const record = state.bookEditOperations.find((operation) => operation.id === where.id);
-    if (!record || (where.status !== undefined && record.status !== where.status)) return { count: 0 };
+    if (
+      !record ||
+      (where.status !== undefined && record.status !== where.status) ||
+      (where.generationJobId !== undefined && (record.generationJobId ?? null) !== where.generationJobId)
+    )
+      return { count: 0 };
     const { automaticRetryCount, ...rest } = data;
     Object.assign(record, rest);
     if (typeof automaticRetryCount === "number") record.automaticRetryCount = automaticRetryCount;

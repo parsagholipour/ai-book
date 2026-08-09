@@ -288,14 +288,82 @@ export async function stopProjectGenerationJobs(projectId: string) {
   }
 
   // Only rows enqueued before the attempt ledger existed still resolve through
-  // the legacy charge walk — and only when such rows were actually stopped.
-  // Running the fallback unconditionally refunded the latest full-book charge
-  // for stops that cancelled nothing but attempt-tracked work.
+  // the legacy paths — and only when such rows were actually stopped. Running
+  // the fallback unconditionally refunded the latest full-book charge for
+  // stops that cancelled nothing but attempt-tracked work.
   const legacyJobs = openJobs.filter((job) => !job.attemptId);
   if (legacyJobs.length > 0) {
-    const chargedEntryId = await stoppedRunLedgerEntryId(projectId, legacyJobs);
+    await settleLegacyStoppedJobs(projectId, legacyJobs);
+  }
+  await closeDerivativeRowsForStoppedJobs(openJobs);
+
+  return {
+    stoppedJobs: stoppedJobs.count,
+    activeJobs: openJobs.filter((job) => job.status === "ACTIVE").length,
+    removedQueueJobs
+  };
+}
+
+const BOOK_RUN_JOB_TYPES = new Set(["GENERATE_BOOK", "GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT"]);
+
+/**
+ * Legacy (attempt-less) rows settle the way the worker settles them: each job
+ * type against its own charge. Only book-run rows may walk to the project's
+ * full-book entry — routing a stopped audiobook or edit there refunds a charge
+ * that paid for a book the user keeps.
+ */
+async function settleLegacyStoppedJobs(
+  projectId: string,
+  legacyJobs: ReadonlyArray<{ id: string; type: string; payload: unknown }>
+): Promise<void> {
+  const refundedEntryIds = new Set<string>();
+  const refundOnce = async (entryId: string) => {
+    if (!refundedEntryIds.has(entryId)) {
+      refundedEntryIds.add(entryId);
+      await refundCreditLedgerEntry(entryId, STOPPED_JOB_ERROR);
+    }
+  };
+  const bookRunJobs: Array<{ type: string; payload: unknown }> = [];
+  for (const job of legacyJobs) {
+    const payload = jsonPayloadToRecord(job.payload);
+    const ownEntryId =
+      typeof payload.billingLedgerEntryId === "string" && payload.billingLedgerEntryId
+        ? payload.billingLedgerEntryId
+        : null;
+    if (BOOK_RUN_JOB_TYPES.has(job.type)) {
+      bookRunJobs.push(job);
+      continue;
+    }
+    if (job.type === "PLAN_BOOK") {
+      if (ownEntryId) {
+        await refundOnce(ownEntryId);
+      } else {
+        await refundLatestProjectOperationCredits({ projectId, operation: "PLAN_GENERATION", reason: STOPPED_JOB_ERROR });
+      }
+      continue;
+    }
+    // Audiobooks, edits, continuations, replans: their own stamped entry, or
+    // their operation's. Unpriced derivative work (characters, research)
+    // stamps nothing and refunds nothing.
+    if (ownEntryId) {
+      await refundOnce(ownEntryId);
+      continue;
+    }
+    const operationId = legacyOperationId(payload);
+    if (operationId) {
+      const operation = await prisma.bookEditOperation.findUnique({
+        where: { id: operationId },
+        select: { ledgerEntryId: true }
+      });
+      if (operation?.ledgerEntryId) {
+        await refundOnce(operation.ledgerEntryId);
+      }
+    }
+  }
+  if (bookRunJobs.length > 0) {
+    const chargedEntryId = await stoppedRunLedgerEntryId(projectId, bookRunJobs);
     if (chargedEntryId) {
-      await refundCreditLedgerEntry(chargedEntryId, STOPPED_JOB_ERROR);
+      await refundOnce(chargedEntryId);
     } else {
       await refundLatestProjectOperationCredits({
         projectId,
@@ -304,12 +372,41 @@ export async function stopProjectGenerationJobs(projectId: string) {
       });
     }
   }
+}
 
-  return {
-    stoppedJobs: stoppedJobs.count,
-    activeJobs: openJobs.filter((job) => job.status === "ACTIVE").length,
-    removedQueueJobs
-  };
+/**
+ * A stopped QUEUED job never reaches the worker, so the rows it would have
+ * closed on failure must be closed here: an Audiobook left GENERATING blocks
+ * every future narration, and an open BookEditOperation blocks every future
+ * edit through the one-open-per-project index.
+ */
+async function closeDerivativeRowsForStoppedJobs(
+  openJobs: ReadonlyArray<{ id: string; type: string; payload: unknown }>
+): Promise<void> {
+  const audiobookJobIds = openJobs.filter((job) => job.type === "GENERATE_AUDIOBOOK").map((job) => job.id);
+  if (audiobookJobIds.length > 0) {
+    await prisma.audiobook.updateMany({
+      where: { generationJobId: { in: audiobookJobIds }, status: "GENERATING" },
+      data: { status: "FAILED", error: STOPPED_JOB_ERROR }
+    });
+  }
+  const operationIds = [
+    ...new Set(openJobs.flatMap((job) => {
+      const operationId = legacyOperationId(jsonPayloadToRecord(job.payload));
+      return operationId ? [operationId] : [];
+    }))
+  ];
+  if (operationIds.length > 0) {
+    await prisma.bookEditOperation.updateMany({
+      where: { id: { in: operationIds }, status: { in: ["QUEUED", "ACTIVE"] } },
+      data: { status: "CANCELED", error: STOPPED_JOB_ERROR }
+    });
+  }
+}
+
+function legacyOperationId(payload: Record<string, unknown>): string | null {
+  const value = payload.operationId ?? payload.editOperationId ?? payload.replanOperationId;
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 /**

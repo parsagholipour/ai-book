@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   updateMany: vi.fn(),
   projectUpdate: vi.fn(),
+  audiobookUpdateMany: vi.fn(),
+  bookEditOperationFindUnique: vi.fn(),
+  bookEditOperationUpdateMany: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn(),
   failGenerationAttempt: vi.fn()
@@ -41,7 +44,12 @@ vi.mock("@book-maker/db", () => ({
       update: mocks.update,
       updateMany: mocks.updateMany
     },
-    project: { update: mocks.projectUpdate }
+    project: { update: mocks.projectUpdate },
+    audiobook: { updateMany: mocks.audiobookUpdateMany },
+    bookEditOperation: {
+      findUnique: mocks.bookEditOperationFindUnique,
+      updateMany: mocks.bookEditOperationUpdateMany
+    }
   }
 }));
 vi.mock("@book-maker/db/billing", () => ({
@@ -222,5 +230,53 @@ describe("stopping a run", () => {
     expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
     expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("settles a legacy audiobook job against its own charge, never the book's", async () => {
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-audiobook",
+        bullJobId: null,
+        status: "QUEUED",
+        type: "GENERATE_AUDIOBOOK",
+        payload: { audiobookId: "audio-1", billingLedgerEntryId: "entry-audio" }
+      }
+    ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("entry-audio", "Stopped by user");
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+    // The worker never sees a queued job the stop removed, so the row it would
+    // have failed must be failed here or narration stays blocked forever.
+    expect(mocks.audiobookUpdateMany).toHaveBeenCalledWith({
+      where: { generationJobId: { in: ["job-audiobook"] }, status: "GENERATING" },
+      data: { status: "FAILED", error: "Stopped by user" }
+    });
+  });
+
+  it("settles a legacy edit job against its operation's charge and closes the operation", async () => {
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-edit",
+        bullJobId: null,
+        status: "QUEUED",
+        type: "APPLY_BOOK_EDIT",
+        payload: { operationId: "op-1", planId: "plan-1" }
+      }
+    ]);
+    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: "ledger-op" });
+    mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 1 });
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("ledger-op", "Stopped by user");
+    // Never the plan walk: the edit's planId must not route the refund to the
+    // book's FULL_BOOK_GENERATION entry.
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+    expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["op-1"] }, status: { in: ["QUEUED", "ACTIVE"] } },
+      data: { status: "CANCELED", error: "Stopped by user" }
+    });
   });
 });
