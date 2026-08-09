@@ -28,6 +28,13 @@ export type PendingEditState = {
   affectedPageIndexes?: number[] | undefined;
   credits?: number | undefined;
   proposalId?: string | undefined;
+  /**
+   * True when the assistant has said something else since presenting this
+   * edit. A bare "ok" typed after an unrelated answer is agreement with that
+   * answer, not consent to a charge, so only an explicit confirmation
+   * ("apply it") may execute the proposal then.
+   */
+  requiresExplicitConfirmation?: boolean | undefined;
 };
 
 /**
@@ -101,6 +108,13 @@ export async function findPendingScopeClarification(
   currentScope: BookEditScope = bookEditScopeFromMessage(currentMessage)
 ): Promise<PendingEditState | null> {
   const messages = (await loadActiveProjectChatMessages(projectId)).reverse().slice(0, 24);
+  // Set once the walk passes an assistant message that is *not* the pending
+  // edit's own presentation. Recovery cards and busy replies re-present the
+  // pending edit with its full metadata, so they are found and returned before
+  // this flag can be set — only a genuinely unrelated reply (a grounded
+  // answer, a different question) marks the pending edit as no longer the
+  // last thing the assistant said.
+  let sawNewerAssistantMessage = false;
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
     if (message.role === "USER" && jsonRecord(jsonRecord(message.metadata).resolvedPendingEdit).request !== undefined) {
@@ -127,6 +141,11 @@ export async function findPendingScopeClarification(
       request.length > 0
     ) {
       const proposal = pendingEditProposalFromMetadata(metadata, pending, request);
+      // Only states whose confirmation executes a charge demand the explicit
+      // form once stale. A scope state resumed by "ok" merely re-proposes, so
+      // gating it would strand the recovery flow behind exact wording.
+      const confirmationCharges =
+        pending.clarification === "confirm" || (pending.clarification === "busy" && proposal.proposalId);
       return {
         request,
         scope: currentScope !== "none" ? currentScope : scopeFromRecentUserMessages(messages.slice(0, index)),
@@ -134,7 +153,8 @@ export async function findPendingScopeClarification(
         ...(proposal.intent ? { intent: proposal.intent } : {}),
         ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
         ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
-        ...(proposal.proposalId ? { proposalId: proposal.proposalId } : {})
+        ...(proposal.proposalId ? { proposalId: proposal.proposalId } : {}),
+        ...(sawNewerAssistantMessage && confirmationCharges ? { requiresExplicitConfirmation: true } : {})
       };
     }
     if (isScopeClarificationAssistantMessage(message.content)) {
@@ -150,17 +170,23 @@ export async function findPendingScopeClarification(
         };
       }
     }
+    sawNewerAssistantMessage = true;
   }
   return null;
 }
 
-/** Rebuild a priced proposal from assistant metadata so "apply it" can skip re-routing. */
+/**
+ * Rebuild a priced proposal from assistant metadata so "apply it" can skip
+ * re-routing. Busy replies that deflected an already-confirmed proposal carry
+ * the same fields, so a resume after the job settles executes the confirmed
+ * edit instead of re-proposing it.
+ */
 export function pendingEditProposalFromMetadata(
   metadata: Record<string, unknown>,
   pending: Record<string, unknown>,
   request: string
 ): Pick<PendingEditState, "intent" | "affectedPageIndexes" | "credits" | "proposalId"> {
-  if (pending.clarification !== "confirm") {
+  if (pending.clarification !== "confirm" && pending.clarification !== "busy") {
     return {};
   }
   const card = jsonRecord(metadata.editProposal);
@@ -287,6 +313,16 @@ export function isPendingEditConfirmationMessage(message: string): boolean {
     /^(?:you\s+decide|whatever\s+you\s+think|whatever\s+you\s+want|up\s+to\s+you|your\s+choice|surprise\s+me|i\s+don'?t\s+(?:care|mind))$/i.test(
       normalized
     );
+}
+
+/**
+ * The confirmation forms that are also ordinary agreement — "ok" after an
+ * answer means "thanks", not "charge me". When the pending edit is no longer
+ * the assistant's latest message these do not confirm it; the explicit forms
+ * ("apply it", "do it", "just add") always do.
+ */
+export function isBareAcknowledgementMessage(message: string): boolean {
+  return /^(?:ok|okay|yes|yep|yeah|sure)$/i.test(normalizeShortFollowUpMessage(message));
 }
 
 export function isPendingEditCancellationMessage(message: string): boolean {

@@ -1,5 +1,6 @@
 import { bookEditScopeFromMessage, messageWithFollowUp, messageWithScope, type BookEditScope } from "../bookEditIntent.js";
 import {
+  isBareAcknowledgementMessage,
   isPendingEditCancellationMessage,
   isPendingEditConfirmationMessage,
   type PendingEditState
@@ -57,12 +58,19 @@ export function resolvePendingEditTurn(
   const pendingResolutionScope = currentScope !== "none" ? currentScope : pendingScope?.scope ?? "none";
   const pendingCarriesFullRequest =
     pendingScope?.clarification === "busy" || pendingScope?.clarification === "confirm";
+  // A bare "ok" only counts as confirmation while the pending edit is still
+  // the assistant's latest word. Once something else was said in between,
+  // "ok" is agreement with that, and only an explicit "apply it" resumes the
+  // edit — the recovery card re-presents it, after which "ok" works again.
+  const confirmsPendingEdit =
+    isPendingEditConfirmationMessage(message) &&
+    !(pendingScope?.requiresExplicitConfirmation && isBareAcknowledgementMessage(message));
   const resolvesPendingScope = Boolean(
     pendingScope &&
       (pendingCarriesFullRequest
-        ? isPendingEditConfirmationMessage(message) || currentScope !== "none"
+        ? confirmsPendingEdit || currentScope !== "none"
         : currentScope !== "none" ||
-          (pendingResolutionScope !== "none" && isPendingEditConfirmationMessage(message)))
+          (pendingResolutionScope !== "none" && confirmsPendingEdit))
   );
   const resolvedPendingEdit =
     pendingScope && resolvesPendingScope
@@ -85,10 +93,15 @@ export function resolvePendingEditTurn(
     : clarifyExhausted && pendingScope
       ? messageWithFollowUp(pendingScope.request, message)
       : message;
+  // Busy replies that deflected an already-confirmed proposal keep its intent
+  // and proposalId, so a later confirmation executes the edit the user already
+  // approved. A busy state without a proposal was never priced or shown, so it
+  // must go back through routing and a fresh proposal card instead.
   const confirmedPendingEdit = Boolean(
     resolvedPendingEdit &&
-      pendingScope?.clarification === "confirm" &&
-      isPendingEditConfirmationMessage(message)
+      (pendingScope?.clarification === "confirm" ||
+        (pendingScope?.clarification === "busy" && pendingScope.proposalId && pendingScope.intent)) &&
+      confirmsPendingEdit
   );
   const pendingScopeIsRecoverable = Boolean(
     pendingScope && (pendingCarriesFullRequest || pendingScope.scope !== "none")

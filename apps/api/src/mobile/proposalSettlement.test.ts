@@ -212,6 +212,226 @@ describe("proposal settlement", () => {
     await app.close();
   });
 
+  it("does not execute a proposal on a bare ok once the assistant has said something else", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-1", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Replace rabbit with fly throughout the whole book." }
+    });
+    expect(proposal.statusCode).toBe(200);
+    const proposalReplyId = proposal.json().reply.id as string;
+
+    // An unrelated question and its answer land after the proposal card.
+    state.projectChatMessages.push(
+      {
+        id: "chat-question",
+        projectId: "project-1",
+        parentId: proposalReplyId,
+        isActiveChild: true,
+        role: "USER",
+        content: "What happens in chapter 2?",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2027-01-01T00:00:00.000Z")
+      },
+      {
+        id: "chat-question-answer",
+        projectId: "project-1",
+        parentId: "chat-question",
+        isActiveChild: true,
+        role: "ASSISTANT",
+        content: "Chapter 2 is where Rabbit learns from Turtle.",
+        operationId: null,
+        metadata: { intent: { kind: "answer", reasoning: "Question about the book.", affectedPageIndexes: [] }, charged: false },
+        createdAt: new Date("2027-01-01T00:01:00.000Z")
+      }
+    );
+
+    // "ok" here agrees with the answer; it must re-present the proposal, not run it.
+    const stale = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "ok" }
+    });
+    expect(stale.statusCode).toBe(200);
+    expect(stale.json().operation).toBeNull();
+    expect(stale.json().reply.content).toContain("still have that edit");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    // The recovery card re-presented the edit, so an explicit confirmation runs it.
+    const confirmed = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    expect(confirmed.statusCode).toBe(200);
+    expect(confirmed.json().operation).not.toBeNull();
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("keeps the confirmed proposal on a busy deflection so the resume runs it, not re-proposes it", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-1", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+    const proposalId = await proposeExactEdit(app);
+
+    // A typed confirmation lands while another job is open: deflected, but the
+    // busy reply must keep the priced proposal it deflected.
+    mockPrisma.generationJob.count.mockResolvedValueOnce(1);
+    const deflected = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    expect(deflected.statusCode).toBe(200);
+    expect(deflected.json().reply.metadata).toMatchObject({
+      blockedByActiveJob: true,
+      pendingEdit: { clarification: "busy", proposalId }
+    });
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+
+    // The job settled; "apply it" now executes the deflected proposal directly.
+    const resumed = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "apply it" }
+    });
+    expect(resumed.statusCode).toBe(200);
+    expect(resumed.json().operation).not.toBeNull();
+    expect(resumed.json().reply.metadata.editProposal).toBeUndefined();
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("settles a free exact proposal as obsolete when its text is gone, instead of charging a rewrite", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const app = await buildMobileApp();
+    const proposalId = await proposeExactEdit(app);
+
+    // The book changed between the quote and Apply: no page contains the
+    // literal text any more. The 0-credit find/replace must not become a
+    // model rewrite priced per page.
+    state.pages = editablePages().map((page) => ({
+      ...page,
+      markdown: page.markdown.replaceAll("Rabbit", "Fox"),
+      title: page.title.replaceAll("Rabbit", "Fox"),
+      summary: page.summary.replaceAll("Rabbit", "Fox")
+    }));
+
+    const applied = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId, requestId: "req-apply-1" }
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().operation).toBeNull();
+    expect(applied.json().reply.content).toContain("no longer appears");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+
+    // The obsolete reply settles the proposal: a later "ok" cannot resurrect it.
+    const followUp = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "ok" }
+    });
+    expect(followUp.statusCode).toBe(200);
+    expect(followUp.json().operation).toBeNull();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("re-proposes at the current price when the edit now costs more than the card showed", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    state.pages = editablePages();
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const app = await buildMobileApp();
+
+    // A stored proposal card quoted below what the same edit costs now.
+    state.projectChatMessages.push(
+      {
+        id: "chat-old-request",
+        projectId: "project-1",
+        role: "USER",
+        content: "Rewrite pages 1 and 2 to be much more dramatic.",
+        operationId: null,
+        metadata: {},
+        createdAt: new Date("2026-06-15T11:00:00.000Z")
+      },
+      {
+        id: "chat-old-proposal",
+        projectId: "project-1",
+        role: "ASSISTANT",
+        content: "Rewrite pages 1, 2. Tap Apply to confirm, or Cancel to drop it.",
+        operationId: null,
+        metadata: {
+          charged: false,
+          pendingEdit: {
+            request: "Rewrite pages 1 and 2 to be much more dramatic.",
+            clarification: "confirm",
+            intent: {
+              kind: "page_rewrite",
+              confidence: 0.95,
+              reasoning: "Explicit rewrite request.",
+              affectedPageIndexes: [1, 2],
+              assistantMessage: "I’ll rewrite pages 1 and 2.",
+              scope: "explicit_pages",
+              impact: "style_rewrite",
+              clarification: "none"
+            },
+            affectedPageIndexes: [1, 2],
+            credits: 1,
+            proposalId: "6f9f14a2-3f5f-4a6e-9a1d-2b7c8d9e0f11"
+          },
+          editProposal: {
+            id: "6f9f14a2-3f5f-4a6e-9a1d-2b7c8d9e0f11",
+            kind: "page_rewrite",
+            scope: "explicit_pages",
+            affectedPageIndexes: [1, 2],
+            credits: 1,
+            summary: "Rewrite pages 1, 2"
+          }
+        },
+        createdAt: new Date("2026-06-15T11:01:00.000Z")
+      }
+    );
+
+    const applied = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: "6f9f14a2-3f5f-4a6e-9a1d-2b7c8d9e0f11", requestId: "req-apply-1" }
+    });
+
+    // Never charge past the shown number: a fresh card at the current price.
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().operation).toBeNull();
+    const newCard = applied.json().reply.metadata.editProposal;
+    expect(newCard).toBeTruthy();
+    expect(newCard.credits).toBeGreaterThan(1);
+    expect(newCard.id).not.toBe("6f9f14a2-3f5f-4a6e-9a1d-2b7c8d9e0f11");
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("keeps a committed edit queued when dispatch fails after the charge landed", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     state.pages = editablePages();

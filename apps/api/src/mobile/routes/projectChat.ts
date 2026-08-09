@@ -279,7 +279,10 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           projectId: id,
           parentMessageId: userMessage.id,
           intent,
-          request: resolvedMessage
+          request: resolvedMessage,
+          // A deflected confirmation keeps its priced proposal, so the resume
+          // after the job settles executes it instead of re-proposing.
+          ...(confirmedProposal ? { pendingState: confirmedProposal } : {})
         });
         return {
           ...(await loadProjectChatResponse(id)),
@@ -297,6 +300,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         textModel: routingTextModel,
         executeProposal: Boolean(confirmedProposal),
         ...(confirmedProposal?.proposalId ? { executionCommandId: confirmedProposal.proposalId } : {}),
+        ...(confirmedProposal?.credits !== undefined ? { quotedCredits: confirmedProposal.credits } : {}),
         ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {}),
         ...(replyTo ? { replyTo } : {})
       });

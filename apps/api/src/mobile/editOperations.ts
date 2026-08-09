@@ -6,7 +6,8 @@ import {
   busyEditReply,
   continuationNewPageCount,
   exactReplacementFromMessage,
-  operationQueuedMessage
+  operationQueuedMessage,
+  proposeBookEdit
 } from "./bookEditIntents.js";
 import { billingOperationForIntent, bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
 import { planExactReplacement } from "./exactReplacementPreview.js";
@@ -437,6 +438,12 @@ export async function queueChatBookEdit(options: {
   message: string;
   intent: BookEditIntent;
   executionCommandId?: string | undefined;
+  /**
+   * What the proposal card showed. The recomputed cost may never exceed it: a
+   * changed book re-proposes at the new price instead of silently charging
+   * more than the user confirmed.
+   */
+  quotedCredits?: number | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   if (intent.kind === "book_replan") {
@@ -456,11 +463,37 @@ export async function queueChatBookEdit(options: {
       userMessageId,
       message,
       intent,
-      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {})
+      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
+      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {})
     });
   }
 
   let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
+  // Recomputed rather than read off the proposal: this is the number that gets
+  // charged, so it has to be derived from the pages as they are now, and the
+  // same scoping the quote used has to be applied or the two disagree.
+  const patch =
+    intent.kind === "local_patch" && affectedPageIndexes.length > 0
+      ? await planExactReplacement(project.id, exactReplacementFromMessage(message), affectedPageIndexes)
+      : null;
+  // A proposal quoted at 0 was a verified find/replace — the user approved a
+  // known diff at no charge, never a model rewrite. When the book changed and
+  // the literal text is gone, settle the proposal as obsolete: falling through
+  // would price it as a rewrite of pages nobody agreed to pay for.
+  if (intent.kind === "local_patch" && options.quotedCredits === 0 && !patch) {
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      parentId: userMessageId,
+      content: "That text no longer appears in the book, so there’s nothing to change. Nothing was changed or charged.",
+      metadata: {
+        intent,
+        charged: false,
+        pendingEditCancelled: true,
+        ...(options.executionCommandId ? { proposalId: options.executionCommandId } : {})
+      }
+    });
+    return { reply, operation: null };
+  }
   if (affectedPageIndexes.length === 0) {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
@@ -478,19 +511,18 @@ export async function queueChatBookEdit(options: {
     return { reply, operation: null };
   }
 
-  // Recomputed rather than read off the proposal: this is the number that gets
-  // charged, so it has to be derived from the pages as they are now, and the
-  // same scoping the quote used has to be applied or the two disagree.
-  const patch =
-    intent.kind === "local_patch"
-      ? await planExactReplacement(project.id, exactReplacementFromMessage(message), affectedPageIndexes)
-      : null;
   if (patch) {
     affectedPageIndexes = patch.pageIndexes;
   }
   const cost = bookEditCreditCost(intent.kind, affectedPageIndexes.length, project, {
     deterministic: Boolean(patch)
   });
+  if (options.quotedCredits !== undefined && cost > options.quotedCredits) {
+    // The book changed between the quote and Apply and the edit now costs
+    // more than the card showed. Never charge past the shown number — put a
+    // fresh card up at the current price instead.
+    return proposeBookEdit({ project, userMessageId, message, intent });
+  }
   const operationKind = operationKindForIntent(intent.kind);
   const billingOperation = billingOperationForIntent(intent.kind);
   const commandRequestId = options.executionCommandId ?? userMessageId;
@@ -572,11 +604,17 @@ export async function queueChatContinueBook(options: {
   message: string;
   intent: BookEditIntent;
   executionCommandId?: string | undefined;
+  quotedCredits?: number | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const chapterCount = Math.min(8, Math.max(1, intent.continuation?.chapterCount ?? 1));
   const newPageCount = continuationNewPageCount(intent, project);
   const cost = bookEditCreditCost(intent.kind, newPageCount, project);
+  if (options.quotedCredits !== undefined && cost > options.quotedCredits) {
+    // Same contract as queueChatBookEdit: the shown quote is a ceiling, so a
+    // book that grew since the card re-proposes at the current price.
+    return proposeBookEdit({ project, userMessageId, message, intent });
+  }
   const commandRequestId = options.executionCommandId ?? userMessageId;
   const operation = await createOpenBookEditOperation({
     projectId: project.id,

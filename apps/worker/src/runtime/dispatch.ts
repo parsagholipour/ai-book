@@ -236,8 +236,8 @@ export function parallelPageWaveSize(input: CreateProjectInput): number {
  * completion tops the wave back up by one, so the number of concurrent page
  * jobs stays at the initial wave size.
  */
-export async function enqueueNextPageIfReady(projectId: string, planId: string) {
-  const waveSize = Math.max(1, config.MAX_PARALLEL_PAGE_JOBS);
+export async function enqueueNextPageIfReady(projectId: string, planId: string, input: CreateProjectInput) {
+  const waveSize = parallelPageWaveSize(input);
   const [pendingPages, openJobs] = await Promise.all([
     prisma.page.findMany({
       where: { projectId, status: "PENDING" },

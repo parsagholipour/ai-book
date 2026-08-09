@@ -147,7 +147,8 @@ export async function applyOrCancelEditProposal(options: {
       projectId,
       parentMessageId: userMessage.id,
       intent: pending.intent,
-      request: pending.request
+      request: pending.request,
+      pendingState: pending
     });
     return {
       ...(await loadProjectChatResponse(projectId)),
@@ -164,7 +165,8 @@ export async function applyOrCancelEditProposal(options: {
     intent: pending.intent,
     textModel,
     executeProposal: true,
-    executionCommandId: proposalId
+    executionCommandId: proposalId,
+    ...(pending.credits !== undefined ? { quotedCredits: pending.credits } : {})
   });
 
   return {
@@ -186,6 +188,8 @@ export async function handleProjectChatIntent(options: {
   executeProposal?: boolean | undefined;
   /** Stable claim shared by typed confirmation and the proposal Apply button. */
   executionCommandId?: string | undefined;
+  /** The credits the executed proposal's card showed — a ceiling on the charge. */
+  quotedCredits?: number | undefined;
   /**
    * What the user originally asked for, when `message` is that request merged
    * with a follow-up. Stored as the resumable request so a clarification chain
@@ -271,7 +275,8 @@ export async function handleProjectChatIntent(options: {
       userMessageId,
       message,
       intent,
-      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {})
+      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
+      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {})
     });
   }
   return proposeBookEdit({ project, userMessageId, message, intent, pendingRequest });
@@ -539,24 +544,34 @@ export function editProposalMessage(
 /**
  * The saved-for-later reply used whenever a new edit cannot start because the
  * project already has open work. The request is preserved in metadata so a
- * later "apply it" can run it once the current job settles.
+ * later "apply it" can run it once the current job settles. When the deflected
+ * turn was an already-confirmed proposal, the full priced state rides along —
+ * without it the resume re-routed through the model and re-proposed the edit
+ * the user had already approved.
  */
 export async function busyEditReply(options: {
   projectId: string;
   parentMessageId: string;
   intent: BookEditIntent;
   request: string;
+  /** The confirmed proposal this busy reply deflected, when there is one. */
+  pendingState?: PendingEditState | undefined;
 }): Promise<MobileProjectChatMessageRecord> {
+  const pendingState: PendingEditState = {
+    ...(options.pendingState ?? { request: options.request, scope: "none" as const }),
+    clarification: "busy"
+  };
   return createAssistantChatMessage({
     projectId: options.projectId,
     parentId: options.parentMessageId,
-    content:
-      "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll run it. You can keep asking questions in the meantime.",
+    content: pendingState.proposalId
+      ? "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll run it. You can keep asking questions in the meantime."
+      : "This book is still being worked on, so I saved that request. Say “apply it” once the current job finishes and I’ll set it up for you to confirm. You can keep asking questions in the meantime.",
     metadata: {
       intent: options.intent,
       blockedByActiveJob: true,
       charged: false,
-      pendingEdit: { request: options.request, clarification: "busy" }
+      pendingEdit: pendingEditMetadataFromState(pendingState)
     }
   });
 }

@@ -434,7 +434,7 @@ describe("enqueueNextPageIfReady", () => {
       return row;
     });
 
-    await enqueueNextPageIfReady("project-1", "plan-1");
+    await enqueueNextPageIfReady("project-1", "plan-1", projectInput() as never);
 
     expect(mocks.prisma.generationJob.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -451,7 +451,7 @@ describe("enqueueNextPageIfReady", () => {
     mocks.prisma.page.findMany.mockResolvedValue([{ id: "page-1", index: 1 }]);
     mocks.prisma.generationJob.findMany.mockResolvedValue([{ payload: { pageId: "page-1" } }]);
 
-    await enqueueNextPageIfReady("project-1", "plan-1");
+    await enqueueNextPageIfReady("project-1", "plan-1", projectInput() as never);
 
     expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
   });
@@ -473,12 +473,34 @@ describe("enqueueNextPageIfReady", () => {
       generationRow({ id: `gj-${(data.payload as { pageId: string }).pageId}`, payload: data.payload as Record<string, unknown> })
     );
 
-    await enqueueNextPageIfReady("project-1", "plan-1");
+    await enqueueNextPageIfReady("project-1", "plan-1", projectInput() as never);
 
     const enqueuedPages = mocks.prisma.generationJob.create.mock.calls.map(
       (call) => ((call[0] as { data: { payload: { pageId: string } } }).data.payload.pageId)
     );
     expect(enqueuedPages).toEqual(["page-2", "page-3", "page-4"]);
+  });
+
+  it("keeps a sequential book strictly one page at a time when refilling", async () => {
+    // A fiction book seeds a wave of 1. The refill must size its deficit from
+    // the book's own wave, not the global page-job ceiling — otherwise the
+    // first completion fans a strictly-sequential book out to a full wave.
+    mocks.prisma.page.findMany.mockResolvedValue([
+      { id: "page-2", index: 2 },
+      { id: "page-3", index: 3 },
+      { id: "page-4", index: 4 }
+    ]);
+    mocks.prisma.generationJob.findMany.mockResolvedValue([{ payload: { pageId: "page-1" } }]);
+    mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+      generationRow({ id: `gj-${(data.payload as { pageId: string }).pageId}`, payload: data.payload as Record<string, unknown> })
+    );
+
+    await enqueueNextPageIfReady("project-1", "plan-1", projectInput({ category: "STORY" }) as never);
+
+    expect(mocks.prisma.generationJob.create).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.generationJob.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ payload: { pageId: "page-2", planId: "plan-1" } }) })
+    );
   });
 
   it("tops up by exactly one when the wave is at full size", async () => {
@@ -495,7 +517,7 @@ describe("enqueueNextPageIfReady", () => {
       generationRow({ id: "gj-next", payload: data.payload as Record<string, unknown> })
     );
 
-    await enqueueNextPageIfReady("project-1", "plan-1");
+    await enqueueNextPageIfReady("project-1", "plan-1", projectInput() as never);
 
     expect(mocks.prisma.generationJob.create).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.generationJob.create).toHaveBeenCalledWith(

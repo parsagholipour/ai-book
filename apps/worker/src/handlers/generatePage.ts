@@ -165,7 +165,7 @@ export async function generatePage(job: Job) {
     await updateJobProgress(generationJobId, {
       message: `Page ${page.index} kept its best draft but failed quality review; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
     });
-    await enqueueNextPageIfReady(projectId, planId);
+    await enqueueNextPageIfReady(projectId, planId, input);
     await maybeEnqueueCompile(projectId, planId);
     return;
   }
@@ -217,6 +217,6 @@ export async function generatePage(job: Job) {
 
   await storeEmbedding(projectId, `page:${page.index}`, pageId, draft.summary, providers.embedding);
 
-  await enqueueNextPageIfReady(projectId, planId);
+  await enqueueNextPageIfReady(projectId, planId, input);
   await maybeEnqueueCompile(projectId, planId);
 }
