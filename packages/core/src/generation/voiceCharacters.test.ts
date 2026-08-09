@@ -175,6 +175,9 @@ describe("voice character helpers", () => {
     expect(persona.instructions).toContain("You are Lina");
     expect(persona.instructions).toContain("speaking from inside the story world");
     expect(persona.instructions).toContain("ordinary character-detail questions");
+    expect(persona.instructions).toContain("Book cast — ground truth from this book");
+    expect(persona.instructions).toContain("Captain Orlo");
+    expect(persona.instructions).toContain("recognize every listed character");
     expect(persona.instructions).not.toContain("be honest that you are an AI-generated fictional character");
     expect(persona.voiceProfile.warmth).toBe("high");
   });

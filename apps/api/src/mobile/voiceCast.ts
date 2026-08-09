@@ -1,6 +1,10 @@
 import { type MobileVoiceCharacterDto, type MobileVoiceCharacterStatus } from "./dto.js";
 import { serializeImage } from "./projectSerializers.js";
-import { reinforceRealtimeCharacterRoleplay } from "@book-maker/core";
+import {
+  buildRealtimeBookCastInstructions,
+  reinforceRealtimeCharacterRoleplay,
+  type RealtimeBookCastMember
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
 /**
@@ -112,11 +116,16 @@ export function mobileVoiceCharacterStatus(status: string): MobileVoiceCharacter
 export function buildVoiceCallInstructions(options: {
   character: Pick<VoiceCharacterRow, "name" | "role" | "description" | "persona">;
   bookTitle: string;
+  bookCast?: RealtimeBookCastMember[] | undefined;
   readerPage?: { index: number; title: string; excerpt: string } | undefined;
   history?: string | undefined;
 }): string {
   const persona = personaInstructions(options.character);
-  const base = reinforceRealtimeCharacterRoleplay(persona, options.character.name);
+  const base = buildRealtimeBookCastInstructions(
+    reinforceRealtimeCharacterRoleplay(persona, options.character.name),
+    options.character.name,
+    options.bookCast ?? []
+  );
   const opening = [
     "This is a live phone call with a reader of the book.",
     "Speak the way a person on a phone does: short turns, one thought at a time, and let them talk.",

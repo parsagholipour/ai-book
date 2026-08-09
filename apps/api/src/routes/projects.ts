@@ -6,6 +6,7 @@ import {
   createProjectSchema,
   createVoiceProvider,
   buildMarginEstimate,
+  buildRealtimeBookCastInstructions,
   buildRealtimeGroupCharacterInstructions,
   buildRealtimeGroupListenerInstructions,
   detectPromptLanguage,
@@ -52,6 +53,7 @@ import {
 } from "../queue.js";
 import { resolveProjectActor, sendProjectNotFound, type ProjectActor } from "../requestAuth.js";
 import { ownedProjectWhere, registerProjectExportRoutes } from "./projectExports.js";
+import { loadVoiceBookCast } from "../voiceBookContext.js";
 
 // The compiled-book helpers moved to ./projectExports.js; re-exported here
 // because the mobile routes and serializers import them from this module.
@@ -935,7 +937,12 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
             `Description: ${character.description}.`,
             "Keep responses conversational, concise, and suitable for a voice call."
           ].join("\n");
-    const instructions = reinforceRealtimeCharacterRoleplay(baseInstructions, character.name);
+    const bookCast = await loadVoiceBookCast(character.projectId);
+    const instructions = buildRealtimeBookCastInstructions(
+      reinforceRealtimeCharacterRoleplay(baseInstructions, character.name),
+      character.name,
+      bookCast
+    );
     const requestedProvider: VoiceChatProviderId = body.provider;
     const providerInfo = voiceProviderOptions(appConfig).find((option) => option.id === requestedProvider);
     if (!providerInfo) {
@@ -1603,4 +1610,3 @@ function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
 
   return payload as Record<string, unknown>;
 }
-

@@ -236,6 +236,51 @@ describe("mobile voice calls", () => {
       await app.close();
     });
 
+    it("grounds an existing persona in the other characters from the same book", async () => {
+      mockPrisma.voiceCharacter.findFirst.mockResolvedValue(
+        characterRecord({
+          name: "Harry Potter",
+          persona: { instructions: "You are Harry Potter." }
+        })
+      );
+      mockPrisma.voiceCharacter.findMany.mockResolvedValue([
+        {
+          name: "Harry Potter",
+          role: "Visiting wizard",
+          description: "Fights beside the heroes."
+        },
+        {
+          name: "Rostam",
+          role: "Main hero",
+          description: "The champion at the center of the battle."
+        }
+      ]);
+      const voiceSession = vi.fn().mockResolvedValue({
+        type: "gemini_live_token",
+        token: "auth_tokens/abc",
+        expiresAt: "2026-07-27T12:30:00.000Z",
+        newSessionExpiresAt: "2026-07-27T12:01:00.000Z",
+        provider: "gemini_live",
+        model: "gemini-3.1-flash-live-preview",
+        voiceId: "Achird",
+        metadata: {}
+      });
+      const app = await buildVoiceApp({ voiceSession });
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/projects/project-1/voice/characters/character-1/calls",
+        headers: bearer("token-a"),
+        payload: {}
+      });
+
+      expect(response.statusCode).toBe(200);
+      const instructions = voiceSession.mock.calls[0]?.[0].instructions as string;
+      expect(instructions).toContain("Rostam: Main hero The champion at the center of the battle.");
+      expect(instructions).toContain("recognize every listed character");
+      await app.close();
+    });
+
     it("builds the persona on the first call and answers as still preparing", async () => {
       mockPrisma.voiceCharacter.findFirst.mockResolvedValue(characterRecord({ status: "CANDIDATE" }));
       mockPrisma.voiceCharacter.update.mockResolvedValue({});

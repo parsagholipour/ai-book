@@ -315,6 +315,10 @@ describe("project routes", () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response("answer-sdp", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     mockPrisma.voiceCharacter.findUnique.mockResolvedValue(readyCharacter({ voiceProvider: "gemini_live" }));
+    mockPrisma.voiceCharacter.findMany.mockResolvedValue([
+      { name: "Lina", role: "Guide", description: "A steady guide." },
+      { name: "Rostam", role: "Main hero", description: "The champion at the center of the battle." }
+    ]);
     const app = await buildApp();
 
     const response = await app.inject({
@@ -340,8 +344,9 @@ describe("project routes", () => {
       expect.objectContaining({ method: "POST" })
     );
     const request = fetchMock.mock.calls.at(0)?.[1] as { body?: FormData } | undefined;
-    const session = JSON.parse(String(request?.body?.get("session"))) as { model?: string };
+    const session = JSON.parse(String(request?.body?.get("session"))) as { model?: string; instructions?: string };
     expect(session.model).toBe("gpt-realtime-mini");
+    expect(session.instructions).toContain("Rostam: Main hero The champion at the center of the battle.");
     await app.close();
     vi.unstubAllGlobals();
   });

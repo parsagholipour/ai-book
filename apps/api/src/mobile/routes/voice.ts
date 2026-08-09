@@ -29,6 +29,7 @@ import {
   type VoiceCallMessage
 } from "../voiceCallHistory.js";
 import { buildVoiceCallInstructions, loadReaderPageContext, loadVoiceCast, voiceCharacterSelect } from "../voiceCast.js";
+import { loadVoiceBookCast } from "../../voiceBookContext.js";
 import { VOICE_CALL_POLICY, creditPricing, normalizeVoiceProfile } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { InsufficientCreditsError, getCreditBalance } from "@book-maker/db/billing";
@@ -145,16 +146,18 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       // Read before the call row is created, so this call cannot remember
       // itself. A history read that fails is not worth losing a call over —
       // the character just meets them fresh.
-      const [readerPage, history] = await Promise.all([
+      const [readerPage, history, bookCast] = await Promise.all([
         loadReaderPageContext(id, parsed.data.pageIndex),
         loadVoiceCallHistory({ userId: auth.user.id, characterId: character.id }).catch((error: unknown) => {
           request.log.warn({ err: error, projectId: id }, "Voice call history could not be read");
           return [];
-        })
+        }),
+        loadVoiceBookCast(id)
       ]);
       const instructions = buildVoiceCallInstructions({
         character,
         bookTitle: character.project.title,
+        bookCast,
         readerPage,
         history: formatVoiceCallHistory(history)
       });

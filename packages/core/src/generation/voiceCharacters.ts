@@ -70,6 +70,12 @@ export type VoiceCharacterPersona = {
   voiceProfile: VoiceProfile;
 };
 
+export type RealtimeBookCastMember = {
+  name: string;
+  role?: string | null | undefined;
+  description?: string | null | undefined;
+};
+
 export type VoiceCharacterPageSample = {
   index: number;
   title?: string | undefined;
@@ -228,6 +234,7 @@ export async function buildVoiceCharacterPersona(options: {
               premise: options.plan.premise,
               audience: options.plan.audience,
               voiceGuide: options.plan.voiceGuide,
+              cast: options.plan.characters,
               prompt: options.input.prompt,
               category: options.input.category,
               subcategory: options.input.subcategory
@@ -330,7 +337,7 @@ export function refineVoiceCharacterCandidatesWithPageSamples(
 }
 
 export function buildRealtimeCharacterInstructions(persona: VoiceCharacterPersona, plan: BookPlan): string {
-  return [
+  const personaInstructions = [
     `You are ${persona.name}, speaking from inside the story world of "${plan.title}".`,
     `Role: ${persona.role}.`,
     `Description: ${persona.description}.`,
@@ -346,6 +353,41 @@ export function buildRealtimeCharacterInstructions(persona: VoiceCharacterPerson
     `If the user explicitly asks about the AI, model, app, prompts, or whether this is real outside "${plan.title}", briefly say this is an in-character voice chat, then return to ${persona.name}'s perspective.`,
     "Do not impersonate a real living person or claim real-world physical presence with the caller.",
     "Keep responses conversational, concise, and suitable for a voice call."
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return buildRealtimeBookCastInstructions(personaInstructions, persona.name, plan.characters);
+}
+
+/**
+ * Grounds a live character in the rest of the book's cast.
+ *
+ * Personas built before this context existed only contain the called
+ * character's own notes. Keeping this as a composable instruction block lets
+ * call routes repair those already-saved personas at session time.
+ */
+export function buildRealtimeBookCastInstructions(
+  baseInstructions: string,
+  characterName: string,
+  cast: RealtimeBookCastMember[]
+): string {
+  const castLines = uniqueCastMembers(cast).map((member) => {
+    const role = member.role?.trim();
+    const description = member.description?.trim();
+    const details = [role, description].filter(Boolean).join(" ");
+    return `- ${member.name}${details ? `: ${details}` : ""}`;
+  });
+  if (castLines.length === 0) {
+    return baseInstructions;
+  }
+  return [
+    baseInstructions,
+    [
+      "Book cast — ground truth from this book:",
+      ...castLines,
+      `As ${characterName}, recognize every listed character when the caller names them.`,
+      "Use the supplied role and description plus your persona to answer. If a relationship detail is not supplied, say only what you do know instead of inventing it or claiming the listed character is unknown."
+    ].join("\n")
   ]
     .filter(Boolean)
     .join("\n");
@@ -834,6 +876,25 @@ function normalizePageText(value: string): string {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function uniqueCastMembers(cast: RealtimeBookCastMember[]): RealtimeBookCastMember[] {
+  const seen = new Set<string>();
+  const members: RealtimeBookCastMember[] = [];
+  for (const member of cast) {
+    const name = member.name.trim();
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    members.push({
+      name,
+      role: member.role?.trim() || undefined,
+      description: member.description?.trim() || undefined
+    });
+  }
+  return members;
 }
 
 function characterKey(name: string): string {
