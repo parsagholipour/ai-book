@@ -39,7 +39,7 @@ class ReaderBottomChrome extends StatelessWidget {
   final String? chapterTitle;
   final bool bookmarked;
   final VoidCallback onContents;
-  final VoidCallback onToggleBookmark;
+  final VoidCallback? onToggleBookmark;
   final VoidCallback onListen;
 
   /// Height of the bar, excluding safe-area padding.

@@ -30,6 +30,7 @@ class ReaderMarkupBar extends StatelessWidget implements PreferredSizeWidget {
     required this.onNote,
     required this.onAction,
     required this.onDismiss,
+    this.markupEnabled = true,
     super.key,
   });
 
@@ -38,6 +39,7 @@ class ReaderMarkupBar extends StatelessWidget implements PreferredSizeWidget {
   /// The colour underline and strikethrough use — the last one the reader
   /// picked, so those two do not need a colour decision of their own.
   final int defaultColorIndex;
+  final bool markupEnabled;
 
   final void Function(ReaderMarkupStyle style, int colorIndex) onMarkup;
   final VoidCallback onNote;
@@ -75,33 +77,42 @@ class ReaderMarkupBar extends StatelessWidget implements PreferredSizeWidget {
               _Swatch(
                 color: readerMarkupColor(palette, index).color,
                 label: '${readerMarkupColor(palette, index).name} highlight',
-                onTap: () {
-                  AppHaptics.selection();
-                  onMarkup(ReaderMarkupStyle.highlight, index);
-                },
+                onTap: markupEnabled
+                    ? () {
+                        AppHaptics.selection();
+                        onMarkup(ReaderMarkupStyle.highlight, index);
+                      }
+                    : null,
               ),
             _divider(theme),
             _IconAction(
               icon: Icons.format_underlined,
               label: 'Underline',
-              onTap: () {
-                AppHaptics.selection();
-                onMarkup(ReaderMarkupStyle.underline, defaultColorIndex);
-              },
+              onTap: markupEnabled
+                  ? () {
+                      AppHaptics.selection();
+                      onMarkup(ReaderMarkupStyle.underline, defaultColorIndex);
+                    }
+                  : null,
             ),
             _IconAction(
               icon: Icons.format_strikethrough,
               label: 'Strike through',
-              onTap: () {
-                AppHaptics.selection();
-                onMarkup(ReaderMarkupStyle.strikethrough, defaultColorIndex);
-              },
+              onTap: markupEnabled
+                  ? () {
+                      AppHaptics.selection();
+                      onMarkup(
+                        ReaderMarkupStyle.strikethrough,
+                        defaultColorIndex,
+                      );
+                    }
+                  : null,
             ),
             _divider(theme),
             _IconAction(
               icon: Icons.sticky_note_2_outlined,
               label: 'Add a note',
-              onTap: onNote,
+              onTap: markupEnabled ? onNote : null,
             ),
             _IconAction(
               icon: Icons.copy_all_outlined,
@@ -130,20 +141,17 @@ class ReaderMarkupBar extends StatelessWidget implements PreferredSizeWidget {
 }
 
 class _Swatch extends StatelessWidget {
-  const _Swatch({
-    required this.color,
-    required this.label,
-    required this.onTap,
-  });
+  const _Swatch({required this.color, required this.label, this.onTap});
 
   final Color color;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
+      enabled: onTap != null,
       label: label,
       child: Tooltip(
         message: label,
@@ -173,15 +181,11 @@ class _Swatch extends StatelessWidget {
 }
 
 class _IconAction extends StatelessWidget {
-  const _IconAction({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
+  const _IconAction({required this.icon, required this.label, this.onTap});
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

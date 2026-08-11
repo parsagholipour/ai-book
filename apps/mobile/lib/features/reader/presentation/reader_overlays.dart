@@ -148,6 +148,26 @@ class ReaderDownloadState extends StatelessWidget {
         onRetry: onOpenPaywall,
       );
     }
+    // The file is being rebuilt, not missing. This is reachable in the window
+    // an edit opens — it deletes the compiled exports and queues the recompile
+    // — and the download itself queues that compile if nothing else has, so
+    // retrying is exactly the right move rather than a dead end.
+    //
+    // The copy deliberately does not promise a compile is running right now. A
+    // rebuild that already failed is not retried until its five-minute window
+    // rolls, so "your changes are being compiled" would be a claim this screen
+    // cannot make. "Try again" always re-checks the file, and picks the book up
+    // the moment one lands.
+    if (_isRebuilding(error)) {
+      return AppErrorState(
+        icon: Icons.hourglass_empty,
+        title: 'Still preparing this book',
+        message:
+            'This book is being rebuilt after your latest changes. It is usually ready within a few minutes.',
+        actionLabel: 'Try again',
+        onRetry: onRetry,
+      );
+    }
     return AppErrorState(
       title: 'Could not download this book',
       message: userFacingError(error),
@@ -162,6 +182,11 @@ class ReaderDownloadState extends StatelessWidget {
   bool _isPaymentFailure(Object error) {
     return error is ApiException &&
         (error.code == 'INSUFFICIENT_CREDITS' || error.statusCode == 402);
+  }
+
+  /// Whether [error] is the export not being on disk yet.
+  bool _isRebuilding(Object error) {
+    return error is ApiException && error.code == 'EXPORT_NOT_READY';
   }
 }
 

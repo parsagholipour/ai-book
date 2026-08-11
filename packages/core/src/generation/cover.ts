@@ -1,5 +1,5 @@
-import puppeteer from "puppeteer";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
+import { withRenderPage } from "./browserPool.js";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
 import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
@@ -322,12 +322,7 @@ export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffe
     tagline: subtitle ? tagline : undefined
   });
 
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-  });
-  try {
-    const page = await browser.newPage();
+  return withRenderPage(async (page) => {
     await page.setViewport({ width: COVER_WIDTH, height: COVER_HEIGHT, deviceScaleFactor: 1 });
     await page.setContent(html, { waitUntil: "load" });
     // `load` and `document.fonts.ready` both resolve while the artwork is still
@@ -360,9 +355,7 @@ export async function renderCoverPng(options: RenderCoverOptions): Promise<Buffe
       clip: { x: 0, y: 0, width: COVER_WIDTH, height: COVER_HEIGHT }
     });
     return Buffer.from(screenshot);
-  } finally {
-    await browser.close();
-  }
+  });
 }
 
 async function buildCoverHtml(options: {

@@ -9,6 +9,7 @@ import { serializeEditProgress } from "./editProgress.js";
 import { serializeGenerationProgress } from "./generationProgress.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { imageSettingsFromMediaSettings } from "./imageSettings.js";
+import { loadProjectQualityReport, qualityWithExportsOnDisk } from "./qualityVerdict.js";
 import { type GenerationJobType } from "../queue.js";
 import { projectExportAvailability, type ProjectExportFormat } from "../routes/projects.js";
 import {
@@ -44,9 +45,9 @@ import {
   generationJobControlsProjectStatus,
   loadConfig,
   mediaSettingsSchema,
+  payloadOwnsProjectOutcome,
   type BookPlan
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
 import { hasActiveProjectEntitlement } from "@book-maker/db/billing";
 import { extname } from "node:path";
 import { z } from "zod";
@@ -109,11 +110,11 @@ export async function serializeProjectDetail(
   userId: string
 ): Promise<MobileProjectDetailDto> {
   const summary = await serializeProjectSummary(project, appConfig, userId);
-  const latestCompile = await prisma.generationJob.findFirst({
-    where: { projectId: project.id, type: "COMPILE_EXPORT" },
-    orderBy: { createdAt: "desc" },
-    select: { qualityReport: true }
-  });
+  // One row, asked for by ownership rather than sifted out of the newest few
+  // compiles: a book that keeps losing its exports queues a repair every five
+  // minutes, and eight of those buried the compile that actually reviewed the
+  // manuscript — after which the detail response reported no verdict at all.
+  const qualityReport = await loadProjectQualityReport(project.id);
   return {
     ...summary,
     prompt: project.prompt,
@@ -134,7 +135,7 @@ export async function serializeProjectDetail(
         imageFailed: image === null && Boolean(page.imageFailureReason)
       };
     }),
-    quality: normalizeProjectQuality(latestCompile?.qualityReport)
+    quality: qualityWithExportsOnDisk(normalizeProjectQuality(qualityReport), summary.exports)
   };
 }
 
@@ -275,9 +276,20 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
   const steps = status.progress.pipeline.map(mobileStepFromPipeline);
   // Derivative operations report failure through their own resources. A
   // narration or voice-character failure must not make a healthy book look
-  // failed or replace the book's own recovery guidance.
+  // failed or replace the book's own recovery guidance. The same is true per
+  // *job* for the two payload-flagged kinds that settle alone: an export
+  // repair rebuilds a file for a book that is already finished and paid for,
+  // and a presentation-only reprint restores the settled status it was born
+  // under — a Chromium blip on either would leave a COMPLETE book saying
+  // "needs attention" forever — `hasFailure` in the app is exactly this field —
+  // with nothing the reader could do about it. The repair re-queues itself
+  // when a download or status surface next asks; a reprint re-queues when the
+  // reader toggles the preference again.
   const failedJob = project.jobs.find(
-    (job) => job.status === "FAILED" && generationJobControlsProjectStatus(job.type)
+    (job) =>
+      job.status === "FAILED" &&
+      generationJobControlsProjectStatus(job.type) &&
+      payloadOwnsProjectOutcome(job.payload)
   );
   const imageSettings = imageSettingsFromMediaSettings(project.mediaSettings);
   const generationProgress = serializeGenerationProgress(status, imageSettings);
@@ -329,7 +341,7 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
       target: status.progress.pages.target
     },
     imageCount: status.progress.images,
-    quality: status.quality,
+    quality: qualityWithExportsOnDisk(status.quality, exports),
     exports,
     updatedAt: project.updatedAt.toISOString()
   };

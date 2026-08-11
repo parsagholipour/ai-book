@@ -42,6 +42,10 @@ services:
     build:
       context: .
       target: dev
+    # Chromium is now pooled rather than launched per render, so a zombie
+    # renderer lives for the process lifetime instead of milliseconds. The
+    # entrypoint shell is PID 1 and does not reap; tini does.
+    init: true
     entrypoint: ["/bin/sh", "/app/scripts/docker-dev-entrypoint.sh"]
     command: ["pnpm", "--filter", "@book-maker/api", "dev"]
     env_file:
@@ -93,6 +97,8 @@ services:
     build:
       context: .
       target: dev
+    # See the api service: a pooled Chromium needs something to reap it.
+    init: true
     entrypoint: ["/bin/sh", "/app/scripts/docker-dev-entrypoint.sh"]
     command: ["pnpm", "--filter", "@book-maker/worker", "dev"]
     env_file:

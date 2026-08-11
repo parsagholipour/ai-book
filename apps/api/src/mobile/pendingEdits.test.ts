@@ -18,6 +18,7 @@ import {
   jobRecord,
   mockAccessTokens,
   mockPrisma,
+  openJobRow,
   projectRecord,
   resetMobileHarness,
   state,
@@ -39,7 +40,7 @@ describe("mobile pending edit recovery", () => {
         pages: []
       })
     );
-    mockPrisma.generationJob.count.mockResolvedValueOnce(1);
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([openJobRow()]);
     const app = await buildMobileApp();
 
     const response = await app.inject({

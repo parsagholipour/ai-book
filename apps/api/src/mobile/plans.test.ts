@@ -13,7 +13,7 @@ import {
   releaseIllustratedBookUse,
   reserveCredits
 } from "@book-maker/db/billing";
-import { DEFAULT_CREDIT_COSTS } from "@book-maker/core";
+import { DEFAULT_CREDIT_COSTS, DETACHED_FROM_PROJECT_LIFECYCLE } from "@book-maker/core";
 
 import { enqueueGenerationJob, requeueGenerationJob } from "../queue.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
@@ -167,6 +167,48 @@ describe("mobile plan lifecycle", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe("RETRY_CONFIRMATION_REQUIRED");
     expect(vi.mocked(requeueGenerationJob)).not.toHaveBeenCalled();
+    expect(reserveCredits).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("never resumes a failed export repair on a finished book", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(
+      projectRecord({
+        id: "project-1",
+        status: "COMPLETE",
+        currentPlanId: "plan-1",
+        currentPlan: { id: "plan-1", createdAt: new Date("2026-06-15T12:00:00.000Z") }
+      })
+    );
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([
+      jobRecord({
+        id: "job-repair-failed",
+        projectId: "project-1",
+        type: "COMPILE_EXPORT",
+        status: "FAILED",
+        payload: { planId: "plan-1", skipFinalReview: true, [DETACHED_FROM_PROJECT_LIFECYCLE]: true },
+        createdAt: new Date("2026-06-15T12:10:00.000Z")
+      })
+    ]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([{ id: "page-1" }]);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/resume",
+      headers: bearer("token-a"),
+      payload: { requestId: "generation-retry-0001", retryToken: "a".repeat(32) }
+    });
+
+    // Nothing to resume, and above all nothing that would move a COMPLETE book
+    // back into GENERATING: a repair rebuilds a file for a book that is already
+    // delivered, and the next download or status poll queues another one.
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("RECOVERY_NOT_AVAILABLE");
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(requeueGenerationJob)).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
     expect(reserveCredits).not.toHaveBeenCalled();
     await app.close();
   });

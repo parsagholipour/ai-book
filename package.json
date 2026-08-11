@@ -18,6 +18,7 @@
     "check": "pnpm typecheck && pnpm lint && pnpm check:sizes && pnpm test",
     "audiobook:samples": "tsx scripts/generate-audiobook-samples.ts",
     "covers:preview": "tsx scripts/preview-cover-designs.ts",
+    "render:fixtures": "tsx scripts/render-book-fixtures.ts",
     "billing:audit-duplicates": "tsx scripts/audit-duplicate-generation-charges.ts",
     "db:generate": "pnpm --filter @book-maker/db prisma generate",
     "db:migrate": "pnpm --filter @book-maker/db prisma migrate dev",

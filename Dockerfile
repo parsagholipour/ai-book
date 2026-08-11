@@ -13,9 +13,14 @@ RUN corepack enable
 # because it is free-form, and for non-Latin text inside a monospace code span.
 # fonts-noto-cjk is deliberately absent: CJK is embedded, and the package is
 # 200 MB.
+# tini is the reaper. Chromium is pooled rather than launched per render, so a
+# renderer that dies badly stays a zombie for the process lifetime instead of
+# milliseconds — and PID 1 in production is `scripts/start-production.sh`, a
+# shell that does not reap. The dev services get the same thing from compose's
+# `init: true`.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
-    chromium ca-certificates fonts-liberation fonts-noto-core fonts-noto-color-emoji \
+    chromium ca-certificates fonts-liberation fonts-noto-core fonts-noto-color-emoji tini \
   && rm -rf /var/lib/apt/lists/*
 
 FROM base AS dev
@@ -39,4 +44,5 @@ ENV NODE_ENV=production \
     BOOK_STORAGE_DIR=/app/storage/books \
     IMAGE_STORAGE_DIR=/app/storage/images
 
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["sh", "scripts/start-production.sh"]

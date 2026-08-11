@@ -78,9 +78,21 @@ src/mobileAuth.ts    email/password + bearer/refresh tokens for mobile users
 src/auth.ts          WEB_PASSWORD cookie auth for the operator console only
 ```
 
-Anything under `/api/admin/` is **cookie-only** — `isOperatorOnlyPath` in `src/auth.ts` rejects
-mobile bearer tokens there before a handler runs, so admin routes never think about mobile users.
-The operator dashboard at `/admin` (overview, users, moderation, pricing) is the only consumer.
+**Everything protected is cookie-only except `/api/mobile/*` and the two asset prefixes.**
+`allowsMobileBearer` in `src/requestAuth.ts` names that surface — `/api/mobile/`,
+`/assets/images/`, `/assets/voice/` — and `isOperatorOnlyPath` in `src/auth.ts` is literally its
+complement, so a bearer token is rejected before any other handler runs. It used to be an
+allowlist of operator paths instead, which is why `/api/projects/*` and `/api/plans/*` quietly
+accepted mobile bearers: every handler there scopes to `actor.userId`, so the app's own user
+reached exactly its own books — through routes that charge nothing.
+`POST /api/plans/:id/approve` starts a whole book with no credit reservation and no free-tier
+image slot, and `GET /api/projects/:id/export/*` renders inline and sends the file without the
+entitlement its `/api/mobile/*` twin takes. **Ownership is not authorization here**; the actor's
+*kind* is, which is what `requireOperatorActor` asserts at every legacy handler. The assets are
+the one shared surface — the serializers hand the app URLs under them — which is why they live in
+`routes/projectAssets.ts` and are the only thing in that file group still calling
+`resolveProjectActor`. The operator dashboard at `/admin` (overview, users, moderation, pricing)
+is the only consumer of `/api/admin/`.
 
 `src/mobileProjects.ts` is now a thin composition root. It builds one `MobileRouteContext`
 (config, rate limiters, Google Play verifier, AI enrichment hooks) and hands it to route groups
@@ -265,6 +277,465 @@ tells you when a listed file has dropped under the default so the entry can be d
   anything that is not a `StopRequestedError` and renders a designed cover, recording
   `coverFallbackReason: "ai_cover_failed"`. The stop check is load-bearing: swallowing it would turn
   every user-cancelled run into a finished book.
+- **The book is typeset against md-to-pdf's stylesheets, but nothing else of md-to-pdf's remains.**
+  `generateBookPdf` no longer calls `mdToPdf()`. `pdfDocument.ts` deep-imports its `getHtml` and
+  `defaultConfig` (the package has no `exports` map) so the markdown still goes through
+  **marked@4.3.0** with `langPrefix: 'hljs '` — rendering it with this repo's own marked@18 instead
+  changes heading ids, email mangling and loose/tight list `<p>` wrapping, which moves every page
+  break in every book ever compiled. Everything md-to-pdf used to supply by *default* is now pinned
+  by hand in `BOOK_PDF_OPTIONS` and `buildBookPdfDocument`: the `30/40/30/20mm` margins,
+  `page_media_type: 'screen'`, and the cascade markdown.css → github.css → ours, which
+  `RTL_OVERRIDES` in `pdfCss.ts` exists to undo the first sheet of. **The text block is set by
+  `pdfCss.ts`, not by those margins** — `bookPdfCss` writes `@page { margin: 20mm 18mm 22mm }`, and
+  Chrome honours that over the CDP parameters, so `BOOK_PDF_OPTIONS.margin` is measurably inert
+  (identical page count and line width at 30/40/30/20mm, at 1 cm, and omitted). It is pinned for the
+  day that `@page` rule is removed, and asserted by equality rather than through a render, because no
+  render can see it. The dependency is pinned to an **exact** version and `pdfDocument.test.ts`
+  asserts both stylesheets' sha256, because a bump is otherwise a silent re-typeset. When a digest
+  fires, render the fixture corpus with `pnpm render:fixtures` (`scripts/render-book-fixtures.ts`,
+  seven books covering both directions, CJK, illustrations, a cover and the dense Contents) on each
+  side and diff them with `--compare`, which checks `Pages` first;
+  byte-comparing PDFs proves nothing, since `/CreationDate`, `/ID` and font-subset ordering differ
+  run to run. The old side is rendered by `--baseline <ref>`, never by stashing: it plants a
+  throwaway worktree at that ref and copies the *current* harness in, because the change under test
+  is routinely the one that adds the corpus, the `render:fixtures` script and the `packages/core`
+  exports the harness imports — and because the fixtures are the control, a ref carrying its own
+  copy of them would report its text as layout drift. Borrowed `node_modules` are this tree's, so a
+  digest that fired *because* the `md-to-pdf` pin moved needs `--install` for the baseline to be
+  rendered by the version it is being compared against. A page-count guard only works on **continuous prose**: a fixture with forced
+  `page-break` divs pins its own count and reports the same number whatever the stylesheet says.
+- **Chrome reads the book off disk; nothing crosses CDP.** The assembled HTML is written to
+  `.book-render-<uuid>.html` inside `IMAGE_STORAGE_DIR` and opened with `page.goto('file://…')`, so
+  the book's relative asset paths (`projectId/filename`) resolve to the real illustrations exactly as
+  they did against md-to-pdf's static server. That is what killed the 174 s and 382 s exports: they
+  lived in `addStyleTag`/`addScriptTag`, which take **no timeout**, and a legacy illustrated book
+  shipped a ~27 MB `JSON.stringify`'d image map through one. Fonts must stay `data:` URIs — a
+  `file://` `@font-face` src from a `file://` document is blocked by Chrome's opaque-origin rules.
+  The temp file is not web-reachable: `/assets/images/:projectId/:filename` is a two-segment param
+  route, not a static mount.
+  **What that transport costs is the origin's protection, so the renderer carries an allowlist.**
+  A page opened from `file://` may load `file://` subresources, and a manuscript is user text —
+  imports arrive as raw prose, an exact-replacement edit writes literal text into a page, and
+  markdown passes raw HTML through. `<iframe src="file:///etc/passwd">` in chapter one printed the
+  server's password file into the exported PDF, reproducibly, and `/proc/self/environ` would have
+  printed its provider keys; the HTTP-origin renderer this replaced refused that for free.
+  `renderResourcePolicy.ts` intercepts every request the render makes and permits four things: the
+  document this render wrote, `data:` (the fonts), `about:blank`, and non-dot files under the
+  compiled project's own image directory — which is why `generateBookPdf` now takes a `projectId`,
+  standing in for the `sendOwnedProjectAsset` check the file transport dropped. Everything else is
+  aborted, **including `http(s)`**: an iframe of `169.254.169.254` prints the instance's cloud
+  credentials the same way, and no legitimate book resource is remote. Interception covers
+  navigations, frames, images, CSS `url()` and anything a script starts later, which is why it is
+  the control and `stripEmbeddedDocuments` (`pdfDocument.ts`, which deletes
+  `iframe`/`object`/`embed`/`frame`/`script`/`link`/`base`/`meta http-equiv` from the assembled
+  HTML) is only the second lock. That strip runs on the *rendered* HTML, never the markdown, so a
+  book about HTML keeps its `<iframe>` examples — marked has already escaped everything in a code
+  fence by then. It is verified by rendering the seven-book fixture corpus with the policy off and
+  on and diffing: pixel-identical, so the allowlist refuses nothing a real book asks for.
+  **The same disclosure had a second door in the EPUB.** Both exports turn
+  `/assets/images/<projectId>/<filename>` into a path on disk, and they did it with a copy of the
+  resolver each; the filename group matches slashes, and only the PDF's copy checked containment, so
+  `![x](/assets/images/p/../../../../etc/passwd)` packaged a server file into the reader's download.
+  There is now one `resolveBookImageAsset` (`bookImageAssets.ts`), which decodes before it resolves
+  (`%2F..%2F` is a separator) and returns null unless the result is exactly
+  `<IMAGE_STORAGE_DIR>/<projectId>/<filename>` — the shape the HTTP route serves.
+  **`<projectId>` there means *this* book's, which is a second option and not a wildcard.** Storage
+  is shared, so containment only ever said "some project's illustration": a manuscript naming
+  `/assets/images/<another-project>/page-3.png` — and manuscripts are user text — read another
+  reader's artwork out of it. The PDF survived that by accident, because the renderer's
+  `assetRoot` allowlist is already scoped to the compiled project; the EPUB reads the file itself
+  and packaged it into the download, with no renderer anywhere to refuse it. So the resolver takes
+  an optional `projectId` and compares it against the *resolved* first segment (after decoding, so
+  `proj-1/..%2Fproj-2` is `proj-2`), `generateBookEpub` and `generateBookPdf` both pass theirs, and
+  the PDF's markdown rewrite refuses what its renderer would have aborted anyway. Omitting it keeps
+  the whole storage directory in scope, which is only right for a book belonging to no project —
+  `scripts/render-book-fixtures.ts`.
+- **One Chromium, many pages — and the reset paths are the point.** `browserPool.ts` is the only
+  place that launches a browser (`generateBookPdf` and `renderCoverPng` both go through
+  `withRenderPage`). It holds a `Promise<Browser>`, not a `Browser`, and clears it on `disconnected`
+  *and* on launch rejection under a **generation counter**, so a stale event cannot evict a newer
+  browser. The semaphore is **2**, deliberately below worker concurrency
+  (`max(MAX_PARALLEL_PAGE_JOBS, MAX_PARALLEL_IMAGE_JOBS)`, 4 by default, env-tunable to 32, with no
+  separate compile lane) — four large books in one Chromium is an OOM that takes all four down.
+  Recycling after 50 renders **retires** the browser rather than closing it: it stops handing out
+  pages and closes once its own last page comes back. Closing inline is only possible when no other
+  render is in flight, and with the semaphore at 2 a busy worker always has one — so a close-now rule
+  fires only when the pool is idle, which is exactly when recycling does not matter. That is why the
+  count lives on the lease and not in a global.
+  A disconnect is retried **once, inside `withRenderPage`**, so both callers get it: sharing a
+  browser is what turned one crash from "fails the job that owned it" into "fails every render in
+  flight", and the cover is where that bites hardest — `renderCoverPng` runs *outside*
+  `generateCover`'s artwork fallback, and `GENERATE_COVER` is not in `DERIVATIVE_GENERATION_JOBS`, so
+  an unretried disconnect there marks a finished, fully paid book FAILED and refunds
+  `FULL_BOOK_GENERATION` because some unrelated compile crashed Chromium. One retry is the whole
+  budget — `compile-export` gets no BullMQ-level retry, which would re-run final QA and re-spend real
+  credits — and it is skipped when `closeSharedBrowser()` was what took the browser away, or a
+  shutdown would launch a replacement and hold the process open. A watchdog timeout is not
+  disconnect-shaped and is never retried. Anything passed to `withRenderPage` must therefore be safe
+  to run twice. "Disconnect-shaped" means **`TargetCloseError` and nothing else**: puppeteer throws
+  that from every path where the far end went away, and its parent `ProtocolError` is the generic CDP
+  failure — including the protocol *timeout*, which would pay its whole budget twice. Matching the
+  parent covered no case the child did not.
+  **A render is leased a browser context, not a page, because the page is not what the manuscript
+  is confined to.** `stripEmbeddedDocuments` deletes `<script>` but not the `onerror` on an `<img>`
+  whose source `renderResourcePolicy` just refused — that handler is script a manuscript gets to
+  run, and one `window.open` from it was a page the pool never leased, never counted against the
+  semaphore and never closed. Verified surviving into later renders, still fetching, with no
+  interception on it: interception is installed per page, so a page the document opened for itself
+  has none. `renderOnce` therefore closes the whole `BrowserContext`, which takes the popups, the
+  workers and the storage with it, and `discardStrayTargets` closes any target the content opens on
+  sight — watching the *context*, so a popup opened by a popup is caught too, and so a
+  `setInterval(window.open)` cannot pile up tabs for the watchdog's whole 90 seconds. What neither
+  can stop is the *first* request of each opened window: Chrome reports a target once it exists, by
+  which time its navigation is on the wire (`--block-new-web-contents` does not refuse it —
+  measured). Closing that needs the document unable to run script at all, i.e. stripping inline
+  `on*` handlers in `pdfDocument.ts`.
+  Every close is **once and bounded**: a wedged renderer's `close()` never settles, so a
+  second attempt would hang the exact case the watchdog exists to unstick. The outcome is acted on
+  rather than discarded, and `"failed"` is not `"timeout"` — a rejected close means the target was
+  already gone, while one that never settles is a renderer still holding a process. The latter
+  **retires** the browser on *every* path, success included: ignoring it on the success path leaked
+  pages into a long-lived Chromium (the pool's own accounting said they were gone) for up to fifty
+  renders. Retiring rather than closing outright is what reclaims them without failing every render
+  sharing that browser.
+  **Retiring is a promise to reclaim, so a lease outlives every close it is waiting on.** The
+  browser's own `close()` is no more bounded than the context's — puppeteer's CDP path sends
+  `Browser.close` and then awaits the process's `exit` event with no deadline of its own — so
+  dropping the lease and fire-and-forgetting that promise left a Chromium nothing in the process
+  had a handle on: invisible to the idle sweep, to `closeSharedBrowser()`, and to anyone reading
+  the code, but not to the container's memory. A lease is now `live`, `retired` or `closing` and
+  leaves `leases` only when its reclaim settles, which is bounded end to end: five seconds for
+  `close()`, then `terminateBrowserProcess` (`browserProcess.ts`) SIGKILLs the process *group*,
+  then two seconds for the exit. The group — the negative pid — is what takes the renderers and
+  the zygote with it, and it cannot name this process's own group by accident, because a group id
+  is always its leader's pid and that pid belongs to our child. The exit check before it is the
+  safety property, not an optimisation: a pid is ours only until Node reaps it, which is exactly
+  when `exitCode`/`signalCode` stop being null. What survives even that is recorded rather than
+  forgotten — `browserPoolStatus().abandonedProcesses`, which both `shutdown()`s log, and which a
+  process that finally dies drops off. `closeSharedBrowser()`
+  is wired into both apps' `shutdown()`, both render test files' `afterAll`, and `pnpm covers:preview`
+  — a live `Browser` holds the event loop open, so without it vitest never exits. It is bounded for
+  the same reason it is awaited in a signal handler: one wedged renderer used to hang the shutdown
+  that was supposed to release it, until the supervisor's own SIGKILL left that Chromium reparented
+  to init. Never `browser.process()?.unref()`; that orphans Chromium — killing it is the opposite,
+  and the only thing that reclaims one. Production reaps it with tini
+  (`ENTRYPOINT`), dev with compose `init: true`, because PID 1 is a shell that does not reap — and
+  budget **two** pooled browsers in production, one per process.
+  **Trapping SIGHUP is part of that wiring, not housekeeping.** Puppeteer's own handlers are off,
+  so its only remaining net is an unconditional `process.on("exit")` — which a signal Node does not
+  handle never reaches. A hangup (a closed terminal, an `ssh` drop, systemd reload) used to kill the
+  API or worker mid-flight and leave Chromium alive, reparented to init and reaped by nobody, so
+  both entry points and `scripts/start-production.sh` trap `HUP` alongside `INT`/`TERM`. Registering
+  a third signal is also why the two `shutdown()`s are now once-only: a hangup is routinely followed
+  by a TERM from the same supervisor. `scripts/tsx-dev.mjs` forwards a hangup as **SIGTERM**,
+  because nodemon handles that and not `SIGHUP` — sent verbatim it dies and orphans the app holding
+  the browser.
+- **A recompile makes no model call, and that is a cache with one rule.**
+  `createReaderChaptersForExport` used to run on *every* compile, including the ones the user was
+  told are free and instant — a presentation toggle, an undo, a manual edit. It now returns
+  `{ chapters, source }` and `readerChapterCache.ts` memoizes it to `<projectDir>/reader-chapters.json`
+  keyed by `readerChapterFingerprint`. Only `source === "model"` is written, and the union has three
+  members because there are three outcomes: `"fallback"` is the deterministic grouping standing in
+  for a call that failed or whose boundaries were rejected, and `"rejected"` is a reply that came
+  back unreadable — no chapters array at all, or a single chapter when the prompt asks for two to
+  twelve or none. Both return what they always returned; neither may be cached. `"rejected"` is the
+  subtle one: it yields `[]`, which is **indistinguishable from the empty array a long single-arc
+  book earns**, so `source` is the only thing separating a real verdict from a miss — and
+  `schema: z.unknown()` accepts any JSON, so a misshaped reply is never retried and would otherwise
+  be pinned for as long as the manuscript's text is unchanged. A genuine empty array is `"model"`
+  and **is** cached — that is the case worth caching. The
+  `projectDir` mkdir is hoisted above the call site for this; do not move it back down beside the
+  `book.md` write.
+  **The cache is not the whole cost control, because that write rule makes a miss ordinary.** A book
+  compiled before the cache existed has no entry, and neither does one whose chapterization fell
+  back or came back unreadable — and a detached export repair is queued by a status read or a
+  download every five minutes for as long as a compiled file is missing, none of it charged for. So
+  a repair has to be free on a *miss* too: `readerChaptersWithCache` takes `allowModelCall`, false
+  exactly when `isDetachedFromProjectLifecycle(job.data)` says so. That payload flag is the signal,
+  not `skipFinalReview` — an edit's own recompile sets that too, and it is charged work whose
+  manuscript is new. On a miss the repair takes `createDeterministicReaderChapters`, the same
+  stand-in a provider outage produces, which shares `shouldAttemptReaderChapterization` so a book too
+  short to chapterize still gets `[]` rather than an invented Contents; and it writes nothing, so the
+  next charged compile of that manuscript still asks. The same flag ends the compile's last fan-out:
+  `maybeEnqueueCharacterCandidatePreparation` is another text-model call wearing a job of its own,
+  and nothing downstream would have stopped a repair starting it — `enqueueWorkerJob` suffixes a
+  dedupe key with the generation attempt's id, and a repair carries no attempt, so the bare
+  `prepare-characters:{project}:{plan}` key it computes is free even for a book whose generation
+  already ran that detection.
+- **The mobile export routes never render.** A missing `book.pdf` used to be compiled inside the
+  Fastify handler — an unbounded Chromium render, with no dedupe, on a route the app hits from the
+  reader, the saved-export card and the actions menu. It is reachable in the window a user edit
+  opens (`invalidateCompiledProjectExports` deletes the files, `queueUserEditExportRecompile` queues
+  the rebuild a moment later). `mobile/routes/exports.ts` now queues that compile and answers 404
+  `EXPORT_NOT_READY`. **Watching the status queues it too, and that is the path that matters**: every
+  download surface gates on `export.available` — the card's button is disabled and reads "Preparing
+  PDF", the reader shows "still being written", the actions menu the same — so a book whose exports
+  never came back is never able to *reach* the download route, and the repair there would sit
+  unreachable behind the very condition it exists to fix. Both status surfaces call it when the
+  **PDF** is missing, and the *stream* is the one the app uses: `projectStatusProvider` subscribes to
+  `GET …/status/events` and falls back to polling `GET …/status` only when the stream ends while the
+  book is still live. A settled book yields one event and the client returns, so a hook that lived
+  only on the poll route never ran for the case it was written for — and the saved-export card's
+  four-second refresh invalidates the provider, which re-subscribes to the stream rather than
+  polling. The stream re-reads the project row at that moment (`ensureExportRepairQueuedFor`) because
+  a connection opened during generation was opened against a status, plan and revision that have
+  since moved. **Both formats use a bounded retry budget.** The EPUB was once left out on the grounds
+  that its own download route repaired it on demand; it cannot, because the button that reaches that
+  route is disabled for exactly as long as the file is missing, so an EPUB-only outage was
+  unrecoverable until some unrelated edit bumped the revision. Both formats use a coarse five-minute
+  window, with EPUB retaining a format-specific `repair-epub-{revision}-{window}` key so it can get
+  a dedicated attempt after a PDF repair completes without producing one. That keeps a burst of
+  status reads to one repair while ensuring a transient conversion failure does not permanently
+  spend the manuscript revision's key. The hook belongs on that per-project
+  route and not in `serializeExportSet`, which the project *list* shares; from there one poll would
+  queue a compile per listed book. The file is **read before the unlock is spent**, and the bytes it hands back are
+  the ones already in memory — `stat`, charge, then read left a window where that same edit could
+  delete the file mid-charge and answer 404 with the reader's credits gone. The entitlement is per
+  project and idempotent, so nothing was double-charged and a retry did deliver, but the first unlock
+  still settled against nothing. What it queues is a **repair**, and it must
+  not borrow the edit recompile's `…:content-{rev}` dedupe key: `enqueueGenerationJob` returns any
+  existing row for a key and only re-dispatches one still QUEUED, so the moment that row goes
+  COMPLETED or FAILED the key is spent and every later repair for that revision enqueues *nothing*.
+  An edit deletes the exports *before* queueing its recompile, so a recompile that failed would
+  otherwise leave a book with no files, a terminal key, and an app polling "preparing" forever.
+  `exportRepairDedupeKey` carries a coarse five-minute window instead — enough to collapse a burst
+  from the reader, the card and the actions menu through the unique index, and to stop a permanently
+  failing compile turning a four-second poll into a job per poll. Collapsing with a compile that is
+  genuinely in flight is done by reading the job's **state** (`QUEUED`/`ACTIVE`), which holds
+  whatever key that compile used — and that read runs in the **same Serializable transaction as the
+  insert**, because the unique index cannot collapse the two formats against each other. Their keys
+  differ by design, so a status read finding the PDF missing and an EPUB download landing in the same
+  millisecond both saw nothing pending and both queued a whole compile of one manuscript: two
+  Chromium renders holding both of the browser pool's slots, and two reader-chapter calls, to rebuild
+  one file. Serializable refuses the loser's insert, which lands in the same catch as any other
+  failure — the caller was answering "not ready" regardless, and by its next poll the winner's job is
+  the pending one everyone stands down for. Only these transactions run serializable, so nothing the
+  worker is doing to those rows can be aborted by one. **The pending compile is half the decision;
+  the file is the other half, and it is re-read inside that same transaction, after the job read.**
+  Every caller arrives having already observed a missing file — the download route read it, both
+  status surfaces stat it through `serializeExportSet` — and a compile that finishes in between is
+  invisible to the job read, so the repair ordered a whole second compile of a book that already had
+  its file. The two together have no gap only in that order: a publication renames the artifact into
+  place strictly before the row that made it stops being QUEUED/ACTIVE (`publishCompiledExports`
+  renames inside its own transaction; the worker marks COMPLETED after the handler returns), so a
+  compile still working is caught by the read and one that finished is caught by the stat. Presence
+  is the whole predicate — the same one every download surface calls availability — and the
+  provenance record beside the file is deliberately neither read nor written here: `unknown` is an
+  old file that downloads fine, and `mismatch` means a publication is landing under the read, which
+  is the last moment to start a compile. Nothing in the decision takes the project row lock, so it
+  can neither deadlock with a publication nor queue a polled request behind one. The repair payload also carries
+  `DETACHED_FROM_PROJECT_LIFECYCLE`, and that flag is load-bearing: `compile-export` is two different
+  jobs wearing one name. The compile at the end of generation owns the book's outcome and must fail
+  it; a compile queued later to rebuild a missing file owns nothing. Without the flag the second kind
+  took the first kind's path — `markFailed` flips a COMPLETE project to FAILED, and
+  `refundFailedProjectCredits` walks the payload's `planId` to the book's own `GENERATE_BOOK` charge
+  and refunds it, so it is not even the vague "latest FULL_BOOK_GENERATION" fallback. `compile-export`
+  has no BullMQ retry, so one watchdog timeout on a repair was enough to mark a delivered, paid book
+  failed and give the credits back. The flag is checked per *job* rather than per job name for
+  exactly that reason; `DERIVATIVE_GENERATION_JOBS` is the wrong granularity here.
+  **Two places settle a stopped run's charge, and both have to ask.** The worker's is
+  `jobOwnsProjectLifecycle` in `runtime/jobLifecycle.ts`; the API has a whole parallel
+  implementation in `stopProjectGenerationJobs` (`apps/api/src/queue.ts`), which every stop and
+  *both* delete routes go through. There a repair falls into `settleLegacyStoppedJobs`'s
+  attempt-less bucket, `BOOK_RUN_JOB_TYPES` contains `COMPILE_EXPORT`, and the payload's `planId`
+  leads to the same `GENERATE_BOOK` charge — so deleting a finished book whose PDF had gone missing
+  refunded the purchase, because the status poll had queued a repair a moment earlier. The filter
+  that builds `legacyJobs` excludes detached rows for that reason; they are stopped like anything
+  else, they just settle nothing. **The charge is only half of what a stop must not touch**: the
+  same function's project write was unconditional, so stopping a repair marked the finished book
+  FAILED — terminal, because `ensureExportRepairQueued` only queues for COMPLETE and
+  REVIEW_REQUIRED and `canRecoverGenerationJob` refuses detached rows, so neither the self-repair
+  lane nor either resume route could move it back. It is guarded on the *status* rather than on
+  what was stopped (`SETTLED_PROJECT_STATUSES`), because a book reaches those two only by being
+  finished while real in-flight work is GENERATING or EDITING — so an unstarted edit or a narration
+  stopped on a finished book leaves it finished too, and nothing that should fail a run stopped
+  failing it. The operator console draws Stop for any QUEUED or ACTIVE job, which a repair is.
+  **Not failing the project is not the same as not being reported as its failure**, and the reading
+  side has to ask too. A FAILED repair row is still a FAILED row, so it reached `failureMessage` in
+  `mobile/projectSerializers.ts` — the app's `hasFailure`, which is `BookStage.needsAttention` — and
+  painted `generationProgress`'s finish step red on a COMPLETE book, permanently and with nothing the
+  reader could do. Worse, `canRecoverGenerationJob` accepted it, so `/resume` (either route) would
+  requeue it *and set the project GENERATING*, which the flag then stops anything moving back out of.
+  `canRecoverGenerationJob` now lives once, in `mobile/generationRecovery.ts`: `routes/projects.ts`
+  and `projectStatus.ts` each carried a copy, which is both how a guard like this ends up on one
+  path only and how `retryAvailable` can promise a retry that would queue nothing — the status read
+  and the resume write have to give the same answer about the same row.
+  For operations: a repair that *fails* does block the next one, but only for the rest of its window
+  — the window is wall-clock aligned rather than measured from the attempt, so the wait is anywhere
+  from a moment to five minutes and never longer. That expiry is the whole difference from the
+  content-revision key it replaced, which went terminal and stayed there. The symptom to look for is
+  a `GenerationJob` whose `dedupeKey` contains `repair-` sitting FAILED while the project's exports
+  are missing; it re-attempts on its own. Note the app gives up watching first: its budget is two
+  minutes against a window of up to five, so a book can stop saying "preparing" before the next
+  repair is even queued. The two numbers are deliberately unmatched — the watch bounds pointless
+  polling, the window bounds pointless compiles, and a repair that keeps failing is a broken book
+  that polling faster would not fix.
+  **That budget belongs to the book, not to the screen, or it is no budget at all.** Watching a
+  settled book with no PDF is what *queues* the repair, so the watch is a cost: every five-minute
+  window a watcher is still awake for buys another whole Chromium compile of the same manuscript.
+  `projectStatusProvider` is `autoDispose` and is rebuilt constantly — the saved-export card
+  invalidates it every four seconds, the reader on open, the book screen on every edit — so a budget
+  owned by that stream was handed back in full several times a minute, and its three-second poll ran
+  for as long as a screen was open. `exportRepairWatchProvider`
+  (`apps/mobile/lib/features/projects/data/export_repair_watch.dart`) holds one
+  `ExportRepairWatchBudget` per project *outside* it, deliberately not `autoDispose`, and meters only
+  the settled-with-no-PDF case: two minutes of watching by wall clock, then five minutes of standing
+  down, so one "preparing" episode is one repair. Wall clock rather than a poll count, because the
+  stream half is metered by the same budget and an SSE connection a proxy never closes ticks far
+  faster than the poll. Standing down never blanks a screen — a rebuilt stream still reads and yields
+  a status, it just does not start a poll loop — a live book is never metered, and a PDF that was on
+  disk a moment ago and is gone now is an edit's rebuild, which gets the whole allowance however the
+  last wait ended. The saved-export card keeps its own allowance because it also watches the EPUB,
+  which the shared watch deliberately does not. The operator routes still render inline, through a single-flight
+  helper keyed `projectId:format:contentRevision`: the console downloads via a plain link where a
+  404 would just break the download. **That inline render publishes exactly the way a compile
+  does**, and for the same reason — it runs for minutes against a project that is COMPLETE, which
+  is the one state in which a reader may edit. The revision is in the key because an edit deletes
+  the compiled files, so the request arriving a moment later found them missing for a *new* reason
+  and must not be answered from the render already in flight; and the render goes to
+  `.book-<uuid>.{pdf,epub}` and is renamed onto `book.pdf` only inside `publishRebuiltExport`'s
+  transaction, which compare-and-sets `contentRevision` and requires COMPLETE or REVIEW_REQUIRED —
+  the same two statuses a detached compile may publish over, refused for the same reason
+  (`applyBookEdit` holds the pre-edit revision for as long as it is rewriting pages). Writing
+  straight to `book.pdf` meant a render that started before an edit could land *after* the worker's
+  recompile published and leave the book sitting finished with its pre-edit PDF until some later
+  revision bump rebuilt it. A render that loses the claim publishes nothing and answers with
+  whatever is on disk now, falling back to its own bytes — a stale download beats a broken link,
+  but it may not become the book. It also passes `projectId` to `generatePdf`, so the renderer's
+  file access is scoped to that book's own illustrations as it is in the worker.
+- **A download says which compile answered it, because the URL cannot.** Every compile of a book is
+  published over `book.pdf`, so the availability descriptor the app fetched with is a claim about
+  what that URL held when the status was read — and the download most likely to be answered by a
+  *newer* compile is the retry after an `EXPORT_NOT_READY`, which is the app being told a compile is
+  landing. The app files those bytes under a `contentRevision` three times over (the reader cache,
+  the "your edits are in" banner, every highlight and bookmark it stamps), so a stale descriptor made
+  all three agree on the wrong book. Sizes cannot separate them: a presentation reprint, a re-applied
+  edit and an undo all produce a book of exactly the same length. So every publication records the
+  sha256 of what it installed beside it (`book.pdf.provenance.json`), under the revision it claimed
+  — `publishCompiledExports` in the worker and `publishRebuiltExport` in the API, both inside the
+  transaction that already holds the row lock, after the renames, and never fatally: a book on disk
+  must not be failed and refunded because a hundred bytes of metadata could not be written.
+  `readPublishedExport` (`packages/core/src/generation/exportProvenance.ts`) then resolves the bytes
+  it read against that record and the mobile route answers with `X-Export-Provenance` and
+  `X-Export-Content-Revision`. **The record is read on both sides of the file read**, because a
+  publication landing in between moves the file and the record independently as far as the reader is
+  concerned; a digest identifies one file, so either read may confirm, and only when neither does is
+  the read tried again. **Nothing consults the project row to label bytes** — a row read after a file
+  read describes whatever compile is current now, which is the same mistake one layer down, and an
+  edit moves the row minutes before the compile that publishes for it. The three states are not
+  interchangeable on the client: `exact` is a fact, `unknown` (no record — a file published before
+  any of this) leaves the descriptor standing in exactly as it did before, and `mismatch` (a record
+  describing other bytes, i.e. the file is being replaced under the read) permits no guess at all —
+  `CachedExport.revision` is null, no manifest is written, and the next open fetches again. Only an
+  exact revision may re-anchor markup (`CachedExport.exactRevision`), because that pass rewrites
+  every mark's revision at once; a stand-in there would have the next pass trust marks it should
+  re-search. And a cache entry *newer* than the descriptor is not stale, which is what a download
+  answered by an unseen compile leaves behind — treating it as a miss re-downloads the book the
+  reader is holding and announces an edit they already have.
+- **A compile publishes by claiming the revision it compiled, and it renders somewhere else until
+  it has.** `staleGenerationJobReason` refuses to *start* a compile whose `contentRevision` has
+  moved, but that is one instant and the work behind it is minutes of QA, reader chapters and a
+  Chromium render. A repair runs against a project that is COMPLETE, which is exactly the state in
+  which a reader may edit — and an edit bumps the revision, deletes the compiled files, sets
+  EDITING and queues its own recompile. The stale compile used to write `book.md`/`book.pdf`/
+  `book.epub` over the fresh ones and then set COMPLETE *unconditionally*, so a book could sit
+  finished with the pre-edit PDF for good. `generation/exportPublication.ts` renders to
+  `.book-<uuid>.{md,pdf,epub}` beside the real names and publishes only after
+  `project.updateMany({ where: { id, contentRevision } })` matches a row: the claim is first, so a
+  loser publishes nothing rather than publishing a book somebody has since changed. Standing down
+  is not a failure — the job still COMPLETEs, because failing it would refund a book that is fine —
+  and it cannot strand the project, because **every** `contentRevision` bump queues its own compile
+  (`queueUserEditExportRecompile`, `applyBookEdit`, `continueBook`), which is the invariant that
+  makes declining the status write safe — and the standing-down compile is exactly what used to
+  break it. `maybeEnqueueCompile` refuses to queue while any `COMPILE_EXPORT` is QUEUED or ACTIVE,
+  and a repair in flight *is* one, so a chat edit landing on top of one deleted the exports, bumped
+  the revision, queued nothing, and left the book EDITING for good: no sweep looks at EDITING
+  (`reconcileStrandedGeneration` only takes GENERATING) and `ensureExportRepairQueued` only at
+  COMPLETE and REVIEW_REQUIRED, so the auto-repair lane could not reach the state its own repair
+  had caused. That count is now revision-aware — a compile carrying a superseded revision will
+  publish nothing, so it may not stand in for one that will — and `applyBookEdit` asks
+  `maybeEnqueueCompile` what it did, restoring COMPLETE on `"not-ready"` rather than trusting that
+  *something* was queued. Manual edits never had the hole: `queueUserEditExportRecompile` always
+  enqueues. Keep the scratch names per compile: two compiles for one
+  project overlapping is the whole case, so a shared name would have them rendering over each
+  other. A payload with no revision claims unconditionally, matching what
+  `staleGenerationTargetReason` does with a null.
+  **The revision is not the whole claim, because an edit moves the status first and the revision
+  last.** `applyBookEdit` sets EDITING before it rewrites a single page and increments only once
+  every page is saved; `continueBook` does the same across an appended chapter. For those minutes
+  the pre-edit revision is still the project's revision, so a repair compiled for it matched, wrote
+  COMPLETE over EDITING and told the reader a half-applied edit was finished — the app's edit
+  progress reads `project.status === "EDITING"`, so it retired mid-edit. A detached compile
+  therefore writes **no** status at all: `ownsProjectStatus` (the success-side twin of
+  `jobOwnsProjectLifecycle`) turns the claim into a lock-taking no-op whose `where` names the two
+  statuses a repair may find, COMPLETE and REVIEW_REQUIRED. That also settles its verdict: a repair
+  runs `skipFinalReview`, so its report is deterministic-only, and letting it speak could only ever
+  clear a REVIEW_REQUIRED that a full compile earned. Nothing is stranded by the silence — a repair
+  is queued only for a project already in one of those two statuses, so there is no state it was
+  the one to move out of.
+  **Every scratch name in that scheme is built in one module, and swept by age from the same one.**
+  A publication renders to `.book-<uuid>.{md,pdf,epub}`, parks each predecessor at
+  `.book-superseded-<uuid>.<ext>` while it moves in, and a PDF render writes `.book-render-<uuid>.html`
+  into the image store; every one of them is removed by a `finally`, which covers a thrown render, a
+  lost claim and a failed publication — and covers nothing at all when the process does not get to
+  run it. A SIGKILL, an OOM kill or an evicted container leaves the file for as long as the volume
+  lives, invisible until storage fills. `exportTempSweep.ts` (`packages/core`) both *names* them —
+  `pendingExportTempPath`, `supersededExportToken`, `renderDocumentTempPath`, used by
+  `exportPublication.ts`, `pdf.ts` and the API's inline rebuild — and collects them, because a writer
+  whose name drifts out of the sweep's pattern strands files nothing recognises and nothing fails.
+  The collection is **age-based only, never a startup wipe**: a rolling deploy runs two workers, the
+  API renders into the same project directories, and `make up` and `pnpm dev` share one storage
+  directory, so "this process just started, therefore nothing here is live" is false in every
+  deployment here. Quiet time is the only signal, which is why the minimum age is clamped up to
+  `EXPORT_TEMP_MIN_AGE_FLOOR_MS` whatever the config says and defaults to six hours against a window
+  that is really seconds — the file is written and published back to back. Nothing else is a
+  candidate: the patterns demand the prefix, the literal `randomUUID()` token shape and the writer's
+  extension, and the scan requires a regular file at both the dirent and an `lstat` and removes it
+  with `unlink`, so a symlink wearing a scratch name is skipped rather than followed. The timestamp
+  is read **twice**, on either side of a decision the whole directory scan could otherwise sit in,
+  and `ctime` counts alongside `mtime` because a writer can backdate one and not the other; ENOENT is
+  not an error but the other end of the race working. `startExportTempCleanup`
+  (`apps/worker/src/runtime/`) is the only thing that runs it — one collector reaches every orphan
+  because the volume is shared, and the sweep is age-based rather than ownership-based precisely so
+  it can clean up after the *other* process. It is bounded (an entry budget, a per-root cap and a
+  resume cursor) and single-flight, and `shutdown()` stops it **before** `worker.close()`: a scan
+  holds an open directory handle and has no job to finish, so it is cancelled through the signal it
+  checks between entries and awaited, rather than left running into `prisma.$disconnect()`.
+  **Staying silent about the status is only half of it; the report still has to be ignored on the
+  way out.** A repair writes its own `qualityReport` — deterministic checks alone, since
+  `skipFinalReview` asks no model anything — and both readers took the newest compile that had one,
+  so rebuilding a missing PDF erased every chapter-coherence and final-QA warning the book had
+  earned, along with the `affectedPageIndexes` the quality card's "Fix page N" button is built from.
+  Nothing brought them back: the next repair erased them again. **Who owns the verdict is a column,
+  not a scan.** `GenerationJob.ownsQualityVerdict` is written from type + payload where the row is
+  born — `jobOwnsQualityVerdict` in `packages/core/src/jobScope.ts`, applied in
+  `enqueueGenerationJob` and `enqueueWorkerJob` beside the `contentRevision` those two already
+  promote — and `loadProjectQualityReport` (`apps/api/src/mobile/qualityVerdict.ts`) is the one rule
+  both `projectStatus.ts` and `mobile/projectSerializers.ts` read through: newest owning compile
+  that *has* reported. That last clause closes the detail serializer's older habit of showing
+  "pending" for as long as any compile was in flight — the column is set at creation, so a queued
+  or running compile owns a verdict it has not written and must not blank the card.
+  It is a column because the two exclusions are payload flags and negating a JSON-path predicate in
+  SQL drops every row whose payload lacks the key — which is all of them but the flagged ones. So
+  both readers used to filter in JS over whatever window they held (eight compiles in the detail
+  serializer, twenty-five jobs *of any type* in the status builder), and job churn — a repair every
+  five minutes, an audiobook, a burst of image retries — pushed the owning compile out of reach.
+  The verdict then did not degrade, it vanished, because `normalizeProjectQuality` reads nothing as
+  `pending`. **The second non-owner is a presentation-only recompile**
+  (`PRESENTATION_ONLY_RECOMPILE`, set only by `applyPresentationPreference`): the Sources list and
+  the chapter-heading style change how the book is printed, not one character of `Page.markdown`, so
+  their deterministic-only report is a *worse* statement about the same manuscript rather than a
+  newer one. `skipFinalReview` cannot make that call — an edit's own recompile sets it too, and a
+  manual edit, an undo or `applyBookEdit` really did rewrite prose, so those keep the verdict on
+  purpose: findings about text the reader just replaced may not outlive it, and nothing runs full QA
+  on a finished book again. Migration `000040_quality_verdict_owner` backfills the column from the
+  payloads already stored; presentation reprints predate their flag and stay owners, so no
+  historical row changes meaning. The one issue that survives all this is `EPUB_EXPORT_FAILED`, and it must:
+  it describes a *file*, the repair that rebuilds it is exactly the detached compile nobody is
+  listening to, and a book whose EPUB is now on disk may not keep saying the export failed. So
+  `qualityWithExportsOnDisk` drops it against `serializeExportSet`'s availability — disk beats a
+  historical job row — and nothing else, because every other issue is about prose no later compile
+  of the same manuscript can have fixed.
 - **Two things decide whether a cover design reads, and neither is visible in the code.** Each
   template darkens the half its text panel sits in — science and business blacken the *top*,
   kids/fiction/romance the *bottom* — so a motif that centres its subject where the type goes is

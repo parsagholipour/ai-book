@@ -150,7 +150,14 @@ export function dbModuleMock() {
     canClaimPlanRevisionRetry: vi.fn(() => ({ eligible: true, staleActive: false, reason: null })),
     planRevisionRetryDelayMs: vi.fn(() => 30_000),
     retryRequestKey: vi.fn((id: string, attempt: number) => `plan-revision-retry:${id}:${attempt}`),
-    Prisma: { JsonNull: null, PrismaClientKnownRequestError: MockPrismaKnownRequestError },
+    // `DbNull` is a sentinel the quality-verdict query passes through to
+    // Prisma; the mocks only ever compare the `where` it lands in, so any
+    // stable, distinguishable value stands in for it.
+    Prisma: {
+      JsonNull: null,
+      DbNull: "DbNull",
+      PrismaClientKnownRequestError: MockPrismaKnownRequestError
+    },
     prisma: mockPrisma
   };
 }

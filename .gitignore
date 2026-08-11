@@ -18,6 +18,7 @@ storage/audio/**
 storage/attachments/**
 output/imagegen/
 output/cover-designs/
+output/book-fixtures/
 apps/worker/storage/books/**
 apps/worker/storage/images/**
 !storage/books/.gitkeep

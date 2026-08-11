@@ -10,7 +10,10 @@ shutdown() {
   fi
 }
 
-trap shutdown INT TERM
+# HUP as well as INT/TERM: this shell is PID 1's only child, and both node
+# processes hold a pooled Chromium that only their own graceful shutdown closes.
+# An untrapped hangup kills the shell without ever signalling them.
+trap shutdown INT TERM HUP
 
 pnpm db:deploy
 pnpm db:seed

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { vi } from "vitest";
 import { hashToken } from "../../mobileAuth.js";
+import { DETACHED_FROM_PROJECT_LIFECYCLE } from "@book-maker/core";
 import type { enqueueGenerationJob } from "../../queue.js";
 import type { CreditBalance } from "@book-maker/db/billing";
 import {
@@ -142,6 +143,12 @@ export function resetMobileHarness(): void {
   mockProjectStatus.buildProjectStatus.mockResolvedValue(statusRecord());
   mockPrisma.generationJob.count.mockResolvedValue(0);
   mockPrisma.generationJob.findUnique.mockResolvedValue(null);
+  mockPrisma.generationJob.findMany.mockResolvedValue([]);
+  // The project detail serializer asks for the compile that owns the book's
+  // quality verdict. No compile has reported in most suites, and a bare
+  // vi.fn() resolving undefined reads as "no owner" too — this only makes that
+  // deliberate.
+  mockPrisma.generationJob.findFirst.mockResolvedValue(null);
   mockPrisma.mobileCreationDraft.findUnique.mockResolvedValue({ revision: 3 });
   mockPrisma.mobileCreationDraft.update.mockResolvedValue(creationDraftRecord({ revision: 2 }));
   mockPrisma.creditLedgerEntry.findMany.mockResolvedValue([]);
@@ -800,6 +807,21 @@ export function jobRecord(overrides: Partial<QueuedGenerationJobRecord> = {}): Q
     updatedAt: new Date("2026-06-15T12:00:00.000Z"),
     ...overrides
   } as QueuedGenerationJobRecord;
+}
+
+/**
+ * Rows as `hasOpenProjectWork` reads them — one query over this project's
+ * QUEUED/ACTIVE jobs selecting nothing but the payload, so a snapshot of these
+ * fed to `mockPrisma.generationJob.findMany` is what makes a project busy. The
+ * repair is the one open job that does not: merely reading a settled book whose
+ * PDF is missing queues one.
+ */
+export function openJobRow(payload: Record<string, unknown> = { operationId: "operation-open" }) {
+  return { payload };
+}
+
+export function detachedRepairJobRow() {
+  return { payload: { planId: "plan-1", skipFinalReview: true, [DETACHED_FROM_PROJECT_LIFECYCLE]: true } };
 }
 
 export function statusRecord(overrides: Record<string, any> = {}) {

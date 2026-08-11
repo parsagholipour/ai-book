@@ -216,7 +216,7 @@ importers:
         specifier: ^18.0.5
         version: 18.0.5
       md-to-pdf:
-        specifier: ^5.2.5
+        specifier: 5.2.5
         version: 5.2.5(typescript@5.9.3)
       openai:
         specifier: ^6.9.1

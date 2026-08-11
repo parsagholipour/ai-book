@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { loadConfig } from "@book-maker/core";
+import { browserPoolStatus, closeSharedBrowser, loadConfig } from "@book-maker/core";
 import { loadCreditPricing, prisma } from "@book-maker/db";
 import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
@@ -181,12 +181,43 @@ const shutdown = async () => {
   clearInterval(pricingRefreshTimer);
   clearInterval(queueReconcileTimer);
   await app.close();
+  // The lazy export rebuild renders in this process too, so the API holds a
+  // pooled Chromium of its own — budget two browsers in production, one per
+  // process.
+  await closeSharedBrowser();
+  // Bounded, so it can be awaited in a signal handler — which means it can also
+  // give up. A browser that answered neither `close()` nor SIGKILL outlives this
+  // process, and the only place that is knowable is here.
+  const stranded = browserPoolStatus().abandonedProcesses;
+  if (stranded.length > 0) {
+    app.log.error({ stranded }, "Chromium processes survived shutdown");
+  }
   await closeQueue();
   await prisma.$disconnect();
 };
 
-process.on("SIGINT", () => void shutdown());
-process.on("SIGTERM", () => void shutdown());
+/**
+ * SIGHUP belongs here with the other two. Puppeteer's own signal handlers are
+ * off (`browserPool.ts`) because they race this shutdown, and its unconditional
+ * `process.on("exit")` hook only runs on a *normal* exit — so a signal Node does
+ * not trap kills this process outright and leaves the pooled Chromium running,
+ * reparented to init. A terminal hangup, an `ssh` disconnect and systemd's
+ * reload all send it.
+ */
+const TERMINATION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+let shuttingDown = false;
+for (const signal of TERMINATION_SIGNALS) {
+  process.on(signal, () => {
+    // A hangup is routinely followed by a TERM from the same supervisor; the
+    // second one must not start a concurrent close of the same resources.
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    void shutdown();
+  });
+}
 
 await app.listen({ host: config.API_HOST, port: config.API_PORT });
 

@@ -4,6 +4,7 @@ import { isStopRequestedError, type ExportPageForRepair, type IndexedPageDraft }
 import { cleanOptionalText } from "../runtime/serialization.js";
 import {
   chapterBriefSchema,
+  exportProvenancePaths,
   normalizePlanPageTargets,
   resolveBookGenerationStrategy,
   reviewPageDraftLocally,
@@ -297,11 +298,22 @@ export function imageGenerationMetadata(image: GeneratedImageBytes): Record<stri
   return image.fallback ? { fallback: image.fallback } : {};
 }
 
+/**
+ * Drops the compiled book so downloads report "preparing" until the recompile
+ * this edit queued lands.
+ *
+ * The provenance records go with the files: they identify bytes rather than a
+ * revision, so one left behind could only describe a file that is no longer
+ * there. Harmless either way — the next publication overwrites its own, and a
+ * digest matching nothing is reported as matching nothing — but a record with
+ * no file has nothing to say.
+ */
 export async function invalidateProjectExports(projectId: string): Promise<void> {
   const projectDir = join(config.BOOK_STORAGE_DIR, projectId);
   await Promise.all(
-    ["book.md", "README.md", "book.pdf", "book.epub"].map((filename) =>
-      rm(join(projectDir, filename), { force: true }).catch(() => undefined)
-    )
+    [
+      ...["book.md", "README.md", "book.pdf", "book.epub"].map((filename) => join(projectDir, filename)),
+      ...exportProvenancePaths(projectDir)
+    ].map((path) => rm(path, { force: true }).catch(() => undefined))
   );
 }

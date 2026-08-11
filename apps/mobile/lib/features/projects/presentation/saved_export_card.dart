@@ -22,9 +22,61 @@ class SavedExportCard extends ConsumerStatefulWidget {
   ConsumerState<SavedExportCard> createState() => _SavedExportCardState();
 }
 
+/// How long the card keeps re-checking for a rebuilt export, and when that
+/// allowance starts over.
+///
+/// The allowance belongs to one *wait*, not to the card. It exists only to stop
+/// a poll for a file that is never coming — the EPUB is best-effort and a
+/// compile finishes without it — so it has to start over whenever a new wait
+/// begins: when everything has landed, and when a file that was there goes
+/// missing. A lifetime counter looks equivalent and is not: a book whose EPUB
+/// never compiles spends it once and then never polls again, so the next edit,
+/// which deletes the PDF too, leaves the card "preparing" until the user leaves
+/// the screen. It also drained across ordinary edits, a few polls at a time.
+@visibleForTesting
+class ExportRefreshBudget {
+  ExportRefreshBudget({this.maxAttempts = 30});
+
+  /// Two minutes at the card's four-second interval.
+  final int maxAttempts;
+
+  int _attempts = 0;
+  bool? _lastPdfAvailable;
+  bool? _lastEpubAvailable;
+
+  int get attempts => _attempts;
+
+  /// Whether to be polling, given the latest status. Call once per status seen —
+  /// it is what notices a file disappearing.
+  bool shouldPoll({
+    required bool isSettled,
+    required bool pdfAvailable,
+    required bool epubAvailable,
+  }) {
+    final rebuildStarted =
+        (_lastPdfAvailable == true && !pdfAvailable) ||
+        (_lastEpubAvailable == true && !epubAvailable);
+    _lastPdfAvailable = pdfAvailable;
+    _lastEpubAvailable = epubAvailable;
+
+    if (!isSettled || (pdfAvailable && epubAvailable)) {
+      _attempts = 0;
+      return false;
+    }
+    if (rebuildStarted) {
+      _attempts = 0;
+    }
+    return _attempts < maxAttempts;
+  }
+
+  /// Counts one poll, and reports whether that was the last one.
+  bool recordAttempt() => ++_attempts >= maxAttempts;
+}
+
 class _SavedExportCardState extends ConsumerState<SavedExportCard> {
   String? _busyAction;
   Timer? _exportRefreshTimer;
+  final ExportRefreshBudget _exportRefresh = ExportRefreshBudget();
 
   String get _projectId => widget.message.projectId;
 
@@ -34,23 +86,43 @@ class _SavedExportCardState extends ConsumerState<SavedExportCard> {
     super.dispose();
   }
 
-  /// The status stream ends once the project settles, so if the exports are
-  /// still being rebuilt at that point nothing would ever re-check them.
-  /// Poll until a file shows up so the buttons flip to "Open PDF" on their own.
+  /// The SSE connection ends once the project settles. The shared provider
+  /// keeps polling a missing PDF, but EPUB is best-effort and intentionally
+  /// does not hold every project listener open. This bounded card refresh keeps
+  /// both buttons current without polling a failed EPUB forever.
+  ///
+  /// Either format missing is enough to keep polling. Requiring *both* meant a
+  /// book whose PDF alone was still rebuilding — the ordinary case, since the
+  /// compile writes the PDF and the EPUB in separate steps — sat on a button
+  /// that never recovered.
   void _ensureExportRefresh(MobileProjectStatus? status) {
-    final waitingForExports =
-        status != null &&
-        status.isComplete &&
-        !status.exports.pdf.available &&
-        !status.exports.epub.available;
-    if (waitingForExports && _exportRefreshTimer == null) {
-      _exportRefreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-        ref.invalidate(projectStatusProvider(_projectId));
-      });
-    } else if (!waitingForExports && _exportRefreshTimer != null) {
-      _exportRefreshTimer!.cancel();
-      _exportRefreshTimer = null;
+    // Every poll invalidates the provider, which drops it to loading — so a null
+    // status is this card's own refresh in flight, not a change of state.
+    // Feeding it to the budget would read as "both files just vanished" and
+    // restart the allowance on every cycle, leaving the poll unbounded.
+    if (status == null) {
+      return;
     }
+    final shouldPoll = _exportRefresh.shouldPoll(
+      isSettled: status.isSettled,
+      pdfAvailable: status.exports.pdf.available,
+      epubAvailable: status.exports.epub.available,
+    );
+    if (!shouldPoll) {
+      _stopExportRefresh();
+      return;
+    }
+    _exportRefreshTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
+      if (_exportRefresh.recordAttempt()) {
+        _stopExportRefresh();
+      }
+      ref.invalidate(projectStatusProvider(_projectId));
+    });
+  }
+
+  void _stopExportRefresh() {
+    _exportRefreshTimer?.cancel();
+    _exportRefreshTimer = null;
   }
 
   Future<void> _download(MobileExportAvailability export) async {

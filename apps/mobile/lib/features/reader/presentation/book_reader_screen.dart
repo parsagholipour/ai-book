@@ -124,11 +124,32 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     setState(() => _paywallOpen = false);
     // A download that failed for want of credits is worth one more attempt now
     // the reader has been to the shop: leaving it on its error card would make
-    // a purchase look like it changed nothing.
+    // a purchase look like it changed nothing. Against the book's current state
+    // rather than this one — a trip through the store is long enough for the
+    // unlock, the balance and the compile behind that URL to have all moved.
     final loader = _loader;
     if (loader != null && loader.stage == ReaderLoadStage.failed) {
-      unawaited(loader.load(export));
+      unawaited(loader.load(export, refresh: _refreshExport));
     }
+  }
+
+  /// Re-reads the book's state and answers with the export it is now offering.
+  ///
+  /// The reader's retry comes through here rather than reusing the descriptor
+  /// this screen was built with: a download only fails once the book has moved
+  /// underneath it, so the descriptor that failed is the one least likely to
+  /// still describe what is behind that URL. See `ReaderView._retryDownload`.
+  ///
+  /// Invalidating is a *refresh* while the chat still listens — Riverpod hands
+  /// the previous value back until the new one lands — so the answer is taken
+  /// from the future rather than from whatever `build` sees next. Failures are
+  /// left to the caller, which falls back to the descriptor it already had.
+  Future<MobileExportAvailability?> _refreshExport() async {
+    if (!mounted) return null;
+    final provider = projectStatusProvider(widget.projectId);
+    ref.invalidate(provider);
+    final status = await ref.read(provider.future);
+    return status.exports.pdf;
   }
 
   @override
@@ -177,6 +198,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           icon: Icons.menu_book_outlined,
           title: 'Still being written',
           message: projectExportStateText(export, credits),
+          actionLabel: 'Try again',
+          onAction: () =>
+              ref.invalidate(projectStatusProvider(widget.projectId)),
         ),
       );
     }
@@ -208,6 +232,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       status: status,
       openAtBookPage: widget.openAtBookPage,
       onOpenPaywall: () => _offerUnlock(export),
+      onRefreshExport: _refreshExport,
     );
   }
 }

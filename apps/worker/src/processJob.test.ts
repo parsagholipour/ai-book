@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   maybeCompileAfterCompletedJob: vi.fn(),
   runLoggerAppend: vi.fn(),
   planBook: vi.fn(),
+  compileExport: vi.fn(),
   generatePage: vi.fn()
 }));
 
@@ -42,7 +43,7 @@ vi.mock("./providers/runLogging.js", () => ({
 }));
 vi.mock("./handlers/applyBookEdit.js", () => ({ applyBookEdit: vi.fn() }));
 vi.mock("./handlers/characters.js", () => ({ buildCharacterPersona: vi.fn(), prepareCharacterCandidates: vi.fn() }));
-vi.mock("./handlers/compileExport.js", () => ({ compileExport: vi.fn() }));
+vi.mock("./handlers/compileExport.js", () => ({ compileExport: mocks.compileExport }));
 vi.mock("./handlers/continueBook.js", () => ({ continueBook: vi.fn() }));
 vi.mock("./handlers/generateAudiobook.js", () => ({ generateAudiobook: vi.fn() }));
 vi.mock("./handlers/generateBook.js", () => ({ generateBook: vi.fn() }));
@@ -85,6 +86,7 @@ beforeEach(() => {
     mocks.order.push("handler");
   });
   mocks.planBook.mockResolvedValue(undefined);
+  mocks.compileExport.mockResolvedValue({});
   mocks.maybeCompileAfterCompletedJob.mockResolvedValue(undefined);
 });
 
@@ -107,7 +109,7 @@ describe("processWorkerJob ordering", () => {
     expect(mocks.generatePage).not.toHaveBeenCalled();
   });
 
-  it("replays only the fan-in follow-up when the row is already COMPLETED", async () => {
+  it("replays success settlement and fan-in when the row is already COMPLETED", async () => {
     // A stalled delivery redelivered a finished job: the work must not run
     // twice, but the compile trigger is idempotent and may be what a crash
     // between markCompleted and the fan-in lost.
@@ -116,7 +118,7 @@ describe("processWorkerJob ordering", () => {
     await processWorkerJob(job("generate-page"));
 
     expect(mocks.generatePage).not.toHaveBeenCalled();
-    expect(mocks.markCompleted).not.toHaveBeenCalled();
+    expect(mocks.markCompleted).toHaveBeenCalled();
     expect(mocks.maybeCompileAfterCompletedJob).toHaveBeenCalled();
   });
 });
@@ -151,6 +153,51 @@ describe("processWorkerJob completion", () => {
     await processWorkerJob(job("plan-book"));
 
     expect(afterJobCompleted).toHaveBeenCalled();
+  });
+
+  it("keeps a published export successful when character fan-out enqueue fails", async () => {
+    const enqueueCharacters = vi.fn().mockRejectedValue(new Error("queue unavailable"));
+    mocks.compileExport.mockResolvedValue({ afterJobCompleted: enqueueCharacters });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      processWorkerJob(job("compile-export", { attemptId: "attempt-1", operationId: "operation-1" }))
+    ).resolves.toBeUndefined();
+
+    expect(mocks.markCompleted).toHaveBeenCalled();
+    expect(enqueueCharacters).toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.follow_up_failed",
+      expect.objectContaining({ error: expect.anything() })
+    );
+    logged.mockRestore();
+  });
+
+  it("keeps Bull successful when completion bookkeeping throws after durable export publication", async () => {
+    mocks.compileExport.mockResolvedValue({ durableCompletionCommitted: true });
+    mocks.markCompleted.mockRejectedValue(new Error("completion write unavailable"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      processWorkerJob(job("compile-export", { attemptId: "attempt-1", operationId: "operation-1" }))
+    ).resolves.toBeUndefined();
+
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.completion_bookkeeping_failed",
+      expect.objectContaining({ error: expect.anything() })
+    );
+    logged.mockRestore();
+  });
+
+  it("does not mask completion errors for a compile that did not durably publish", async () => {
+    mocks.compileExport.mockResolvedValue({});
+    mocks.markCompleted.mockRejectedValue(new Error("completion write unavailable"));
+
+    await expect(processWorkerJob(job("compile-export"))).rejects.toThrow("completion write unavailable");
+
+    expect(mocks.markFailed).toHaveBeenCalled();
   });
 });
 

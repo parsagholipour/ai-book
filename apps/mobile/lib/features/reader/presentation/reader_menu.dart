@@ -29,6 +29,8 @@ Future<ReaderMenuAction?> showReaderMenu({
   required bool bookmarked,
   required bool immersive,
   required int markupCount,
+  bool bookmarkingEnabled = true,
+  bool bookActionsEnabled = true,
 }) async {
   final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
   if (overlay is! RenderBox) return null;
@@ -56,11 +58,13 @@ Future<ReaderMenuAction?> showReaderMenu({
         value: ReaderMenuAction.callCharacter,
         icon: Icons.record_voice_over_outlined,
         label: 'Call a character',
+        enabled: bookActionsEnabled,
       ),
       _item(
         value: ReaderMenuAction.toggleBookmark,
         icon: bookmarked ? Icons.bookmark : Icons.bookmark_outline,
         label: bookmarked ? 'Remove bookmark' : 'Bookmark this page',
+        enabled: bookmarkingEnabled,
       ),
       _item(
         value: ReaderMenuAction.savedPlaces,

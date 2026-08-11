@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   bookGenerationStrategies,
@@ -36,10 +36,14 @@ import {
   type VoiceChatProviderId
 } from "@book-maker/core";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
 import { jobsWithoutRefundedCharges } from "../resumeGuards.js";
+// One implementation of "can this failed row be resumed", shared with the
+// mobile retry route. It used to be copied here, and the copies drifted: the
+// guard that keeps a detached export repair out of a resume was added to one.
+import { canRecoverGenerationJob, isPlanningRecoveryJob, recoveryPayload } from "../mobile/generationRecovery.js";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
 import { deleteProjectStorage } from "../projectStorage.js";
@@ -51,7 +55,8 @@ import {
   stopProjectGenerationJobs,
   type GenerationJobType
 } from "../queue.js";
-import { resolveProjectActor, sendProjectNotFound, type ProjectActor } from "../requestAuth.js";
+import { requireOperatorActor, type ProjectActor } from "../requestAuth.js";
+import { registerProjectAssetRoutes } from "./projectAssets.js";
 import { ownedProjectWhere, registerProjectExportRoutes } from "./projectExports.js";
 import { loadVoiceBookCast } from "../voiceBookContext.js";
 
@@ -82,10 +87,6 @@ import {
 } from "./projectVoiceSupport.js";
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
-const assetParamsSchema = z.object({
-  projectId: z.string().min(1),
-  filename: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/)
-});
 const planMessageParamsSchema = z.object({ id: z.string().min(1) });
 const voiceCharacterParamsSchema = z.object({ id: z.string().min(1), characterId: z.string().min(1) });
 const voiceCharacterIdParamsSchema = z.object({ characterId: z.string().min(1) });
@@ -182,24 +183,6 @@ const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLA
 const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
 const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
 const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
-const MIME_BY_EXT: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".webp": "image/webp",
-  ".gif": "image/gif",
-  ".svg": "image/svg+xml",
-  ".wav": "audio/wav",
-  ".mp3": "audio/mpeg",
-  ".m4a": "audio/mp4",
-  ".ogg": "audio/ogg"
-};
-type ResumeContext = {
-  currentPlanId: string | null;
-  currentPlanCreatedAt: Date | null;
-  existingPages: number;
-  pageIds: Set<string>;
-};
 
 
 export const projectRoutes: FastifyPluginAsync = async (fastify) => {
@@ -208,25 +191,9 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/health", async () => ({ ok: true, mockAi: appConfig.MOCK_AI }));
 
-  fastify.get("/assets/images/:projectId/:filename", async (request, reply) => {
-    const { projectId, filename } = assetParamsSchema.parse(request.params);
-    return sendOwnedProjectAsset(request, reply, {
-      projectId,
-      filename,
-      storageDir: appConfig.IMAGE_STORAGE_DIR,
-      missingLabel: "Image not found"
-    });
-  });
-
-  fastify.get("/assets/voice/:projectId/:filename", async (request, reply) => {
-    const { projectId, filename } = assetParamsSchema.parse(request.params);
-    return sendOwnedProjectAsset(request, reply, {
-      projectId,
-      filename,
-      storageDir: appConfig.VOICE_STORAGE_DIR,
-      missingLabel: "Voice file not found"
-    });
-  });
+  // The only routes here a mobile bearer reaches, which is why they live in
+  // their own module: everything below takes an operator.
+  registerProjectAssetRoutes(fastify, appConfig);
 
   fastify.get("/api/voice/rtc-config", async () => resolveVoiceRtcConfig(appConfig));
 
@@ -268,7 +235,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   }));
 
   fastify.get("/api/templates", async (request, reply) => {
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -276,7 +243,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.get("/api/projects", async (request, reply) => {
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -316,7 +283,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -350,7 +317,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.post("/api/projects", async (request, reply) => {
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -389,7 +356,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/plan", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -432,7 +399,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/plans/:id/messages", async (request, reply) => {
     const { id } = planMessageParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -493,7 +460,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/plans/:id/approve", async (request, reply) => {
     const { id } = planMessageParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -548,7 +515,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/cover", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -586,7 +553,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/resume", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -609,7 +576,6 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const resumeContext = {
       currentPlanId: project.currentPlanId,
       currentPlanCreatedAt: project.currentPlan?.createdAt ?? null,
-      existingPages: pages.length,
       pageIds: new Set(pages.map((page) => page.id))
     };
     // Refunded rows recover through the mobile paid-retry route, never a free
@@ -666,7 +632,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/pages/:pageId/retry", async (request, reply) => {
     const { id, pageId } = z.object({ id: z.string().min(1), pageId: z.string().min(1) }).parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -707,7 +673,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/stop", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -722,7 +688,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.delete("/api/projects/:id", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -751,7 +717,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/status", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -768,7 +734,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/voice-characters", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -809,7 +775,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-characters/:characterId/approve", async (request, reply) => {
     const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -860,7 +826,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-characters/:characterId/reject", async (request, reply) => {
     const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -879,7 +845,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.patch("/api/projects/:id/voice-characters/:characterId/voice-profile", async (request, reply) => {
     const { id, characterId } = voiceCharacterParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -912,7 +878,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/voice-characters/:characterId/calls", async (request, reply) => {
     const { characterId } = voiceCharacterIdParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -979,7 +945,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-rooms/sessions", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -1096,7 +1062,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/voice-conversations", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -1114,7 +1080,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/projects/:id/voice-conversations", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -1221,7 +1187,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/api/voice-characters/:characterId/call-events", async (request, reply) => {
     const { characterId } = voiceCharacterIdParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -1260,7 +1226,7 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/api/projects/:id/events", async (request, reply) => {
     const { id } = idParamsSchema.parse(request.params);
-    const actor = await resolveProjectActor(request, reply);
+    const actor = await requireOperatorActor(request, reply);
     if (!actor) {
       return;
     }
@@ -1355,42 +1321,6 @@ function ownedVoiceCharacterWhere(characterId: string, actor: ProjectActor): Pri
   return { id: characterId, project: { userId: actor.userId } };
 }
 
-async function sendOwnedProjectAsset(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: {
-    projectId: string;
-    filename: string;
-    storageDir: string;
-    missingLabel: string;
-  }
-) {
-  const actor = await resolveProjectActor(request, reply);
-  if (!actor) {
-    return;
-  }
-  const project = await prisma.project.findFirst({
-    where: ownedProjectWhere(options.projectId, actor),
-    select: { id: true }
-  });
-  if (!project) {
-    return sendProjectNotFound(reply, options.missingLabel);
-  }
-
-  const filePath = join(options.storageDir, options.projectId, options.filename);
-  try {
-    const file = await readFile(filePath);
-    reply.type(mimeTypeForPath(filePath));
-    reply.header("Cache-Control", "private, max-age=300");
-    return file;
-  } catch {
-    return sendProjectNotFound(reply, options.missingLabel);
-  }
-}
-
-function mimeTypeForPath(filePath: string): string {
-  return MIME_BY_EXT[extname(filePath).toLowerCase()] ?? "application/octet-stream";
-}
 
 
 
@@ -1501,96 +1431,6 @@ function jsonPayload(input: CreateProjectInput): Record<string, unknown> {
 
 function jsonInputValue(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-function payloadPlanId(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return null;
-  }
-
-  const value = (payload as Record<string, unknown>).planId;
-  return typeof value === "string" ? value : null;
-}
-
-function canRecoverGenerationJob(
-  type: GenerationJobType,
-  payload: unknown,
-  context: ResumeContext,
-  jobCreatedAt: Date
-): boolean {
-  const payloadRecord = jsonPayloadToRecord(payload);
-
-  if (type === "PLAN_BOOK") {
-    return !context.currentPlanCreatedAt || jobCreatedAt > context.currentPlanCreatedAt;
-  }
-
-  if (type === "REVISE_PLAN") {
-    return (
-      typeof payloadRecord.planId === "string" &&
-      payloadRecord.planId === context.currentPlanId &&
-      typeof payloadRecord.message === "string" &&
-      payloadRecord.message.trim().length > 0
-    );
-  }
-
-  if (!context.currentPlanId) {
-    return false;
-  }
-
-  const planId = payloadPlanId(payloadRecord);
-  if (planId && planId !== context.currentPlanId) {
-    return false;
-  }
-
-  if (type === "GENERATE_BOOK") {
-    return planId === context.currentPlanId;
-  }
-
-  if (type === "GENERATE_PAGE") {
-    return isCurrentPagePayload(payloadRecord, context);
-  }
-
-  if (type === "GENERATE_IMAGE") {
-    return (
-      isCurrentCoverPayload(payloadRecord, context) ||
-      (isCurrentPagePayload(payloadRecord, context) && typeof payloadRecord.prompt === "string")
-    );
-  }
-
-  return type === "COMPILE_EXPORT" || type === "APPLY_BOOK_EDIT" || type === "REPLAN_BOOK";
-}
-
-function isPlanningRecoveryJob(type: GenerationJobType): boolean {
-  return type === "PLAN_BOOK" || type === "REVISE_PLAN";
-}
-
-function recoveryPayload(
-  type: GenerationJobType,
-  payload: unknown,
-  currentPlanId: string | null
-): Record<string, unknown> {
-  if (isPlanningRecoveryJob(type)) {
-    return jsonPayloadToRecord(payload);
-  }
-  if (!currentPlanId) {
-    return jsonPayloadToRecord(payload);
-  }
-  return payloadWithCurrentPlan(payload, currentPlanId);
-}
-
-function payloadWithCurrentPlan(payload: unknown, currentPlanId: string): Record<string, unknown> {
-  return {
-    ...jsonPayloadToRecord(payload),
-    planId: currentPlanId
-  };
-}
-
-function isCurrentPagePayload(payload: Record<string, unknown>, context: ResumeContext): boolean {
-  return typeof payload.pageId === "string" && context.pageIds.has(payload.pageId);
-}
-
-function isCurrentCoverPayload(payload: Record<string, unknown>, context: ResumeContext): boolean {
-  return payload.assetType === "COVER" && payloadPlanId(payload) === context.currentPlanId;
 }
 
 function cleanOptionalText(value: string | undefined): string | undefined {

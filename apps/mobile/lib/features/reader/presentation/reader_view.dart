@@ -14,13 +14,13 @@ import '../data/reader_repository.dart';
 import '../domain/reader_annotation.dart';
 import '../domain/reader_annotation_geometry.dart';
 import '../domain/reader_models.dart';
-import '../domain/reader_page_seek.dart';
 import '../domain/reader_settings.dart';
 import 'book_reader_screen.dart';
 import 'reader_annotation_controller.dart';
 import 'reader_annotation_overlays.dart';
 import 'reader_annotation_painter.dart';
 import 'reader_app_bar.dart';
+import 'reader_book_pages.dart';
 import 'reader_bottom_bar.dart';
 import 'reader_departures.dart';
 import 'reader_document_loader.dart';
@@ -38,6 +38,8 @@ import 'reader_selection_menu.dart';
 import 'reader_selection_resolver.dart';
 import 'reader_update_banner.dart';
 
+part 'reader_view_surface.dart';
+
 /// The reading surface: the rendered PDF plus everything layered over it.
 class ReaderView extends ConsumerStatefulWidget {
   const ReaderView({
@@ -46,6 +48,7 @@ class ReaderView extends ConsumerStatefulWidget {
     required this.loader,
     required this.status,
     required this.onOpenPaywall,
+    this.onRefreshExport,
     this.openAtBookPage,
     super.key,
   });
@@ -55,6 +58,14 @@ class ReaderView extends ConsumerStatefulWidget {
   final ReaderDocumentLoader loader;
   final MobileProjectStatus status;
   final VoidCallback onOpenPaywall;
+
+  /// Re-reads the book's state and answers with the export it is now offering,
+  /// or null when it cannot be read.
+  ///
+  /// Supplied by [BookReaderScreen], which owns the status this screen was
+  /// built from. See [_ReaderViewState._retryDownload] for why a retry may not
+  /// reuse the descriptor it already has.
+  final Future<MobileExportAvailability?> Function()? onRefreshExport;
 
   /// A `Page.index` the caller wants opened, resolved once the document is up.
   final int? openAtBookPage;
@@ -125,7 +136,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     _annotations = ReaderAnnotationController(
       repository: _repository,
       projectId: widget.projectId,
-      revision: widget.export.revision,
+      revision: _renderedExactRevision,
     )..addListener(_onAnnotationsChanged);
     _annotationsLoaded = _annotations.load();
     widget.loader.addListener(_onLoaderChanged);
@@ -159,6 +170,13 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   void _onLoaderChanged() {
+    final exactRevision = _renderedExactRevision;
+    if (exactRevision != _annotations.revision) {
+      // A replacement document cannot inherit an open pen/text tool from the
+      // previous one. Creation stays closed unless this PDF's exact revision is
+      // known; existing marks are re-anchored separately below.
+      _annotations.setDisplayedRevision(exactRevision);
+    }
     if (mounted) setState(() {});
   }
 
@@ -214,7 +232,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// reader never does. So the frame is requested explicitly.
   void _afterFrame(VoidCallback change) {
     if (!mounted) return;
-    if (SchedulerBinding.instance.schedulerPhase != SchedulerPhase.persistentCallbacks) {
+    if (SchedulerBinding.instance.schedulerPhase !=
+        SchedulerPhase.persistentCallbacks) {
       setState(change);
       return;
     }
@@ -259,31 +278,20 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// the reader is simply left where it already was.
   Future<void> _seekToRequestedBookPage(PdfDocument document) async {
     final target = widget.openAtBookPage;
-    if (target == null || identical(_seekedFor, document)) return;
-    _seekedFor = document;
-    try {
-      final locator = await _repository.pageLocator(
-        projectId: widget.projectId,
-        revision: widget.export.revision,
-      );
-      final pdfPage = await findPdfPageForBookPage(
-        bookPageIndex: target,
-        pdfPageCount: document.pages.length,
-        locator: locator,
-        loadPageText: (pageNumber) async {
-          try {
-            final page = document.pages[pageNumber - 1];
-            return (await page.loadStructuredText()).fullText;
-          } catch (_) {
-            return null;
-          }
-        },
-      );
-      if (pdfPage == null || !mounted) return;
-      await _goToPage(pdfPage);
-    } catch (_) {
-      // The book's text could not be loaded or matched. The reader still opens.
+    final revision = _mappingRevision;
+    if (target == null || revision == null || identical(_seekedFor, document)) {
+      return;
     }
+    _seekedFor = document;
+    final pdfPage = await readerPdfPageForBookPage(
+      document: document,
+      repository: _repository,
+      projectId: widget.projectId,
+      revision: revision,
+      bookPageIndex: target,
+    );
+    if (pdfPage == null || !mounted) return;
+    await _goToPage(pdfPage);
   }
 
   Future<void> _loadOutline(PdfDocument document) async {
@@ -301,9 +309,38 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   List<String> _planChapterTitles() {
-    final plan = ref.read(projectDetailProvider(widget.projectId)).asData?.value.plan;
+    final plan = ref
+        .read(projectDetailProvider(widget.projectId))
+        .asData
+        ?.value
+        .plan;
     return [for (final chapter in plan?.chapters ?? const []) chapter.title];
   }
+
+  /// The exact revision the pages on screen belong to.
+  ///
+  /// `widget.export` is what the server is offering *now*; the file being
+  /// rendered was fetched earlier and can be a different compile of the same
+  /// book, so mapping or stamping against the offered descriptor would name a
+  /// manuscript the reader is not looking at. Unknown/mismatched bytes answer
+  /// null and cannot create marks or be mapped to the editable manuscript.
+  int? get _renderedExactRevision =>
+      widget.loader.exactRevisionForProject(widget.projectId);
+
+  int? get _mappingRevision => widget.loader.mappingRevisionFor(
+    expectedProjectId: widget.projectId,
+    offeredRevision: widget.export.revision,
+  );
+
+  bool get _canUseCurrentBook => _mappingRevision != null;
+
+  bool get _canCreateMarkup {
+    final revision = _renderedExactRevision;
+    return revision != null && _annotations.revision == revision;
+  }
+
+  bool get _canToggleBookmark =>
+      _renderedExactRevision != null || _state.hasBookmarkOn(_currentPage);
 
   /// Follows the markup onto a newly compiled edition of the book.
   ///
@@ -311,15 +348,22 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// PDF's own text, and guarded on the document so a rebuild does not scan it
   /// again. Only losses are reported: markup that moved successfully is markup
   /// the reader never needed to hear about.
+  ///
+  /// The revision comes off the downloaded file and only when the server named
+  /// it, never off the descriptor: this pass rewrites every mark's revision at
+  /// once, so a stamp naming a compile the marks were never placed against has
+  /// the next pass trust them where it should re-search. Bytes tied to no
+  /// compile are left alone entirely — a revision only ever changes by a
+  /// recompile, and a recompile records what it published, so the document that
+  /// needs this pass is the identified one that follows.
   Future<void> _reanchorMarkup(PdfDocument document) async {
     if (identical(_reanchoredFor, document)) return;
     _reanchoredFor = document;
+    final revision = _renderedExactRevision;
+    if (revision == null) return;
     await _annotationsLoaded;
     if (!mounted) return;
-    await _markup.reanchorInto(
-      document: document,
-      toRevision: widget.export.revision,
-    );
+    await _markup.reanchorInto(document: document, toRevision: revision);
   }
 
   bool get _editingEnabled {
@@ -330,8 +374,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   String get _title =>
       widget.status.exports.pdf.filename.replaceAll('.pdf', '');
 
-  bool get _onDarkPage =>
-      _annotations.settings.tint == ReaderPageTint.night;
+  bool get _onDarkPage => _annotations.settings.tint == ReaderPageTint.night;
 
   /// The palette, rebuilt only when the page colour changes. It is read on
   /// every page paint, so allocating a list each time would be wasteful.
@@ -379,23 +422,15 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// nothing, and the call is unscoped rather than wrong.
   Future<int?> _currentBookPageIndex() async {
     final document = _document;
-    if (document == null) return null;
-    try {
-      final locator = await _repository.pageLocator(
-        projectId: widget.projectId,
-        revision: widget.export.revision,
-      );
-      final pageNumber = _currentPage;
-      final page = document.pages[pageNumber - 1];
-      final text = (await page.loadStructuredText()).fullText;
-      // The unwidened span: the ±1 margin that keeps a *selection* inside a
-      // page range would here name a page the reader has not reached.
-      return locator
-          .anchorSpanForPage(pdfPageNumber: pageNumber, pageText: text)
-          ?.first;
-    } catch (_) {
-      return null;
-    }
+    final revision = _mappingRevision;
+    if (document == null || revision == null) return null;
+    return readerBookPageForPdfPage(
+      document: document,
+      repository: _repository,
+      projectId: widget.projectId,
+      revision: revision,
+      pdfPageNumber: _currentPage,
+    );
   }
 
   Future<void> _goToPage(int pageNumber) async {
@@ -414,9 +449,13 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       case ReaderMenuAction.listen:
         _departures.listen();
       case ReaderMenuAction.callCharacter:
-        unawaited(_departures.callCharacter());
+        if (_canUseCurrentBook) {
+          unawaited(_departures.callCharacter());
+        }
       case ReaderMenuAction.toggleBookmark:
-        if (_stateLoaded) _places.toggleBookmark(_currentPage);
+        if (_stateLoaded && _canToggleBookmark) {
+          _places.toggleBookmark(_currentPage);
+        }
       case ReaderMenuAction.savedPlaces:
         _places.showBookmarks();
       case ReaderMenuAction.myMarkup:
@@ -441,7 +480,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     context: context,
     state: _state,
     outline: _outline,
-    currentRevision: widget.export.revision,
+    currentRevision: _renderedExactRevision,
     onStateChanged: (state) {
       setState(() => _state = state);
       _persistState();
@@ -456,6 +495,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     bookTitle: _title,
     palette: _markupPalette,
     editingEnabled: _editingEnabled,
+    canUseCurrentBook: () => _canUseCurrentBook,
+    canModifyPlacement: () => _canCreateMarkup,
     isMounted: () => mounted,
     onGoToPage: (page) => unawaited(_goToPage(page)),
   );
@@ -483,7 +524,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       ranges: ranges,
       repository: _repository,
       projectId: widget.projectId,
-      revision: widget.export.revision,
+      revision: _mappingRevision,
     );
     if (!mounted || _selection?.text != preview.selection.text) return;
     _showSelection(placed.selection, anchor, placed.spans);
@@ -519,6 +560,15 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   Future<void> _runAction(ReaderSelectionAction action) async {
     final selection = _selection;
     if (selection == null) return;
+    final localAction =
+        action == ReaderSelectionAction.copy ||
+        action == ReaderSelectionAction.share;
+    if (!localAction && !_canUseCurrentBook) {
+      _markup.showSnack(
+        'Reload this book before using actions that change or ask about it.',
+      );
+      return;
+    }
     _dismissSelection();
     await runReaderSelectionAction(
       context: context,
@@ -534,6 +584,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     final spans = _selectionSpans;
     final markup = _markup;
     _dismissSelection();
+    if (!_canCreateMarkup) {
+      markup.showSnack(
+        'Reload this book before adding markup so it stays on the right page.',
+      );
+      return;
+    }
     if (selection == null || spans.isEmpty) {
       // Without rectangles there is nothing to draw. Rather than fail silently,
       // say so — this only happens when the document went away mid-selection.
@@ -556,6 +612,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     final spans = _selectionSpans;
     final markup = _markup;
     _dismissSelection();
+    if (!_canCreateMarkup) {
+      markup.showSnack(
+        'Reload this book before adding notes so they stay on the right page.',
+      );
+      return;
+    }
     await markup.noteOnSelection(selection: selection, spans: spans);
   }
 
@@ -578,134 +640,20 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     );
   }
 
-  // --------------------------------------------------------------------- build
+  void _setSearching(bool searching) {
+    setState(() => _searching = searching);
+  }
+
+  void _setImmersive(bool immersive) {
+    setState(() => _immersive = immersive);
+  }
+
+  void _dismissUpdate() {
+    setState(() => _updateDismissed = true);
+  }
 
   @override
-  Widget build(BuildContext context) {
-    final loader = widget.loader;
-    final document = loader.document;
-
-    if (document == null) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Reading')),
-        body: Center(child: _loadingBody(loader)),
-      );
-    }
-
-    final searcher = _searcher;
-    final hideChrome = _immersive || _searching;
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-      // A live selection takes the top bar over, the way a contextual action
-      // bar does anywhere else — including in full screen, because someone who
-      // has just selected text has asked for tools.
-      appBar: _selection != null
-          ? ReaderMarkupBar(
-              palette: _markupPalette,
-              defaultColorIndex: _annotations.settings.markupColorIndex,
-              onMarkup: _markSelection,
-              onNote: () => unawaited(_noteOnSelection()),
-              onAction: (action) => unawaited(_runAction(action)),
-              onDismiss: _dismissSelection,
-            )
-          : hideChrome
-          ? null
-          : ReaderAppBar(
-              title: _title,
-              bookmarked: _state.hasBookmarkOn(_state.lastPage),
-              immersive: _immersive,
-              markupCount: _annotations.count,
-              markingUp: _annotations.isMarkingUp,
-              onSearch: searcher == null
-                  ? null
-                  : () => setState(() => _searching = true),
-              onToggleMarkup: _annotations.toggleMarkup,
-              onMenuAction: _onMenuAction,
-            ),
-      floatingActionButton: _immersive
-          ? FloatingActionButton.small(
-              tooltip: 'Exit full screen',
-              // Immersive chrome stays circular primary; the shared FAB theme
-              // is for ordinary app surfaces, not the reader's exit control.
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              shape: const CircleBorder(),
-              onPressed: () => setState(() => _immersive = false),
-              child: const Icon(Icons.fullscreen_exit),
-            )
-          : null,
-      body: Column(
-        children: [
-          if (_searching && searcher != null)
-            ReaderSearchBar(
-              searcher: searcher,
-              onClose: () => setState(() => _searching = false),
-            ),
-          ReaderUpdateBanner(
-            status: _updateStatus,
-            onReload: () => unawaited(_reload()),
-            onDismiss: () => setState(() => _updateDismissed = true),
-          ),
-          Expanded(
-            child: Stack(
-              children: [
-                ref.watch(readerViewerBuilderProvider)(
-                  context,
-                  document.path,
-                  _controller,
-                  _viewerParams(_annotations.viewerMode),
-                  _state.lastPage,
-                ),
-                ReaderDimOverlay(level: _annotations.settings.dimLevel),
-                ReaderScrollHandle(
-                  controller: _controller,
-                  chapterFor: _chapterFor,
-                  // Panning is off while drawing, so the handle is then the
-                  // only way to reach another page and must not fade away.
-                  alwaysVisible: _annotations.isMarkingUp,
-                ),
-                if (_menuSelection != null && _menuAnchor != null)
-                  ReaderSelectionOverlay(
-                    anchor: _menuAnchor!,
-                    visible: _selection != null,
-                    child: ReaderSelectionMenu(
-                      selection: _menuSelection!,
-                      editingEnabled: _editingEnabled,
-                      onAction: (action) => unawaited(_runAction(action)),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: hideChrome ? null : _bottomBar(),
-    );
-  }
-
-  Widget _bottomBar() {
-    return ReaderBottomChrome(
-      annotations: _annotations,
-      palette: _markupPalette,
-      currentPage: _state.lastPage,
-      pageCount: _pageCount,
-      chapterTitle: _chapterFor(_state.lastPage),
-      bookmarked: _state.hasBookmarkOn(_state.lastPage),
-      onContents: () => _onMenuAction(ReaderMenuAction.contents),
-      onToggleBookmark: () => _onMenuAction(ReaderMenuAction.toggleBookmark),
-      onListen: () => _onMenuAction(ReaderMenuAction.listen),
-    );
-  }
-
-  String? _chapterFor(int page) => outlineEntryForPage(_outline, page)?.title;
-
-  Widget _loadingBody(ReaderDocumentLoader loader) {
-    return ReaderDownloadState(
-      loader: loader,
-      onRetry: () => unawaited(loader.load(widget.export)),
-      onOpenPaywall: widget.onOpenPaywall,
-    );
-  }
+  Widget build(BuildContext context) => _buildReaderSurface(context);
 
   /// The viewer's parameters, built once per gesture mode and reused.
   ///
@@ -745,7 +693,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     Rect pageRect,
     PdfPage page,
   ) {
-    final mode = _annotations.viewerMode;
+    final mode = _canCreateMarkup
+        ? _annotations.viewerMode
+        : ReaderViewerMode.reading;
     final annotations = _annotations.onPage(page.pageNumber);
     final overlays = <Widget>[];
 
@@ -782,9 +732,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         overlays.add(
           ReaderTapLayer(
             key: ValueKey('place-${page.pageNumber}'),
-            onTap: (point) => unawaited(
-              _markup.handlePlacementTap(page.pageNumber, point),
-            ),
+            onTap: (point) =>
+                unawaited(_markup.handlePlacementTap(page.pageNumber, point)),
           ),
         );
       case ReaderViewerMode.reading:

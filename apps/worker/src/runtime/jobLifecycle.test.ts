@@ -107,6 +107,107 @@ describe("job lifecycle ownership", () => {
     expect(mocks.projectUpdate).not.toHaveBeenCalled();
   });
 
+  it("settles a paid audiobook failure through its attempt without changing the book", async () => {
+    await markFailed(
+      job("generate-audiobook", {
+        audiobookId: "audio-1",
+        attemptId: "attempt-audio",
+        billingLedgerEntryId: "legacy-ledger"
+      }),
+      new Error("speech quota exhausted")
+    );
+
+    expect(mocks.failGenerationAttempt).toHaveBeenCalledWith("attempt-audio", "speech quota exhausted");
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+    expect(mocks.audiobookUpdateMany).toHaveBeenCalledWith({
+      where: { id: "audio-1", status: "GENERATING" },
+      data: { status: "FAILED", error: "speech quota exhausted" }
+    });
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+  });
+
+  it("fails a detached export repair without touching the finished book it belongs to", async () => {
+    // A compile queued to rebuild a file that went missing is not the compile
+    // that decides whether the book exists. Sharing `compile-export`'s name with
+    // that one meant a Chromium blip on a repair marked a COMPLETE project
+    // FAILED and refunded the reader's whole book charge — which the payload's
+    // own `planId` leads straight to, so it is not even the vague fallback.
+    // `compile-export` has no BullMQ retry, so one failure was enough.
+    mocks.generationJobFindMany.mockResolvedValue([
+      { payload: { planId: "plan-1", billingLedgerEntryId: "entry-book" } }
+    ]);
+
+    await markFailed(
+      job("compile-export", { planId: "plan-1", detachedFromProjectLifecycle: true }),
+      new Error("Render exceeded 90s and was abandoned.")
+    );
+
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("still fails the book when the compile that generates it fails", async () => {
+    // The other half: a compile at the end of generation *does* own the
+    // outcome. Detaching by job name rather than per job would have taken this
+    // away, leaving a book with no artifacts sitting at COMPLETE.
+    mocks.generationJobFindMany.mockResolvedValue([
+      { payload: { planId: "plan-1", billingLedgerEntryId: "entry-book" } }
+    ]);
+
+    await markFailed(job("compile-export", { planId: "plan-1" }), new Error("compile failed"));
+
+    expect(mocks.projectUpdate).toHaveBeenCalledWith({ where: { id: "project-1" }, data: { status: "FAILED" } });
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("entry-book", "compile failed");
+  });
+
+  it("leaves the book alone when a detached repair is stopped", async () => {
+    await markStopped(job("compile-export", { planId: "plan-1", detachedFromProjectLifecycle: true }));
+
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("restores a presentation reprint's prior settled status without refunding on failure or stop", async () => {
+    const payload = {
+      planId: "plan-1",
+      contentRevision: 9,
+      presentationOnlyRecompile: true,
+      presentationRecompileFallbackStatus: "REVIEW_REQUIRED"
+    };
+
+    await markFailed(job("compile-export", payload), new Error("render failed"));
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING", contentRevision: 9 },
+      data: { status: "REVIEW_REQUIRED" }
+    });
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    mocks.generationJobFindUnique.mockResolvedValue({ steps: [] });
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.projectUpdateMany.mockResolvedValue({ count: 1 });
+    await markStopped(job("compile-export", payload));
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING", contentRevision: 9 },
+      data: { status: "REVIEW_REQUIRED" }
+    });
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("does not drag a finished book back to generating for a detached repair retry", async () => {
+    await markRecovering(
+      job("compile-export", { planId: "plan-1", detachedFromProjectLifecycle: true }),
+      new Error("network interruption")
+    );
+
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+  });
+
   it("settles an attempt-aware descendant by attempt and never by a mutable payload ledger", async () => {
     await markFailed(
       job("generate-page", {
@@ -341,6 +442,28 @@ describe("job lifecycle ownership", () => {
 
     await expect(markCompleted(job("compile-export", { attemptId: "attempt-1" }))).resolves.toBe(false);
     expect(mocks.markGenerationAttemptSucceeded).not.toHaveBeenCalled();
+  });
+
+  it("replays attempt and edit settlement after publication already committed COMPLETED", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({
+      steps: [],
+      status: "COMPLETED",
+      message: "Export published",
+      qualityReport: null
+    });
+
+    await expect(
+      markCompleted(job("compile-export", { attemptId: "attempt-1", operationId: "operation-1" }))
+    ).resolves.toBe(true);
+
+    expect(mocks.markGenerationAttemptSucceeded).toHaveBeenCalledWith("attempt-1");
+    expect(mocks.bookEditOperationUpdateMany).toHaveBeenCalledWith({
+      where: { id: "operation-1", status: { in: ["QUEUED", "ACTIVE"] } },
+      data: { status: "APPLIED", appliedAt: expect.any(Date) }
+    });
+    expect(mocks.generationJobUpdateMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "COMPLETED" }) })
+    );
   });
 
   it("never refunds an edit operation the completion path already settled", async () => {

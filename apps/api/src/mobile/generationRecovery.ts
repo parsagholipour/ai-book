@@ -1,3 +1,4 @@
+import { payloadOwnsProjectOutcome } from "@book-maker/core";
 import { type GenerationJobType } from "../queue.js";
 import { jsonRecord } from "./support.js";
 
@@ -13,6 +14,17 @@ export function canRecoverGenerationJob(
   context: { currentPlanId: string | null; currentPlanCreatedAt: Date | null; pageIds: Set<string> },
   jobCreatedAt: Date
 ): boolean {
+  // Work that settles on its own row — an export repair for a finished, paid
+  // book, or a free presentation-only reprint — is nobody's recovery: resuming
+  // it would put the project back into GENERATING for something its outcome
+  // does not depend on, and a requeued presentation recompile can never
+  // publish from there (its status claim names the EDITING it was born under),
+  // so the book would sit GENERATING until the stranded-generation sweep
+  // re-ran full QA on a delivered book.
+  if (!payloadOwnsProjectOutcome(payload)) {
+    return false;
+  }
+
   const payloadRecord = jsonRecord(payload);
 
   if (type === "PLAN_BOOK") {

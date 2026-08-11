@@ -619,9 +619,24 @@ describe("maybeEnqueueCompile", () => {
     await maybeEnqueueCompile("project-1", "plan-1", { skipFinalReview: true });
 
     const compile = expectCreatedJobOfType("COMPILE_EXPORT");
-    expect(compile.payload).toEqual({ planId: "plan-1", contentRevision: 7, skipFinalReview: true });
+    expect(compile.payload).toEqual({
+      planId: "plan-1",
+      contentRevision: 7,
+      skipFinalReview: true,
+      exportPublicationProjectStatus: "GENERATING"
+    });
     expect(compile.contentRevision).toBe(7);
     expect(compile.dedupeKey).toMatch(/^compile-export:project-1:plan-1:[0-9a-f]{24}$/);
+    // Promoted out of the payload beside `contentRevision`, so the API can read
+    // the compile that owns the book's quality verdict with one indexed lookup
+    // rather than sifting it out of however many recent jobs it happens to hold.
+    expect(compile.ownsQualityVerdict).toBe(true);
+  });
+
+  it("keeps a fan-out job that reports no manuscript verdict out of the verdict column", async () => {
+    await maybeEnqueueCompile("project-1", "plan-1");
+
+    expect(expectCreatedJobOfType("GENERATE_IMAGE").ownsQualityVerdict).toBe(false);
   });
 
   it("counts a FAILED_QA page that kept a draft as terminal", async () => {
@@ -662,7 +677,37 @@ describe("maybeEnqueueCompile", () => {
       { id: "page-2", index: 2, status: "PENDING", markdown: "", revision: 0 }
     ]);
 
-    await maybeEnqueueCompile("project-1", "plan-1");
+    expect(await maybeEnqueueCompile("project-1", "plan-1")).toBe("not-ready");
+
+    expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
+  });
+
+  it("still compiles when the only open compile was queued for a superseded manuscript", async () => {
+    // An export repair is queued while the book is COMPLETE, then an edit lands
+    // under it: the repair stands down at publish time, so counting it as "a
+    // compile is already coming" left the edit with no recompile at all.
+    mocks.prisma.imageAsset.count.mockResolvedValue(1);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 7 });
+    mocks.prisma.generationJob.count.mockImplementation(
+      async ({ where }: { where: { type: string; OR?: Array<{ contentRevision: number | null }> } }) => {
+        if (where.type !== "COMPILE_EXPORT") return 0;
+        // The in-flight repair compiles revision 6; the edit has moved to 7.
+        return (where.OR ?? []).some((clause) => clause.contentRevision === 6) ? 1 : 0;
+      }
+    );
+
+    expect(await maybeEnqueueCompile("project-1", "plan-1", { skipFinalReview: true })).toBe("compile");
+
+    const compile = expectCreatedJobOfType("COMPILE_EXPORT");
+    expect(compile.contentRevision).toBe(7);
+  });
+
+  it("does not double-compile while one is in flight for the same manuscript", async () => {
+    mocks.prisma.imageAsset.count.mockResolvedValue(1);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "GENERATING", contentRevision: 7 });
+    countsByType({ COMPILE_EXPORT: 1 });
+
+    expect(await maybeEnqueueCompile("project-1", "plan-1")).toBe("compile");
 
     expect(mocks.prisma.generationJob.create).not.toHaveBeenCalled();
   });

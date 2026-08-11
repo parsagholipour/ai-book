@@ -5,12 +5,14 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
+import { DETACHED_FROM_PROJECT_LIFECYCLE, PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
 import { buildProjectStatus } from "../projectStatus.js";
 import {
   bearer,
   buildMobileApp,
   mockAccessTokens,
   mockPrisma,
+  mockProjectStatus,
   projectRecord,
   resetMobileHarness,
   statusRecord,
@@ -232,6 +234,33 @@ describe("mobile project listing, detail and status", () => {
     expect(JSON.stringify(project)).not.toMatch(/temperature|generationStrategy|mediaSettings|cost|tokens/);
     // Not a replan copy, so it names no origin.
     expect(project.revisedFrom).toBeNull();
+    await app.close();
+  });
+
+  it("takes project detail's quality verdict from the owning compile, not a window of recent jobs", async () => {
+    // A book whose exports keep going missing queues a repair every five
+    // minutes, and eight of those used to bury the compile that actually
+    // reviewed the manuscript — after which detail reported no verdict at all.
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValueOnce(projectRecord({ id: "project-a", status: "COMPLETE" }));
+    const owningReport = { state: "review_recommended", score: 91, issues: [], affectedPageIndexes: [7] };
+    mockPrisma.generationJob.findFirst.mockResolvedValue({ qualityReport: owningReport });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/mobile/projects/project-a", headers: bearer("token-a") });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockProjectStatus.normalizeProjectQuality).toHaveBeenCalledWith(owningReport);
+    expect(mockPrisma.generationJob.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ projectId: "project-a", type: "COMPILE_EXPORT", ownsQualityVerdict: true }),
+        orderBy: { createdAt: "desc" }
+      })
+    );
+    // No window left to fall out of: nothing scans the compile list any more.
+    expect(mockPrisma.generationJob.findMany).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ type: "COMPILE_EXPORT" }) })
+    );
     await app.close();
   });
 
@@ -470,6 +499,120 @@ describe("mobile project listing, detail and status", () => {
       failureMessage: null
     });
     expect(status.generationProgress).toMatchObject({ percent: 100, detail: null });
+    await app.close();
+  });
+
+  it("keeps a failed export repair out of a completed book's status", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          id: "project-1",
+          title: "Finished Book",
+          status: "COMPLETE",
+          jobs: [
+            // The compile that rebuilds a missing PDF for a book that is already
+            // finished and paid for. It fails alone: the reader has a book, and
+            // the next download or status poll queues another repair.
+            {
+              id: "job-repair-failed",
+              type: "COMPILE_EXPORT",
+              status: "FAILED",
+              progress: 40,
+              error: "Chromium disconnected.",
+              payload: { planId: "plan-1", skipFinalReview: true, [DETACHED_FROM_PROJECT_LIFECYCLE]: true }
+            },
+            { id: "job-compile", type: "COMPILE_EXPORT", status: "COMPLETED", progress: 100, error: null }
+          ]
+        },
+        progress: {
+          pages: { complete: 12, target: 12 },
+          images: 3,
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done" },
+            { key: "pages", label: "Pages", status: "done", detail: "12/12 pages" },
+            { key: "images", label: "Images", status: "done", detail: "3 images" },
+            { key: "export", label: "Export", status: "done", detail: "Markdown & PDF ready" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status).toMatchObject({
+      status: "complete",
+      currentAction: "Ready to download.",
+      failureMessage: null
+    });
+    // The book's own last step stays done: nothing about it failed.
+    expect(status.generationProgress).toMatchObject({ percent: 100 });
+    expect(status.generationProgress.steps.every((step: { status: string }) => step.status !== "failed")).toBe(true);
+    await app.close();
+  });
+
+  it("keeps a failed presentation reprint out of a completed book's status", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    vi.mocked(buildProjectStatus).mockResolvedValue(
+      statusRecord({
+        project: {
+          id: "project-1",
+          title: "Finished Book",
+          status: "COMPLETE",
+          jobs: [
+            // The free recompile a Sources-list or chapter-heading toggle
+            // queues. Like a repair it settles alone: the book is delivered,
+            // its manuscript unchanged, and the reader can re-toggle — so a
+            // Chromium blip here must not paint the book "needs attention".
+            {
+              id: "job-reprint-failed",
+              type: "COMPILE_EXPORT",
+              status: "FAILED",
+              progress: 40,
+              error: "Chromium disconnected.",
+              payload: { planId: "plan-1", skipFinalReview: true, [PRESENTATION_ONLY_RECOMPILE]: true }
+            },
+            { id: "job-compile", type: "COMPILE_EXPORT", status: "COMPLETED", progress: 100, error: null }
+          ]
+        },
+        progress: {
+          pages: { complete: 12, target: 12 },
+          images: 3,
+          pipeline: [
+            { key: "plan", label: "Plan", status: "done" },
+            { key: "pages", label: "Pages", status: "done", detail: "12/12 pages" },
+            { key: "images", label: "Images", status: "done", detail: "3 images" },
+            { key: "export", label: "Export", status: "done", detail: "Markdown & PDF ready" }
+          ]
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/status",
+      headers: bearer("token-a")
+    });
+    const status = response.json().status;
+
+    expect(response.statusCode).toBe(200);
+    expect(status).toMatchObject({
+      status: "complete",
+      currentAction: "Ready to download.",
+      failureMessage: null
+    });
+    expect(status.generationProgress).toMatchObject({ percent: 100 });
+    expect(status.generationProgress.steps.every((step: { status: string }) => step.status !== "failed")).toBe(true);
     await app.close();
   });
 

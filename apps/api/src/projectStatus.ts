@@ -2,6 +2,17 @@ import { loadConfig, type JobStep } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+// What the app *reports* as recoverable and what a resume route will actually
+// requeue have to be the same answer — this file used to carry its own copy of
+// the predicate, which is how a book could offer a retry that queued nothing.
+import { canRecoverGenerationJob } from "./mobile/generationRecovery.js";
+// And for the same reason: an export repair's model-free report is not this
+// book's verdict, which the write side already knows and this read used not to.
+// Asked of the owning compile directly rather than picked out of `project.jobs`
+// below — that list is the newest 25 jobs of any type, so a book with an
+// audiobook, a few image retries or a repair loop pushed its own verdict out of
+// the window and rendered a blank quality card.
+import { loadProjectQualityReport } from "./mobile/qualityVerdict.js";
 import { loadProjectCostSummary } from "./projectCosts.js";
 import type { GenerationJobType } from "./queue.js";
 
@@ -18,7 +29,6 @@ export type PipelineStep = {
 type ResumeContext = {
   currentPlanId: string | null;
   currentPlanCreatedAt: Date | null;
-  existingPages: number;
   pageIds: Set<string>;
 };
 
@@ -102,7 +112,6 @@ export async function buildProjectStatus(projectId: string) {
   const resumeContext: ResumeContext = {
     currentPlanId: project.currentPlanId,
     currentPlanCreatedAt: project.currentPlan?.createdAt ?? null,
-    existingPages: pages.length,
     pageIds: new Set(pages.map((page) => page.id))
   };
   const failedGenerationJobs = await prisma.generationJob.findMany({
@@ -154,7 +163,7 @@ export async function buildProjectStatus(projectId: string) {
   });
 
   const jobIds = project.jobs.map((job) => job.id);
-  const [tokenLogRows, cost, imageFallbacksByJobId] = await Promise.all([
+  const [tokenLogRows, cost, imageFallbacksByJobId, qualityReport] = await Promise.all([
     prisma.providerCallLog.findMany({
       where: { projectId },
       select: {
@@ -167,7 +176,8 @@ export async function buildProjectStatus(projectId: string) {
       }
     }),
     loadProjectCostSummary(projectId),
-    loadImageFallbackDetails(projectId, project.jobs)
+    loadImageFallbackDetails(projectId, project.jobs),
+    loadProjectQualityReport(projectId)
   ]);
   const projectTokens = summarizeTokenLogs(tokenLogRows);
   const visibleJobIds = new Set(jobIds);
@@ -201,9 +211,7 @@ export async function buildProjectStatus(projectId: string) {
       ...(typeof pageIndex === "number" ? { pageIndex } : {})
     };
   });
-  const latestQuality = normalizeProjectQuality(
-    project.jobs.find((job) => job.type === "COMPILE_EXPORT" && job.qualityReport !== null)?.qualityReport
-  );
+  const latestQuality = normalizeProjectQuality(qualityReport);
 
   return {
     project: { ...project, jobs: jobsWithSteps, generationAttempts },
@@ -611,65 +619,6 @@ export function buildPipelineSteps(input: {
 
 function isCurrentPlanningFailure(jobCreatedAt: Date | undefined, currentPlanCreatedAt: Date | null): boolean {
   return !currentPlanCreatedAt || (jobCreatedAt ? jobCreatedAt > currentPlanCreatedAt : true);
-}
-
-function canRecoverGenerationJob(
-  type: GenerationJobType,
-  payload: unknown,
-  context: ResumeContext,
-  jobCreatedAt: Date
-): boolean {
-  const payloadRecord = jsonPayloadToRecord(payload);
-
-  if (type === "PLAN_BOOK") {
-    return !context.currentPlanCreatedAt || jobCreatedAt > context.currentPlanCreatedAt;
-  }
-
-  if (type === "REVISE_PLAN") {
-    return (
-      typeof payloadRecord.planId === "string" &&
-      payloadRecord.planId === context.currentPlanId &&
-      typeof payloadRecord.message === "string" &&
-      payloadRecord.message.trim().length > 0
-    );
-  }
-
-  if (!context.currentPlanId) {
-    return false;
-  }
-
-  const planId = payloadPlanId(payloadRecord);
-  if (planId && planId !== context.currentPlanId) {
-    return false;
-  }
-
-  if (type === "GENERATE_BOOK") {
-    return planId === context.currentPlanId;
-  }
-
-  if (type === "GENERATE_PAGE") {
-    return typeof payloadRecord.pageId === "string" && context.pageIds.has(payloadRecord.pageId);
-  }
-
-  if (type === "GENERATE_IMAGE") {
-    return (
-      isCurrentCoverPayload(payloadRecord, context) ||
-      (typeof payloadRecord.pageId === "string" &&
-        context.pageIds.has(payloadRecord.pageId) &&
-        typeof payloadRecord.prompt === "string")
-    );
-  }
-
-  return type === "COMPILE_EXPORT" || type === "APPLY_BOOK_EDIT" || type === "REPLAN_BOOK";
-}
-
-function payloadPlanId(payload: Record<string, unknown>): string | null {
-  const value = payload.planId;
-  return typeof value === "string" ? value : null;
-}
-
-function isCurrentCoverPayload(payload: Record<string, unknown>, context: ResumeContext): boolean {
-  return payload.assetType === "COVER" && payloadPlanId(payload) === context.currentPlanId;
 }
 
 function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {

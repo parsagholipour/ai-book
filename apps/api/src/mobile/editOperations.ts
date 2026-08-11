@@ -25,7 +25,7 @@ import {
   jsonInputValue,
   languageDisplayName
 } from "./support.js";
-import { bookPlanSchema, creditCostForOperation } from "@book-maker/core";
+import { bookPlanSchema, creditCostForOperation, isDetachedFromProjectLifecycle } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import {
   InsufficientCreditsError,
@@ -697,13 +697,70 @@ export async function queueChatContinueBook(options: {
   });
 }
 
+/**
+ * Whether something is being done to the *book* right now.
+ *
+ * Every edit entry point asks this before it writes: manual saves and undo
+ * answer 409 `PROJECT_BUSY`, and the chat deflects the request into the
+ * project's one pending edit. So anything counted here is something the reader
+ * is told to wait for.
+ *
+ * Detached jobs are not that. An export repair rebuilds a file that went
+ * missing on a book that is already finished and already paid for, and merely
+ * *looking* at a settled project queues one — every status read gates the
+ * download surfaces on `export.available` and calls `ensureExportRepairQueued`
+ * when the PDF or EPUB is gone. Counting it made opening the book the thing
+ * that blocked editing it: the app drew a COMPLETE project with nothing in
+ * flight, and every save came back "still being worked on" for as long as the
+ * compile ran — then the next poll queued another repair, in a window the four
+ * second saved-export refresh reopens indefinitely while a compile keeps
+ * failing.
+ *
+ * Letting the edit through is safe because a repair owns nothing the edit
+ * touches. It writes no project status (`ownsProjectStatus`), and it publishes
+ * only by compare-and-setting the `contentRevision` it compiled — so once the
+ * edit bumps that revision the repair stands down with its render on a scratch
+ * name, and `maybeEnqueueCompile`'s revision-aware count already refuses to let
+ * such a compile stand in for the edit's own recompile.
+ *
+ * The flag lives in the payload, and it cannot be negated in the `where`:
+ * `NOT (payload->>flag = true)` in SQL is null for every row that never carried
+ * the key, which is all of them but the repairs, so a real compile would be
+ * filtered out along with the repairs. The exclusion is therefore made in
+ * JavaScript, over the rows themselves, through the same
+ * `isDetachedFromProjectLifecycle` predicate every other reader of these rows
+ * uses — `queue.ts`, `projectSerializers.ts`, `generationProgress.ts`,
+ * `generationRecovery.ts`.
+ *
+ * **One query, because the answer is about one moment.** This used to count the
+ * open rows, then count the detached ones, and subtract. Under the connection's
+ * actual isolation level — Read Committed — each statement takes its own
+ * snapshot, so the two counts described two different instants and a repair that
+ * crossed the gap broke the subtraction in both directions. A repair *queued*
+ * between them was absent from the total and present in the subtrahend, so a
+ * project with one real edit job open answered `1 > 1` — not busy — and let a
+ * second edit through the guard. A repair that *completed* between them was
+ * present in the total and gone from the subtrahend, so a settled book with
+ * nothing but a repair in flight answered `1 > 0` — busy — and a manual save or
+ * an undo got 409 `PROJECT_BUSY` for exactly the reason this exclusion exists.
+ * A single `findMany` cannot be torn that way: one statement is one snapshot at
+ * any isolation level, so every row is judged as of the same instant and no
+ * transaction is needed to say so. It selects only `payload`, and the open rows
+ * of one project are bounded by the fan-out waves that create them —
+ * `countOpenCoverJobs` and `enqueueNextPageIfReady` in the worker read the same
+ * rows the same way.
+ *
+ * What no snapshot can promise is that the answer is still true when the caller
+ * acts on it, which is why this is only the fast path: the authoritative
+ * one-open-edit-at-a-time guard is the partial unique index behind
+ * `createOpenBookEditOperation`.
+ */
 export async function hasOpenProjectWork(projectId: string): Promise<boolean> {
-  const count = await prisma.generationJob.count({
-    where: {
-      projectId,
-      status: { in: ["QUEUED", "ACTIVE"] },
-      type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH"] }
-    }
-  });
-  return count > 0;
+  const openWork = {
+    projectId,
+    status: { in: ["QUEUED", "ACTIVE"] },
+    type: { notIn: ["PREPARE_CHARACTER_CANDIDATES", "BUILD_CHARACTER_PERSONA", "RESEARCH"] }
+  } satisfies Prisma.GenerationJobWhereInput;
+  const openJobs = await prisma.generationJob.findMany({ where: openWork, select: { payload: true } });
+  return openJobs.some((job) => !isDetachedFromProjectLifecycle(job.payload));
 }

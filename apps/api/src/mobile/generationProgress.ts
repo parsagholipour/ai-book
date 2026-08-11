@@ -1,3 +1,4 @@
+import { payloadOwnsProjectOutcome } from "@book-maker/core";
 import type { MobileProjectStatusDto, ProjectStatusResult } from "./dto.js";
 import { jsonRecord, stringField } from "./support.js";
 
@@ -391,6 +392,10 @@ function failedStepFor(jobs: readonly StatusJob[], writingStarted: boolean): Gen
   const failed = jobs.find(
     (job) =>
       job.status === "FAILED" &&
+      // A detached compile rebuilds a file for a book that is already finished,
+      // and a presentation-only reprint reprints one; neither is this book's
+      // "Building your book" step and must not paint it red after the fact.
+      payloadOwnsProjectOutcome(job.payload) &&
       (job.type === "GENERATE_BOOK" || job.type === "GENERATE_PAGE" || job.type === "GENERATE_IMAGE" || job.type === "COMPILE_EXPORT")
   );
   if (!failed) {

@@ -16,6 +16,7 @@ class LocatorOnlyRepository implements ReaderRepository {
   final MobileEditableBook book;
   final bool fail;
   int locatorCalls = 0;
+  final locatorRevisions = <int>[];
 
   @override
   Future<ReaderPageLocator> pageLocator({
@@ -23,6 +24,7 @@ class LocatorOnlyRepository implements ReaderRepository {
     required int revision,
   }) async {
     locatorCalls++;
+    locatorRevisions.add(revision);
     if (fail) throw Exception('the book could not be fetched');
     return ReaderPageLocator(book);
   }
@@ -92,15 +94,16 @@ List<PdfPageTextRange> selectionOf(
 
 Future<ReaderResolvedSelection> place(
   LocatorOnlyRepository repository,
-  List<PdfPageTextRange> ranges,
-) async {
+  List<PdfPageTextRange> ranges, {
+  int? revision = 1,
+}) async {
   final preview = previewReaderSelection(ranges, null)!;
   return placeReaderSelection(
     preview: preview,
     ranges: ranges,
     repository: repository,
     projectId: 'project-1',
-    revision: 1,
+    revision: revision,
   );
 }
 
@@ -108,7 +111,10 @@ void main() {
   group('preview', () {
     test('collapses the selection the moment it is made', () {
       final preview = previewReaderSelection(
-        selectionOf('The rabbit  stretched\nin the grass.', 'rabbit  stretched'),
+        selectionOf(
+          'The rabbit  stretched\nin the grass.',
+          'rabbit  stretched',
+        ),
         null,
       )!;
 
@@ -136,6 +142,47 @@ void main() {
   });
 
   group('placing', () {
+    test(
+      'does not load the current manuscript without an exact PDF revision',
+      () async {
+        final repository = LocatorOnlyRepository(
+          const MobileEditableBook(
+            projectId: 'project-1',
+            title: 'The Race',
+            pages: [],
+          ).copyWithPages([page(1, 'The tortoise kept walking.')]),
+        );
+
+        final placed = await place(
+          repository,
+          selectionOf('The tortoise kept walking.', 'tortoise kept walking'),
+          revision: null,
+        );
+
+        expect(placed.selection.placed, isTrue);
+        expect(placed.selection.bookPageIndex, isNull);
+        expect(repository.locatorCalls, 0);
+      },
+    );
+
+    test('loads the locator under the displayed exact revision', () async {
+      final repository = LocatorOnlyRepository(
+        const MobileEditableBook(
+          projectId: 'project-1',
+          title: 'The Race',
+          pages: [],
+        ).copyWithPages([page(1, 'The tortoise kept walking.')]),
+      );
+
+      await place(
+        repository,
+        selectionOf('The tortoise kept walking.', 'tortoise kept walking'),
+        revision: 7,
+      );
+
+      expect(repository.locatorRevisions, [7]);
+    });
+
     test('names the book page a passage came from', () async {
       final repository = LocatorOnlyRepository(
         const MobileEditableBook(
@@ -188,31 +235,34 @@ void main() {
       expect(placed.selection.bookPageIndex, 3);
     });
 
-    test('a passage that is nowhere carries no page, and still works', () async {
-      final repository = LocatorOnlyRepository(
-        const MobileEditableBook(
-          projectId: 'project-1',
-          title: 'The Race',
-          pages: [],
-        ).copyWithPages([page(1, 'Nothing here resembles the selection.')]),
-      );
+    test(
+      'a passage that is nowhere carries no page, and still works',
+      () async {
+        final repository = LocatorOnlyRepository(
+          const MobileEditableBook(
+            projectId: 'project-1',
+            title: 'The Race',
+            pages: [],
+          ).copyWithPages([page(1, 'Nothing here resembles the selection.')]),
+        );
 
-      final placed = await place(
-        repository,
-        selectionOf(
-          'An entirely different sentence about something else.',
-          'entirely different sentence about something',
-        ),
-      );
+        final placed = await place(
+          repository,
+          selectionOf(
+            'An entirely different sentence about something else.',
+            'entirely different sentence about something',
+          ),
+        );
 
-      expect(placed.selection.bookPageIndex, isNull);
-      expect(
-        placed.selection.placed,
-        isTrue,
-        reason: 'the search finished; it just found nothing',
-      );
-      expect(placed.selection.placementLabel, 'Page not identified');
-    });
+        expect(placed.selection.bookPageIndex, isNull);
+        expect(
+          placed.selection.placed,
+          isTrue,
+          reason: 'the search finished; it just found nothing',
+        );
+        expect(placed.selection.placementLabel, 'Page not identified');
+      },
+    );
 
     test('a book that cannot be fetched is not a dead end', () async {
       final repository = LocatorOnlyRepository(
@@ -264,10 +314,6 @@ void main() {
 
 extension on MobileEditableBook {
   MobileEditableBook copyWithPages(List<MobileEditableBookPage> pages) {
-    return MobileEditableBook(
-      projectId: projectId,
-      title: title,
-      pages: pages,
-    );
+    return MobileEditableBook(projectId: projectId, title: title, pages: pages);
   }
 }

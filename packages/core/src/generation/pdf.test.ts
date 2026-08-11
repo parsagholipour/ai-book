@@ -3,13 +3,21 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { describe, expect, it, afterEach } from "vitest";
+import { createServer } from "node:http";
+import { describe, expect, it, afterAll, afterEach } from "vitest";
+import { closeSharedBrowser, withRenderPage } from "./browserPool.js";
 import {
   generateBookPdf,
   insertCoverPageBreak,
   localizeImagesInMarkdown,
   prepareMarkdownForPdfDocument
 } from "./pdf.js";
+
+afterAll(async () => {
+  // Renders share one long-lived Chromium, and a live browser holds the event
+  // loop open — without this vitest never exits.
+  await closeSharedBrowser();
+});
 
 describe("localizeImagesInMarkdown", () => {
   const tempDirs: string[] = [];
@@ -84,13 +92,82 @@ describe("localizeImagesInMarkdown", () => {
       publicApiUrl: "http://localhost:4001"
     });
 
-    expect(result.markdown).toMatch(/^<div class="pdf-cover-page"/);
-    expect(result.markdown).toContain('<img src="proj-cover-break/cover.png"');
-    expect(result.markdown).toContain('alt="Book cover"');
-    expect(result.markdown).not.toContain("![Book cover]");
-    expect(result.markdown).not.toContain("data:image");
-    expect(result.markdown.indexOf("pdf-cover-page")).toBeLessThan(result.markdown.indexOf("# The Book"));
-    expect(result.imageDataUrls.get("proj-cover-break/cover.png")).toMatch(/^data:image\/png;base64,/);
+    expect(result).toMatch(/^<div class="pdf-cover-page"/);
+    expect(result).toContain('<img src="proj-cover-break/cover.png"');
+    expect(result).toContain('alt="Book cover"');
+    expect(result).not.toContain("![Book cover]");
+    // The renderer opens the file off disk now; nothing is inlined into the
+    // document, which is what used to make a legacy illustrated book a ~27 MB
+    // CDP payload.
+    expect(result).not.toContain("data:image");
+    expect(result.indexOf("pdf-cover-page")).toBeLessThan(result.indexOf("# The Book"));
+  });
+
+  it("does not let $-sequences in alt text rewrite the document", async () => {
+    // The rewrite used to substitute through `String.replace`'s pattern
+    // syntax, where `$&` in the replacement expands to the whole match.
+    const imageStorageDir = join(tmpdir(), `book-pdf-dollar-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    const imageDir = join(imageStorageDir, "proj-dollar");
+    await mkdir(imageDir, { recursive: true });
+    await writeFile(
+      join(imageDir, "page-1.png"),
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64"
+      )
+    );
+
+    const result = await localizeImagesInMarkdown(
+      "![see $& and $' here](http://localhost:4001/assets/images/proj-dollar/page-1.png)",
+      { imageStorageDir, publicApiUrl: "http://localhost:4001" }
+    );
+
+    expect(result).toBe("![see $& and $' here](proj-dollar/page-1.png)");
+  });
+
+  it("does not localize another project's illustration", async () => {
+    // The render's own allowlist would abort the load, but the document should
+    // never have named it: the same scoping refuses it here, which is the only
+    // thing standing between a manuscript and another reader's artwork in the
+    // EPUB, where nothing renders.
+    const imageStorageDir = join(tmpdir(), `book-pdf-scope-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(join(imageStorageDir, "proj-other"), { recursive: true });
+    await writeFile(
+      join(imageStorageDir, "proj-other", "private.png"),
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64"
+      )
+    );
+
+    const markdown = "![Theirs](http://localhost:4001/assets/images/proj-other/private.png)";
+
+    expect(
+      await localizeImagesInMarkdown(markdown, {
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001",
+        projectId: "proj-mine"
+      })
+    ).toBe(markdown);
+    // …and the same compile with no project named still resolves it, which is
+    // what the fixture renderer relies on.
+    expect(await localizeImagesInMarkdown(markdown, { imageStorageDir, publicApiUrl: "http://localhost:4001" })).toBe(
+      "![Theirs](proj-other/private.png)"
+    );
+  });
+
+  it("keeps the original URL when the local file is missing", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-missing-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+
+    const markdown = "![Gone](http://localhost:4001/assets/images/proj-missing/page-1.png)";
+
+    expect(await localizeImagesInMarkdown(markdown, { imageStorageDir, publicApiUrl: "http://localhost:4001" })).toBe(
+      markdown
+    );
   });
 
   it("does not add a page break when Markdown starts with a title", () => {
@@ -137,6 +214,48 @@ describe("localizeImagesInMarkdown", () => {
     const pdf = (await readFile(outputPath)).toString("latin1");
     expect(pdf).toContain("/Outlines");
     expect((pdf.match(/\/Title/g) ?? []).length).toBeGreaterThan(1);
+  }, 30_000);
+
+  const itIfPdfInfoAvailable = hasCommand("pdfinfo") ? it : it.skip;
+
+  itIfPdfInfoAvailable("lays a known manuscript out over a recorded number of pages", async () => {
+    // Page count is the cheapest signal that the typography this book is set in
+    // drifted — `bookPdfCss`, md-to-pdf's `markdown.css`, or the marked output
+    // those are applied to. `pdfDocument.ts` now pins all three by hand instead
+    // of inheriting them, and if this number moves, every book ever compiled
+    // re-paginates.
+    //
+    // The prose runs continuously on purpose. An earlier version of this
+    // fixture ended each chapter with `<div class="page-break"></div>`, which
+    // pinned the count to the chapter count and made it blind: it returned 12
+    // whatever the stylesheet said. As written, a 5% change in body size, a
+    // wider `@page` margin or a taller line-height all move it.
+    //
+    // What it cannot see is `BOOK_PDF_OPTIONS.margin`, and nothing can: that
+    // option is inert while `bookPdfCss` sets `@page { margin }`, which Chrome
+    // honours instead. `pdfDocument.test.ts` asserts that value directly.
+    const imageStorageDir = join(tmpdir(), `book-pdf-pagination-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    const body = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ".repeat(
+      18
+    );
+    const markdown = `# The Quiet Engine\n\nAn opening note.\n\n${Array.from(
+      { length: 12 },
+      (_, index) => `## Chapter ${index + 1}\n\nThis is the body of chapter ${index + 1}. ${body}`
+    ).join("\n\n")}`;
+
+    await generateBookPdf(markdown, {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001",
+      outputPath,
+      language: "en"
+    });
+
+    const info = execFileSync("pdfinfo", [outputPath], { encoding: "utf8" });
+    expect(/^Pages:\s+(\d+)$/m.exec(info)?.[1]).toBe("9");
   }, 30_000);
 
   const itIfPdfFontsAndTextAvailable = hasCommand("pdffonts") && hasCommand("pdftotext") ? it : it.skip;
@@ -214,6 +333,118 @@ describe("localizeImagesInMarkdown", () => {
     expect(readRgb(page, 0, 0)).toEqual([255, 0, 0]);
     expect(readRgb(page, 5, 5)).toEqual([255, 0, 0]);
   }, 30_000);
+
+  const itIfPdfTextAndRasterAvailable = hasCommand("pdftotext") && hasCommand("pdftoppm") ? it : it.skip;
+
+  itIfPdfTextAndRasterAvailable("prints the book's own illustrations and no other file on the server", async () => {
+    // The reported disclosure, end to end. Printing from `file://` is what made
+    // the export fast, and it handed the manuscript the renderer's file access:
+    // markdown passes raw HTML through, and a manuscript is user text (imports,
+    // exact-replacement edits), so an `<iframe src="file:///etc/passwd">` in
+    // chapter one printed the server's password file into the book. The
+    // HTTP-origin renderer this replaced refused `file://` for free.
+    //
+    // Rendered with the cover in place so the same run also proves the policy
+    // did not simply block everything: a book whose illustrations stopped
+    // loading would pass a leak assertion on its own.
+    const imageStorageDir = join(tmpdir(), `book-pdf-file-access-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    const projectId = "proj-file-access";
+    await mkdir(join(imageStorageDir, projectId), { recursive: true });
+    await mkdir(join(imageStorageDir, "proj-other"), { recursive: true });
+    await writeFile(
+      join(imageStorageDir, projectId, "cover.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2400"><rect width="1800" height="2400" fill="red"/></svg>'
+    );
+    const secretPath = join(imageStorageDir, "secret.txt");
+    await writeFile(secretPath, "SUPER-SECRET-MARKER\n");
+    const otherProjectSecret = join(imageStorageDir, "proj-other", "notes.txt");
+    await writeFile(otherProjectSecret, "OTHER-PROJECT-MARKER\n");
+    const outputPath = join(imageStorageDir, "book.pdf");
+    const ppmPrefix = join(imageStorageDir, "cover-page");
+
+    await generateBookPdf(
+      [
+        `![Book cover](http://localhost:4001/assets/images/${projectId}/cover.svg)`,
+        "# The Book",
+        "",
+        "Innocent prose.",
+        "",
+        `<iframe src="file://${secretPath}" width="600" height="300"></iframe>`,
+        `<iframe src="file://${otherProjectSecret}" width="600" height="300"></iframe>`,
+        '<object data="file:///etc/passwd" type="text/plain" width="600" height="400"></object>',
+        '<embed src="file:///etc/hostname" width="600" height="200">',
+        '<div style="background-image:url(file:///etc/hosts)">x</div>',
+        "<script>document.title = 'ran';</script>"
+      ].join("\n"),
+      { imageStorageDir, publicApiUrl: "http://localhost:4001", outputPath, projectId }
+    );
+
+    const text = execFileSync("pdftotext", [outputPath, "-"], { encoding: "utf8" });
+    expect(text).toContain("Innocent prose.");
+    expect(text).not.toContain("SUPER-SECRET-MARKER");
+    expect(text).not.toContain("OTHER-PROJECT-MARKER");
+    expect(text).not.toContain("root:x:0:0");
+
+    // The cover still fills page one, so nothing above came at the cost of the
+    // book's own illustrations.
+    execFileSync("pdftoppm", ["-r", "20", "-f", "1", "-singlefile", outputPath, ppmPrefix]);
+    expect(readRgb(await readPpm(`${ppmPrefix}.ppm`), 5, 5)).toEqual([255, 0, 0]);
+  }, 60_000);
+
+  it("does not execute manuscript attributes or leave auxiliary pages behind", async () => {
+    // Request interception is per page. Before executable attributes were
+    // removed and JavaScript was disabled, a missing image's `onerror` could
+    // open a new page whose first navigation was already on the wire before the
+    // pool learned that target existed — a real SSRF, not merely a leaked tab.
+    const imageStorageDir = join(tmpdir(), `book-pdf-popup-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    const projectId = "proj-popup";
+    await mkdir(join(imageStorageDir, projectId), { recursive: true });
+
+    let requests = 0;
+    const server = createServer((_request, response) => {
+      requests += 1;
+      response.end("probe");
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Probe server did not expose a TCP port.");
+    }
+
+    try {
+      // Asked through a render of its own, so it is the pool's own browser being
+      // counted rather than one this test launched.
+      const pagesInPool = () => withRenderPage(async (page) => (await page.browser().pages()).length);
+      const before = await pagesInPool();
+
+      await generateBookPdf(
+        [
+          "# The Book",
+          "",
+          "Innocent prose.",
+          "",
+          `<img src="${projectId}/missing.png" onerror="window.open('http://127.0.0.1:${address.port}/probe','_blank')">`
+        ].join("\n"),
+        { imageStorageDir, publicApiUrl: "http://localhost:4001", projectId }
+      );
+
+      // Give an accidentally opened navigation time to reach the local server;
+      // the vulnerable implementation made two requests before PDF generation
+      // returned, so this is deliberately generous.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(requests).toBe(0);
+      expect(await pagesInPool()).toBe(before);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  }, 60_000);
 
   const itIfPdfFontsAvailable = hasCommand("pdffonts") ? it : it.skip;
 

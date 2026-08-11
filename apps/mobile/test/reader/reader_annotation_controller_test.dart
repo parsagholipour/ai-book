@@ -76,6 +76,54 @@ const stroke = InkStroke(
 );
 
 void main() {
+  test(
+    'refuses to stamp markup before the displayed revision is exact',
+    () async {
+      final repository = MemoryReaderRepository();
+      final controller = ReaderAnnotationController(
+        repository: repository,
+        projectId: 'project-1',
+        revision: null,
+      );
+      addTearDown(controller.dispose);
+      await controller.load();
+
+      expect(
+        controller.addTextMarkup(
+          page: 1,
+          style: ReaderMarkupStyle.highlight,
+          rects: const [NormRect(0, 0, 1, 0.02)],
+          quote: 'unverified passage',
+        ),
+        isNull,
+      );
+      expect(
+        controller.addNote(
+          page: 1,
+          anchor: const NormPoint(0.2, 0.2),
+          body: 'unverified note',
+        ),
+        isNull,
+      );
+      expect(
+        controller.addTextBox(
+          page: 1,
+          anchor: const NormPoint(0.3, 0.3),
+          body: 'unverified text',
+        ),
+        isNull,
+      );
+      expect(controller.addStroke(page: 1, stroke: stroke), isNull);
+      controller.setTool(ReaderTool.pen);
+      controller.beginMove('old-note');
+      expect(controller.tool, ReaderTool.none);
+      expect(controller.pendingMoveId, isNull);
+      expect(controller.isMarkingUp, isFalse);
+      expect(controller.all, isEmpty);
+      expect(repository.annotationWrites, 0);
+    },
+  );
+
   test('a page with nothing on it costs nothing to draw', () async {
     final controller = await loaded(MemoryReaderRepository());
     addTearDown(controller.dispose);
@@ -112,34 +160,40 @@ void main() {
     expect(controller.count, 1);
   });
 
-  test('the eraser takes the stroke under the finger and nothing else', () async {
-    final controller = await loaded(MemoryReaderRepository());
-    addTearDown(controller.dispose);
+  test(
+    'the eraser takes the stroke under the finger and nothing else',
+    () async {
+      final controller = await loaded(MemoryReaderRepository());
+      addTearDown(controller.dispose);
 
-    controller.addStroke(page: 1, stroke: stroke);
-    controller.addStroke(
-      page: 1,
-      stroke: const InkStroke(
-        points: [NormPoint(0.1, 0.9), NormPoint(0.9, 0.9)],
-        colorIndex: 4,
-        width: 0.004,
-      ),
-    );
+      controller.addStroke(page: 1, stroke: stroke);
+      controller.addStroke(
+        page: 1,
+        stroke: const InkStroke(
+          points: [NormPoint(0.1, 0.9), NormPoint(0.9, 0.9)],
+          colorIndex: 4,
+          width: 0.004,
+        ),
+      );
 
-    expect(controller.eraseAt(page: 1, point: const NormPoint(0.5, 0.5)), isTrue);
-    expect(controller.onPage(1), hasLength(1));
+      expect(
+        controller.eraseAt(page: 1, point: const NormPoint(0.5, 0.5)),
+        isTrue,
+      );
+      expect(controller.onPage(1), hasLength(1));
 
-    expect(
-      controller.eraseAt(page: 1, point: const NormPoint(0.5, 0.2)),
-      isFalse,
-      reason: 'nothing is there',
-    );
-    expect(
-      controller.eraseAt(page: 2, point: const NormPoint(0.5, 0.9)),
-      isFalse,
-      reason: 'a stroke on another page is not under the finger',
-    );
-  });
+      expect(
+        controller.eraseAt(page: 1, point: const NormPoint(0.5, 0.2)),
+        isFalse,
+        reason: 'nothing is there',
+      );
+      expect(
+        controller.eraseAt(page: 2, point: const NormPoint(0.5, 0.9)),
+        isFalse,
+        reason: 'a stroke on another page is not under the finger',
+      );
+    },
+  );
 
   group('tapping your own markup', () {
     test('a tap on a highlight finds it', () async {
@@ -157,7 +211,7 @@ void main() {
       // has to be bigger than the thing drawn or nothing would ever be tapped.
       expect(
         controller.annotationAt(3, const NormPoint(0.4, 0.31))?.id,
-        mark.id,
+        mark!.id,
       );
       expect(
         controller.annotationAt(3, const NormPoint(0.4, 0.60)),
@@ -189,7 +243,7 @@ void main() {
 
       expect(
         controller.annotationAt(1, const NormPoint(0.32, 0.31))?.id,
-        onTop.id,
+        onTop!.id,
       );
     });
 
@@ -199,7 +253,10 @@ void main() {
 
       final drawn = controller.addStroke(page: 2, stroke: stroke)!;
 
-      expect(controller.annotationAt(2, const NormPoint(0.5, 0.5))?.id, drawn.id);
+      expect(
+        controller.annotationAt(2, const NormPoint(0.5, 0.5))?.id,
+        drawn.id,
+      );
       expect(controller.annotationAt(2, const NormPoint(0.5, 0.9)), isNull);
     });
 
@@ -249,11 +306,11 @@ void main() {
       // Two translucent layers over one line read as a third, darker colour,
       // and the index would list the passage twice.
       expect(controller.onPage(1), hasLength(1));
-      expect(controller.onPage(1).single.id, second.id);
+      expect(controller.onPage(1).single.id, second!.id);
       expect(controller.onPage(1).single.colorIndex, 2);
       expect(
         controller.all.map((entry) => entry.id),
-        isNot(contains(first.id)),
+        isNot(contains(first!.id)),
       );
     });
 
@@ -319,7 +376,7 @@ void main() {
       controller.undo();
 
       expect(controller.onPage(1), hasLength(1));
-      expect(controller.onPage(1).single.id, first.id);
+      expect(controller.onPage(1).single.id, first!.id);
     });
   });
 
@@ -393,17 +450,20 @@ void main() {
       expect(controller.viewerMode, ReaderViewerMode.placing);
     });
 
-    test('moving something puts the page into placing, whatever the tool', () async {
-      final controller = await loaded(MemoryReaderRepository());
-      addTearDown(controller.dispose);
+    test(
+      'moving something puts the page into placing, whatever the tool',
+      () async {
+        final controller = await loaded(MemoryReaderRepository());
+        addTearDown(controller.dispose);
 
-      controller.beginMove('some-id');
-      expect(controller.viewerMode, ReaderViewerMode.placing);
-      expect(controller.tool, ReaderTool.none);
+        controller.beginMove('some-id');
+        expect(controller.viewerMode, ReaderViewerMode.placing);
+        expect(controller.tool, ReaderTool.none);
 
-      controller.endMove();
-      expect(controller.viewerMode, ReaderViewerMode.reading);
-    });
+        controller.endMove();
+        expect(controller.viewerMode, ReaderViewerMode.reading);
+      },
+    );
 
     test('closing the tray puts every tool away', () async {
       final controller = await loaded(MemoryReaderRepository());
@@ -433,29 +493,32 @@ void main() {
     expect(controller.settings.markupColorIndex, 2);
   });
 
-  test('a fresh highlight takes the remembered colour unless told otherwise', () async {
-    final repository = MemoryReaderRepository()
-      ..settings = const ReaderSettings(markupColorIndex: 3);
-    final controller = await loaded(repository);
-    addTearDown(controller.dispose);
+  test(
+    'a fresh highlight takes the remembered colour unless told otherwise',
+    () async {
+      final repository = MemoryReaderRepository()
+        ..settings = const ReaderSettings(markupColorIndex: 3);
+      final controller = await loaded(repository);
+      addTearDown(controller.dispose);
 
-    final remembered = controller.addTextMarkup(
-      page: 1,
-      style: ReaderMarkupStyle.highlight,
-      rects: const [NormRect(0, 0, 1, 0.02)],
-      quote: 'a passage',
-    );
-    final explicit = controller.addTextMarkup(
-      page: 1,
-      style: ReaderMarkupStyle.underline,
-      rects: const [NormRect(0, 0, 1, 0.02)],
-      quote: 'another passage',
-      colorIndex: 1,
-    );
+      final remembered = controller.addTextMarkup(
+        page: 1,
+        style: ReaderMarkupStyle.highlight,
+        rects: const [NormRect(0, 0, 1, 0.02)],
+        quote: 'a passage',
+      );
+      final explicit = controller.addTextMarkup(
+        page: 1,
+        style: ReaderMarkupStyle.underline,
+        rects: const [NormRect(0, 0, 1, 0.02)],
+        quote: 'another passage',
+        colorIndex: 1,
+      );
 
-    expect(remembered.colorIndex, 3);
-    expect(explicit.colorIndex, 1);
-  });
+      expect(remembered!.colorIndex, 3);
+      expect(explicit!.colorIndex, 1);
+    },
+  );
 
   test('writes are debounced, then flushed on demand', () async {
     final repository = MemoryReaderRepository();

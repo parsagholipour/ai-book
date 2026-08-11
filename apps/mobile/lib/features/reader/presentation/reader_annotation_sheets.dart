@@ -106,6 +106,8 @@ Future<ReaderAnnotationCommand?> showReaderAnnotationSheet({
   required List<ReaderMarkupColor> palette,
   required bool editingEnabled,
   required void Function(int colorIndex) onColorChanged,
+  bool placementEnabled = true,
+  bool bookActionsEnabled = true,
 }) {
   return showModalBottomSheet<ReaderAnnotationCommand>(
     context: context,
@@ -115,6 +117,8 @@ Future<ReaderAnnotationCommand?> showReaderAnnotationSheet({
       annotation: annotation,
       palette: palette,
       editingEnabled: editingEnabled,
+      placementEnabled: placementEnabled,
+      bookActionsEnabled: bookActionsEnabled,
       onColorChanged: onColorChanged,
     ),
   );
@@ -127,12 +131,16 @@ class ReaderAnnotationSheet extends StatefulWidget {
     required this.palette,
     required this.editingEnabled,
     required this.onColorChanged,
+    this.placementEnabled = true,
+    this.bookActionsEnabled = true,
     super.key,
   });
 
   final ReaderAnnotation annotation;
   final List<ReaderMarkupColor> palette;
   final bool editingEnabled;
+  final bool placementEnabled;
+  final bool bookActionsEnabled;
   final void Function(int colorIndex) onColorChanged;
 
   @override
@@ -188,6 +196,13 @@ class _ReaderAnnotationSheetState extends State<ReaderAnnotationSheet> {
                   text:
                       'The passage this was on is no longer in the book, so it '
                       'is not shown on the page.',
+                ),
+              ],
+              if (!widget.bookActionsEnabled && _hasQuote) ...[
+                const SizedBox(height: 10),
+                _Notice(
+                  icon: Icons.sync_problem_outlined,
+                  text: 'Reload to use actions tied to the current book.',
                 ),
               ],
               if (body.isNotEmpty) ...[
@@ -262,6 +277,7 @@ class _ReaderAnnotationSheetState extends State<ReaderAnnotationSheet> {
           Icons.open_with,
           'Move it',
           () => _pop(ReaderAnnotationCommand.move),
+          enabled: widget.placementEnabled,
         ),
       if (_hasQuote) ...[
         _action(
@@ -273,24 +289,25 @@ class _ReaderAnnotationSheetState extends State<ReaderAnnotationSheet> {
           Icons.chat_bubble_outline,
           'Ask about it',
           () => _pop(ReaderAnnotationCommand.ask),
+          enabled: widget.bookActionsEnabled,
         ),
         _action(
           Icons.auto_fix_high_outlined,
           'Rewrite it',
           () => _pop(ReaderAnnotationCommand.rewrite),
-          enabled: widget.editingEnabled,
+          enabled: widget.bookActionsEnabled && widget.editingEnabled,
         ),
         _action(
           Icons.find_replace_outlined,
           'Replace it',
           () => _pop(ReaderAnnotationCommand.replace),
-          enabled: widget.editingEnabled,
+          enabled: widget.bookActionsEnabled && widget.editingEnabled,
         ),
         _action(
           Icons.edit_outlined,
           'Edit this page',
           () => _pop(ReaderAnnotationCommand.editPage),
-          enabled: widget.editingEnabled,
+          enabled: widget.bookActionsEnabled && widget.editingEnabled,
         ),
       ],
       _action(

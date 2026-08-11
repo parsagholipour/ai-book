@@ -46,6 +46,60 @@ describe("persistent manuscript quality gate", () => {
     expect(buildManuscriptQualityReport(issues)).toMatchObject({ state: "passed", score: 100, issues: [] });
   });
 
+  it("flags two nearly identical pages", () => {
+    const body = words(120);
+    const issues = runDeterministicManuscriptChecks({
+      expectedPageCount: 2,
+      pages: [
+        { index: 1, title: "Opening", markdown: `${body} alpha.` },
+        { index: 2, title: "Repeat", markdown: `${body} beta.` }
+      ]
+    });
+
+    expect(issues.map((issue) => issue.code)).toContain("NEAR_DUPLICATE_PAGES");
+    expect(issues.find((issue) => issue.code === "NEAR_DUPLICATE_PAGES")?.affectedPageIndexes).toEqual([1, 2]);
+  });
+
+  it("does not flag two distinct pages of the same length", () => {
+    const issues = runDeterministicManuscriptChecks({
+      expectedPageCount: 2,
+      pages: [
+        { index: 1, title: "Opening", markdown: words(120, "left") },
+        { index: 2, title: "Closing", markdown: words(120, "right") }
+      ]
+    });
+
+    expect(issues.map((issue) => issue.code)).not.toContain("NEAR_DUPLICATE_PAGES");
+  });
+
+  it("ignores pages under the 80-word floor even when identical", () => {
+    const body = words(40);
+    const issues = runDeterministicManuscriptChecks({
+      expectedPageCount: 2,
+      pages: [
+        { index: 1, title: "Opening", markdown: body },
+        { index: 2, title: "Repeat", markdown: body }
+      ]
+    });
+
+    expect(issues.map((issue) => issue.code)).not.toContain("NEAR_DUPLICATE_PAGES");
+  });
+
+  it("does not flag a short page whose words are all reused by a much longer one", () => {
+    // The Jaccard size bound rejects this in O(1). It has to agree with the
+    // full computation: 100 shared words over a 300-word union is 0.33.
+    const shared = words(100);
+    const issues = runDeterministicManuscriptChecks({
+      expectedPageCount: 2,
+      pages: [
+        { index: 1, title: "Short", markdown: shared },
+        { index: 2, title: "Long", markdown: `${shared} ${words(200, "extra")}` }
+      ]
+    });
+
+    expect(issues.map((issue) => issue.code)).not.toContain("NEAR_DUPLICATE_PAGES");
+  });
+
   it("appends a post-hoc warning without erasing the original checks", () => {
     const report = buildManuscriptQualityReport([]);
 
@@ -83,3 +137,8 @@ describe("persistent manuscript quality gate", () => {
     expect(appended.state).toBe("blocked");
   });
 });
+
+/** `count` distinct words, so a page's vocabulary size is exactly `count`. */
+function words(count: number, prefix = "word"): string {
+  return Array.from({ length: count }, (_, index) => `${prefix}${index}`).join(" ");
+}

@@ -162,6 +162,13 @@ class MobileProjectStatus {
 
   bool get isComplete => status == 'complete';
 
+  /// Generation has finished and missing compiled files can be repaired.
+  ///
+  /// A book that needs quality review is still a finished, exportable book;
+  /// review changes the warning shown to the reader, not whether its PDF and
+  /// EPUB can be rebuilt.
+  bool get isSettled => isComplete || status == 'review_required';
+
   bool get hasReadyExport => exports.pdf.available || exports.epub.available;
 
   bool get requiresReview => status == 'review_required' || quality.isBlocked;

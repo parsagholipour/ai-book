@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import {
   coverArtSourceFor,
   dispatchBackoffMs,
+  EXPORT_PUBLICATION_PROJECT_STATUS,
+  jobOwnsQualityVerdict,
   resolveBookGenerationStrategy,
   retryJobOptions,
   workerJobNameForType,
@@ -78,6 +80,11 @@ export async function enqueueWorkerJob(options: {
         ...(dedupeKey ? { dedupeKey } : {}),
         ...(attemptId ? { attemptId } : {}),
         ...(options.contentRevision !== undefined ? { contentRevision: options.contentRevision } : {}),
+        // Promoted out of the payload alongside `contentRevision`: the API reads
+        // the owning compile straight off this column, because a payload flag
+        // cannot be negated in SQL without dropping every row that never
+        // carried it. See `jobOwnsQualityVerdict`.
+        ownsQualityVerdict: jobOwnsQualityVerdict(options.type, options.payload),
         payload: options.payload as Prisma.InputJsonValue
       }
     });
@@ -279,20 +286,41 @@ export async function enqueueNextPageIfReady(projectId: string, planId: string, 
   }
 }
 
+/**
+ * Whether an export is now on its way, which is what a caller that moved the
+ * project needs to know.
+ *
+ * `applyBookEdit` is that caller: it takes the project EDITING, deletes the
+ * compiled files and increments `contentRevision`, and *nothing but a compile*
+ * takes it back out. A silent no-op there leaves a book mid-edit with no files,
+ * no job, and no sweep that can reach it — `reconcileStrandedGeneration` only
+ * looks at GENERATING and `ensureExportRepairQueued` only at COMPLETE and
+ * REVIEW_REQUIRED.
+ */
+export type CompileDispatchOutcome =
+  /** A compile for this manuscript is queued, or one was already in flight. */
+  | "compile"
+  /** Work in flight fans back in here when it lands — the cover, a page, an image. */
+  | "waiting"
+  /** Nothing is coming: the saved pages are not a publishable book. */
+  | "not-ready"
+  /** The project is gone or FAILED; its status is not this function's to move. */
+  | "settled";
+
 export async function maybeEnqueueCompile(
   projectId: string,
   planId: string,
   options: { skipFinalReview?: boolean } = {}
-) {
+): Promise<CompileDispatchOutcome> {
   const [project, planVersion] = await Promise.all([
     prisma.project.findUnique({ where: { id: projectId } }),
     prisma.planVersion.findUnique({ where: { id: planId } })
   ]);
   if (!project) {
-    return;
+    return "settled";
   }
   if (project.status === "FAILED") {
-    return;
+    return "settled";
   }
   const input = inputForPlanVersion(project, planVersion?.inputSnapshot);
   const strategy = resolveBookGenerationStrategy(input).strategy;
@@ -309,7 +337,21 @@ export async function maybeEnqueueCompile(
         where: { projectId, type: "GENERATE_IMAGE", status: { in: ["QUEUED", "ACTIVE"] } }
       }),
       prisma.generationJob.count({
-        where: { projectId, type: "COMPILE_EXPORT", status: { in: ["QUEUED", "ACTIVE"] } }
+        where: {
+          projectId,
+          type: "COMPILE_EXPORT",
+          status: { in: ["QUEUED", "ACTIVE"] },
+          // Only a compile that will publish *this* manuscript counts as one
+          // already coming. An export repair is queued against a book that is
+          // COMPLETE, so it carries the pre-edit revision — and an edit that
+          // lands under it makes it stand down at `publishCompiledExports`, or
+          // be cancelled outright by `staleGenerationJobReason` before it
+          // starts. Letting a compile that will publish nothing suppress the
+          // edit's own recompile left the project EDITING with its exports
+          // already deleted and nothing left to rebuild them. A null revision
+          // claims unconditionally, so it does still count.
+          OR: [{ contentRevision: null }, { contentRevision: project.contentRevision }]
+        }
       }),
       prisma.imageAsset.count({ where: { projectId, type: "COVER" } })
     ]);
@@ -324,13 +366,14 @@ export async function maybeEnqueueCompile(
     openPageJobs === 0;
   if (pagesReady && coverArtSourceFor(input.mediaSettings) !== "none" && coverAssets === 0 && openImageJobs === 0) {
     await maybeEnqueueCover(projectId, planId, input);
-    return;
+    return "waiting";
   }
-  if (
-    pagesReady &&
-    openImageJobs === 0 &&
-    existingCompileJobs === 0
-  ) {
+  if (!pagesReady || openImageJobs > 0) {
+    // A page or image job still in flight calls back here when it completes;
+    // anything else means the saved pages do not add up to a book at all.
+    return openPageJobs > 0 || openImageJobs > 0 ? "waiting" : "not-ready";
+  }
+  if (existingCompileJobs === 0) {
     const contentFingerprint = createHash("sha256")
       .update(pages.map((page) => `${page.id}:${page.revision}`).sort().join("|"))
       .digest("hex")
@@ -340,11 +383,17 @@ export async function maybeEnqueueCompile(
       projectId,
       type: "COMPILE_EXPORT",
       name: "compile-export",
-      payload: { planId, contentRevision, ...(options.skipFinalReview ? { skipFinalReview: true } : {}) },
+      payload: {
+        planId,
+        contentRevision,
+        [EXPORT_PUBLICATION_PROJECT_STATUS]: project.status,
+        ...(options.skipFinalReview ? { skipFinalReview: true } : {})
+      },
       dedupeKey: `compile-export:${projectId}:${planId}:${contentFingerprint}`,
       contentRevision
     });
   }
+  return "compile";
 }
 
 const STRANDED_GENERATION_GRACE_MS = 60_000;

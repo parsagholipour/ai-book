@@ -1,22 +1,18 @@
-import { readFile } from "node:fs/promises";
-import { extname, isAbsolute, join, relative, sep } from "node:path";
-import { mdToPdf } from "md-to-pdf";
+import { constants } from "node:fs";
+import { access, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
+import { resolveBookImageAsset } from "./bookImageAssets.js";
+import { withRenderPage } from "./browserPool.js";
+import { renderDocumentTempPath } from "./exportTempSweep.js";
 import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
 import { bookPdfCss } from "./pdfCss.js";
+import { BOOK_PDF_MEDIA_TYPE, BOOK_PDF_OPTIONS, buildBookPdfDocument } from "./pdfDocument.js";
+import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
 
 const IMAGE_MARKDOWN_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
-
-const MIME_BY_EXT: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".svg": "image/svg+xml"
-};
-
 
 export type GenerateBookPdfOptions = {
   imageStorageDir: string;
@@ -28,64 +24,83 @@ export type GenerateBookPdfOptions = {
    * without it a Persian book has no Arabic glyphs to render with.
    */
   language?: string | undefined;
+  /**
+   * The project being compiled. It narrows the files the renderer may read to
+   * that project's own illustrations, the way `sendOwnedProjectAsset` narrows
+   * the HTTP asset route — printing from `file://` is what dropped that check.
+   * Without it the whole image storage directory is readable, which is the
+   * fallback for callers that render a book belonging to no project.
+   */
+  projectId?: string | undefined;
 };
 
-export type PreparedMarkdownForPdf = {
-  markdown: string;
-  imageDataUrls: ReadonlyMap<string, string>;
-};
+type PdfImageOptions = { imageStorageDir: string; publicApiUrl: string; projectId?: string | undefined };
 
-export async function localizeImagesInMarkdown(
-  markdown: string,
-  options: { imageStorageDir: string; publicApiUrl: string }
-): Promise<string> {
-  return (await prepareMarkdownImagesForPdf(markdown, options)).markdown;
+export async function localizeImagesInMarkdown(markdown: string, options: PdfImageOptions): Promise<string> {
+  return prepareMarkdownImagesForPdf(markdown, options);
 }
 
 export async function prepareMarkdownForPdfDocument(
   markdown: string,
-  options: { imageStorageDir: string; publicApiUrl: string }
-): Promise<PreparedMarkdownForPdf> {
-  const prepared = await prepareMarkdownImagesForPdf(markdown, options);
-  return {
-    markdown: insertCoverPageBreak(prepared.markdown),
-    imageDataUrls: prepared.imageDataUrls
-  };
+  options: PdfImageOptions
+): Promise<string> {
+  return insertCoverPageBreak(await prepareMarkdownImagesForPdf(markdown, options));
 }
 
+/**
+ * Rewrites every local illustration to the path the renderer reads it from.
+ *
+ * The path is relative, and the document is printed from a file inside
+ * `imageStorageDir`, so Chrome opens each illustration directly off disk. The
+ * bytes used to be read here, base64'd, and shipped into the page as a data-URI
+ * map — a second copy of every image on top of the one the renderer already had.
+ *
+ * Only existence is checked, and all the checks run together: an image whose
+ * file is gone keeps its original URL rather than being pointed at a path that
+ * is not there either. The rewrite is a single `replace` pass with a function
+ * replacer, so it is linear in the document rather than one full-text scan per
+ * image, and a `$&` or `$'` in alt text can no longer rewrite itself.
+ */
 async function prepareMarkdownImagesForPdf(
   markdown: string,
-  options: { imageStorageDir: string; publicApiUrl: string }
-): Promise<PreparedMarkdownForPdf> {
-  const publicBase = options.publicApiUrl.replace(/\/+$/, "");
-  let result = markdown;
-  const imageDataUrls = new Map<string, string>();
+  options: PdfImageOptions
+): Promise<string> {
+  const publicApiBase = options.publicApiUrl.replace(/\/+$/, "");
+  // Another project's illustration is refused here as well as at the renderer's
+  // allowlist, so the document never names a file the render is going to abort —
+  // and the EPUB, which has no renderer to stop it, is refusing the same thing in
+  // the same place.
+  const resolve = (src: string) =>
+    resolveBookImageAsset(src, {
+      imageStorageDir: options.imageStorageDir,
+      publicApiBase,
+      projectId: options.projectId
+    });
 
+  const localPaths = new Map<string, string>();
   for (const match of markdown.matchAll(IMAGE_MARKDOWN_RE)) {
-    const full = match[0];
-    const alt = match[1] ?? "";
-    const src = match[2] ?? "";
-    const localPath = resolveImageLocalPath(src, options.imageStorageDir, publicBase);
-    if (!localPath) {
-      continue;
-    }
-
-    try {
-      const assetPath = markdownAssetPathForLocalImage(localPath, options.imageStorageDir);
-      if (!assetPath) {
-        continue;
-      }
-      imageDataUrls.set(assetPath, await imageDataUrlForLocalPath(localPath));
-      result = result.replace(full, `![${alt}](${assetPath})`);
-    } catch {
-      // Keep the original URL when the local file cannot be embedded.
+    const resolved = resolve(match[2] ?? "");
+    if (resolved) {
+      localPaths.set(resolved.assetPath, resolved.localPath);
     }
   }
 
-  return {
-    markdown: result,
-    imageDataUrls
-  };
+  const readable = new Set<string>();
+  await Promise.all(
+    [...localPaths].map(async ([assetPath, localPath]) => {
+      try {
+        await access(localPath, constants.R_OK);
+        readable.add(assetPath);
+      } catch {
+        // Leave it out; the rewrite below keeps the original URL.
+      }
+    })
+  );
+
+  return markdown.replace(IMAGE_MARKDOWN_RE, (full: string, alt: string, src: string) => {
+    const resolved = resolve(src);
+    return resolved && readable.has(resolved.assetPath) ? `![${alt}](${resolved.assetPath})` : full;
+  });
 }
 
 export function insertCoverPageBreak(markdown: string): string {
@@ -118,52 +133,93 @@ export async function generateBookPdf(
 ): Promise<Buffer> {
   const prepared = await prepareMarkdownForPdfDocument(markdown, {
     imageStorageDir: options.imageStorageDir,
-    publicApiUrl: options.publicApiUrl
+    publicApiUrl: options.publicApiUrl,
+    projectId: options.projectId
   });
   const profile = scriptProfileForLanguage(options.language);
-  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), prepared.markdown, profile);
-  const css = `${fontCss}\n${bookPdfCss(profile)}`;
+  const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), prepared, profile);
+  const html = await buildBookPdfDocument({
+    markdown: prepared,
+    css: `${fontCss}\n${bookPdfCss(profile)}`,
+    profile
+  });
 
-  const result = await mdToPdf(
-    // The stylesheet rides on the `css` option alone. It used to also be
-    // inlined into the content, and md-to-pdf applies `css` last and wins —
-    // so the copy was pure waste, and a CJK book's fonts would have put
-    // megabytes of it into the DOM twice.
-    { content: prepared.markdown },
-    {
-      ...(options.outputPath ? { dest: options.outputPath } : {}),
-      pdf_options: {
-        format: "a4",
-        printBackground: true,
-        // Chapter and page headings become PDF bookmarks, which is what the
-        // mobile reader's table of contents navigates by. Books compiled
-        // before this was added have no outline; the reader falls back to the
-        // Contents page links.
-        outline: true
-      },
-      css,
-      launch_options: {
-        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-      },
-      script: [
-        // md-to-pdf's HTML wrapper is fixed and carries no `lang` or `dir`.
-        // The direction itself comes from CSS, which is bidi-equivalent; this
-        // is for what CSS cannot reach — Chrome copies `lang` into the PDF's
-        // own `/Lang`, and `dir` adds the UA's root bidi isolation.
-        ...(isDefaultLatinProfile(profile) ? [] : [{ content: buildDocumentLanguageScript(profile) }]),
-        ...(prepared.imageDataUrls.size > 0
-          ? [{ content: buildEmbedLocalImagesScript(prepared.imageDataUrls) }]
-          : [])
-      ],
-      basedir: options.imageStorageDir
-    }
-  );
-
-  if (!result?.content) {
-    throw new Error("PDF generation returned no content");
+  const pdf = await renderPdfDocument(html, {
+    imageStorageDir: options.imageStorageDir,
+    assetRoot: options.projectId
+      ? join(options.imageStorageDir, options.projectId)
+      : options.imageStorageDir
+  });
+  if (options.outputPath) {
+    await writeFile(options.outputPath, pdf);
   }
+  return pdf;
+}
 
-  return Buffer.from(result.content);
+/**
+ * Prints an assembled document, handing Chrome a real file on disk.
+ *
+ * The document is written *into* `imageStorageDir` so the book's relative asset
+ * paths (`projectId/filename`) resolve against it exactly as they resolved
+ * against md-to-pdf's static server — except Chrome now reads the HTML, the CSS
+ * and every illustration straight off disk, so nothing crosses CDP at all. That
+ * is what removes the pathological exports: `addStyleTag`/`addScriptTag` take no
+ * timeout, and a legacy illustrated book was shipping a ~27 MB JSON image map
+ * through one of them.
+ *
+ * The file is not web-reachable. `/assets/images/:projectId/:filename` is a
+ * two-segment parameter route rather than a static mount, so nothing at the root
+ * of the directory can be fetched.
+ *
+ * What a `file://` document *can* reach is the rest of the disk, which is the
+ * one thing the static server used to prevent — hence the resource policy below.
+ */
+async function renderPdfDocument(
+  html: string,
+  options: { imageStorageDir: string; assetRoot: string }
+): Promise<Buffer> {
+  await mkdir(options.imageStorageDir, { recursive: true });
+  const documentPath = renderDocumentTempPath(options.imageStorageDir);
+  await writeFile(documentPath, html, "utf8");
+
+  try {
+    // `withRenderPage` owns the one retry a shared browser needs, so the temp
+    // document has to outlive it — hence the `finally` rather than a cleanup
+    // inside the render.
+    return await printDocument(documentPath, options.assetRoot);
+  } finally {
+    // Covers every way this call can end except the ones where no code of ours
+    // runs at all: a SIGKILL, an OOM kill, a container evicted mid-render.
+    // `sweepStaleExportTempFiles` collects what those leave behind.
+    await rm(documentPath, { force: true }).catch(() => undefined);
+  }
+}
+
+function printDocument(documentPath: string, assetRoot: string): Promise<Buffer> {
+  return withRenderPage(async (page) => {
+    // Manuscripts are content, never programs. Disabling script before the
+    // first navigation is the only way to cover windows a document might open:
+    // request interception is installed per page, after a popup's first
+    // navigation has already begun. Puppeteer's own `evaluate` calls below
+    // still run through CDP with page JavaScript disabled.
+    await page.setJavaScriptEnabled(false);
+    // Before the navigation, because the navigation is one of the things it
+    // governs: this document, and this book's illustrations, and nothing else.
+    await applyRenderResourcePolicy(page, { documentPath, assetRoot });
+    await page.goto(pathToFileURL(documentPath).href, { waitUntil: "load" });
+    // Replaces md-to-pdf's `networkidle0` wait, which was a hard ≥500 ms floor
+    // and the only thing sequencing web fonts and image decode before the
+    // print. `page.pdf()` waits on `document.fonts.ready` itself in puppeteer
+    // 25, so the fonts are double-covered — the explicit wait stays so that the
+    // image decode is ordered after them, and so the sequencing is visible here
+    // rather than in a dependency's default.
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    await page.evaluate(async () => {
+      await Promise.all([...document.images].map((image) => image.decode().catch(() => undefined)));
+    });
+    await page.emulateMediaType(BOOK_PDF_MEDIA_TYPE);
+    return Buffer.from(await page.pdf(BOOK_PDF_OPTIONS));
+  });
 }
 
 /**
@@ -180,71 +236,6 @@ function loadBookPdfFontCss(fontSet: BookFontSet, markdown: string, profile: Scr
     { family: "SourceSerifBook", packages: fontSet.body, codePoints },
     { family: "InterBook", packages: fontSet.display, codePoints }
   ]);
-}
-
-function isDefaultLatinProfile(profile: ScriptProfile): boolean {
-  return profile.script === "latin" && profile.direction === "ltr" && profile.code === "en";
-}
-
-function buildDocumentLanguageScript(profile: ScriptProfile): string {
-  return `(() => {
-  document.documentElement.lang = ${JSON.stringify(profile.code)};
-  document.documentElement.dir = ${JSON.stringify(profile.direction)};
-})();`;
-}
-
-function resolveImageLocalPath(
-  src: string,
-  imageStorageDir: string,
-  publicApiBase: string
-): string | null {
-  let pathPart = src.trim();
-  if (pathPart.startsWith(publicApiBase)) {
-    pathPart = pathPart.slice(publicApiBase.length);
-  }
-
-  const match = pathPart.match(/\/assets\/images\/([^/]+)\/([^)\s]+)/);
-  if (!match) {
-    return null;
-  }
-
-  const projectId = match[1];
-  const filename = match[2];
-  if (!projectId || !filename) {
-    return null;
-  }
-  return join(imageStorageDir, projectId, filename);
-}
-
-function markdownAssetPathForLocalImage(localPath: string, imageStorageDir: string): string | null {
-  const relativePath = relative(imageStorageDir, localPath);
-  if (!relativePath || relativePath.startsWith("..") || isAbsolute(relativePath)) {
-    return null;
-  }
-  return relativePath.split(sep).map(encodeURIComponent).join("/");
-}
-
-async function imageDataUrlForLocalPath(localPath: string): Promise<string> {
-  const bytes = await readFile(localPath);
-  return `data:${mimeTypeForPath(localPath)};base64,${bytes.toString("base64")}`;
-}
-
-function mimeTypeForPath(filePath: string): string {
-  return MIME_BY_EXT[extname(filePath).toLowerCase()] ?? "application/octet-stream";
-}
-
-function buildEmbedLocalImagesScript(imageDataUrls: ReadonlyMap<string, string>): string {
-  const entries = JSON.stringify([...imageDataUrls.entries()]);
-  return `(() => {
-  const imageDataUrls = new Map(${entries});
-  for (const image of document.images) {
-    const src = image.getAttribute("src") || "";
-    const dataUrl = imageDataUrls.get(src);
-    if (dataUrl) {
-      image.setAttribute("src", dataUrl);
-    }
-  }
-})();`;
 }
 
 function escapeHtmlAttribute(value: string): string {

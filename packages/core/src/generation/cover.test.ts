@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { closeSharedBrowser } from "./browserPool.js";
 import {
   applyCoverTemplateOverride,
   buildCoverArtworkPrompt,
@@ -16,18 +17,40 @@ const screenshot = vi.hoisted(() => vi.fn(async () => Buffer.from("png")));
 vi.mock("puppeteer", () => ({
   default: {
     launch: async () => ({
-      newPage: async () => ({
-        setViewport: async () => undefined,
-        setContent: async () => undefined,
-        // The real page runs these against a document; the options we assert on
-        // do not depend on anything they return.
-        evaluate: async () => undefined,
-        screenshot
+      // A render is leased a whole browser context, so that anything the
+      // rendered document opens for itself goes when the context does.
+      createBrowserContext: async () => ({
+        newPage: async () => ({
+          setViewport: async () => undefined,
+          setContent: async () => undefined,
+          // The real page runs these against a document; the options we assert
+          // on do not depend on anything they return.
+          evaluate: async () => undefined,
+          screenshot,
+          close: async () => undefined,
+          // What the pool compares stray targets against.
+          target: () => ({ type: () => "page" })
+        }),
+        // Where the pool watches for windows the content opened.
+        on: () => undefined,
+        close: async () => undefined
       }),
+      // The pool clears its cached browser when this fires.
+      on: () => undefined,
+      // What the pool would kill if this browser's `close()` ever wedged. There
+      // is no process behind a fake, which is what a real `connect()`ed browser
+      // answers too.
+      process: () => null,
       close: async () => undefined
     })
   }
 }));
+
+afterAll(async () => {
+  // A pooled browser outlives the render, and a live one holds the event loop
+  // open — without this vitest never exits.
+  await closeSharedBrowser();
+});
 
 describe("renderCoverPng", () => {
   it("captures within the viewport, which is what makes the clip usable on an RTL cover", async () => {

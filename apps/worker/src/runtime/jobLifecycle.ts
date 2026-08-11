@@ -2,10 +2,13 @@ import type { Job } from "bullmq";
 import {
   BOOK_GENERATION_CHARGE_LOOKBACK,
   bookGenerationChargeFromPayloads,
+  isPresentationOnlyRecompile,
   isRecoverableNetworkError,
+  payloadOwnsProjectOutcome,
+  presentationRecompileFallbackStatus,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
   shouldRecoverJobAttempt as retryPolicyShouldRecover,
-  workerJobControlsProjectStatus
+  workerJobOwnsFailureLifecycle
 } from "@book-maker/core";
 import { Prisma, planRevisionRetryDelayMs, prisma } from "@book-maker/db";
 import {
@@ -201,7 +204,7 @@ export async function markCompleted(job: Job): Promise<boolean> {
   await completeAllJobSteps(generationJobId);
   const existing = await prisma.generationJob.findUnique({
     where: { id: generationJobId },
-    select: { qualityReport: true, message: true }
+    select: { qualityReport: true, message: true, status: true }
   });
   const qualityState = jsonPayloadToRecord(existing?.qualityReport).state;
   const completionMessage =
@@ -215,12 +218,23 @@ export async function markCompleted(job: Job): Promise<boolean> {
   // Conditional: a stop or settlement that reached the row between the
   // assertJobNotStopped read above and this write wins. Claiming success over
   // it would deliver a run whose charge was just refunded.
-  const completed = await prisma.generationJob.updateMany({
-    where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
-    data: { status: "COMPLETED", finishedAt: new Date(), message: completionMessage, progress: 100 }
-  });
-  if (completed.count !== 1) {
-    return false;
+  if (existing?.status !== "COMPLETED") {
+    const completed = await prisma.generationJob.updateMany({
+      where: { id: generationJobId, status: { in: ["QUEUED", "ACTIVE"] } },
+      data: { status: "COMPLETED", finishedAt: new Date(), message: completionMessage, progress: 100 }
+    });
+    if (completed.count !== 1) {
+      return false;
+    }
+  } else {
+    // Export publication terminalizes the durable row in the same transaction
+    // that installs its artifacts. Finish the human-facing message here, but
+    // never reopen the row: a stop that follows publication must see COMPLETED
+    // and leave both the files and their charge alone.
+    await prisma.generationJob.update({
+      where: { id: generationJobId },
+      data: { message: completionMessage, progress: 100 }
+    });
   }
   const attemptId = generationAttemptIdFromJob(job);
   if (attemptId && attemptCompletesWithJob(job.name)) {
@@ -255,7 +269,7 @@ export async function markFailed(job: Job, error: unknown) {
     }
     await failActiveJobStep(generationJobId);
   }
-  if (attemptId) {
+  if (attemptId && payloadOwnsProjectOutcome(job.data)) {
     await failGenerationAttempt(attemptId, errorMessage(error)).catch((settlementError) => {
       console.error(`Failed to settle generation attempt ${attemptId}`, settlementError);
     });
@@ -328,7 +342,11 @@ export async function markFailed(job: Job, error: unknown) {
   if (job.name === "import-book") {
     await releaseImportQuotaForJob(job);
   }
-  if (projectId && workerJobControlsProjectStatus(job.name)) {
+  if (projectId && isPresentationOnlyRecompile(job.data)) {
+    await restorePresentationRecompileStatus(job, projectId);
+    return;
+  }
+  if (projectId && jobOwnsProjectLifecycle(job)) {
     await refundFailedProjectCredits(job, projectId, errorMessage(error));
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
@@ -487,7 +505,7 @@ export async function markStopped(job: Job) {
     }
     await failActiveJobStep(generationJobId, { allowStopped: true });
   }
-  if (attemptId) {
+  if (attemptId && payloadOwnsProjectOutcome(job.data)) {
     await failGenerationAttempt(attemptId, STOPPED_JOB_ERROR, "CANCELED").catch((settlementError) => {
       console.error(`Failed to settle stopped generation attempt ${attemptId}`, settlementError);
     });
@@ -528,10 +546,40 @@ export async function markStopped(job: Job) {
   if (job.name === "import-book") {
     await releaseImportQuotaForJob(job);
   }
-  if (projectId && workerJobControlsProjectStatus(job.name)) {
+  if (projectId && isPresentationOnlyRecompile(job.data)) {
+    await restorePresentationRecompileStatus(job, projectId);
+    return;
+  }
+  if (projectId && jobOwnsProjectLifecycle(job)) {
     await refundFailedProjectCredits(job, projectId, STOPPED_JOB_ERROR);
     await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } }).catch(() => undefined);
   }
+}
+
+/**
+ * Whether this job's outcome is the *project's* outcome.
+ *
+ * Two things have to be true: the job name is not a derivative one, and the job
+ * was not enqueued as detached work on a project that is already finished — a
+ * rebuild of a missing export, say. A detached job that fails records that on its
+ * own row and leaves the project and its credits alone.
+ */
+function jobOwnsProjectLifecycle(job: Job): boolean {
+  return workerJobOwnsFailureLifecycle(job.name, job.data);
+}
+
+async function restorePresentationRecompileStatus(job: Job, projectId: string): Promise<void> {
+  const contentRevision = typeof job.data.contentRevision === "number" ? job.data.contentRevision : undefined;
+  await prisma.project
+    .updateMany({
+      where: {
+        id: projectId,
+        status: "EDITING",
+        ...(contentRevision === undefined ? {} : { contentRevision })
+      },
+      data: { status: presentationRecompileFallbackStatus(job.data) }
+    })
+    .catch(() => ({ count: 0 }));
 }
 
 export async function refundFailedProjectCredits(job: Job, projectId: string, reason: string): Promise<void> {
@@ -645,7 +693,7 @@ export async function markRecovering(job: Job, error: unknown) {
       return;
     }
   }
-  if (projectId && workerJobControlsProjectStatus(job.name)) {
+  if (projectId && jobOwnsProjectLifecycle(job)) {
     await prisma.project.update({ where: { id: projectId }, data: { status: "GENERATING" } }).catch(() => undefined);
   }
 }

@@ -35,6 +35,35 @@ final apiClientProvider = Provider<ApiClient>((ref) {
 /// would misreport a slow-but-healthy model reply as a network error.
 const llmReceiveTimeout = Duration(seconds: 120);
 
+/// What the server said about the bytes a download just wrote.
+///
+/// Only the headers, and only because one download needs them: a compiled
+/// export is served from a URL that every compile of the book publishes over,
+/// so the response — not the request, and not a status read taken before it —
+/// is the only thing that can say which compile answered. See
+/// `ExportProvenance`.
+class DownloadedFile {
+  const DownloadedFile({required this.headers});
+
+  /// Response headers, names lower-cased, first value only.
+  final Map<String, String> headers;
+
+  String? header(String name) => headers[name.toLowerCase()];
+
+  /// The length the response declared, or null when it declared none.
+  int? get contentLength => int.tryParse(header('content-length') ?? '');
+
+  static DownloadedFile fromResponse(Response<dynamic> response) {
+    return DownloadedFile(
+      headers: {
+        for (final entry in response.headers.map.entries)
+          if (entry.value.isNotEmpty)
+            entry.key.toLowerCase(): entry.value.first,
+      },
+    );
+  }
+}
+
 class ApiClient {
   ApiClient({
     required this.dio,
@@ -131,17 +160,15 @@ class ApiClient {
     } on DioException catch (error) {
       if (error.response?.statusCode == 401) {
         final tokens = await refreshTokens();
-        try {
-          return await dio.request<dynamic>(
+        return _mapped(
+          () => dio.request<dynamic>(
             path,
             data: Stream.fromIterable([bytes]),
             queryParameters: queryParameters,
             options: buildOptions(tokens.accessToken),
             onSendProgress: onSendProgress,
-          );
-        } on DioException catch (retryError) {
-          throw _mapDioException(retryError);
-        }
+          ),
+        );
       }
       throw _mapDioException(error);
     }
@@ -155,13 +182,17 @@ class ApiClient {
     return _request('DELETE', path, data: data, requiresAuth: requiresAuth);
   }
 
-  /// Downloads [path] to [savePath].
+  /// Downloads [path] to [savePath], and reports what the response said.
   ///
   /// [onReceiveProgress] reports bytes received; its `total` is -1 when the
   /// response carries no Content-Length. [cancelToken] lets a caller abandon a
   /// download it no longer needs — the reader cancels when the screen closes
   /// mid-download.
-  Future<void> downloadFile(
+  ///
+  /// The headers come back because the bytes cannot be identified without them:
+  /// a caller that has to record *what* it downloaded has only the response to
+  /// learn it from. Callers that just want the file ignore the result.
+  Future<DownloadedFile> downloadFile(
     String path,
     String savePath, {
     ProgressCallback? onReceiveProgress,
@@ -169,26 +200,31 @@ class ApiClient {
   }) async {
     final accessToken = await _validAccessToken();
     try {
-      await dio.download(
-        path,
-        savePath,
-        options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
-        onReceiveProgress: onReceiveProgress,
-        cancelToken: cancelToken,
+      return DownloadedFile.fromResponse(
+        await dio.download(
+          path,
+          savePath,
+          options: Options(headers: {'Authorization': 'Bearer $accessToken'}),
+          onReceiveProgress: onReceiveProgress,
+          cancelToken: cancelToken,
+        ),
       );
     } on DioException catch (error) {
       if (error.response?.statusCode == 401) {
         final tokens = await refreshTokens();
-        await dio.download(
-          path,
-          savePath,
-          options: Options(
-            headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
+        return DownloadedFile.fromResponse(
+          await _mapped(
+            () => dio.download(
+              path,
+              savePath,
+              options: Options(
+                headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
+              ),
+              onReceiveProgress: onReceiveProgress,
+              cancelToken: cancelToken,
+            ),
           ),
-          onReceiveProgress: onReceiveProgress,
-          cancelToken: cancelToken,
         );
-        return;
       }
       throw _mapDioException(error);
     }
@@ -263,14 +299,16 @@ class ApiClient {
           retryOnAuthFailure &&
           error.response?.statusCode == 401) {
         final tokens = await refreshTokens();
-        return dio.request<dynamic>(
-          path,
-          data: data,
-          options: Options(
-            method: method,
-            contentType: data == null ? null : Headers.jsonContentType,
-            receiveTimeout: receiveTimeout,
-            headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
+        return _mapped(
+          () => dio.request<dynamic>(
+            path,
+            data: data,
+            options: Options(
+              method: method,
+              contentType: data == null ? null : Headers.jsonContentType,
+              receiveTimeout: receiveTimeout,
+              headers: {'Authorization': 'Bearer ${tokens.accessToken}'},
+            ),
           ),
         );
       }
@@ -304,16 +342,18 @@ class ApiClient {
           retryOnAuthFailure &&
           error.response?.statusCode == 401) {
         final tokens = await refreshTokens();
-        return dio.request<ResponseBody>(
-          path,
-          options: Options(
-            method: 'GET',
-            responseType: ResponseType.stream,
-            receiveTimeout: Duration.zero,
-            headers: {
-              'Accept': 'text/event-stream',
-              'Authorization': 'Bearer ${tokens.accessToken}',
-            },
+        return _mapped(
+          () => dio.request<ResponseBody>(
+            path,
+            options: Options(
+              method: 'GET',
+              responseType: ResponseType.stream,
+              receiveTimeout: Duration.zero,
+              headers: {
+                'Accept': 'text/event-stream',
+                'Authorization': 'Bearer ${tokens.accessToken}',
+              },
+            ),
           ),
         );
       }
@@ -342,6 +382,23 @@ class ApiClient {
       return (await refreshTokens()).accessToken;
     }
     return tokens.accessToken;
+  }
+
+  /// Runs [send] and maps any Dio failure onto an [ApiException].
+  ///
+  /// Every retry after a token refresh goes through here, and that is the
+  /// whole point: the retry is an ordinary request, so it fails in ordinary
+  /// ways. A `401 → refresh → 404 EXPORT_NOT_READY` reaching the reader as a
+  /// raw `DioException` matches neither `_isRebuilding` nor `_isPaymentFailure`
+  /// in `reader_overlays.dart` — both test `is ApiException` first — so an
+  /// expired access token would downgrade the "still preparing" overlay to a
+  /// dead "Could not download this book".
+  Future<T> _mapped<T>(Future<T> Function() send) async {
+    try {
+      return await send();
+    } on DioException catch (error) {
+      throw _mapDioException(error);
+    }
   }
 
   ApiException _mapDioException(DioException error) {

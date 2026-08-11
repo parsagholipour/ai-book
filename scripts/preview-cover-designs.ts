@@ -12,10 +12,12 @@
  */
 
 import {
+  closeSharedBrowser,
   COVER_DESIGNS,
   coverDesignSvg,
   createProjectSchema,
   renderCoverPng,
+  installSharedBrowserSignalHandlers,
   type BookPlan,
   type CoverDesign
 } from "../packages/core/src/index.js";
@@ -53,26 +55,38 @@ const plan = {
   characters: []
 } as unknown as BookPlan;
 
-await mkdir(outputDir, { recursive: true });
+const removeSignalHandlers = installSharedBrowserSignalHandlers();
+try {
+  await mkdir(outputDir, { recursive: true });
 
-for (const design of designs) {
-  const png = await renderCoverPng({
-    input,
-    plan,
-    metadata: { title: SAMPLE.title, subtitle: SAMPLE.subtitle, authorName: SAMPLE.authorName },
-    artwork: { bytes: Buffer.from(coverDesignSvg(design), "utf8"), mimeType: "image/svg+xml" },
-    template: {
-      id: design.template,
-      ...(design.accentColor ? { accentColor: design.accentColor } : {}),
-      ...(design.overlayCss ? { overlayCss: design.overlayCss } : {})
-    }
-  });
-  await writeFile(join(outputDir, `${design.id}.png`), png);
-  console.log(`${design.id.padEnd(20)} ${design.motif.padEnd(11)} ${(png.byteLength / 1024).toFixed(0)} KB`);
+  for (const design of designs) {
+    const png = await renderCoverPng({
+      input,
+      plan,
+      metadata: { title: SAMPLE.title, subtitle: SAMPLE.subtitle, authorName: SAMPLE.authorName },
+      artwork: { bytes: Buffer.from(coverDesignSvg(design), "utf8"), mimeType: "image/svg+xml" },
+      template: {
+        id: design.template,
+        ...(design.accentColor ? { accentColor: design.accentColor } : {}),
+        ...(design.overlayCss ? { overlayCss: design.overlayCss } : {})
+      }
+    });
+    await writeFile(join(outputDir, `${design.id}.png`), png);
+    console.log(`${design.id.padEnd(20)} ${design.motif.padEnd(11)} ${(png.byteLength / 1024).toFixed(0)} KB`);
+  }
+
+  await writeFile(join(outputDir, "index.html"), contactSheet(designs));
+  console.log(`\n${designs.length} designs → ${join(outputDir, "index.html")}`);
+} finally {
+  try {
+    // Keep the signal handlers installed until Chromium is actually gone. A
+    // signal during an awaited close must join cleanup, not restore Node's
+    // default immediate exit and orphan the browser midway through shutdown.
+    await closeSharedBrowser();
+  } finally {
+    removeSignalHandlers();
+  }
 }
-
-await writeFile(join(outputDir, "index.html"), contactSheet(designs));
-console.log(`\n${designs.length} designs → ${join(outputDir, "index.html")}`);
 
 function contactSheet(entries: readonly CoverDesign[]): string {
   const cards = entries

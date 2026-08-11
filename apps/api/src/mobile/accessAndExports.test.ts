@@ -6,6 +6,10 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { InsufficientCreditsError, ensureProjectExportEntitlementOrSpend } from "@book-maker/db/billing";
+import { exportContentDigest } from "@book-maker/core";
+
+import { readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 import { enqueueGenerationJob } from "../queue.js";
 import {
@@ -166,6 +170,183 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(Date.parse(exports.pdf.updatedAt)).not.toBeNaN();
     // The EPUB was never compiled, so it carries the revision but no file facts.
     expect(exports.epub).toMatchObject({ available: false, revision: 7, byteSize: null, updatedAt: null });
+    await app.close();
+  });
+
+  it("delivers the bytes even when an edit deletes the file while the unlock settles", async () => {
+    // The unlock must never settle against nothing. An edit deletes the
+    // compiled exports before queueing its recompile, so it can land in exactly
+    // this window — and the old order (stat, charge, read) answered 404 with
+    // the reader's credits already spent.
+    mockAccessTokens({ "token-a": "user-a" });
+    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", "%PDF-about-to-vanish");
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a",
+      title: "Owned Mobile Book",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      contentRevision: 7
+    });
+    const bookStorageDir = state.bookStorageDir ?? "";
+    vi.mocked(ensureProjectExportEntitlementOrSpend).mockImplementationOnce(async () => {
+      rmSync(join(bookStorageDir, "project-a", "book.pdf"));
+      return undefined as never;
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/pdf",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe("%PDF-about-to-vanish");
+    await app.close();
+  });
+
+  it("does not spend the export unlock when there is no file to hand back", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a",
+      title: "Owned Mobile Book",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      contentRevision: 7
+    });
+    const app = await buildMobileApp();
+
+    for (const format of ["pdf", "epub"]) {
+      const response = await app.inject({
+        method: "GET",
+        url: `/api/mobile/projects/project-a/export/${format}`,
+        headers: bearer("token-a")
+      });
+      expect(response.statusCode, format).toBe(404);
+      expect(response.json().error.code, format).toBe("EXPORT_NOT_READY");
+    }
+    expect(vi.mocked(ensureProjectExportEntitlementOrSpend)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("names the compile that produced the bytes it sends, not the row's revision", async () => {
+    // The reader files what it downloads under a revision — it caches it under
+    // one, decides staleness against one and stamps its markup with one — and
+    // the only thing that can say which compile answered is the response. Not
+    // the project row: an edit takes the row to a new revision minutes before
+    // the compile that publishes it, so a row read after the file describes a
+    // book that is not on disk yet.
+    mockAccessTokens({ "token-a": "user-a" });
+    const bytes = "%PDF-published";
+    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", bytes);
+    writeProjectFile(
+      state.bookStorageDir,
+      "project-a",
+      "book.pdf.provenance.json",
+      JSON.stringify({
+        revision: 7,
+        digest: exportContentDigest(Buffer.from(bytes)),
+        byteSize: bytes.length,
+        publishedAt: "2026-08-11T00:00:00.000Z"
+      })
+    );
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a",
+      title: "Owned Mobile Book",
+      status: "EDITING",
+      currentPlanId: "plan-1",
+      contentRevision: 8
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/pdf",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe(bytes);
+    expect(response.headers["x-export-provenance"]).toBe("exact");
+    expect(response.headers["x-export-content-revision"]).toBe("7");
+    await app.close();
+  });
+
+  it("refuses to name a revision when a same-length compile replaced the file", async () => {
+    // The race this contract exists for, in the state it leaves on disk: the
+    // record describes the book that was published, the file holds the book
+    // that replaced it, and the two are the same length — a presentation
+    // reprint, a re-applied edit or an undo all produce one. A size comparison
+    // calls these identical and hands the reader a newer book under an older
+    // revision. Nothing may be named here.
+    mockAccessTokens({ "token-a": "user-a" });
+    const published = "%PDF-edition-one";
+    const replacement = "%PDF-edition-two";
+    expect(replacement.length, "same length is the whole point").toBe(published.length);
+    writeProjectFile(state.bookStorageDir, "project-a", "book.pdf", replacement);
+    writeProjectFile(
+      state.bookStorageDir,
+      "project-a",
+      "book.pdf.provenance.json",
+      JSON.stringify({
+        revision: 7,
+        digest: exportContentDigest(Buffer.from(published)),
+        byteSize: published.length,
+        publishedAt: "2026-08-11T00:00:00.000Z"
+      })
+    );
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a",
+      title: "Owned Mobile Book",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      contentRevision: 7
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/pdf",
+      headers: bearer("token-a")
+    });
+
+    // The book still downloads: it is whole and it is paid for.
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe(replacement);
+    expect(response.headers["x-export-provenance"]).toBe("mismatch");
+    expect(response.headers["x-export-content-revision"]).toBeUndefined();
+    await app.close();
+  });
+
+  it("backfills a pre-provenance export without recompiling it", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    writeProjectFile(state.bookStorageDir, "project-a", "book.epub", "epub-legacy");
+    mockPrisma.project.findFirst.mockResolvedValue({
+      id: "project-a",
+      title: "Owned Mobile Book",
+      status: "COMPLETE",
+      currentPlanId: "plan-1",
+      contentRevision: 7
+    });
+    // The compile that published these legacy bytes: the heal stamps a revision
+    // onto sidecar-less bytes only behind proof that a compile really COMPLETED
+    // for it — without this, a failed presentation recompile's leftover file
+    // would be labelled with a revision it does not contain.
+    mockPrisma.generationJob.findFirst.mockResolvedValue({ id: "compile-legacy" });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-a/export/epub",
+      headers: bearer("token-a")
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-export-provenance"]).toBe("exact");
+    expect(response.headers["x-export-content-revision"]).toBe("7");
+    expect(
+      JSON.parse(readFileSync(join(state.bookStorageDir!, "project-a", "book.epub.provenance.json"), "utf8"))
+    ).toMatchObject({ revision: 7 });
     await app.close();
   });
 

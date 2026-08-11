@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
@@ -17,10 +18,72 @@ export type CreateReaderChaptersOptions = {
   textModel: TextModelAdapter;
 };
 
-export async function createReaderChaptersForExport(options: CreateReaderChaptersOptions): Promise<ReaderChapter[]> {
+/**
+ * Where the chapters came from, so a caller can cache the expensive answer
+ * without pinning a cheap one. Only `"model"` may be cached.
+ *
+ * - `"model"` — the model's own usable answer. That includes the empty array a
+ *   long single-arc book earns, which is a real verdict and the case most worth
+ *   caching, and the empty array a short manuscript short-circuits to without
+ *   asking anyone.
+ * - `"rejected"` — the model answered, but not with something usable: a reply
+ *   carrying no chapters array at all, or a single chapter when the prompt asks
+ *   for two to twelve or none. The book still gets `[]`, which is what it always
+ *   got, but the next compile must be free to ask again. `schema: z.unknown()`
+ *   below is why this matters: any JSON satisfies it, so a misshaped reply is
+ *   never retried by `generateJsonWithRetry` and would otherwise be pinned as
+ *   "this book has no chapters" for as long as its text is unchanged.
+ * - `"fallback"` — the call itself failed, or its boundaries were rejected, and
+ *   the deterministic grouping stood in. Caching that would freeze one transient
+ *   outage into this manuscript forever.
+ */
+export type ReaderChapterSource = "model" | "rejected" | "fallback";
+
+export type ReaderChapterResult = {
+  chapters: ReaderChapter[];
+  source: ReaderChapterSource;
+};
+
+/**
+ * Identifies the inputs this chapterization was computed from — exactly the
+ * fields the prompt below reads, so a cached result is reusable precisely when
+ * nothing the model saw has changed.
+ *
+ * The page markdown goes in whole rather than as the 700-character excerpt the
+ * prompt sends: a false miss costs one call, which is what every compile pays
+ * today, while a false hit would print stale chapter boundaries over rewritten
+ * prose.
+ */
+export function readerChapterFingerprint(options: {
+  input: CreateProjectInput;
+  plan: BookPlan;
+  pages: MarkdownPage[];
+}): string {
+  const pages = normalizePages(options.pages);
+  const payload = JSON.stringify({
+    plan: {
+      title: options.plan.title,
+      premise: options.plan.premise,
+      audience: options.plan.audience
+    },
+    input: {
+      targetPages: options.input.targetPages,
+      category: options.input.category,
+      subcategory: options.input.subcategory ?? null,
+      language: options.input.language,
+      temperature: options.input.temperature
+    },
+    pages: pages.map((page) => [page.index, page.title, page.summary ?? "", page.markdown])
+  });
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+export async function createReaderChaptersForExport(
+  options: CreateReaderChaptersOptions
+): Promise<ReaderChapterResult> {
   const pages = normalizePages(options.pages);
   if (!shouldAttemptReaderChapterization(pages)) {
-    return [];
+    return { chapters: [], source: "model" };
   }
 
   try {
@@ -79,24 +142,37 @@ export async function createReaderChaptersForExport(options: CreateReaderChapter
       ]
     });
 
-    return normalizeReaderChaptersFromModel(result.data, pages);
+    return normalizeReaderChapters(result.data, pages);
   } catch {
-    return createDeterministicReaderChapters(pages);
+    return { chapters: createDeterministicReaderChapters(pages), source: "fallback" };
   }
 }
 
+/** The chapters a model reply yields, and whether the reply was usable as given. */
 export function normalizeReaderChaptersFromModel(raw: unknown, pagesInput: MarkdownPage[]): ReaderChapter[] {
+  return normalizeReaderChapters(raw, pagesInput).chapters;
+}
+
+function normalizeReaderChapters(raw: unknown, pagesInput: MarkdownPage[]): ReaderChapterResult {
   const pages = normalizePages(pagesInput);
   if (!shouldAttemptReaderChapterization(pages)) {
-    return [];
+    return { chapters: [], source: "model" };
   }
 
   const rawChapters = extractChapterArray(raw);
+  if (!rawChapters) {
+    // No chapters array anywhere in the reply. That is a miss, not a verdict.
+    return { chapters: [], source: "rejected" };
+  }
   if (rawChapters.length === 0) {
-    return [];
+    // "This manuscript reads as one arc" — what the prompt asks for, and a real
+    // answer to keep.
+    return { chapters: [], source: "model" };
   }
   if (rawChapters.length === 1) {
-    return [];
+    // Off-spec: the prompt asks for two to twelve, or none. One chapter helps
+    // no reader, so the book gets `[]` — but the next compile may ask again.
+    return { chapters: [], source: "rejected" };
   }
 
   const pageCount = pages.length;
@@ -109,7 +185,7 @@ export function normalizeReaderChaptersFromModel(raw: unknown, pagesInput: Markd
   const firstPage = pages[0];
   const lastPage = pages[pages.length - 1];
   if (!firstPage || !lastPage) {
-    return [];
+    return { chapters: [], source: "rejected" };
   }
 
   const chapters = rawChapters.map((rawChapter, index) => {
@@ -171,10 +247,13 @@ export function normalizeReaderChaptersFromModel(raw: unknown, pagesInput: Markd
     throw new Error("Reader chapterization returned page-level chapters.");
   }
 
-  return ordered.map((chapter, index) => ({
-    ...chapter,
-    index: index + 1
-  }));
+  return {
+    chapters: ordered.map((chapter, index) => ({
+      ...chapter,
+      index: index + 1
+    })),
+    source: "model"
+  };
 }
 
 export function createDeterministicReaderChapters(pagesInput: MarkdownPage[]): ReaderChapter[] {
@@ -249,12 +328,20 @@ function normalizePages(pages: MarkdownPage[]): MarkdownPage[] {
     .sort((a, b) => a.index - b.index);
 }
 
-function extractChapterArray(raw: unknown): unknown[] {
+/**
+ * The chapters array a reply carries, or `undefined` when it carries none.
+ *
+ * The distinction is the whole point: an *empty* array is the model saying this
+ * manuscript is one arc, while no array at all is a reply we could not read.
+ * Collapsing both to `[]` made the second one look like the first, and the cache
+ * then kept it.
+ */
+function extractChapterArray(raw: unknown): unknown[] | undefined {
   if (Array.isArray(raw)) {
     return raw;
   }
   if (!isRecord(raw)) {
-    return [];
+    return undefined;
   }
   for (const key of ["chapters", "readerChapters", "reader_chapters", "sections", "tableOfContents"]) {
     const value = raw[key];
@@ -262,7 +349,7 @@ function extractChapterArray(raw: unknown): unknown[] {
       return value;
     }
   }
-  return [];
+  return undefined;
 }
 
 function sanitizeReaderChapterTitle(title: string, index: number, pages: MarkdownPage[]): string {

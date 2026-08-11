@@ -62,9 +62,13 @@ export async function processWorkerJob(job: Job): Promise<void> {
         }
         if (!(await markActive(job))) {
           // The row is already COMPLETED: a stalled delivery brought back a
-          // finished job. The work must not run twice, but the fan-in
-          // follow-up is idempotent and may be what the crash lost.
+          // finished job. The work must not run twice, but publication may have
+          // committed the row immediately before this process died, before the
+          // attempt/edit-operation success settlement ran. `markCompleted` is
+          // idempotent over COMPLETED and closes that crash window; the fan-in
+          // follow-up is idempotent too and may be the other thing the crash lost.
           await runLogger.append("job.already_completed", {});
+          await markCompleted(job);
           await maybeCompileAfterCompletedJob(job);
           return;
         }
@@ -85,7 +89,7 @@ export async function processWorkerJob(job: Job): Promise<void> {
             await generateImage(job);
             break;
           case "compile-export":
-            await compileExport(job);
+            completion = await compileExport(job);
             break;
           case "apply-book-edit":
             await applyBookEdit(job);
@@ -111,7 +115,23 @@ export async function processWorkerJob(job: Job): Promise<void> {
           default:
             throw new Error(`Unknown worker job: ${job.name}`);
         }
-        completed = await markCompleted(job);
+        try {
+          completed = await markCompleted(job);
+        } catch (error) {
+          if (!completion?.durableCompletionCommitted) {
+            throw error;
+          }
+          // Export publication commits the durable row and its attempt/edit
+          // settlement in the artifact transaction. A failure while replaying
+          // step/message bookkeeping afterwards cannot make Bull fail work that
+          // is already downloadable, and there is no unsettled charge left for
+          // the failure path to compensate.
+          completed = true;
+          console.error(`Post-publication completion bookkeeping failed for ${job.name} job ${job.id ?? "?"}`, error);
+          await runLogger
+            .append("job.completion_bookkeeping_failed", { error: serializeError(error) })
+            .catch(() => undefined);
+        }
       } catch (error) {
         if (isStopRequestedError(error)) {
           await runLogger.append("job.stopped", {});
@@ -151,6 +171,10 @@ export async function processWorkerJob(job: Job): Promise<void> {
       // Post-completion follow-ups run outside the failure path: the work is
       // delivered and the row is COMPLETED, so a throw here must not reach
       // markFailed — that used to fail the project and refund a finished run.
+      // Compile-export's optional character-candidate fan-out belongs here too:
+      // publication terminalizes its row before the handler returns, and an
+      // enqueue outage must not make Bull report a failed export whose files are
+      // already downloadable or strand the attempt/edit settlement above.
       // A lost compile fan-in is replayed by a redelivery (above) or the
       // stranded-generation sweeper; a lost plan-book afterJobCompleted leaves
       // the project PLANNING until a redelivery replays it, which is the

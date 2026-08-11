@@ -12,7 +12,7 @@ class _FakeApiClient implements ApiClient {
   Object? failWith;
 
   @override
-  Future<void> downloadFile(
+  Future<DownloadedFile> downloadFile(
     String path,
     String savePath, {
     ProgressCallback? onReceiveProgress,
@@ -37,6 +37,7 @@ class _FakeApiClient implements ApiClient {
     } else {
       await File(savePath).writeAsString('mp3-$path');
     }
+    return const DownloadedFile(headers: {});
   }
 
   @override

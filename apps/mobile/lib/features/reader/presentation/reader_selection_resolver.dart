@@ -7,10 +7,7 @@ import '../domain/reader_page_locator.dart';
 
 /// A selection, and everything worked out about it so far.
 class ReaderResolvedSelection {
-  const ReaderResolvedSelection({
-    required this.selection,
-    required this.spans,
-  });
+  const ReaderResolvedSelection({required this.selection, required this.spans});
 
   final ReaderSelection selection;
 
@@ -48,9 +45,7 @@ ReaderResolvedSelection? previewReaderSelection(
     ),
     // The rectangles are captured now, while the selection exists, so tapping
     // a colour is a paint and not another round trip into the PDF.
-    spans: document == null
-        ? const []
-        : readerSelectionSpans(ranges, document),
+    spans: document == null ? const [] : readerSelectionSpans(ranges, document),
   );
 }
 
@@ -69,7 +64,7 @@ Future<ReaderResolvedSelection> placeReaderSelection({
   required List<PdfPageTextRange> ranges,
   required ReaderRepository repository,
   required String projectId,
-  required int revision,
+  required int? revision,
 }) async {
   final selection = preview.selection;
   ReaderResolvedSelection settled({int? bookPageIndex}) {
@@ -82,6 +77,13 @@ Future<ReaderResolvedSelection> placeReaderSelection({
       ),
       spans: preview.spans,
     );
+  }
+
+  // Without the exact current compile there is no honest book to load a
+  // locator from. The selection still supports local copy/share, but it must
+  // not be placed against whichever manuscript happens to be current.
+  if (revision == null) {
+    return settled();
   }
 
   try {

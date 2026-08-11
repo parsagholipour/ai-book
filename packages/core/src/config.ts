@@ -100,6 +100,14 @@ const envSchema = z.object({
   ATTACHMENT_STORAGE_DIR: z.string().default("./storage/attachments"),
   /** How long uploaded user files are kept before deletion. Generated books and plans are kept forever. */
   ATTACHMENT_RETENTION_DAYS: z.coerce.number().int().min(1).default(180),
+  /**
+   * How long a render or publication scratch file must sit untouched before the
+   * worker's sweep treats it as abandoned (a process killed before its own
+   * cleanup could run). The floor is an hour because the only thing separating
+   * an orphan from a live compile in another process is quiet time — see
+   * `exportTempSweep.ts`.
+   */
+  EXPORT_TEMP_RETENTION_HOURS: z.coerce.number().min(1).max(720).default(6),
   MAX_PARALLEL_PAGE_JOBS: z.coerce.number().int().min(1).max(32).default(4),
   MAX_PARALLEL_IMAGE_JOBS: z.coerce.number().int().min(1).max(8).default(2),
   MOCK_AI: z

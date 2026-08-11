@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/auth/domain/auth_models.dart';
 import 'package:tomeza/shared/api/api_client.dart';
+import 'package:tomeza/shared/api/api_error.dart';
 import 'package:tomeza/shared/api/auth_token_store.dart';
 
 void main() {
@@ -67,10 +69,7 @@ void main() {
     expect(adapter.lastOptions?.receiveTimeout, llmReceiveTimeout);
 
     await apiClient.getJson('/api/mobile/projects/project-1');
-    expect(
-      adapter.lastOptions?.receiveTimeout,
-      const Duration(seconds: 20),
-    );
+    expect(adapter.lastOptions?.receiveTimeout, const Duration(seconds: 20));
   });
 
   test('refreshTokens sends JSON content type', () async {
@@ -92,28 +91,31 @@ void main() {
     expect(adapter.lastOptions?.contentType, Headers.jsonContentType);
   });
 
-  test('concurrent refreshTokens calls share a single refresh request', () async {
-    final adapter = RefreshCountingHttpClientAdapter();
-    final apiClient = ApiClient(
-      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
-        ..httpClientAdapter = adapter,
-      tokenStore: MemoryAuthTokenStore(validTokens()),
-    );
+  test(
+    'concurrent refreshTokens calls share a single refresh request',
+    () async {
+      final adapter = RefreshCountingHttpClientAdapter();
+      final apiClient = ApiClient(
+        dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+          ..httpClientAdapter = adapter,
+        tokenStore: MemoryAuthTokenStore(validTokens()),
+      );
 
-    final results = await Future.wait([
-      apiClient.refreshTokens(),
-      apiClient.refreshTokens(),
-      apiClient.refreshTokens(),
-    ]);
+      final results = await Future.wait([
+        apiClient.refreshTokens(),
+        apiClient.refreshTokens(),
+        apiClient.refreshTokens(),
+      ]);
 
-    expect(adapter.refreshCount, 1);
-    expect(results[1].refreshToken, results[0].refreshToken);
-    expect(results[2].refreshToken, results[0].refreshToken);
+      expect(adapter.refreshCount, 1);
+      expect(results[1].refreshToken, results[0].refreshToken);
+      expect(results[2].refreshToken, results[0].refreshToken);
 
-    await apiClient.refreshTokens();
+      await apiClient.refreshTokens();
 
-    expect(adapter.refreshCount, 2);
-  });
+      expect(adapter.refreshCount, 2);
+    },
+  );
 
   test('parallel requests with a stale access token refresh once', () async {
     final adapter = RefreshCountingHttpClientAdapter();
@@ -130,11 +132,97 @@ void main() {
     ]);
 
     expect(adapter.refreshCount, 1);
-    expect(
-      adapter.authorizationHeaders.toSet(),
-      {'Bearer access-token-1'},
-    );
+    expect(adapter.authorizationHeaders.toSet(), {'Bearer access-token-1'});
     expect((await tokenStore.read())?.accessToken, 'access-token-1');
+  });
+
+  test(
+    'downloadFile surfaces the server error code, not a generic API_ERROR',
+    () async {
+      // The reader's "Still preparing this book" overlay keys on
+      // `code == 'EXPORT_NOT_READY'`, and a download is the one request whose
+      // body Dio reads as a stream — it only decodes the error body because
+      // `receiveDataWhenStatusError` defaults to true. A Dio upgrade or a
+      // BaseOptions tweak that turned that off would silently downgrade the
+      // overlay to "Could not download this book" with no other test noticing.
+      //
+      // The status alone cannot stand in for the code here: PROJECT_NOT_FOUND and
+      // a genuinely absent book are 404 too, and neither is "still preparing".
+      final directory = await Directory.systemTemp.createTemp(
+        'api-client-test',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final apiClient = ApiClient(
+        dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+          ..httpClientAdapter = ErrorBodyHttpClientAdapter(
+            statusCode: 404,
+            code: 'EXPORT_NOT_READY',
+            message: 'This export is not ready yet.',
+          ),
+        tokenStore: MemoryAuthTokenStore(validTokens()),
+      );
+
+      await expectLater(
+        apiClient.downloadFile(
+          '/api/mobile/projects/project-1/export/pdf',
+          '${directory.path}/book.pdf',
+        ),
+        throwsA(
+          isA<ApiException>()
+              .having((error) => error.code, 'code', 'EXPORT_NOT_READY')
+              .having((error) => error.statusCode, 'statusCode', 404)
+              .having(
+                (error) => error.message,
+                'message',
+                'This export is not ready yet.',
+              ),
+        ),
+      );
+    },
+  );
+
+  test('a request that fails after a token refresh is still mapped', () async {
+    // The retry that follows a 401 is issued from inside the catch block that
+    // does the mapping, so it is not covered by it. An access token that
+    // expired while the reader sat on the book turned every subsequent refusal
+    // into a raw DioException: the reader's rebuilding overlay and the paywall
+    // both begin `error is ApiException`, so a book that was merely still
+    // compiling reported "Could not download this book" instead.
+    final directory = await Directory.systemTemp.createTemp('api-client-test');
+    addTearDown(() => directory.delete(recursive: true));
+    final apiClient = ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = StaleTokenErrorBodyHttpClientAdapter(
+          statusCode: 404,
+          code: 'EXPORT_NOT_READY',
+          message: 'This export is not ready yet.',
+        ),
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    await expectLater(
+      apiClient.downloadFile(
+        '/api/mobile/projects/project-1/export/pdf',
+        '${directory.path}/book.pdf',
+      ),
+      throwsA(
+        isA<ApiException>()
+            .having((error) => error.code, 'code', 'EXPORT_NOT_READY')
+            .having((error) => error.statusCode, 'statusCode', 404),
+      ),
+    );
+
+    // The same gap sits on the shared JSON path, which every other call uses.
+    await expectLater(
+      apiClient.getJson('/api/mobile/projects/project-1'),
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.code,
+          'code',
+          'EXPORT_NOT_READY',
+        ),
+      ),
+    );
   });
 }
 
@@ -229,6 +317,107 @@ class RefreshCountingHttpClientAdapter implements HttpClientAdapter {
     return ResponseBody.fromString(
       '{"ok":true}',
       200,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+}
+
+/// Rejects the first token as expired, serves the refresh, then answers the
+/// retry with a structured error body — the sequence a reader hits when their
+/// access token ran out while the export was still compiling.
+class StaleTokenErrorBodyHttpClientAdapter implements HttpClientAdapter {
+  StaleTokenErrorBodyHttpClientAdapter({
+    required this.statusCode,
+    required this.code,
+    required this.message,
+  });
+
+  final int statusCode;
+  final String code;
+  final String message;
+  final Set<String> _refreshed = {};
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    await requestStream?.drain<void>();
+    if (options.path == '/api/mobile/auth/refresh') {
+      final now = DateTime.now().toUtc();
+      final session = MobileSessionTokens(
+        accessToken: 'access-token-1',
+        accessTokenExpiresAt: now.add(const Duration(minutes: 15)),
+        refreshToken: 'refresh-token-1',
+        refreshTokenExpiresAt: now.add(const Duration(days: 30)),
+      );
+      return ResponseBody.fromString(
+        jsonEncode({'session': session.toJson()}),
+        200,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    if (_refreshed.add(options.path)) {
+      return ResponseBody.fromString(
+        jsonEncode({
+          'error': {'code': 'TOKEN_EXPIRED', 'message': 'Token expired.'},
+        }),
+        401,
+        headers: {
+          Headers.contentTypeHeader: [Headers.jsonContentType],
+        },
+      );
+    }
+
+    return ResponseBody.fromString(
+      jsonEncode({
+        'error': {'code': code, 'message': message},
+      }),
+      statusCode,
+      headers: {
+        Headers.contentTypeHeader: [Headers.jsonContentType],
+      },
+    );
+  }
+}
+
+/// Answers every request with a structured error body, the way the mobile API
+/// reports a refusal.
+class ErrorBodyHttpClientAdapter implements HttpClientAdapter {
+  ErrorBodyHttpClientAdapter({
+    required this.statusCode,
+    required this.code,
+    required this.message,
+  });
+
+  final int statusCode;
+  final String code;
+  final String message;
+
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    await requestStream?.drain<void>();
+    return ResponseBody.fromString(
+      jsonEncode({
+        'error': {'code': code, 'message': message},
+      }),
+      statusCode,
       headers: {
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },

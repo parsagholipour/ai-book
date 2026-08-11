@@ -26,7 +26,10 @@ class ReaderPlaces {
   final BuildContext context;
   final ReaderState state;
   final List<ReaderOutlineEntry> outline;
-  final int currentRevision;
+
+  /// The exact revision of the PDF on screen. Null disables creating a new
+  /// bookmark, while still allowing an existing one to be removed.
+  final int? currentRevision;
   final void Function(ReaderState state) onStateChanged;
   final void Function(int page) onGoToPage;
 
@@ -80,12 +83,14 @@ class ReaderPlaces {
       bookmarks.removeAt(existing);
       AppHaptics.tap();
     } else {
+      final revision = currentRevision;
+      if (revision == null) return;
       bookmarks.add(
         ReaderBookmark(
           page: page,
           label: 'Page $page',
           createdAt: DateTime.now(),
-          revision: currentRevision,
+          revision: revision,
         ),
       );
       bookmarks.sort((a, b) => a.page.compareTo(b.page));

@@ -5,6 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
+import { PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
 import { reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
@@ -71,7 +72,13 @@ describe("mobile chapter heading edits", () => {
         projectId: "project-1",
         type: "COMPILE_EXPORT",
         // skipFinalReview keeps a free edit from dragging a whole-book QA pass.
-        payload: expect.objectContaining({ planId: "plan-1", skipFinalReview: true })
+        // presentationOnly then stops the report it does write — deterministic
+        // checks alone — standing in for the book's real QA verdict.
+        payload: expect.objectContaining({
+          planId: "plan-1",
+          skipFinalReview: true,
+          [PRESENTATION_ONLY_RECOMPILE]: true
+        })
       })
     );
     await app.close();

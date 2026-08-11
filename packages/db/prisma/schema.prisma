@@ -992,6 +992,12 @@ model GenerationJob {
   dispatchedAt DateTime?
   contentRevision Int?
   qualityReport Json?
+  /// Whether `qualityReport` is the *project's* verdict once this job writes one.
+  /// Derived from type + payload where the row is created (`jobOwnsQualityVerdict`),
+  /// so the read side can fetch the owning compile directly instead of scanning
+  /// recent jobs: detached export repairs and presentation-only recompiles report
+  /// deterministic checks alone and must not replace a full model QA pass.
+  ownsQualityVerdict Boolean @default(false)
   payload    Json
   steps      Json?
   startedAt  DateTime?
@@ -1007,6 +1013,7 @@ model GenerationJob {
   primaryForAttempt GenerationAttempt? @relation("GenerationAttemptPrimaryJob")
 
   @@index([projectId, type, status])
+  @@index([projectId, type, ownsQualityVerdict, createdAt])
   @@index([status, nextDispatchAt])
   @@index([attemptId])
 }

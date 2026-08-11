@@ -61,5 +61,11 @@ export type WorkerImageAsset = {
 
 /** Returned by a handler that needs work to run after the job is marked complete. */
 export type JobCompletion = {
+  /**
+   * The handler atomically committed the durable job's terminal verdict with
+   * its delivered output. A later `markCompleted` error is bookkeeping only and
+   * must not make Bull report that already-delivered work as failed.
+   */
+  durableCompletionCommitted?: boolean;
   afterJobCompleted?: () => Promise<void>;
 };

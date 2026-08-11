@@ -9,7 +9,18 @@ import {
   toPriorPageContext,
   formatQualityFailure
 } from "../generation/bookHelpers.js";
+import {
+  discardPendingExports,
+  exportPublicationSuperseded,
+  pendingExportPaths,
+  publishCompiledExports
+} from "../generation/exportPublication.js";
 import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
+import {
+  readCompatibleCachedReaderChapters,
+  readerChaptersFromPublishedMarkdown,
+  readerChaptersWithCache
+} from "../generation/readerChapterCache.js";
 import { researchCitationsForExport } from "../generation/researchLinks.js";
 import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
@@ -17,8 +28,8 @@ import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { parallelPageWaveSize } from "../runtime/dispatch.js";
-import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
-import { isStopRequestedError, type ExportPageForRepair } from "../runtime/jobTypes.js";
+import { advanceJobStep, editOperationIdFromJob, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { isStopRequestedError, type ExportPageForRepair, type JobCompletion } from "../runtime/jobTypes.js";
 import { effectiveSavedWholeBookExportContext } from "../generation/wholeBookTolerance.js";
 import { maybeEnqueueCharacterCandidatePreparation } from "./characters.js";
 import {
@@ -26,14 +37,22 @@ import {
   assertBookLikeMarkdown,
   bookPlanSchema,
   buildManuscriptQualityReport,
+  createDeterministicReaderChapters,
   createProviders,
   createReaderChaptersForExport,
+  exportPublicationProjectStatusFromPayload,
+  exportRepairFormatFromPayload,
   generateBookEpub,
   generateJsonWithRetry,
   chapterHeadingLabelPreference,
   chapterHeadingStylePreference,
   includeSourcesPreference,
+  isDetachedFromProjectLifecycle,
+  isPresentationOnlyRecompile,
+  payloadOwnsProjectOutcome,
   publicAssetUrl,
+  presentationRecompileFallbackStatus,
+  readerChapterFingerprint,
   resolvePublicImageUrl,
   runDeterministicManuscriptChecks,
   type BookGenerationStrategy,
@@ -47,7 +66,7 @@ import {
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 
@@ -55,12 +74,71 @@ import { z } from "zod";
  * `compile-export` job: final QA over the manuscript, then Markdown/PDF/EPUB output.
  */
 
-export async function compileExport(job: Job) {
+/**
+ * Stands this compile down for the one the newer manuscript queued.
+ *
+ * The job still COMPLETEs: nothing failed, and failing it would refund a book
+ * that is fine. The warning is the trace worth having — `markCompleted`
+ * overwrites the progress message a moment later, so without it a compile that
+ * deliberately published nothing looks identical to one that published.
+ */
+async function standDownForNewerExport(projectId: string, generationJobId: string | undefined): Promise<void> {
+  console.warn("Export compile superseded before publication", {
+    event: "generation.consistency_warning",
+    warning: "export_publication_superseded",
+    projectId,
+    generationJobId
+  });
+  await updateJobProgress(generationJobId, {
+    message: "The book changed while this export was compiling; the newer export publishes it instead."
+  });
+}
+
+export async function compileExport(job: Job): Promise<JobCompletion> {
   const { projectId, planId } = job.data as { projectId: string; planId: string };
   const generationJobId = job.data.generationJobId as string | undefined;
+  if (!generationJobId) {
+    throw new Error("Export publication requires a durable generation job");
+  }
   // Set for recompiles after user-driven edits (manual Edit Mode, undo):
   // the QA repair pass must not rewrite text the user chose deliberately.
   const skipFinalReview = job.data.skipFinalReview === true;
+  // The manuscript this compile was queued for. Every enqueue site records it
+  // — the run's own fan-in, an edit's recompile and an export repair — and
+  // nothing downstream may be published under a different one; see
+  // `generation/exportPublication.ts`.
+  const queuedContentRevision = typeof job.data.contentRevision === "number" ? job.data.contentRevision : null;
+  // A repair rebuilds a missing file on a book that is already finished; it owns
+  // neither the project's status nor its credits. This is the one reliable signal
+  // for that — the payload flag every repair carries — rather than
+  // `skipFinalReview`, which an edit's own recompile sets too.
+  //
+  // It gates two separate things. The project write, because an edit sets EDITING
+  // before it bumps the revision, so the revision check alone would let a stale
+  // repair report the book finished while its pages were still being rewritten
+  // (`jobOwnsProjectLifecycle` is the failure side of the same question). And
+  // every model call below, because nobody was charged for a repair and a status
+  // read queues a fresh one every five minutes for as long as a file is missing.
+  const detachedRepair = isDetachedFromProjectLifecycle(job.data);
+  const presentationOnly = isPresentationOnlyRecompile(job.data);
+  const ownsOutcome = payloadOwnsProjectOutcome(job.data);
+  const generationAttemptId = ownsOutcome && typeof job.data.attemptId === "string" ? job.data.attemptId : null;
+  const editOperationId = ownsOutcome ? editOperationIdFromJob(job) : null;
+  // Character discovery follows every charged compile of the manuscript — the
+  // generation's own and an edit's recompile alike, since an edit is charged
+  // work whose prose is new and a book whose detection was never run must still
+  // be able to earn it. A repair and a presentation reprint were charged
+  // nothing and change no prose, so they start no model fan-out. An edit's
+  // recompile claims the legacy project/plan key rather than its own attempt:
+  // the attempt paid for the edit, not for re-discovery, so a book that has
+  // already run detection collapses onto the spent key instead of paying a
+  // discovery call per edit.
+  const shouldPrepareCharacterCandidates = ownsOutcome;
+  const repairFormat = detachedRepair ? exportRepairFormatFromPayload(job.data) : null;
+  if (detachedRepair && repairFormat === null) {
+    throw new Error("Detached export repair is missing its requested format");
+  }
+  const ownsProjectStatus = !detachedRepair;
   const [planVersion, project] = await Promise.all([
     prisma.planVersion.findUnique({ where: { id: planId } }),
     prisma.project.findUnique({
@@ -75,6 +153,8 @@ export async function compileExport(job: Job) {
   if (!planVersion || !project) {
     throw new Error("Cannot compile export without plan and project");
   }
+  const expectedProjectStatus = exportPublicationProjectStatusFromPayload(job.data) ??
+    (skipFinalReview ? "EDITING" : project.status === "COMPLETE" ? "COMPLETE" : "GENERATING");
   let plan = bookPlanSchema.parse(planVersion.planningPackage);
   let input = inputForPlanVersion(project, planVersion.inputSnapshot);
   let pages: ExportPageForRepair[] = project.pages;
@@ -85,15 +165,28 @@ export async function compileExport(job: Job) {
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   const failedQaPageIndexes = pages.filter((page) => page.status === "FAILED_QA").map((page) => page.index);
-  const initialIntegrityIssues = runDeterministicManuscriptChecks({
-    pages: pages.map((page) => ({ index: page.index, title: page.title, markdown: page.markdown })),
-    expectedPageCount: input.targetPages
-  });
+  // Only the repair pass below reads this, and only when the final review runs.
+  // A `skipFinalReview` recompile — every presentation toggle, undo and manual
+  // edit — would otherwise pay for two full passes over the manuscript and
+  // throw the first one away.
+  const initialIntegrityIssues = () =>
+    runDeterministicManuscriptChecks({
+      pages: pages.map((page) => ({ index: page.index, title: page.title, markdown: page.markdown })),
+      expectedPageCount: input.targetPages
+    });
   let modelQualityIssues: ManuscriptQualityIssue[] = [];
   // Parallel-wave drafting relies on the final review as its continuity
   // reconciliation pass, so it runs even when the user disabled final review.
+  // `detachedRepair` is belt and braces here — every repair is queued with
+  // `skipFinalReview` — but it is the signal that actually means "uncharged", and
+  // a repair's verdict is discarded anyway: `ownsProjectStatus` is false, so it
+  // writes no status, and its row was created with `ownsQualityVerdict` false —
+  // which is the column the API reads the book's verdict off — so the report
+  // below stays on this job for an operator and never reaches the app.
   const runFinalReview =
     !skipFinalReview &&
+    !detachedRepair &&
+    !presentationOnly &&
     (input.mediaSettings.finalReview ||
       (strategy.executionMode === "sequential-pages" && parallelPageWaveSize(input) > 1));
   if (runFinalReview) {
@@ -131,7 +224,7 @@ export async function compileExport(job: Job) {
         finalQa,
         extraPageIndexes: [
           ...failedQaPageIndexes,
-          ...initialIntegrityIssues.flatMap((issue) => issue.affectedPageIndexes)
+          ...initialIntegrityIssues().flatMap((issue) => issue.affectedPageIndexes)
         ],
         generationJobId
       });
@@ -200,99 +293,211 @@ export async function compileExport(job: Job) {
     progress: 62,
     message: "Placing reader chapters"
   });
-  const readerChapters = await createReaderChaptersForExport({
-    input,
-    plan,
-    pages: markdownPages,
-    textModel: providers.text
-  });
-  const researchSources = await researchCitationsForExport(project.research);
-  const markdown = strategy.compileMarkdown({
-    plan,
-    category: input.category,
-    language: input.language,
-    readerChapters,
-    ...(cover
-      ? {
-          cover: {
-            imagePath: publicAssetUrl(config.PUBLIC_API_URL, cover.path),
-            imageAlt: `Cover for ${plan.title}`
-          }
-        }
-      : {}),
-    pages: markdownPages,
-    researchSources,
-    // From the project row rather than `input`, whose mediaSettings come from
-    // the plan's frozen snapshot: dropping the Sources list or restyling the
-    // chapter headings is a live reader preference that only queues a recompile.
-    // The byline reads from the row for the same reason, and because that is
-    // where `coverMetadataFromProject` typesets it from. Covered books print
-    // the byline there; this value only feeds a title-page fallback when no
-    // cover exists.
-    ...(project.authorName ? { authorName: project.authorName } : {}),
-    includeSources: includeSourcesPreference(project.mediaSettings),
-    chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
-    chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
-  });
-  assertBookLikeMarkdown(markdown);
-  await advanceJobStep(generationJobId, "write", 80);
+  // Created here rather than beside the `book.md` write below, because the
+  // reader-chapter cache lives in it and is read before the model call.
   const projectDir = join(config.BOOK_STORAGE_DIR, projectId);
   await mkdir(projectDir, { recursive: true });
-  await writeFile(join(projectDir, "book.md"), markdown, "utf8");
-  await advanceJobStep(generationJobId, "pdf", 88);
-  await strategy.generatePdf(markdown, {
-    imageStorageDir: config.IMAGE_STORAGE_DIR,
-    publicApiUrl: config.PUBLIC_API_URL,
-    outputPath: join(projectDir, "book.pdf"),
-    language: input.language
-  });
-  await advanceJobStep(generationJobId, "epub", 95);
-  const generateEpub = () =>
-    generateBookEpub(markdown, {
-      title: plan.title,
-      ...(project.authorName ? { author: project.authorName } : {}),
+  // Cheap early exit before the reader-chapter call and the render: an edit
+  // applied while this compile was in QA has already queued the recompile that
+  // will publish instead. The binding decision is the claim in
+  // `publishCompiledExports`, since an edit can still land after this read.
+  if (await exportPublicationSuperseded(projectId, queuedContentRevision)) {
+    await standDownForNewerExport(projectId, generationJobId);
+    return {};
+  }
+  const publishedMarkdownPath = join(projectDir, "book.md");
+  const publishedMarkdown = detachedRepair || presentationOnly
+    ? await readOptionalPublishedMarkdown(publishedMarkdownPath)
+    : undefined;
+  let preservedReaderChapters = presentationOnly && publishedMarkdown !== undefined
+    ? readerChaptersFromPublishedMarkdown(publishedMarkdown, markdownPages)
+    : undefined;
+  if (preservedReaderChapters === undefined && detachedRepair && publishedMarkdown === undefined) {
+    // An edit changes the fingerprint but not its page partition. The cache is
+    // deliberately retained when exports are invalidated, so a repair can keep
+    // the prior model-authored grouping without making an uncharged model call.
+    preservedReaderChapters = await readCompatibleCachedReaderChapters(projectDir, markdownPages);
+  }
+  const compileCurrentMarkdown = async (): Promise<string> => {
+    const readerChapters = await readerChaptersWithCache({
+      projectDir,
+      fingerprint: readerChapterFingerprint({ input, plan, pages: markdownPages }),
+      // Presentation recompiles and repairs are free. A cache miss must not
+      // turn either into an uncharged model request.
+      allowModelCall: !detachedRepair && !presentationOnly,
+      compute: () =>
+        createReaderChaptersForExport({
+          input,
+          plan,
+          pages: markdownPages,
+          textModel: providers.text
+        }),
+      deterministic: () => preservedReaderChapters ?? createDeterministicReaderChapters(markdownPages)
+    });
+    const researchSources = await researchCitationsForExport(project.research);
+    return strategy.compileMarkdown({
+      plan,
+      category: input.category,
       language: input.language,
-      imageStorageDir: config.IMAGE_STORAGE_DIR,
-      publicApiUrl: config.PUBLIC_API_URL,
-      outputPath: join(projectDir, "book.epub")
+      readerChapters,
+      ...(cover
+        ? {
+            cover: {
+              imagePath: publicAssetUrl(config.PUBLIC_API_URL, cover.path),
+              imageAlt: `Cover for ${plan.title}`
+            }
+          }
+        : {}),
+      pages: markdownPages,
+      researchSources,
+      // From the project row rather than `input`, whose mediaSettings come from
+      // the plan's frozen snapshot: dropping the Sources list or restyling the
+      // chapter headings is a live reader preference that only queues a recompile.
+      ...(project.authorName ? { authorName: project.authorName } : {}),
+      includeSources: includeSourcesPreference(project.mediaSettings),
+      chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
+      chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
     });
+  };
+  // The exact published manuscript remains the repair source whenever it is
+  // available. User edits intentionally invalidate it before queueing their
+  // compile, though, and both queue failure and a `not-ready` fan-in hand the
+  // resulting COMPLETE + missing-files state to this detached lane. Refusing to
+  // reconstruct there made every status poll enqueue another repair that could
+  // never succeed. The fallback is built solely from this revision's durable
+  // project rows, without QA/model calls, and is installed with the derivative
+  // below so subsequent repairs are exact again.
+  const repairReconstructedMarkdown = detachedRepair && publishedMarkdown === undefined;
+  const markdown = detachedRepair && publishedMarkdown !== undefined
+    ? publishedMarkdown
+    : await compileCurrentMarkdown();
+  assertBookLikeMarkdown(markdown);
+  await advanceJobStep(generationJobId, "write", 80);
+  // Rendered beside the real filenames, never onto them: until the claim below
+  // succeeds this compile has no right to replace a book somebody may have
+  // edited while it worked.
+  const pending = pendingExportPaths(projectDir);
+  let epubProduced = true;
+  let characterPreparationJobId: string | null = null;
   try {
-    try {
-      await generateEpub();
-    } catch {
-      // Local conversion can fail transiently (e.g. resource pressure); one
-      // plain retry before recording the failure.
-      await generateEpub();
+    if (repairFormat === null || repairReconstructedMarkdown) {
+      await writeFile(pending.markdown, markdown, "utf8");
     }
-  } catch (error) {
-    // EPUB is a best-effort companion format; never fail an export that
-    // already produced the markdown and PDF artifacts — but surface the gap
-    // in the quality report so the client shows it instead of a silent
-    // missing download.
-    console.error(`EPUB generation failed for project ${projectId}:`, error);
-    const degradedReport = appendQualityIssue(qualityReport, {
-      code: "EPUB_EXPORT_FAILED",
-      severity: "warning",
-      source: "deterministic",
-      message: "EPUB export failed; PDF and markdown are available.",
-      guidance: "Download the PDF, or re-run the export to retry the EPUB.",
-      affectedPageIndexes: []
-    });
-    if (generationJobId) {
-      await prisma.generationJob.update({
-        where: { id: generationJobId },
-        data: { qualityReport: degradedReport as unknown as Prisma.InputJsonValue }
+    if (repairFormat === null || repairFormat === "pdf") {
+      await advanceJobStep(generationJobId, "pdf", 88);
+      await strategy.generatePdf(markdown, {
+        imageStorageDir: config.IMAGE_STORAGE_DIR,
+        publicApiUrl: config.PUBLIC_API_URL,
+        outputPath: pending.pdf,
+        language: input.language,
+        // Scopes the renderer's file access to this book's own illustrations.
+        projectId
       });
     }
-    await updateJobProgress(generationJobId, {
-      message: "EPUB export failed; markdown and PDF were still produced."
+    const generateEpub = () =>
+      generateBookEpub(markdown, {
+        title: plan.title,
+        ...(project.authorName ? { author: project.authorName } : {}),
+        language: input.language,
+        imageStorageDir: config.IMAGE_STORAGE_DIR,
+        publicApiUrl: config.PUBLIC_API_URL,
+        outputPath: pending.epub,
+        // Scopes the illustrations this book may package to its own, the way the
+        // PDF's renderer policy scopes what the render may read.
+        projectId
+      });
+    if (repairFormat === null || repairFormat === "epub") {
+      await advanceJobStep(generationJobId, "epub", 95);
+      try {
+        try {
+          await generateEpub();
+        } catch {
+          // Local conversion can fail transiently (e.g. resource pressure); one
+          // plain retry before recording the failure.
+          await generateEpub();
+        }
+      } catch (error) {
+        // EPUB is a best-effort companion format; never fail an export that
+        // already produced the markdown and PDF artifacts — but surface the gap
+        // in the quality report so the client shows it instead of a silent
+        // missing download. Publication retires any predecessor EPUB and its
+        // provenance, so an older revision can never masquerade as this one.
+        epubProduced = false;
+        console.error(`EPUB generation failed for project ${projectId}:`, error);
+        const degradedReport = appendQualityIssue(qualityReport, {
+          code: "EPUB_EXPORT_FAILED",
+          severity: "warning",
+          source: "deterministic",
+          message: "EPUB export failed; PDF and markdown are available.",
+          guidance: "Download the PDF, or re-run the export to retry the EPUB.",
+          affectedPageIndexes: []
+        });
+        await prisma.generationJob.update({
+          where: { id: generationJobId },
+          data: { qualityReport: degradedReport as unknown as Prisma.InputJsonValue }
+        });
+        await updateJobProgress(generationJobId, {
+          message: "EPUB export failed; markdown and PDF were still produced."
+        });
+      }
+    }
+    const publication = await publishCompiledExports({
+      projectId,
+      generationJobId,
+      projectDir,
+      pending,
+      epubProduced,
+      repairFormat,
+      publishReconstructedMarkdown: repairReconstructedMarkdown,
+      contentRevision: queuedContentRevision,
+      expectedProjectStatus,
+      status: presentationOnly
+        ? presentationRecompileFallbackStatus(job.data)
+        : reviewRequired
+          ? "REVIEW_REQUIRED"
+          : "COMPLETE",
+      ownsProjectStatus,
+      generationAttemptId,
+      editOperationId,
+      characterPreparation: shouldPrepareCharacterCandidates
+        ? { planId, attemptId: skipFinalReview ? null : generationAttemptId }
+        : null
     });
+    if (!publication.published) {
+      await standDownForNewerExport(projectId, generationJobId);
+      return {};
+    }
+    characterPreparationJobId = publication.characterPreparationJobId;
+  } finally {
+    await discardPendingExports(pending);
   }
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { status: reviewRequired ? "REVIEW_REQUIRED" : "COMPLETE" }
-  });
-  await maybeEnqueueCharacterCandidatePreparation(projectId, planId);
+  const persistedCharacterPreparationJobId = characterPreparationJobId;
+  return {
+    // Publication committed the durable job plus attempt/edit settlement in
+    // the same transaction as these files. `processWorkerJob` may therefore
+    // treat later step/message bookkeeping as best-effort without hiding any
+    // pre-publication failure.
+    durableCompletionCommitted: true,
+    ...(persistedCharacterPreparationJobId
+      ? {
+          // The row already exists durably. This hook only pushes that exact id
+          // to Redis; a crash or outage is recovered by the undispatched sweep.
+          afterJobCompleted: () =>
+            maybeEnqueueCharacterCandidatePreparation(projectId, planId, persistedCharacterPreparationJobId)
+        }
+      : {})
+  };
+}
+
+async function readOptionalPublishedMarkdown(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (typeof error === "object" && error !== null && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 export const chapterQualityReviewSchema = z

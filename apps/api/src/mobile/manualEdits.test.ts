@@ -5,6 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
+import { PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
 import { enqueueGenerationJob } from "../queue.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -12,10 +13,12 @@ import {
   appliedEditOperationRecord,
   bearer,
   buildMobileApp,
+  detachedRepairJobRow,
   editablePages,
   jobRecord,
   mockAccessTokens,
   mockPrisma,
+  openJobRow,
   projectRecord,
   resetMobileHarness,
   state,
@@ -135,6 +138,12 @@ describe("mobile editable book and manual edits", () => {
       type: "COMPILE_EXPORT",
       payload: expect.objectContaining({ planId: "plan-1", skipFinalReview: true })
     }));
+    // A manual edit rewrote the page, so this recompile keeps the verdict:
+    // findings about the text the reader just replaced may not outlive it.
+    // Only a presentation reprint of unchanged prose opts out.
+    expect(vi.mocked(enqueueGenerationJob).mock.calls[0]?.[0].payload).not.toHaveProperty(
+      PRESENTATION_ONLY_RECOMPILE
+    );
     expect(mockPrisma.project.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: "project-1" },
       data: expect.objectContaining({ status: "EDITING" })
@@ -143,6 +152,9 @@ describe("mobile editable book and manual edits", () => {
       where: { id: "project-1" },
       data: { status: "COMPLETE" }
     });
+    expect(mockPrisma.project.update.mock.invocationCallOrder[0]).toBeLessThan(
+      mockPrisma.page.update.mock.invocationCallOrder[0] as number
+    );
     await app.close();
   });
 
@@ -294,6 +306,8 @@ describe("mobile editable book and manual edits", () => {
       projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
     );
     state.pages = editablePages();
+    writeProjectFile(state.bookStorageDir, "project-1", "book.pdf", "%PDF-stale");
+    writeProjectFile(state.bookStorageDir, "project-1", "book.epub", "stale epub");
     mockPrisma.project.update.mockResolvedValue(projectRecord({ id: "project-1" }));
     vi.mocked(enqueueGenerationJob).mockRejectedValueOnce(new Error("queue offline"));
     const app = await buildMobileApp();
@@ -314,10 +328,12 @@ describe("mobile editable book and manual edits", () => {
       where: { id: "project-1" },
       data: expect.objectContaining({ status: "EDITING" })
     }));
-    expect(mockPrisma.project.update).toHaveBeenCalledWith({
-      where: { id: "project-1" },
+    expect(mockPrisma.project.updateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING", contentRevision: 0 },
       data: { status: "COMPLETE" }
     });
+    expect(existsSync(join(state.bookStorageDir!, "project-1", "book.pdf"))).toBe(false);
+    expect(existsSync(join(state.bookStorageDir!, "project-1", "book.epub"))).toBe(false);
     await app.close();
   });
 
@@ -395,7 +411,7 @@ describe("mobile editable book and manual edits", () => {
     mockPrisma.project.findFirst.mockResolvedValue(
       projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
     );
-    mockPrisma.generationJob.count.mockResolvedValueOnce(1);
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([openJobRow()]);
     const app = await buildMobileApp();
 
     const response = await app.inject({
@@ -409,6 +425,39 @@ describe("mobile editable book and manual edits", () => {
 
     expect(response.statusCode).toBe(409);
     expect(response.json().error.code).toBe("PROJECT_BUSY");
+    await app.close();
+  });
+
+  // The status read that drew this screen is what queued the repair, so
+  // counting it would make looking at a book with a missing PDF the thing that
+  // stops you editing it — on a project the app is showing as settled.
+  it("saves a manual edit while an export repair rebuilds a missing file", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    state.pages = editablePages();
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([detachedRepairJobRow()]);
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/manual-edits",
+      headers: bearer("token-a"),
+      payload: {
+        pages: [
+          {
+            id: "page-1",
+            title: "Rabbit Starts Fast",
+            markdown: "Rabbit sprints ahead while Turtle takes one steady step.",
+            baseRevision: 1
+          }
+        ]
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().operation).toMatchObject({ kind: "manual_edit", status: "applied" });
     await app.close();
   });
 

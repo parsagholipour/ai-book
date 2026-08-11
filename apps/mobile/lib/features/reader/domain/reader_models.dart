@@ -11,10 +11,35 @@ class CachedExport {
     required this.revision,
     required this.byteSize,
     required this.downloadedAt,
+    this.revisionIsExact = false,
   });
 
   final String path;
-  final int revision;
+
+  /// The content revision these bytes belong to, or null when nothing could be
+  /// said about them at all.
+  ///
+  /// Every compile of a book is published over the same URL, so the descriptor
+  /// a download was started from is only a claim about what that URL held when
+  /// the status was read. The response settles it instead: the server resolves
+  /// the bytes it sends against the digest their publication recorded, and the
+  /// revision it names is [revisionIsExact]. When it can name none — an older
+  /// file that no publication recorded — the descriptor stands in, guarded by
+  /// its reported size. When it reports the file as being replaced under the
+  /// read, this is null: a whole readable book is still handed back and shown,
+  /// but `ExportCache` writes no manifest for it, so the next open fetches
+  /// again, and the reader neither re-anchors nor re-stamps its markup.
+  final int? revision;
+
+  /// Whether [revision] is the compile the server tied these exact bytes to,
+  /// rather than the descriptor standing in for one. Only an exact revision may
+  /// be written onto the reader's own marks in bulk — see
+  /// `ReaderView._reanchorMarkup`.
+  final bool revisionIsExact;
+
+  /// [revision] when it is a fact rather than a stand-in.
+  int? get exactRevision => revisionIsExact ? revision : null;
+
   final int byteSize;
   final DateTime downloadedAt;
 
@@ -27,9 +52,26 @@ class CachedExport {
   /// A mismatch has to be positively established. A server that does not report
   /// a size leaves that check out rather than counting as a difference, or
   /// every open would re-download and the reader would permanently claim the
-  /// book had just been edited.
+  /// book had just been edited. Bytes filed under no revision at all — a file
+  /// replaced under the read, or a transfer nothing could vouch for — are the
+  /// one exception: they match nothing, because the only honest thing to say
+  /// about them is that a fresh copy is worth fetching.
+  ///
+  /// A cached file may also be *newer* than the descriptor, which is what a
+  /// download answered by a compile the status read had not seen yet leaves
+  /// behind. It is not stale — nothing newer is being offered — and the size
+  /// the descriptor reported describes the older compile, so it is not compared
+  /// against these bytes. Treating it as a miss would re-download the file the
+  /// reader already has and tell them their finished book had just changed.
   bool matches(MobileExportAvailability export) {
-    if (!export.available || export.revision != revision) {
+    final known = revision;
+    if (known == null || !export.available) {
+      return false;
+    }
+    if (known > export.revision) {
+      return true;
+    }
+    if (known != export.revision) {
       return false;
     }
     final reported = export.byteSize;
@@ -38,12 +80,18 @@ class CachedExport {
 
   Map<String, dynamic> toJson() {
     return {
-      'revision': revision,
+      if (revision != null) 'revision': revision,
+      'revisionIsExact': revisionIsExact,
       'byteSize': byteSize,
       'downloadedAt': downloadedAt.toIso8601String(),
     };
   }
 
+  /// Reads a manifest back.
+  ///
+  /// A manifest written before the server reported provenance carries no
+  /// `revisionIsExact`, and defaults to false: it was filed under the
+  /// descriptor that asked for it, which is exactly what a stand-in is.
   static CachedExport? fromJson(Map<String, dynamic> json, String path) {
     final revision = json['revision'];
     final byteSize = json['byteSize'];
@@ -56,6 +104,7 @@ class CachedExport {
     return CachedExport(
       path: path,
       revision: revision,
+      revisionIsExact: json['revisionIsExact'] == true,
       byteSize: byteSize,
       downloadedAt: downloadedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
@@ -80,8 +129,15 @@ class ReaderBookmark {
   /// shown as approximate rather than silently trusted.
   final int? revision;
 
-  bool isApproximateFor(int currentRevision) =>
-      revision != null && revision != currentRevision;
+  /// A bookmark is exact only when both sides name the same known compile.
+  ///
+  /// In particular, a bookmark made by an older app with no revision and a PDF
+  /// whose provenance cannot be established are both approximate — absence is
+  /// not evidence that the physical page number is still current.
+  bool isApproximateFor(int? currentRevision) =>
+      revision == null ||
+      currentRevision == null ||
+      revision != currentRevision;
 
   Map<String, dynamic> toJson() {
     return {

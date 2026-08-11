@@ -81,8 +81,12 @@ child.on("exit", (code, signal) => {
   process.exit(code ?? 0);
 });
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
+// A hangup has to reach the app process too — it owns a pooled Chromium that
+// nothing else closes. nodemon handles SIGINT and SIGTERM but not SIGHUP, so
+// forwarding that one verbatim would kill nodemon outright and orphan the app
+// underneath it; it goes down as SIGTERM instead, which nodemon passes on.
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(signal, () => {
-    child.kill(signal);
+    child.kill(signal === "SIGHUP" ? "SIGTERM" : signal);
   });
 }

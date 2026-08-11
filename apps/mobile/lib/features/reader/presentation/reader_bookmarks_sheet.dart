@@ -17,7 +17,7 @@ class ReaderBookmarksSheet extends StatelessWidget {
   });
 
   final ReaderState state;
-  final int currentRevision;
+  final int? currentRevision;
   final void Function(ReaderBookmark bookmark) onSelect;
   final void Function(ReaderBookmark bookmark) onRemove;
 
@@ -59,7 +59,9 @@ class ReaderBookmarksSheet extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: approximate
-                        ? const Text('Saved before the last edit — may have moved')
+                        ? const Text(
+                            'Saved before the last edit — may have moved',
+                          )
                         : null,
                     trailing: IconButton(
                       icon: const Icon(Icons.close),

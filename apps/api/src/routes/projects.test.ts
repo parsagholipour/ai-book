@@ -85,33 +85,61 @@ describe("project routes", () => {
     }
   });
 
-  it("lists and reads only the signed-in user's projects", async () => {
-    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
-    mockPrisma.project.findMany.mockResolvedValueOnce([projectRecord({ id: "project-a", userId: "user-a" })]);
+  it("lists and reads only the operator's own projects", async () => {
+    mockPrisma.project.findMany.mockResolvedValueOnce([projectRecord({ id: "project-a", userId: "local-admin" })]);
     mockPrisma.project.findFirst.mockResolvedValueOnce(null);
     const app = await buildApp();
 
-    const list = await app.inject({
-      method: "GET",
-      url: "/api/projects",
-      headers: bearer("token-a")
-    });
-    const crossUserDetail = await app.inject({
-      method: "GET",
-      url: "/api/projects/project-b",
-      headers: bearer("token-a")
-    });
+    const list = await app.inject({ method: "GET", url: "/api/projects" });
+    const otherOwnerDetail = await app.inject({ method: "GET", url: "/api/projects/project-b" });
 
     expect(list.statusCode).toBe(200);
-    expect(list.json()).toEqual([expect.objectContaining({ id: "project-a", userId: "user-a" })]);
-    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: "user-a" } }));
-    expect(crossUserDetail.statusCode).toBe(404);
+    expect(list.json()).toEqual([expect.objectContaining({ id: "project-a", userId: "local-admin" })]);
+    expect(mockPrisma.project.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "local-admin" } })
+    );
+    expect(otherOwnerDetail.statusCode).toBe(404);
     expect(mockPrisma.project.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "project-b", userId: "user-a" } })
+      expect.objectContaining({ where: { id: "project-b", userId: "local-admin" } })
     );
     await app.close();
   });
 
+  /**
+   * Owning the book was never enough to be allowed down these routes. They are
+   * the operator console's: unpriced, unmetered, and rendering exports inline.
+   * A mobile bearer that scoped cleanly to its own project got a book generated
+   * with no credit reservation (`/api/plans/:id/approve`) and an export with no
+   * unlock — the charge that `/api/mobile/projects/:id/export/*` exists to take.
+   */
+  it("refuses mobile bearer tokens on the operator API", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    writeProjectFile(tempBookStorageDir, "project-a", "book.pdf", "%PDF-owned");
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-a", userId: "user-a" }));
+    const app = await buildApp();
+
+    const refused = await Promise.all(
+      (
+        [
+          ["GET", "/api/projects"],
+          ["GET", "/api/projects/project-a"],
+          ["GET", "/api/projects/project-a/export/pdf"],
+          ["GET", "/api/projects/project-a/export/epub"],
+          ["GET", "/api/projects/project-a/book"],
+          ["POST", "/api/plans/plan-a/approve"],
+          ["DELETE", "/api/projects/project-a"]
+        ] as const
+      ).map(([method, url]) => app.inject({ method, url, headers: bearer("token-a") }))
+    );
+
+    expect(refused.map((response) => response.statusCode)).toEqual(refused.map(() => 403));
+    expect(mockPrisma.project.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.project.delete).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  // The assets are the one surface a mobile bearer keeps: the serializers hand
+  // the app URLs under them and the client fetches those with the same token.
   it("authorizes image and voice assets by project owner", async () => {
     mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
     writeProjectFile(tempImageStorageDir, "project-a", "cover.png", "image-bytes");
@@ -152,36 +180,19 @@ describe("project routes", () => {
   });
 
   it("authorizes PDF and EPUB exports by project owner", async () => {
-    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
     writeProjectFile(tempBookStorageDir, "project-a", "book.pdf", "%PDF-owned");
     writeProjectFile(tempBookStorageDir, "project-a", "book.epub", "epub-owned");
     mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
-      where.id === "project-a" && where.userId === "user-a"
+      where.id === "project-a" && where.userId === "local-admin"
         ? { id: "project-a", title: "Owned Book", language: "en", currentPlanId: null, mediaSettings: {} }
         : null
     );
     const app = await buildApp();
 
-    const ownPdf = await app.inject({
-      method: "GET",
-      url: "/api/projects/project-a/export/pdf",
-      headers: bearer("token-a")
-    });
-    const otherPdf = await app.inject({
-      method: "GET",
-      url: "/api/projects/project-a/export/pdf",
-      headers: bearer("token-b")
-    });
-    const ownEpub = await app.inject({
-      method: "GET",
-      url: "/api/projects/project-a/export/epub",
-      headers: bearer("token-a")
-    });
-    const otherEpub = await app.inject({
-      method: "GET",
-      url: "/api/projects/project-a/export/epub",
-      headers: bearer("token-b")
-    });
+    const ownPdf = await app.inject({ method: "GET", url: "/api/projects/project-a/export/pdf" });
+    const otherPdf = await app.inject({ method: "GET", url: "/api/projects/project-b/export/pdf" });
+    const ownEpub = await app.inject({ method: "GET", url: "/api/projects/project-a/export/epub" });
+    const otherEpub = await app.inject({ method: "GET", url: "/api/projects/project-b/export/epub" });
 
     expect(ownPdf.statusCode).toBe(200);
     expect(ownPdf.body).toBe("%PDF-owned");
@@ -193,29 +204,20 @@ describe("project routes", () => {
   });
 
   it("deletes owned projects and best-effort project storage", async () => {
-    mockAccessTokens({ "token-a": "user-a", "token-b": "user-b" });
     writeProjectFile(tempBookStorageDir, "project-a", "book.pdf", "%PDF-owned");
     writeProjectFile(tempImageStorageDir, "project-a", "cover.png", "image-bytes");
     writeProjectFile(tempVoiceStorageDir, "project-a", "conversation.wav", "voice-bytes");
     vi.mocked(stopProjectGenerationJobs).mockResolvedValue({ stoppedJobs: 1, activeJobs: 0, removedQueueJobs: 1 });
     mockPrisma.project.findFirst.mockImplementation(async ({ where }: { where: { id?: string; userId?: string } }) =>
-      where.id === "project-a" && where.userId === "user-a" ? { id: "project-a" } : null
+      where.id === "project-a" && where.userId === "local-admin" ? { id: "project-a" } : null
     );
     mockPrisma.project.delete.mockResolvedValue({ id: "project-a" });
     const app = await buildApp();
 
-    const otherUserDelete = await app.inject({
-      method: "DELETE",
-      url: "/api/projects/project-a",
-      headers: bearer("token-b")
-    });
-    const ownDelete = await app.inject({
-      method: "DELETE",
-      url: "/api/projects/project-a",
-      headers: bearer("token-a")
-    });
+    const otherOwnerDelete = await app.inject({ method: "DELETE", url: "/api/projects/project-b" });
+    const ownDelete = await app.inject({ method: "DELETE", url: "/api/projects/project-a" });
 
-    expect(otherUserDelete.statusCode).toBe(404);
+    expect(otherOwnerDelete.statusCode).toBe(404);
     expect(ownDelete.statusCode).toBe(200);
     expect(ownDelete.json()).toEqual(
       expect.objectContaining({

@@ -20,6 +20,7 @@ Future<void> pumpMenu(
   ReaderSelection selection = placed,
   void Function(ReaderSelectionAction action)? onAction,
   bool editingEnabled = true,
+  bool sourceCurrent = true,
 }) {
   return tester.pumpWidget(
     MaterialApp(
@@ -32,6 +33,7 @@ Future<void> pumpMenu(
             child: ReaderSelectionMenu(
               selection: selection,
               editingEnabled: editingEnabled,
+              sourceCurrent: sourceCurrent,
               onAction: onAction ?? (_) {},
             ),
           ),
@@ -48,6 +50,7 @@ Future<void> pumpMarkupBar(
   VoidCallback? onNote,
   VoidCallback? onDismiss,
   int defaultColorIndex = 0,
+  bool markupEnabled = true,
 }) {
   return tester.pumpWidget(
     MaterialApp(
@@ -55,6 +58,7 @@ Future<void> pumpMarkupBar(
         appBar: ReaderMarkupBar(
           palette: readerMarkupPalette(onDarkPage: false),
           defaultColorIndex: defaultColorIndex,
+          markupEnabled: markupEnabled,
           onMarkup: onMarkup ?? (_, _) {},
           onNote: onNote ?? () {},
           onAction: onAction ?? (_) {},
@@ -111,9 +115,7 @@ void main() {
     expect(widths.toSet(), hasLength(1));
   });
 
-  testWidgets('shows nothing but the actions when all is well', (
-    tester,
-  ) async {
+  testWidgets('shows nothing but the actions when all is well', (tester) async {
     // The book page a passage resolved to is our bookkeeping, not the
     // reader's: they are looking at a rendered PDF page, and Page.index is a
     // different number for the same place. Showing it invites a correction to
@@ -148,11 +150,7 @@ void main() {
     tester,
   ) async {
     final tapped = <ReaderSelectionAction>[];
-    await pumpMenu(
-      tester,
-      editingEnabled: false,
-      onAction: tapped.add,
-    );
+    await pumpMenu(tester, editingEnabled: false, onAction: tapped.add);
 
     // The only thing worth a second row: three of the four actions have just
     // greyed out and nothing else on screen says why.
@@ -164,6 +162,21 @@ void main() {
     await tester.pump();
 
     expect(tapped, [ReaderSelectionAction.ask]);
+  });
+
+  testWidgets('an older displayed PDF disables every current-book action', (
+    tester,
+  ) async {
+    final tapped = <ReaderSelectionAction>[];
+    await pumpMenu(tester, sourceCurrent: false, onAction: tapped.add);
+
+    expect(find.text('Reload to use book actions'), findsOneWidget);
+    for (final label in const ['Ask', 'Rewrite', 'Replace', 'Edit page']) {
+      await tester.tap(find.text(label));
+    }
+    await tester.pump();
+
+    expect(tapped, isEmpty);
   });
 
   testWidgets('each book action reports itself', (tester) async {
@@ -254,7 +267,33 @@ void main() {
       await tester.tap(find.byTooltip('Share'));
       await tester.pump();
 
-      expect(tapped, [
+      expect(tapped, [ReaderSelectionAction.copy, ReaderSelectionAction.share]);
+    });
+
+    testWidgets('unverified pages disable marks but keep copy and share', (
+      tester,
+    ) async {
+      final marks = <(ReaderMarkupStyle, int)>[];
+      final actions = <ReaderSelectionAction>[];
+      var notes = 0;
+      await pumpMarkupBar(
+        tester,
+        markupEnabled: false,
+        onMarkup: (style, color) => marks.add((style, color)),
+        onNote: () => notes++,
+        onAction: actions.add,
+      );
+
+      await tester.tap(find.byTooltip('Yellow highlight'));
+      await tester.tap(find.byTooltip('Underline'));
+      await tester.tap(find.byTooltip('Add a note'));
+      await tester.tap(find.byTooltip('Copy'));
+      await tester.tap(find.byTooltip('Share'));
+      await tester.pump();
+
+      expect(marks, isEmpty);
+      expect(notes, 0);
+      expect(actions, [
         ReaderSelectionAction.copy,
         ReaderSelectionAction.share,
       ]);

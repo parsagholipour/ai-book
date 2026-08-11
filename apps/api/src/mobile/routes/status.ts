@@ -1,3 +1,4 @@
+import { ensureExportRepairQueued, ensureExportRepairQueuedFor, missingExportFormat } from "../exportRepair.js";
 import { requireMobileAuth, sendMobileError } from "../httpErrors.js";
 import { imageContentType, isLiveProjectStatus, loadSerializedProjectStatus, mobileAssetFilenameFromPath } from "../projectSerializers.js";
 import { assetParamsSchema, idParamsSchema, mobileAuthError } from "../schemas.js";
@@ -25,7 +26,7 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
       const { id } = idParamsSchema.parse(request.params);
       const project = await prisma.project.findFirst({
         where: { id, userId: auth.user.id },
-        select: { id: true }
+        select: { id: true, status: true, currentPlanId: true, contentRevision: true }
       });
       if (!project) {
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
@@ -33,6 +34,24 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
       const status = await loadSerializedProjectStatus(id, appConfig, auth.user.id);
       if (!status) {
         return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
+      // The download routes queue a repair when they find nothing to send, but
+      // no surface ever reaches them while the file is missing: the card's
+      // button is disabled, the reader returns "still being written", and the
+      // actions menu gates the same way. Watching the status is the only signal
+      // there is, so that is what has to queue the rebuild — here for the app's
+      // fallback poll, and in the stream below for the path it normally takes.
+      //
+      // Both formats, because neither has a surface that can ask for itself: an
+      // EPUB-only outage is just as unreachable as a missing PDF, the download
+      // route being gated behind the same disabled button. Both use the bounded
+      // window in `exportRepairDedupeKey`, so a terminal job can be retried
+      // without a four-second status poll becoming a job per poll. Everything
+      // else this needs — including the in-flight compile guard — is inside
+      // `ensureExportRepairQueued`.
+      const missing = missingExportFormat(status.exports);
+      if (missing) {
+        await ensureExportRepairQueued(project, missing, appConfig);
       }
       return { status };
     }
@@ -87,6 +106,20 @@ export async function registerMobileStatusRoutes(fastify: FastifyInstance, conte
             reply.raw.write(`event: error\ndata: ${JSON.stringify({ code: "PROJECT_NOT_FOUND" })}\n\n`);
             close();
             return;
+          }
+          if (!isLiveProjectStatus(status.status)) {
+            // The same repair the poll route queues, on the surface the app
+            // actually uses. `projectStatusProvider` subscribes *here* and falls
+            // back to `GET …/status` while a settled book is still missing its
+            // PDF. Queue before publishing that missing-export snapshot so the
+            // client never observes "repair needed" before the repair decision
+            // has been made. Every later re-check (the saved-export card's
+            // bounded refresh, the reader, the book screen) can then observe the
+            // compile this read initiated.
+            const missing = missingExportFormat(status.exports);
+            if (missing) {
+              await ensureExportRepairQueuedFor(id, auth.user.id, missing, appConfig);
+            }
           }
           reply.raw.write(`event: status\ndata: ${JSON.stringify({ status })}\n\n`);
           if (!isLiveProjectStatus(status.status)) {

@@ -18,6 +18,8 @@ class ReaderAppBar extends StatefulWidget implements PreferredSizeWidget {
     required this.onSearch,
     required this.onToggleMarkup,
     required this.onMenuAction,
+    this.bookmarkingEnabled = true,
+    this.bookActionsEnabled = true,
     super.key,
   });
 
@@ -26,12 +28,14 @@ class ReaderAppBar extends StatefulWidget implements PreferredSizeWidget {
   final bool immersive;
   final int markupCount;
   final bool markingUp;
+  final bool bookmarkingEnabled;
+  final bool bookActionsEnabled;
 
   /// Null while the searcher does not exist yet — it cannot until the viewer
   /// has a document.
   final VoidCallback? onSearch;
 
-  final VoidCallback onToggleMarkup;
+  final VoidCallback? onToggleMarkup;
   final void Function(ReaderMenuAction action) onMenuAction;
 
   @override
@@ -61,6 +65,8 @@ class _ReaderAppBarState extends State<ReaderAppBar> {
       bookmarked: widget.bookmarked,
       immersive: widget.immersive,
       markupCount: widget.markupCount,
+      bookmarkingEnabled: widget.bookmarkingEnabled,
+      bookActionsEnabled: widget.bookActionsEnabled,
     );
     if (action == null || !mounted) return;
     widget.onMenuAction(action);
@@ -69,11 +75,7 @@ class _ReaderAppBarState extends State<ReaderAppBar> {
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      title: Text(
-        widget.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       actions: [
         IconButton(
           icon: const Icon(Icons.search),
@@ -85,7 +87,9 @@ class _ReaderAppBarState extends State<ReaderAppBar> {
           isSelected: widget.markingUp,
           icon: const Icon(Icons.draw_outlined),
           selectedIcon: const Icon(Icons.draw),
-          tooltip: widget.markingUp ? 'Put the tools away' : 'Mark up this book',
+          tooltip: widget.markingUp
+              ? 'Put the tools away'
+              : 'Mark up this book',
           onPressed: widget.onToggleMarkup,
         ),
         IconButton(

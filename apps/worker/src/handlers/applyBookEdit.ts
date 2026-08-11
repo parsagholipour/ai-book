@@ -228,5 +228,28 @@ export async function applyBookEdit(job: Job) {
   // repair pass would not have. Rewriting surrounding pages the user never
   // asked about is the same hazard the manual Edit Mode skip exists for, and
   // the per-page price never modeled a book-sized review.
-  await maybeEnqueueCompile(projectId, effectivePlanVersion.id, { skipFinalReview: true });
+  let dispatched: Awaited<ReturnType<typeof maybeEnqueueCompile>>;
+  try {
+    dispatched = await maybeEnqueueCompile(projectId, effectivePlanVersion.id, { skipFinalReview: true });
+  } catch (error) {
+    // The edit and its snapshots are already committed and the old exports are
+    // intentionally gone. Failing the delivered edit here only leaves its Bull
+    // row disagreeing with an APPLIED operation; restoring a settled project
+    // hands the missing files to the same on-demand repair lane as `not-ready`.
+    console.error(`Failed to enqueue the export refresh for edited project ${projectId}:`, error);
+    dispatched = "not-ready";
+  }
+  if (dispatched === "not-ready") {
+    // The compile is the only thing that takes this project back out of
+    // EDITING, and the exports are already deleted — so a fan-in that declines
+    // to queue one, with nothing in flight to call it again, would leave the
+    // book unreadable and undownloadable for good: no sweep looks at EDITING,
+    // and `ensureExportRepairQueued` refuses a project that is not COMPLETE or
+    // REVIEW_REQUIRED. Handing it back to that repair lane is the recovery —
+    // COMPLETE with missing files is precisely the state the app's status
+    // stream already knows how to rebuild.
+    await prisma.project
+      .updateMany({ where: { id: projectId, status: "EDITING" }, data: { status: "COMPLETE" } })
+      .catch(() => undefined);
+  }
 }

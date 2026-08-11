@@ -32,6 +32,7 @@ class ReaderSelectionMenu extends StatelessWidget {
     required this.selection,
     required this.editingEnabled,
     required this.onAction,
+    this.sourceCurrent = true,
     super.key,
   });
 
@@ -40,6 +41,11 @@ class ReaderSelectionMenu extends StatelessWidget {
   /// False while the book is generating or has an open edit operation, which
   /// the server would reject anyway.
   final bool editingEnabled;
+
+  /// Whether the selected PDF can be tied to the project's current manuscript.
+  /// False for unknown provenance, a loader from another project, or an exact
+  /// PDF whose revision differs from the screen's current export snapshot.
+  final bool sourceCurrent;
 
   final void Function(ReaderSelectionAction action) onAction;
 
@@ -58,7 +64,10 @@ class ReaderSelectionMenu extends StatelessWidget {
           _bookActions(context),
           // The only thing worth a second row: three of the four actions have
           // just greyed out and nothing else on screen says why.
-          if (!editingEnabled) _busyNotice(context),
+          if (!sourceCurrent)
+            _staleNotice(context)
+          else if (!editingEnabled)
+            _busyNotice(context),
         ],
       ),
     );
@@ -73,6 +82,7 @@ class ReaderSelectionMenu extends StatelessWidget {
           child: _BookAction(
             icon: Icons.chat_bubble_outline,
             label: 'Ask',
+            enabled: sourceCurrent,
             onTap: () => onAction(ReaderSelectionAction.ask),
           ),
         ),
@@ -80,7 +90,7 @@ class ReaderSelectionMenu extends StatelessWidget {
           child: _BookAction(
             icon: Icons.auto_fix_high_outlined,
             label: 'Rewrite',
-            enabled: editingEnabled,
+            enabled: sourceCurrent && editingEnabled,
             onTap: () => onAction(ReaderSelectionAction.rewrite),
           ),
         ),
@@ -88,7 +98,7 @@ class ReaderSelectionMenu extends StatelessWidget {
           child: _BookAction(
             icon: Icons.find_replace_outlined,
             label: 'Replace',
-            enabled: editingEnabled,
+            enabled: sourceCurrent && editingEnabled,
             onTap: () => onAction(ReaderSelectionAction.replace),
           ),
         ),
@@ -96,7 +106,7 @@ class ReaderSelectionMenu extends StatelessWidget {
           child: _BookAction(
             icon: Icons.edit_outlined,
             label: 'Edit page',
-            enabled: editingEnabled,
+            enabled: sourceCurrent && editingEnabled,
             onTap: () => onAction(ReaderSelectionAction.editPage),
           ),
         ),
@@ -112,6 +122,24 @@ class ReaderSelectionMenu extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: Text(
         'The book is busy — editing paused',
+        textAlign: TextAlign.center,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  Widget _staleNotice(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      color: theme.colorScheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      child: Text(
+        'Reload to use book actions',
         textAlign: TextAlign.center,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

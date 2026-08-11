@@ -6,9 +6,14 @@ import {
   STOPPED_JOB_MESSAGE,
   bookGenerationChargeFromPayloads,
   dispatchBackoffMs,
+  generationJobOwnsFailureLifecycle,
+  isPresentationOnlyRecompile,
   jobNames,
+  payloadOwnsProjectOutcome,
+  jobOwnsQualityVerdict,
   jsonPayloadToRecord,
   loadConfig,
+  presentationRecompileFallbackStatus,
   retryJobOptions,
   type GenerationJobType
 } from "@book-maker/core";
@@ -70,6 +75,11 @@ export async function enqueueGenerationJob(options: {
         projectId: options.projectId,
         type: options.type,
         payload: options.payload as Prisma.InputJsonValue,
+        // Promoted out of the payload here for the same reason
+        // `contentRevision` is: the read side has to be able to ask for the
+        // compile whose verdict is the book's, and a payload flag cannot be
+        // negated in SQL without dropping every row that never carried it.
+        ownsQualityVerdict: jobOwnsQualityVerdict(options.type, options.payload),
         ...(options.dedupeKey ? { dedupeKey: options.dedupeKey } : {}),
         ...(options.contentRevision !== undefined ? { contentRevision: options.contentRevision } : {}),
         ...(options.attemptId ? { attemptId: options.attemptId } : {}),
@@ -231,12 +241,87 @@ export async function requeueGenerationJob(job: RequeueableGenerationJob) {
   return (await dispatchGenerationJob(job.id)) ?? durableJob;
 }
 
-export async function stopProjectGenerationJobs(projectId: string) {
-  await prisma.project.update({ where: { id: projectId }, data: { status: "FAILED" } });
+/**
+ * The statuses a stop may not move a project out of.
+ *
+ * A finished book is finished whatever is stopped alongside it, and work is
+ * queued against a COMPLETE or REVIEW_REQUIRED project all the time: an export
+ * repair the status poll asked for, a narration, an edit that has not started
+ * yet. None of that is the book's own outcome — the worker refuses to fail the
+ * project for any of it (`jobOwnsProjectLifecycle`, and `ownsProjectStatus` on
+ * the success side) — but a stop cancels a QUEUED job without the worker ever
+ * seeing it, so the same decision has to be made a third time, here.
+ *
+ * Getting it wrong is terminal rather than cosmetic. A delivered, paid book
+ * marked FAILED reads as trouble on every surface (`failureMessage` feeds the
+ * app's `hasFailure`, i.e. `BookStage.needsAttention`) and nothing can move it
+ * back: `ensureExportRepairQueued` only queues for these two statuses, so the
+ * self-repair lane is shut off, and `canRecoverGenerationJob` refuses detached
+ * rows, so neither resume route will requeue one either. The operator console
+ * offers Stop whenever any job is QUEUED or ACTIVE, which a repair is, so one
+ * click on a book whose PDF had gone missing was enough.
+ *
+ * The guard is on the *status* rather than on what was stopped, because that is
+ * the property worth holding: the two settled statuses are exactly the ones a
+ * book reaches by being finished. Real in-flight work is never in one — a
+ * generation is GENERATING, an edit that has started is EDITING — so anything
+ * whose stop genuinely fails a book still fails it.
+ */
+const SETTLED_PROJECT_STATUSES = ["COMPLETE", "REVIEW_REQUIRED"] as const;
 
-  const openJobs = await prisma.generationJob.findMany({
-    where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } },
-    select: { id: true, bullJobId: true, status: true, type: true, payload: true, attemptId: true }
+export async function stopProjectGenerationJobs(projectId: string) {
+  // Publication takes the project row and then its durable job row. Stop uses
+  // the same lock order and terminalizes both in one transaction, so exactly
+  // one outcome wins: a committed publication owns COMPLETED and cannot be
+  // refunded, while a committed stop owns FAILED and cannot publish.
+  const openJobs = await prisma.$transaction(async (tx) => {
+    const project = await tx.project.update({
+      where: { id: projectId },
+      data: { contentRevision: { increment: 0 } },
+      select: { status: true }
+    });
+    const candidates = await tx.generationJob.findMany({
+      where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } },
+      select: { id: true, bullJobId: true, status: true, type: true, payload: true, attemptId: true }
+    });
+    const stopped = [] as typeof candidates;
+    for (const candidate of candidates) {
+      const claimed = await tx.generationJob.updateMany({
+        where: { id: candidate.id, status: { in: ["QUEUED", "ACTIVE"] } },
+        data: {
+          status: "FAILED",
+          message: STOPPED_JOB_MESSAGE,
+          error: STOPPED_JOB_ERROR,
+          finishedAt: new Date()
+        }
+      });
+      if (claimed.count === 1) {
+        stopped.push(candidate);
+      }
+    }
+
+    // The status write is guarded on the *status*, never on what was stopped
+    // (see SETTLED_PROJECT_STATUSES above): a stop that claims zero rows is
+    // routinely a stranded project — GENERATING with its jobs long gone — and
+    // Stop is the one lever the user has to move it back to a retryable
+    // FAILED. The single exception is a free presentation reprint caught
+    // mid-flight with nothing owning stopped alongside it: its EDITING belongs
+    // to a settled book, so it goes back to the settled status it was born
+    // under rather than to FAILED.
+    const owningStopped = stopped.some((job) => generationJobOwnsFailureLifecycle(job.type, job.payload));
+    const presentation = stopped.find((job) => isPresentationOnlyRecompile(job.payload));
+    if (!owningStopped && presentation && project.status === "EDITING") {
+      await tx.project.updateMany({
+        where: { id: projectId, status: "EDITING" },
+        data: { status: presentationRecompileFallbackStatus(presentation.payload) }
+      });
+    } else {
+      await tx.project.updateMany({
+        where: { id: projectId, status: { notIn: [...SETTLED_PROJECT_STATUSES] } },
+        data: { status: "FAILED" }
+      });
+    }
+    return stopped;
   });
   let removedQueueJobs = 0;
 
@@ -262,23 +347,19 @@ export async function stopProjectGenerationJobs(projectId: string) {
     })
   );
 
-  const finishedAt = new Date();
-  const stoppedJobs = await prisma.generationJob.updateMany({
-    where: { projectId, status: { in: ["QUEUED", "ACTIVE"] } },
-    data: {
-      status: "FAILED",
-      message: STOPPED_JOB_MESSAGE,
-      error: STOPPED_JOB_ERROR,
-      finishedAt
-    }
-  });
   // Every stopped job that belongs to a paid attempt settles through the
   // attempt state machine: terminalizing the attempt refunds its own ledger
   // entry (plan, edit, audiobook or book — whichever paid for it) exactly once,
   // and marks the attempt CANCELED so its rows can never be resumed for free.
   // This is idempotent against the worker noticing the stop on an active job
   // and settling the same attempt itself.
-  const attemptIds = [...new Set(openJobs.flatMap((job) => (job.attemptId ? [job.attemptId] : [])))];
+  const attemptIds = [
+    ...new Set(
+      openJobs.flatMap((job) =>
+        job.attemptId && payloadOwnsProjectOutcome(job.payload) ? [job.attemptId] : []
+      )
+    )
+  ];
   for (const attemptId of attemptIds) {
     await failGenerationAttempt(attemptId, STOPPED_JOB_ERROR, "CANCELED").catch((error) => {
       // failGenerationAttempt left refundPending set; the worker's refund
@@ -291,14 +372,24 @@ export async function stopProjectGenerationJobs(projectId: string) {
   // the legacy paths — and only when such rows were actually stopped. Running
   // the fallback unconditionally refunded the latest full-book charge for
   // stops that cancelled nothing but attempt-tracked work.
-  const legacyJobs = openJobs.filter((job) => !job.attemptId);
+  //
+  // A detached row is excluded for exactly the reason the worker excludes it
+  // from `markFailed`, and this is the second place that decision has to be
+  // made: an export repair is attempt-less, is typed `COMPILE_EXPORT`, and
+  // carries the finished book's own `planId` — so the book-run walk below finds
+  // that book's `GENERATE_BOOK` charge and hands it back because a rebuild of a
+  // missing file was cancelled. Deleting a finished book is enough to trigger
+  // it: the status poll queues a repair the moment the PDF is missing, and both
+  // delete routes stop the project's open jobs first. It is not legacy work —
+  // nothing was charged for it, so nothing settles.
+  const legacyJobs = openJobs.filter((job) => !job.attemptId && payloadOwnsProjectOutcome(job.payload));
   if (legacyJobs.length > 0) {
     await settleLegacyStoppedJobs(projectId, legacyJobs);
   }
   await closeDerivativeRowsForStoppedJobs(openJobs);
 
   return {
-    stoppedJobs: stoppedJobs.count,
+    stoppedJobs: openJobs.length,
     activeJobs: openJobs.filter((job) => job.status === "ACTIVE").length,
     removedQueueJobs
   };

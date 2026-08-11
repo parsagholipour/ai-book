@@ -37,6 +37,8 @@ class ReaderMarkupActions {
     required this.bookTitle,
     required this.palette,
     required this.editingEnabled,
+    required this.canUseCurrentBook,
+    required this.canModifyPlacement,
     required this.isMounted,
     required this.onGoToPage,
   });
@@ -47,6 +49,8 @@ class ReaderMarkupActions {
   final String bookTitle;
   final List<ReaderMarkupColor> palette;
   final bool editingEnabled;
+  final bool Function() canUseCurrentBook;
+  final bool Function() canModifyPlacement;
   final bool Function() isMounted;
   final void Function(int page) onGoToPage;
 
@@ -202,6 +206,8 @@ class ReaderMarkupActions {
       annotation: annotation,
       palette: palette,
       editingEnabled: editingEnabled,
+      placementEnabled: canModifyPlacement(),
+      bookActionsEnabled: canUseCurrentBook(),
       onColorChanged: (index) =>
           controller.replace(annotation.recolored(index)),
     );
@@ -211,7 +217,14 @@ class ReaderMarkupActions {
       case ReaderAnnotationCommand.editBody:
         await _editBody(annotation);
       case ReaderAnnotationCommand.move:
-        controller.beginMove(annotation.id);
+        if (canModifyPlacement()) {
+          controller.beginMove(annotation.id);
+        } else {
+          showSnack(
+            'Reload this book before moving markup so it stays on the right '
+            'page.',
+          );
+        }
       case ReaderAnnotationCommand.delete:
         delete(annotation);
       case ReaderAnnotationCommand.copy:
@@ -270,6 +283,15 @@ class ReaderMarkupActions {
     ReaderAnnotation annotation,
     ReaderSelectionAction action,
   ) async {
+    final localAction =
+        action == ReaderSelectionAction.copy ||
+        action == ReaderSelectionAction.share;
+    if (!localAction && !canUseCurrentBook()) {
+      showSnack(
+        'Reload this book before using actions that change or ask about it.',
+      );
+      return;
+    }
     final quote = annotation.quote?.trim() ?? '';
     final body = annotation.body?.trim() ?? '';
     final text = quote.isEmpty ? body : quote;

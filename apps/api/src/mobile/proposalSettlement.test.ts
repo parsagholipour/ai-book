@@ -19,6 +19,7 @@ import {
   mockAccessTokens,
   mockPrisma,
   mockQueue,
+  openJobRow,
   projectRecord,
   resetMobileHarness,
   state,
@@ -187,7 +188,7 @@ describe("proposal settlement", () => {
     const proposalId = await proposeExactEdit(app);
 
     // The first tap lands while another job is open: saved, not executed.
-    mockPrisma.generationJob.count.mockResolvedValueOnce(1);
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([openJobRow()]);
     const deflected = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/proposals/apply",
@@ -288,7 +289,7 @@ describe("proposal settlement", () => {
 
     // A typed confirmation lands while another job is open: deflected, but the
     // busy reply must keep the priced proposal it deflected.
-    mockPrisma.generationJob.count.mockResolvedValueOnce(1);
+    mockPrisma.generationJob.findMany.mockResolvedValueOnce([openJobRow()]);
     const deflected = await app.inject({
       method: "POST",
       url: "/api/mobile/projects/project-1/chat/messages",
@@ -471,7 +472,7 @@ describe("proposal settlement", () => {
     // yet, and production's unique [projectId, requestId] index settles the
     // race at the insert. hasOpenProjectWork is the loser's last read before
     // that insert, so the winner lands exactly there.
-    mockPrisma.generationJob.count.mockImplementationOnce(async () => {
+    mockPrisma.generationJob.findMany.mockImplementationOnce(async () => {
       state.bookEditOperations.push({
         id: "operation-winner",
         projectId: "project-1",
@@ -500,7 +501,7 @@ describe("proposal settlement", () => {
         updatedAt: new Date("2026-06-15T13:30:00.000Z"),
         appliedAt: null
       });
-      return 0;
+      return [];
     });
 
     const raced = await app.inject({
@@ -578,9 +579,9 @@ describe("proposal settlement", () => {
     // check and its busy check — the busyness IS the winner. Saving the
     // request as a pending edit here is what used to let a later "yes" rebuild
     // the proposal and charge the same rewrite a second time.
-    mockPrisma.generationJob.count.mockImplementationOnce(async () => {
+    mockPrisma.generationJob.findMany.mockImplementationOnce(async () => {
       state.bookEditOperations.push(winnerOperation(proposalId));
-      return 1;
+      return [openJobRow({ operationId: "operation-winner" })];
     });
 
     const deflected = await app.inject({
@@ -608,9 +609,9 @@ describe("proposal settlement", () => {
     const app = await buildMobileApp();
     const proposalId = await proposePricedRewrite(app);
 
-    mockPrisma.generationJob.count.mockImplementationOnce(async () => {
+    mockPrisma.generationJob.findMany.mockImplementationOnce(async () => {
       state.bookEditOperations.push(winnerOperation(proposalId));
-      return 1;
+      return [openJobRow({ operationId: "operation-winner" })];
     });
 
     const typed = await app.inject({

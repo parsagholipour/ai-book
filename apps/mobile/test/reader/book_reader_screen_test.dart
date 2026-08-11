@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,8 +9,6 @@ import 'package:tomeza/features/reader/data/reader_repository.dart';
 import 'package:tomeza/features/reader/domain/reader_annotation.dart';
 import 'package:tomeza/features/reader/domain/reader_annotation_geometry.dart';
 import 'package:tomeza/features/reader/domain/reader_models.dart';
-import 'package:tomeza/features/reader/domain/reader_page_locator.dart';
-import 'package:tomeza/features/reader/domain/reader_settings.dart';
 import 'package:tomeza/features/reader/presentation/book_reader_screen.dart';
 import 'package:tomeza/features/reader/presentation/reader_document_loader.dart';
 import 'package:tomeza/features/reader/presentation/reader_app_bar.dart';
@@ -21,151 +18,7 @@ import 'package:tomeza/features/reader/presentation/reader_markup_toolbar.dart';
 import 'package:tomeza/features/reader/presentation/reader_selection_menu.dart';
 import 'package:tomeza/features/reader/presentation/reader_view.dart';
 
-/// A reader repository with no filesystem or network behind it.
-class FakeReaderRepository implements ReaderRepository {
-  FakeReaderRepository({this.failDownload = false, this.downloadError});
-
-  bool failDownload;
-
-  /// What a failed download throws. Null is an ordinary network failure; a
-  /// refusal the app can act on — a 402, say — is passed explicitly.
-  Object? downloadError;
-  ReaderState state = const ReaderState();
-  List<ReaderAnnotation> annotations = const [];
-  ReaderSettings settings = const ReaderSettings();
-  final saved = <ReaderState>[];
-  final savedAnnotations = <List<ReaderAnnotation>>[];
-  final downloadedRevisions = <int>[];
-  final clearedProjects = <String>[];
-  Completer<void>? gate;
-
-  @override
-  Future<CachedExport> ensureExport({
-    required String projectId,
-    required MobileExportAvailability export,
-    void Function(int received, int total)? onProgress,
-    CancelToken? cancelToken,
-  }) async {
-    onProgress?.call(50, 100);
-    await gate?.future;
-    if (failDownload) {
-      throw downloadError ?? Exception('connection lost');
-    }
-    downloadedRevisions.add(export.revision);
-    return CachedExport(
-      path: '/tmp/book-${export.revision}.pdf',
-      revision: export.revision,
-      byteSize: export.byteSize ?? 0,
-      downloadedAt: DateTime.utc(2026, 7, 25),
-    );
-  }
-
-  @override
-  Future<ReaderState> loadState(String projectId) async => state;
-
-  @override
-  Future<void> saveState(String projectId, ReaderState next) async {
-    state = next;
-    saved.add(next);
-  }
-
-  @override
-  Future<List<ReaderAnnotation>> loadAnnotations(String projectId) async =>
-      annotations;
-
-  @override
-  Future<void> saveAnnotations(
-    String projectId,
-    List<ReaderAnnotation> next,
-  ) async {
-    annotations = next;
-    savedAnnotations.add(next);
-  }
-
-  @override
-  Future<ReaderSettings> loadSettings() async => settings;
-
-  @override
-  Future<void> saveSettings(ReaderSettings next) async => settings = next;
-
-  @override
-  Future<void> clearProject(String projectId) async =>
-      clearedProjects.add(projectId);
-
-  @override
-  Future<ReaderPageLocator> pageLocator({
-    required String projectId,
-    required int revision,
-  }) async {
-    return ReaderPageLocator(
-      const MobileEditableBook(
-        projectId: 'project-1',
-        title: 'The Book',
-        pages: [
-          MobileEditableBookPage(
-            id: 'page-1',
-            index: 1,
-            title: 'Opening',
-            markdown: 'The rabbit stretched in the long grass.',
-            revision: 1,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-MobileExportAvailability pdfExport({
-  bool available = true,
-  bool unlocked = true,
-  int creditsRequired = 0,
-  int revision = 1,
-  int byteSize = 100,
-}) {
-  return MobileExportAvailability(
-    format: 'pdf',
-    available: available,
-    unlocked: unlocked,
-    creditsRequired: creditsRequired,
-    downloadUrl: '/api/mobile/projects/project-1/export/pdf',
-    filename: 'the-race.pdf',
-    contentType: 'application/pdf',
-    revision: revision,
-    byteSize: byteSize,
-    updatedAt: DateTime.utc(2026, 7, 25),
-  );
-}
-
-MobileProjectStatus statusWith(MobileExportAvailability export) {
-  return MobileProjectStatus(
-    projectId: 'project-1',
-    status: 'complete',
-    statusLabel: 'Complete',
-    progressPercent: 100,
-    currentAction: 'Your book is ready.',
-    retryAvailable: false,
-    steps: const [],
-    pageProgress: const MobilePageProgress(completed: 12, target: 12),
-    imageCount: 4,
-    exports: MobileExportSet(
-      pdf: export,
-      epub: pdfExport(available: false, byteSize: 0),
-    ),
-    updatedAt: DateTime.utc(2026, 7, 25),
-  );
-}
-
-/// Stands in for PdfViewer, whose PDFium natives are not loaded under
-/// `flutter test`.
-Widget stubViewer(
-  BuildContext context,
-  String path,
-  controller,
-  params,
-  int initialPageNumber,
-) {
-  return Center(child: Text('pdf:$path@$initialPageNumber'));
-}
+import 'book_reader_test_support.dart';
 
 /// Records the params object handed to the viewer on each build.
 List<PdfViewerParams> capturedParams = [];
@@ -297,7 +150,6 @@ Future<void> _pump(
   MobileExportAvailability export,
   ReaderDocumentLoader documentLoader,
 ) async {
-
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -487,6 +339,129 @@ void main() {
     expect(find.text('Page 9'), findsOneWidget);
   });
 
+  testWidgets('unknown PDF provenance disables new bookmarks and markup', (
+    tester,
+  ) async {
+    final repository = FakeReaderRepository()
+      ..exactProvenance = false
+      ..state = const ReaderState(revision: 1, lastPage: 9);
+
+    await pumpReader(tester, repository: repository, export: pdfExport());
+    await tester.pumpAndSettle();
+
+    final bookmark = tester.widget<IconButton>(
+      find
+          .ancestor(
+            of: find.byTooltip('Bookmark'),
+            matching: find.byType(IconButton),
+          )
+          .first,
+    );
+    final markup = tester.widget<IconButton>(
+      find.byKey(const Key('reader-markup-toggle')),
+    );
+    expect(bookmark.onPressed, isNull);
+    expect(markup.onPressed, isNull);
+    expect(repository.state.bookmarks, isEmpty);
+    expect(
+      repository.state
+          .copyWith(
+            bookmarks: [
+              ReaderBookmark(
+                page: 9,
+                label: 'Page 9',
+                createdAt: DateTime.utc(2026),
+              ),
+            ],
+          )
+          .bookmarks
+          .single
+          .isApproximateFor(null),
+      isTrue,
+    );
+  });
+
+  testWidgets('stamps a mark with the compile on screen, not the one offered', (
+    tester,
+  ) async {
+    // The descriptor is what the server is offering now; the pages under the
+    // reader's finger are whatever was downloaded, and between an edit and a
+    // reload those are two different books. A bookmark stamped with the offered
+    // revision claims to be exact against a compile nobody has seen — so it is
+    // never shown as approximate, which is the one thing repagination makes it.
+    final repository = FakeReaderRepository()
+      ..state = const ReaderState(revision: 1, lastPage: 9);
+    final loader = ReaderDocumentLoader(
+      repository: repository,
+      projectId: 'project-1',
+    );
+    addTearDown(loader.dispose);
+
+    await pumpReader(
+      tester,
+      repository: repository,
+      export: pdfExport(),
+      loader: loader,
+    );
+    await tester.pumpAndSettle();
+
+    // The edit lands. The reader keeps reading revision 1 until they reload.
+    await pumpReader(
+      tester,
+      repository: repository,
+      export: pdfExport(revision: 2, byteSize: 140),
+      loader: loader,
+    );
+    await tester.pumpAndSettle();
+
+    await chooseFromMenu(tester, 'Bookmark this page');
+
+    expect(repository.state.bookmarks.single.revision, 1);
+    expect(
+      repository.state.bookmarks.single.isApproximateFor(2),
+      isTrue,
+      reason: 'the page it names is the old compile\'s',
+    );
+  });
+
+  testWidgets('stamps the compile that answered the download, not the one it '
+      'asked for', (tester) async {
+    // A compile landed between the status read and the download, so the bytes
+    // on screen are revision 2 while the descriptor that fetched them still
+    // says 1 — and the two books can be exactly the same length, which is why
+    // only the response can tell them apart. Stamping the descriptor's number
+    // would call a mark on the new pages exact against the old compile.
+    final repository = FakeReaderRepository()
+      ..answerWithRevision = 2
+      ..state = const ReaderState(revision: 1, lastPage: 9);
+    final loader = ReaderDocumentLoader(
+      repository: repository,
+      projectId: 'project-1',
+    );
+    addTearDown(loader.dispose);
+
+    await pumpReader(
+      tester,
+      repository: repository,
+      export: pdfExport(),
+      loader: loader,
+    );
+    await tester.pumpAndSettle();
+
+    await chooseFromMenu(tester, 'Bookmark this page');
+
+    expect(repository.state.bookmarks.single.revision, 2);
+    expect(
+      repository.state.bookmarks.single.isApproximateFor(2),
+      isFalse,
+      reason: 'the mark was placed on revision 2\'s pages',
+    );
+    // And the book already in hand is not announced as an edit to fetch: the
+    // stale descriptor describes an older compile than the one on screen.
+    expect(find.text('Your edits are in. Reload to see them.'), findsNothing);
+    expect(repository.downloadedRevisions, [1]);
+  });
+
   testWidgets('offers a reload once an edit recompiles the book', (
     tester,
   ) async {
@@ -555,10 +530,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      find.text('Updating this book with your changes…'),
-      findsOneWidget,
-    );
+    expect(find.text('Updating this book with your changes…'), findsOneWidget);
     expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
   });
 

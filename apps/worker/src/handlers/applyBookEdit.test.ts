@@ -4,7 +4,7 @@ import type { Job } from "bullmq";
 const mocks = vi.hoisted(() => ({
   prisma: {
     bookEditOperation: { findUnique: vi.fn(), update: vi.fn() },
-    project: { update: vi.fn() },
+    project: { update: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
     page: { findMany: vi.fn(), update: vi.fn() },
     pageEditSnapshot: { create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
@@ -67,6 +67,7 @@ describe("applyBookEdit in exact mode", () => {
       ...data,
       revision: 2
     }));
+    mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -149,6 +150,78 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
     expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
     expect(mocks.prisma.page.update.mock.calls[0]?.[0].data.title).toBe("Fly Learns");
+  });
+
+  it("hands the book back to the repair lane when no recompile was queued", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
+    mocks.maybeEnqueueCompile.mockResolvedValue("not-ready");
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Replace rabbit with fly",
+        affectedPageIndexes: [1],
+        planId: "plan-1",
+        exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+        mode: "exact"
+      })
+    );
+
+    // Nothing else moves a project out of EDITING, and the exports are already
+    // deleted — so leaving it there is a book no sweep and no route can reach.
+    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "COMPLETE" }
+    });
+  });
+
+  it("hands the applied edit to the repair lane when export enqueue fails", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
+    mocks.maybeEnqueueCompile.mockRejectedValue(new Error("queue unavailable"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(
+      applyBookEdit(
+        job({
+          projectId: "project-1",
+          operationId: "op-1",
+          request: "Replace rabbit with fly",
+          affectedPageIndexes: [1],
+          planId: "plan-1",
+          exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+          mode: "exact"
+        })
+      )
+    ).resolves.toBeUndefined();
+
+    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "COMPLETE" }
+    });
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("leaves the project EDITING while a compile is on its way", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
+    mocks.maybeEnqueueCompile.mockResolvedValue("compile");
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Replace rabbit with fly",
+        affectedPageIndexes: [1],
+        planId: "plan-1",
+        exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+        mode: "exact"
+      })
+    );
+
+    // The compile publishes the status; restoring COMPLETE here would retire
+    // the app's edit progress while the book is still being rebuilt.
+    expect(mocks.prisma.project.updateMany).not.toHaveBeenCalled();
   });
 
   it("still falls back to a rewrite when no exact mode was promised", async () => {

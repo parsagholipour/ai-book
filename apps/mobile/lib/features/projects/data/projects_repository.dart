@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,7 +8,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../shared/api/api_client.dart';
+import '../../../shared/api/api_error.dart';
+import '../../../shared/api/export_provenance.dart';
 import '../domain/project_models.dart';
+import 'export_repair_watch.dart';
 
 enum ExportOpenOutcome { opened, sharedFallback }
 
@@ -146,9 +150,14 @@ abstract interface class ProjectsRepository {
 }
 
 class MobileProjectsRepository implements ProjectsRepository {
-  const MobileProjectsRepository({required this.apiClient});
+  MobileProjectsRepository({
+    required this.apiClient,
+    Future<Directory> Function()? documentsDirectory,
+  }) : _documentsDirectory =
+           documentsDirectory ?? getApplicationDocumentsDirectory;
 
   final ApiClient apiClient;
+  final Future<Directory> Function() _documentsDirectory;
 
   @override
   Future<List<MobileProjectSummary>> listProjects() async {
@@ -513,7 +522,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String projectId,
     required MobileExportAvailability export,
   }) async {
-    final directory = await getApplicationDocumentsDirectory();
+    final directory = await _documentsDirectory();
     final safeProjectId = projectId.replaceAll(
       RegExp(r'[^A-Za-z0-9._-]+'),
       '-',
@@ -526,7 +535,32 @@ class MobileProjectsRepository implements ProjectsRepository {
     }
     final filename = _safeLocalFilename(export.filename, export.format);
     final path = '${exportDirectory.path}/$filename';
-    await apiClient.downloadFile(export.downloadUrl, path);
+    final partial = File('$path.part');
+    if (await partial.exists()) {
+      await partial.delete();
+    }
+    try {
+      final received = await apiClient.downloadFile(
+        export.downloadUrl,
+        partial.path,
+      );
+      final byteSize = await partial.length();
+      _validateDirectExportDownload(
+        export: export,
+        received: received,
+        byteSize: byteSize,
+      );
+      final existing = File(path);
+      if (await existing.exists()) {
+        await existing.delete();
+      }
+      await partial.rename(path);
+    } catch (_) {
+      if (await partial.exists()) {
+        await partial.delete();
+      }
+      rethrow;
+    }
     return ProjectExportFile(
       format: export.format,
       filename: filename,
@@ -565,6 +599,57 @@ class MobileProjectsRepository implements ProjectsRepository {
   }
 }
 
+/// Refuses bytes the response positively ties to an *older* compile.
+///
+/// What the bytes are is decided by [ExportProvenance.resolveDownload], the
+/// same rule the reader's cache reads through. This surface is stricter about
+/// what it keeps: silently handing an edited book's previous EPUB to the share
+/// sheet is worse than asking for a retry, so a stale or unidentifiable
+/// download throws. A *newer* exact revision is accepted — the retry after an
+/// `EXPORT_NOT_READY` is routinely answered by the compile that just
+/// published, and nothing newer is on offer. Refused bytes remain in the
+/// temporary file and are removed by [downloadExport].
+void _validateDirectExportDownload({
+  required MobileExportAvailability export,
+  required DownloadedFile received,
+  required int byteSize,
+}) {
+  final resolved = ExportProvenance.fromDownload(received).resolveDownload(
+    byteSize: byteSize,
+    declaredContentLength: received.contentLength,
+    descriptorRevision: export.revision,
+    descriptorByteSize: export.byteSize,
+  );
+  switch (resolved.resolution) {
+    case ExportDownloadResolution.identified:
+      return;
+    case ExportDownloadResolution.incomplete:
+      throw const ApiException(
+        code: 'EXPORT_DOWNLOAD_INCOMPLETE',
+        message: 'The export download was incomplete. Try again.',
+      );
+    case ExportDownloadResolution.identifiedStale:
+      throw ApiException(
+        code: 'EXPORT_REVISION_MISMATCH',
+        message:
+            'This ${export.format.toUpperCase()} belongs to an older '
+            'version of your book. Refresh and try again.',
+      );
+    case ExportDownloadResolution.replacedUnderRead:
+      throw const ApiException(
+        code: 'EXPORT_PROVENANCE_MISMATCH',
+        message: 'This file changed while it was downloading. Try again.',
+      );
+    case ExportDownloadResolution.unidentified:
+      throw const ApiException(
+        code: 'EXPORT_REVISION_MISMATCH',
+        message:
+            'This export no longer matches the version shown. Refresh and '
+            'try again.',
+      );
+  }
+}
+
 final projectsRepositoryProvider = Provider<ProjectsRepository>((ref) {
   return MobileProjectsRepository(apiClient: ref.watch(apiClientProvider));
 });
@@ -593,7 +678,14 @@ final projectDetailProvider = FutureProvider.autoDispose
 
 final projectStatusProvider = StreamProvider.autoDispose
     .family<MobileProjectStatus, String>((ref, id) {
-      return _watchProjectStatus(ref.watch(projectsRepositoryProvider), id);
+      final pollDelay = _StatusPollDelay();
+      ref.onDispose(pollDelay.dispose);
+      return _watchProjectStatus(
+        ref.watch(projectsRepositoryProvider),
+        id,
+        pollDelay,
+        ref.watch(exportRepairWatchProvider(id)),
+      );
     });
 
 final projectChatProvider = FutureProvider.autoDispose
@@ -638,30 +730,76 @@ Map<String, dynamic> _reportPayload({required String reason, String? comment}) {
 Stream<MobileProjectStatus> _watchProjectStatus(
   ProjectsRepository repository,
   String id,
+  _StatusPollDelay pollDelay,
+  ExportRepairWatchBudget repairWatch,
 ) async* {
   try {
     await for (final status in repository.watchProjectStatus(id)) {
       yield status;
-      if (!status.isLive) {
+      if (!repairWatch.shouldKeepWatching(status)) {
         return;
       }
     }
-    // Falling out of the loop with the book still live means the socket ended
-    // without saying so — a backgrounded app, a proxy idle timeout, a network
-    // switch. It raises nothing, so the only sign is the stream simply
-    // stopping, and returning here would freeze the progress UI on its last
-    // tick for the rest of the generation. Drop through to polling instead.
+    // Falling out while there is still something to watch means the socket
+    // ended without saying so — a backgrounded app, a proxy idle timeout, a
+    // network switch, or the API deliberately closing after it queued a settled
+    // book's export repair. Drop through to polling instead.
   } catch (_) {
     // Older API builds, local proxies, or transient stream failures fall back
-    // to short polling so the progress UI remains live enough to trust.
+    // to short polling so progress and export repairs remain observable.
   }
 
   while (true) {
     final status = await repository.getProjectStatus(id);
     yield status;
-    if (!status.isLive) {
+    if (!repairWatch.shouldKeepWatching(status)) {
       return;
     }
-    await Future<void>.delayed(const Duration(seconds: 3));
+    if (!await pollDelay.wait()) {
+      return;
+    }
   }
 }
+
+/// Owns the one pending short-poll delay so auto-disposing the provider also
+/// cancels its timer. A bare `Future.delayed` keeps running after its stream
+/// subscription is canceled, wasting work and leaving a timer behind when a
+/// reader closes during an export repair.
+class _StatusPollDelay {
+  Timer? _timer;
+  Completer<bool>? _pending;
+  bool _disposed = false;
+
+  Future<bool> wait() {
+    if (_disposed) {
+      return Future.value(false);
+    }
+    final pending = Completer<bool>();
+    _pending = pending;
+    _timer = Timer(const Duration(seconds: 3), () {
+      _timer = null;
+      _pending = null;
+      pending.complete(true);
+    });
+    return pending.future;
+  }
+
+  void dispose() {
+    _disposed = true;
+    _timer?.cancel();
+    _timer = null;
+    final pending = _pending;
+    _pending = null;
+    if (pending != null && !pending.isCompleted) {
+      pending.complete(false);
+    }
+  }
+}
+
+// A finished book can briefly have no PDF after an edit invalidates its old
+// compile. The server queues a repair from the status read, so watching a
+// missing PDF is what asks for the rebuild — and, for a repair that never
+// lands, what keeps asking. `ExportRepairWatchBudget` (export_repair_watch.dart)
+// meters that: it holds the decision per project, outside this stream, so the
+// constant invalidations that rebuild the provider cannot hand a failing repair
+// a fresh allowance several times a minute.

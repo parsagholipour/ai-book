@@ -5,6 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
+import { PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
 import { reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
@@ -68,7 +69,13 @@ describe("mobile back matter edits", () => {
       expect.objectContaining({
         projectId: "project-1",
         type: "COMPILE_EXPORT",
-        payload: expect.objectContaining({ planId: "plan-1", skipFinalReview: true })
+        payload: expect.objectContaining({
+          planId: "plan-1",
+          skipFinalReview: true,
+          // Not one page changed, so this reprint's deterministic-only report
+          // must not become the book's verdict and erase its model QA findings.
+          [PRESENTATION_ONLY_RECOMPILE]: true
+        })
       })
     );
     await app.close();

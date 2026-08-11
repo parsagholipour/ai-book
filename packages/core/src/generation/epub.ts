@@ -1,10 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { marked } from "marked";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
+import { resolveBookImageAsset } from "./bookImageAssets.js";
 import { markdownLabels } from "./markdown.js";
+import { stripEmbeddedDocuments } from "./pdfDocument.js";
 
 const IMAGE_MARKDOWN_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
@@ -54,6 +56,15 @@ export type GenerateBookEpubOptions = {
   imageStorageDir: string;
   publicApiUrl: string;
   outputPath?: string | undefined;
+  /**
+   * The project being compiled. It narrows the illustrations this book may
+   * package to that project's own, the way `sendOwnedProjectAsset` narrows the
+   * HTTP asset route and `projectId` narrows the PDF renderer's file access —
+   * reading the file here is the EPUB's equivalent of that render. Omitting it
+   * leaves the whole image storage directory in scope, which is only right for a
+   * book belonging to no project.
+   */
+  projectId?: string | undefined;
 };
 
 type EpubChapter = {
@@ -110,7 +121,11 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
     zip.file(`OEBPS/${chapter.fileName}`, chapter.xhtml);
   }
   for (const image of images.values()) {
-    zip.file(`OEBPS/${image.fileName}`, image.data);
+    // Illustrations arrive as PNG/JPEG/WebP — already entropy-coded, so
+    // deflating them spends real CPU (pako is pure JS) to save nothing. The
+    // per-entry override is the same mechanism `mimetype` above uses, and
+    // stored image entries are fully legal EPUB.
+    zip.file(`OEBPS/${image.fileName}`, image.data, { compression: "STORE" });
   }
   zip.file(
     "OEBPS/content.opf",
@@ -129,7 +144,10 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
   const bytes = await zip.generateAsync({
     type: "nodebuffer",
     compression: "DEFLATE",
-    compressionOptions: { level: 9 }
+    // What is left to deflate is XHTML and CSS, where level 6 is within a
+    // percent of level 9 for a fraction of the time. Level 9 only ever paid
+    // for itself on the image entries, which no longer take this path.
+    compressionOptions: { level: 6 }
   });
   if (options.outputPath) {
     await writeFile(options.outputPath, bytes);
@@ -137,62 +155,80 @@ export async function generateBookEpub(markdown: string, options: GenerateBookEp
   return bytes;
 }
 
+/**
+ * Packages every local illustration and rewrites the markdown to point at it.
+ *
+ * Two properties are contract rather than accident, and both come from the
+ * *first appearance* order of the collect pass below:
+ *
+ * - `image-1` is the book's cover, because `contentOpf` marks the first entry
+ *   of `images` as `properties="cover-image"`.
+ * - a repeated illustration is packaged once, keyed by its path on disk.
+ *
+ * The reads run together instead of one per match — a 40-image book paid 40
+ * serial disk round-trips — and the rewrite is a single `replace` pass with a
+ * function replacer, so it is linear in the document rather than one full-text
+ * scan per image, and `$&`-shaped alt text can no longer corrupt the output.
+ */
 async function packageLocalImages(
   markdown: string,
   options: GenerateBookEpubOptions,
   images: Map<string, EpubImage>
 ): Promise<string> {
-  const publicBase = options.publicApiUrl.replace(/\/+$/, "");
-  let result = markdown;
+  const publicApiBase = options.publicApiUrl.replace(/\/+$/, "");
+  // Containment lives in the resolver: this used to be its own copy without one,
+  // and `![x](/assets/images/p/../../../etc/passwd)` packaged a server file into
+  // the reader's download. `projectId` is the other half — storage is shared, so
+  // containment alone still let a manuscript name another project's illustration
+  // and have it read and packaged here.
+  const localPathFor = (src: string) =>
+    resolveBookImageAsset(src, {
+      imageStorageDir: options.imageStorageDir,
+      publicApiBase,
+      projectId: options.projectId
+    })?.localPath ?? null;
 
+  // A Set keeps insertion order, which is what makes the numbering below
+  // first-appearance rather than filesystem-completion order.
+  const orderedPaths = new Set<string>();
   for (const match of markdown.matchAll(IMAGE_MARKDOWN_RE)) {
-    const full = match[0];
-    const alt = match[1] ?? "";
-    const src = match[2] ?? "";
-    const localPath = resolveImageLocalPath(src, options.imageStorageDir, publicBase);
-    if (!localPath) {
-      // Strip remote/unresolvable images so the EPUB never has broken refs.
-      result = result.replace(full, "");
+    const localPath = localPathFor(match[2] ?? "");
+    if (localPath) {
+      orderedPaths.add(localPath);
+    }
+  }
+
+  const files = await Promise.all(
+    [...orderedPaths].map(async (localPath) => {
+      try {
+        return { localPath, data: await readFile(localPath) };
+      } catch {
+        return { localPath, data: undefined };
+      }
+    })
+  );
+
+  for (const file of files) {
+    if (!file.data) {
       continue;
     }
-    try {
-      let image = images.get(localPath);
-      if (!image) {
-        const data = await readFile(localPath);
-        const index = images.size + 1;
-        const extension = extname(localPath).toLowerCase() || ".png";
-        image = {
-          id: `image-${index}`,
-          fileName: `images/image-${index}${extension}`,
-          mediaType: MIME_BY_EXT[extension] ?? "application/octet-stream",
-          data
-        };
-        images.set(localPath, image);
-      }
-      result = result.replace(full, `![${alt}](${image.fileName})`);
-    } catch {
-      result = result.replace(full, "");
-    }
+    const index = images.size + 1;
+    const extension = extname(file.localPath).toLowerCase() || ".png";
+    images.set(file.localPath, {
+      id: `image-${index}`,
+      fileName: `images/image-${index}${extension}`,
+      mediaType: MIME_BY_EXT[extension] ?? "application/octet-stream",
+      data: file.data
+    });
   }
 
-  return result;
-}
-
-function resolveImageLocalPath(src: string, imageStorageDir: string, publicApiBase: string): string | null {
-  let pathPart = src.trim();
-  if (pathPart.startsWith(publicApiBase)) {
-    pathPart = pathPart.slice(publicApiBase.length);
-  }
-  const match = pathPart.match(/\/assets\/images\/([^/]+)\/([^)\s]+)/);
-  if (!match) {
-    return null;
-  }
-  const projectId = match[1];
-  const filename = match[2];
-  if (!projectId || !filename) {
-    return null;
-  }
-  return join(imageStorageDir, projectId, decodeURIComponent(filename));
+  return markdown.replace(IMAGE_MARKDOWN_RE, (_full, alt: string, src: string) => {
+    const localPath = localPathFor(src);
+    const image = localPath ? images.get(localPath) : undefined;
+    // Remote, unresolvable and unreadable images are all stripped, so the EPUB
+    // never ships a broken reference.
+    return image ? `![${alt}](${image.fileName})` : "";
+  });
 }
 
 function splitIntoChapters(markdown: string, bookTitle: string): Array<{ title: string; markdown: string }> {
@@ -226,7 +262,11 @@ function splitIntoChapters(markdown: string, bookTitle: string): Array<{ title: 
 
 async function renderMarkdownToXhtml(markdown: string): Promise<string> {
   const html = await marked.parse(markdown, { async: true, gfm: true });
-  return toXhtml(html);
+  // The same active markup the PDF drops. Nothing here renders on this machine,
+  // so there is no server file to disclose — it is the reader's device that
+  // would resolve an iframe or execute an event/URL attribute shipped inside a
+  // book they opened.
+  return toXhtml(stripEmbeddedDocuments(html));
 }
 
 /** Self-closes void elements so the output parses as XHTML. */

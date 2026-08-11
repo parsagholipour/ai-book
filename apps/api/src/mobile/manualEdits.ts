@@ -15,6 +15,12 @@ import {
   type ProjectForChat
 } from "./projectChat.js";
 import { jsonInputValue, jsonRecord } from "./support.js";
+import {
+  exportProvenancePaths,
+  EXPORT_PUBLICATION_PROJECT_STATUS,
+  PRESENTATION_ONLY_RECOMPILE,
+  PRESENTATION_RECOMPILE_FALLBACK_STATUS
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -42,13 +48,23 @@ export function manualEditInfoFromMessage(message: MobileProjectChatMessageRecor
     : null;
 }
 
-/** Removes compiled export files so downloads show "preparing" until the re-compile lands. */
+/**
+ * Removes compiled export files so downloads show "preparing" until the
+ * re-compile lands.
+ *
+ * The provenance records go with them: they identify bytes rather than a
+ * revision, so a surviving one could only ever describe a file that is no
+ * longer there. Leaving them would be harmless — the next publication
+ * overwrites its own, and a digest that matches nothing is reported as matching
+ * nothing — but a record outliving its file has no reader and no meaning.
+ */
 export async function invalidateCompiledProjectExports(bookStorageDir: string, projectId: string): Promise<void> {
   const projectDir = join(bookStorageDir, projectId);
   await Promise.all(
-    ["book.md", "README.md", "book.pdf", "book.epub"].map((filename) =>
-      rm(join(projectDir, filename), { force: true }).catch(() => undefined)
-    )
+    [
+      ...["book.md", "README.md", "book.pdf", "book.epub"].map((filename) => join(projectDir, filename)),
+      ...exportProvenancePaths(projectDir)
+    ].map((path) => rm(path, { force: true }).catch(() => undefined))
   );
 }
 
@@ -73,7 +89,19 @@ export async function applyManualBookEdit(options: {
     ? null
     : activeProjectChatLeafId(await loadActiveProjectChatMessages(projectId));
 
-  const { message, operation } = await prisma.$transaction(async (tx) => {
+  const { message, operation, contentRevision } = await prisma.$transaction(async (tx) => {
+    // Take the same project-row lock publication takes *before* changing a
+    // page. A detached repair that claimed the previous revision either lands
+    // first (and is deleted below) or observes EDITING/the new revision and
+    // publishes nothing; it can no longer reinstall stale bytes between the
+    // page commit and this revision bump.
+    const editRevision = options.currentPlanId
+      ? await tx.project.update({
+          where: { id: projectId },
+          data: { status: "EDITING", contentRevision: { increment: 1 } },
+          select: { contentRevision: true }
+        })
+      : null;
     const operation = await tx.bookEditOperation.create({
       data: {
         projectId,
@@ -165,12 +193,14 @@ export async function applyManualBookEdit(options: {
       where: { id: operation.id },
       data: { assistantMessageId: message.id }
     });
-    return { message, operation };
+    return { message, operation, contentRevision: editRevision?.contentRevision ?? null };
   });
 
   await invalidateCompiledProjectExports(options.bookStorageDir, projectId);
-  if (options.currentPlanId) {
-    await queueUserEditExportRecompile(projectId, options.currentPlanId, options.fallbackProjectStatus);
+  if (options.currentPlanId && contentRevision !== null) {
+    await queueUserEditExportRecompile(projectId, options.currentPlanId, options.fallbackProjectStatus, {
+      contentRevision
+    });
   }
 
   return { message, operation };
@@ -202,30 +232,55 @@ export async function replayManualBookEdit(
  * stream stays live and flips the export buttons once the files are rebuilt;
  * the compile job restores COMPLETE when it finishes. skipFinalReview keeps
  * the compile QA pass from rewriting text the user chose deliberately.
+ *
+ * `presentationOnly` says the manuscript itself did not move — a Sources toggle
+ * or a chapter-heading restyle, never an edit to `Page.markdown`. Only the
+ * verdict cares: with no final review this compile's report is the
+ * deterministic checks alone, and for a reprint of unchanged prose that is a
+ * *worse* statement than the one the last real QA pass made, not a newer one.
+ * A manual edit or an undo leaves it off, because those do rewrite pages and
+ * their fresh report has to replace findings about text that is gone.
  */
 export async function queueUserEditExportRecompile(
   projectId: string,
   planId: string,
-  fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED" = "COMPLETE"
+  fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED" = "COMPLETE",
+  options: { presentationOnly?: boolean; contentRevision?: number } = {}
 ): Promise<void> {
-  const project = await prisma.project.update({
-    where: { id: projectId },
-    data: { status: "EDITING", contentRevision: { increment: 1 } },
-    select: { contentRevision: true }
-  });
+  const project = options.contentRevision === undefined
+    ? await prisma.project.update({
+        where: { id: projectId },
+        data: { status: "EDITING", contentRevision: { increment: 1 } },
+        select: { contentRevision: true }
+      })
+    : { contentRevision: options.contentRevision };
   try {
     await enqueueGenerationJob({
       projectId,
       type: "COMPILE_EXPORT",
       dedupeKey: `compile-export:${projectId}:${planId}:content-${project.contentRevision}`,
       contentRevision: project.contentRevision,
-      payload: { planId, skipFinalReview: true, contentRevision: project.contentRevision }
+      payload: {
+        planId,
+        skipFinalReview: true,
+        contentRevision: project.contentRevision,
+        [EXPORT_PUBLICATION_PROJECT_STATUS]: "EDITING",
+        ...(options.presentationOnly
+          ? {
+              [PRESENTATION_ONLY_RECOMPILE]: true,
+              [PRESENTATION_RECOMPILE_FALLBACK_STATUS]: fallbackStatus
+            }
+          : {})
+      }
     });
   } catch {
     // Without a queued compile nothing will restore COMPLETE, so put the
     // project back instead of stranding it in EDITING.
     await prisma.project
-      .update({ where: { id: projectId }, data: { status: fallbackStatus } })
+      .updateMany({
+        where: { id: projectId, status: "EDITING", contentRevision: project.contentRevision },
+        data: { status: fallbackStatus }
+      })
       .catch(() => undefined);
   }
 }
@@ -268,7 +323,14 @@ export async function undoLastBookEdit(
   }
 
   const restoredPageIndexes: number[] = [];
-  await prisma.$transaction(async (tx) => {
+  const contentRevision = await prisma.$transaction(async (tx) => {
+    const editRevision = project.currentPlanId
+      ? await tx.project.update({
+          where: { id: project.id },
+          data: { status: "EDITING", contentRevision: { increment: 1 } },
+          select: { contentRevision: true }
+        })
+      : null;
     for (const snapshot of operation.snapshots) {
       await tx.page.update({
         where: { id: snapshot.pageId },
@@ -291,14 +353,16 @@ export async function undoLastBookEdit(
         })
       }
     });
+    return editRevision?.contentRevision ?? null;
   });
   restoredPageIndexes.sort((a, b) => a - b);
 
-  if (project.currentPlanId) {
+  if (project.currentPlanId && contentRevision !== null) {
     await queueUserEditExportRecompile(
       project.id,
       project.currentPlanId,
-      project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE"
+      project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE",
+      { contentRevision }
     );
   }
 

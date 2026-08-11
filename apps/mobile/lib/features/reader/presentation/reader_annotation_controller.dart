@@ -60,8 +60,12 @@ class ReaderAnnotationController extends ChangeNotifier {
   final ReaderRepository repository;
   final String projectId;
 
-  /// The export revision the markup is currently placed against.
-  int revision;
+  /// The exact export revision the markup is currently placed against.
+  ///
+  /// Null while the displayed PDF has unknown or mismatched provenance. New
+  /// markup is refused in that state: assigning the descriptor's revision would
+  /// make marks on unverified pages look exact after the real compile arrives.
+  int? revision;
 
   final List<ReaderAnnotation> _annotations = [];
   final Map<int, List<ReaderAnnotation>> _byPage = {};
@@ -108,6 +112,7 @@ class ReaderAnnotationController extends ChangeNotifier {
   String? get pendingMoveId => _pendingMoveId;
 
   void beginMove(String id) {
+    if (revision == null) return;
     _pendingMoveId = id;
     _markupOpen = true;
     _tool = ReaderTool.none;
@@ -166,11 +171,26 @@ class ReaderAnnotationController extends ChangeNotifier {
   }
 
   /// Whether the markup was made against a different build of the book.
-  bool get needsReanchor =>
-      _loaded &&
-      _annotations.any(
-        (entry) => !entry.isDeleted && entry.isStaleFor(revision),
-      );
+  bool get needsReanchor {
+    final currentRevision = revision;
+    return currentRevision != null &&
+        _loaded &&
+        _annotations.any(
+          (entry) => !entry.isDeleted && entry.isStaleFor(currentRevision),
+        );
+  }
+
+  /// Updates the exact revision new markup may be stamped with.
+  ///
+  /// This does not rewrite existing annotations; [reanchor] still examines each
+  /// annotation's own revision once the PDF document is ready. It only makes the
+  /// newly downloaded file's provenance available to mutations immediately.
+  void setDisplayedRevision(int? value) {
+    if (revision == value) return;
+    revision = value;
+    closeMarkup();
+    notifyListeners();
+  }
 
   /// Moves the markup onto a newly compiled edition.
   ///
@@ -181,8 +201,12 @@ class ReaderAnnotationController extends ChangeNotifier {
     required int toRevision,
     required ReanchorPageLoader loadPage,
   }) async {
+    final revisionChanged = revision != toRevision;
     if (!_loaded || _annotations.isEmpty) {
       revision = toRevision;
+      if (revisionChanged) {
+        notifyListeners();
+      }
       return null;
     }
     final result = await reanchorAnnotations(
@@ -193,6 +217,9 @@ class ReaderAnnotationController extends ChangeNotifier {
     );
     revision = toRevision;
     if (!result.changed) {
+      if (revisionChanged) {
+        notifyListeners();
+      }
       return null;
     }
     _annotations
@@ -205,6 +232,7 @@ class ReaderAnnotationController extends ChangeNotifier {
   }
 
   void setTool(ReaderTool tool) {
+    if (revision == null) return;
     if (_tool == tool && _markupOpen) return;
     _tool = tool;
     _markupOpen = true;
@@ -212,6 +240,7 @@ class ReaderAnnotationController extends ChangeNotifier {
   }
 
   void openMarkup() {
+    if (revision == null) return;
     if (_markupOpen) return;
     _markupOpen = true;
     notifyListeners();
@@ -258,7 +287,7 @@ class ReaderAnnotationController extends ChangeNotifier {
 
   // ---------------------------------------------------------------- mutations
 
-  ReaderAnnotation addTextMarkup({
+  ReaderAnnotation? addTextMarkup({
     required int page,
     required ReaderMarkupStyle style,
     required List<NormRect> rects,
@@ -266,11 +295,13 @@ class ReaderAnnotationController extends ChangeNotifier {
     int? bookPageIndex,
     int? colorIndex,
   }) {
+    final exactRevision = revision;
+    if (exactRevision == null) return null;
     final now = DateTime.now();
     final annotation = TextMarkupAnnotation(
       id: _newId(),
       page: page,
-      revision: revision,
+      revision: exactRevision,
       colorIndex: colorIndex ?? _settings.markupColorIndex,
       createdAt: now,
       updatedAt: now,
@@ -294,7 +325,7 @@ class ReaderAnnotationController extends ChangeNotifier {
     return annotation;
   }
 
-  NoteAnnotation addNote({
+  NoteAnnotation? addNote({
     required int page,
     required NormPoint anchor,
     required String body,
@@ -303,11 +334,13 @@ class ReaderAnnotationController extends ChangeNotifier {
     List<NormRect> rects = const [],
     int? colorIndex,
   }) {
+    final exactRevision = revision;
+    if (exactRevision == null) return null;
     final now = DateTime.now();
     final annotation = NoteAnnotation(
       id: _newId(),
       page: page,
-      revision: revision,
+      revision: exactRevision,
       colorIndex: colorIndex ?? _settings.markupColorIndex,
       createdAt: now,
       updatedAt: now,
@@ -321,17 +354,19 @@ class ReaderAnnotationController extends ChangeNotifier {
     return annotation;
   }
 
-  TextBoxAnnotation addTextBox({
+  TextBoxAnnotation? addTextBox({
     required int page,
     required NormPoint anchor,
     required String body,
     int? colorIndex,
   }) {
+    final exactRevision = revision;
+    if (exactRevision == null) return null;
     final now = DateTime.now();
     final annotation = TextBoxAnnotation(
       id: _newId(),
       page: page,
-      revision: revision,
+      revision: exactRevision,
       colorIndex: colorIndex ?? _settings.inkColorIndex,
       createdAt: now,
       updatedAt: now,
@@ -348,14 +383,15 @@ class ReaderAnnotationController extends ChangeNotifier {
   /// granularity, so grouping a drawing session into one record would only make
   /// each of them harder.
   InkAnnotation? addStroke({required int page, required InkStroke stroke}) {
-    if (stroke.points.length < 2) {
+    final exactRevision = revision;
+    if (exactRevision == null || stroke.points.length < 2) {
       return null;
     }
     final now = DateTime.now();
     final annotation = InkAnnotation(
       id: _newId(),
       page: page,
-      revision: revision,
+      revision: exactRevision,
       colorIndex: stroke.colorIndex,
       createdAt: now,
       updatedAt: now,

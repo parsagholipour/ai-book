@@ -112,9 +112,13 @@ export function runDeterministicManuscriptChecks(options: {
     }
   }
 
+  // Tokenized once per page rather than once per pair: the loop below is
+  // n(n-1)/2 comparisons, and a 60-page book was re-running `plainMarkdown`
+  // plus the word regex ~3,500 times over the same prose.
+  const wordSets = pages.map((page) => distinctWords(page.markdown));
   for (let left = 0; left < pages.length; left += 1) {
     for (let right = left + 1; right < pages.length; right += 1) {
-      if (nearDuplicate(pages[left]!.markdown, pages[right]!.markdown)) {
+      if (nearDuplicateWordSets(wordSets[left]!, wordSets[right]!)) {
         issues.push(
           issue(
             "NEAR_DUPLICATE_PAGES",
@@ -214,18 +218,36 @@ function hasUnsupportedFootnote(value: string): boolean {
   return references.some((reference) => reference && !definitions.has(reference));
 }
 
-function nearDuplicate(left: string, right: string): boolean {
-  const leftWords = normalizedWords(left);
-  const rightWords = normalizedWords(right);
-  if (leftWords.length < 80 || rightWords.length < 80) return false;
-  const leftSet = new Set(leftWords);
-  const rightSet = new Set(rightWords);
+const NEAR_DUPLICATE_MIN_WORDS = 80;
+const NEAR_DUPLICATE_JACCARD = 0.9;
+
+/**
+ * A page's distinct words, or `undefined` for a page too short to compare.
+ *
+ * Hoisting the length floor in here is what keeps the pair loop from
+ * re-deciding it: a book's short pages are short for every pair they appear in.
+ */
+function distinctWords(markdown: string): Set<string> | undefined {
+  const words = normalizedWords(markdown);
+  return words.length < NEAR_DUPLICATE_MIN_WORDS ? undefined : new Set(words);
+}
+
+function nearDuplicateWordSets(left: Set<string> | undefined, right: Set<string> | undefined): boolean {
+  if (!left || !right) return false;
+  // |A∩B| ≤ min(|A|,|B|) and |A∪B| ≥ max(|A|,|B|), so J ≤ min/max. Two pages
+  // whose vocabularies differ in size by more than a tenth cannot reach the
+  // threshold, and are rejected without walking either set.
+  const smaller = left.size <= right.size ? left : right;
+  const larger = smaller === left ? right : left;
+  if (larger.size === 0 || smaller.size / larger.size < NEAR_DUPLICATE_JACCARD) return false;
+
   let intersection = 0;
-  for (const word of leftSet) {
-    if (rightSet.has(word)) intersection += 1;
+  for (const word of smaller) {
+    if (larger.has(word)) intersection += 1;
   }
-  const union = new Set([...leftSet, ...rightSet]).size;
-  return union > 0 && intersection / union >= 0.9;
+  // |A∪B| = |A| + |B| − |A∩B|, so the union needs no second set built.
+  const union = left.size + right.size - intersection;
+  return union > 0 && intersection / union >= NEAR_DUPLICATE_JACCARD;
 }
 
 function normalizedWords(value: string): string[] {

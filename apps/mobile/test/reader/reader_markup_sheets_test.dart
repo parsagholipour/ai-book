@@ -48,7 +48,9 @@ NoteAnnotation note({String body = 'Come back to this.'}) {
 
 Future<void> pumpSheet(WidgetTester tester, Widget sheet) {
   return tester.pumpWidget(
-    MaterialApp(home: Scaffold(body: SingleChildScrollView(child: sheet))),
+    MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: sheet)),
+    ),
   );
 }
 
@@ -86,7 +88,9 @@ void main() {
       await pumpSheet(
         tester,
         ReaderAnnotationsSheet(
-          annotations: [highlight(orphaned: true, quote: 'a rewritten passage')],
+          annotations: [
+            highlight(orphaned: true, quote: 'a rewritten passage'),
+          ],
           palette: palette,
           onSelect: (_) => jumped = true,
           onRemove: (_) {},
@@ -99,11 +103,7 @@ void main() {
       expect(find.text('From an earlier version'), findsOneWidget);
       await tester.tap(find.text('a rewritten passage'));
       await tester.pump();
-      expect(
-        jumped,
-        isFalse,
-        reason: 'there is no page to jump to any more',
-      );
+      expect(jumped, isFalse, reason: 'there is no page to jump to any more');
     });
 
     testWidgets('an empty book says how to start, and hides Share', (
@@ -122,7 +122,10 @@ void main() {
         ),
       );
 
-      expect(find.textContaining('Select a passage to highlight it'), findsOneWidget);
+      expect(
+        find.textContaining('Select a passage to highlight it'),
+        findsOneWidget,
+      );
       expect(find.text('Share'), findsNothing);
     });
   });
@@ -250,6 +253,37 @@ Page 9
       );
     });
 
+    testWidgets('stale pages keep local markup actions but disable book work', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        ReaderAnnotationSheet(
+          annotation: note(),
+          palette: palette,
+          editingEnabled: true,
+          placementEnabled: false,
+          bookActionsEnabled: false,
+          onColorChanged: (_) {},
+        ),
+      );
+
+      ListTile tileFor(String label) => tester.widget<ListTile>(
+        find.ancestor(of: find.text(label), matching: find.byType(ListTile)),
+      );
+
+      expect(find.textContaining('Reload to use actions'), findsOneWidget);
+      expect(tileFor('Move it').enabled, isFalse);
+      expect(tileFor('Ask about it').enabled, isFalse);
+      expect(tileFor('Rewrite it').enabled, isFalse);
+      expect(tileFor('Replace it').enabled, isFalse);
+      expect(tileFor('Edit this page').enabled, isFalse);
+      expect(tileFor('Edit note').enabled, isTrue);
+      expect(tileFor('Copy the passage').enabled, isTrue);
+      expect(tileFor('Share').enabled, isTrue);
+      expect(tileFor('Delete').enabled, isTrue);
+    });
+
     testWidgets('recolouring applies at once and leaves the sheet open', (
       tester,
     ) async {
@@ -284,10 +318,7 @@ Page 9
         ),
       );
 
-      expect(
-        find.textContaining('no longer in the book'),
-        findsOneWidget,
-      );
+      expect(find.textContaining('no longer in the book'), findsOneWidget);
     });
   });
 

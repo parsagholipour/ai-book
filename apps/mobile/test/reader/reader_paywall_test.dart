@@ -13,8 +13,11 @@ import 'package:tomeza/features/reader/presentation/reader_view.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 
 import '../billing/billing_paywall_harness.dart'
-    show EmptyCreditLogRepository, FakeBillingRepository, FakeStoreBillingClient;
-import 'book_reader_screen_test.dart'
+    show
+        EmptyCreditLogRepository,
+        FakeBillingRepository,
+        FakeStoreBillingClient;
+import 'book_reader_test_support.dart'
     show FakeReaderRepository, pdfExport, statusWith, stubViewer;
 
 /// Opening a book the balance cannot unlock.
@@ -55,7 +58,9 @@ void main() {
     expect(find.text('Open book'), findsOneWidget);
   });
 
-  testWidgets('reopens the paywall when the reader asks for it', (tester) async {
+  testWidgets('reopens the paywall when the reader asks for it', (
+    tester,
+  ) async {
     await _openLockedReader(tester);
     await tester.tap(find.byTooltip('Close'));
     await tester.pumpAndSettle();
@@ -116,6 +121,59 @@ void main() {
 
     expect(paywallCalls, 1);
   });
+
+  testWidgets(
+    'a download refused because the export is rebuilding offers a retry, '
+    'not a failure',
+    (tester) async {
+      // Reachable in the window an edit opens: it deletes the compiled exports
+      // and queues the recompile a moment later. The download itself queues that
+      // compile if nothing else has, so retrying is the right move — "Could not
+      // download this book" read as a dead end for what is really a wait.
+      final repository = FakeReaderRepository(failDownload: true)
+        ..downloadError = const ApiException(
+          code: 'EXPORT_NOT_READY',
+          message: 'This export is not ready yet.',
+          statusCode: 404,
+        );
+      final loader = ReaderDocumentLoader(
+        repository: repository,
+        projectId: 'project-1',
+      );
+      addTearDown(loader.dispose);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            readerRepositoryProvider.overrideWithValue(repository),
+            readerViewerBuilderProvider.overrideWithValue(stubViewer),
+          ],
+          child: MaterialApp(
+            home: ReaderView(
+              projectId: 'project-1',
+              export: pdfExport(),
+              loader: loader,
+              status: statusWith(pdfExport()),
+              onOpenPaywall: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Still preparing this book'), findsOneWidget);
+      expect(find.text('Could not download this book'), findsNothing);
+      // The retry has to be there: the compile it queued will land.
+      expect(find.text('Try again'), findsOneWidget);
+
+      // And it recovers once the compile does land.
+      repository.failDownload = false;
+      await tester.tap(find.text('Try again'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Still preparing this book'), findsNothing);
+    },
+  );
 }
 
 /// Pushes the reader onto a book whose export costs more than the balance

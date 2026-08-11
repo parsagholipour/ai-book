@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -30,6 +32,33 @@ class ReaderDocumentLoader extends ChangeNotifier {
   CachedExport? get document => _document;
   Object? get error => _error;
 
+  /// The exact revision displayed for [expectedProjectId].
+  ///
+  /// The project check is intentionally part of this answer. A loader is owned
+  /// by one reader screen today, but accepting a reused loader from another book
+  /// would otherwise make an exact revision from project B authorize marks and
+  /// edits against project A.
+  int? exactRevisionForProject(String expectedProjectId) {
+    if (projectId != expectedProjectId) return null;
+    return _document?.exactRevision;
+  }
+
+  /// The displayed revision that may be mapped to the current editable book.
+  ///
+  /// An exact PDF from another revision is safe to keep reading and to bookmark
+  /// under its own revision, but the repository can fetch only the manuscript
+  /// described by the screen's current export snapshot. Mapping either older or
+  /// newer pages against a different snapshot can aim an edit or character call
+  /// at the wrong scene, so those actions stand down until the states agree.
+  int? mappingRevisionFor({
+    required String expectedProjectId,
+    required int offeredRevision,
+  }) {
+    final exact = exactRevisionForProject(expectedProjectId);
+    if (exact == null || exact != offeredRevision) return null;
+    return exact;
+  }
+
   /// Download progress in 0..1, or null when the size is not yet known.
   double? get progress {
     if (_stage != ReaderLoadStage.downloading || _total <= 0) {
@@ -51,7 +80,18 @@ class ReaderDocumentLoader extends ChangeNotifier {
   ///
   /// Concurrent calls are ignored while a download is in flight so a rebuild
   /// cannot start a second one.
-  Future<void> load(MobileExportAvailability export) async {
+  ///
+  /// [refresh] re-reads what the server is offering and, when it answers,
+  /// replaces [export] for this attempt. A descriptor is a snapshot of one
+  /// moment, and the attempts that need it most are the ones taken long after
+  /// it: a retry that follows a failed download is answered by whatever compile
+  /// is behind that URL *now*, which is how a newer book ends up filed under an
+  /// older revision. Only a caller that can produce a current descriptor passes
+  /// this; the rest fetch what they were given.
+  Future<void> load(
+    MobileExportAvailability export, {
+    Future<MobileExportAvailability?> Function()? refresh,
+  }) async {
     if (_stage == ReaderLoadStage.downloading ||
         _stage == ReaderLoadStage.preparing) {
       return;
@@ -64,9 +104,13 @@ class ReaderDocumentLoader extends ChangeNotifier {
     final cancelToken = CancelToken();
     _cancelToken = cancelToken;
     try {
+      final target = refresh == null
+          ? export
+          : await _currentExport(refresh, export, cancelToken);
+      if (_disposed || cancelToken.isCancelled) return;
       final document = await repository.ensureExport(
         projectId: projectId,
-        export: export,
+        export: target,
         cancelToken: cancelToken,
         onProgress: (received, total) {
           if (_disposed) return;
@@ -103,6 +147,33 @@ class ReaderDocumentLoader extends ChangeNotifier {
   /// The document already on screen is kept until the new one arrives, so a
   /// reload after an edit never blanks the page the reader was on.
   Future<void> reload(MobileExportAvailability export) => load(export);
+
+  /// The descriptor to fetch: the re-read one, or [fallback] when the re-read
+  /// cannot be made.
+  ///
+  /// A failed re-check is not the attempt failing. The download is the real
+  /// test and reports its own reason, so a status call that times out or
+  /// refuses leaves the reader with the same retry they had rather than a
+  /// second kind of error to read. The bound matters because nothing else here
+  /// has one: the stage is already `preparing`, so an answer that never comes
+  /// would leave the screen on its spinner with no way back to the retry.
+  Future<MobileExportAvailability> _currentExport(
+    Future<MobileExportAvailability?> Function() refresh,
+    MobileExportAvailability fallback,
+    CancelToken cancelToken,
+  ) async {
+    try {
+      final current = await refresh().timeout(_refreshTimeout);
+      if (_disposed || cancelToken.isCancelled) {
+        return fallback;
+      }
+      return current ?? fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  static const _refreshTimeout = Duration(seconds: 15);
 
   void _setStage(ReaderLoadStage stage) {
     _stage = stage;

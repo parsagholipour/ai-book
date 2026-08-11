@@ -2,10 +2,11 @@ import { getProjectOrThrow, imageGenerationMetadata, imageStorageMetadata, strat
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
-import { enqueueWorkerJob } from "../runtime/dispatch.js";
+import { dispatchWorkerGenerationJob, enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { jsonInputValue, jsonPayloadToRecord, safePathPart } from "../runtime/serialization.js";
 import { selectReferenceImagePaths, toWorkerImageAsset } from "../generation/characterReferences.js";
+import { characterPreparationDedupeKey } from "../generation/characterPreparation.js";
 import {
   bookPlanSchema,
   buildCharacterProfileImagePrompt,
@@ -32,8 +33,31 @@ import { join } from "node:path";
  * voice-character feature.
  */
 
-export async function maybeEnqueueCharacterCandidatePreparation(projectId: string, planId: string) {
-  const [existingCharacters, openJobs] = await Promise.all([
+export async function maybeEnqueueCharacterCandidatePreparation(
+  projectId: string,
+  planId: string,
+  persistedJobId?: string
+) {
+  if (persistedJobId) {
+    // Export publication created this exact row in the artifact transaction.
+    // The post-completion hook is dispatch-only: recreating on a miss would
+    // reopen the crash gap the durable publication claim just closed.
+    const persisted = await prisma.generationJob.findFirst({
+      where: {
+        id: persistedJobId,
+        projectId,
+        type: "PREPARE_CHARACTER_CANDIDATES",
+        payload: { path: ["planId"], equals: planId }
+      },
+      select: { id: true, status: true, bullJobId: true }
+    });
+    if (persisted?.status === "QUEUED" && !persisted.bullJobId) {
+      await dispatchWorkerGenerationJob(persisted.id);
+    }
+    return;
+  }
+
+  const [existingCharacters, openJob] = await Promise.all([
     prisma.voiceCharacter.count({
       where: {
         projectId,
@@ -41,16 +65,26 @@ export async function maybeEnqueueCharacterCandidatePreparation(projectId: strin
         status: { not: "REJECTED" }
       }
     }),
-    prisma.generationJob.count({
+    prisma.generationJob.findFirst({
       where: {
         projectId,
         type: "PREPARE_CHARACTER_CANDIDATES",
         status: { in: ["QUEUED", "ACTIVE"] },
         payload: { path: ["planId"], equals: planId }
-      }
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, status: true, bullJobId: true }
     })
   ]);
-  if (existingCharacters > 0 || openJobs > 0) {
+  if (existingCharacters > 0) {
+    return;
+  }
+  if (openJob) {
+    // A row-first enqueue that crashed before Redis is recoverable here as well
+    // as by the periodic undispatched-job reconciler.
+    if (openJob.status === "QUEUED" && !openJob.bullJobId) {
+      await dispatchWorkerGenerationJob(openJob.id);
+    }
     return;
   }
 
@@ -59,7 +93,9 @@ export async function maybeEnqueueCharacterCandidatePreparation(projectId: strin
     type: "PREPARE_CHARACTER_CANDIDATES",
     name: "prepare-character-candidates",
     payload: { planId },
-    dedupeKey: `prepare-characters:${projectId}:${planId}`
+    // `enqueueWorkerJob` appends the current attempt id; the shared helper is
+    // called with null here to produce that base key.
+    dedupeKey: characterPreparationDedupeKey(projectId, planId, null)
   });
 }
 

@@ -3,10 +3,13 @@ import type { AppConfig } from "@book-maker/core";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import {
+  allowsMobileBearer,
   authenticateMobileBearer,
   markOperatorRequest,
+  pathFromRequestUrl,
   sendMobileAuthFailure
 } from "./requestAuth.js";
+import { readBearerToken } from "./mobileAuth.js";
 import { hasCurrentLegalAcceptance } from "./legalAcceptance.js";
 
 const AUTH_COOKIE_NAME = "ai_book_maker_session";
@@ -59,7 +62,13 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
     const operatorAuthenticated = isAuthenticatedRequest(request, config);
     if (isOperatorOnlyPath(path)) {
       if (operatorAuthenticated) {
-        await markOperatorRequest(request);
+        // With password auth disabled, a mobile bearer must still reach the
+        // handler as a bearer so `requireOperatorActor` can reject it. With
+        // password auth enabled, `operatorAuthenticated` proves the cookie and
+        // the established operator context intentionally wins any bearer.
+        if (isAuthEnabled(config) || !readBearerToken(request)) {
+          await markOperatorRequest(request);
+        }
         return;
       }
       return reply.code(401).send({ error: "Password required" });
@@ -95,10 +104,6 @@ export async function registerAuth(app: FastifyInstance, config: AppConfig) {
 
 function isAuthEnabled(config: AppConfig): config is AppConfig & { WEB_PASSWORD: string } {
   return Boolean(config.WEB_PASSWORD);
-}
-
-function pathFromRequestUrl(rawUrl: string): string {
-  return new URL(rawUrl, "http://localhost").pathname;
 }
 
 function shouldProtectPath(path: string): boolean {
@@ -140,14 +145,19 @@ export function requiresCurrentLegalAcceptance(method: string, path: string): bo
   return true;
 }
 
+/**
+ * Everything protected that is not the mobile surface — `/docs`, `/api/admin/*`,
+ * `/api/runtime`, the voice provider config, and the whole legacy operator API
+ * under `/api/projects`, `/api/plans` and `/api/templates`.
+ *
+ * It is expressed as the complement of `allowsMobileBearer` rather than as its
+ * own list because the two have to partition the protected surface exactly: a
+ * route missing from an operator-only list was not merely undocumented, it
+ * accepted mobile bearer tokens. That is how the operator export handlers came
+ * to serve an app user a render nobody was charged for.
+ */
 function isOperatorOnlyPath(path: string): boolean {
-  return (
-    path.startsWith("/docs") ||
-    path.startsWith("/api/admin/") ||
-    path === "/api/runtime" ||
-    path === "/api/voice/rtc-config" ||
-    path === "/api/voice/providers"
-  );
+  return !allowsMobileBearer(path);
 }
 
 function isAuthenticatedRequest(request: FastifyRequest, config: AppConfig): boolean {
