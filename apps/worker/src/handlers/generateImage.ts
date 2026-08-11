@@ -149,21 +149,28 @@ async function renderAndStorePageIllustration(options: {
     where: { id: pageId, NOT: { imageFailureReason: null } },
     data: { imageFailureReason: null }
   });
-  await prisma.imageAsset.create({
-    data: {
-      projectId,
-      pageId,
-      type: isDiagramFriendlyBookCategory(input.category) ? "DIAGRAM" : "SCENE_ILLUSTRATION",
-      prompt: imagePrompt,
-      provider: image.provider,
-      path: publicAssetUrl(config.PUBLIC_API_URL, `/assets/images/${projectId}/${filename}`),
-      metadata: {
-        model: image.model,
-        ...imageStorageMetadata(optimizedImage),
-        revisedPrompt: image.revisedPrompt,
-        ...imageGenerationMetadata(image),
-        characterReferenceCount: referenceImagePaths.length
+  const assetType = isDiagramFriendlyBookCategory(input.category) ? "DIAGRAM" : "SCENE_ILLUSTRATION";
+  // delete + create in one transaction, the cover's shape: a BullMQ redelivery
+  // of this job replaces the page's asset row instead of accumulating one per
+  // delivery (the file on disk is already overwritten by name).
+  await prisma.$transaction([
+    prisma.imageAsset.deleteMany({ where: { pageId, type: assetType } }),
+    prisma.imageAsset.create({
+      data: {
+        projectId,
+        pageId,
+        type: assetType,
+        prompt: imagePrompt,
+        provider: image.provider,
+        path: publicAssetUrl(config.PUBLIC_API_URL, `/assets/images/${projectId}/${filename}`),
+        metadata: {
+          model: image.model,
+          ...imageStorageMetadata(optimizedImage),
+          revisedPrompt: image.revisedPrompt,
+          ...imageGenerationMetadata(image),
+          characterReferenceCount: referenceImagePaths.length
+        }
       }
-    }
-  });
+    })
+  ]);
 }

@@ -118,79 +118,112 @@ export async function applyBookEdit(job: Job) {
     );
 
   const skippedPageIndexes: number[] = [];
-  for (const [offset, page] of pages.entries()) {
-    await reportPage(page, offset, "draft");
-    // Through the shared matcher, not `includes`: the pages were chosen with a
-    // case-insensitive search, so a literal check here disagreed with the search
-    // that selected them and sent those pages to the model instead. The title
-    // counts too — the preview prices title-only pages, and `locallyPatchedPage`
-    // patches the title, so a markdown-only gate skipped a promised rename.
-    const patchable = Boolean(
-      exactReplacement &&
-        (hasExactMatch(page.markdown, exactReplacement) || hasExactMatch(page.title, exactReplacement))
-    );
-    if (mode === "exact" && !patchable) {
-      // The page changed between the quote and the apply. Nothing to replace,
-      // and rewriting it is not what was approved.
-      skippedPageIndexes.push(page.index);
-      continue;
-    }
-    const updated = exactReplacement && patchable
-      ? locallyPatchedPage(page, exactReplacement)
-      : await rewritePageForUserRequest({
-          projectId,
-          page,
-          input,
-          plan,
-          strategy,
-          providers,
-          request,
-          generationJobId,
-          onPhase: (phase) => reportPage(page, offset, phase)
-        });
-    await reportPage(page, offset, "save");
-
-    const saved = await prisma.page.update({
-      where: { id: page.id },
-      data: {
-        title: updated.title,
-        markdown: updated.markdown,
-        summary: updated.summary,
-        imagePrompt: updated.imagePrompt ?? page.imagePrompt,
-        // The rewrite loop's verdict is saved honestly: a page whose best
-        // candidate still failed review stays flagged, so a later full
-        // compile's repair pass can target it instead of it passing silently.
-        status: updated.qualityReport.approved ? "COMPLETED" : "FAILED_QA",
-        revision: { increment: 1 },
-        qualityReport: updated.qualityReport as Prisma.InputJsonValue
+  try {
+    for (const [offset, page] of pages.entries()) {
+      await reportPage(page, offset, "draft");
+      // Through the shared matcher, not `includes`: the pages were chosen with a
+      // case-insensitive search, so a literal check here disagreed with the search
+      // that selected them and sent those pages to the model instead. The title
+      // counts too — the preview prices title-only pages, and `locallyPatchedPage`
+      // patches the title, so a markdown-only gate skipped a promised rename.
+      const patchable = Boolean(
+        exactReplacement &&
+          (hasExactMatch(page.markdown, exactReplacement) || hasExactMatch(page.title, exactReplacement))
+      );
+      if (mode === "exact" && !patchable) {
+        // The page changed between the quote and the apply. Nothing to replace,
+        // and rewriting it is not what was approved.
+        skippedPageIndexes.push(page.index);
+        continue;
       }
-    });
-    const snapshotId = snapshots.get(page.index);
-    if (snapshotId) {
-      await prisma.pageEditSnapshot.update({
-        where: { id: snapshotId },
+      const updated = exactReplacement && patchable
+        ? locallyPatchedPage(page, exactReplacement)
+        : await rewritePageForUserRequest({
+            projectId,
+            page,
+            input,
+            plan,
+            strategy,
+            providers,
+            request,
+            generationJobId,
+            onPhase: (phase) => reportPage(page, offset, phase)
+          });
+      await reportPage(page, offset, "save");
+
+      const saved = await prisma.page.update({
+        where: { id: page.id },
         data: {
-          titleAfter: saved.title,
-          markdownAfter: saved.markdown,
-          summaryAfter: saved.summary,
-          revisionAfter: saved.revision
+          title: updated.title,
+          markdown: updated.markdown,
+          summary: updated.summary,
+          imagePrompt: updated.imagePrompt ?? page.imagePrompt,
+          // The rewrite loop's verdict is saved honestly: a page whose best
+          // candidate still failed review stays flagged, so a later full
+          // compile's repair pass can target it instead of it passing silently.
+          status: updated.qualityReport.approved ? "COMPLETED" : "FAILED_QA",
+          revision: { increment: 1 },
+          qualityReport: updated.qualityReport as Prisma.InputJsonValue
         }
       });
+      const snapshotId = snapshots.get(page.index);
+      if (snapshotId) {
+        await prisma.pageEditSnapshot.update({
+          where: { id: snapshotId },
+          data: {
+            titleAfter: saved.title,
+            markdownAfter: saved.markdown,
+            summaryAfter: saved.summary,
+            revisionAfter: saved.revision
+          }
+        });
+      }
+      if (updated.continuityNotes.length > 0) {
+        await prisma.continuityNote.createMany({
+          data: updated.continuityNotes.map((body) => ({
+            projectId,
+            scope: `page:${page.index}:edit:${operationId}`,
+            body,
+            tags: ["page", String(page.index), "edit"]
+          }))
+        });
+      }
+      if (strategyUsesSemanticMemory(strategy)) {
+        await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
+      }
+      updatedPageIndexes.push(page.index);
     }
-    if (updated.continuityNotes.length > 0) {
-      await prisma.continuityNote.createMany({
-        data: updated.continuityNotes.map((body) => ({
-          projectId,
-          scope: `page:${page.index}:edit:${operationId}`,
-          body,
-          tags: ["page", String(page.index), "edit"]
-        }))
-      });
+  } catch (error) {
+    // Pages are saved per iteration, but the export invalidation and the
+    // contentRevision bump live on the success path below — so a mid-loop
+    // failure or stop used to hand back a "COMPLETE" book whose Page.markdown
+    // held a half-applied edit while book.pdf still held the pre-edit text.
+    // If anything was saved, rebuild the exports from what the pages actually
+    // say before letting the failure settle. Detached, because the settlement
+    // for this failed edit (markFailed/markStopped, and the attempt it stops
+    // siblings for) must not cancel the rebuild — and the rebuild's own
+    // failure must not flip the restored book to FAILED or refund its
+    // generation charge. Every contentRevision bump queues its own compile;
+    // if this one cannot (`not-ready`, enqueue outage), the restored COMPLETE
+    // status with missing files is exactly the state the on-demand export
+    // repair lane rebuilds.
+    if (updatedPageIndexes.length > 0) {
+      try {
+        await invalidateProjectExports(projectId);
+        await prisma.project.update({
+          where: { id: projectId },
+          data: { contentRevision: { increment: 1 } }
+        });
+        await maybeEnqueueCompile(projectId, effectivePlanVersion.id, { skipFinalReview: true, detached: true });
+      } catch (cleanupError) {
+        console.error(
+          `Failed to queue the export rebuild for half-applied edit ${operationId} on project ${projectId}:`,
+          cleanupError
+        );
+      }
     }
-    if (strategyUsesSemanticMemory(strategy)) {
-      await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
-    }
-    updatedPageIndexes.push(page.index);
+    // Rethrown as-is: a StopRequestedError must still reach markStopped.
+    throw error;
   }
 
   if (skippedPageIndexes.length > 0) {

@@ -2,7 +2,13 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 import { prisma } from "@book-maker/db";
 import { z } from "zod";
-import { InMemoryRateLimiter, rateLimitKey, sendRateLimitError, type RateLimitConfig } from "./rateLimit.js";
+import {
+  InMemoryRateLimiter,
+  identityRateLimitKey,
+  rateLimitKey,
+  sendRateLimitError,
+  type RateLimitConfig
+} from "./rateLimit.js";
 import { hasCurrentLegalAcceptance, legalAcceptanceEvidence } from "./legalAcceptance.js";
 
 const ACCESS_TOKEN_PREFIX = "bma_at";
@@ -209,6 +215,19 @@ export const mobileAuthRoutes: FastifyPluginAsync<MobileAuthRouteOptions> = asyn
       if (!limit.allowed) {
         return sendRateLimitError(reply, limit.retryAfterSeconds);
       }
+      // Second dimension with no IP in it: rotating addresses — free on
+      // carrier NAT — minted a fresh per-IP bucket per hop for the same target
+      // mailbox, so the per-IP limit alone never slowed credential stuffing.
+      // Wider than the per-IP ceiling so one shared office NAT cannot lock a
+      // household out of a mailbox, but finite.
+      const emailLimit = signInLimiter.hit(
+        identityRateLimitKey("signin", parsed.data.email),
+        Date.now(),
+        signInLimiter.maxAttempts * 4
+      );
+      if (!emailLimit.allowed) {
+        return sendRateLimitError(reply, emailLimit.retryAfterSeconds);
+      }
 
       const user = await prisma.user.findUnique({
         where: { email: parsed.data.email },
@@ -403,6 +422,16 @@ export async function refreshMobileSession(
       const withinGrace =
         rotatedAt != null && now.getTime() - rotatedAt.getTime() <= REFRESH_TOKEN_GRACE_MS;
       if (!withinGrace) {
+        // Reuse of a rotated token outside the grace window is the classic
+        // sign of a stolen refresh token: whoever presented this stale copy is
+        // not the client that rotated it — and answering with a bare 401 left
+        // the thief's *rotated* chain alive for the rest of the session's 90
+        // days. Revoke the whole session so both chains die; the legitimate
+        // user signs in again and gets a clean one.
+        await prisma.mobileSession.updateMany({
+          where: { id: session.id, revokedAt: null },
+          data: { revokedAt: now }
+        });
         return authFailure(401, "INVALID_SESSION", "Sign in again to continue.");
       }
     }

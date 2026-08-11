@@ -42,6 +42,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { applyBookEdit } from "./applyBookEdit.js";
+import { StopRequestedError } from "../runtime/jobTypes.js";
 
 const page = (index: number, markdown: string) => ({
   id: `page-${index}`,
@@ -248,6 +249,106 @@ describe("applyBookEdit in exact mode", () => {
     // The rewrite was reviewed per page with the user's request in context;
     // the recompile never re-runs the whole-book QA pass for an edit.
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
+  });
+
+  it("rebuilds the exports from half-applied pages when a mid-edit rewrite fails", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "First."), page(2, "Second.")]);
+    mocks.rewritePageForUserRequest
+      .mockResolvedValueOnce({
+        title: "Page 1",
+        markdown: "Rewritten.",
+        summary: "Summary.",
+        continuityNotes: [],
+        qualityReport: { approved: true }
+      })
+      .mockRejectedValueOnce(new Error("model outage"));
+
+    await expect(
+      applyBookEdit(
+        job({
+          projectId: "project-1",
+          operationId: "op-1",
+          request: "Make it funnier",
+          affectedPageIndexes: [1, 2],
+          planId: "plan-1"
+        })
+      )
+    ).rejects.toThrow("model outage");
+
+    // Page 1 already holds the edit while book.pdf still holds the pre-edit
+    // text: the failure path must invalidate the exports, bump the revision
+    // and queue the recompile itself, or the restored COMPLETE book keeps
+    // valid-looking exports of text the pages no longer say.
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { contentRevision: { increment: 1 } }
+    });
+    // Detached: the failed edit's settlement must not cancel the rebuild, and
+    // the rebuild's own failure must not fail or refund the book.
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
+      skipFinalReview: true,
+      detached: true
+    });
+  });
+
+  it("still rethrows a mid-edit stop after queueing the rebuild", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "First."), page(2, "Second.")]);
+    const stop = new StopRequestedError();
+    mocks.rewritePageForUserRequest
+      .mockResolvedValueOnce({
+        title: "Page 1",
+        markdown: "Rewritten.",
+        summary: "Summary.",
+        continuityNotes: [],
+        qualityReport: { approved: true }
+      })
+      .mockRejectedValueOnce(stop);
+
+    // The same StopRequestedError instance must escape, so markStopped still
+    // runs and the stop settles the operation and its charge.
+    await expect(
+      applyBookEdit(
+        job({
+          projectId: "project-1",
+          operationId: "op-1",
+          request: "Make it funnier",
+          affectedPageIndexes: [1, 2],
+          planId: "plan-1"
+        })
+      )
+    ).rejects.toBe(stop);
+
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
+      skipFinalReview: true,
+      detached: true
+    });
+  });
+
+  it("leaves the exports alone when the edit fails before any page was saved", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "First.")]);
+    mocks.rewritePageForUserRequest.mockRejectedValue(new Error("model outage"));
+
+    await expect(
+      applyBookEdit(
+        job({
+          projectId: "project-1",
+          operationId: "op-1",
+          request: "Make it funnier",
+          affectedPageIndexes: [1],
+          planId: "plan-1"
+        })
+      )
+    ).rejects.toThrow("model outage");
+
+    // Nothing was written, so the pre-edit exports still describe the book.
+    expect(mocks.invalidateProjectExports).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { contentRevision: { increment: 1 } }
+    });
   });
 
   it("saves a rewrite whose best candidate still failed review as FAILED_QA", async () => {

@@ -19,7 +19,11 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   String? _pendingProjectRequestId;
   String? _pendingProjectRequestText;
   String? _pendingProjectEditMessageId;
-  String? _pendingProjectReplyToId;
+
+  /// The whole target, not just its id: a retry has to send the quote again,
+  /// and only the id would make `samePendingRequest` true while silently
+  /// dropping the quoted turn from the replayed request.
+  ChatReplyTarget? _pendingProjectReplyTo;
 
   /// The message the user just sent, echoed until the refreshed transcript
   /// carries it — or until it fails and offers itself back to retry.
@@ -53,11 +57,11 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     final samePendingRequest =
         _pendingProjectRequestText == trimmed &&
         _pendingProjectEditMessageId == editingMessageId &&
-        _pendingProjectReplyToId == replyTo?.messageId;
+        _pendingProjectReplyTo?.messageId == replyTo?.messageId;
     if (!samePendingRequest) {
       _pendingProjectRequestText = trimmed;
       _pendingProjectEditMessageId = editingMessageId;
-      _pendingProjectReplyToId = replyTo?.messageId;
+      _pendingProjectReplyTo = replyTo;
       _pendingProjectRequestId =
           'project-chat-${DateTime.now().microsecondsSinceEpoch}';
     }
@@ -89,7 +93,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       _pendingProjectRequestId = null;
       _pendingProjectRequestText = null;
       _pendingProjectEditMessageId = null;
-      _pendingProjectReplyToId = null;
+      _pendingProjectReplyTo = null;
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);
@@ -134,7 +138,14 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     final echo = _pendingProjectEcho;
     if (echo == null || !echo.failed || _projectChatSending) return;
     setState(() => _pendingProjectEcho = null);
-    await _sendProjectMessage(projectId: projectId, message: echo.text);
+    // Carrying the stored reply target is what keeps `samePendingRequest`
+    // true, so the retry reuses the original request id — a timed-out send
+    // that landed server-side is replayed, not charged a second time.
+    await _sendProjectMessage(
+      projectId: projectId,
+      message: echo.text,
+      replyTo: _pendingProjectReplyTo,
+    );
   }
 
   /// Drops the failed message, handing the text back to an empty composer so
@@ -147,6 +158,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       _pendingProjectRequestId = null;
       _pendingProjectRequestText = null;
       _pendingProjectEditMessageId = null;
+      _pendingProjectReplyTo = null;
       if (_composerController.text.trim().isEmpty) {
         _composerController.text = echo.text;
         _composerController.selection = TextSelection.collapsed(

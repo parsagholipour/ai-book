@@ -5,7 +5,9 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     page: { findUnique: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
-    imageAsset: { create: vi.fn() }
+    imageAsset: { create: vi.fn(), deleteMany: vi.fn() },
+    // Array form: the operations are already-started promises of the mocks.
+    $transaction: vi.fn(async (operations: Array<Promise<unknown>>) => Promise.all(operations))
   },
   generateImageBytes: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
@@ -77,6 +79,12 @@ describe("generateImage interior rescue", () => {
     await generateImage(job);
 
     expect(mocks.prisma.imageAsset.create).toHaveBeenCalledTimes(1);
+    // Redelivery replaces the page's asset instead of accumulating one per
+    // delivery: the delete and the create share one transaction.
+    expect(mocks.prisma.imageAsset.deleteMany).toHaveBeenCalledWith({
+      where: { pageId: "page-1", type: "SCENE_ILLUSTRATION" }
+    });
+    expect(mocks.prisma.$transaction).toHaveBeenCalledTimes(1);
     // A successful render clears any earlier recorded loss for this page.
     expect(mocks.prisma.page.updateMany).toHaveBeenCalledWith({
       where: { id: "page-1", NOT: { imageFailureReason: null } },

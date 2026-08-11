@@ -149,17 +149,3 @@ export async function ensureProjectExportEntitlementOrSpend(options: {
   });
   return { entitlement, chargedLedgerEntry: entry };
 }
-
-export async function revokeEntitlementsForLedgerEntry(ledgerEntryId: string): Promise<number> {
-  const updated = await prisma.userEntitlement.updateMany({
-    where: {
-      relatedLedgerEntryId: ledgerEntryId,
-      status: "ACTIVE"
-    },
-    data: {
-      status: "REVOKED",
-      consumedAt: new Date()
-    }
-  });
-  return updated.count;
-}

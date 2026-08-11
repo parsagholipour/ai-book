@@ -2437,6 +2437,65 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('retrying a failed book-chat reply replays the same turn with '
+      'its quote', (tester) async {
+    final creation = ScriptedCreationRepository(
+      sessions: [
+        chatSession(
+          draftId: 'draft-done',
+          title: 'Completed book',
+          status: 'COMPLETED',
+          createdProjectId: 'project-1',
+        ),
+      ],
+    );
+    creation.resumeAssistantMessages['draft-done'] = 'Book transcript';
+    final projects = PlanProjectsRepository(
+      project: plannedProject(status: 'complete', plan: approvedPlan()),
+    );
+
+    await tester.pumpWidget(
+      app(creation: creation, projects: projects, draftId: 'draft-done'),
+    );
+    await tester.pumpAndSettle();
+
+    // A first successful exchange, so there is an assistant turn to quote.
+    await tester.enterText(
+      find.byType(TextField).last,
+      'Rewrite page 1 to sound warmer',
+    );
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(bubbleText('I can help edit this book.'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reply'));
+    await tester.pumpAndSettle();
+
+    projects.sendFailure = Exception('offline');
+    await tester.enterText(find.byType(TextField).last, 'Also fix the ending');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    final failed = projects.sendRequests.last;
+    expect(failed.message, 'Also fix the ending');
+    expect(failed.replyToMessageId, isNotNull);
+
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+
+    // Same request id, same quote: the server replays the original turn
+    // rather than charging for a second one aimed at nothing.
+    final retried = projects.sendRequests.last;
+    expect(retried.message, 'Also fix the ending');
+    expect(retried.requestId, failed.requestId);
+    expect(retried.replyToMessageId, failed.replyToMessageId);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets(
     'editing a brainstorm message after build forks a creation branch',
     (tester) async {

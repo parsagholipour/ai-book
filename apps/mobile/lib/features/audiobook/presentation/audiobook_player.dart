@@ -86,11 +86,13 @@ class JustAudioAudiobookPlayer implements AudiobookPlayer {
       _player.playerStateStream.map(_isPlaying).distinct();
 
   @override
-  Stream<bool> get busyStream => _player.playerStateStream.map(
-    (state) =>
-        state.processingState == ProcessingState.loading ||
-        state.processingState == ProcessingState.buffering,
-  );
+  Stream<bool> get busyStream => _player.playerStateStream
+      .map(
+        (state) =>
+            state.processingState == ProcessingState.loading ||
+            state.processingState == ProcessingState.buffering,
+      )
+      .distinct();
 
   @override
   Stream<void> get completedStream => _player.playerStateStream

@@ -419,6 +419,16 @@ class ApiClient {
       }
     }
 
+    if (error.type == DioExceptionType.cancel) {
+      // The caller abandoned this request on purpose (a reader closing
+      // mid-download); a generic API_ERROR would present their own action back
+      // to them as a failure.
+      return const ApiException(
+        code: 'REQUEST_CANCELLED',
+        message: 'The request was cancelled.',
+      );
+    }
+
     if (error.type == DioExceptionType.connectionError ||
         error.type == DioExceptionType.connectionTimeout ||
         error.type == DioExceptionType.receiveTimeout ||

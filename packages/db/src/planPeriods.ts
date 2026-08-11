@@ -23,15 +23,17 @@ import {
   highestPlanTier,
   planTierForEntitlementType
 } from "@book-maker/core";
-import { Prisma, prisma } from "./client.ts";
+import { prisma } from "./client.ts";
 import {
   type BillingTx,
   type CreditLedgerEntryRecord,
   activeEntitlementWhere,
   jsonInput,
   ledgerSelect,
+  planPeriodKeyFromMetadata,
   runSerializable
 } from "./billingInternals.ts";
+import { activeCreditPricingVersion } from "./creditPricing.ts";
 
 /** Monthly usage counters. See `UsageCounter` in the schema. */
 export const ILLUSTRATED_BOOK_COUNTER = "illustrated_books";
@@ -324,6 +326,19 @@ export async function consumeManuscriptImportUse(options: {
   return consumeMonthlyUse(prisma, MANUSCRIPT_IMPORT_COUNTER, options);
 }
 
+/**
+ * Transaction-aware form, so an import can claim its slot inside the same
+ * transaction that creates the project and queues the job — a crash then rolls
+ * the claim back with everything else instead of burning the month's slot on
+ * an import that never existed.
+ */
+export async function consumeManuscriptImportUseTx(
+  tx: BillingTx,
+  options: { userId: string; limit: number; now?: Date | undefined }
+): Promise<ConsumeUsageResult> {
+  return consumeMonthlyUse(tx, MANUSCRIPT_IMPORT_COUNTER, options);
+}
+
 async function consumeMonthlyUse(
   tx: BillingTx,
   kind: string,
@@ -425,16 +440,46 @@ async function applyPlanPeriodTx(
 ): Promise<{ account: PlanAccountRow; entry: CreditLedgerEntryRecord | null }> {
   const existing = await tx.creditLedgerEntry.findUnique({
     where: { idempotencyKey: options.idempotencyKey },
-    select: ledgerSelect
+    select: { ...ledgerSelect, metadata: true }
   });
-  // Granted *and* already on the period: a duplicate call, or the losing side of
-  // a race the winner has finished. Writing here would forfeit the allowance the
-  // winner just deposited.
-  if (existing && options.account.planPeriodKey === options.period.key) {
-    return { account: options.account, entry: existing };
+  // Already sitting on this exact period: it has been granted — under this key
+  // or another. The grant key and the period key are derived from different
+  // fields (Google's `latestOrderId` versus the reported period end), so they
+  // can disagree: an orderId that drifts between the app's verify and the
+  // sweep's mints a second grant key for a period already granted, and writing
+  // here would first forfeit what is left of it and then re-grant the full
+  // allowance — resetting a part-spent month to full.
+  if (options.account.planPeriodKey === options.period.key) {
+    return { account: options.account, entry: existing ?? null };
   }
 
   const allowance = Math.max(0, Math.floor(options.allowance));
+
+  if (existing) {
+    const grantedPeriodKey = planPeriodKeyFromMetadata(existing.metadata);
+    if (grantedPeriodKey !== null && grantedPeriodKey !== options.period.key) {
+      // The same grant key re-applied to a *recomputed* period: the mock
+      // verifier's moving month-end, or a real verification whose missing
+      // `expiryTime` fell back to now + 31 days. That is the same purchase
+      // cycle with shifted boundaries, not a new cycle — a new cycle arrives
+      // under a new grant key and takes the fresh-grant path below. Slide the
+      // period and keep the pool: the adoption write this used to fall into
+      // wiped a live subscription's remaining allowance on every refresh,
+      // restore, or re-verify.
+      const account = await tx.userCreditAccount.update({
+        where: { userId: options.userId },
+        data: {
+          planCreditsPerPeriod: allowance,
+          planPeriodStart: options.period.start,
+          planPeriodEnd: options.period.end,
+          planPeriodKey: options.period.key
+        },
+        select: accountSelect
+      });
+      return { account, entry: existing };
+    }
+  }
+
   const granted = existing ? 0 : allowance;
   const forfeited = Math.max(0, options.account.planCredits);
   if (forfeited > 0) {
@@ -453,7 +498,11 @@ async function applyPlanPeriodTx(
           ? `${options.idempotencyKey}:adopted:${options.account.planPeriodKey ?? "none"}`
           : `${options.idempotencyKey}:expired`,
         description: "Unused monthly allowance expired",
+        // Same pricing-version stamp `ledgerData` gives every other entry:
+        // allowance sizes are operator-editable, so a row without the version
+        // cannot be reconciled against the prices in force when it was cut.
         metadata: jsonInput({
+          pricingVersion: activeCreditPricingVersion(),
           expiredPlanPeriodKey: options.account.planPeriodKey,
           replacedByPlanPeriodKey: options.period.key
         })
@@ -493,7 +542,7 @@ async function applyPlanPeriodTx(
             balanceAfterCredits: account.availableCredits + granted,
             idempotencyKey: options.idempotencyKey,
             description: options.description,
-            metadata: jsonInput(options.metadata)
+            metadata: jsonInput({ pricingVersion: activeCreditPricingVersion(), ...options.metadata })
           },
           select: ledgerSelect
         });
@@ -505,20 +554,14 @@ async function ensureUsageCounterRow(
   tx: BillingTx,
   where: { userId: string; kind: string; periodKey: string }
 ): Promise<void> {
-  const existing = await tx.usageCounter.findUnique({
+  // Native upsert rather than create-and-swallow-P2002: `tx` is routinely a
+  // caller's open transaction, and inside one a unique violation aborts the
+  // whole Postgres transaction even when the error is caught — the loser's
+  // claim, and every statement after it, would fail with 25P02. ON CONFLICT
+  // resolves the same race without raising.
+  await tx.usageCounter.upsert({
     where: { userId_kind_periodKey: where },
-    select: { id: true }
+    create: { ...where, used: 0 },
+    update: {}
   });
-  if (existing) {
-    return;
-  }
-  try {
-    await tx.usageCounter.create({ data: { ...where, used: 0 } });
-  } catch (error) {
-    // Another request created the same period's row first, which is the outcome
-    // we wanted anyway.
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")) {
-      throw error;
-    }
-  }
 }

@@ -255,6 +255,24 @@ export async function maybeExpandStrategyResearch(options: {
     return;
   }
 
+  // Existing-rows guard, mirroring embedResearchSourcesForProject: a resumed
+  // or redelivered GENERATE_BOOK re-runs this expansion, and a bare createMany
+  // doubled the book's Sources list forever (the compile rebuilds it from
+  // these rows on every export). Expansion sources are keyed by the queries
+  // they were searched for, and those queries are derived from the plan — so a
+  // stored row whose query is not one of the plan's own research notes can
+  // only have been written by a previous run of this expansion. Skip the
+  // provider calls entirely then, and dedupe by query on the way in otherwise.
+  const existingSources = await prisma.researchSource.findMany({
+    where: { projectId: options.projectId },
+    select: { query: true }
+  });
+  const existingQueries = new Set(existingSources.map((source) => source.query));
+  const planNoteQueries = new Set(options.plan.researchNotes.map((note) => note.query));
+  if ([...existingQueries].some((query) => !planNoteQueries.has(query))) {
+    return;
+  }
+
   await updateJobProgress(options.generationJobId, {
     progress: 15,
     message: "Expanding chapter research"
@@ -269,16 +287,19 @@ export async function maybeExpandStrategyResearch(options: {
     return;
   }
 
-  await prisma.researchSource.createMany({
-    data: sources.map((source) => ({
-      projectId: options.projectId,
-      query: source.query,
-      title: source.title,
-      url: source.url ?? null,
-      summary: source.summary,
-      publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
-    }))
-  });
+  const freshSources = sources.filter((source) => !existingQueries.has(source.query));
+  if (freshSources.length > 0) {
+    await prisma.researchSource.createMany({
+      data: freshSources.map((source) => ({
+        projectId: options.projectId,
+        query: source.query,
+        title: source.title,
+        url: source.url ?? null,
+        summary: source.summary,
+        publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
+      }))
+    });
+  }
   // Research embeddings feed the semantic branch of page-context loading,
   // which only sequential-pages jobs use.
   if (strategyUsesSemanticMemory(options.strategy)) {

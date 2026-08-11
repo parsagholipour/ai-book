@@ -181,6 +181,38 @@ void main() {
     },
   );
 
+  test('a cancelled download maps to REQUEST_CANCELLED, not API_ERROR', () async {
+    // The reader cancels its own download when the screen closes; surfacing
+    // that as a generic failure would report the reader's own action back to
+    // them as something going wrong.
+    final directory = await Directory.systemTemp.createTemp('api-client-test');
+    addTearDown(() => directory.delete(recursive: true));
+    final apiClient = ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = HangingHttpClientAdapter(),
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    final cancelToken = CancelToken();
+    final download = apiClient.downloadFile(
+      '/api/mobile/projects/project-1/export/pdf',
+      '${directory.path}/book.pdf',
+      cancelToken: cancelToken,
+    );
+    cancelToken.cancel('Reader closed');
+
+    await expectLater(
+      download,
+      throwsA(
+        isA<ApiException>().having(
+          (error) => error.code,
+          'code',
+          'REQUEST_CANCELLED',
+        ),
+      ),
+    );
+  });
+
   test('a request that fails after a token refresh is still mapped', () async {
     // The retry that follows a 401 is issued from inside the catch block that
     // does the mapping, so it is not covered by it. An access token that
@@ -321,6 +353,21 @@ class RefreshCountingHttpClientAdapter implements HttpClientAdapter {
         Headers.contentTypeHeader: [Headers.jsonContentType],
       },
     );
+  }
+}
+
+/// Never answers, so a cancellation is the only way the request can end.
+class HangingHttpClientAdapter implements HttpClientAdapter {
+  @override
+  void close({bool force = false}) {}
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    return Completer<ResponseBody>().future;
   }
 }
 

@@ -147,8 +147,9 @@ class FakeAudiobookRepository implements AudiobookRepository {
   final List<({String voice, bool replace})> starts = [];
 
   /// Thrown instead of answering, so the screen can be tested against a server
-  /// that cannot read or start a narration.
-  ApiException? fetchError;
+  /// that cannot read or start a narration. `Object` rather than
+  /// `ApiException`, because a decode error is one of the failures under test.
+  Object? fetchError;
   ApiException? startError;
 
   @override
@@ -193,6 +194,19 @@ class FakeAudiobookCache implements AudiobookCache {
   final Directory directory;
   final timelinesByChapter = <int, AudiobookChapterTimeline>{};
 
+  /// When set, the next chapter-audio download parks on this until it is
+  /// completed — how a suite holds a download loop mid-await.
+  Completer<void>? audioGate;
+
+  /// Thrown from the next chapter-audio download, once.
+  Object? audioError;
+
+  /// When set, the next cover-art fetch parks on this until it is completed.
+  Completer<void>? coverGate;
+
+  /// Every chapter audio handed out, as `audiobookId:chapterIndex`.
+  final downloadedAudio = <String>[];
+
   /// Never used: every method that would reach the network is overridden.
   @override
   ApiClient get apiClient => throw UnimplementedError();
@@ -218,6 +232,17 @@ class FakeAudiobookCache implements AudiobookCache {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
+    final gate = audioGate;
+    if (gate != null) {
+      audioGate = null;
+      await gate.future;
+    }
+    final error = audioError;
+    if (error != null) {
+      audioError = null;
+      throw error;
+    }
+    downloadedAudio.add('$audiobookId:${chapter.index}');
     // Deliberately no real I/O: the fake player never opens the file, and real
     // filesystem work does not complete inside the widget test's fake clock.
     return File('${directory.path}/chapter-${chapter.index}.mp3');
@@ -238,7 +263,14 @@ class FakeAudiobookCache implements AudiobookCache {
     required String projectId,
     required String audiobookId,
     required String? coverUrl,
-  }) async => null;
+  }) async {
+    final gate = coverGate;
+    if (gate != null) {
+      coverGate = null;
+      await gate.future;
+    }
+    return null;
+  }
 
   @override
   Future<void> pruneOtherAudiobooks(
@@ -294,12 +326,13 @@ ProviderContainer audiobookContainer({
 }
 
 MobileAudiobook audiobookWith({
+  String id = 'audiobook-1',
   AudiobookStatus status = AudiobookStatus.complete,
   List<MobileAudiobookChapter>? chapters,
   bool backupNarrationUsed = false,
 }) {
   return MobileAudiobook(
-    id: 'audiobook-1',
+    id: id,
     projectId: 'project-1',
     status: status,
     voice: 'Zephyr',

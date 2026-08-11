@@ -22,6 +22,7 @@ const {
   recordVerifiedGooglePlayPurchase,
   refundCreditLedgerEntry,
   refundLatestProjectOperationCredits,
+  releaseReservationsByKeyPrefix,
   reserveCredits,
   resolvePlanTier,
   spendCredits
@@ -60,6 +61,46 @@ describe("credit ledger operations", () => {
 
     await refundCreditLedgerEntry(spend.id, "Generation failed");
     expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 1000, reservedCredits: 0, lifetimeCreditsSpent: 0 });
+  });
+
+  it("releases only the still-RESERVED holds under a key prefix", async () => {
+    // The voice-call shape: holds keyed hold:0, hold:1, … where the pointer
+    // recording a hold can be lost to a crash. Releasing by prefix frees the
+    // orphan with the tracked ones, while a hold already committed to a spend
+    // — and every entry of any other call — is left alone.
+    await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
+
+    const committed = await reserveCredits({
+      userId: "user-a",
+      operation: "VOICE_CALL_MINUTE",
+      amountCredits: 100,
+      idempotencyKey: "mobile:voice-call:call-1:hold:0"
+    });
+    await commitReservedCredits(committed!.id);
+    await reserveCredits({
+      userId: "user-a",
+      operation: "VOICE_CALL_MINUTE",
+      amountCredits: 200,
+      idempotencyKey: "mobile:voice-call:call-1:hold:1"
+    });
+    await reserveCredits({
+      userId: "user-a",
+      operation: "VOICE_CALL_MINUTE",
+      amountCredits: 300,
+      idempotencyKey: "mobile:voice-call:call-2:hold:0"
+    });
+
+    const released = await releaseReservationsByKeyPrefix("mobile:voice-call:call-1:hold:", "Call ended");
+
+    expect(released).toBe(1);
+    // 1000 - 100 spent; call-1's 200 hold released; call-2's 300 still held.
+    expect(await getCreditBalance("user-a")).toMatchObject({
+      availableCredits: 600,
+      reservedCredits: 300,
+      lifetimeCreditsSpent: 100
+    });
+    // Idempotent: nothing under the prefix is RESERVED any more.
+    expect(await releaseReservationsByKeyPrefix("mobile:voice-call:call-1:hold:", "Call ended")).toBe(0);
   });
 
   it("prevents double spend and treats duplicate idempotency keys as one reservation", async () => {
@@ -236,6 +277,73 @@ describe("google play purchases", () => {
     });
     expect([...fakeDb.state.ledger.values()].filter((entry) => entry.operation === "SUBSCRIPTION_CREDIT_GRANT")).toHaveLength(1);
     expect(await resolvePlanTier("user-a", JUNE)).toBe("creator");
+  });
+
+  it("slides the period instead of wiping the allowance when the same purchase re-verifies with a recomputed end", async () => {
+    await recordVerifiedGooglePlayPurchase({ userId: "user-a", verification: creatorVerification });
+    await spendCredits({
+      userId: "user-a",
+      operation: "FULL_BOOK_GENERATION",
+      amountCredits: 400,
+      idempotencyKey: "spend:book-1",
+      now: JUNE
+    });
+
+    // The mock verifier answers every refresh and restore with a *moving*
+    // period end for the same order id — the shape that used to write the
+    // remaining allowance off as "expired" on every tap of refresh, for a
+    // subscription that was active and uncancelled. A missing expiryTime's
+    // now+31d fallback produces the same shape in production.
+    await recordVerifiedGooglePlayPurchase({
+      userId: "user-a",
+      verification: {
+        ...creatorVerification,
+        subscription: {
+          status: "ACTIVE" as const,
+          currentPeriodStart: new Date("2026-06-15T00:00:00.000Z"),
+          currentPeriodEnd: new Date("2026-07-20T00:00:00.000Z")
+        }
+      }
+    });
+
+    expect(await getCreditBalance("user-a", JUNE)).toMatchObject({
+      planCredits: 5600,
+      availableCredits: 5600
+    });
+    expect(
+      [...fakeDb.state.ledger.values()].filter((entry) => entry.operation === "SUBSCRIPTION_CREDIT_GRANT")
+    ).toHaveLength(1);
+    expect(
+      [...fakeDb.state.ledger.values()].filter((entry) => entry.description === "Unused monthly allowance expired")
+    ).toHaveLength(0);
+  });
+
+  it("neither re-grants nor forfeits when the order id drifts within one period", async () => {
+    await recordVerifiedGooglePlayPurchase({ userId: "user-a", verification: creatorVerification });
+    await spendCredits({
+      userId: "user-a",
+      operation: "FULL_BOOK_GENERATION",
+      amountCredits: 400,
+      idempotencyKey: "spend:book-1",
+      now: JUNE
+    });
+
+    // Google's deprecated latestOrderId can change between the app's verify
+    // and the sweep's for the same period. A fresh grant key for a period the
+    // account is already on used to forfeit the remainder and re-grant the
+    // full allowance — resetting a part-spent month to full.
+    await recordVerifiedGooglePlayPurchase({
+      userId: "user-a",
+      verification: { ...creatorVerification, externalPurchaseId: "GPA.a-different-order-id" }
+    });
+
+    expect(await getCreditBalance("user-a", JUNE)).toMatchObject({
+      planCredits: 5600,
+      availableCredits: 5600
+    });
+    expect(
+      [...fakeDb.state.ledger.values()].filter((entry) => entry.operation === "SUBSCRIPTION_CREDIT_GRANT")
+    ).toHaveLength(1);
   });
 
   it("does not stack allowances across renewals", async () => {

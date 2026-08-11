@@ -13,10 +13,9 @@ import {
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import {
-  consumeManuscriptImportUse,
+  consumeManuscriptImportUseTx,
   getImportQuota,
-  hasActiveSubscriptionEntitlement,
-  releaseManuscriptImportUse
+  hasActiveSubscriptionEntitlement
 } from "@book-maker/db/billing";
 import { z } from "zod";
 import { saveCreationAttachmentFile } from "./attachmentStorage.js";
@@ -31,6 +30,13 @@ import {
 } from "./mobileProjects.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "./queue.js";
 import { InMemoryRateLimiter, type RateLimitConfig } from "./rateLimit.js";
+
+/** Aborts the import transaction when the month's slot is already used. */
+class ImportQuotaExhaustedError extends Error {
+  constructor(readonly limit: number) {
+    super("Manuscript import quota exhausted");
+  }
+}
 
 /**
  * "Bring your own book": authors upload a finished manuscript and it becomes
@@ -127,20 +133,32 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
       const replayed = await prisma.bookImport.findUnique({
         where: { userId_requestId: { userId: auth.user.id, requestId: query.data.requestId } }
       });
-      if (replayed?.projectId) {
-        const project = await loadMobileProjectDetail(auth.user.id, replayed.projectId);
-        if (project) {
-          const job = await prisma.generationJob.findUnique({
-            where: { dedupeKey: `import-book:${replayed.projectId}` }
-          });
-          return reply.code(200).send({
-            project: await serializeProjectDetail(project, appConfig, auth.user.id),
-            import: serializeBookImport(replayed),
-            operation: job
-              ? { kind: "import_queued" as const, jobId: job.id, message: "Importing your book." }
-              : null
-          } satisfies MobileImportResponseDto);
+      if (replayed) {
+        if (replayed.projectId) {
+          const project = await loadMobileProjectDetail(auth.user.id, replayed.projectId);
+          if (project) {
+            const job = await prisma.generationJob.findUnique({
+              where: { dedupeKey: `import-book:${replayed.projectId}` }
+            });
+            return reply.code(200).send({
+              project: await serializeProjectDetail(project, appConfig, auth.user.id),
+              import: serializeBookImport(replayed),
+              operation: job
+                ? { kind: "import_queued" as const, jobId: job.id, message: "Importing your book." }
+                : null
+            } satisfies MobileImportResponseDto);
+          }
         }
+        // The requestId was spent by an import whose book no longer exists
+        // (deleted after importing). Falling through used to hit the
+        // (userId, requestId) unique index and answer 500 on every retry,
+        // forever; a fresh import needs a fresh requestId, so say that.
+        return sendMobileError(
+          reply,
+          409,
+          "IMPORT_REQUEST_ALREADY_USED",
+          "That upload already finished and its book was since deleted. Import the file again to make a new book."
+        );
       }
 
       const data = request.body;
@@ -219,32 +237,24 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
         return sendMobileError(reply, 422, "IMPORT_FAILED", "That file could not be saved. Try again.");
       }
 
-      // The free tier's monthly import, claimed last so every 4xx above cost
-      // nothing. The claim rides the job payload as `importQuota`, which is
-      // what lets a failed worker import hand the slot back (markFailed).
-      // The same SUBSCRIPTION_REQUIRED code as before the allowance existed,
-      // because shipped clients answer it with the upgrade sheet — which is
-      // also the right answer to "this month's import is used".
+      // The free tier's monthly import is claimed last, so every 4xx above
+      // cost nothing — and *inside* the transaction that creates the project
+      // and queues the job, so a crash or failure anywhere in between rolls
+      // the claim back with everything else instead of burning the month's
+      // slot on an import that never existed. The claim still rides the job
+      // payload as `importQuota`, which is what lets a failed worker import
+      // hand the slot back (markFailed).
+      const quota = subscribed ? null : await getImportQuota(auth.user.id);
       let importQuotaPeriodKey: string | null = null;
-      if (!subscribed) {
-        const quota = await getImportQuota(auth.user.id);
+
+      const created = await prisma.$transaction(async (tx) => {
         if (quota) {
-          const claim = await consumeManuscriptImportUse({ userId: auth.user.id, limit: quota.limit });
+          const claim = await consumeManuscriptImportUseTx(tx, { userId: auth.user.id, limit: quota.limit });
           if (!claim.allowed) {
-            return sendMobileError(
-              reply,
-              403,
-              "SUBSCRIPTION_REQUIRED",
-              claim.limit === 1
-                ? "You've used this month's free import. Importing more is part of the Creator plan."
-                : `Free plans include ${claim.limit} manuscript imports a month and you have used all of them. Importing more is part of the Creator plan.`
-            );
+            throw new ImportQuotaExhaustedError(claim.limit);
           }
           importQuotaPeriodKey = claim.periodKey;
         }
-      }
-
-      const created = await prisma.$transaction(async (tx) => {
         const project = await tx.project.create({
           data: {
             userId: auth.user.id,
@@ -290,12 +300,29 @@ export const mobileImportRoutes: FastifyPluginAsync<MobileImportRoutesOptions> =
           }
         });
         return { project, bookImport, durableJob };
-      }).catch(async (error: unknown) => {
-        if (importQuotaPeriodKey) {
-          await releaseManuscriptImportUse(auth.user.id, importQuotaPeriodKey).catch(() => undefined);
+      }).catch((error: unknown) => {
+        // The rollback already handed the quota slot back — the claim lives in
+        // this transaction. Only the "slot exhausted" refusal needs a reply of
+        // its own; anything else is a real failure for the outer handler. The
+        // same SUBSCRIPTION_REQUIRED code as before the allowance existed,
+        // because shipped clients answer it with the upgrade sheet — which is
+        // also the right answer to "this month's import is used".
+        if (error instanceof ImportQuotaExhaustedError) {
+          return null;
         }
         throw error;
       });
+      if (!created) {
+        const limit = quota?.limit ?? 1;
+        return sendMobileError(
+          reply,
+          403,
+          "SUBSCRIPTION_REQUIRED",
+          limit === 1
+            ? "You've used this month's free import. Importing more is part of the Creator plan."
+            : `Free plans include ${limit} manuscript imports a month and you have used all of them. Importing more is part of the Creator plan.`
+        );
+      }
 
       await dispatchGenerationJob(created.durableJob.id);
 

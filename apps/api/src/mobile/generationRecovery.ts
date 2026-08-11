@@ -8,6 +8,16 @@ import { jsonRecord } from "./support.js";
  * out of projectSerializers.ts, which re-exports it.
  */
 
+/**
+ * Statuses in which a project is already being worked on, and a resume must
+ * therefore stand down. Both resume surfaces claim the project by writing
+ * their status *conditionally* against this list — the operator's free
+ * requeue and the mobile paid retry used to share no claim at all, so the two
+ * racing each other enqueued overlapping work for one book: the old rows
+ * requeued for free alongside a freshly charged retry of the same run.
+ */
+export const LIVE_PROJECT_STATUSES = ["PLANNING", "GENERATING", "EDITING"] as const;
+
 export function canRecoverGenerationJob(
   type: GenerationJobType,
   payload: unknown,

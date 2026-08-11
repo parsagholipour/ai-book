@@ -311,6 +311,12 @@ const DEEPINFRA_MISTRAL_SMALL_RATE: TextRate = {
 const GEMINI_IMAGE_COSTS_USD = new Map<string, number>([
   ["gemini-2.5-flash-image", 0.039],
   ["imagen-4.0-fast-generate-001", 0.02],
+  // Reachable through `normalizeGeminiImageModel`, which maps the retired
+  // preview names onto these GA ids — an image model missing from this table
+  // is recorded nowhere at all (`recordProviderImageCost` returns early), so
+  // its spend is invisible to every dashboard bucket, including unrated.
+  ["imagen-4.0-generate-001", 0.04],
+  ["imagen-4.0-ultra-generate-001", 0.06],
   ["gemini-3.1-flash-image:0.5k", 0.045],
   ["gemini-3.1-flash-image:1k", 0.067],
   ["gemini-3.1-flash-image:2k", 0.101],

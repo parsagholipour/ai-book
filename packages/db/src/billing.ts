@@ -24,6 +24,7 @@ export {
   refundCreditLedgerEntry,
   refundLatestProjectOperationCredits,
   refundedLedgerEntryIds,
+  releaseReservationsByKeyPrefix,
   reserveCredits,
   spendCredits
 } from "./billingLedger.ts";
@@ -34,8 +35,7 @@ export {
   grantProjectEntitlement,
   hasActiveProjectEntitlement,
   hasActiveSubscriptionEntitlement,
-  listActiveUserEntitlements,
-  revokeEntitlementsForLedgerEntry
+  listActiveUserEntitlements
 } from "./billingEntitlements.ts";
 
 export {
@@ -49,6 +49,7 @@ export {
   calendarPeriodKey,
   consumeIllustratedBookUse,
   consumeManuscriptImportUse,
+  consumeManuscriptImportUseTx,
   ensureCurrentPlanPeriod,
   getImageQuota,
   getImportQuota,

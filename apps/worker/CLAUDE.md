@@ -37,5 +37,5 @@ cost accounting and the progress UI.
 `StopRequestedError` (from `runtime/jobTypes.ts`) means the user stopped the run — it converts to
 an `UnrecoverableError` so BullMQ does not retry. Anything else goes through
 `shouldRecoverJobAttempt` in `runtime/jobLifecycle.ts`, which wraps the pure policy in
-`runtime/jobRetryPolicy.ts`. Failed paid work must refund; see `refundFailedProjectCredits`, also
-in `runtime/jobLifecycle.ts`.
+`packages/core/src/jobDispatch.ts`. Failed paid work must refund; see `refundFailedProjectCredits`,
+also in `runtime/jobLifecycle.ts`.

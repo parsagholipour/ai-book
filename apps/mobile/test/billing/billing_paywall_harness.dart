@@ -238,6 +238,11 @@ class FakeStoreBillingClient implements StoreBillingClient {
   void emit(StorePurchaseUpdate purchase) {
     _controller.add([purchase]);
   }
+
+  /// One batch of several purchases — how Google Play reports a restore.
+  void emitAll(List<StorePurchaseUpdate> purchases) {
+    _controller.add(purchases);
+  }
 }
 
 class BuyCall {

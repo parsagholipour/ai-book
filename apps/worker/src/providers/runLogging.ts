@@ -1,7 +1,12 @@
 import type { Job } from "bullmq";
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { providerRetryAfterMs, type GenerateTextOptions, type ImageAdapter } from "@book-maker/core";
+import {
+  isRecoverableNetworkError,
+  providerRetryAfterMs,
+  type GenerateTextOptions,
+  type ImageAdapter
+} from "@book-maker/core";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { safeJsonStringify, safePathPart, serializeError } from "../runtime/serialization.js";
 import { config } from "../runtime/config.js";
@@ -95,11 +100,18 @@ export function providerRetryOptions(
   logger: RunLogger,
   generationJobId: string | undefined,
   operation: string,
-  purpose?: string | undefined
+  purpose?: string | undefined,
+  signal?: AbortSignal | undefined
 ) {
   return {
     attempts: PROVIDER_NETWORK_RETRY_ATTEMPTS,
     delayMs: PROVIDER_NETWORK_RETRY_DELAY_MS,
+    // A user stop aborts the in-flight call, and an abort matches the
+    // recoverable network patterns (ABORT_ERR, /aborted/) — so the retry loop
+    // used to sit out its whole backoff re-invoking the provider against an
+    // already-aborted signal, adding ~6s of dead latency per in-flight call
+    // to every stop. Once the signal is aborted, nothing is recoverable.
+    shouldRetry: (error: unknown) => !signal?.aborted && isRecoverableNetworkError(error),
     onRetry: async ({
       attempt,
       attempts,

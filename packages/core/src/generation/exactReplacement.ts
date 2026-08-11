@@ -88,23 +88,53 @@ function mapOccurrences(
   needle: string,
   render: (match: string) => string
 ): { text: string; count: number } {
-  const haystack = text.toLowerCase();
+  // Lowercasing can change a string's *length* for some scripts — "İ" (U+0130)
+  // lowercases to two UTF-16 units — so an index into the lowercased haystack
+  // does not index the original text: every match after such a character lands
+  // one unit off per occurrence and splices the page mid-word. The haystack is
+  // therefore built per character alongside a map from each of its units back
+  // to the original index, and every slice below goes through that map.
   const target = needle.toLowerCase();
+  let haystack = "";
+  const origin: number[] = [];
+  for (let index = 0; index < text.length; ) {
+    const character = String.fromCodePoint(text.codePointAt(index)!);
+    const lower = character.toLowerCase();
+    for (let unit = 0; unit < lower.length; unit += 1) {
+      origin.push(index);
+    }
+    haystack += lower;
+    index += character.length;
+  }
+  origin.push(text.length);
+
   let out = "";
   let cursor = 0;
+  let emitted = 0;
   let count = 0;
   for (;;) {
     const found = haystack.indexOf(target, cursor);
     if (found === -1) {
       break;
     }
-    // Slice out of `text`, not `haystack`: lowercasing can change a string's
-    // length for some scripts, so the original is the only safe source.
-    out += text.slice(cursor, found) + render(text.slice(found, found + needle.length));
-    cursor = found + needle.length;
+    const end = found + target.length;
+    const textStart = origin[found]!;
+    const textEnd = origin[end]!;
+    // A hit that starts or ends inside one original character's lowercase
+    // expansion matches a fragment no slice of the original can express
+    // (e.g. the bare "i" inside İ's "i̇"). Skip it rather than guess.
+    const startsMidCharacter = found > 0 && origin[found - 1] === textStart;
+    const endsMidCharacter = end < haystack.length && origin[end - 1] === textEnd;
+    if (startsMidCharacter || endsMidCharacter || textEnd <= textStart) {
+      cursor = found + 1;
+      continue;
+    }
+    out += text.slice(emitted, textStart) + render(text.slice(textStart, textEnd));
+    emitted = textEnd;
+    cursor = end;
     count += 1;
   }
-  return { text: out + text.slice(cursor), count };
+  return { text: out + text.slice(emitted), count };
 }
 
 /**

@@ -524,7 +524,11 @@ model PurchaseRecord {
 
   @@index([userId, createdAt])
   @@index([provider, externalPurchaseId])
-  @@index([purchaseTokenHash])
+  /// One record per purchase token: concurrent verifications (the Play
+  /// listener racing a restore) used to fork duplicate rows, double-counting
+  /// cash in the revenue dashboard and letting the same token link to two
+  /// accounts. NULL hashes (legacy rows) stay unconstrained.
+  @@unique([purchaseTokenHash])
 }
 
 model SubscriptionState {
@@ -554,7 +558,9 @@ model SubscriptionState {
   product ProductCatalog? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
-  @@index([provider, externalSubscriptionId])
+  /// One state row per subscription: a duplicate left the renewal sweep
+  /// updating one row and polling the other forever.
+  @@unique([provider, externalSubscriptionId])
   @@index([status, nextCreditGrantAt])
 }
 

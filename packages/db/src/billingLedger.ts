@@ -122,6 +122,13 @@ export async function reserveCreditsTx(
     // done for free. Any priced operation a user can retry has to vary its key
     // per attempt (see the audiobook route, which names the run it supersedes).
   if (existing) {
+    // The short-circuit may only ever answer the account that owns the entry:
+    // a key computed from shared material (a purchase token, a project id)
+    // that collided across users would otherwise commit user B's charge
+    // against user A's reservation and account.
+    if (existing.userId !== options.userId) {
+      throw new Error("Idempotency key already belongs to another account's charge.");
+    }
     return existing;
   }
 
@@ -256,6 +263,35 @@ export async function refundCreditLedgerEntry(
   now: Date = new Date()
 ): Promise<CreditLedgerEntryRecord | null> {
   return runSerializable((tx) => refundCreditLedgerEntryTx(tx, entryId, reason, now));
+}
+
+/**
+ * Releases every reservation still RESERVED under an idempotency-key prefix.
+ *
+ * A holder that reserves first and records the entry id second can crash
+ * between the two statements, leaving a RESERVED entry no row points to — and
+ * a settle that walks only the recorded ids releases everything except the one
+ * the crash orphaned, so those credits stay held forever. When the holder's
+ * keys are deterministic (the voice-call holds are
+ * `mobile:voice-call:{id}:hold:{n}`), the prefix finds what the pointer lost.
+ * Only RESERVED rows are touched, so entries already released or committed to
+ * a spend are never disturbed, and re-running is a no-op.
+ */
+export async function releaseReservationsByKeyPrefix(
+  idempotencyKeyPrefix: string,
+  reason: string
+): Promise<number> {
+  const open = await prisma.creditLedgerEntry.findMany({
+    where: { idempotencyKey: { startsWith: idempotencyKeyPrefix }, status: "RESERVED" },
+    select: { id: true }
+  });
+  let released = 0;
+  for (const entry of open) {
+    if (await refundCreditLedgerEntry(entry.id, reason)) {
+      released += 1;
+    }
+  }
+  return released;
 }
 
 /**

@@ -155,7 +155,14 @@ describe("mobile auth service", () => {
       ok: false,
       code: "INVALID_SESSION"
     });
-    expect(mockPrisma.mobileSession.updateMany).not.toHaveBeenCalled();
+    // Reuse outside the grace window is the signature of a stolen token: the
+    // whole session is revoked, so the *rotated* chain dies with the stale
+    // one, and no rotation write happens for the presenter.
+    expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.mobileSession.updateMany).toHaveBeenCalledWith({
+      where: { id: "session-1", revokedAt: null },
+      data: { revokedAt: NOW }
+    });
   });
 
   it("retries against fresh state when a concurrent refresh rotates first", async () => {

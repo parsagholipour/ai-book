@@ -86,6 +86,8 @@ describe("RoutingTextModelAdapter", () => {
     const sources = await Promise.all(
       [
         "../generation/pages.ts",
+        "../generation/pagesPageMap.ts",
+        "../generation/pagesReview.ts",
         "../generation/bestOf.ts",
         "../generation/readerChapters.ts",
         "../generation/coverDesigns.ts",

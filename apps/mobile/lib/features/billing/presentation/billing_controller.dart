@@ -405,7 +405,12 @@ class BillingController extends ChangeNotifier {
           _releasePurchase(purchase.productId);
           return;
         }
-        final verificationKeepAlive = _keepAlive();
+        // Guarded like [_holdPurchase]: a purchase can land mid-batch after
+        // the provider element is disposed, where `ref.keepAlive()` throws —
+        // and that throw would skip verifying every purchase after this one.
+        final VoidCallback verificationKeepAlive = _disposed
+            ? _noKeepAlive
+            : _keepAlive();
         _setState(
           _state.copyWith(
             pendingProductIds: {
@@ -506,6 +511,8 @@ class BillingController extends ChangeNotifier {
     _state = value;
     notifyListeners();
   }
+
+  static void _noKeepAlive() {}
 
   void _holdPurchase(String productId) {
     if (_disposed) {

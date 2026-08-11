@@ -30,6 +30,7 @@ import {
   qwenImageReferenceLimit,
   supportsQwenImageReferenceImages
 } from "./alibabaModels.js";
+import { ProviderHttpError } from "./retry.js";
 
 export { AlibabaJsonParseError, AlibabaJsonValidationError };
 
@@ -263,7 +264,7 @@ export class AlibabaImageAdapter implements ImageAdapter {
     try {
       return await this.generateSynchronousImage(request);
     } catch (error) {
-      if (!supportsAsyncQwenImage(this.model)) {
+      if (!supportsAsyncQwenImage(this.model) || !shouldFallBackToAsyncQwen(error)) {
         throw error;
       }
       return this.generateAsyncImage(request);
@@ -503,6 +504,25 @@ function supportsAsyncQwenImage(model: string): boolean {
   return model === "qwen-image" || model === "qwen-image-plus";
 }
 
+/**
+ * Whether a failed synchronous render is worth a second, fully billed attempt
+ * through the async endpoint.
+ *
+ * The fallback exists for failures *specific to the sync path* — a gateway
+ * timeout, a 5xx, a connection that died. It used to catch everything, so a
+ * 401 (bad key), a 400 (content policy) or a 429 (quota) launched a second
+ * generation guaranteed to fail the same way, and the surfaced error was the
+ * async attempt's rather than the root cause.
+ */
+function shouldFallBackToAsyncQwen(error: unknown): boolean {
+  if (!(error instanceof ProviderHttpError)) {
+    // Network-shaped failures (no HTTP status at all) may be transport issues
+    // the async path avoids.
+    return true;
+  }
+  return error.status >= 500 || error.status === 408;
+}
+
 async function parseAlibabaHttpResponse(response: Response): Promise<unknown> {
   const text = await response.text();
   const data = text ? safeJsonParse(text) : {};
@@ -511,7 +531,18 @@ async function parseAlibabaHttpResponse(response: Response): Promise<unknown> {
       firstString(responseAt(data, ["message"]), responseAt(data, ["error", "message"]), responseAt(data, ["output", "message"])) ??
       text.slice(0, 500) ??
       response.statusText;
-    throw new Error(`Alibaba Qwen API request failed (${response.status}): ${message}`);
+    // ProviderHttpError, not a bare Error: the status has to travel as a
+    // *field* for `isRecoverableNetworkError` to see it — a DashScope 429
+    // whose status lived only in the message text matched no retry pattern
+    // and was never retried, the exact failure the ProviderHttpError design
+    // exists to prevent. The speech adapters got this fix; this path had not.
+    const retryAfterHeader = Number(response.headers.get("retry-after"));
+    throw new ProviderHttpError(`Alibaba Qwen API request failed (${response.status}): ${message}`, {
+      status: response.status,
+      ...(Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? { retryAfterMs: retryAfterHeader * 1000 }
+        : {})
+    });
   }
   return data;
 }

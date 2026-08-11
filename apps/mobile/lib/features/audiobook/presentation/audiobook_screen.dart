@@ -125,6 +125,19 @@ class _AudiobookScreenState extends ConsumerState<AudiobookScreen> {
       );
     }
     if (!state.canPlay) {
+      // A failed chapter download must not hide behind "warming up": once the
+      // narration has settled nothing polls, so without a retry here the
+      // screen would say preparing forever.
+      final error = state.error;
+      if (error != null) {
+        return AppErrorState(
+          title: 'Download interrupted',
+          message: error,
+          onRetry: () => ref
+              .read(audiobookControllerProvider(widget.projectId).notifier)
+              .retry(),
+        );
+      }
       return _PreparingNarration(audiobook: audiobook);
     }
 

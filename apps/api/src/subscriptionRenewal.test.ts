@@ -68,7 +68,10 @@ describe("subscription renewal sweep", () => {
       expect.objectContaining({
         where: expect.objectContaining({
           purchaseToken: { not: null },
-          status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED"] },
+          // PAUSED is included: Google resumes a paused subscription on its
+          // own schedule, and one left out of the sweep would never be granted
+          // again unless the user happened to open the app.
+          status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED", "PAUSED"] },
           nextCreditGrantAt: { lte: NOW }
         })
       })

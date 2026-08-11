@@ -338,12 +338,21 @@ export async function queueChatBookReplanCopy(options: {
   message: string;
   intent: BookEditIntent;
   executionCommandId?: string | undefined;
+  /** What the proposal card showed; the recomputed cost may never exceed it. */
+  quotedCredits?: number | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   // Same settings the proposal was quoted from, or the user approves one price
   // and is charged another.
   const replanSettings = intent.replanSettings ?? null;
   const cost = bookEditCreditCost(intent.kind, 0, project, { replanSettings });
+  if (options.quotedCredits !== undefined && cost > options.quotedCredits) {
+    // The same ceiling the other charged kinds enforce: the book changed
+    // between the card and Apply (a continuation landed, the page count
+    // moved), so re-propose at the current price rather than silently
+    // charging past the number the user confirmed.
+    return proposeBookEdit({ project, userMessageId, message, intent });
+  }
   const targetLanguage = cleanTargetLanguage(intent.targetLanguage);
   const commandRequestId = options.executionCommandId ?? userMessageId;
   const operation = await createOpenBookEditOperation({
@@ -472,7 +481,8 @@ export async function queueChatBookEdit(options: {
       userMessageId,
       message,
       intent,
-      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {})
+      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
+      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {})
     });
   }
   if (intent.kind === "continue_book") {

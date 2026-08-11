@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   add: vi.fn(),
   findUnique: vi.fn(),
+  findUniqueOrThrow: vi.fn(),
   findMany: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -42,6 +43,7 @@ vi.mock("@book-maker/db", () => ({
     $transaction: mocks.transaction,
     generationJob: {
       findUnique: mocks.findUnique,
+      findUniqueOrThrow: mocks.findUniqueOrThrow,
       findMany: mocks.findMany,
       create: mocks.create,
       update: mocks.update,
@@ -65,9 +67,78 @@ import { DETACHED_FROM_PROJECT_LIFECYCLE, PRESENTATION_ONLY_RECOMPILE } from "@b
 import {
   dispatchGenerationJob,
   enqueueGenerationJob,
+  enqueueOrRequeueGenerationJob,
   reconcileUndispatchedGenerationJobs,
   stopProjectGenerationJobs
 } from "./queue.js";
+
+describe("enqueueOrRequeueGenerationJob", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.add.mockResolvedValue({ id: "job-build" });
+    mocks.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: "job-build",
+      projectId: "project-1",
+      type: "BUILD_CHARACTER_PERSONA",
+      payload: { voiceCharacterId: "character-1" },
+      bullJobId: null,
+      dispatchAttempts: 0,
+      ...data
+    }));
+  });
+
+  it("returns a live row untouched — it already is the work", async () => {
+    mocks.findUnique.mockResolvedValue({
+      id: "job-build",
+      status: "ACTIVE",
+      bullJobId: "bull-1",
+      payload: { voiceCharacterId: "character-1" }
+    });
+
+    const job = await enqueueOrRequeueGenerationJob({
+      projectId: "project-1",
+      type: "BUILD_CHARACTER_PERSONA",
+      dedupeKey: "build-character:project-1:character-1",
+      payload: { voiceCharacterId: "character-1" }
+    });
+
+    expect(job?.status).toBe("ACTIVE");
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("requeues a terminal row instead of answering with it inert", async () => {
+    // A FAILED build spent the dedupe key; the plain enqueue would return the
+    // failed row and dispatch nothing, leaving the character "getting ready"
+    // forever with nothing in the app able to move it.
+    const failedRow = {
+      id: "job-build",
+      projectId: "project-1",
+      type: "BUILD_CHARACTER_PERSONA",
+      status: "FAILED",
+      bullJobId: null,
+      dispatchAttempts: 0,
+      payload: { voiceCharacterId: "character-1" }
+    };
+    mocks.findUnique
+      .mockResolvedValueOnce(failedRow)
+      .mockResolvedValue({ ...failedRow, status: "QUEUED" });
+    mocks.findUnique.mockResolvedValueOnce(failedRow);
+
+    await enqueueOrRequeueGenerationJob({
+      projectId: "project-1",
+      type: "BUILD_CHARACTER_PERSONA",
+      dedupeKey: "build-character:project-1:character-1",
+      payload: { voiceCharacterId: "character-1" }
+    });
+
+    expect(mocks.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "job-build" },
+        data: expect.objectContaining({ status: "QUEUED", message: "Queued for resume" })
+      })
+    );
+  });
+});
 
 describe("who owns a book's quality verdict", () => {
   beforeEach(() => {

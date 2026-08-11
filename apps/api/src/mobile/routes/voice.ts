@@ -1,4 +1,4 @@
-import { enqueueGenerationJob } from "../../queue.js";
+import { enqueueOrRequeueGenerationJob } from "../../queue.js";
 import {
   type MobileVoiceCallMeterDto,
   type MobileVoiceCallSessionDto,
@@ -222,6 +222,12 @@ export async function registerMobileVoiceRoutes(fastify: FastifyInstance, contex
       if (!auth) {
         return;
       }
+      // The one mutating voice route that had no limiter: each hit costs a few
+      // DB round-trips and possibly a billing call, and a real call heartbeats
+      // only every few seconds. The draft budget is far above that.
+      if (!hitAuthenticatedLimit(draftLimiter, request, reply, auth.user.id, "voice-call-heartbeat")) {
+        return;
+      }
       const { callId } = voiceCallParamsSchema.parse(request.params);
       const parsed = mobileVoiceCallProgressBodySchema.safeParse(request.body);
       if (!parsed.success) {
@@ -319,7 +325,12 @@ async function ensureCharacterPersonaBuild(projectId: string, characterId: strin
     where: { id: characterId },
     data: { status: "APPROVED", approvedAt: new Date(), error: null }
   });
-  await enqueueGenerationJob({
+  // Or-requeue, because this path is reachable again after a FAILED build:
+  // the plain enqueue answered a spent dedupe key with the failed row and
+  // dispatched nothing, and since the character was just flipped APPROVED the
+  // retry guard above never fired again — "getting ready" forever, with no
+  // way out of it in the app.
+  await enqueueOrRequeueGenerationJob({
     projectId,
     type: "BUILD_CHARACTER_PERSONA",
     dedupeKey: `build-character:${projectId}:${characterId}`,

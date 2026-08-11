@@ -112,6 +112,44 @@ void main() {
     expect(find.text('Choose a narrator'), findsOneWidget);
   });
 
+  testWidgets('a load that fails outside the API still lands on the error '
+      'state instead of spinning forever', (tester) async {
+    repository.audiobook = null;
+    // The shape of a decode error: not an ApiException, and the only catch
+    // used to be one.
+    repository.fetchError = TypeError();
+    await pumpScreen(tester);
+
+    expect(find.text('Narration unavailable'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    repository.fetchError = null;
+    await tester.tap(find.text('Try again'));
+    await settle(tester);
+
+    expect(find.text('Choose a narrator'), findsOneWidget);
+  });
+
+  testWidgets('a failed chapter download on a finished narration offers a '
+      'retry rather than preparing forever', (tester) async {
+    cache.audioError = Exception('disk full');
+    await pumpScreen(tester);
+
+    // The narration is settled, so nothing polls: without this error state the
+    // screen would say "warming up" with no way to run the download again.
+    expect(find.text('Zephyr is warming up'), findsNothing);
+    expect(find.text('Download interrupted'), findsOneWidget);
+
+    await tester.tap(find.text('Try again'));
+    await settle(tester);
+
+    expect(player.tracks, hasLength(1));
+    expect(
+      find.textContaining('She waited.', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('downloads the finished chapter and shows its transcript', (
     tester,
   ) async {

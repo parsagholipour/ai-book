@@ -10,7 +10,12 @@ import {
   type VoiceCallEndingReason
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
-import { InsufficientCreditsError, refundCreditLedgerEntry, reserveCredits, spendCredits } from "@book-maker/db/billing";
+import {
+  InsufficientCreditsError,
+  releaseReservationsByKeyPrefix,
+  reserveCredits,
+  spendCredits
+} from "@book-maker/db/billing";
 
 /**
  * The credit lifecycle of a realtime character call.
@@ -92,8 +97,14 @@ export async function startVoiceCall(options: {
       maxCallSeconds: VOICE_CALL_POLICY.maxCallMinutes * 60
     };
   } catch (error) {
-    // No hold means no call. Drop the row rather than leave a zero-credit
-    // ACTIVE call for the sweep to reason about.
+    // No hold means no call. Release anything the failed hold managed to
+    // reserve — the pointer write is what failed, so the row cannot name it —
+    // then drop the row rather than leave a zero-credit ACTIVE call for the
+    // sweep to reason about.
+    await releaseReservationsByKeyPrefix(
+      voiceCallHoldKeyPrefix(call.id),
+      "Voice call hold released (call failed to start)."
+    ).catch(() => null);
     await prisma.voiceCall.delete({ where: { id: call.id } }).catch(() => undefined);
     throw error;
   }
@@ -112,10 +123,14 @@ export async function heartbeatVoiceCall(options: {
   elapsedSeconds: number;
 }): Promise<VoiceCallMeter> {
   const call = await activeCallOrThrow(options.callId, options.userId);
-  // Elapsed time only moves forward. A retried or reordered heartbeat must not
-  // be able to talk the meter back down.
+  // Elapsed time only moves forward, and never below the server's own clock.
+  // The audio runs on a socket the server never sees, so `elapsedSeconds` is
+  // the client's word — a retried or reordered heartbeat must not talk the
+  // meter back down, and a doctored client reporting 0 forever must not talk
+  // itself into a free call. Wall clock since `startedAt` is the floor: the
+  // call has verifiably been open that long, whatever the app reports.
   const elapsedSeconds = Math.min(
-    Math.max(options.elapsedSeconds, call.elapsedSeconds),
+    Math.max(options.elapsedSeconds, call.elapsedSeconds, wallClockElapsedSeconds(call.startedAt)),
     VOICE_CALL_POLICY.maxCallMinutes * 60
   );
 
@@ -185,8 +200,14 @@ export async function endVoiceCall(options: {
     };
   }
 
+  // The same server-clock floor as the heartbeat: the client names how long it
+  // talked, but never less than how long the call has been open.
   const elapsedSeconds = Math.min(
-    Math.max(options.elapsedSeconds ?? call.elapsedSeconds, call.elapsedSeconds),
+    Math.max(
+      options.elapsedSeconds ?? call.elapsedSeconds,
+      call.elapsedSeconds,
+      wallClockElapsedSeconds(call.startedAt)
+    ),
     VOICE_CALL_POLICY.maxCallMinutes * 60
   );
   return settleCall(call, elapsedSeconds, options.reason);
@@ -205,14 +226,35 @@ export async function sweepStaleVoiceCalls(now = new Date()): Promise<number> {
     select: voiceCallSelect
   });
   for (const call of stale) {
-    await settleCall(call, call.elapsedSeconds, "heartbeat_lost");
+    // Floor at the wall clock of the last heartbeat rather than of now: the
+    // call was verifiably alive until then, and charging the grace window a
+    // crashed app could not report would overbill the honest case.
+    const elapsedSeconds = Math.min(
+      Math.max(call.elapsedSeconds, wallClockElapsedSeconds(call.startedAt, call.lastHeartbeatAt)),
+      VOICE_CALL_POLICY.maxCallMinutes * 60
+    );
+    await settleCall(call, elapsedSeconds, "heartbeat_lost");
   }
   return stale.length;
+}
+
+/** Whole seconds this call has verifiably been open, by the server's clock. */
+function wallClockElapsedSeconds(startedAt: Date, until: Date = new Date()): number {
+  return Math.max(0, Math.floor((until.getTime() - startedAt.getTime()) / 1000));
 }
 
 /** Credits a user must have available before a call is offered to them. */
 export function voiceCallEntryCredits(): number {
   return voiceCallStartingCredits();
+}
+
+/**
+ * Every hold this call reserves carries a key under this prefix — the hold's
+ * own key appends `{n}` for the nth top-up. `settleCall` releases by the
+ * prefix, so the two must never drift apart.
+ */
+function voiceCallHoldKeyPrefix(callId: string): string {
+  return `mobile:voice-call:${callId}:hold:`;
 }
 
 const voiceCallSelect = {
@@ -224,7 +266,9 @@ const voiceCallSelect = {
   reservationEntryIds: true,
   heldCredits: true,
   chargedCredits: true,
-  elapsedSeconds: true
+  elapsedSeconds: true,
+  startedAt: true,
+  lastHeartbeatAt: true
 } as const;
 
 type VoiceCallRow = {
@@ -237,12 +281,20 @@ type VoiceCallRow = {
   heldCredits: number;
   chargedCredits: number;
   elapsedSeconds: number;
+  startedAt: Date;
+  lastHeartbeatAt: Date;
 };
 
 async function settleCall(call: VoiceCallRow, elapsedSeconds: number, reason: string): Promise<VoiceCallMeter> {
-  for (const entryId of call.reservationEntryIds) {
-    await refundCreditLedgerEntry(entryId, `Voice call hold released (${reason}).`).catch(() => null);
-  }
+  // Released by key prefix rather than by walking `reservationEntryIds`: the
+  // hold is reserved in one statement and the pointer written in the next, so
+  // a crash between the two leaves a RESERVED entry the row never learned
+  // about. Every hold's key starts with this prefix, which finds the orphan
+  // along with the tracked ones — and only still-RESERVED rows are touched.
+  await releaseReservationsByKeyPrefix(
+    voiceCallHoldKeyPrefix(call.id),
+    `Voice call hold released (${reason}).`
+  ).catch(() => null);
 
   const settlement = settleVoiceCall(elapsedSeconds);
   let chargedCredits = 0;
@@ -308,7 +360,7 @@ async function extendVoiceCallHold(options: {
     projectId: options.projectId,
     operation: "VOICE_CALL_MINUTE",
     amountCredits: plan.additionalCredits,
-    idempotencyKey: `mobile:voice-call:${options.callId}:hold:${options.reservationEntryIds.length}`,
+    idempotencyKey: `${voiceCallHoldKeyPrefix(options.callId)}${options.reservationEntryIds.length}`,
     description: "Character voice call time"
   });
   if (!entry) {
@@ -321,15 +373,28 @@ async function extendVoiceCallHold(options: {
     return { heldCredits: options.heldCredits };
   }
 
-  const heldCredits = options.heldCredits + plan.additionalCredits;
-  await prisma.voiceCall.update({
-    where: { id: options.callId },
+  // The entry's own amount, not this plan's: an existing entry adopted here —
+  // reserved by a call whose pointer write then crashed — holds whatever was
+  // planned when it was reserved, and `heldCredits` claims to be the sum of
+  // the still-RESERVED holds. For a fresh reservation the two are equal.
+  //
+  // The write is conditional on the entry not already being recorded: two
+  // overlapping heartbeats can both hold the same entry (same idempotency key)
+  // and both pass the stale `includes` check above — an unconditional push
+  // would record it twice and inflate `heldCredits` by a block nobody
+  // reserved. Postgres re-evaluates the predicate under the row lock, so
+  // exactly one of them records it.
+  const additionalCredits = Math.abs(entry.amountCredits);
+  const recorded = await prisma.voiceCall.updateMany({
+    where: { id: options.callId, NOT: { reservationEntryIds: { has: entry.id } } },
     data: {
-      heldCredits,
+      heldCredits: { increment: additionalCredits },
       reservationEntryIds: { push: entry.id }
     }
   });
-  return { heldCredits };
+  return {
+    heldCredits: recorded.count === 1 ? options.heldCredits + additionalCredits : options.heldCredits
+  };
 }
 
 async function activeCallOrThrow(callId: string, userId: string): Promise<VoiceCallRow> {

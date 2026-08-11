@@ -38,6 +38,7 @@ export type Ledger = {
   status: string;
   idempotencyKey: string;
   reversesEntryId: string | null;
+  description: string | null;
   metadata: unknown;
   createdAt: Date;
 };
@@ -214,6 +215,9 @@ export function createBillingTestDb() {
   }
 
   function ledgerMatchesWhere(row: Ledger, where: Record<string, any>) {
+    if (where.id?.in && !where.id.in.includes(row.id)) {
+      return false;
+    }
     if (where.projectId !== undefined && row.projectId !== where.projectId) {
       return false;
     }
@@ -223,7 +227,16 @@ export function createBillingTestDb() {
     if (where.amountCredits?.lt !== undefined && !(row.amountCredits < where.amountCredits.lt)) {
       return false;
     }
+    if (typeof where.status === "string" && row.status !== where.status) {
+      return false;
+    }
     if (where.status?.in && !where.status.in.includes(row.status)) {
+      return false;
+    }
+    if (
+      where.idempotencyKey?.startsWith !== undefined &&
+      !row.idempotencyKey.startsWith(where.idempotencyKey.startsWith)
+    ) {
       return false;
     }
     if (where.reversedByEntry === null) {
@@ -399,6 +412,35 @@ export function createBillingTestDb() {
         }
         Object.assign(row, data);
         return row;
+      }),
+      upsert: vi.fn(async ({ where, create, update }: any) => {
+        const key = where.provider_externalSubscriptionId;
+        const existing = [...state.subscriptions.values()].find(
+          (row) =>
+            row.provider === key.provider && row.externalSubscriptionId === key.externalSubscriptionId
+        );
+        if (existing) {
+          Object.assign(existing, update);
+          return existing;
+        }
+        const row: Subscription = {
+          id: `subscription-${++state.subscriptionSeq}`,
+          userId: create.userId,
+          productId: create.productId ?? null,
+          provider: create.provider,
+          externalSubscriptionId: create.externalSubscriptionId ?? null,
+          purchaseToken: create.purchaseToken ?? null,
+          status: create.status,
+          creditsPerPeriod: create.creditsPerPeriod,
+          currentPeriodStart: create.currentPeriodStart ?? null,
+          currentPeriodEnd: create.currentPeriodEnd ?? null,
+          nextCreditGrantAt: create.nextCreditGrantAt ?? null,
+          autoRenewing: create.autoRenewing ?? null,
+          canceledAt: create.canceledAt ?? null,
+          metadata: create.metadata
+        };
+        state.subscriptions.set(row.id, row);
+        return row;
       })
     },
     userCreditAccount: {
@@ -437,6 +479,21 @@ export function createBillingTestDb() {
         }
         applyMutation(row, data);
         return { count: 1 };
+      }),
+      upsert: vi.fn(async ({ where, create }: any) => {
+        const existing = state.usage.get(usageKey(where.userId_kind_periodKey));
+        if (existing) {
+          return existing;
+        }
+        const row: Usage = {
+          id: `usage-${++state.usageSeq}`,
+          userId: create.userId,
+          kind: create.kind,
+          periodKey: create.periodKey,
+          used: create.used ?? 0
+        };
+        state.usage.set(usageKey(row), row);
+        return row;
       })
     },
     creditLedgerEntry: {
@@ -457,6 +514,9 @@ export function createBillingTestDb() {
           .filter((row) => ledgerMatchesWhere(row, where))
           .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
       ),
+      findMany: vi.fn(async ({ where }: any) =>
+        [...state.ledger.values()].filter((row) => ledgerMatchesWhere(row, where ?? {}))
+      ),
       create: vi.fn(async ({ data }: any) => {
         const row: Ledger = {
           id: `ledger-${++state.ledgerSeq}`,
@@ -470,6 +530,7 @@ export function createBillingTestDb() {
           status: data.status,
           idempotencyKey: data.idempotencyKey,
           reversesEntryId: data.reversesEntryId ?? null,
+          description: data.description ?? null,
           metadata: data.metadata,
           createdAt: new Date(2026, 5, 15, 12, state.ledgerSeq)
         };

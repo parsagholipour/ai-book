@@ -37,7 +37,12 @@ export async function runSubscriptionRenewalSweep(options: {
     where: {
       provider: "GOOGLE_PLAY",
       purchaseToken: { not: null },
-      status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED"] },
+      // PAUSED is included because Google resumes a paused subscription on its
+      // own schedule and tells nobody: without re-verifying, a subscriber who
+      // resumed would never be granted again until they happened to open the
+      // app. Only EXPIRED is truly final, and that state clears
+      // `nextCreditGrantAt` anyway.
+      status: { in: ["ACTIVE", "GRACE_PERIOD", "CANCELED", "PAUSED"] },
       nextCreditGrantAt: { lte: now }
     },
     orderBy: { nextCreditGrantAt: "asc" },

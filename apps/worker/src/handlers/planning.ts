@@ -27,6 +27,11 @@ import { Job } from "bullmq";
  * `plan-book` and `revise-plan` jobs: research a brief and turn it into a BookPlan.
  */
 
+/** Identity for the redelivery dedupe of stored research sources. */
+function researchSourceIdentity(source: { query: string; title: string; url?: string | null | undefined }): string {
+  return [source.query, source.title, source.url ?? ""].join("\0");
+}
+
 export async function planBook(job: Job): Promise<JobCompletion> {
   const { projectId, inputSnapshot } = job.data as { projectId: string; inputSnapshot?: unknown };
   const generationJobId = job.data.generationJobId as string | undefined;
@@ -101,16 +106,30 @@ export async function planBook(job: Job): Promise<JobCompletion> {
     }
 
     if (plan.researchNotes.length > 0) {
-      await tx.researchSource.createMany({
-        data: plan.researchNotes.map((source) => ({
-          projectId,
-          query: source.query,
-          title: source.title,
-          url: source.url ?? null,
-          summary: source.summary,
-          publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
-        }))
+      // Existing-rows guard, mirroring embedResearchSourcesForProject: a
+      // redelivered plan-book re-runs this whole transaction, and unlike the
+      // cast above these rows were appended rather than replaced — doubling
+      // the book's Sources list forever (the compile rebuilds it from these
+      // rows on every export). Insert only the notes that are not already
+      // stored.
+      const existingSources = await tx.researchSource.findMany({
+        where: { projectId },
+        select: { query: true, title: true, url: true }
       });
+      const storedKeys = new Set(existingSources.map((source) => researchSourceIdentity(source)));
+      const missingNotes = plan.researchNotes.filter((source) => !storedKeys.has(researchSourceIdentity(source)));
+      if (missingNotes.length > 0) {
+        await tx.researchSource.createMany({
+          data: missingNotes.map((source) => ({
+            projectId,
+            query: source.query,
+            title: source.title,
+            url: source.url ?? null,
+            summary: source.summary,
+            publishedAt: source.publishedAt ? new Date(source.publishedAt) : null
+          }))
+        });
+      }
     }
   });
   // Best-effort: the plan is already committed, and a failure past this point

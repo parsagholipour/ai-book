@@ -411,16 +411,18 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       if (!parsed.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Undo request was invalid.");
       }
+      // Ownership before replay, matching the messages route: a replay answers
+      // with the project's whole chat response, so replaying for a caller who
+      // does not own the project would hand them another reader's transcript.
+      const project = await loadProjectForChat(auth.user.id, id);
+      if (!project) {
+        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+      }
       if (parsed.data.requestId) {
         const replay = await replayProjectChatRequest(id, parsed.data.requestId);
         if (replay) {
           return replay;
         }
-      }
-
-      const project = await loadProjectForChat(auth.user.id, id);
-      if (!project) {
-        return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
       }
 
       // Same gate as typing "undo" in chat: the undo rewrite and recompile

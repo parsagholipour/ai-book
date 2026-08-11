@@ -2,8 +2,10 @@ import { Job, type JobsOptions } from "bullmq";
 import { createHash } from "node:crypto";
 import {
   coverArtSourceFor,
+  DETACHED_FROM_PROJECT_LIFECYCLE,
   dispatchBackoffMs,
   EXPORT_PUBLICATION_PROJECT_STATUS,
+  isDetachedFromProjectLifecycle,
   jobOwnsQualityVerdict,
   resolveBookGenerationStrategy,
   retryJobOptions,
@@ -55,7 +57,11 @@ export async function enqueueWorkerJob(options: {
     return;
   }
 
-  const attemptId = currentGenerationAttemptId();
+  // Detached work never belongs to the paid attempt that happens to be on the
+  // async context: an attempt settling (stop, failure) marks its QUEUED/ACTIVE
+  // sibling rows FAILED, which would kill the very rebuild a failure path just
+  // queued to repair the book.
+  const attemptId = isDetachedFromProjectLifecycle(options.payload) ? null : currentGenerationAttemptId();
   const dedupeKey =
     options.dedupeKey && attemptId ? `${options.dedupeKey}:attempt:${attemptId}` : options.dedupeKey;
 
@@ -310,7 +316,16 @@ export type CompileDispatchOutcome =
 export async function maybeEnqueueCompile(
   projectId: string,
   planId: string,
-  options: { skipFinalReview?: boolean } = {}
+  options: {
+    skipFinalReview?: boolean;
+    /**
+     * Queue the compile as detached repair work: it owns neither the project's
+     * status nor its charge, so its own failure cannot flip a settled book to
+     * FAILED or refund the book's generation. Used by failure paths that must
+     * rebuild exports for a book whose own job is about to settle.
+     */
+    detached?: boolean;
+  } = {}
 ): Promise<CompileDispatchOutcome> {
   const [project, planVersion] = await Promise.all([
     prisma.project.findUnique({ where: { id: projectId } }),
@@ -387,7 +402,8 @@ export async function maybeEnqueueCompile(
         planId,
         contentRevision,
         [EXPORT_PUBLICATION_PROJECT_STATUS]: project.status,
-        ...(options.skipFinalReview ? { skipFinalReview: true } : {})
+        ...(options.skipFinalReview ? { skipFinalReview: true } : {}),
+        ...(options.detached ? { [DETACHED_FROM_PROJECT_LIFECYCLE]: true } : {})
       },
       dedupeKey: `compile-export:${projectId}:${planId}:${contentFingerprint}`,
       contentRevision

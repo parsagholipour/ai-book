@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
-  consumeManuscriptImportUse,
+  consumeManuscriptImportUseTx,
   getImportQuota,
   hasActiveSubscriptionEntitlement
 } from "@book-maker/db/billing";
@@ -28,8 +28,7 @@ vi.mock("@book-maker/db", () => ({
 vi.mock("@book-maker/db/billing", () => ({
   hasActiveSubscriptionEntitlement: vi.fn(),
   getImportQuota: vi.fn(),
-  consumeManuscriptImportUse: vi.fn(),
-  releaseManuscriptImportUse: vi.fn()
+  consumeManuscriptImportUseTx: vi.fn()
 }));
 
 vi.mock("./queue.js", () => ({
@@ -169,7 +168,7 @@ describe("mobile import routes", () => {
       periodKey: "2026-08",
       resetsAt: new Date("2026-09-01T00:00:00.000Z")
     });
-    vi.mocked(consumeManuscriptImportUse).mockResolvedValue({
+    vi.mocked(consumeManuscriptImportUseTx).mockResolvedValue({
       allowed: true,
       used: 1,
       limit: 1,
@@ -195,7 +194,7 @@ describe("mobile import routes", () => {
       periodKey: "2026-08",
       resetsAt: new Date("2026-09-01T00:00:00.000Z")
     });
-    vi.mocked(consumeManuscriptImportUse).mockResolvedValue({
+    vi.mocked(consumeManuscriptImportUseTx).mockResolvedValue({
       allowed: false,
       used: 1,
       limit: 1,
@@ -218,7 +217,7 @@ describe("mobile import routes", () => {
     const response = await inject(app);
     expect(response.statusCode).toBe(201);
     expect(getImportQuota).not.toHaveBeenCalled();
-    expect(consumeManuscriptImportUse).not.toHaveBeenCalled();
+    expect(consumeManuscriptImportUseTx).not.toHaveBeenCalled();
     await app.close();
   });
 

@@ -110,7 +110,11 @@ export class OpenAICompatibleTextAdapter implements TextModelAdapter {
   private async generateTextStreaming(options: GenerateTextOptions): Promise<TextResult> {
     const stream: any = await this.client.chat.completions.create({
       model: this.model,
-      messages: options.messages,
+      // Through the same conversion the non-streaming paths use: a raw tool
+      // message carries internal `toolCallId`/`toolName` keys instead of the
+      // wire's `tool_call_id`, and strict servers 400 the streaming call that
+      // succeeds unstreamed.
+      messages: toOpenAiChatMessages(options.messages),
       temperature: options.temperature ?? null,
       ...maxTokensParam(options.maxTokens),
       stream: true,

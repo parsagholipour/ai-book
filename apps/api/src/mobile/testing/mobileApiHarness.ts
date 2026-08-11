@@ -133,7 +133,9 @@ export function resetMobileHarness(): void {
   // vi.fn() resolving undefined would fail every approval in every suite.
   mockPrisma.planVersion.updateMany.mockResolvedValue({ count: 1 });
   mockPrisma.project.updateMany.mockResolvedValue({ count: 1 });
+  mockPrisma.voiceCall.updateMany.mockResolvedValue({ count: 1 });
   mockQueue.enqueueGenerationJob.mockResolvedValue(jobRecord());
+  mockQueue.enqueueOrRequeueGenerationJob.mockResolvedValue(jobRecord());
   mockQueue.dispatchGenerationJob.mockImplementation(async (id: string) => jobRecord({ id }));
   // Compensation paths refund only when the cancel claims the row; an
   // undispatched row in these tests is always claimable.

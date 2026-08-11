@@ -275,7 +275,7 @@ class LoggingTextModelAdapter implements TextModelAdapter {
       const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
         withRecoverableNetworkRetry(
           () => this.delegate.generateText(abortableOptions),
-          providerRetryOptions(this.logger, this.generationJobId, "text.generateText", options.purpose)
+          providerRetryOptions(this.logger, this.generationJobId, "text.generateText", options.purpose, abortableOptions.signal)
         )
       );
       const responseAt = await this.logger.append("text.generateText.response", { callId, result });
@@ -336,7 +336,7 @@ class LoggingTextModelAdapter implements TextModelAdapter {
       const result = await this.withStopAbort(monitoredOptions, (abortableOptions) =>
         withRecoverableNetworkRetry(
           () => this.delegate.generateJson(abortableOptions),
-          providerRetryOptions(this.logger, this.generationJobId, "text.generateJson", options.purpose)
+          providerRetryOptions(this.logger, this.generationJobId, "text.generateJson", options.purpose, abortableOptions.signal)
         )
       );
       const responseAt = await this.logger.append("text.generateJson.response", { callId, result });
@@ -403,7 +403,7 @@ class LoggingTextModelAdapter implements TextModelAdapter {
       const result = await this.withStopAbort(options, (abortableOptions) =>
         withRecoverableNetworkRetry(
           () => this.delegate.generateWithTools(abortableOptions),
-          providerRetryOptions(this.logger, this.generationJobId, "text.generateWithTools", options.purpose)
+          providerRetryOptions(this.logger, this.generationJobId, "text.generateWithTools", options.purpose, abortableOptions.signal)
         )
       );
       const responseAt = await this.logger.append("text.generateWithTools.response", { callId, result });

@@ -34,6 +34,19 @@ export async function importBook(job: Job) {
     throw new Error("Book import not found");
   }
   const project = await getProjectOrThrow(projectId);
+  if (bookImport.status === "COMPLETE") {
+    // A previous delivery committed the import transaction (chapters, pages,
+    // plan and the COMPLETE stamp land together) and crashed before its
+    // durable COMPLETED write. Re-importing would hit
+    // @@unique(projectId, index) on the first chapter.create and mark a fully
+    // committed book FAILED — short-circuit to the success tail instead, which
+    // is idempotent.
+    await prisma.project.update({ where: { id: projectId }, data: { status: "COMPLETE" } });
+    if (project.currentPlanId) {
+      await maybeEnqueueCompile(projectId, project.currentPlanId);
+    }
+    return;
+  }
   try {
     await prisma.bookImport.update({ where: { id: importId }, data: { status: "PARSING", error: null } });
     await advanceJobStep(generationJobId, "read", 10, "Reading your manuscript");

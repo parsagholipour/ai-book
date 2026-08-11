@@ -18,7 +18,7 @@ import {
 import { deleteProjectStorage } from "./projectStorage.js";
 import {
   InMemoryRateLimiter,
-  rateLimitKey,
+  identityRateLimitKey,
   sendRateLimitError,
   type RateLimitConfig
 } from "./rateLimit.js";
@@ -465,12 +465,14 @@ async function requireOperatorAuth(request: FastifyRequest, _reply: FastifyReply
 
 function hitAuthenticatedLimit(
   limiter: InMemoryRateLimiter,
-  request: FastifyRequest,
+  _request: FastifyRequest,
   reply: FastifyReply,
   userId: string,
   action: string
 ): boolean {
-  const limit = limiter.hit(rateLimitKey(request, userId, action));
+  // Account-keyed like the shared helper in mobile/httpErrors.ts: these limits
+  // are about the user, and an IP prefix reset the bucket per address.
+  const limit = limiter.hit(identityRateLimitKey(userId, action));
   if (limit.allowed) {
     return true;
   }

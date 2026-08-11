@@ -12,6 +12,32 @@ import {
   PUBLIC_TERMS_OF_SERVICE_URL
 } from "./legal.js";
 
+/**
+ * Boolean env vars accept the obvious spellings, case-insensitively, and
+ * refuse everything else loudly at startup. `MOCK_AI=TRUE` and `MOCK_AI=1`
+ * used to parse silently as *false* — running real providers and spending
+ * real tokens in a repo whose documented default workflow is `MOCK_AI=true` —
+ * and `AUDIOBOOK_OPENAI_FALLBACK_ENABLED=0` silently left the fallback on.
+ */
+function booleanEnv(name: string): (value: string | undefined) => boolean | undefined {
+  return (value) => {
+    if (value === undefined) {
+      return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "") {
+      return undefined;
+    }
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return false;
+    }
+    throw new Error(`${name} must be true or false, got "${value}".`);
+  };
+}
+
 const envSchema = z.object({
   NODE_ENV: z.string().optional(),
   PORT: z.coerce.number().int().positive().optional(),
@@ -42,8 +68,7 @@ const envSchema = z.object({
   AUDIOBOOK_OPENAI_FALLBACK_ENABLED: z
     .string()
     .optional()
-    .transform((value) => value !== "false")
-    .default(true),
+    .transform((value) => booleanEnv("AUDIOBOOK_OPENAI_FALLBACK_ENABLED")(value) ?? true),
   GEMINI_TTS_SAFE_RPD_BUDGET: z.coerce.number().int().min(0).default(90),
   VOICE_CHAT_PROVIDER: z.enum(["openai_realtime", "gemini_live"]).default("gemini_live"),
   OPENAI_REALTIME_MODEL: z.string().default("gpt-realtime-2"),
@@ -113,12 +138,11 @@ const envSchema = z.object({
   MOCK_AI: z
     .string()
     .optional()
-    .transform((value) => value === "true")
-    .default(false),
+    .transform((value) => booleanEnv("MOCK_AI")(value) ?? false),
   MOCK_GOOGLE_PLAY_BILLING: z
     .string()
     .optional()
-    .transform((value) => (value === undefined ? undefined : value === "true"))
+    .transform(booleanEnv("MOCK_GOOGLE_PLAY_BILLING"))
 }).transform(({ NODE_ENV, PORT, RAILWAY_ENVIRONMENT, API_PORT, MOCK_AI, MOCK_GOOGLE_PLAY_BILLING, ...env }) => {
   const nodeEnv = NODE_ENV?.trim() || undefined;
   const devMode = nodeEnv === "development" || nodeEnv === "test";

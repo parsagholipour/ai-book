@@ -24,6 +24,7 @@ import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
+import { errorMessage } from "../runtime/serialization.js";
 import { bookPlanSchema, createProviders, generateJsonWithRetry, type BookPlan, type TextModelAdapter } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
@@ -47,11 +48,29 @@ export async function continueBook(job: Job) {
   if (!operation) {
     throw new Error("Book edit operation not found");
   }
+  if (operation.status === "APPLIED") {
+    // A previous delivery finished the whole append — the operation is only
+    // marked APPLIED once every page is saved — and crashed before its durable
+    // COMPLETED write. The book already contains this continuation; running
+    // again would append it a second time. Replay only the idempotent success
+    // tail so the exports are rebuilt from the delivered chapters.
+    const appliedProject = await getProjectOrThrow(projectId);
+    if (!appliedProject.currentPlanId) {
+      throw new Error("Current plan not found");
+    }
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { status: "COMPLETE", contentRevision: { increment: 1 } }
+    });
+    await invalidateProjectExports(projectId);
+    await maybeEnqueueCompile(projectId, appliedProject.currentPlanId);
+    return;
+  }
   await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
   await advanceJobStep(generationJobId, "outline", 15, "Outlining new chapters");
 
-  const project = await getProjectOrThrow(projectId);
+  let project = await getProjectOrThrow(projectId);
   const basePlanVersion = planId
     ? await prisma.planVersion.findUnique({ where: { id: planId } })
     : project.currentPlanId
@@ -64,6 +83,71 @@ export async function continueBook(job: Job) {
   const plan = bookPlanSchema.parse(basePlanVersion.planningPackage);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
+
+  // --- Redelivery fence ------------------------------------------------------
+  // The pre-continuation boundary is the plan named by the payload's `planId`,
+  // recorded at enqueue time (the API stamps the then-current plan). It is the
+  // safest durable fence available: generation, import and a *completed*
+  // continuation all write chapters and plan together in one transaction, so
+  // every chapter the book legitimately owns appears in that plan. Chapter
+  // rows past its last index can only be a previous delivery of this job that
+  // crashed mid-append — recomputing `lastPageIndex` over them (and reading
+  // their drafted pages as trailing context) would append a SECOND
+  // continuation on top. Clean them up so this delivery rebuilds the
+  // continuation exactly once, from the original book state.
+  const baseChapterBoundary = plan.chapters.at(-1)?.index ?? 0;
+  const strandedChapters = await prisma.chapter.findMany({
+    where: { projectId, index: { gt: baseChapterBoundary } },
+    select: { id: true }
+  });
+  if (strandedChapters.length > 0) {
+    const strandedChapterIds = strandedChapters.map((chapter) => chapter.id);
+    const strandedPages = await prisma.page.findMany({
+      where: { projectId, chapterId: { in: strandedChapterIds } },
+      select: { index: true }
+    });
+    const strandedPlanId =
+      project.currentPlanId && project.currentPlanId !== basePlanVersion.id ? project.currentPlanId : null;
+    if (strandedPlanId) {
+      // Only a plan the crashed attempt wrote may be deleted; its messages
+      // carry the marker `continueBook` itself writes. Anything else past the
+      // base plan is a state this job does not understand — fail instead of
+      // guessing, and let the normal failure path settle the charge.
+      const strandedPlan = await prisma.planVersion.findUnique({
+        where: { id: strandedPlanId },
+        select: { messages: true }
+      });
+      const marker = `Continue the book: ${request}`.slice(0, 2000);
+      const strandedMessages = strandedPlan && Array.isArray(strandedPlan.messages) ? strandedPlan.messages : [];
+      const looksLikeOwnAppend = strandedMessages.some(
+        (message) =>
+          typeof message === "object" && message !== null && (message as { content?: unknown }).content === marker
+      );
+      if (!looksLikeOwnAppend) {
+        throw new Error("Found chapters past the current plan that this continuation does not own");
+      }
+    }
+    await prisma.$transaction(async (tx) => {
+      await tx.page.deleteMany({ where: { projectId, chapterId: { in: strandedChapterIds } } });
+      await tx.chapter.deleteMany({ where: { projectId, index: { gt: baseChapterBoundary } } });
+      await tx.embedding.deleteMany({
+        where: { projectId, scope: { in: strandedPages.map((page) => `page:${page.index}`) } }
+      });
+      await tx.project.update({
+        where: { id: projectId },
+        // `input.targetPages` is the base plan snapshot's page count — the
+        // value the project held before the crashed append inflated it.
+        data: { currentPlanId: basePlanVersion.id, targetPages: input.targetPages }
+      });
+      await tx.planVersion.update({ where: { id: basePlanVersion.id }, data: { status: "APPROVED" } });
+      if (strandedPlanId) {
+        await tx.planVersion.deleteMany({ where: { id: strandedPlanId, projectId } });
+      }
+    });
+    // Re-read: the row's targetPages (used by the compensation below) and
+    // currentPlanId just changed.
+    project = await getProjectOrThrow(projectId);
+  }
 
   const trailingPagesDesc = await prisma.page.findMany({
     where: { projectId, status: "COMPLETED" },
@@ -242,6 +326,21 @@ export async function continueBook(job: Job) {
       })
       .catch((cleanupError) => {
         console.error(`Continuation cleanup failed for project ${projectId}`, cleanupError);
+      });
+    // The failure may land after the operation was marked APPLIED (the export
+    // refresh above), and the compensation just deleted the pages that verdict
+    // names. `failEditOperation` on the failure path only claims QUEUED/ACTIVE
+    // rows, so without this the operation stayed APPLIED forever, reporting a
+    // continuation the book does not contain. Guarded on APPLIED so the normal
+    // QUEUED/ACTIVE settlement — whose claim is what gates the legacy refund —
+    // is left untouched, and refunds stay with the attempt settlement.
+    await prisma.bookEditOperation
+      .updateMany({
+        where: { id: operationId, status: "APPLIED" },
+        data: { status: "FAILED", error: errorMessage(error), affectedPageIndexes: [] }
+      })
+      .catch((flipError) => {
+        console.error(`Failed to mark rolled-back continuation ${operationId} FAILED`, flipError);
       });
     throw error;
   }

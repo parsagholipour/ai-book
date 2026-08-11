@@ -18,6 +18,7 @@ import { serializeBookEditOperation } from "../projectChat.js";
 import { isValidGenerationRetryToken } from "../generationRetryQuote.js";
 import { queueInitialMobilePlan } from "../projectRecords.js";
 import {
+  LIVE_PROJECT_STATUSES,
   canRecoverGenerationJob,
   inputSnapshotFromProject,
   isPlanningRecoveryJob,
@@ -49,6 +50,13 @@ import {
   startGenerationAttempt
 } from "@book-maker/db/billing";
 import { type FastifyReply, type FastifyRequest } from "fastify";
+
+/** Aborts a confirmed retry whose project is already being worked on. */
+class ResumeAlreadyLiveError extends Error {
+  constructor() {
+    super("Project is already live");
+  }
+}
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
@@ -576,7 +584,17 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
             if (!primaryJobId) {
               throw new Error("Confirmed retry created no generation job.");
             }
-            await tx.project.update({ where: { id }, data: { status: nextStatus } });
+            // The claim both resume surfaces share: refuse to start on top of
+            // a project that is already live (an operator resume, an edit, or
+            // a concurrent retry). Inside the attempt's transaction, so a
+            // refused claim rolls the charge back with everything else.
+            const claimed = await tx.project.updateMany({
+              where: { id, status: { notIn: [...LIVE_PROJECT_STATUSES] } },
+              data: { status: nextStatus }
+            });
+            if (claimed.count !== 1) {
+              throw new ResumeAlreadyLiveError();
+            }
             return { projectId: id, primaryJobId };
           }
         });
@@ -589,6 +607,14 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         }
         if (error instanceof GenerationAttemptConflictError) {
           return sendMobileError(reply, 409, error.code, error.message);
+        }
+        if (error instanceof ResumeAlreadyLiveError) {
+          return sendMobileError(
+            reply,
+            409,
+            "RECOVERY_NOT_AVAILABLE",
+            "This book is already being worked on. Give it a moment and check again."
+          );
         }
         throw error;
       }

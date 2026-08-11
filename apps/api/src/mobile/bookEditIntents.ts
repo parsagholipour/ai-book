@@ -53,16 +53,18 @@ export async function applyOrCancelEditProposal(options: {
   textModel?: TextModelAdapter | undefined;
 }): Promise<MobileProjectChatMessageResponseDto | void> {
   const { reply, userId, projectId, proposalId, requestId, action, textModel } = options;
+  // Ownership before replay, matching the messages route: a replay answers
+  // with the project's whole chat response, so replaying for a caller who does
+  // not own the project would hand them another reader's transcript.
+  const project = await loadProjectForChat(userId, projectId);
+  if (!project) {
+    return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
+  }
   if (requestId) {
     const replay = await replayProjectChatRequest(projectId, requestId);
     if (replay) {
       return replay;
     }
-  }
-
-  const project = await loadProjectForChat(userId, projectId);
-  if (!project) {
-    return sendMobileError(reply, 404, "PROJECT_NOT_FOUND", "Project not found.");
   }
 
   if (action === "apply") {

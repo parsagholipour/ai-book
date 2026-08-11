@@ -43,6 +43,7 @@ class StubVoiceCallController extends VoiceCallController {
     int? pageIndex,
     VoiceCallAudio? audio,
     VoiceCallRecorder? recorder,
+    GeminiLiveSocketConnector? socketConnector,
   }) async {}
 
   @override

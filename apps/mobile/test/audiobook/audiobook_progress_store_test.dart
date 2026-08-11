@@ -109,4 +109,25 @@ void main() {
     expect((await store.load('project-1'))?.positionMs, 3000);
     expect(File('${progressFile('project-1').path}.part').existsSync(), isFalse);
   });
+
+  test('one failed write does not poison every save after it', () async {
+    // A *file* where the project directory should go makes that write fail.
+    final blocked = File(
+      '${root.path}/${AudiobookCache.directoryName}/project-bad',
+    );
+    blocked.parent.createSync(recursive: true);
+    blocked.createSync();
+
+    await expectLater(
+      store.save('project-bad', positionAt(1000)),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    // The chain recovers: later saves and clears still reach the disk.
+    await store.save('project-1', positionAt(2000));
+    expect((await store.load('project-1'))?.positionMs, 2000);
+
+    await store.clear('project-1');
+    expect(await store.load('project-1'), isNull);
+  });
 }

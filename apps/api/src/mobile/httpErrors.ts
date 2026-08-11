@@ -1,5 +1,5 @@
 import { type AuthFailure } from "../mobileAuth.js";
-import { InMemoryRateLimiter, rateLimitKey, sendRateLimitError } from "../rateLimit.js";
+import { InMemoryRateLimiter, identityRateLimitKey, sendRateLimitError } from "../rateLimit.js";
 import { authenticateMobileBearer, sendMobileAuthFailure, type MobileAuthContext } from "../requestAuth.js";
 import {
   InsufficientCreditsError,
@@ -27,12 +27,15 @@ export async function requireMobileAuth(request: FastifyRequest, reply: FastifyR
 
 export function hitAuthenticatedLimit(
   limiter: InMemoryRateLimiter,
-  request: FastifyRequest,
+  _request: FastifyRequest,
   reply: FastifyReply,
   userId: string,
   action: string
 ): boolean {
-  const limit = limiter.hit(rateLimitKey(request, userId, action));
+  // Keyed by the account alone: these limits are about the *user*, and an IP
+  // prefix handed a fresh bucket to every address a rotating carrier NAT
+  // walked through.
+  const limit = limiter.hit(identityRateLimitKey(userId, action));
   if (limit.allowed) {
     return true;
   }
@@ -69,13 +72,14 @@ async function isSubscriberForRateLimit(userId: string): Promise<boolean> {
  */
 export async function hitTieredLimit(
   limiter: InMemoryRateLimiter,
-  request: FastifyRequest,
+  _request: FastifyRequest,
   reply: FastifyReply,
   userId: string,
   action: string
 ): Promise<boolean> {
   const multiplier = (await isSubscriberForRateLimit(userId)) ? SUBSCRIBER_RATE_LIMIT_MULTIPLIER : 1;
-  const limit = limiter.hit(rateLimitKey(request, userId, action), Date.now(), limiter.maxAttempts * multiplier);
+  // Account-keyed for the same reason as `hitAuthenticatedLimit`.
+  const limit = limiter.hit(identityRateLimitKey(userId, action), Date.now(), limiter.maxAttempts * multiplier);
   if (limit.allowed) {
     return true;
   }

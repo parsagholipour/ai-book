@@ -15,6 +15,15 @@ import '../data/voice_repository.dart';
 import '../domain/voice_models.dart';
 import '../domain/voice_transcript_queue.dart';
 
+/// How the controller opens its socket to Gemini. Injectable for the same
+/// reason [VoiceCallAudio] and [VoiceCallRecorder] are handed to [VoiceCallController.dial]:
+/// tests drive the protocol without a network.
+typedef GeminiLiveSocketConnector = Future<GeminiLiveSocket> Function({
+  required String token,
+  required String model,
+  String? sessionHandle,
+});
+
 /// Drives one call from "tap a name" to "hung up".
 ///
 /// The shape follows `BrowserVoiceCallClient` on the web: connect with retries,
@@ -46,6 +55,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
 
   VoiceCallAudio? _audio;
   GeminiLiveSocket? _socket;
+  GeminiLiveSocketConnector? _socketConnector;
   VoiceCallRecorder? _recorder;
   VoiceCallRecorder? _recorderOverride;
   StreamSubscription<Uint8List>? _micSubscription;
@@ -91,6 +101,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     int? pageIndex,
     VoiceCallAudio? audio,
     VoiceCallRecorder? recorder,
+    GeminiLiveSocketConnector? socketConnector,
   }) async {
     // A controller that has already carried a call can carry another: the
     // provider is auto-disposed, but not the instant the screen pops, so a
@@ -102,6 +113,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     state = VoiceCallState(character: character, phase: VoiceCallPhase.ringing);
 
     _recorderOverride = recorder;
+    _socketConnector = socketConnector;
     final io = audio ?? PlatformVoiceCallAudio();
     _audio = io;
     if (!await io.ensurePermission()) {
@@ -169,6 +181,14 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     final callId = _session?.callId;
     _connectionSequence += 1;
     await _teardown();
+    // The timer is gone, but a heartbeat already on the wire may still be
+    // holding lines it took from the queue. Wait it out: success delivered
+    // them, failure just restored them — either way the drain below is the
+    // first read that sees the truth.
+    final heartbeatInFlight = _heartbeatInFlight;
+    if (heartbeatInFlight != null) {
+      await heartbeatInFlight;
+    }
 
     var charged = state.chargedCredits;
     if (callId != null) {
@@ -389,7 +409,8 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     _connectionSequence += 1;
     final sequence = _connectionSequence;
 
-    final socket = await GeminiLiveSocket.connect(
+    final connect = _socketConnector ?? GeminiLiveSocket.connect;
+    final socket = await connect(
       token: session.token,
       model: session.model,
       sessionHandle: _sessionHandle.isEmpty ? null : _sessionHandle,
@@ -542,7 +563,23 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     }
   }
 
-  Future<void> _sendHeartbeat() async {
+  /// The heartbeat currently on the wire. [hangUp] waits for it: a failed one
+  /// restores the batch it took back into the queue, and only a drain that
+  /// runs *after* that restore carries those lines out with the end call.
+  Future<void>? _heartbeatInFlight;
+
+  Future<void> _sendHeartbeat() {
+    final beat = _heartbeat();
+    _heartbeatInFlight = beat;
+    return beat.whenComplete(() {
+      if (identical(_heartbeatInFlight, beat)) {
+        _heartbeatInFlight = null;
+      }
+    });
+  }
+
+  /// Never throws: a missed heartbeat costs a delay, not the call.
+  Future<void> _heartbeat() async {
     final callId = _session?.callId;
     if (callId == null || _disposed || state.phase == VoiceCallPhase.ended) return;
     final batch = _transcriptQueue.take();

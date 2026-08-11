@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     bookEditOperation: { findUnique: vi.fn() },
     character: { deleteMany: vi.fn(), createMany: vi.fn() },
     location: { deleteMany: vi.fn(), createMany: vi.fn() },
-    researchSource: { createMany: vi.fn() },
+    researchSource: { createMany: vi.fn(), findMany: vi.fn() },
     $transaction: vi.fn()
   },
   createPlan: vi.fn(),
@@ -141,6 +141,7 @@ beforeEach(() => {
   mocks.nextPlanVersion.mockResolvedValue(3);
   mocks.revisePlan.mockResolvedValue(revisedPlan);
   mocks.embedResearchSourcesForProject.mockResolvedValue(undefined);
+  mocks.prisma.researchSource.findMany.mockResolvedValue([]);
 });
 
 describe("revisePlan guards", () => {
@@ -351,6 +352,31 @@ describe("planBook", () => {
       where: { id: "project-1" },
       data: { status: "PLAN_READY" }
     });
+  });
+
+  it("does not re-insert research sources a previous delivery already saved", async () => {
+    // A redelivered plan-book re-runs the whole transaction. Characters and
+    // locations are replaced wholesale, but sources were appended — doubling
+    // the book's Sources list, which every export rebuilds from these rows.
+    mocks.prisma.researchSource.findMany.mockResolvedValue([
+      { query: "birds", title: "Bird facts", url: "https://example.org/birds" }
+    ]);
+
+    await planBook(planJob());
+
+    expect(mocks.prisma.researchSource.createMany).not.toHaveBeenCalled();
+  });
+
+  it("inserts only the research sources that are not already stored", async () => {
+    mocks.prisma.researchSource.findMany.mockResolvedValue([
+      { query: "other", title: "Older note", url: null }
+    ]);
+
+    await planBook(planJob());
+
+    expect(mocks.prisma.researchSource.createMany).toHaveBeenCalledTimes(1);
+    const created = mocks.prisma.researchSource.createMany.mock.calls[0]?.[0] as { data: Array<{ title: string }> };
+    expect(created.data.map((row) => row.title)).toEqual(["Bird facts"]);
   });
 
   it("treats a failed research embedding as degradation, not failure", async () => {

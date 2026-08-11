@@ -2,23 +2,16 @@ import type { FastifyPluginAsync } from "fastify";
 import {
   AUTO_BOOK_GENERATION_STRATEGY_ID,
   bookGenerationStrategies,
-  createLanguageDetectionTextModel,
   createProjectSchema,
   createVoiceProvider,
-  buildMarginEstimate,
   buildRealtimeBookCastInstructions,
   buildRealtimeGroupCharacterInstructions,
   buildRealtimeGroupListenerInstructions,
-  detectPromptLanguage,
-  estimateFullBookCreditCost,
-  estimateProviderCostForProject,
   generateGeminiVoiceConversationTranscript,
   imageModelOptions,
-  isEnglishLanguage,
   loadConfig,
   makeMockVoiceConversationTranscript,
   mediaSettingsSchema,
-  normalizeProjectLanguage,
   normalizeVoiceProfile,
   publicAssetUrl,
   reinforceRealtimeCharacterRoleplay,
@@ -30,12 +23,9 @@ import {
   voiceConversationSpeakersForTranscript,
   voiceProviderOptions,
   voiceProfileSchema,
-  type AppConfig,
-  type CreateProjectInput,
-  type ProjectCostSummary,
   type VoiceChatProviderId
 } from "@book-maker/core";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
@@ -43,19 +33,40 @@ import { jobsWithoutRefundedCharges } from "../resumeGuards.js";
 // One implementation of "can this failed row be resumed", shared with the
 // mobile retry route. It used to be copied here, and the copies drifted: the
 // guard that keeps a detached export repair out of a resume was added to one.
-import { canRecoverGenerationJob, isPlanningRecoveryJob, recoveryPayload } from "../mobile/generationRecovery.js";
+import {
+  LIVE_PROJECT_STATUSES,
+  canRecoverGenerationJob,
+  isPlanningRecoveryJob,
+  recoveryPayload
+} from "../mobile/generationRecovery.js";
 import { buildProjectStatus, normalizeTokenUsage } from "../projectStatus.js";
 import { loadProjectCostSummaries, loadProjectCostSummary } from "../projectCosts.js";
 import { deleteProjectStorage } from "../projectStorage.js";
 import {
   dispatchGenerationJob,
   enqueueGenerationJob,
+  enqueueOrRequeueGenerationJob,
   isBullJobActive,
   requeueGenerationJob,
   stopProjectGenerationJobs,
   type GenerationJobType
 } from "../queue.js";
-import { requireOperatorActor, type ProjectActor } from "../requestAuth.js";
+import { requireOperatorActor } from "../requestAuth.js";
+import {
+  cleanOptionalText,
+  deriveTitle,
+  inputWithDetectedLanguage,
+  jsonInputValue,
+  jsonPayload,
+  jsonPayloadToRecord,
+  ownedPlanWhere,
+  ownedVoiceCharacterWhere,
+  planInputForStrategy,
+  projectBillingSummary,
+  projectUpdateDataFromInput,
+  safePathPart,
+  stablePayloadHash
+} from "./projectInputHelpers.js";
 import { registerProjectAssetRoutes } from "./projectAssets.js";
 import { ownedProjectWhere, registerProjectExportRoutes } from "./projectExports.js";
 import { loadVoiceBookCast } from "../voiceBookContext.js";
@@ -609,7 +620,18 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
     const nextStatus = jobsReadyToResume.every((job) => isPlanningRecoveryJob(job.type as GenerationJobType))
       ? "PLANNING"
       : "GENERATING";
-    await prisma.project.update({ where: { id }, data: { status: nextStatus } });
+    // The claim both resume surfaces share: a project already being worked on
+    // — by the mobile paid retry, an edit, or a concurrent resume — must not
+    // have its old rows requeued alongside that work.
+    const claimed = await prisma.project.updateMany({
+      where: { id, status: { notIn: [...LIVE_PROJECT_STATUSES] } },
+      data: { status: nextStatus }
+    });
+    if (claimed.count !== 1) {
+      return reply.code(409).send({
+        error: "This project is already being worked on. Wait for the current run to settle before resuming."
+      });
+    }
     const resumedJobs = [];
     for (const job of jobsReadyToResume) {
       resumedJobs.push(
@@ -812,7 +834,10 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
         }
       });
       if (openBuildJobs === 0) {
-        await enqueueGenerationJob({
+        // Or-requeue: a FAILED build spent this dedupe key, and the plain
+        // enqueue would answer with that row and dispatch nothing — approving
+        // again has to actually run the build.
+        await enqueueOrRequeueGenerationJob({
           projectId: id,
           type: "BUILD_CHARACTER_PERSONA",
           dedupeKey: `build-character:${id}:${character.id}`,
@@ -1268,185 +1293,3 @@ export const projectRoutes: FastifyPluginAsync = async (fastify) => {
 
   registerProjectExportRoutes(fastify, appConfig);
 };
-
-function projectBillingSummary(
-  project: {
-    title: string;
-    subtitle: string | null;
-    authorName: string | null;
-    coverTagline: string | null;
-    prompt: string;
-    category: string;
-    subcategory: string | null;
-    targetPages: number;
-    complexity: number;
-    temperature: number;
-    language: string;
-    mediaSettings: unknown;
-  },
-  cost: ProjectCostSummary | undefined
-) {
-  const input = createProjectSchema.parse({
-    title: project.title,
-    ...(project.subtitle ? { subtitle: project.subtitle } : {}),
-    ...(project.authorName ? { authorName: project.authorName } : {}),
-    ...(project.coverTagline ? { coverTagline: project.coverTagline } : {}),
-    prompt: project.prompt,
-    category: project.category,
-    ...(project.subcategory ? { subcategory: project.subcategory } : {}),
-    targetPages: project.targetPages,
-    complexity: project.complexity,
-    temperature: project.temperature,
-    language: project.language,
-    mediaSettings: mediaSettingsSchema.parse(project.mediaSettings)
-  });
-  const creditEstimate = estimateFullBookCreditCost(input);
-  const providerEstimate = estimateProviderCostForProject(input);
-  return {
-    creditEstimate,
-    providerEstimate,
-    margin: buildMarginEstimate({
-      creditEstimate,
-      providerEstimate,
-      actualProviderCostUsd: cost?.totalUsd ?? null
-    })
-  };
-}
-
-function ownedPlanWhere(planId: string, actor: ProjectActor): Prisma.PlanVersionWhereInput {
-  return { id: planId, project: { userId: actor.userId } };
-}
-
-function ownedVoiceCharacterWhere(characterId: string, actor: ProjectActor): Prisma.VoiceCharacterWhereInput {
-  return { id: characterId, project: { userId: actor.userId } };
-}
-
-
-
-
-type ProjectStrategySource = {
-  title: string;
-  subtitle?: string | null;
-  authorName?: string | null;
-  coverTagline?: string | null;
-  prompt: string;
-  category: string;
-  subcategory?: string | null;
-  targetPages: number;
-  complexity: number;
-  temperature: number;
-  language: string;
-  mediaSettings: unknown;
-};
-
-function planInputForStrategy(inputSnapshot: unknown, project: ProjectStrategySource): CreateProjectInput {
-  const fromSnapshot = createProjectSchema.safeParse(inputSnapshot);
-  if (fromSnapshot.success) {
-    return fromSnapshot.data;
-  }
-  return createProjectSchema.parse({
-    title: project.title,
-    subtitle: project.subtitle ?? undefined,
-    authorName: project.authorName ?? undefined,
-    coverTagline: project.coverTagline ?? undefined,
-    prompt: project.prompt,
-    category: project.category,
-    subcategory: project.subcategory ?? undefined,
-    targetPages: project.targetPages,
-    complexity: project.complexity,
-    temperature: project.temperature,
-    language: project.language,
-    mediaSettings: mediaSettingsSchema.parse(project.mediaSettings)
-  });
-}
-
-
-function safePathPart(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "asset";
-}
-
-function deriveTitle(prompt: string): string {
-  return prompt
-    .split(/[.!?\n]/)[0]
-    ?.replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 90) || "Untitled Book";
-}
-
-function projectUpdateDataFromInput(input: CreateProjectInput, templateId: string | null) {
-  const subtitle = cleanOptionalText(input.subtitle);
-  const authorName = cleanOptionalText(input.authorName);
-  const coverTagline = cleanOptionalText(input.coverTagline);
-  const subcategory = cleanOptionalText(input.subcategory);
-
-  return {
-    title: input.title ?? deriveTitle(input.prompt),
-    subtitle: subtitle ?? null,
-    authorName: authorName ?? null,
-    coverTagline: coverTagline ?? null,
-    prompt: input.prompt,
-    category: input.category,
-    subcategory: subcategory ?? null,
-    targetPages: input.targetPages,
-    complexity: input.complexity,
-    temperature: input.temperature,
-    language: input.language,
-    mediaSettings: mediaSettingsSchema.parse(input.mediaSettings),
-    ...(templateId ? { templateId } : {})
-  };
-}
-
-async function inputWithDetectedLanguage(
-  input: CreateProjectInput,
-  rawBody: unknown,
-  appConfig: AppConfig
-): Promise<CreateProjectInput> {
-  const explicitLanguage = explicitLanguageFromBody(rawBody);
-  if (explicitLanguage && !isEnglishLanguage(explicitLanguage)) {
-    return { ...input, language: normalizeProjectLanguage(explicitLanguage) };
-  }
-  const fallbackLanguage = explicitLanguage ? normalizeProjectLanguage(explicitLanguage) : input.language;
-
-  try {
-    return {
-      ...input,
-      language: await detectPromptLanguage(createLanguageDetectionTextModel(appConfig), input.prompt)
-    };
-  } catch {
-    return { ...input, language: fallbackLanguage };
-  }
-}
-
-function explicitLanguageFromBody(rawBody: unknown): string | undefined {
-  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
-    return undefined;
-  }
-  const language = (rawBody as Record<string, unknown>).language;
-  return typeof language === "string" && language.trim() ? language : undefined;
-}
-
-function jsonPayload(input: CreateProjectInput): Record<string, unknown> {
-  return JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
-}
-
-function jsonInputValue(value: unknown): Prisma.InputJsonValue {
-  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-}
-
-function cleanOptionalText(value: string | undefined): string | undefined {
-  const trimmed = value?.replace(/\s+/g, " ").trim();
-  return trimmed || undefined;
-}
-
-function stablePayloadHash(value: unknown): string {
-  const serialized = typeof value === "string" ? value : JSON.stringify(value);
-  return createHash("sha256").update(serialized).digest("hex").slice(0, 24);
-}
-
-function jsonPayloadToRecord(payload: unknown): Record<string, unknown> {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return {};
-  }
-
-  return payload as Record<string, unknown>;
-}

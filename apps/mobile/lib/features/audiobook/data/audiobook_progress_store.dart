@@ -89,16 +89,24 @@ class AudiobookProgressStore {
   }
 
   Future<void> save(String projectId, AudiobookListeningPosition position) {
-    return _writes = _writes.then((_) => _write(projectId, position));
+    return _writes = _afterPendingWrites(() => _write(projectId, position));
   }
 
   Future<void> clear(String projectId) {
-    return _writes = _writes.then((_) async {
+    return _writes = _afterPendingWrites(() async {
       final file = await _file(projectId);
       if (await file.exists()) {
         await file.delete();
       }
     });
+  }
+
+  /// Queues [action] behind whatever write is in flight, swallowing the
+  /// predecessor's failure first — chaining straight onto a rejected future
+  /// once left every later save rejecting without ever touching the disk.
+  /// Each caller still sees its own action's result.
+  Future<void> _afterPendingWrites(Future<void> Function() action) {
+    return _writes.catchError((_) {}).then((_) => action());
   }
 
   /// Writes through a `.part` file and renames, so being killed mid-save costs

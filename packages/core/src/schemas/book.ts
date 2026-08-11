@@ -114,6 +114,22 @@ function normalizeChapterBrief(value: unknown): unknown {
   };
 }
 
+/**
+ * Coerces a model-reported score onto the schema's integer 0–100.
+ *
+ * The postprocess schemas demand an int in [0,100], so `score: 87.5` used to
+ * fail validation outright and burn a full revise/restart cycle at real token
+ * cost. A score that is plainly on a 0–10 scale — the reply says so
+ * (`outOf: 10`), or it is a fraction at or under 10 — is rescaled; an
+ * ambiguous small *integer* is left alone rather than guessed into ten times
+ * itself, since a genuinely terrible 8/100 must not become a perfect 80.
+ */
+function normalizeQualityScore(score: number, outOf: number | undefined): number {
+  const tenScale = outOf === 10 || (score >= 0 && score <= 10 && !Number.isInteger(score));
+  const scaled = tenScale ? score * 10 : score;
+  return Math.min(100, Math.max(0, Math.round(scaled)));
+}
+
 function normalizePageQualityReport(value: unknown): unknown {
   const unwrapped = unwrapJsonObject(["qualityReport", "report", "review", "data", "result"])(value);
   if (!isRecord(unwrapped)) {
@@ -129,8 +145,13 @@ function normalizePageQualityReport(value: unknown): unknown {
 
   const scoreFromModel = numberField(unwrapped, ["score", "qualityScore", "rating", "grade"]);
   const score =
-    scoreFromModel ??
-    (approvedFromModel === true ? 85 : approvedFromModel === false ? 45 : 70);
+    scoreFromModel !== undefined
+      ? normalizeQualityScore(scoreFromModel, numberField(unwrapped, ["outOf", "scale", "maxScore"]))
+      : approvedFromModel === true
+        ? 85
+        : approvedFromModel === false
+          ? 45
+          : 70;
 
   let issues = stringArrayField(unwrapped, ["issues", "problems", "concerns", "flags"]) ?? [];
   let notes = stringField(unwrapped, ["notes", "summary", "rationale"]) ?? "";
@@ -189,8 +210,13 @@ function normalizeFinalBookQa(value: unknown): unknown {
   const approvedFromModel = typeof unwrapped.approved === "boolean" ? unwrapped.approved : undefined;
   const scoreFromModel = numberField(unwrapped, ["score", "qualityScore", "rating", "grade"]);
   const score =
-    scoreFromModel ??
-    (approvedFromModel === true ? 85 : approvedFromModel === false ? 45 : 70);
+    scoreFromModel !== undefined
+      ? normalizeQualityScore(scoreFromModel, numberField(unwrapped, ["outOf", "scale", "maxScore"]))
+      : approvedFromModel === true
+        ? 85
+        : approvedFromModel === false
+          ? 45
+          : 70;
 
   let issues =
     stringArrayField(unwrapped, ["issues", "problems", "concerns", "flags", "reasons", "rejectionReasons"]) ?? [];

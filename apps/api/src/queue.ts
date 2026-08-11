@@ -104,6 +104,37 @@ export async function enqueueGenerationJob(options: {
 }
 
 /**
+ * Enqueues under a dedupe key, resurrecting a terminal row instead of
+ * returning it inert.
+ *
+ * `enqueueGenerationJob` treats a spent key as "this work already happened":
+ * the existing row comes back and nothing is dispatched. That is right for
+ * charged work, and a permanent dead end for retryable derivative work — a
+ * persona build that failed once left a FAILED row under its key, so every
+ * later attempt enqueued nothing and the character said "getting ready"
+ * forever. Only callers that have just re-established the need for the work
+ * should use this; a QUEUED or ACTIVE row is already that work and is
+ * returned untouched.
+ */
+export async function enqueueOrRequeueGenerationJob(options: {
+  projectId: string;
+  type: GenerationJobType;
+  payload: Record<string, unknown>;
+  dedupeKey: string;
+}) {
+  const job = await enqueueGenerationJob(options);
+  if (job && job.status !== "QUEUED" && job.status !== "ACTIVE") {
+    return requeueGenerationJob({
+      id: job.id,
+      projectId: job.projectId,
+      type: job.type as GenerationJobType,
+      payload: options.payload
+    });
+  }
+  return job;
+}
+
+/**
  * Publishes a durable database job to BullMQ. A Redis outage deliberately
  * leaves the row QUEUED so reconciliation can publish it later; callers can
  * safely return the durable job instead of rolling domain state back.

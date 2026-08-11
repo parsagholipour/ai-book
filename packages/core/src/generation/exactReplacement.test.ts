@@ -54,6 +54,26 @@ describe("preserveCase", () => {
   it("does not disturb surrounding text", () => {
     expect(applyExactReplacement("The Rabbit's burrow", replacement)).toBe("The Fly's burrow");
   });
+
+  it("stays aligned when lowercasing changes the string's length", () => {
+    // "İ" (U+0130) lowercases to two UTF-16 units, so an index into the
+    // lowercased haystack drifts one unit per İ before the match — which used
+    // to splice the page mid-word ("İstanbul hosts a Rflytoday.").
+    expect(applyExactReplacement("İstanbul hosts a Rabbit today.", replacement)).toBe(
+      "İstanbul hosts a Fly today."
+    );
+    expect(countExactMatches("İzmir and İstanbul both keep a rabbit and a Rabbit.", replacement)).toBe(2);
+    expect(applyExactReplacement("İzmir and İstanbul both keep a rabbit and a Rabbit.", replacement)).toBe(
+      "İzmir and İstanbul both keep a fly and a Fly."
+    );
+  });
+
+  it("never matches the fragment inside one character's lowercase expansion", () => {
+    // İ lowercases to "i" + a combining dot; the bare "i" inside that pair is
+    // not a slice of the original text and must not count as a hit.
+    expect(countExactMatches("İ", { from: "i", to: "x", preserveCase: true })).toBe(0);
+    expect(applyExactReplacement("İ", { from: "i", to: "x", preserveCase: true })).toBe("İ");
+  });
 });
 
 describe("exactReplacementLineDiff", () => {

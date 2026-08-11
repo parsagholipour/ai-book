@@ -494,6 +494,11 @@ class PlanProjectsRepository implements ProjectsRepository {
   MobileProjectDetail project;
   MobileProjectStatus? status;
   final revisionMessages = <String>[];
+
+  /// Every chat send with the identity the server would dedupe on, so a suite
+  /// can prove a retry replays the same turn instead of minting a new one.
+  final sendRequests =
+      <({String message, String? requestId, String? replyToMessageId})>[];
   final requestedProjectIds = <String>[];
   final chatMessages = <MobileProjectChatMessage>[];
   final planSnapshots = <MobilePlan>[];
@@ -690,6 +695,11 @@ class PlanProjectsRepository implements ProjectsRepository {
     String? replyToMessageId,
   }) async {
     revisionMessages.add(message);
+    sendRequests.add((
+      message: message,
+      requestId: requestId,
+      replyToMessageId: replyToMessageId,
+    ));
     final gate = sendGate;
     if (gate != null) {
       sendGate = null;

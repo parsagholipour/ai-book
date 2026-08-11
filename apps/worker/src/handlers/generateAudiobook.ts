@@ -98,8 +98,14 @@ export async function generateAudiobook(job: Job) {
   await removeSupersededAudiobookDirs(projectId, audiobookId);
   await syncChapterRows(audiobookId, narrations, plans);
 
+  // Only READY chapters that exist in the *current* partition count: rows from
+  // an older, larger partition would start `completed` above the chapter total
+  // and push the derived progress past 100.
+  const plannedChapterIndexes = new Set(plans.map((chapter) => chapter.index));
   let readyIndexes = new Set(
-    audiobook.chapters.filter((chapter) => chapter.status === "READY").map((chapter) => chapter.index)
+    audiobook.chapters
+      .filter((chapter) => chapter.status === "READY" && plannedChapterIndexes.has(chapter.index))
+      .map((chapter) => chapter.index)
   );
   const stylePrompt = narrationStylePrompt({ language: languageLabel(project.language) });
   const logger = createRunLogger(job);

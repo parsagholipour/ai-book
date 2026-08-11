@@ -121,7 +121,11 @@ export async function updateJobProgress(
   await prisma.generationJob.update({
     where: { id: generationJobId },
     data: {
-      ...(update.progress !== undefined ? { progress: update.progress } : {}),
+      // The single write site for progress, so the clamp lives here: handlers
+      // derive percentages from counters that can legitimately overshoot (a
+      // resumed audiobook whose old partition had more chapters than the
+      // current one) and the app renders whatever number lands in the row.
+      ...(update.progress !== undefined ? { progress: Math.min(100, update.progress) } : {}),
       ...(update.message !== undefined ? { message: update.message } : {}),
       ...(update.steps !== undefined ? { steps: update.steps as Prisma.InputJsonValue } : {})
     }

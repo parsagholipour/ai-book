@@ -47,6 +47,14 @@ class AudiobookController extends Notifier<AudiobookState> {
   bool _downloading = false;
   bool _disposed = false;
 
+  /// Advanced whenever the narration the downloads belong to is replaced
+  /// (see [_resetPlayback], and [_refresh] when the server hands back a
+  /// different audiobook). A download loop parked on an await compares the
+  /// value it captured against this and abandons instead of queueing the old
+  /// narration's audio under the new timeline — the same pattern as
+  /// `VoiceCallController._connectionSequence`.
+  int _syncGeneration = 0;
+
   /// True while the queue is parked on a finished last chapter. Playing from
   /// there makes no sound, so the play button has to mean something else.
   bool _atEndOfQueue = false;
@@ -80,6 +88,12 @@ class AudiobookController extends Notifier<AudiobookState> {
           .fetch(projectId);
       if (_disposed) {
         return;
+      }
+      final previous = state.audiobook;
+      if (previous != null && audiobook != null && previous.id != audiobook.id) {
+        // A different narration arrived over a refresh: whatever a running
+        // download loop is fetching belongs to the one that is gone.
+        _syncGeneration += 1;
       }
       if (audiobook == null) {
         // clearError matters here: "never narrated" is the state a retry after a
@@ -117,7 +131,9 @@ class AudiobookController extends Notifier<AudiobookState> {
         return;
       }
       unawaited(_syncDownloads());
-    } on ApiException catch (error) {
+    } catch (error) {
+      // Deliberately not just ApiException: a decode error escaping here left
+      // `loading` true forever, a spinner with no error and no retry.
       if (!_disposed) {
         state = state.copyWith(loading: false, error: userFacingError(error));
       }
@@ -313,6 +329,11 @@ class AudiobookController extends Notifier<AudiobookState> {
       return;
     }
     _downloading = true;
+    // Checked after every await below: past any of them the narration may have
+    // been replaced, and a stale loop must walk away without touching the
+    // queue, the timelines, the player or the state.
+    final generation = _syncGeneration;
+    bool abandoned() => _disposed || generation != _syncGeneration;
     try {
       final cache = ref.read(audiobookCacheProvider);
       final pending = audiobook.readyChapters
@@ -320,7 +341,7 @@ class AudiobookController extends Notifier<AudiobookState> {
           .toList(growable: false);
 
       for (final chapter in pending) {
-        if (_disposed) {
+        if (abandoned()) {
           return;
         }
         final file = await cache.ensureChapterAudio(
@@ -328,30 +349,42 @@ class AudiobookController extends Notifier<AudiobookState> {
           audiobookId: audiobook.id,
           chapter: chapter,
         );
+        if (abandoned()) {
+          return;
+        }
         final timeline = await cache.ensureChapterTimeline(
           projectId: projectId,
           audiobookId: audiobook.id,
           chapter: chapter,
         );
-        if (_disposed) {
+        if (abandoned()) {
           return;
         }
         _timelines[chapter.index] = timeline;
         _queuedChapters.add(chapter.index);
 
+        final artFile = await _coverArt(audiobook);
+        // Also the dispose fence: a player built past this point would have no
+        // teardown left to dispose it.
+        if (abandoned()) {
+          return;
+        }
         final track = AudiobookTrack(
           id: '${audiobook.id}:${chapter.index}',
           file: file,
           bookTitle: state.bookTitle ?? 'Your book',
           chapterTitle: chapter.title.isEmpty ? 'Chapter ${chapter.index}' : chapter.title,
           narratorName: audiobook.narratorName,
-          artFile: await _coverArt(audiobook),
+          artFile: artFile,
         );
 
         if (_player == null) {
           await _startPlayer([track]);
         } else {
           await _player!.appendTracks([track]);
+        }
+        if (abandoned()) {
+          return;
         }
         // Show the words as soon as they exist. Waiting for the first position
         // tick would leave the transcript blank until play is pressed, when it
@@ -365,11 +398,17 @@ class AudiobookController extends Notifier<AudiobookState> {
         await _applyResumeIfReady();
       }
     } catch (error) {
-      if (!_disposed) {
+      if (!abandoned()) {
         state = state.copyWith(error: userFacingError(error));
       }
     } finally {
       _downloading = false;
+      // While this loop held `_downloading`, the replacing narration's own
+      // sync returned empty-handed — so starting the fresh loop is this one's
+      // last job on the way out.
+      if (!_disposed && generation != _syncGeneration) {
+        unawaited(_syncDownloads());
+      }
     }
   }
 
@@ -381,6 +420,8 @@ class AudiobookController extends Notifier<AudiobookState> {
   /// no longer in the manifest, and the position mapping reads that queue
   /// positionally — it would not fail, it would play the wrong chapter.
   Future<void> _resetPlayback() async {
+    // Fences any download loop still in flight for the old queue.
+    _syncGeneration += 1;
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }
@@ -398,6 +439,11 @@ class AudiobookController extends Notifier<AudiobookState> {
     _player = player;
     await player.setQueue(tracks);
     await player.setSpeed(state.speed);
+    // A reset during those awaits already disposed this player; subscribing to
+    // it now would resurrect it into a queue it is no longer part of.
+    if (!identical(_player, player)) {
+      return;
+    }
 
     _subscriptions.add(
       player.positionStream.listen((position) => _onPosition(position.inMilliseconds)),
