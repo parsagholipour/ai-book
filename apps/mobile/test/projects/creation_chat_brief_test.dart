@@ -154,7 +154,9 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('the headline pen opens the title sheet', (tester) async {
+  testWidgets('the pen chip in the expanded panel opens the title sheet', (
+    tester,
+  ) async {
     final creation = ScriptedCreationRepository()
       ..replyTitleSuggestions = ['First Idea', 'Second Idea'];
     await tester.pumpWidget(app(creation: creation));
@@ -162,11 +164,16 @@ void main() {
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
 
-    // The first suggestion is already the working title — the headline.
+    // The first suggestion is already the working title — the headline —
+    // and the collapsed bar carries no pen of its own.
     expect(_inHeader(find.text('First Idea')), findsOneWidget);
+    expect(find.text('Edit title'), findsNothing);
+
+    await _expandHeader(tester);
 
     // Tapping a suggestion applies it immediately.
-    await tester.tap(find.byTooltip('Edit title'));
+    await tester.ensureVisible(_inDetails(find.text('Edit title')));
+    await tester.tap(_inDetails(find.text('Edit title')));
     await tester.pumpAndSettle();
     expect(find.text('Book title'), findsOneWidget);
     await tester.tap(find.text('Second Idea'));
@@ -174,7 +181,7 @@ void main() {
     expect(_inHeader(find.text('Second Idea')), findsOneWidget);
 
     // Typing a title of your own wins over the ideas.
-    await tester.tap(find.byTooltip('Edit title'));
+    await tester.tap(_inDetails(find.text('Edit title')));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.widgetWithText(TextField, 'Second Idea'),
@@ -189,13 +196,15 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('the pen retires once the book is built', (tester) async {
+  testWidgets('the pen chip retires once the book is built', (tester) async {
     final creation = ScriptedCreationRepository();
     final projects = PlanProjectsRepository();
     await tester.pumpWidget(app(creation: creation, projects: projects));
     await _buildBook(tester);
 
-    expect(find.byTooltip('Edit title'), findsNothing);
+    await _expandHeader(tester);
+
+    expect(find.text('Edit title'), findsNothing);
 
     await tester.teardownScreen();
   });

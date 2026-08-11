@@ -14,6 +14,7 @@ class _BriefDetails extends StatelessWidget {
     this.project,
     this.liveStatus,
     this.onOpenAdvanced,
+    this.onEditTitle,
   });
 
   final CreationChatState state;
@@ -26,6 +27,10 @@ class _BriefDetails extends StatelessWidget {
   final MobileProjectDetail? project;
   final MobileProjectStatus? liveStatus;
   final Future<void> Function()? onOpenAdvanced;
+
+  /// Opens the title sheet; null once built. Lives here as the pen chip
+  /// rather than beside the headline, so the collapsed bar stays plain.
+  final Future<void> Function()? onEditTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +64,12 @@ class _BriefDetails extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
+            if (onEditTitle != null)
+              _TappableBriefChip(
+                icon: Icons.edit_outlined,
+                label: 'Edit title',
+                onTap: () => unawaited(onEditTitle!()),
+              ),
             _TappableBriefChip(
               label: 'Type',
               value: bookTypeLabel(
@@ -173,15 +184,21 @@ class _BriefRow {
 /// locally keeps the shared widget non-interactive while these chips open
 /// Advanced settings. A null onTap renders exactly the plain chip.
 class _TappableBriefChip extends StatelessWidget {
-  const _TappableBriefChip({required this.label, this.value, this.onTap});
+  const _TappableBriefChip({
+    required this.label,
+    this.value,
+    this.icon,
+    this.onTap,
+  });
 
   final String label;
   final String? value;
+  final IconData? icon;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final chip = AppMetricChip(label: label, value: value);
+    final chip = AppMetricChip(label: label, value: value, icon: icon);
     if (onTap == null) {
       return chip;
     }

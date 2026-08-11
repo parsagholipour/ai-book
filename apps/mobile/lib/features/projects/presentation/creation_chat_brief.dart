@@ -158,8 +158,8 @@ class _BriefHeader extends StatefulWidget {
   /// sheet edits the pre-build presets, which a built book no longer reads.
   final Future<void> Function()? onOpenAdvanced;
 
-  /// Opens the title sheet from the pen beside the headline; null once
-  /// built, when the title belongs to the book rather than the brief.
+  /// Opens the title sheet from the pen chip in the expanded panel; null
+  /// once built, when the title belongs to the book rather than the brief.
   final Future<void> Function()? onEditTitle;
 
   @override
@@ -241,40 +241,12 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                headline,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w800),
-                              ),
-                            ),
-                            if (widget.onEditTitle != null) ...[
-                              const SizedBox(width: 4),
-                              // Deliberately smaller than an IconButton: its
-                              // 48px floor would grow the whole bar. A missed
-                              // tap only toggles the row's expansion.
-                              Tooltip(
-                                message: 'Edit title',
-                                child: InkResponse(
-                                  onTap: () =>
-                                      unawaited(widget.onEditTitle!()),
-                                  radius: 16,
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(4),
-                                    child: Icon(
-                                      Icons.edit_outlined,
-                                      size: 15,
-                                      color: colors.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+                        Text(
+                          headline,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -339,6 +311,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     project: project,
                     liveStatus: liveStatus,
                     onOpenAdvanced: widget.onOpenAdvanced,
+                    onEditTitle: widget.onEditTitle,
                   ),
                 ),
               ),
