@@ -26,7 +26,6 @@ import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../data/creation_prefs_store.dart';
-import '../data/creation_repository.dart';
 import '../data/projects_repository.dart';
 import '../domain/creation_message_models.dart';
 import '../domain/creation_models.dart';
@@ -233,19 +232,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     final activeProjectId = _activeProjectId(state);
     final isInOutputStage = activeProjectId != null;
     final activeDraftId = widget.draftId ?? state.draftId;
-    final loadingSelectedChat =
-        widget.draftId != null && widget.draftId != state.draftId;
-    final sidebarTitle = ref
-        .watch(chatSessionsProvider)
-        .maybeWhen(
-          data: (sessions) => _titleForDraft(sessions, activeDraftId),
-          orElse: () => null,
-        );
-    final screenTitle = _screenTitle(
-      state,
-      sidebarTitle,
-      preferSidebarTitle: loadingSelectedChat,
-    );
 
     AsyncValue<MobileProjectDetail>? planValue;
     AsyncValue<MobileProjectChat>? projectChatValue;
@@ -294,9 +280,10 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       fit: StackFit.expand,
       children: [
         Scaffold(
+          // No title: the book is named by the brief header below, which is
+          // always present — naming it twice a few pixels apart said nothing.
           appBar: AppBar(
             leading: EasyDrawerButton(controllerKey: _drawerKey),
-            title: Text(screenTitle),
             actions: [
               IconButton(
                 tooltip: 'New book chat',
@@ -347,9 +334,11 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                   )
                 : Column(
                     children: [
-                      if (!isInOutputStage)
-                        _BriefHeader(state: state)
-                      else if (state.outputs.length > 1)
+                      _BriefHeader(
+                        state: state,
+                        activeProjectId: activeProjectId,
+                      ),
+                      if (isInOutputStage && state.outputs.length > 1)
                         _OutputSwitcher(
                           outputs: state.outputs,
                           activeProjectId: activeProjectId,
@@ -687,31 +676,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     if (refreshStatus) {
       ref.invalidate(projectStatusProvider(projectId));
     }
-  }
-
-  String _screenTitle(
-    CreationChatState state,
-    String? sidebarTitle, {
-    required bool preferSidebarTitle,
-  }) {
-    final title = sidebarTitle?.trim();
-    if (preferSidebarTitle) {
-      return title == null || title.isEmpty ? 'New book' : title;
-    }
-    if (title != null && title.isNotEmpty && state.sessionTitle == null) {
-      return title;
-    }
-    return state.displayTitle;
-  }
-
-  String? _titleForDraft(List<MobileChatSession> sessions, String? draftId) {
-    if (draftId == null) return null;
-    for (final session in sessions) {
-      if (session.draftId == draftId) {
-        return session.title;
-      }
-    }
-    return null;
   }
 
   Widget _buildOutputFooter(

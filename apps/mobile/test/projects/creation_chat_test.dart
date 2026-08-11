@@ -28,7 +28,8 @@ void main() {
     await tester.pumpWidget(app(creation: creation));
     await tester.pumpAndSettle();
 
-    expect(find.text('New book'), findsOneWidget);
+    // The app bar carries no title; the brief header names the forming book.
+    expect(find.text('Your next book'), findsOneWidget);
     expect(find.text(greeting), findsOneWidget);
     expect(find.text('A kids book'), findsOneWidget);
     expect(creation.startedMessages, isEmpty);
@@ -935,14 +936,16 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(creation.buildDraftId, 'draft-1');
+    // The brief header is the screen's only title surface and now names the
+    // built book after the plan it was given.
     expect(
       find.descendant(
-        of: find.byType(AppBar),
-        matching: find.text('A kids book'),
+        of: find.byKey(const ValueKey('creationBriefHeader')),
+        matching: find.text(planTitle),
       ),
       findsOneWidget,
     );
-    expect(find.text(planTitle), findsOneWidget);
+    expect(bubbleText(planTitle), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -1256,7 +1259,8 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('Revising your book plan'), findsNothing);
-      expect(find.text(planTitle), findsOneWidget);
+      // Scoped to the transcript: the brief header also carries the title.
+      expect(bubbleText(planTitle), findsOneWidget);
 
       await tester.teardownScreen();
     },
@@ -1318,7 +1322,7 @@ void main() {
     },
   );
 
-  testWidgets('selected chat title shows before messages load', (tester) async {
+  testWidgets('selected chat title shows once the chat loads', (tester) async {
     final resumeGate = Completer<void>();
     final creation = ScriptedCreationRepository(
       resumeByIdGate: resumeGate.future,
@@ -1328,12 +1332,15 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.text('Title for draft-a'), findsOneWidget);
+    // While the chat loads the screen shows only the loading state: the app
+    // bar carries no title and the brief header arrives with the chat.
+    expect(find.text('Loading chat'), findsOneWidget);
     expect(find.text('Selected chat draft-a'), findsNothing);
 
     resumeGate.complete();
     await tester.pumpAndSettle();
 
+    expect(find.text('Title for draft-a'), findsOneWidget);
     expect(find.text('Selected chat draft-a'), findsOneWidget);
 
     await tester.teardownScreen();
@@ -1399,7 +1406,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.text(planTitle), findsOneWidget);
+      expect(bubbleText(planTitle), findsOneWidget);
 
       // Already sitting on /books/new?fresh=true (the initial location):
       // tapping "New book" targets that same path+fresh flag again, differing
@@ -2260,6 +2267,10 @@ void main() {
     );
     expect(projects.revisionMessages, isEmpty);
 
+    // The always-present brief header shortens the transcript viewport, so
+    // bring the button fully on-screen before tapping.
+    await tester.ensureVisible(find.text('View progress'));
+    await tester.pump();
     await tester.tap(find.text('View progress'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
@@ -2460,6 +2471,10 @@ void main() {
     );
     await tester.pump();
     await tester.tap(find.byTooltip('Send'));
+    await tester.pump();
+    // The always-present brief header shortens the lazy transcript's
+    // viewport: pull its tail on-screen before asserting on it.
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pump();
 
     expect(find.text('Rewrite page 1 to sound warmer'), findsOneWidget);
@@ -2672,7 +2687,7 @@ void main() {
 
       expect(creation.buildCount, 1);
       expect(creation.buildDraftId, 'draft-1');
-      expect(find.text(planTitle), findsOneWidget);
+      expect(bubbleText(planTitle), findsOneWidget);
 
       await tester.teardownScreen();
     },
@@ -3016,7 +3031,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
 
     expect(creation.buildCount, 1);
-    expect(find.text(planTitle), findsOneWidget);
+    expect(bubbleText(planTitle), findsOneWidget);
 
     await tester.teardownScreen();
   });
@@ -3376,16 +3391,21 @@ void main() {
     sendGate.complete();
     await tester.pumpAndSettle();
 
-    // The created chat is cached and the drawer list refetched, so it is
-    // reachable again without reopening the app.
+    // The created chat is cached, so it is reachable again without reopening
+    // the app.
     expect(
       container.read(creationConversationCacheProvider).readById('draft-1'),
       isNotNull,
     );
-    expect(creation.listSessionsCalls, greaterThan(callsBefore));
     // The chat the user switched to is untouched by the stale response.
     expect(find.text('Selected chat draft-b'), findsOneWidget);
     expect(find.text(reply), findsNothing);
+
+    // The sessions list was invalidated, and nothing watches it until the
+    // drawer opens — which is when the refetch lands.
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    expect(creation.listSessionsCalls, greaterThan(callsBefore));
 
     await tester.teardownScreen();
   });

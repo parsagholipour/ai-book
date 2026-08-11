@@ -37,7 +37,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    expect(find.text('New book'), findsOneWidget);
+    expect(find.text('Practical guide'), findsOneWidget);
     expect(find.byKey(const ValueKey('creationBriefHeader')), findsWidgets);
     expect(find.text('A kids book'), findsOneWidget);
     expect(find.text('Create your account'), findsNothing);
@@ -67,7 +67,7 @@ void main() {
     await tester.tap(agreeButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('New book'), findsOneWidget);
+    expect(find.text('Practical guide'), findsOneWidget);
     expect(find.text('The terms have been updated'), findsNothing);
   });
 
@@ -90,7 +90,7 @@ void main() {
     await tester.tap(notNowButton);
     await tester.pumpAndSettle();
 
-    expect(find.text('New book'), findsOneWidget);
+    expect(find.text('Practical guide'), findsOneWidget);
     expect(find.text('The terms have been updated'), findsNothing);
 
     // A 428 on any write clears the dismissal through this provider; drive it

@@ -45,7 +45,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('New book'), findsOneWidget);
+    // The brief header names the forming book (here by its detected lane);
+    // the app bar carries no title.
+    expect(find.text('Practical guide'), findsOneWidget);
     expect(find.byKey(const ValueKey('creationBriefHeader')), findsOneWidget);
     expect(tester.takeException(), isNull);
 

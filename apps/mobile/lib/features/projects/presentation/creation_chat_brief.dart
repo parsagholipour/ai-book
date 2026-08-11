@@ -5,9 +5,16 @@ part of 'creation_chat_screen.dart';
 // parent library file.
 
 class _BriefHeader extends StatefulWidget {
-  const _BriefHeader({required this.state});
+  const _BriefHeader({required this.state, this.activeProjectId});
 
   final CreationChatState state;
+
+  /// Non-null once the chat has a built book. The header then carries the
+  /// screen's only title (the app bar names nothing), so it prefers the
+  /// active output's title — the server keeps it synced to the project row,
+  /// where a replan or rename lands — and retires the readiness pill, which
+  /// only describes a brief that is still forming.
+  final String? activeProjectId;
 
   @override
   State<_BriefHeader> createState() => _BriefHeaderState();
@@ -16,9 +23,22 @@ class _BriefHeader extends StatefulWidget {
 class _BriefHeaderState extends State<_BriefHeader> {
   bool _expanded = false;
 
+  String? _activeOutputTitle() {
+    final projectId = widget.activeProjectId;
+    if (projectId == null) return null;
+    for (final output in widget.state.outputs) {
+      if (output.projectId == projectId) {
+        final title = output.title.trim();
+        return title.isEmpty ? null : title;
+      }
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
+    final built = widget.activeProjectId != null;
     final brief = state.brief;
     final colors = Theme.of(context).colorScheme;
     final presets = state.presets;
@@ -27,14 +47,16 @@ class _BriefHeaderState extends State<_BriefHeader> {
           ? presets.bookTypeChoice
           : 'auto',
     );
-    final workingTitle = workingCreationTitle(
-      optionalDetails: state.optionalDetails,
-      brief: brief,
-      titleSuggestions: state.titleSuggestions,
-      sessionTitle: state.sessionTitle,
-    );
+    final workingTitle =
+        _activeOutputTitle() ??
+        workingCreationTitle(
+          optionalDetails: state.optionalDetails,
+          brief: brief,
+          titleSuggestions: state.titleSuggestions,
+          sessionTitle: state.sessionTitle,
+        );
     // Untitled: name the detected shape rather than repeating 'New book'
-    // (the app bar's default) or the word 'Auto'.
+    // (the sidebar's default) or the word 'Auto'.
     final headline =
         workingTitle ??
         (state.detectedLane != 'auto'
@@ -59,7 +81,9 @@ class _BriefHeaderState extends State<_BriefHeader> {
                   CreationCoverGlimpse(
                     title: workingTitle,
                     readinessScore: state.readiness.score,
-                    canBuild: state.readiness.canBuild,
+                    // A built book is past forming: solid whatever the
+                    // restored readiness says.
+                    canBuild: built || state.readiness.canBuild,
                     seed: state.draftId ?? 'draft',
                     palette: coverPreviewColors(state.coverPreview),
                   ),
@@ -87,7 +111,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _ReadinessPill(readiness: state.readiness),
+                  if (!built) _ReadinessPill(readiness: state.readiness),
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
                     color: colors.onSurfaceVariant,
@@ -122,6 +146,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     state: state,
                     brief: brief,
                     presets: presets,
+                    built: built,
                   ),
                 ),
               ),
@@ -138,11 +163,16 @@ class _BriefDetails extends StatelessWidget {
     required this.state,
     required this.brief,
     required this.presets,
+    required this.built,
   });
 
   final CreationChatState state;
   final MobileBookRecipe? brief;
   final MobileCreationPresets presets;
+
+  /// A built book has nothing left to add: the readiness hints are advice
+  /// for a brief still being written.
+  final bool built;
 
   @override
   Widget build(BuildContext context) {
@@ -209,7 +239,7 @@ class _BriefDetails extends StatelessWidget {
           const SizedBox(height: 2),
           Text(row.value),
         ],
-        if (state.readiness.missing.isNotEmpty) ...[
+        if (!built && state.readiness.missing.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
             'Helpful to add',

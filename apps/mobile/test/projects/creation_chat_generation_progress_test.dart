@@ -207,6 +207,10 @@ void main() {
   testWidgets('View progress opens the book page', (tester) async {
     await _pumpChat(tester, status: _status());
 
+    // The always-present brief header shortens the transcript viewport, so
+    // bring the button fully on-screen before tapping.
+    await tester.ensureVisible(find.text('View progress'));
+    await tester.pump();
     await tester.tap(find.text('View progress'));
     await _settleEnough(tester);
 
