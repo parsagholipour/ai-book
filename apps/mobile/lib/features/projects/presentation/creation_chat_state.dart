@@ -117,6 +117,7 @@ class CreationChatState {
     this.titleSuggestions = const <String>[],
     this.shapePreview = const <String>[],
     this.warnings = const <String>[],
+    this.coverPreview,
     this.outputs = const <MobileCreationOutput>[],
     this.sourceNotes = '',
     this.optionalDetails = const MobileCreationOptionalDetails(),
@@ -150,6 +151,12 @@ class CreationChatState {
   final List<String> titleSuggestions;
   final List<String> shapePreview;
   final List<String> warnings;
+
+  /// Server-derived cover glimpse for the header's mini cover. Kept from the
+  /// last turn that carried one, so an old stored turn without the field does
+  /// not blink the cover back to the seeded palette.
+  final MobileCreationCoverPreview? coverPreview;
+
   final List<MobileCreationOutput> outputs;
   final String sourceNotes;
   final MobileCreationOptionalDetails optionalDetails;
@@ -223,6 +230,7 @@ class CreationChatState {
     List<String>? titleSuggestions,
     List<String>? shapePreview,
     List<String>? warnings,
+    MobileCreationCoverPreview? coverPreview,
     List<MobileCreationOutput>? outputs,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
@@ -260,6 +268,7 @@ class CreationChatState {
       titleSuggestions: titleSuggestions ?? this.titleSuggestions,
       shapePreview: shapePreview ?? this.shapePreview,
       warnings: warnings ?? this.warnings,
+      coverPreview: coverPreview ?? this.coverPreview,
       outputs: outputs ?? this.outputs,
       sourceNotes: sourceNotes ?? this.sourceNotes,
       optionalDetails: optionalDetails ?? this.optionalDetails,

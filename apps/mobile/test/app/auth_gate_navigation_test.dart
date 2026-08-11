@@ -38,7 +38,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('New book'), findsOneWidget);
-    expect(find.text('Book brief'), findsWidgets);
+    expect(find.byKey(const ValueKey('creationBriefHeader')), findsWidgets);
     expect(find.text('A kids book'), findsOneWidget);
     expect(find.text('Create your account'), findsNothing);
   });

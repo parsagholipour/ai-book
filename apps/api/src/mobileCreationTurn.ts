@@ -26,6 +26,9 @@ import {
  * `./mobileCreation.js` surface is unchanged.
  */
 
+/** Catalog palettes are hex today, but the shape is the catalog's to change. */
+const coverPreviewColor = z.string().trim().min(4).max(32);
+
 export const mobileCreationTurnSchema = z
   .object({
     // Branch navigation intentionally returns no new chat bubble.
@@ -45,6 +48,19 @@ export const mobileCreationTurnSchema = z
     titleSuggestions: z.array(z.string().trim().min(1).max(160)).max(5).default([]),
     shapePreview: z.array(z.string().trim().min(1).max(160)).min(1).max(8),
     warnings: z.array(z.string().trim().min(1).max(280)).max(5).default([]),
+    // A deterministic glimpse of the designed cover this brief would earn
+    // today (see mobileCreationCoverPreview.ts). Derived at every
+    // finalization site, never patched by the model. Optional because every
+    // draft's stored `lastTurn` written before the field existed must keep
+    // parsing.
+    coverPreview: z
+      .object({
+        designId: z.string().trim().min(1).max(80),
+        template: z.string().trim().min(1).max(40),
+        palette: z.tuple([coverPreviewColor, coverPreviewColor, coverPreviewColor])
+      })
+      .strict()
+      .optional(),
     // Grounded web evidence used for this answer, if the turn searched.
     research: mobileCreationResearchSchema.optional(),
     // Detected or confirmed book language for this conversation ("fa", "es", ...).
@@ -108,6 +124,7 @@ export const creationTurnAiPatchSchema = z.preprocess((value) => {
 export type CreationTurnAiPatch = Partial<z.infer<typeof creationTurnAiPatchSchema>>;
 
 export type MobileCreationTurn = z.infer<typeof mobileCreationTurnSchema>;
+export type MobileCreationCoverPreview = NonNullable<MobileCreationTurn["coverPreview"]>;
 export type MobileCreationResearch = z.infer<typeof mobileCreationResearchSchema>;
 export type { MobileCreationTurnQuestion };
 

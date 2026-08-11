@@ -329,3 +329,70 @@ int visualLimitFor(String bookType) {
     _ => 4,
   };
 }
+
+/// The name the forming book is known by right now, or null while it has
+/// none. Priority: a title stated in chat, then the brief's own, then the
+/// first model suggestion, then a session title the user set — but never the
+/// 'New book' default, which is the absence of a title wearing a string.
+String? workingCreationTitle({
+  required MobileCreationOptionalDetails optionalDetails,
+  required MobileBookRecipe? brief,
+  required List<String> titleSuggestions,
+  required String? sessionTitle,
+}) {
+  final session = sessionTitle?.trim() ?? '';
+  final candidates = <String>[
+    optionalDetails.title,
+    brief?.title ?? '',
+    if (titleSuggestions.isNotEmpty) titleSuggestions.first,
+    if (session != 'New book') session,
+  ];
+  for (final candidate in candidates) {
+    final trimmed = candidate.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+/// One line for the chat header saying what the book will do: the brief's
+/// lane-aware promise, then its audience, then the chosen type as a floor.
+String creationPitchLine({
+  required MobileBookRecipe? brief,
+  required String bookTypeChoiceLabel,
+}) {
+  if (brief != null) {
+    final promise = primaryPromise(brief).trim();
+    if (promise.isNotEmpty) {
+      return promise;
+    }
+    final audience = brief.audience.trim();
+    if (audience.isNotEmpty) {
+      return audience;
+    }
+  }
+  return bookTypeChoiceLabel;
+}
+
+/// Parses the server cover glimpse's hex palette for the header's mini
+/// cover; null when the turn carried none (or unreadable colours), where the
+/// seeded placeholder palette stands in.
+List<Color>? coverPreviewColors(MobileCreationCoverPreview? preview) {
+  if (preview == null) {
+    return null;
+  }
+  final colors = <Color>[];
+  for (final hex in preview.colors) {
+    final cleaned = hex.trim().replaceFirst('#', '');
+    if (cleaned.length != 6) {
+      continue;
+    }
+    final value = int.tryParse(cleaned, radix: 16);
+    if (value == null) {
+      continue;
+    }
+    colors.add(Color(0xFF000000 | value));
+  }
+  return colors.length >= 2 ? colors : null;
+}

@@ -846,13 +846,21 @@ class CreationChatController extends Notifier<CreationChatState> {
     );
   }
 
+  /// An empty value means the reader deselected the tone, so the choice marker
+  /// goes with it — same shape as [setBookType] with `auto` and
+  /// [setPageCountAuto]. Leaving it behind would badge the field "Your choice"
+  /// over a row with nothing selected.
   void setTone(String value) {
+    final trimmed = value.trim();
+    final choices = {...state.userChoices};
+    if (trimmed.isEmpty) {
+      choices.remove(CreationChoice.tone);
+    } else {
+      choices.add(CreationChoice.tone);
+    }
     state = state.copyWith(
-      optionalDetails: copyOptionalDetails(
-        state.optionalDetails,
-        tone: value.trim(),
-      ),
-      userChoices: {...state.userChoices, CreationChoice.tone},
+      optionalDetails: copyOptionalDetails(state.optionalDetails, tone: trimmed),
+      userChoices: choices,
     );
   }
 
@@ -1151,6 +1159,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       titleSuggestions: turn.titleSuggestions,
       shapePreview: turn.shapePreview,
       warnings: turn.warnings,
+      coverPreview: turn.coverPreview,
       outputs: session?.outputs ?? state.outputs,
       activeProjectId: session?.activeProjectId ?? session?.createdProjectId,
       language: applyDetectedLanguage ? detectedLanguage : null,

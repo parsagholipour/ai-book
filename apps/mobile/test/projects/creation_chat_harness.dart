@@ -139,10 +139,12 @@ Map<String, dynamic> turnJson({
   List<String> warnings = const [],
   String? authorName,
   String? title,
+  Map<String, dynamic>? brief,
+  List<String> missing = const [],
 }) {
   return {
     'assistantMessage': assistantMessage,
-    'brief': {'lane': 'auto'},
+    'brief': brief ?? {'lane': 'auto'},
     'presets': {
       'bookType': 'lead_magnet',
       'bookTypeChoice': 'auto',
@@ -159,7 +161,7 @@ Map<String, dynamic> turnJson({
     'readiness': {
       'score': canBuild ? 80 : 10,
       'canBuild': canBuild,
-      'missing': <dynamic>[],
+      'missing': missing,
     },
     'titleSuggestions': <dynamic>[],
     'shapePreview': ['Intro'],

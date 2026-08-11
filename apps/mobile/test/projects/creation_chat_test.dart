@@ -83,13 +83,59 @@ void main() {
     expect(creation.startedMessages, contains('A kids book'));
     expect(creation.sentMessages, contains('A kids book'));
     expect(find.text(reply), findsOneWidget);
-    await tester.tap(find.text('Book brief'));
+    await tester.tap(find.byKey(const ValueKey('creationBriefHeader')));
     await tester.pumpAndSettle();
     expect(find.text('Cover: Included'), findsOneWidget);
     expect(find.text('Illustrations: Included'), findsOneWidget);
 
     final buildFinder = find.widgetWithText(FilledButton, 'Build the plan');
     expect(tester.widget<FilledButton>(buildFinder).onPressed, isNotNull);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('expanding the brief never hides an open question or its build '
+      'affordance', (tester) async {
+    // Phone-sized surface: the expanded details, the question card and the
+    // build affordance all share one fixed-height column, so an unbounded
+    // expansion overflows it and pushes the controls off screen.
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final creation = ScriptedCreationRepository(replyWithQuestion: true)
+      // A filled-in brief, the state a real conversation reaches: audience,
+      // promise and tone rows plus a "Helpful to add" list make the expanded
+      // details genuinely tall.
+      ..replyBrief = {
+        'lane': 'practical_guide',
+        'audience': 'New managers stepping into their first team lead role',
+        'promise': 'Run confident one-on-ones and delegate without guilt',
+        'tone': 'Warm, direct and practical',
+      }
+      ..replyMissing = const [
+        'Preferred book length',
+        'Author name for the byline',
+      ];
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    expect(find.text('Who is this book for?'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('creationBriefHeader')));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Cover: Included'), findsOneWidget);
+    expect(find.text('Who is this book for?'), findsOneWidget);
+    expect(
+      tester.getBottomLeft(find.text('Skip and build the plan')).dy,
+      lessThanOrEqualTo(640),
+    );
+    // The clipped details announce themselves the way the question drawer
+    // does: a visible scrollbar plus the "Scroll for more" cue.
+    expect(find.text('Scroll for more'), findsWidgets);
 
     await tester.teardownScreen();
   });
@@ -722,6 +768,49 @@ void main() {
     },
   );
 
+  testWidgets('advanced sheet tone chips deselect on a second tap', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Advanced settings'));
+    await tester.pumpAndSettle();
+
+    final warmChip = find.widgetWithText(ChoiceChip, 'warm');
+    await tester.ensureVisible(warmChip);
+    await tester.tap(warmChip);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<ChoiceChip>(warmChip).selected, isTrue);
+    expect(find.text('Your choice'), findsOneWidget);
+
+    // Tone has no Auto option, so the selected chip is the only way back to
+    // letting the studio choose — and the badge goes with the value.
+    await tester.tap(warmChip);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<ChoiceChip>(warmChip).selected, isFalse);
+    expect(find.text('Your choice'), findsNothing);
+
+    final doneButton = find.widgetWithText(FilledButton, 'Done');
+    await tester.ensureVisible(doneButton);
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.continuePastVisualsPrompt();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(creation.buildOptionalDetails?.tone ?? '', isEmpty);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('build asks for pages when preflight requires a page count', (
     tester,
   ) async {
@@ -1178,7 +1267,9 @@ void main() {
     await tester.pumpWidget(app(creation: creation, draftId: 'draft-a'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Title for draft-a'), findsOneWidget);
+    // The session title shows in the app bar and, as the working title, in
+    // the brief header's headline and on the mini cover.
+    expect(find.text('Title for draft-a'), findsWidgets);
     expect(find.text('Selected chat draft-a'), findsOneWidget);
 
     await tester.pumpWidget(app(creation: creation, draftId: 'draft-b'));
@@ -1186,7 +1277,7 @@ void main() {
 
     expect(creation.resumedDraftIds, ['draft-a', 'draft-b']);
     expect(find.text('Title for draft-a'), findsNothing);
-    expect(find.text('Title for draft-b'), findsOneWidget);
+    expect(find.text('Title for draft-b'), findsWidgets);
     expect(find.text('Selected chat draft-a'), findsNothing);
     expect(find.text('Selected chat draft-b'), findsOneWidget);
 

@@ -8,6 +8,7 @@ import {
   briefForMobilePayload,
   chatSettingChangesFromMessage,
   composeMobileProjectPrompt,
+  creationCoverPreview,
   detectMessageLanguage,
   deterministicAdvisor,
   explicitTargetPagesForMobilePayload,
@@ -222,6 +223,26 @@ describe("runCreationTurn", () => {
     expect(turn.assistantMessage).toContain("cozy bedtime");
     expect(turn.quickReplies).toContain("Add a friendly moon");
     expect(turn.detectedLane).toBe("children_story");
+  });
+
+  it("re-derives the cover glimpse from the enriched brief, not the base's", async () => {
+    const deterministic = deterministicCreationTurn(autoRequest);
+    const turn = await runCreationTurn(autoRequest, {
+      enrich: async (_request, base) => ({
+        assistantMessage: "A pricing guide it is.",
+        presets: { ...base.presets, bookType: "lead_magnet", bookTypeChoice: "lead_magnet" },
+        brief: { ...base.brief, title: "Price with Confidence", audience: "consultants" }
+      })
+    });
+
+    expect(turn.coverPreview).toBeDefined();
+    expect(turn.coverPreview).toEqual(
+      creationCoverPreview({ lane: turn.detectedLane, brief: turn.brief })
+    );
+    // The lane moved from the deterministic children-story guess to business,
+    // so the glimpse must not still be the base's.
+    expect(turn.detectedLane).not.toBe(deterministic.detectedLane);
+    expect(turn.coverPreview).not.toEqual(deterministic.coverPreview);
   });
 
   it("does not attach an English fallback card to a localized AI reply", async () => {

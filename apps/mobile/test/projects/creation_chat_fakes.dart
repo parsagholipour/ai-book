@@ -67,6 +67,12 @@ class ScriptedCreationRepository implements CreationRepository {
   Object? uploadError;
   Object? sendError;
   List<String> replyWarnings = const [];
+
+  /// The brief the reply turn carries; null keeps the bare `{'lane': 'auto'}`.
+  Map<String, dynamic>? replyBrief;
+
+  /// The reply turn's readiness.missing — the "Helpful to add" list.
+  List<String> replyMissing = const [];
   List<String> greetingQuickReplies = const ['A kids book', 'A workbook'];
   int uploadCount = 0;
   final resumedDraftIds = <String>[];
@@ -303,6 +309,8 @@ class ScriptedCreationRepository implements CreationRepository {
         buildRequested: replyWithBuildRequest,
         warnings: replyWarnings,
         authorName: replyAuthorName,
+        brief: replyBrief,
+        missing: replyMissing,
       ),
     });
   }

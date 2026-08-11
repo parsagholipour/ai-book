@@ -36,6 +36,7 @@ import 'chat_media_preview.dart';
 import 'chat_reply_quote.dart';
 import 'chat_thinking_bubble.dart';
 import 'creation_chat_controller.dart';
+import 'creation_cover_glimpse.dart';
 import 'creation_labels.dart';
 import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';

@@ -336,6 +336,14 @@ class _LanguageField extends StatelessWidget {
   }
 }
 
+/// The tone chips, which unlike every other control here have an off state
+/// reachable only by tapping the selected chip again.
+///
+/// Tone has no "Auto" entry to return to — the row is the five examples and
+/// nothing else — so a chip that only ever selects made the first tap
+/// irreversible: the reader could swap warm for gentle but never get back to
+/// letting the studio choose. Tapping the selected chip clears it, which is
+/// what [ChoiceChip.onSelected] reports as `false`.
 class _ToneField extends StatelessWidget {
   const _ToneField({
     required this.tone,
@@ -386,7 +394,7 @@ class _ToneField extends StatelessWidget {
               ChoiceChip(
                 label: Text(option),
                 selected: tone.toLowerCase() == option,
-                onSelected: (_) => onChanged(option),
+                onSelected: (selected) => onChanged(selected ? option : ''),
               ),
           ],
         ),

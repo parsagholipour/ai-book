@@ -46,7 +46,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('New book'), findsOneWidget);
-    expect(find.text('Book brief'), findsOneWidget);
+    expect(find.byKey(const ValueKey('creationBriefHeader')), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(

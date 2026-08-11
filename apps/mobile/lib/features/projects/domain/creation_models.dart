@@ -485,6 +485,38 @@ class MobileCreationReadiness {
   }
 }
 
+/// The designed-cover glimpse the server derives from the brief each turn:
+/// which catalog design this book would earn today. The chat header paints
+/// its palette on the mini cover. Absent on turns stored before the field
+/// existed, where the seeded placeholder palette stands in.
+class MobileCreationCoverPreview {
+  const MobileCreationCoverPreview({
+    required this.designId,
+    required this.template,
+    required this.colors,
+  });
+
+  final String designId;
+  final String template;
+
+  /// Ground, mid and accent as `#rrggbb` hex strings, in that order.
+  final List<String> colors;
+
+  static MobileCreationCoverPreview? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) {
+      return null;
+    }
+    final palette = json['palette'];
+    return MobileCreationCoverPreview(
+      designId: json['designId'] as String? ?? '',
+      template: json['template'] as String? ?? '',
+      colors: palette is List
+          ? palette.whereType<String>().toList()
+          : const <String>[],
+    );
+  }
+}
+
 class MobileCreationTurn {
   const MobileCreationTurn({
     required this.assistantMessage,
@@ -500,6 +532,7 @@ class MobileCreationTurn {
     this.language,
     this.authorName,
     this.title,
+    this.coverPreview,
     this.buildRequested = false,
   });
 
@@ -524,6 +557,9 @@ class MobileCreationTurn {
 
   /// Book title stated in chat, or the one the draft was resumed with.
   final String? title;
+
+  /// Cover glimpse for the chat header, when the server sent one.
+  final MobileCreationCoverPreview? coverPreview;
 
   /// True when the user asked in chat to build the plan ("ok build it").
   final bool buildRequested;
@@ -550,6 +586,7 @@ class MobileCreationTurn {
       language: json['language'] as String?,
       authorName: json['authorName'] as String?,
       title: json['title'] as String?,
+      coverPreview: MobileCreationCoverPreview.fromJson(json['coverPreview']),
       buildRequested: json['buildRequested'] as bool? ?? false,
     );
   }

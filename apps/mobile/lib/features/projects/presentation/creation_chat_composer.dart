@@ -7,6 +7,7 @@ class _ScrollableFooterContext extends StatefulWidget {
   const _ScrollableFooterContext({
     required this.child,
     this.showScrollAffordance = true,
+    this.fadeColor,
     super.key,
   });
 
@@ -15,6 +16,11 @@ class _ScrollableFooterContext extends StatefulWidget {
   /// When false (e.g. question drawer minimized), hide the "Scroll for more"
   /// cue even if the viewport could still scroll.
   final bool showScrollAffordance;
+
+  /// What the "more below" gradient fades into — the host's background.
+  /// Defaults to `surface` (the footer); the brief header sits on
+  /// `surfaceContainerHigh` and passes it.
+  final Color? fadeColor;
 
   @override
   State<_ScrollableFooterContext> createState() =>
@@ -101,8 +107,10 @@ class _ScrollableFooterContextState extends State<_ScrollableFooterContext> {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      colors.surface.withValues(alpha: 0),
-                      colors.surface,
+                      (widget.fadeColor ?? colors.surface).withValues(
+                        alpha: 0,
+                      ),
+                      widget.fadeColor ?? colors.surface,
                     ],
                   ),
                 ),

@@ -69,6 +69,8 @@ describe("mobile creation sessions", () => {
     expect(body.session.draftId).toBe("session-draft");
     expect(body.turn.detectedLane).toBe("auto");
     expect(body.turn.readiness.canBuild).toBe(true);
+    expect(body.turn.coverPreview.designId.length).toBeGreaterThan(0);
+    expect(body.turn.coverPreview.palette).toHaveLength(3);
     expect(body.session.messages.map((message: { role: string }) => message.role)).toEqual([
       "assistant",
       "user",
@@ -112,6 +114,7 @@ describe("mobile creation sessions", () => {
     expect(body.session.draftId).toBe("session-draft");
     expect(body.turn.detectedLane).toBe("auto");
     expect(body.turn.readiness.canBuild).toBe(true);
+    expect(body.turn.coverPreview.designId.length).toBeGreaterThan(0);
     await app.close();
   });
 

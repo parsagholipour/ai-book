@@ -35,6 +35,7 @@ import {
   type MobileBookAdvisorResponse,
   type MobileCreationPresets
 } from "./mobileCreationSchemas.js";
+import { creationCoverPreview, withCreationCoverPreview } from "./mobileCreationCoverPreview.js";
 import {
   applyCreationTurnPatch,
   attachmentContextForTurn,
@@ -57,6 +58,7 @@ export * from "./mobileCreationAdvisor.js";
 export * from "./mobileCreationPrompt.js";
 export * from "./mobileCreationChatSettings.js";
 export * from "./mobileCreationTurn.js";
+export * from "./mobileCreationCoverPreview.js";
 
 type CreationTurnOptions = {
   enrich?:
@@ -92,7 +94,9 @@ export async function runCreationTurn(
       options.onEnrichError?.(reason);
       return base;
     }
-    return mobileCreationTurnSchema.parse(applyCreationTurnPatch(neutralBase, patch));
+    // The patch may have moved the lane or rewritten the brief, so the cover
+    // glimpse is re-derived from the merged turn rather than inherited.
+    return mobileCreationTurnSchema.parse(withCreationCoverPreview(applyCreationTurnPatch(neutralBase, patch)));
   } catch (error) {
     options.onEnrichError?.(error);
     return base;
@@ -157,6 +161,7 @@ export function deterministicCreationTurn(
     titleSuggestions: base.titleSuggestions,
     shapePreview: base.bookShapePreview,
     warnings: base.warnings,
+    coverPreview: creationCoverPreview({ lane: base.detectedLane, brief: base.recipe }),
     ...(language ? { language } : {}),
     buildRequested
   });

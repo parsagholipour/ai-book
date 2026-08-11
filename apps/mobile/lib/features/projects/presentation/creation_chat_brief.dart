@@ -1,7 +1,8 @@
 part of 'creation_chat_screen.dart';
 
-// Collapsible brief header showing what the planner understood, plus the output switcher.
-// Imports and shared state live in the parent library file.
+// Collapsible brief header: the book materializing as the chat fills the
+// brief in, plus the output switcher. Imports and shared state live in the
+// parent library file.
 
 class _BriefHeader extends StatefulWidget {
   const _BriefHeader({required this.state});
@@ -26,37 +27,66 @@ class _BriefHeaderState extends State<_BriefHeader> {
           ? presets.bookTypeChoice
           : 'auto',
     );
+    final workingTitle = workingCreationTitle(
+      optionalDetails: state.optionalDetails,
+      brief: brief,
+      titleSuggestions: state.titleSuggestions,
+      sessionTitle: state.sessionTitle,
+    );
+    // Untitled: name the detected shape rather than repeating 'New book'
+    // (the app bar's default) or the word 'Auto'.
+    final headline =
+        workingTitle ??
+        (state.detectedLane != 'auto'
+            ? laneTitle(state.detectedLane)
+            : 'Your next book');
+    final pitch = creationPitchLine(
+      brief: brief,
+      bookTypeChoiceLabel: typeTitle,
+    );
 
     return Material(
       color: colors.surfaceContainerHigh,
       child: Column(
         children: [
           InkWell(
+            key: const ValueKey('creationBriefHeader'),
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
               child: Row(
                 children: [
-                  Icon(Icons.menu_book_outlined, color: colors.primary),
+                  CreationCoverGlimpse(
+                    title: workingTitle,
+                    readinessScore: state.readiness.score,
+                    canBuild: state.readiness.canBuild,
+                    seed: state.draftId ?? 'draft',
+                    palette: coverPreviewColors(state.coverPreview),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Book brief',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(color: colors.onSurfaceVariant),
+                          headline,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w800),
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          typeTitle,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w800),
+                          pitch,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(color: colors.onSurfaceVariant),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(width: 8),
                   _ReadinessPill(readiness: state.readiness),
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
@@ -67,12 +97,33 @@ class _BriefHeaderState extends State<_BriefHeader> {
             ),
           ),
           if (_expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              child: _BriefDetails(
-                state: state,
-                brief: brief,
-                presets: presets,
+            // Bounded and scrollable: the details share one fixed-height
+            // column with the transcript, the question card and the build
+            // footer, so growing without a cap pushes "Build the plan" off
+            // the screen and overflows the column. A third of the space the
+            // keyboard leaves is the most a helper bar may take.
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: math.max(
+                  (MediaQuery.sizeOf(context).height -
+                          MediaQuery.viewInsetsOf(context).bottom) *
+                      0.3,
+                  120.0,
+                ),
+              ),
+              // The same visible scrollbar and "Scroll for more" cue the
+              // question drawer uses, so a clipped list is never mistaken
+              // for the whole list.
+              child: _ScrollableFooterContext(
+                fadeColor: colors.surfaceContainerHigh,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                  child: _BriefDetails(
+                    state: state,
+                    brief: brief,
+                    presets: presets,
+                  ),
+                ),
               ),
             ),
           Divider(height: 1, color: colors.outlineVariant),
