@@ -26,6 +26,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
   void _armFallingEdge(MobileBookEditOperation? operation);
   Future<void> _sendMessage(String message);
 
+  /// Drops the "You now have enough credits" follow-up: settling any proposal
+  /// makes it stale, and its proposal card remains the way to run that edit.
+  void _clearCreditsReadyPrompt();
+
   Future<void> _retryOperation(MobileBookEditOperation operation) async {
     if (operation.isAutomaticRetryPending || _retryingOperationId != null) {
       return;
@@ -90,7 +94,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       return;
     }
     final requestId = _newRequestId('proposal-apply');
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _clearCreditsReadyPrompt();
+    });
     // Move to where the progress will appear before the request even returns.
     _scrollToBottomSoon();
     try {
@@ -131,7 +138,10 @@ mixin _ProjectChatEditActions on ConsumerState<ProjectChatScreen> {
       return;
     }
     final requestId = _newRequestId('proposal-cancel');
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _clearCreditsReadyPrompt();
+    });
     try {
       await ref
           .read(projectsRepositoryProvider)

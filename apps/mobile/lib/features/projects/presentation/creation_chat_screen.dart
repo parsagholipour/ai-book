@@ -387,7 +387,19 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                                 projectId: activeProjectId,
                                 project: planValue?.asData?.value,
                                 credits: message.insufficientCreditsRequired,
+                                resumeProposalId: message.editProposal?.id,
                               ),
+                            ),
+                            creditsReady:
+                                activeProjectId != null &&
+                                _creditsReadyProposalId != null,
+                            onProceedCreditsReady: activeProjectId == null
+                                ? null
+                                : () => _proceedWithCreditsReadyEdit(
+                                    activeProjectId,
+                                  ),
+                            onDismissCreditsReady: () => setState(
+                              () => _creditsReadyProposalId = null,
                             ),
                             onApplyEditProposal: activeProjectId == null
                                 ? null
@@ -509,28 +521,6 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         ),
       ],
     );
-  }
-
-  Future<void> _openProjectChatPaywall({
-    required String? projectId,
-    MobileProjectDetail? project,
-    int? credits,
-  }) async {
-    await showBillingPaywall(
-      context,
-      projectId: projectId,
-      title: null,
-      creditsNeeded: PaywallCreditsNeeded(
-        credits: credits,
-        reason: project == null
-            ? 'Applying this edit.'
-            : 'Applying this edit to "${project.title}".',
-      ),
-    );
-    ref.invalidate(billingProvider);
-    if (projectId != null) {
-      _refreshOutput(projectId);
-    }
   }
 
   Future<void> _retryFailedOperation({

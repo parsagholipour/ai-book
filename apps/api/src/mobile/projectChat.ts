@@ -350,12 +350,24 @@ export async function insufficientCreditsChatMessage(
   projectId: string,
   parentId: string,
   intent: BookEditIntent,
-  error: InsufficientCreditsError
+  error: InsufficientCreditsError,
+  /**
+   * A fresh pendingEdit/editProposal pair that keeps the blocked edit
+   * resumable. It must carry a *new* proposalId: the Apply that just failed
+   * settled its own id (the USER row wrote `proposalAction`, and the FAILED
+   * operation row holds the [projectId, requestId] claim), so re-applying the
+   * old id answers "already being handled". Without this the reply is a dead
+   * end — after topping up, the user's only way forward was retyping the
+   * request.
+   */
+  resume?: { pendingEdit: Record<string, unknown>; editProposal?: Record<string, unknown> } | undefined
 ): Promise<MobileProjectChatMessageRecord> {
   return createAssistantChatMessage({
     projectId,
     parentId,
-    content: `You need ${error.requiredCredits} credits for that edit, but you have ${error.availableCredits}. Add credits, then send the edit again.`,
+    content: resume
+      ? `You need ${error.requiredCredits} credits for that edit, but you have ${error.availableCredits}. Add credits, then tap Apply and I’ll run it.`
+      : `You need ${error.requiredCredits} credits for that edit, but you have ${error.availableCredits}. Add credits, then send the edit again.`,
     metadata: {
       intent,
       charged: false,
@@ -363,7 +375,8 @@ export async function insufficientCreditsChatMessage(
         requiredCredits: error.requiredCredits,
         availableCredits: error.availableCredits,
         reservedCredits: error.reservedCredits
-      }
+      },
+      ...resume
     }
   });
 }

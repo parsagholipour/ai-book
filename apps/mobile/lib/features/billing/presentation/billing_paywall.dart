@@ -35,14 +35,20 @@ export 'billing_credits_needed.dart' show PaywallCreditsNeeded;
 /// about: the balance could not cover something. It becomes the masthead — a
 /// "Credits needed" section saying how short the account is and offering both
 /// ways out — so [title] and [message] go unused when it is passed.
-Future<void> showBillingPaywall(
+///
+/// Returns the verified purchase when one completed here — a plan or top-up
+/// tile, or the amount picker closing the shortfall — and null when the sheet
+/// was dismissed without buying. The caller that opened this over something the
+/// balance blocked is the only place that can offer to pick that thing back up,
+/// which is why the outcome must not be swallowed.
+Future<BillingPurchaseSuccess?> showBillingPaywall(
   BuildContext context, {
   String? projectId,
   String? title = 'Upgrade your plan',
   String? message,
   PaywallCreditsNeeded? creditsNeeded,
 }) async {
-  final success = await showModalBottomSheet<BillingPurchaseSuccess>(
+  final outcome = await showModalBottomSheet<_PaywallOutcome>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
@@ -53,14 +59,27 @@ Future<void> showBillingPaywall(
       creditsNeeded: creditsNeeded,
       onPurchaseSuccess: (purchase) {
         if (ModalRoute.of(sheetContext)?.isCurrent ?? false) {
-          Navigator.of(sheetContext).pop(purchase);
+          Navigator.of(
+            sheetContext,
+          ).pop(_PaywallOutcome(purchase, successDialogShown: false));
         }
       },
     ),
   );
-  if (success != null && context.mounted) {
-    await showBillingPurchaseSuccessDialog(context, success);
+  if (outcome != null && !outcome.successDialogShown && context.mounted) {
+    await showBillingPurchaseSuccessDialog(context, outcome.purchase);
   }
+  return outcome?.purchase;
+}
+
+/// What the paywall closed with: the purchase, and whether its success dialog
+/// was already shown — the amount picker shows its own before the paywall pops,
+/// and showing it twice reads as two purchases.
+class _PaywallOutcome {
+  const _PaywallOutcome(this.purchase, {required this.successDialogShown});
+
+  final BillingPurchaseSuccess purchase;
+  final bool successDialogShown;
 }
 
 class BillingPaywall extends ConsumerStatefulWidget {
@@ -197,7 +216,10 @@ class _BillingPaywallState extends ConsumerState<BillingPaywall> {
     }
     final navigator = Navigator.of(context);
     if (navigator.canPop()) {
-      navigator.pop();
+      // Carry the picker's purchase out as this sheet's own result — with its
+      // dialog marked shown, since showBuyCreditsSheet already presented it —
+      // so the caller learns the shortfall it opened for is now closed.
+      navigator.pop(_PaywallOutcome(success, successDialogShown: true));
     }
   }
 

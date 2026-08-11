@@ -202,7 +202,7 @@ export function pendingEditProposalFromMetadata(
   const intentSource = jsonRecord(pending.intent);
   const kind = typeof intentSource.kind === "string" ? intentSource.kind : typeof card.kind === "string" ? card.kind : "";
   if (
-    !["local_patch", "page_rewrite", "chapter_regenerate", "book_replan", "continue_book"].includes(kind)
+    !["local_patch", "page_rewrite", "chapter_regenerate", "book_replan", "continue_book", "plan_revision"].includes(kind)
   ) {
     return proposalId ? { proposalId } : {};
   }

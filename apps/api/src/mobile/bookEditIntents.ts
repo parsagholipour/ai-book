@@ -523,6 +523,11 @@ export function editProposalCardFromState(state: PendingEditState): Record<strin
 }
 
 export function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexes: number[], intent: BookEditIntent): string {
+  if (kind === "plan_revision") {
+    // Only ever carded by a credits-blocked revision's resume proposal; the
+    // ordinary plan revision path charges without a card.
+    return "Revise the book plan";
+  }
   if (kind === "continue_book") {
     const chapterCount = intent.continuation?.chapterCount ?? 1;
     return chapterCount > 1

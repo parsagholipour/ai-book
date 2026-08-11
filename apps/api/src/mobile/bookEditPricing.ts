@@ -65,7 +65,7 @@ export function bookEditCreditCost(
 
 export function operationKindForIntent(
   kind: BookEditIntentKind
-): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" | "CONTINUE_BOOK" {
+): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" | "CONTINUE_BOOK" | "PLAN_REVISION" {
   if (kind === "page_rewrite") {
     return "PAGE_REWRITE";
   }
@@ -77,6 +77,12 @@ export function operationKindForIntent(
   }
   if (kind === "continue_book") {
     return "CONTINUE_BOOK";
+  }
+  if (kind === "plan_revision") {
+    // Reached only from the proposal Cancel path: a plan revision is normally
+    // charged without a card, but a credits-blocked one resumes as a proposal,
+    // and cancelling that must not be recorded as a text edit.
+    return "PLAN_REVISION";
   }
   return "LOCAL_PATCH";
 }

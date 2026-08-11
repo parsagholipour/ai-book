@@ -73,6 +73,74 @@ class ChatIntroCard extends StatelessWidget {
   }
 }
 
+/// The follow-up drawn after a top-up bought from an insufficient-credits
+/// reply: it confirms the balance now covers the blocked edit and offers to
+/// run it, so the purchase never ends in a silent chat. Local to the screen
+/// that saw the purchase — after a restart the reply's own proposal card is
+/// the durable way to proceed.
+class CreditsReadyBubble extends StatelessWidget {
+  const CreditsReadyBubble({
+    required this.onProceed,
+    this.onDismiss,
+    super.key,
+  });
+
+  /// Applies the blocked edit's resumable proposal. Null while another send is
+  /// in flight, which draws the button disabled rather than hiding it.
+  final VoidCallback? onProceed;
+  final VoidCallback? onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'You now have enough credits.',
+                  style: TextStyle(color: colors.onSurface),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FilledButton.icon(
+                      key: const ValueKey('credits-ready-proceed'),
+                      onPressed: onProceed,
+                      icon: const Icon(Icons.play_arrow_outlined, size: 18),
+                      label: const Text('Proceed'),
+                    ),
+                    if (onDismiss != null) ...[
+                      const SizedBox(width: 8),
+                      TextButton(
+                        key: const ValueKey('credits-ready-dismiss'),
+                        onPressed: onDismiss,
+                        child: const Text('Not now'),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class EmptyProjectChat extends StatelessWidget {
   const EmptyProjectChat({super.key});
 

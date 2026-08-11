@@ -5,10 +5,13 @@ import {
   affectedPagesForIntent,
   busyEditReply,
   continuationNewPageCount,
+  editProposalCardFromState,
   exactReplacementFromMessage,
   operationQueuedMessage,
+  pendingEditMetadataFromState,
   proposeBookEdit
 } from "./bookEditIntents.js";
+import { type PendingEditState } from "./pendingEditState.js";
 import { billingOperationForIntent, bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js";
 import { planExactReplacement } from "./exactReplacementPreview.js";
 import {
@@ -27,6 +30,7 @@ import {
 } from "./support.js";
 import { bookPlanSchema, creditCostForOperation, isDetachedFromProjectLifecycle } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
+import { randomUUID } from "node:crypto";
 import {
   InsufficientCreditsError,
   commitReservedCredits,
@@ -114,10 +118,31 @@ export async function withChargedEnqueue<T>(options: {
   }
 }
 
+/**
+ * The resume payload for a credits-blocked edit: the same pendingEdit +
+ * editProposal pair `proposeBookEdit` writes, under a **fresh** proposalId.
+ * The failed Apply's own id is spent — its USER row settled it and its FAILED
+ * operation row holds the [projectId, requestId] claim forever — so only a
+ * re-proposal turns "add credits, then start over" into an Apply that works.
+ * The quoted credits ride along and stay the ceiling on the eventual charge.
+ */
+function creditsBlockedResume(
+  state: Omit<PendingEditState, "clarification" | "proposalId">
+): { pendingEdit: Record<string, unknown>; editProposal?: Record<string, unknown> } {
+  const resumable: PendingEditState = { ...state, clarification: "confirm", proposalId: randomUUID() };
+  const card = editProposalCardFromState(resumable);
+  return {
+    pendingEdit: pendingEditMetadataFromState(resumable),
+    ...(card ? { editProposal: card } : {})
+  };
+}
+
 async function queueAttemptChatOperation(options: {
   userId: string;
   project: ProjectForChat;
   userMessageId: string;
+  /** The edit request as the reader typed it; resumes the edit if the charge is refused. */
+  request: string;
   intent: BookEditIntent;
   operation: MobileBookEditOperationRecord;
   cost: number;
@@ -183,7 +208,14 @@ async function queueAttemptChatOperation(options: {
         options.project.id,
         options.userMessageId,
         options.intent,
-        error
+        error,
+        creditsBlockedResume({
+          request: options.request,
+          scope: options.intent.scope,
+          intent: options.intent,
+          affectedPageIndexes: options.operation.affectedPageIndexes,
+          credits: options.cost
+        })
       );
       return { reply, operation: null };
     }
@@ -297,7 +329,19 @@ export async function queueChatPlanRevision(options: {
       data: { status: "FAILED", error: errorMessage(error) }
     });
     if (error instanceof InsufficientCreditsError) {
-      const reply = await insufficientCreditsChatMessage(project.id, userMessageId, intent, error);
+      const reply = await insufficientCreditsChatMessage(
+        project.id,
+        userMessageId,
+        intent,
+        error,
+        creditsBlockedResume({
+          request: message,
+          scope: intent.scope,
+          intent,
+          affectedPageIndexes: [],
+          credits
+        })
+      );
       return { reply, operation: null };
     }
     throw error;
@@ -388,6 +432,7 @@ export async function queueChatBookReplanCopy(options: {
     userId,
     project,
     userMessageId,
+    request: message,
     intent,
     operation,
     cost,
@@ -587,6 +632,7 @@ export async function queueChatBookEdit(options: {
     userId,
     project,
     userMessageId,
+    request: message,
     intent,
     operation,
     cost,
@@ -677,6 +723,7 @@ export async function queueChatContinueBook(options: {
     userId,
     project,
     userMessageId,
+    request: message,
     intent,
     operation,
     cost,

@@ -12,6 +12,12 @@ part of 'creation_chat_screen.dart';
 mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   bool _projectChatSending = false;
 
+  /// The resumable proposal behind a "You now have enough credits" bubble,
+  /// set when a paywall opened from an insufficient-credits reply closed with
+  /// a purchase covering the blocked edit. Local by design: after a restart
+  /// the reply's own proposal card is the way to proceed.
+  String? _creditsReadyProposalId;
+
   /// True only while the undo request itself is on the wire, so the card's
   /// Undo button can show its own spinner without every other send doing so.
   bool _undoingProjectEdit = false;
@@ -43,6 +49,65 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   void _resumeStickToBottom();
   Future<void> _openReplanCopy(String projectId);
 
+  /// Drops the "You now have enough credits" follow-up: a new request or a
+  /// settled proposal supersedes it, and its proposal card in the transcript
+  /// remains the way to run that edit.
+  void _clearCreditsReadyPrompt() => _creditsReadyProposalId = null;
+
+  Future<void> _openProjectChatPaywall({
+    required String? projectId,
+    MobileProjectDetail? project,
+    int? credits,
+    String? resumeProposalId,
+  }) async {
+    final purchase = await showBillingPaywall(
+      context,
+      projectId: projectId,
+      title: null,
+      creditsNeeded: PaywallCreditsNeeded(
+        credits: credits,
+        reason: project == null
+            ? 'Applying this edit.'
+            : 'Applying this edit to "${project.title}".',
+      ),
+    );
+    if (!mounted) return;
+    ref.invalidate(billingProvider);
+    if (projectId != null) {
+      _refreshOutput(projectId);
+    }
+    // Guide instead of going quiet: the purchase closed the shortfall that
+    // blocked an edit, so say so and offer to run it — otherwise the chat
+    // sits on the same "Add credits" reply as if nothing happened.
+    if (purchase == null || resumeProposalId == null) return;
+    final covered = await _projectBalanceCovers(credits);
+    if (!mounted || !covered) return;
+    setState(() => _creditsReadyProposalId = resumeProposalId);
+    _resumeStickToBottom();
+  }
+
+  /// Whether the balance now covers what the blocked edit needed. An unknown
+  /// balance counts as covered — Proceed re-checks server-side anyway, and the
+  /// worst case is the same insufficient-credits reply with fresh numbers.
+  Future<bool> _projectBalanceCovers(int? required) async {
+    if (required == null) return true;
+    try {
+      final billing = await ref.read(billingProvider.future);
+      return billing.credits.available >= required;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  void _proceedWithCreditsReadyEdit(String projectId) {
+    final proposalId = _creditsReadyProposalId;
+    if (proposalId == null) return;
+    setState(_clearCreditsReadyPrompt);
+    unawaited(
+      _applyProjectEditProposal(projectId: projectId, proposalId: proposalId),
+    );
+  }
+
   Future<MobileProjectChatSendResult?> _sendProjectMessage({
     required String projectId,
     required String message,
@@ -73,6 +138,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     setState(() {
       _projectChatSending = true;
       _pendingProjectEcho = PendingEcho(text: trimmed);
+      _clearCreditsReadyPrompt();
     });
     _resumeStickToBottom();
     try {
@@ -179,7 +245,11 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     }
     final requestId =
         'project-proposal-apply-${DateTime.now().microsecondsSinceEpoch}';
-    setState(() => _projectChatSending = true);
+    setState(() {
+      _projectChatSending = true;
+      // Settling a proposal makes the top-up follow-up stale either way.
+      _clearCreditsReadyPrompt();
+    });
     // Move to where the progress will appear before the request even returns.
     _resumeStickToBottom();
     try {
@@ -231,7 +301,10 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     }
     final requestId =
         'project-proposal-cancel-${DateTime.now().microsecondsSinceEpoch}';
-    setState(() => _projectChatSending = true);
+    setState(() {
+      _projectChatSending = true;
+      _clearCreditsReadyPrompt();
+    });
     try {
       await ref
           .read(projectsRepositoryProvider)

@@ -5,7 +5,7 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { reserveCredits } from "@book-maker/db/billing";
+import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
 
 import { enqueueGenerationJob } from "../queue.js";
 import {
@@ -209,6 +209,108 @@ describe("proposal settlement", () => {
 
     expect(retried.statusCode).toBe(200);
     expect(retried.json().operation).not.toBeNull();
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("keeps a credits-blocked Apply resumable under a fresh proposal id", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-1", type: "APPLY_BOOK_EDIT" }));
+    const app = await buildMobileApp();
+
+    const proposal = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Make the whole book warmer." }
+    });
+    expect(proposal.statusCode).toBe(200);
+    const card = proposal.json().reply.metadata.editProposal;
+    expect(card.credits).toBeGreaterThan(0);
+
+    // Apply lands with too few credits in the account.
+    vi.mocked(reserveCredits).mockRejectedValueOnce(
+      new InsufficientCreditsError({ requiredCredits: card.credits, availableCredits: 10, reservedCredits: 0 })
+    );
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: card.id, requestId: "req-apply-1" }
+    });
+    expect(blocked.statusCode).toBe(200);
+    expect(blocked.json().operation).toBeNull();
+    const reply = blocked.json().reply;
+    expect(reply.metadata.insufficientCredits).toMatchObject({
+      requiredCredits: card.credits,
+      availableCredits: 10
+    });
+    // The failed Apply settled its own proposal id (its USER row wrote
+    // proposalAction and its FAILED operation row keeps the requestId claim),
+    // so the reply must re-propose under a fresh id — the one the app's
+    // post-top-up Proceed button applies.
+    const resume = reply.metadata.editProposal;
+    expect(resume.id).toBeTruthy();
+    expect(resume.id).not.toBe(card.id);
+    expect(resume.credits).toBe(card.credits);
+    expect(reply.metadata.pendingEdit).toMatchObject({
+      clarification: "confirm",
+      proposalId: resume.id
+    });
+
+    // Credits added: applying the fresh id runs the edit at the quoted price.
+    const applied = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: resume.id, requestId: "req-apply-2" }
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().operation).toMatchObject({ kind: "page_rewrite" });
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("re-proposes a credits-blocked plan revision so Apply can run it after topping up", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({
+        id: "project-1",
+        status: "GENERATING",
+        currentPlanId: "plan-1",
+        currentPlan: approvedPlanRecord(),
+        pages: []
+      })
+    );
+    vi.mocked(enqueueGenerationJob).mockResolvedValue(jobRecord({ id: "job-chat-revise", type: "REVISE_PLAN" }));
+    const app = await buildMobileApp();
+
+    vi.mocked(reserveCredits).mockRejectedValueOnce(
+      new InsufficientCreditsError({ requiredCredits: 30, availableCredits: 2, reservedCredits: 0 })
+    );
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Change rabbit into a fly before writing starts." }
+    });
+    expect(blocked.statusCode).toBe(200);
+    expect(blocked.json().operation).toBeNull();
+    const reply = blocked.json().reply;
+    expect(reply.metadata.insufficientCredits).toMatchObject({ requiredCredits: 30, availableCredits: 2 });
+    const resume = reply.metadata.editProposal;
+    expect(resume.id).toBeTruthy();
+    expect(reply.metadata.pendingEdit).toMatchObject({ clarification: "confirm", proposalId: resume.id });
+
+    const applied = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/proposals/apply",
+      headers: bearer("token-a"),
+      payload: { proposalId: resume.id, requestId: "req-apply-1" }
+    });
+    expect(applied.statusCode).toBe(200);
+    expect(applied.json().operation).toMatchObject({ kind: "plan_revision" });
     expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledTimes(1);
     await app.close();
   });

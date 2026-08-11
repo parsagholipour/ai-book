@@ -96,6 +96,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   PendingEcho? _pendingEcho;
   final List<MobileProjectChatMessage> _olderMessages = [];
 
+  /// The resumable proposal behind a "You now have enough credits" bubble,
+  /// set when a paywall opened from an insufficient-credits reply closed with
+  /// a purchase that covers the blocked edit. Local by design: after a restart
+  /// the reply's own proposal card is the way to proceed.
+  String? _creditsReadyProposalId;
+
   @override
   void initState() {
     super.initState();
@@ -339,6 +345,8 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                                     projectValue.asData?.value,
                                     credits:
                                         message.insufficientCreditsRequired,
+                                    resumeProposalId:
+                                        message.editProposal?.id,
                                   )
                                 : null,
                             onOpenReplanCopy:
@@ -371,6 +379,18 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                           echo: _pendingEcho!,
                           onRetry: _retryPendingEcho,
                           onDismiss: _dismissPendingEcho,
+                        ),
+                        const SizedBox(height: 10),
+                      ],
+                      if (_creditsReadyProposalId != null) ...[
+                        CreditsReadyBubble(
+                          onProceed:
+                              _sending || _editing || liveStatus != null
+                              ? null
+                              : _proceedWithCreditsReadyEdit,
+                          onDismiss: () => setState(
+                            () => _creditsReadyProposalId = null,
+                          ),
                         ),
                         const SizedBox(height: 10),
                       ],
@@ -558,6 +578,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     setState(() {
       _sending = true;
       _pendingEcho = PendingEcho(text: message);
+      // A new request supersedes the top-up follow-up; its proposal card in
+      // the transcript remains the way to run that edit.
+      _creditsReadyProposalId = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     try {
@@ -709,8 +732,9 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   Future<void> _openPaywall(
     MobileProjectDetail? project, {
     int? credits,
+    String? resumeProposalId,
   }) async {
-    await showBillingPaywall(
+    final purchase = await showBillingPaywall(
       context,
       projectId: widget.projectId,
       title: null,
@@ -721,8 +745,40 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
             : 'Applying this edit to "${project.title}".',
       ),
     );
+    if (!mounted) return;
     ref.invalidate(billingProvider);
     _refresh();
+    // Guide instead of going quiet: the purchase closed the shortfall that
+    // blocked an edit, so say so and offer to run it — otherwise the chat sits
+    // on the same "Add credits" reply as if nothing happened.
+    if (purchase == null || resumeProposalId == null) return;
+    final covered = await _balanceCovers(credits);
+    if (!mounted || !covered) return;
+    setState(() => _creditsReadyProposalId = resumeProposalId);
+    _scrollToBottomSoon();
+  }
+
+  /// Whether the balance now covers what the blocked edit needed. An unknown
+  /// balance counts as covered — Proceed re-checks server-side anyway, and the
+  /// worst case is the same insufficient-credits reply with fresh numbers.
+  Future<bool> _balanceCovers(int? required) async {
+    if (required == null) return true;
+    try {
+      final billing = await ref.read(billingProvider.future);
+      return billing.credits.available >= required;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  @override
+  void _clearCreditsReadyPrompt() => _creditsReadyProposalId = null;
+
+  void _proceedWithCreditsReadyEdit() {
+    final proposalId = _creditsReadyProposalId;
+    if (proposalId == null) return;
+    setState(_clearCreditsReadyPrompt);
+    unawaited(_applyProposal(proposalId));
   }
 
   /// Whether the newest message is already in view.

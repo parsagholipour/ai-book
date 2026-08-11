@@ -16,6 +16,9 @@ class _Transcript extends StatelessWidget {
     this.switchingProjectBranch = false,
     this.pendingProjectEcho,
     this.projectChatSending = false,
+    this.creditsReady = false,
+    this.onProceedCreditsReady,
+    this.onDismissCreditsReady,
     this.onRetryPendingProjectEcho,
     this.onDismissPendingProjectEcho,
     this.onSwitchProjectBranch,
@@ -50,6 +53,12 @@ class _Transcript extends StatelessWidget {
 
   /// Whether a request about the finished book is waiting on the server.
   final bool projectChatSending;
+
+  /// Whether a top-up just covered a credits-blocked edit, so the transcript
+  /// ends on a "You now have enough credits" bubble offering to run it.
+  final bool creditsReady;
+  final VoidCallback? onProceedCreditsReady;
+  final VoidCallback? onDismissCreditsReady;
   final VoidCallback? onRetryPendingProjectEcho;
   final VoidCallback? onDismissPendingProjectEcho;
   final void Function(MobileProjectChatMessage message, String direction)?
@@ -104,6 +113,7 @@ class _Transcript extends StatelessWidget {
         (hasLivePlanBubble ? 1 : 0) +
         projectItems.length +
         (hasProjectEcho ? 1 : 0) +
+        (creditsReady ? 1 : 0) +
         (hasOutputThinking ? 1 : 0);
 
     return ListView.builder(
@@ -122,6 +132,7 @@ class _Transcript extends StatelessWidget {
           hasLivePlanBubble: hasLivePlanBubble,
           hasTyping: hasTyping,
           hasProjectEcho: hasProjectEcho,
+          hasCreditsReady: creditsReady,
           hasOutputThinking: hasOutputThinking,
         );
         // Only the newest entry animates in. Wrapping every row would replay
@@ -148,6 +159,7 @@ class _Transcript extends StatelessWidget {
     required bool hasLivePlanBubble,
     required bool hasTyping,
     required bool hasProjectEcho,
+    required bool hasCreditsReady,
     required bool hasOutputThinking,
   }) {
     var cursor = state.messages.length;
@@ -255,6 +267,16 @@ class _Transcript extends StatelessWidget {
       );
     }
     if (hasProjectEcho) cursor++;
+    if (hasCreditsReady && index == cursor) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: CreditsReadyBubble(
+          onProceed: projectChatSending ? null : onProceedCreditsReady,
+          onDismiss: onDismissCreditsReady,
+        ),
+      );
+    }
+    if (hasCreditsReady) cursor++;
     if (hasOutputThinking && index == cursor) {
       return const ChatThinkingBubble(stages: bookChatThinkingStages);
     }

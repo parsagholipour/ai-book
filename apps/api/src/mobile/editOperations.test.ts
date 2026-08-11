@@ -35,8 +35,10 @@ vi.mock("./bookEditIntents.js", () => ({
   affectedPagesForIntent: vi.fn(),
   busyEditReply: vi.fn(),
   continuationNewPageCount: vi.fn(),
+  editProposalCardFromState: vi.fn(),
   exactReplacementFromMessage: vi.fn(),
-  operationQueuedMessage: vi.fn()
+  operationQueuedMessage: vi.fn(),
+  pendingEditMetadataFromState: vi.fn()
 }));
 vi.mock("./bookEditPricing.js", () => ({
   billingOperationForIntent: vi.fn(),

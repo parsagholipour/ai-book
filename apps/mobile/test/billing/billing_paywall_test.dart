@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/app/config/app_config.dart';
+import 'package:tomeza/features/billing/data/billing_repository.dart';
+import 'package:tomeza/features/billing/data/credit_log_repository.dart';
 import 'package:tomeza/features/billing/data/google_play_billing_client.dart';
 import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
@@ -158,6 +160,94 @@ void main() {
     );
     expect(find.text('Purchase successful'), findsOneWidget);
     expect(repository.verifications.single.productId, 'tomeza.credit_pack_1');
+  });
+
+  testWidgets('showBillingPaywall returns the verified purchase to its caller', (
+    tester,
+  ) async {
+    // The caller that opened the paywall over something the balance blocked is
+    // the only place that can offer to pick that thing back up, so the outcome
+    // must reach it instead of being swallowed with the success dialog.
+    final store = FakeStoreBillingClient();
+    final repository = FakeBillingRepository();
+    BillingPurchaseSuccess? returned;
+    var callerResumed = false;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storeBillingClientProvider.overrideWithValue(store),
+          billingRepositoryProvider.overrideWithValue(repository),
+          creditLogRepositoryProvider.overrideWithValue(
+            EmptyCreditLogRepository(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Center(
+                child: FilledButton(
+                  key: const ValueKey('open-billing-paywall'),
+                  onPressed: () async {
+                    returned = await showBillingPaywall(
+                      context,
+                      projectId: 'project-1',
+                      title: null,
+                    );
+                    callerResumed = true;
+                  },
+                  child: const Text('Open billing'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('open-billing-paywall')));
+    await tester.pumpAndSettle();
+
+    final creditPack = find.byKey(
+      const ValueKey('paywall-topup-tomeza.credit_pack_1'),
+    );
+    await tester.scrollUntilVisible(
+      creditPack,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    final buyButton = find.descendant(
+      of: creditPack,
+      matching: find.byType(FilledButton),
+    );
+    await tester.ensureVisible(buyButton);
+    await tester.pumpAndSettle();
+    await tester.tap(buyButton);
+    await tester.pump();
+    store.emit(
+      const StorePurchaseUpdate(
+        productId: 'tomeza.credit_pack_1',
+        status: StorePurchaseStatus.purchased,
+        purchaseToken: 'purchase-token-1',
+        purchaseId: 'order-1',
+        pendingCompletePurchase: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The success dialog still gates the caller: the purchase is returned
+    // only once the user has acknowledged it.
+    expect(callerResumed, isFalse);
+    final successDialog = find.byKey(
+      const ValueKey('billing-purchase-success-dialog'),
+    );
+    expect(successDialog, findsOneWidget);
+    await tester.tap(
+      find.descendant(of: successDialog, matching: find.byType(FilledButton)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(callerResumed, isTrue);
+    expect(returned?.productId, 'tomeza.credit_pack_1');
   });
 
   testWidgets('a late success cannot pop the page under a closing paywall', (
