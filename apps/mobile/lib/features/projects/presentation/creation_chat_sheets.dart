@@ -40,6 +40,29 @@ extension _CreationChatSheets on _CreationChatScreenState {
       builder: (_) => _AdvancedSheet(controller: controller),
     );
   }
+
+  Future<void> openTitleSheet() async {
+    final state = ref.read(creationChatControllerProvider);
+    final working = workingCreationTitle(
+      optionalDetails: state.optionalDetails,
+      brief: state.brief,
+      titleSuggestions: state.titleSuggestions,
+      sessionTitle: state.sessionTitle,
+    );
+    final saved = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _TitleSheet(
+        initial: working ?? '',
+        suggestions: state.titleSuggestions,
+      ),
+    );
+    final trimmed = saved?.trim() ?? '';
+    if (trimmed.isNotEmpty) {
+      ref.read(creationChatControllerProvider.notifier).setTitle(trimmed);
+    }
+  }
 }
 
 class _PageCountSelection {
@@ -254,6 +277,108 @@ class _SourceNotesSheet extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Names the book: type a title or take one of the model's suggestions.
+/// A sheet rather than chips in the brief header — it holds every suggestion
+/// without costing the helper bar a row. Owns its controller: the opener's
+/// await resolves before the exit animation finishes, so disposing there
+/// would pull the controller out from under the still-animating field.
+class _TitleSheet extends StatefulWidget {
+  const _TitleSheet({required this.initial, required this.suggestions});
+
+  final String initial;
+  final List<String> suggestions;
+
+  @override
+  State<_TitleSheet> createState() => _TitleSheetState();
+}
+
+class _TitleSheetState extends State<_TitleSheet> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final ideas = <String>[];
+    final seen = <String>{};
+    for (final suggestion in widget.suggestions) {
+      final trimmed = suggestion.trim();
+      if (trimmed.isEmpty || !seen.add(trimmed.toLowerCase())) continue;
+      ideas.add(trimmed);
+    }
+    return Padding(
+      padding: EdgeInsets.fromLTRB(18, 4, 18, 18 + bottomInset),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Book title',
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'The working title for the cover and the chat — change it any '
+              'time before the build.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _controller,
+              textInputAction: TextInputAction.done,
+              // The server accepts up to 160 characters for a title.
+              maxLength: 160,
+              onSubmitted: (value) => Navigator.of(context).pop(value),
+              decoration: const InputDecoration(labelText: 'Title'),
+            ),
+            if (ideas.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Ideas from the chat',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final idea in ideas)
+                    ActionChip(
+                      label: Text(
+                        idea,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onPressed: () => Navigator.of(context).pop(idea),
+                    ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 12),
+            AppButton.primary(
+              onPressed: () => Navigator.of(context).pop(_controller.text),
+              label: 'Use this title',
+              expanded: true,
+            ),
+          ],
+        ),
       ),
     );
   }

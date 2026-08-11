@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/ui/motion.dart';
+import '../domain/project_models.dart';
 import 'book_cover.dart';
 
 /// The little book at the head of the creation chat: a cover that
@@ -19,12 +20,17 @@ class CreationCoverGlimpse extends StatelessWidget {
     required this.canBuild,
     required this.seed,
     this.palette,
+    this.image,
     this.width = 28,
     super.key,
   });
 
   /// Working title typeset on the cover; null renders an untitled ghost.
   final String? title;
+
+  /// The book's real cover art once the cover job has drawn one; wins over
+  /// both palettes, exactly as it does on the library shelf.
+  final MobileProjectImage? image;
 
   /// Brief readiness, 0–100.
   final int readinessScore;
@@ -61,6 +67,7 @@ class CreationCoverGlimpse extends StatelessWidget {
           child: BookCover(
             title: title ?? '',
             seed: seed,
+            image: image,
             palette: palette,
             width: width,
             // The default radius reads blobby this small.

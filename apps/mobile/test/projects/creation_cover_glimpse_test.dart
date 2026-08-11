@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/domain/creation_models.dart';
+import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/features/projects/presentation/book_cover.dart';
 import 'package:tomeza/features/projects/presentation/creation_cover_glimpse.dart';
 import 'package:tomeza/features/projects/presentation/creation_labels.dart';
 
@@ -70,6 +72,43 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(_glimpseOpacity(tester), 1.0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('real cover art is handed through to BookCover', (tester) async {
+    const image = MobileProjectImage(
+      id: 'cover-image',
+      role: 'cover',
+      url: '/api/mobile/projects/project-1/assets/cover-image',
+      contentType: 'image/png',
+      altText: 'Generated cover',
+    );
+    await _pump(
+      tester,
+      const CreationCoverGlimpse(
+        title: 'Launch Course Workbook',
+        readinessScore: 100,
+        canBuild: true,
+        seed: 'draft-1',
+        image: image,
+      ),
+    );
+    await tester.pumpAndSettle();
+    // The param is the contract: under `flutter test` the network fetch
+    // fails into BookCover's placeholder, which is fine and not asserted.
+    expect(tester.widget<BookCover>(find.byType(BookCover)).image, image);
+
+    await _pump(
+      tester,
+      const CreationCoverGlimpse(
+        title: 'Launch Course Workbook',
+        readinessScore: 100,
+        canBuild: true,
+        seed: 'draft-1',
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<BookCover>(find.byType(BookCover)).image, isNull);
     expect(tester.takeException(), isNull);
   });
 

@@ -56,6 +56,7 @@ part 'creation_chat_plan.dart';
 part 'creation_chat_generation.dart';
 part 'creation_chat_plan_footers.dart';
 part 'creation_chat_brief.dart';
+part 'creation_chat_brief_details.dart';
 part 'creation_chat_transcript.dart';
 part 'creation_chat_sources.dart';
 part 'creation_chat_bubbles.dart';
@@ -337,6 +338,12 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                       _BriefHeader(
                         state: state,
                         activeProjectId: activeProjectId,
+                        planValue: planValue,
+                        statusValue: generationStatusValue,
+                        onOpenAdvanced: isInOutputStage
+                            ? null
+                            : openAdvancedSheet,
+                        onEditTitle: isInOutputStage ? null : openTitleSheet,
                       ),
                       if (isInOutputStage && state.outputs.length > 1)
                         _OutputSwitcher(

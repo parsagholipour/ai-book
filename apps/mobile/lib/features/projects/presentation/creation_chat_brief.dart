@@ -1,11 +1,142 @@
 part of 'creation_chat_screen.dart';
 
 // Collapsible brief header: the book materializing as the chat fills the
-// brief in, plus the output switcher. Imports and shared state live in the
+// brief in, plus the output switcher. The expanded panel's contents live in
+// creation_chat_brief_details.dart. Imports and shared state live in the
 // parent library file.
 
+/// What the collapsed row says about a built book: one badge and one pitch
+/// line. Null badge label means the pill slot stays empty.
+class _BuiltHeaderView {
+  const _BuiltHeaderView({
+    required this.pitch,
+    this.badgeLabel,
+    this.badgeIcon,
+    this.badgeTone = AppTone.neutral,
+  });
+
+  final String pitch;
+  final String? badgeLabel;
+  final IconData? badgeIcon;
+  final AppTone badgeTone;
+}
+
+/// Resolves the built book's badge and pitch from whichever source exists.
+/// The status stream is only watched while the book is live
+/// (_shouldWatchGenerationStatus), so the project detail is the fallback for
+/// settled books; with neither loaded yet the header keeps the brief pitch.
+///
+/// None of this copy may equal the generation bubble's labels verbatim: the
+/// bubble's suite asserts its exact strings appear exactly once, and the two
+/// surfaces are on screen together. Composed lines like
+/// 'Generating your book · 46%' stay distinct by construction.
+_BuiltHeaderView? _builtHeaderView(
+  MobileProjectStatus? liveStatus,
+  MobileProjectDetail? project,
+) {
+  final status = liveStatus?.status ?? project?.status;
+  if (status == null) {
+    return null;
+  }
+  final statusLabel = (liveStatus?.statusLabel ?? project?.statusLabel ?? '')
+      .trim();
+  // The step list's number when there is one, same as the bubble — but with
+  // no monotonic guard: a stale tick moving a text line backwards does not
+  // read as work being undone the way an animating bar does.
+  final percent =
+      (liveStatus == null
+              ? (project?.progressPercent ?? 0)
+              : (liveStatus.generationProgress?.percent ??
+                    liveStatus.progressPercent))
+          .clamp(0, 100)
+          .toInt();
+  final workingPitch = statusLabel.isEmpty
+      ? 'Working on your book · $percent%'
+      : '$statusLabel · $percent%';
+
+  if (liveStatus?.isAutomaticRetryPending ?? false) {
+    return _BuiltHeaderView(
+      pitch: workingPitch,
+      badgeLabel: 'Retrying',
+      badgeIcon: Icons.autorenew_outlined,
+      badgeTone: AppTone.info,
+    );
+  }
+  switch (status) {
+    case 'planning':
+      return _BuiltHeaderView(
+        pitch: workingPitch,
+        badgeLabel: 'Planning',
+        badgeIcon: Icons.autorenew_outlined,
+        badgeTone: AppTone.info,
+      );
+    case 'generating':
+      return _BuiltHeaderView(
+        pitch: workingPitch,
+        badgeLabel: 'Writing',
+        badgeIcon: Icons.autorenew_outlined,
+        badgeTone: AppTone.info,
+      );
+    case 'editing':
+      return _BuiltHeaderView(
+        pitch: workingPitch,
+        badgeLabel: 'Updating',
+        badgeIcon: Icons.autorenew_outlined,
+        badgeTone: AppTone.info,
+      );
+  }
+  final requiresReview =
+      liveStatus?.requiresReview ?? status == 'review_required';
+  if (requiresReview) {
+    return const _BuiltHeaderView(
+      pitch: 'Finished — review recommended',
+      badgeLabel: 'Review',
+      badgeIcon: Icons.error_outline,
+      badgeTone: AppTone.warning,
+    );
+  }
+  final failed = liveStatus != null
+      ? status == 'failed' || liveStatus.hasFailure
+      : status == 'failed';
+  if (failed) {
+    return const _BuiltHeaderView(
+      pitch: 'Something needs your attention',
+      badgeLabel: 'Attention',
+      badgeIcon: Icons.error_outline,
+      badgeTone: AppTone.error,
+    );
+  }
+  if (liveStatus?.isComplete ?? status == 'complete') {
+    // Whichever source knows: a detail read mid-refresh can still say 0
+    // while the status stream already counted the pages.
+    final projectPages = project?.pageCount ?? 0;
+    final pageCount = projectPages > 0
+        ? projectPages
+        : liveStatus?.pageProgress.completed ?? 0;
+    return _BuiltHeaderView(
+      pitch: pageCount > 0 ? 'Ready to read · $pageCount pages' : 'Ready to read',
+      badgeLabel: 'Ready',
+      badgeIcon: Icons.check_circle_outline,
+      badgeTone: AppTone.success,
+    );
+  }
+  // Anything else a built book can be is a plan waiting for its reader.
+  return const _BuiltHeaderView(
+    pitch: 'Plan ready to review',
+    badgeLabel: 'Plan ready',
+    badgeIcon: Icons.rate_review_outlined,
+  );
+}
+
 class _BriefHeader extends StatefulWidget {
-  const _BriefHeader({required this.state, this.activeProjectId});
+  const _BriefHeader({
+    required this.state,
+    this.activeProjectId,
+    this.planValue,
+    this.statusValue,
+    this.onOpenAdvanced,
+    this.onEditTitle,
+  });
 
   final CreationChatState state;
 
@@ -15,6 +146,21 @@ class _BriefHeader extends StatefulWidget {
   /// where a replan or rename lands — and retires the readiness pill, which
   /// only describes a brief that is still forming.
   final String? activeProjectId;
+
+  /// The built book's detail: the real cover art, and the settled status
+  /// once the live stream is no longer watched.
+  final AsyncValue<MobileProjectDetail>? planValue;
+
+  /// The live status stream; only watched while the book is being worked on.
+  final AsyncValue<MobileProjectStatus>? statusValue;
+
+  /// Opens Advanced settings from the preset chips. Null once built: the
+  /// sheet edits the pre-build presets, which a built book no longer reads.
+  final Future<void> Function()? onOpenAdvanced;
+
+  /// Opens the title sheet from the pen beside the headline; null once
+  /// built, when the title belongs to the book rather than the brief.
+  final Future<void> Function()? onEditTitle;
 
   @override
   State<_BriefHeader> createState() => _BriefHeaderState();
@@ -39,6 +185,9 @@ class _BriefHeaderState extends State<_BriefHeader> {
   Widget build(BuildContext context) {
     final state = widget.state;
     final built = widget.activeProjectId != null;
+    final project = built ? widget.planValue?.asData?.value : null;
+    final liveStatus = built ? widget.statusValue?.asData?.value : null;
+    final builtView = built ? _builtHeaderView(liveStatus, project) : null;
     final brief = state.brief;
     final colors = Theme.of(context).colorScheme;
     final presets = state.presets;
@@ -62,10 +211,9 @@ class _BriefHeaderState extends State<_BriefHeader> {
         (state.detectedLane != 'auto'
             ? laneTitle(state.detectedLane)
             : 'Your next book');
-    final pitch = creationPitchLine(
-      brief: brief,
-      bookTypeChoiceLabel: typeTitle,
-    );
+    final pitch =
+        builtView?.pitch ??
+        creationPitchLine(brief: brief, bookTypeChoiceLabel: typeTitle);
 
     return Material(
       color: colors.surfaceContainerHigh,
@@ -85,6 +233,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     // restored readiness says.
                     canBuild: built || state.readiness.canBuild,
                     seed: state.draftId ?? 'draft',
+                    image: project?.coverImage,
                     palette: coverPreviewColors(state.coverPreview),
                   ),
                   const SizedBox(width: 10),
@@ -92,12 +241,40 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          headline,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w800),
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                headline,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                            if (widget.onEditTitle != null) ...[
+                              const SizedBox(width: 4),
+                              // Deliberately smaller than an IconButton: its
+                              // 48px floor would grow the whole bar. A missed
+                              // tap only toggles the row's expansion.
+                              Tooltip(
+                                message: 'Edit title',
+                                child: InkResponse(
+                                  onTap: () =>
+                                      unawaited(widget.onEditTitle!()),
+                                  radius: 16,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(4),
+                                    child: Icon(
+                                      Icons.edit_outlined,
+                                      size: 15,
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -111,7 +288,18 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  if (!built) _ReadinessPill(readiness: state.readiness),
+                  if (!built)
+                    _ReadinessPill(readiness: state.readiness)
+                  else if (builtView?.badgeLabel != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: AppStatusBadge(
+                        label: builtView!.badgeLabel!,
+                        icon: builtView.badgeIcon,
+                        tone: builtView.badgeTone,
+                        semanticLabel: 'Book status: ${builtView.badgeLabel}',
+                      ),
+                    ),
                   Icon(
                     _expanded ? Icons.expand_less : Icons.expand_more,
                     color: colors.onSurfaceVariant,
@@ -127,6 +315,7 @@ class _BriefHeaderState extends State<_BriefHeader> {
             // the screen and overflows the column. A third of the space the
             // keyboard leaves is the most a helper bar may take.
             ConstrainedBox(
+              key: const ValueKey('creationBriefDetails'),
               constraints: BoxConstraints(
                 maxHeight: math.max(
                   (MediaQuery.sizeOf(context).height -
@@ -147,6 +336,9 @@ class _BriefHeaderState extends State<_BriefHeader> {
                     brief: brief,
                     presets: presets,
                     built: built,
+                    project: project,
+                    liveStatus: liveStatus,
+                    onOpenAdvanced: widget.onOpenAdvanced,
                   ),
                 ),
               ),
@@ -156,114 +348,6 @@ class _BriefHeaderState extends State<_BriefHeader> {
       ),
     );
   }
-}
-
-class _BriefDetails extends StatelessWidget {
-  const _BriefDetails({
-    required this.state,
-    required this.brief,
-    required this.presets,
-    required this.built,
-  });
-
-  final CreationChatState state;
-  final MobileBookRecipe? brief;
-  final MobileCreationPresets presets;
-
-  /// A built book has nothing left to add: the readiness hints are advice
-  /// for a brief still being written.
-  final bool built;
-
-  @override
-  Widget build(BuildContext context) {
-    final lane = state.detectedLane;
-    final promise = brief == null ? '' : primaryPromise(brief!);
-    final rows = <_BriefRow>[
-      if ((brief?.audience ?? '').trim().isNotEmpty)
-        _BriefRow(audienceLabel(lane), brief!.audience),
-      if (promise.trim().isNotEmpty) _BriefRow(promiseLabel(lane), promise),
-      if ((brief?.tone ?? '').trim().isNotEmpty) _BriefRow('Tone', brief!.tone),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            AppMetricChip(
-              label: 'Type',
-              value: bookTypeLabel(
-                state.userChoices.contains(CreationChoice.bookType)
-                    ? presets.bookTypeChoice
-                    : 'auto',
-              ),
-            ),
-            AppMetricChip(label: 'Size', value: pageCountLabelFor(presets)),
-            AppMetricChip(
-              label: 'Finish',
-              value: qualityLabel(presets.qualityPreset),
-            ),
-            AppMetricChip(
-              label: 'Cover',
-              value: presets.coverEnabled ? 'Included' : 'Not included',
-            ),
-            AppMetricChip(
-              label: 'Illustrations',
-              value: presets.illustrationsEnabled ? 'Included' : 'Not included',
-            ),
-            if (state.language != 'en')
-              AppMetricChip(
-                label: 'Language',
-                value: languageLabel(state.language),
-              ),
-          ],
-        ),
-        if (state.userChoices.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          const AppStatusBadge(
-            label: 'Your choices applied',
-            icon: Icons.tune_outlined,
-            tone: AppTone.success,
-          ),
-        ],
-        for (final row in rows) ...[
-          const SizedBox(height: 10),
-          Text(
-            row.label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 2),
-          Text(row.value),
-        ],
-        if (!built && state.readiness.missing.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(
-            'Helpful to add',
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          for (final item in state.readiness.missing)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 3),
-              child: Text('• $item'),
-            ),
-        ],
-      ],
-    );
-  }
-}
-
-class _BriefRow {
-  const _BriefRow(this.label, this.value);
-
-  final String label;
-  final String value;
 }
 
 class _ReadinessPill extends StatelessWidget {

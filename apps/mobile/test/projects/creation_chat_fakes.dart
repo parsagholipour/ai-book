@@ -73,6 +73,9 @@ class ScriptedCreationRepository implements CreationRepository {
 
   /// The reply turn's readiness.missing — the "Helpful to add" list.
   List<String> replyMissing = const [];
+
+  /// The reply turn's title suggestions — the header's "Title ideas" chips.
+  List<String> replyTitleSuggestions = const [];
   List<String> greetingQuickReplies = const ['A kids book', 'A workbook'];
   int uploadCount = 0;
   final resumedDraftIds = <String>[];
@@ -311,6 +314,7 @@ class ScriptedCreationRepository implements CreationRepository {
         authorName: replyAuthorName,
         brief: replyBrief,
         missing: replyMissing,
+        titleSuggestions: replyTitleSuggestions,
       ),
     });
   }

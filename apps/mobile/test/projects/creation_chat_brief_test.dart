@@ -1,0 +1,237 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
+import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
+
+import 'creation_chat_fakes.dart';
+import 'creation_chat_harness.dart';
+
+// The brief header's collapsed status line, badge, and expanded panel
+// (quick actions, tappable chips, title ideas, shape, materials, estimate).
+// New cases live here rather than in creation_chat_test.dart, which is
+// already over its recorded size ceiling.
+
+/// The collapsed tap row — headline, pitch and badge live here.
+Finder _inHeader(Finder matching) => find.descendant(
+  of: find.byKey(const ValueKey('creationBriefHeader')),
+  matching: matching,
+);
+
+/// The expanded panel, a sibling of the tap row. Scoping matters: the
+/// generation bubble renders some of the same strings in the transcript.
+Finder _inDetails(Finder matching) => find.descendant(
+  of: find.byKey(const ValueKey('creationBriefDetails')),
+  matching: matching,
+);
+
+/// Quick reply → Build the plan → past the visuals prompt, with the bounded
+/// pumps the build flow needs (a poll timer makes pumpAndSettle hang).
+Future<void> _buildBook(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('A kids book'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+  await tester.continuePastVisualsPrompt();
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
+Future<void> _expandHeader(WidgetTester tester) async {
+  await tester.tap(find.byKey(const ValueKey('creationBriefHeader')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
+void main() {
+  testWidgets('built header shows the live writing status and badge', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
+        status: 'generating',
+        currentAction: 'Writing your book.',
+        plan: approvedPlan(),
+      ),
+      status: projectStatus(),
+    );
+    await tester.pumpWidget(app(creation: creation, projects: projects));
+    await _buildBook(tester);
+
+    expect(_inHeader(find.text('Generating your book · 38%')), findsOneWidget);
+    expect(_inHeader(find.text('Writing')), findsOneWidget);
+    // The readiness pill is a brief-stage concept and has retired.
+    expect(_inHeader(find.text('80%')), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('completed book offers read, listen and download when expanded', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
+        status: 'complete',
+        currentAction: 'Your book is ready.',
+        plan: approvedPlan(),
+      ),
+      status: projectStatus(
+        status: 'complete',
+        progressPercent: 100,
+        completedPages: 28,
+        exports: unlockedExports,
+      ),
+    );
+    await tester.pumpWidget(app(creation: creation, projects: projects));
+    await _buildBook(tester);
+
+    expect(_inHeader(find.text('Ready to read · 28 pages')), findsOneWidget);
+    expect(_inHeader(find.text('Ready')), findsOneWidget);
+
+    await _expandHeader(tester);
+
+    expect(_inDetails(find.text('Read book')), findsOneWidget);
+    expect(_inDetails(find.text('Listen')), findsOneWidget);
+    expect(_inDetails(find.text('Open PDF')), findsOneWidget);
+    expect(_inDetails(find.text('View progress')), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('failed book shows attention and only the progress shortcut', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
+        status: 'failed',
+        currentAction: 'Generation failed.',
+        plan: approvedPlan(),
+      ),
+      status: projectStatus(
+        status: 'failed',
+        failureMessage: 'Generation failed.',
+        retryAvailable: true,
+      ),
+    );
+    await tester.pumpWidget(app(creation: creation, projects: projects));
+    await _buildBook(tester);
+
+    expect(
+      _inHeader(find.text('Something needs your attention')),
+      findsOneWidget,
+    );
+    expect(_inHeader(find.text('Attention')), findsOneWidget);
+
+    await _expandHeader(tester);
+
+    expect(_inDetails(find.text('View progress')), findsOneWidget);
+    expect(_inDetails(find.text('Read book')), findsNothing);
+    expect(_inDetails(find.text('Listen')), findsNothing);
+    expect(_inDetails(find.text('Open PDF')), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('preset chips open Advanced settings before the build', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await _expandHeader(tester);
+    await tester.ensureVisible(_inDetails(find.text('Type: Auto')));
+    await tester.tap(_inDetails(find.text('Type: Auto')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Advanced settings'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('the headline pen opens the title sheet', (tester) async {
+    final creation = ScriptedCreationRepository()
+      ..replyTitleSuggestions = ['First Idea', 'Second Idea'];
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+
+    // The first suggestion is already the working title — the headline.
+    expect(_inHeader(find.text('First Idea')), findsOneWidget);
+
+    // Tapping a suggestion applies it immediately.
+    await tester.tap(find.byTooltip('Edit title'));
+    await tester.pumpAndSettle();
+    expect(find.text('Book title'), findsOneWidget);
+    await tester.tap(find.text('Second Idea'));
+    await tester.pumpAndSettle();
+    expect(_inHeader(find.text('Second Idea')), findsOneWidget);
+
+    // Typing a title of your own wins over the ideas.
+    await tester.tap(find.byTooltip('Edit title'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Second Idea'),
+      'My Own Title',
+    );
+    await tester.tap(find.text('Use this title'));
+    await tester.pumpAndSettle();
+
+    expect(_inHeader(find.text('My Own Title')), findsOneWidget);
+    expect(find.text('Book title'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('the pen retires once the book is built', (tester) async {
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository();
+    await tester.pumpWidget(app(creation: creation, projects: projects));
+    await _buildBook(tester);
+
+    expect(find.byTooltip('Edit title'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('expanded brief shows shape, materials and the build estimate', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+
+    // Paste notes exactly as the attach sheet would hand them over.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(CreationChatScreen)),
+      listen: false,
+    );
+    container
+        .read(creationChatControllerProvider.notifier)
+        .setSourceNotes('Reference these facts.');
+    await tester.pump();
+
+    await _expandHeader(tester);
+
+    expect(_inDetails(find.text('Shape')), findsOneWidget);
+    expect(_inDetails(find.text('• Intro')), findsOneWidget);
+    expect(_inDetails(find.text('Source notes attached')), findsOneWidget);
+    expect(
+      _inDetails(find.text('Estimated build cost · ~12 pages')),
+      findsOneWidget,
+    );
+    // 350 base + 12·8 pages + 45 cover + 3·45 interiors + 150 unlock, from
+    // the harness billing costs — the same figure the page-count sheet quotes.
+    expect(_inDetails(find.text('776')), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+}
