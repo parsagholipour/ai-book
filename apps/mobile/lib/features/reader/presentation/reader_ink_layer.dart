@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../domain/reader_annotation_geometry.dart';
@@ -152,14 +155,30 @@ class _ReaderInkLayerState extends State<ReaderInkLayer> {
 
 /// Turns a tap anywhere on a page into a position on that page.
 ///
-/// Used while a note or a text box is waiting to be put somewhere. Like
+/// Used while a note or a text box is waiting to be put somewhere, and while
+/// reading, where a tap is what puts the bars away and brings them back. Like
 /// [ReaderInkLayer] it listens rather than competing for the gesture, so the
 /// page still pans and zooms underneath while the reader looks for the right
 /// spot — and a drag is read as scrolling, not as a placement.
 class ReaderTapLayer extends StatefulWidget {
-  const ReaderTapLayer({required this.onTap, super.key});
+  const ReaderTapLayer({required this.onTap, this.onDoubleTap, super.key});
 
   final void Function(NormPoint point) onTap;
+
+  /// The second of two quick taps, reported the moment that finger *lands*
+  /// rather than when it lifts — waiting for the release is the difference
+  /// between a zoom that answers the gesture and one that trails it. This is
+  /// what `onDoubleTapDown` means everywhere else in the app.
+  ///
+  /// In **global** coordinates, because what it drives is the viewer's zoom and
+  /// this layer is one page inside it.
+  ///
+  /// The tap before it has already gone out through [onTap] and cannot be taken
+  /// back: nothing here can know a second one is coming without holding every
+  /// single tap in the book for the length of the double-tap window. Undoing
+  /// what that first tap did is therefore the caller's — see
+  /// `_onReadingDoubleTap`.
+  final void Function(Offset globalPosition)? onDoubleTap;
 
   /// How far a finger may travel and still count as a tap rather than a drag.
   static const slop = 12.0;
@@ -171,6 +190,53 @@ class ReaderTapLayer extends StatefulWidget {
 class _ReaderTapLayerState extends State<ReaderTapLayer> {
   Offset? _down;
   int? _pointer;
+
+  /// Where the last tap landed, for as long as a second one could still join it
+  /// into a double tap, and the timer that closes that window.
+  ///
+  /// A timer rather than a comparison of pointer timestamps, so the window runs
+  /// on the same clock Flutter's own double-tap recognizer uses — including the
+  /// test one, where every pointer event is stamped zero.
+  Offset? _firstTap;
+  Timer? _doubleTapWindow;
+
+  /// Set on the touch that completed a double tap, so its release is not
+  /// reported a second time as a tap of its own.
+  bool _paired = false;
+
+  @override
+  void dispose() {
+    _doubleTapWindow?.cancel();
+    super.dispose();
+  }
+
+  void _openDoubleTapWindow(Offset at) {
+    _doubleTapWindow?.cancel();
+    _firstTap = at;
+    _doubleTapWindow = Timer(kDoubleTapTimeout, _closeDoubleTapWindow);
+  }
+
+  void _closeDoubleTapWindow() {
+    _doubleTapWindow?.cancel();
+    _doubleTapWindow = null;
+    _firstTap = null;
+  }
+
+  /// Whether this touch completes a double tap — and reports it if it does.
+  ///
+  /// Measured from where the first tap landed with the platform's own
+  /// tolerance, which is far wider than [ReaderTapLayer.slop]: that one is
+  /// about one finger staying still, this one about two taps meaning the same
+  /// place.
+  bool _completesDoubleTap(PointerDownEvent event) {
+    final first = _firstTap;
+    final onDoubleTap = widget.onDoubleTap;
+    if (first == null || onDoubleTap == null) return false;
+    if ((event.localPosition - first).distance > kDoubleTapSlop) return false;
+    _closeDoubleTapWindow();
+    onDoubleTap(event.position);
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -186,23 +252,36 @@ class _ReaderTapLayerState extends State<ReaderTapLayer> {
           behavior: HitTestBehavior.translucent,
           onPointerDown: (event) {
             if (_pointer != null) {
-              // A second finger means a pinch; nothing is being placed.
+              // A second finger means a pinch; nothing is being placed, and two
+              // fingers at once are not the second half of a double tap.
               _pointer = null;
               _down = null;
+              _paired = false;
+              _closeDoubleTapWindow();
               return;
             }
             _pointer = event.pointer;
             _down = event.localPosition;
+            _paired = _completesDoubleTap(event);
           },
           onPointerUp: (event) {
             final down = _down;
             final pointer = _pointer;
+            final paired = _paired;
             _pointer = null;
             _down = null;
+            _paired = false;
             if (down == null || pointer != event.pointer) return;
             if ((event.localPosition - down).distance >
                 ReaderTapLayer.slop) {
               return;
+            }
+            // The double tap already went out on this finger's way down.
+            // Reporting the release as well would put the bars back and then
+            // take them away again in one gesture.
+            if (paired) return;
+            if (widget.onDoubleTap != null) {
+              _openDoubleTapWindow(event.localPosition);
             }
             widget.onTap(
               NormPoint.fromOffset(event.localPosition, pageRect),
@@ -211,6 +290,7 @@ class _ReaderTapLayerState extends State<ReaderTapLayer> {
           onPointerCancel: (_) {
             _pointer = null;
             _down = null;
+            _paired = false;
           },
           child: const SizedBox.expand(),
         );

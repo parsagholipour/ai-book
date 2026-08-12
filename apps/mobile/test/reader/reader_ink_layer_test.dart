@@ -197,5 +197,146 @@ void main() {
 
       expect(taps, isEmpty);
     });
+
+    testWidgets('a placement never becomes a double tap', (tester) async {
+      // Nothing is listening for one while a note is looking for a spot, so
+      // two quick taps are two placements — the second one is not swallowed.
+      final taps = <NormPoint>[];
+      await pumpLayer(tester, ReaderTapLayer(onTap: taps.add));
+
+      await tester.tapAt(at(0.4, 0.4));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(at(0.4, 0.4));
+      await tester.pump();
+
+      expect(taps, hasLength(2));
+    });
+  });
+
+  group('double tap', () {
+    testWidgets('the second of two quick taps is a zoom, not a tap', (
+      tester,
+    ) async {
+      final taps = <NormPoint>[];
+      final zooms = <Offset>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(onTap: taps.add, onDoubleTap: zooms.add),
+      );
+
+      await tester.tapAt(at(0.5, 0.5));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(at(0.5, 0.5));
+      await tester.pump();
+
+      // The first tap went out the moment it landed — it had to, and putting
+      // back what it did is the reader's job, not this layer's.
+      expect(taps, hasLength(1));
+      // Reported in global coordinates, because the zoom is anchored in the
+      // viewer's space rather than this page's.
+      expect(zooms, [at(0.5, 0.5)]);
+    });
+
+    testWidgets('the zoom goes out on the way down, not on the release', (
+      tester,
+    ) async {
+      // A double tap that waits for the second finger to lift trails the
+      // gesture. This is `onDoubleTapDown`, held to by the pointer stream.
+      final zooms = <Offset>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(onTap: (_) {}, onDoubleTap: zooms.add),
+      );
+
+      await tester.tapAt(at(0.5, 0.5));
+      await tester.pump(const Duration(milliseconds: 40));
+      final second = await tester.startGesture(at(0.5, 0.5));
+      await tester.pump();
+
+      expect(zooms, hasLength(1));
+
+      await second.up();
+      await tester.pump();
+    });
+
+    testWidgets('two taps far apart in time are two taps', (tester) async {
+      final taps = <NormPoint>[];
+      final zooms = <Offset>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(onTap: taps.add, onDoubleTap: zooms.add),
+      );
+
+      await tester.tapAt(at(0.5, 0.5));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tapAt(at(0.5, 0.5));
+      await tester.pump();
+
+      expect(taps, hasLength(2));
+      expect(zooms, isEmpty);
+    });
+
+    testWidgets('two taps far apart on the page are two taps', (tester) async {
+      final taps = <NormPoint>[];
+      final zooms = <Offset>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(onTap: taps.add, onDoubleTap: zooms.add),
+      );
+
+      await tester.tapAt(at(0.1, 0.1));
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(at(0.9, 0.9));
+      await tester.pump();
+
+      expect(taps, hasLength(2));
+      expect(zooms, isEmpty);
+    });
+
+    testWidgets('a third tap starts over rather than zooming again', (
+      tester,
+    ) async {
+      // Otherwise a drum roll on the page would zoom in and out on every beat.
+      final taps = <NormPoint>[];
+      final zooms = <Offset>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(onTap: taps.add, onDoubleTap: zooms.add),
+      );
+
+      for (var i = 0; i < 3; i++) {
+        await tester.tapAt(at(0.5, 0.5));
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+
+      expect(zooms, hasLength(1));
+      expect(taps, hasLength(2), reason: 'the third tap is a tap again');
+    });
+
+    testWidgets('a pinch closes the window instead of completing it', (
+      tester,
+    ) async {
+      // Two fingers is a zoom the reader is driving themselves. The tap that
+      // came before must not still be waiting for a partner afterwards.
+      final taps = <NormPoint>[];
+      final zooms = <Offset>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(onTap: taps.add, onDoubleTap: zooms.add),
+      );
+
+      await tester.tapAt(at(0.1, 0.1));
+      await tester.pump(const Duration(milliseconds: 40));
+      final first = await tester.startGesture(at(0.5, 0.5));
+      final second = await tester.startGesture(at(0.7, 0.7));
+      await first.up();
+      await second.up();
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(at(0.5, 0.5));
+      await tester.pump();
+
+      expect(zooms, isEmpty);
+      expect(taps, hasLength(2), reason: 'the pinch itself reported nothing');
+    });
   });
 }

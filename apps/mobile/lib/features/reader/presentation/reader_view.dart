@@ -159,6 +159,11 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
   bool _searching = false;
   bool _immersive = false;
+
+  /// Whether the last tap on a page was a plain one — it toggled the chrome and
+  /// did nothing else — and so is still open to becoming the first half of a
+  /// double tap. See [_onReadingDoubleTap].
+  bool _chromeToggledByTap = false;
   bool _updateDismissed = false;
   bool _stateLoaded = false;
   bool _awake = false;

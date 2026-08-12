@@ -14,6 +14,13 @@ typedef _ReaderPageMetrics = ({
   double bottomBar,
 });
 
+/// How far above the page-fills-the-width scale still counts as not zoomed.
+///
+/// A hair over 1 rather than an exact comparison: a pinch settles wherever it
+/// settles, and a book a rounding error away from home has to read as home or a
+/// double tap would answer "reset" with a zoom nobody asked for.
+const _zoomedInRatio = 1.01;
+
 /// Adapts the reader's page geometry to pdfrx.
 PdfPageLayoutFunction _layoutPagesFor(_ReaderPageMetrics metrics) {
   return (pages, params) {
@@ -214,6 +221,7 @@ extension _ReaderViewViewer on _ReaderViewState {
           ReaderTapLayer(
             key: ValueKey('read-${page.pageNumber}'),
             onTap: (point) => unawaited(_onReadingTap(page.pageNumber, point)),
+            onDoubleTap: _onReadingDoubleTap,
           ),
         );
     }
@@ -238,6 +246,9 @@ extension _ReaderViewViewer on _ReaderViewState {
   /// Everything else is a tap on the book, which is how the bars get out of the
   /// way and come back.
   Future<void> _onReadingTap(int page, NormPoint point) async {
+    // Cleared before anything can return: only a tap that ends in the chrome
+    // toggle below may go on to become half of a double tap.
+    _chromeToggledByTap = false;
     if (_selection != null || _searching) return;
     // Letting go of a long press is not a tap on the book. The tap layer only
     // watches pointers, so it never learns that the selection drag took the
@@ -270,6 +281,61 @@ extension _ReaderViewViewer on _ReaderViewState {
     }
     if (!mounted) return;
     _setImmersive(!_immersive);
+    _chromeToggledByTap = true;
+  }
+
+  /// A second tap in quick succession zooms the page in, and the one after that
+  /// puts the book back the way it was.
+  ///
+  /// Honoured only when the tap before it was a plain tap on the page. One that
+  /// opened a note or followed a link has already taken the reader somewhere
+  /// else, and a zoom into wherever they landed is not what a second tap could
+  /// have meant.
+  ///
+  /// That same flag is what makes the pair read as one gesture. The first tap
+  /// has already toggled the chrome — it had to, because holding every tap for
+  /// the length of the double-tap window would make the bars feel late on the
+  /// far more common gesture, and a reader who taps again because nothing
+  /// happened would find themselves zoomed — so the toggle is put back here.
+  /// What that looks like is the bars starting to move and thinking better of
+  /// it, rather than a zoom that also hid them.
+  void _onReadingDoubleTap(Offset globalPosition) {
+    if (!_chromeToggledByTap) return;
+    _chromeToggledByTap = false;
+    _setImmersive(!_immersive);
+    unawaited(_zoomAtTap(globalPosition));
+  }
+
+  /// One step in, then all the way back out.
+  ///
+  /// Both keep the tapped point where it is, so the line being read does not
+  /// slide out from under the finger. "Out" is `coverScale` — the scale the
+  /// book opens at, the one that fills the viewer's width — and deliberately
+  /// not `minScale`, which is the same number in portrait and a whole page
+  /// shrunk to fit in landscape. A reader who has pinched below that is not
+  /// zoomed *in*, so a double tap there steps up to it rather than resetting.
+  Future<void> _zoomAtTap(Offset globalPosition) async {
+    if (!_controller.isReady) return;
+    // The tap arrives in the page overlay's own coordinates; the zoom is
+    // anchored in the viewer's, which is what the controller can convert to.
+    final position = _controller.globalToLocal(globalPosition);
+    if (position == null) return;
+    final duration = AppMotion.reducedMotion(context)
+        ? Duration.zero
+        : AppMotion.fast;
+    final home = _controller.coverScale;
+    if (_controller.currentZoom > home * _zoomedInRatio) {
+      await _controller.zoomOnLocalPosition(
+        localPosition: position,
+        newZoom: home,
+        duration: duration,
+      );
+      return;
+    }
+    await _controller.zoomUpOnLocalPosition(
+      localPosition: position,
+      duration: duration,
+    );
   }
 
   void _paintPageTint(Canvas canvas, Rect pageRect, PdfPage page) {
