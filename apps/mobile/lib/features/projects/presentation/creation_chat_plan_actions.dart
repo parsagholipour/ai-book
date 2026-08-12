@@ -14,10 +14,6 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
         if (selection == null) {
           return;
         }
-        controller.setCustomTargetPages(
-          selection.targetPages,
-          source: selection.source,
-        );
       }
       // The page count the illustration quote is priced against. When the sheet
       // ran it is the answer just given; otherwise the server resolved one from
@@ -34,6 +30,15 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
           return;
         }
         if (!mounted) return;
+      }
+      // Committed only once every popup has answered: a committed page count
+      // makes the next preflight skip the sheet, so writing it earlier turned
+      // a cancel on the visuals prompt into a Build that never asks again.
+      if (selection != null) {
+        controller.setCustomTargetPages(
+          selection.targetPages,
+          source: selection.source,
+        );
       }
       final result = await controller.buildPlan();
       ref.invalidate(projectsProvider);

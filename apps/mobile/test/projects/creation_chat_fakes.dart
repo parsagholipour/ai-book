@@ -418,11 +418,23 @@ class ScriptedCreationRepository implements CreationRepository {
     MobileCreationOptionalDetails? optionalDetails,
     String? language,
   }) async {
+    // Mirrors the server's resolveMobilePageCount: presets already carrying a
+    // custom page count resolve it, so the sheet is only shown when the answer
+    // was never committed.
+    final presetsResolvePageCount =
+        presets?.pageCountMode == 'custom' && presets?.targetPages != null;
+    final requiresPageCount =
+        preflightRequiresPageCount && !presetsResolvePageCount;
     return MobileCreationBuildPreflight(
-      requiresPageCount: preflightRequiresPageCount,
+      requiresPageCount: requiresPageCount,
       recommendations: preflightRecommendations,
-      detectedPageCount: preflightRequiresPageCount
+      detectedPageCount: requiresPageCount
           ? null
+          : presetsResolvePageCount
+          ? MobileDetectedPageCount(
+              targetPages: presets!.targetPages!,
+              source: presets.pageCountSource ?? 'settings',
+            )
           : const MobileDetectedPageCount(targetPages: 8, source: 'chat'),
     );
   }

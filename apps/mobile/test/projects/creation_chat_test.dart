@@ -869,6 +869,44 @@ void main() {
     await tester.teardownScreen();
   });
 
+  testWidgets('cancelling the images prompt forgets the picked page count', (
+    tester,
+  ) async {
+    // The page count is committed only when every popup has answered, so a
+    // build abandoned at the images prompt leaves nothing behind and the next
+    // Build asks about pages again.
+    final creation = ScriptedCreationRepository(
+      preflightRequiresPageCount: true,
+    );
+    await tester.pumpWidget(
+      app(creation: creation, projects: PlanProjectsRepository()),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('A kids book'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('8 pages'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Choose book images'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(creation.buildCount, 0);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Build the plan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('How many pages?'), findsOneWidget);
+    expect(find.text('Choose book images'), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
   testWidgets('cover and illustration choices stay independent across chat', (
     tester,
   ) async {
