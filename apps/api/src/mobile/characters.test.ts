@@ -29,6 +29,7 @@ function characterRecord(overrides: Record<string, unknown> = {}) {
     photoPath: null,
     photoKind: null,
     suggestedDescription: null,
+    appearance: null,
     portraitPath: null,
     portraitSource: null,
     portraitStatus: "NONE",
@@ -51,6 +52,7 @@ const visionReading = (overrides: Record<string, unknown> = {}) => ({
   confidence: 0.95,
   subjectCount: 1,
   suggestedDescription: "A round-faced girl in a yellow raincoat.",
+  suggestedAppearance: "Around eight, short black hair, warm brown skin, yellow raincoat.",
   suggestedFields: [],
   ...overrides
 });
@@ -67,18 +69,30 @@ const uploadPhoto = (app: Awaited<ReturnType<typeof buildMobileApp>>) =>
 const uploadWrite = () => mockPrisma.libraryCharacter.update.mock.calls[0]![0].data as Record<string, unknown>;
 
 /**
- * The compare-and-set that moves the reference, or null when the upload left
- * it alone. It is a separate write from the photo columns precisely because it
- * has to re-assert the status it decided from — up to the vision budget passes
- * in between, and a portrait the reader started meanwhile owns the row.
+ * The upload's compare-and-set writes, found by shape rather than by call
+ * order: the appearance fill and the reference claim are two independent
+ * conditional writes and either may be absent, so an index would silently
+ * hand one test the other one's write.
  */
-const referenceClaim = () => {
-  const call = mockPrisma.libraryCharacter.updateMany.mock.calls[0];
-  return call ? (call[0].data as Record<string, unknown>) : null;
+const conditionalWrite = (column: "portraitPath" | "appearance") => {
+  const call = mockPrisma.libraryCharacter.updateMany.mock.calls.find(
+    (entry: any[]) => column in (entry[0].data as Record<string, unknown>)
+  );
+  return call ? (call[0] as { data: Record<string, unknown>; where: Record<string, unknown> }) : null;
 };
 
-const referenceClaimGuard = () =>
-  mockPrisma.libraryCharacter.updateMany.mock.calls[0]![0].where as Record<string, unknown>;
+/**
+ * The claim that moves the reference, or null when the upload left it alone.
+ * It is a separate write from the photo columns precisely because it has to
+ * re-assert the status it decided from — up to the vision budget passes in
+ * between, and a portrait the reader started meanwhile owns the row.
+ */
+const referenceClaim = () => conditionalWrite("portraitPath")?.data ?? null;
+
+const referenceClaimGuard = () => conditionalWrite("portraitPath")!.where;
+
+/** The fill that records what the photo shows, or null when it was refused. */
+const appearanceFill = () => conditionalWrite("appearance");
 
 function expectingUpload(current = characterRecord(), options: { claimWon?: boolean } = {}) {
   const row: Record<string, unknown> = { ...current };
@@ -88,7 +102,10 @@ function expectingUpload(current = characterRecord(), options: { claimWon?: bool
     return characterRecord({ ...row });
   });
   mockPrisma.libraryCharacter.updateMany.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
-    if (options.claimWon === false) {
+    // Both conditional writes go through here, so each is judged by its own
+    // condition: the appearance fill loses to a look the row already has, and
+    // `claimWon` speaks only for the reference claim.
+    if ("appearance" in data ? Boolean(row.appearance) : options.claimWon === false) {
       return { count: 0 };
     }
     Object.assign(row, data);
@@ -136,10 +153,18 @@ describe("mobile character library routes", () => {
       method: "POST",
       url: "/api/mobile/characters",
       headers: bearer("token-a"),
-      payload: { name: "Luna", description: "A brave night-flying rabbit.", fields: [{ key: "Age", value: "9" }] }
+      payload: {
+        name: "Luna",
+        description: "A brave night-flying rabbit.",
+        appearance: "Grey rabbit with one folded ear and a red scarf.",
+        fields: [{ key: "Age", value: "9" }]
+      }
     });
     expect(created.statusCode).toBe(201);
     expect(created.json().character.name).toBe("Luna");
+    expect(mockPrisma.libraryCharacter.create.mock.calls[0]![0].data).toMatchObject({
+      appearance: "Grey rabbit with one folded ear and a red scarf."
+    });
 
     const { MockPrismaKnownRequestError } = await import("./testing/mobileApiMocks.js");
     mockPrisma.libraryCharacter.create.mockRejectedValue(
@@ -290,6 +315,95 @@ describe("mobile character library routes", () => {
       suggestedDescription: "A round-faced girl in a yellow raincoat."
     });
     await app.close();
+  });
+
+  it("records what the photo shows as the character's appearance, unasked", async () => {
+    // The one thing the upload applies rather than offers. An empty appearance
+    // is not a neutral default: it is what lets the planner invent a look and
+    // write it into every illustration prompt, where it beats the reference
+    // image. Leaving the fix behind a tap leaves the default path broken.
+    expectingUpload();
+    const app = await buildMobileApp({
+      characterPhotoVision: vi.fn().mockResolvedValue(visionReading({ imageKind: "photograph" }))
+    });
+
+    const uploaded = await uploadPhoto(app);
+
+    expect(uploaded.statusCode).toBe(200);
+    expect(appearanceFill()!.data).toEqual({
+      appearance: "Around eight, short black hair, warm brown skin, yellow raincoat."
+    });
+    // A compare-and-set, not a field on the photo write: the vision budget
+    // passes between reading the row and this, and the user may have typed one.
+    expect(appearanceFill()!.where).toMatchObject({
+      OR: [{ appearance: null }, { appearance: "" }]
+    });
+    const character = uploaded.json().character;
+    expect(character.appearance).toBe("Around eight, short black hair, warm brown skin, yellow raincoat.");
+    // Applied, so there is nothing left to offer — and the description, which
+    // is the user's own prose, is still only ever a suggestion.
+    expect(character.suggestedAppearance).toBeNull();
+    expect(character.description).toBe("A brave night-flying rabbit.");
+    await app.close();
+  });
+
+  it("never overwrites a look the user already has, and offers the new one instead", async () => {
+    expectingUpload(characterRecord({ appearance: "Adult woman in a black hijab and a grey embroidered top." }));
+    const app = await buildMobileApp({
+      characterPhotoVision: vi.fn().mockResolvedValue(visionReading({ imageKind: "photograph" }))
+    });
+
+    const uploaded = await uploadPhoto(app);
+
+    expect(uploaded.statusCode).toBe(200);
+    // The write is still attempted — the row could have been cleared while the
+    // photo was being read — and the database is what refuses it.
+    expect(appearanceFill()).not.toBeNull();
+    const character = uploaded.json().character;
+    expect(character.appearance).toBe("Adult woman in a black hijab and a grey embroidered top.");
+    expect(character.suggestedAppearance).toBe(
+      "Around eight, short black hair, warm brown skin, yellow raincoat."
+    );
+    await app.close();
+  });
+
+  it("stores no appearance when the reading carries none", async () => {
+    expectingUpload();
+    const app = await buildMobileApp({
+      characterPhotoVision: vi.fn().mockResolvedValue(visionReading({ suggestedAppearance: "" }))
+    });
+
+    const uploaded = await uploadPhoto(app);
+
+    expect(uploaded.statusCode).toBe(200);
+    // Absent rather than empty: "" would read downstream as a recorded look
+    // that says nothing, which is worse than no look at all.
+    expect(appearanceFill()).toBeNull();
+    expect(uploaded.json().character).toMatchObject({ appearance: null, suggestedAppearance: null });
+    await app.close();
+  });
+
+  it("lets the user write an appearance and clear it again", async () => {
+    for (const [payload, written] of [
+      [{ appearance: "Black hijab, grey embroidered top." }, "Black hijab, grey embroidered top."],
+      // Sent-and-empty is a deliberate clear, and it has a meaning of its own:
+      // it puts the character back to "no look recorded, defer to the picture".
+      [{ appearance: "" }, null]
+    ] as const) {
+      vi.mocked(mockPrisma.libraryCharacter.update).mockClear();
+      mockPrisma.libraryCharacter.findFirst.mockResolvedValue(characterRecord({ appearance: "Something older." }));
+      mockPrisma.libraryCharacter.update.mockResolvedValue(characterRecord());
+      const app = await buildMobileApp();
+      const patched = await app.inject({
+        method: "PATCH",
+        url: "/api/mobile/characters/char-1",
+        headers: bearer("token-a"),
+        payload
+      });
+      expect(patched.statusCode).toBe(200);
+      expect(mockPrisma.libraryCharacter.update.mock.calls[0]![0].data).toMatchObject({ appearance: written });
+      await app.close();
+    }
   });
 
   it("refuses to adopt when the reading is unsure or the artwork holds a cast", async () => {

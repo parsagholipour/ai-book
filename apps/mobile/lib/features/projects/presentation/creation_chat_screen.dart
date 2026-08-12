@@ -44,6 +44,7 @@ import 'creation_labels.dart';
 import 'credit_cost_badge.dart';
 import 'edit_proposal_card.dart';
 import 'message_actions_menu.dart';
+import 'mention_chips_row.dart';
 import 'message_hold_feedback.dart';
 import 'plan_approval.dart';
 import 'plan_revision_retry.dart';
@@ -482,6 +483,14 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                           onOpen: _scrollToReplyTarget,
                           onCancel: _cancelReply,
                         ),
+                      // Persistent, unlike the suggestion strip below it: who
+                      // the message will carry has to be visible whether or not
+                      // an @token is being typed. Without this the UI was
+                      // byte-identical whether a mention registered, never
+                      // registered, or silently de-registered — which is how a
+                      // book came to invent its own version of a saved
+                      // character with nothing on screen to warn anyone.
+                      MentionChipsRow(mentions: _attachedMentions),
                       // Above whichever footer is active: the same composer
                       // serves both stages, so one strip serves both too.
                       if (_mentionQuery != null)

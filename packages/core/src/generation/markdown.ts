@@ -665,6 +665,18 @@ export function shouldPrintSourcesBackMatter(options: {
   return isSourceForwardBookCategory(options.category);
 }
 
+/**
+ * Whether any stored research row can become a citation. The compiler prints
+ * only sources carrying a URL, so a project with rows but no links has nothing
+ * to put at the end of the book — which is what the chat has to say rather than
+ * promising a section it cannot deliver.
+ */
+export function hasReaderFacingSources(
+  sources: Array<{ title: string; url?: string | undefined; summary: string }>
+): boolean {
+  return uniqueResearchCitations(sources).length > 0;
+}
+
 function formatReaderFacingSources(input: CompileMarkdownInput): string {
   if (
     !shouldPrintSourcesBackMatter({

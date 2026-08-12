@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/characters/presentation/character_network_image.dart';
 import 'package:tomeza/features/voice/data/voice_repository.dart';
 import 'package:tomeza/features/voice/data/voice_disclosure_store.dart';
 import 'package:tomeza/features/voice/domain/voice_models.dart';
@@ -11,6 +12,8 @@ VoiceCharacter character({
   String name = 'Marlow',
   String role = 'The lighthouse keeper',
   VoiceCharacterStatus status = VoiceCharacterStatus.ready,
+  String? libraryCharacterId,
+  String? libraryPortraitUrl,
 }) {
   return VoiceCharacter(
     id: id,
@@ -21,6 +24,8 @@ VoiceCharacter character({
     traits: const [],
     status: status,
     needsPreparation: false,
+    libraryCharacterId: libraryCharacterId,
+    libraryPortraitUrl: libraryPortraitUrl,
   );
 }
 
@@ -205,5 +210,86 @@ void main() {
     await pumpCastSheet(tester, FakeVoiceRepository(cast(characters: [])));
 
     expect(find.text('No one to call yet'), findsOneWidget);
+  });
+
+  testWidgets('says which cast member is the reader\'s own saved character', (
+    tester,
+  ) async {
+    // Two rows, one linked: the badge has to name the link rather than the
+    // sheet saying it somewhere general, because the whole question is which
+    // of these is the character the reader saved.
+    await pumpCastSheet(
+      tester,
+      FakeVoiceRepository(
+        cast(
+          characters: [
+            character(
+              libraryCharacterId: 'lib-1',
+              libraryPortraitUrl: '/api/mobile/characters/lib-1/portrait',
+            ),
+            character(id: 'character-2', name: 'Invented', role: 'A stranger'),
+          ],
+        ),
+      ),
+    );
+
+    expect(find.text('From your characters'), findsOneWidget);
+    expect(find.text('Marlow'), findsOneWidget);
+    expect(find.text('Invented'), findsOneWidget);
+    // The linked row draws the saved portrait through the character asset
+    // route (its own bearer headers), not the project one — the unlinked row
+    // still has nothing to draw.
+    expect(find.byType(CharacterNetworkImage), findsOneWidget);
+  });
+
+  testWidgets('a cast member the book invented carries no library badge', (
+    tester,
+  ) async {
+    await pumpCastSheet(tester, FakeVoiceRepository(cast()));
+
+    expect(find.text('From your characters'), findsNothing);
+  });
+
+  testWidgets('reads the library link off the wire', (tester) async {
+    final parsed = VoiceCharacter.fromJson(const {
+      'id': 'character-1',
+      'projectId': 'project-1',
+      'name': 'Natalia',
+      'libraryCharacterId': 'lib-1',
+      'libraryPortraitUrl': '/api/mobile/characters/lib-1/portrait',
+    });
+
+    expect(parsed.fromLibrary, isTrue);
+    // No cast image yet, so the saved portrait is what the avatar draws — the
+    // window where a linked row used to render grey initials despite the app
+    // holding the picture.
+    expect(parsed.standInPortraitUrl, '/api/mobile/characters/lib-1/portrait');
+
+    final built = VoiceCharacter.fromJson(const {
+      'id': 'character-1',
+      'projectId': 'project-1',
+      'name': 'Natalia',
+      'libraryCharacterId': 'lib-1',
+      'libraryPortraitUrl': '/api/mobile/characters/lib-1/portrait',
+      'image': {
+        'id': 'image-1',
+        'role': 'character',
+        'url': '/assets/images/project-1/character-1.png',
+        'contentType': 'image/png',
+        'altText': 'Natalia',
+      },
+    });
+
+    // Once the book has drawn her, that likeness wins: it is this book's own
+    // reference sheet, not an account-level portrait.
+    expect(built.standInPortraitUrl, isNull);
+
+    final invented = VoiceCharacter.fromJson(const {
+      'id': 'character-2',
+      'projectId': 'project-1',
+      'name': 'Someone',
+    });
+    expect(invented.fromLibrary, isFalse);
+    expect(invented.standInPortraitUrl, isNull);
   });
 }

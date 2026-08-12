@@ -2,7 +2,7 @@ import { type BookEditIntent } from "../bookEditIntent.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { applyPresentationPreference } from "./presentationEdits.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
-import { includeSourcesPreference, shouldPrintSourcesBackMatter } from "@book-maker/core";
+import { hasReaderFacingSources, includeSourcesPreference, shouldPrintSourcesBackMatter } from "@book-maker/core";
 
 /**
  * Applies a `back_matter` intent: the reader-facing Sources list at the end of
@@ -28,8 +28,15 @@ export async function applyBackMatterEdit(
       metadata: { intent, charged: false, backMatter: { includeSources } }
     });
 
-  if (!includeSources && project.research.length === 0) {
-    return reply("This book doesn’t have a sources list at the end, so there’s nothing to remove there.");
+  // Both directions, because the compiler prints only sources that carry a URL:
+  // without one there is nothing to remove, and nothing that turning the list on
+  // could make appear.
+  if (!hasReaderFacingSources(project.research.map((source) => ({ ...source, url: source.url ?? undefined })))) {
+    return reply(
+      includeSources
+        ? "I don’t have any linked research sources saved for this book, so a sources list at the end would be empty."
+        : "This book doesn’t have a sources list at the end, so there’s nothing to remove there."
+    );
   }
   if (includeSources) {
     // Unset follows the source-forward categories; only no-op when that

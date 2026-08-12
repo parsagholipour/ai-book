@@ -5,7 +5,12 @@ import { config } from "../runtime/config.js";
 import { dispatchWorkerGenerationJob, enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { jsonInputValue, jsonPayloadToRecord, safePathPart } from "../runtime/serialization.js";
-import { selectReferenceImagePaths, toWorkerImageAsset } from "../generation/characterReferences.js";
+import {
+  characterReferencePromptInstruction,
+  imageAssetPlanId,
+  selectReferenceImagePaths,
+  toWorkerImageAsset
+} from "../generation/characterReferences.js";
 import { characterPreparationDedupeKey } from "../generation/characterPreparation.js";
 import {
   bookPlanSchema,
@@ -145,6 +150,10 @@ export async function prepareCharacterCandidates(job: Job) {
       return {
         projectId,
         planVersionId: planId,
+        // Copy-by-value, like the plan snapshot it came from: the cast sheet
+        // shows the saved character's own portrait and says the book was built
+        // from it, and deleting that character later changes no book state.
+        libraryCharacterId: candidate.libraryCharacterId ?? null,
         name: candidate.name,
         role: candidate.role,
         description: candidate.description,
@@ -213,6 +222,7 @@ export async function buildCharacterPersona(job: Job) {
     await advanceJobStep(generationJobId, "portrait", 60);
     const profileImageAsset = await generateCharacterProfileImage({
       projectId,
+      planId: planVersionId,
       voiceCharacterId,
       input,
       plan,
@@ -271,6 +281,7 @@ export async function samplePagesForVoiceCharacters(projectId: string) {
 
 export async function generateCharacterProfileImage(options: {
   projectId: string;
+  planId: string;
   voiceCharacterId: string;
   input: CreateProjectInput;
   plan: BookPlan;
@@ -278,7 +289,7 @@ export async function generateCharacterProfileImage(options: {
   providers: ProviderSet;
   strategy: BookGenerationStrategy;
 }) {
-  const prompt = buildCharacterProfileImagePrompt({
+  const basePrompt = buildCharacterProfileImagePrompt({
     plan: options.plan,
     candidate: options.persona
   });
@@ -286,14 +297,25 @@ export async function generateCharacterProfileImage(options: {
     where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" },
     orderBy: { createdAt: "asc" }
   });
-  const { paths: referenceImagePaths } = await selectReferenceImagePaths({
+  const references = await selectReferenceImagePaths({
     input: options.input,
     plan: options.plan,
-    assets: characterReferenceAssets.map(toWorkerImageAsset),
+    // A replan leaves the previous plan's sheets on the project, so the plan is
+    // part of the identity of a reference — without it this avatar could be
+    // drawn from a superseded book's cast. The same JS-side filter the sheet
+    // generator uses, since the plan lives in the asset's JSON metadata.
+    assets: characterReferenceAssets
+      .filter((asset) => imageAssetPlanId(asset.metadata) === options.planId)
+      .map(toWorkerImageAsset),
     projectId: options.projectId,
     image: options.providers.image,
-    context: `${options.persona.name}\n${options.persona.description}\n${prompt}`
+    context: `${options.persona.name}\n${options.persona.description}\n${basePrompt}`
   });
+  const referenceImagePaths = references.paths;
+  // Attached images the prompt never mentions are treated as loose inspiration,
+  // which is how an avatar drifted off the face the page renders use. The page
+  // and cover handlers say what the attachments are; so does this one.
+  const prompt = [basePrompt, characterReferencePromptInstruction(references)].filter(Boolean).join("\n");
   const image = await options.strategy.generateImageBytes({
     image: options.providers.image,
     prompt,

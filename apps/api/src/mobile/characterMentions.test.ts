@@ -30,6 +30,7 @@ function libraryCharacterRow(overrides: Record<string, unknown> = {}) {
     photoPath: null,
     photoKind: null,
     suggestedDescription: null,
+    appearance: null,
     portraitPath: null,
     portraitSource: null,
     portraitStatus: "NONE",
@@ -124,6 +125,66 @@ describe("character mentions in the creation chat", () => {
   });
 });
 
+const BUILD_PRESETS = {
+  bookType: "short_story",
+  lengthPreset: "short",
+  qualityPreset: "balanced",
+  imagesEnabled: true,
+  pageCountMode: "custom",
+  targetPages: 12,
+  pageCountSource: "settings"
+};
+
+/** A fresh draft id per build: a replayed one is an idempotent 409, not a build. */
+let buildSequence = 0;
+
+/**
+ * Builds a book from one chat branch against one library, and hands back the
+ * `Project.create` input — `mediaSettings.mobile.characters` is the snapshot
+ * everything downstream reads.
+ */
+async function buildWithMessages(
+  messages: Array<Record<string, unknown>>,
+  library: Array<Record<string, unknown>>
+): Promise<Record<string, any>> {
+  mockAccessTokens({ "token-a": "user-a" });
+  const draftId = `session-draft-${(buildSequence += 1)}`;
+  const payload = { payloadVersion: 3, messages, selectedPresets: BUILD_PRESETS };
+  mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(creationDraftRecord({ id: draftId, payload }));
+  mockPrisma.template.findFirst.mockResolvedValue({ id: "template-kids" });
+  // The id lookup and the whole-library name read the typed-mention scan makes
+  // both land here.
+  mockPrisma.libraryCharacter.findMany.mockImplementation(async ({ where }: { where: any }) =>
+    where.id ? library.filter((row) => (where.id.in as string[]).includes(row.id as string)) : library
+  );
+  mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
+    projectRecord({
+      id: "project-from-session",
+      title: data.title,
+      prompt: data.prompt,
+      mediaSettings: data.mediaSettings,
+      currentPlan: null,
+      pages: [],
+      _count: { pages: 0, images: 0, jobs: 0 }
+    })
+  );
+  mockPrisma.mobileCreationDraft.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
+    creationDraftRecord({ id: draftId, payload, ...data })
+  );
+  mockPrisma.project.update.mockResolvedValue({});
+  vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-plan" }));
+  const app = await buildMobileApp({ advisorEnrichment: false, creationEnrichment: false });
+  const response = await app.inject({
+    method: "POST",
+    url: `/api/mobile/creation-sessions/${draftId}/build`,
+    headers: bearer("token-a"),
+    payload: {}
+  });
+  expect(response.statusCode).toBe(201);
+  await app.close();
+  return mockPrisma.project.create.mock.calls.at(-1)![0].data;
+}
+
 describe("character snapshots at build time", () => {
   beforeEach(resetMobileHarness);
   afterEach(teardownMobileHarness);
@@ -165,7 +226,11 @@ describe("character snapshots at build time", () => {
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(creationDraftRecord({ id: "session-draft", payload }));
     mockPrisma.template.findFirst.mockResolvedValue({ id: "template-kids" });
     mockPrisma.libraryCharacter.findMany.mockResolvedValue([
-      libraryCharacterRow({ portraitStatus: "READY", portraitPath: "char-1-portrait.webp" })
+      libraryCharacterRow({
+        portraitStatus: "READY",
+        portraitPath: "char-1-portrait.webp",
+        appearance: "Adult woman in a black hijab and a grey embroidered top."
+      })
     ]);
     mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
       projectRecord({
@@ -207,6 +272,10 @@ describe("character snapshots at build time", () => {
         id: "char-1",
         name: "Luna",
         description: "A brave night-flying rabbit.",
+        // The look travels with the copy. Without it the planner has nothing
+        // but a name and a biography, invents a look to fill the gap, and the
+        // invented one wins at render time over the attached portrait.
+        appearance: "Adult woman in a black hijab and a grey embroidered top.",
         fields: [{ key: "Age", value: "9" }],
         portraitFile: "user-a/char-1-portrait.webp",
         // A row written before adoption existed carries no source; the
@@ -244,10 +313,13 @@ describe("character snapshots at build time", () => {
     };
     mockPrisma.mobileCreationDraft.findFirst.mockResolvedValue(creationDraftRecord({ id: "session-draft", payload }));
     mockPrisma.template.findFirst.mockResolvedValue({ id: "template-kids" });
+    const library = ids.map((characterId, index) =>
+      libraryCharacterRow({ id: characterId, name: `Name${index}` })
+    );
+    // Two different queries reach this now: the id lookup for the snapshot, and
+    // the whole-library name read the typed-mention scan makes.
     mockPrisma.libraryCharacter.findMany.mockImplementation(async ({ where }: { where: any }) =>
-      (where.id.in as string[]).map((characterId, index) =>
-        libraryCharacterRow({ id: characterId, name: `Name${index}` })
-      )
+      where.id ? library.filter((row) => (where.id.in as string[]).includes(row.id)) : library
     );
     mockPrisma.project.create.mockImplementation(async ({ data }: { data: Record<string, any> }) =>
       projectRecord({
@@ -282,6 +354,124 @@ describe("character snapshots at build time", () => {
     const created = mockPrisma.project.create.mock.calls.at(0)![0].data;
     expect(created.mediaSettings.mobile.characters).toHaveLength(10);
     await app.close();
+  });
+
+  it("snapshots a name the reader typed but never tapped", async () => {
+    // `message.characters` is written only when the suggestion chip was tapped.
+    // Typing "@Natalia" by hand — or tapping and then editing the message,
+    // which rebuilds the text and drops the refs — sent no id at all, so the
+    // book was planned *about* the saved character while carrying no snapshot
+    // of them, and the planner invented the look it was told to reuse.
+    const created = await buildWithMessages([
+      { id: "m1", role: "user", content: "A story about @Natalia and her team", isActiveChild: true }
+    ], [libraryCharacterRow({ id: "char-nat", name: "Natalia", appearance: "Black hijab, grey top." })]);
+
+    expect(created.mediaSettings.mobile.characters).toMatchObject([
+      { id: "char-nat", name: "Natalia", appearance: "Black hijab, grey top." }
+    ]);
+  });
+
+  it("takes only the mention, never the bare word", async () => {
+    // "Rose", "Hope" and "می" are ordinary words. Matching prose would drag a
+    // saved character into every book that happened to use one, so the literal
+    // "@" is required — and it has to start a word itself, or an email address
+    // becomes a cast list.
+    const rose = [libraryCharacterRow({ id: "char-rose", name: "Rose" })];
+    for (const content of [
+      "She held a rose from the garden",
+      "Rose early and wrote all morning",
+      "Write to rose@example.com about it"
+    ]) {
+      const created = await buildWithMessages(
+        [{ id: "m1", role: "user", content, isActiveChild: true }],
+        rose
+      );
+      expect(created.mediaSettings.mobile.characters).toBeUndefined();
+    }
+  });
+
+  it("binds the longest name, and ignores the assistant echoing one back", async () => {
+    const library = [
+      libraryCharacterRow({ id: "char-luna", name: "Luna" }),
+      libraryCharacterRow({ id: "char-vega", name: "Luna Vega" }),
+      libraryCharacterRow({ id: "char-bram", name: "Bram" })
+    ];
+    const created = await buildWithMessages(
+      [
+        { id: "m1", role: "user", content: "Make it about @Luna Vega", isActiveChild: true },
+        { id: "m2", role: "assistant", content: "Lovely — should @Bram be in it too?", parentId: "m1", isActiveChild: true }
+      ],
+      library
+    );
+
+    // "@Luna" sits inside "@Luna Vega" and must not bind its own character;
+    // and nothing the assistant writes decides who is in the book.
+    expect(created.mediaSettings.mobile.characters).toMatchObject([{ id: "char-vega", name: "Luna Vega" }]);
+  });
+
+  it("takes neither of two characters whose names fold together", async () => {
+    // "Luna" and "luna" are two rows the unique index allows, and typed text
+    // carries no id to tell them apart. A missing seed is a character drawn
+    // from prose; a wrong one is a stranger wearing the reader's saved face.
+    const created = await buildWithMessages(
+      [{ id: "m1", role: "user", content: "A story about @Luna", isActiveChild: true }],
+      [
+        libraryCharacterRow({ id: "char-upper", name: "Luna" }),
+        libraryCharacterRow({ id: "char-lower", name: "luna" })
+      ]
+    );
+
+    expect(created.mediaSettings.mobile.characters).toBeUndefined();
+  });
+
+  it("keeps an edited-away mention out, tapped or typed", async () => {
+    // The scan reads the ACTIVE branch's current text, never history, which is
+    // the same rule the tapped ids already followed — expressed against the
+    // words rather than against the refs.
+    const created = await buildWithMessages(
+      [
+        { id: "m1", role: "assistant", content: "Who is it about?", parentId: null, isActiveChild: true },
+        {
+          id: "m2",
+          role: "user",
+          content: "Star @Luna in it",
+          parentId: "m1",
+          isActiveChild: false,
+          characters: [{ id: "char-luna", name: "Luna" }]
+        },
+        { id: "m3", role: "user", content: "Actually, make it about a lighthouse", parentId: "m1", isActiveChild: true }
+      ],
+      [libraryCharacterRow({ id: "char-luna", name: "Luna" })]
+    );
+
+    expect(created.mediaSettings.mobile.characters).toBeUndefined();
+  });
+
+  it("keeps tapped mentions ahead of scanned ones when the build clamps", async () => {
+    const library = [
+      libraryCharacterRow({ id: "char-typed", name: "Typed" }),
+      libraryCharacterRow({ id: "char-tapped", name: "Tapped" })
+    ];
+    await buildWithMessages(
+      [
+        {
+          id: "m1",
+          role: "user",
+          content: "A story with @Typed in it",
+          isActiveChild: true,
+          characters: [{ id: "char-tapped", name: "Tapped" }]
+        }
+      ],
+      library
+    );
+
+    // First mentioned wins is still the rule and a scan only ever appends, so
+    // the cast the chat was built around is the cast that survives the clamp.
+    // The order of the *lookup* is what carries that, not the row order.
+    const lookup = mockPrisma.libraryCharacter.findMany.mock.calls
+      .map((call: any[]) => call[0].where.id?.in as string[] | undefined)
+      .find(Boolean);
+    expect(lookup).toEqual(["char-tapped", "char-typed"]);
   });
 
   it("carries adopted artwork into the book, and its provenance with it", async () => {

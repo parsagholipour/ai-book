@@ -1,4 +1,4 @@
-import { libraryCharacterPromptBlock } from "@book-maker/core";
+import { libraryCharacterAppearanceRule, libraryCharacterPromptBlock } from "@book-maker/core";
 import { chatReplyQuoteLabel } from "./chatReplyQuote.js";
 import { clampBriefText, completeRecipe, normalizePayload } from "./mobileCreationAdvisor.js";
 import { intentForLane, laneLabel } from "./mobileCreationLanes.js";
@@ -55,8 +55,20 @@ export function composeMobileProjectPrompt(
     fieldLine("Promise or story shape", recipe.promise),
     fieldLine("Tone or vibe", recipe.tone),
     fieldLine("Main character", recipe.mainCharacter),
+    // These are the book's real cast, not a hint. The "Main character" line
+    // directly above is often the lane's generic fallback ("a curious child or
+    // gentle animal") rather than anything the user said, and sitting above a
+    // named saved character it reads as a second protagonist to invent — or as
+    // licence to re-describe the saved one to fit it.
     libraryCharacters.length > 0
-      ? `Characters from the user's library (each must appear in the book; keep names exactly as written):\n${libraryCharacterPromptBlock(libraryCharacters)}`
+      ? [
+          "Characters from the user's library (each must appear in the book; keep names exactly as written).",
+          "These are real, already-designed characters the user saved and asked for by name — they are the cast, and any 'Main character' line above describes one of them rather than someone new:",
+          libraryCharacterPromptBlock(libraryCharacters),
+          libraryCharacterAppearanceRule(libraryCharacters)
+        ]
+          .filter(Boolean)
+          .join("\n")
       : "",
     fieldLine("Conflict", recipe.conflict),
     fieldLine("Theme", recipe.theme),

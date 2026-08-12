@@ -3,6 +3,11 @@ import type { TextModelAdapter } from "../adapters/types.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
 import {
+  libraryCharactersFromMediaSettings,
+  matchLibraryCharacter,
+  type LibraryCharacterSnapshot
+} from "./libraryCharacters.js";
+import {
   inferVoiceProfileFromCharacter,
   normalizeVoiceProfile,
   refineVoiceProfileWithPageSamples,
@@ -32,6 +37,13 @@ export const voiceCharacterCandidateSchema = z.object({
   traits: z.array(z.string()).default([]),
   visualRules: z.array(z.string()).default([]),
   source: z.enum(["PLAN", "BOOK_SAMPLE"]).default("PLAN"),
+  /**
+   * The saved library character this cast member *is*, when the plan carried a
+   * mentioned character's name. Absent for a character the book invented, and
+   * for every candidate extracted from page samples — the model is never shown
+   * an id and could not return one.
+   */
+  libraryCharacterId: z.string().min(1).optional(),
   voiceProfile: voiceProfileSchema.default({
     ageBand: "adult",
     genderPresentation: "unknown",
@@ -114,7 +126,11 @@ export function candidatesFromPlanCharacters(input: CreateProjectInput, plan: Bo
   if (voiceCharactersDisabledForInput(input)) {
     return [];
   }
-  return plan.characters.map((character) => candidateFromPlanCharacter(input, character));
+  // Read once for the whole cast: the snapshots are this book's own copy of the
+  // @-mentioned library characters, and a plan character links back to one by
+  // carrying its name verbatim.
+  const librarySnapshots = libraryCharactersFromMediaSettings(input.mediaSettings);
+  return plan.characters.map((character) => candidateFromPlanCharacter(input, character, librarySnapshots));
 }
 
 export async function extractVoiceCharacterCandidates(options: {
@@ -424,15 +440,45 @@ export function buildRealtimeGroupListenerInstructions(participantNames: string[
     .join(" ");
 }
 
-function candidateFromPlanCharacter(input: CreateProjectInput, character: PlanCharacter): VoiceCharacterCandidate {
+/**
+ * One cast member, copied from the plan and linked back to the saved character
+ * it was made from where there is one.
+ *
+ * Everything the reader sees about a cast member is otherwise the planner's:
+ * the description is what a text model wrote about a character it was given a
+ * name for, and the avatar is drawn from that description. A reader who put
+ * their own saved character in the book therefore met a same-named twin on the
+ * cast sheet. Where the snapshot has its own words they win — they are the
+ * user's, and the planner's are at best a paraphrase.
+ *
+ * The recorded appearance only fills *empty* visualRules. With a look on file
+ * the planner is told to reuse it verbatim, so a non-empty rule set already
+ * carries it; overwriting one earned from the prose would drop the rest of that
+ * character's continuity notes. And the voice profile is inferred from the
+ * merged text rather than the plan's, because an age read off a placeholder
+ * description is how an adult woman ended up with a six-year-old's voice.
+ */
+function candidateFromPlanCharacter(
+  input: CreateProjectInput,
+  character: PlanCharacter,
+  librarySnapshots: readonly LibraryCharacterSnapshot[]
+): VoiceCharacterCandidate {
+  const library = matchLibraryCharacter(character.name, librarySnapshots);
+  const appearance = library?.appearance?.trim();
+  const merged: PlanCharacter = {
+    ...character,
+    description: library?.description.trim() || character.description,
+    visualRules: character.visualRules.length === 0 && appearance ? [appearance] : character.visualRules
+  };
   return voiceCharacterCandidateSchema.parse({
-    name: character.name,
-    role: character.role,
-    description: character.description,
-    traits: character.traits,
-    visualRules: character.visualRules,
+    name: merged.name,
+    role: merged.role,
+    description: merged.description,
+    traits: merged.traits,
+    visualRules: merged.visualRules,
     source: "PLAN",
-    voiceProfile: inferVoiceProfileFromCharacter(input, character)
+    voiceProfile: inferVoiceProfileFromCharacter(input, merged),
+    ...(library ? { libraryCharacterId: library.id } : {})
   });
 }
 

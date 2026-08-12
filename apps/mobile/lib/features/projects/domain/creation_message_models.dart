@@ -26,6 +26,7 @@ class MobileCreationMessage {
     this.requestId,
     this.replyTo,
     this.mentionedCharacterIds = const [],
+    this.characters = const [],
   });
 
   final String role;
@@ -62,6 +63,16 @@ class MobileCreationMessage {
   /// optimistic message so a failed-send retry replays the same mentions.
   final List<String> mentionedCharacterIds;
 
+  /// The same mentions as the server stored them, id and name together.
+  ///
+  /// Separate from [mentionedCharacterIds] because they answer different
+  /// questions: that list is what *this* client is about to send, this one is
+  /// what the message on the server already carries. Editing a stored message
+  /// needs the second — the composer is prefilled with text that still says
+  /// `@Luna`, and without the refs behind it the edit re-sent the same sentence
+  /// with no mentions at all, so the book invented a character wearing the name.
+  final List<MobileCreationCharacterRef> characters;
+
   /// True when this optimistic/user turn included pasted source notes.
   final bool includedSourceNotes;
 
@@ -95,6 +106,7 @@ class MobileCreationMessage {
       requestId: requestId,
       replyTo: replyTo,
       mentionedCharacterIds: mentionedCharacterIds,
+      characters: characters,
     );
   }
 
@@ -124,6 +136,7 @@ class MobileCreationMessage {
       id: json['id'] as String?,
       parentId: json['parentId'] as String?,
       requestId: json['requestId'] as String?,
+      characters: MobileCreationCharacterRef.listFromJson(json['characters']),
       replyTo: ChatReplyTarget.fromJson(json['replyTo']),
       branch: branch is Map<String, dynamic>
           ? MobileProjectChatBranch.fromJson(branch)
@@ -144,8 +157,46 @@ class MobileCreationMessage {
       if (id != null) 'id': id,
       if (parentId != null) 'parentId': parentId,
       if (requestId != null) 'requestId': requestId,
+      if (characters.isNotEmpty)
+        'characters': characters
+            .map((character) => character.toJson())
+            .toList(),
     };
   }
+}
+
+/// One library character a stored chat message @-mentions.
+///
+/// The name is carried alongside the id because that is what the composer
+/// spells: rehydrating an edit means matching `@Luna` in the text back to the
+/// id, and the id alone cannot say which token in the sentence it belongs to.
+class MobileCreationCharacterRef {
+  const MobileCreationCharacterRef({required this.id, required this.name});
+
+  final String id;
+  final String name;
+
+  factory MobileCreationCharacterRef.fromJson(Map<String, dynamic> json) {
+    return MobileCreationCharacterRef(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '',
+    );
+  }
+
+  /// Refs whose id and name are both usable; anything else is dropped rather
+  /// than becoming a mention of nobody.
+  static List<MobileCreationCharacterRef> listFromJson(Object? json) {
+    if (json is! List) return const [];
+    return [
+      for (final entry in json)
+        if (entry is Map<String, dynamic> &&
+            entry['id'] is String &&
+            (entry['name'] as String?)?.isNotEmpty == true)
+          MobileCreationCharacterRef.fromJson(entry),
+    ];
+  }
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
 }
 
 const _groundingRedirectHost = 'vertexaisearch.cloud.google.com';

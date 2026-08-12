@@ -1,5 +1,5 @@
 import { isGroundingRedirectUrl, resolveGroundingRedirects } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { prisma } from "./client.ts";
 
 type StoredResearchSource = {
   id: string;
@@ -23,6 +23,11 @@ type ResearchCitation = {
  * wrapper whose first unwrap failed. The correction is written back because a
  * grounding redirect expires: resolving it now, while it still works, is what
  * stops the same book compiling a dead link on some later recompile.
+ *
+ * It lives here rather than beside the worker's compile because the API renders
+ * the same book inline when a compiled file is missing. That path built its own
+ * citations and skipped the unwrap, so one book's Sources list named Google or
+ * not depending on which process happened to render it.
  *
  * Nothing here is allowed to fail an export. A wrapper that will not resolve
  * stays as it is, which is the same link the book had before.

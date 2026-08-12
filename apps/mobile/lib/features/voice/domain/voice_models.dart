@@ -25,6 +25,8 @@ class VoiceCharacter {
     required this.status,
     required this.needsPreparation,
     this.image,
+    this.libraryCharacterId,
+    this.libraryPortraitUrl,
   });
 
   factory VoiceCharacter.fromJson(Map<String, dynamic> json) {
@@ -43,6 +45,8 @@ class VoiceCharacter {
       image: image is Map<String, dynamic>
           ? MobileProjectImage.fromJson(image)
           : null,
+      libraryCharacterId: json['libraryCharacterId'] as String?,
+      libraryPortraitUrl: json['libraryPortraitUrl'] as String?,
     );
   }
 
@@ -56,7 +60,32 @@ class VoiceCharacter {
   final bool needsPreparation;
   final MobileProjectImage? image;
 
+  /// The account-level character this cast member *is*, when the book was
+  /// built from an @-mention. Null for one the book invented, and for every
+  /// row written before the link existed.
+  ///
+  /// The row itself is a copy of `plan.characters`, so without this the sheet
+  /// could only ever show a same-named twin: the description is the planner's
+  /// and the avatar was drawn from it.
+  final String? libraryCharacterId;
+
+  /// The saved character's own portrait, under `/api/mobile/characters/…` and
+  /// behind the bearer token like every other character image. Only ever set
+  /// alongside [libraryCharacterId].
+  final String? libraryPortraitUrl;
+
   bool get callable => status != VoiceCharacterStatus.unavailable;
+
+  /// Whether this row is one of the reader's saved characters.
+  bool get fromLibrary => libraryCharacterId != null;
+
+  /// The saved portrait to stand in with, or null.
+  ///
+  /// Only while the cast has no built image of its own: that one is drawn from
+  /// this book's own reference sheet, so it is the better likeness of who is on
+  /// the page. The portrait's job is the window before it exists, where a
+  /// linked row rendered grey initials despite the app holding the picture.
+  String? get standInPortraitUrl => image == null ? libraryPortraitUrl : null;
 }
 
 class VoiceCast {

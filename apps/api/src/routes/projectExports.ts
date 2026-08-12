@@ -16,7 +16,7 @@ import {
   type AppConfig,
   type ExportArtifact
 } from "@book-maker/core";
-import { Prisma, prisma, type ProjectStatus } from "@book-maker/db";
+import { Prisma, prisma, researchCitationsForExport, type ProjectStatus } from "@book-maker/db";
 import { access, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -667,11 +667,10 @@ export async function compileProjectMarkdown(
       imagePath: resolvePublicImageUrl(page.images[0]?.path, publicApiUrl),
       imageAlt: "Illustration"
     })),
-    researchSources: project.research.map((source) => ({
-      title: source.title,
-      url: source.url ?? undefined,
-      summary: source.summary
-    })),
+    // Through the shared builder, not a local map: it unwraps a stored Google
+    // grounding redirect and writes the publisher's own address back, so this
+    // render cannot print a link the worker's render of the same book would not.
+    researchSources: await researchCitationsForExport(project.research),
     includeSources: includeSourcesPreference(project.mediaSettings),
     chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
     chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)

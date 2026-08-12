@@ -739,6 +739,24 @@ export type MobileVoiceCharacterDto = {
   /** True when the first call has to build the persona before connecting. */
   needsPreparation: boolean;
   image: MobileProjectImageDto | null;
+  /**
+   * The account-level character this row IS, when the book was built from an
+   * @-mention. Null for a cast member the book invented, and for every row
+   * written before the link existed.
+   *
+   * Without it the sheet could only ever show a same-named twin: the row is
+   * copied from `plan.characters`, so its description is the planner's and its
+   * avatar is drawn from that description. The app uses this to say "from your
+   * characters" and to draw the portrait the reader already recognises.
+   */
+  libraryCharacterId: string | null;
+  /**
+   * The saved character's own portrait, under /api/mobile/characters/:id/… —
+   * present only alongside `libraryCharacterId`. It stands in until the cast
+   * avatar has been built, which is the window where a linked row would
+   * otherwise render as grey initials despite the app holding the picture.
+   */
+  libraryPortraitUrl: string | null;
 };
 
 export type MobileVoiceCastDto = {
@@ -749,96 +767,10 @@ export type MobileVoiceCastDto = {
   maxCallSeconds: number;
 };
 
-export type MobileLibraryCharacterPortraitStatus = "none" | "queued" | "generating" | "ready" | "failed";
-
-/** What the uploaded image turned out to be. Null on rows never read. */
-export type MobileLibraryCharacterPhotoKind = "photograph" | "illustration" | "unknown";
-
-/** Whether the reference image was drawn for a fee or is the user's own art. */
-export type MobileLibraryCharacterPortraitSource = "generated" | "adopted_upload";
-
-/** An account-level library character ("consistent characters"). */
-export type MobileLibraryCharacterDto = {
-  id: string;
-  name: string;
-  description: string;
-  fields: Array<{ key: string; value: string }>;
-  portraitStatus: MobileLibraryCharacterPortraitStatus;
-  portraitError: string | null;
-  portraitSource: MobileLibraryCharacterPortraitSource | null;
-  hasPhoto: boolean;
-  photoKind: MobileLibraryCharacterPhotoKind | null;
-  /**
-   * A description read off the photo, offered to the user. Never applied on
-   * their behalf, and cleared as soon as they accept, edit, or dismiss it.
-   */
-  suggestedDescription: string | null;
-  /**
-   * Whether this character's look actually reaches an illustrated book. It is
-   * exactly the condition the build snapshot uses, so the app can never promise
-   * more than the pipeline delivers — a stored photo alone does not count.
-   */
-  usedInBooks: boolean;
-  /** Authenticated fetch paths under /api/mobile/characters/:id/…, or null. */
-  photoUrl: string | null;
-  portraitUrl: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type MobileLibraryCharacterListDto = {
-  characters: MobileLibraryCharacterDto[];
-  /** What one portrait generation costs right now, for the editor's badge. */
-  portraitCredits: number;
-};
-
-/** Where the bytes of one retained picture came from. */
-export type MobileLibraryCharacterImageSource = "upload" | "generated";
-
-/**
- * One retained version of a character's picture — every upload and every
- * drawing, newest first on the wire.
- */
-export type MobileLibraryCharacterImageDto = {
-  id: string;
-  /**
-   * Authenticated fetch path. Immutable: one id is one set of bytes forever,
-   * so it carries no cache-busting query and must never be given one.
-   */
-  url: string;
-  source: MobileLibraryCharacterImageSource;
-  photoKind: MobileLibraryCharacterPhotoKind | null;
-  /** The picture every surface shows: the reference if there is one, else the photo. */
-  isMain: boolean;
-  isCurrentPhoto: boolean;
-  isCurrentReference: boolean;
-  /**
-   * Whether making this the main picture would move the **book reference**.
-   * The server's own adoption verdict, not a client rule — and the only flag a
-   * surface may pair with copy that mentions books.
-   */
-  canBeMain: boolean;
-  /**
-   * Whether this upload can become the character's photo without touching what
-   * books draw from. Only offered while there is no reference at all, since a
-   * reference outranks the photo on every surface and the action would
-   * otherwise change nothing the reader can see.
-   */
-  canBeShownAsPhoto: boolean;
-  width: number | null;
-  height: number | null;
-  createdAt: string;
-};
-
-export type MobileLibraryCharacterImageListDto = {
-  images: MobileLibraryCharacterImageDto[];
-};
-
-/** What every write that can move a pointer answers with: one call re-renders every surface. */
-export type MobileLibraryCharacterWithImagesDto = {
-  character: MobileLibraryCharacterDto;
-  images: MobileLibraryCharacterImageDto[];
-};
+// The character library is its own surface with its own routes, schemas and
+// serializer; its response shapes live beside them. Re-exported here so the
+// contract stays one import for every existing caller.
+export * from "./characterDto.js";
 
 /**
  * Everything the app needs to open its own Gemini Live socket.

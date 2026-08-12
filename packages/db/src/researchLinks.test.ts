@@ -4,9 +4,9 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(async () => ({}))
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: { researchSource: { update: mocks.update } } }));
+vi.mock("./client.ts", () => ({ prisma: { researchSource: { update: mocks.update } } }));
 
-const { researchCitationsForExport } = await import("./researchLinks.js");
+const { researchCitationsForExport } = await import("./researchLinks.ts");
 
 const WRAPPER = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AbC123";
 

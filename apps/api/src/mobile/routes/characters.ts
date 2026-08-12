@@ -100,6 +100,46 @@ function adoptsAsReference(reading: CharacterPhotoReading | null): boolean {
   return reading?.canAdoptAsReference === true;
 }
 
+/**
+ * Writes the look read off the photo into `appearance`, but only onto a
+ * character that has none.
+ *
+ * This is the one thing the upload *applies* rather than offers, and the
+ * asymmetry with `suggestedDescription` is deliberate. A description is prose
+ * the user wrote about who their character is, so it is theirs and is never
+ * overwritten. An appearance is a field they have never had, empty on every
+ * existing row — and empty is not a neutral default: it is precisely the state
+ * in which the planner invents a look for the character it was told to reuse
+ * and writes that invention into every illustration prompt, where it beats the
+ * reference image attached beside it. Leaving the fix behind a tap would mean
+ * the default path — upload a photo, tap nothing — stays broken, and the
+ * default path is the bug.
+ *
+ * Filling is therefore additive by construction: `appearance` moves only from
+ * "nothing recorded" to "what your picture shows", never from one look to
+ * another. A reading that lands on a character who already has one is offered
+ * on the response instead, exactly as a description is.
+ *
+ * A compare-and-set rather than a field on the write above, for the same reason
+ * `REFERENCE_CLAIMABLE` is one: up to `CHARACTER_PHOTO_VISION_BUDGET_MS` passes
+ * between reading the row and this write, which is long enough for the user to
+ * have typed an appearance of their own in the editor.
+ */
+async function fillAppearanceFromPhoto(
+  characterId: string,
+  reading: CharacterPhotoReading | null
+): Promise<boolean> {
+  const appearance = reading?.suggestedAppearance;
+  if (!appearance) {
+    return false;
+  }
+  const filled = await prisma.libraryCharacter.updateMany({
+    where: { id: characterId, OR: [{ appearance: null }, { appearance: "" }] },
+    data: { appearance }
+  });
+  return filled.count === 1;
+}
+
 /** Thrown inside the attempt transaction when another start already owns the portrait. */
 class PortraitInProgressError extends Error {
   constructor() {
@@ -117,9 +157,19 @@ export async function registerMobileCharacterRoutes(
   const characterContentText = (input: {
     name: string;
     description: string;
+    // Screened with the rest — it is user text like any other. The photo
+    // path's own reading never comes through here: `readCharacterPhoto`
+    // screens it there, so that one bad half can be dropped without
+    // failing an upload the reader did nothing wrong in.
+    appearance?: string | null | undefined;
     fields: Array<{ key: string; value: string }>;
   }) =>
-    [input.name, input.description, ...input.fields.map((field) => `${field.key}: ${field.value}`)]
+    [
+      input.name,
+      input.description,
+      input.appearance ?? "",
+      ...input.fields.map((field) => `${field.key}: ${field.value}`)
+    ]
       .filter(Boolean)
       .join("\n");
 
@@ -136,7 +186,7 @@ export async function registerMobileCharacterRoutes(
         orderBy: { createdAt: "asc" }
       });
       return {
-        characters: characters.map(serializeLibraryCharacter),
+        characters: characters.map((character) => serializeLibraryCharacter(character)),
         portraitCredits: creditCostForOperation("CHARACTER_PORTRAIT_GENERATION")
       } satisfies MobileLibraryCharacterListDto;
     }
@@ -181,6 +231,9 @@ export async function registerMobileCharacterRoutes(
             userId: auth.user.id,
             name: body.data.name,
             description: body.data.description,
+            // Null rather than "": "no appearance recorded" is a state the
+            // planner prompt branches on, so it gets one representation.
+            appearance: body.data.appearance || null,
             fields: body.data.fields
           }
         });
@@ -223,6 +276,7 @@ export async function registerMobileCharacterRoutes(
       const next = {
         name: body.data.name ?? character.name,
         description: body.data.description ?? character.description,
+        appearance: body.data.appearance ?? character.appearance,
         fields: body.data.fields ?? fieldsFromJson(character.fields)
       };
       if (!(await enforceContentRestrictions(reply, characterContentText(next)))) {
@@ -238,6 +292,9 @@ export async function registerMobileCharacterRoutes(
           data: {
             ...(body.data.name !== undefined ? { name: body.data.name } : {}),
             ...(body.data.description !== undefined ? { description: body.data.description } : {}),
+            // Sent-and-empty is a deliberate clear, which is why the write is
+            // keyed on the key being present rather than on the value.
+            ...(body.data.appearance !== undefined ? { appearance: body.data.appearance || null } : {}),
             ...(body.data.fields !== undefined ? { fields: body.data.fields } : {}),
             ...(clearsSuggestion ? { suggestedDescription: null } : {})
           }
@@ -382,6 +439,8 @@ export async function registerMobileCharacterRoutes(
         }
       });
 
+      const appearanceApplied = await fillAppearanceFromPhoto(character.id, reading);
+
       if (adoptsAsReference(reading)) {
         // Adoption points *both* columns at the one uploaded file. The second
         // copy existed so the two columns could be deleted independently;
@@ -405,7 +464,15 @@ export async function registerMobileCharacterRoutes(
       const current = (await ownedCharacter(id, auth.user.id)) ?? character;
       const images = await loadCharacterImages(character.id, auth.user.id);
       return {
-        character: serializeLibraryCharacter(current) satisfies MobileLibraryCharacterDto,
+        character: serializeLibraryCharacter(
+          current,
+          // Applied, it is the appearance and there is nothing to offer.
+          // Refused, the character already has a look the user owns and this
+          // is the alternative the new picture shows.
+          appearanceApplied || !reading?.suggestedAppearance
+            ? {}
+            : { suggestedAppearance: reading.suggestedAppearance }
+        ) satisfies MobileLibraryCharacterDto,
         images: images.map((image) => serializeLibraryCharacterImage(current, image))
       };
     }

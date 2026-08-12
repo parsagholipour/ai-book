@@ -1,16 +1,24 @@
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
+import { MAX_APPEARANCE_LENGTH } from "../generation/libraryCharacters.js";
 
 /**
  * Reads the image a user attached to a library character, once, at upload time.
  *
- * It answers two questions in one call, because both are about the same pixels:
- * what this character looks like (offered back as a description the user may
- * accept), and whether the image is a photograph of a real person or already an
- * illustration. The second answer decides whether the image can *be* the
- * character's reference or has to be drawn into one first — see
- * `LibraryCharacterPhotoKind` in the Prisma schema.
+ * It answers three questions in one call, because all three are about the same
+ * pixels: who this character reads as (offered back as a description the user
+ * may accept), what they physically LOOK like, and whether the image is a
+ * photograph of a real person or already an illustration. The last answer
+ * decides whether the image can *be* the character's reference or has to be
+ * drawn into one first — see `LibraryCharacterPhotoKind` in the Prisma schema.
+ *
+ * The appearance is the load-bearing one. It is the only moment in the whole
+ * pipeline where the look leaves the pixels and becomes text: the planner is a
+ * text model and never sees this image, so without a sentence it can read it
+ * invents a look for the character it was told to reuse — and that invented
+ * sentence travels into every illustration prompt, where it outranks the
+ * reference image attached beside it.
  *
  * Modeled on `fileUnderstanding.ts`: same cheap vision model, same JSON-schema
  * response, same "never refuse" framing. It is deliberately a separate adapter
@@ -38,6 +46,17 @@ export type CharacterPhotoVisionResult = {
   subjectCount: number;
   /** 1-3 sentences describing how this character looks, for a book to draw. */
   suggestedDescription: string;
+  /**
+   * The same look written as fixed facts rather than as prose: the sentence
+   * that becomes `LibraryCharacter.appearance` and, through the build snapshot,
+   * the "Appearance (fixed — use verbatim)" line every model downstream reads.
+   *
+   * Empty when the model saw no character it could describe. Empty is not
+   * neutral downstream — it is exactly the state that lets a planner invent a
+   * look — so the caller distinguishes it from a real reading rather than
+   * storing it.
+   */
+  suggestedAppearance: string;
   /** Short profile rows (Age, Hair, Outfit…) the editor offers individually. */
   suggestedFields: Array<{ key: string; value: string }>;
 };
@@ -54,6 +73,13 @@ const characterPhotoVisionSchema = z
     confidence: z.number().min(0).max(1),
     subjectCount: z.number().int().min(0).max(50),
     suggestedDescription: z.string().min(1).max(1200),
+    // Defaulted rather than required: a reply that answered everything else is
+    // worth keeping, and an absent appearance is the same "nothing to store"
+    // an unreadable image produces. The bound is deliberately looser than the
+    // storage cap the prompt asks for — failing the whole parse over an
+    // overlong appearance would throw away the verdict and the description
+    // with it, and the caller already has to bound what it stores.
+    suggestedAppearance: z.string().max(MAX_APPEARANCE_LENGTH * 2).default(""),
     suggestedFields: z
       .array(
         z
@@ -75,8 +101,9 @@ const CHARACTER_PHOTO_INSTRUCTIONS = [
   '- "confidence": how sure you are of imageKind, from 0 to 1.',
   '- "subjectCount": how many distinct people or creatures are the subject. 0 if the image shows no character at all.',
   '- "suggestedDescription": 1-3 sentences describing how this character looks, written so an illustrator could draw them again: build and apparent age, face, hair, skin tone, clothing, colours, and anything distinctive. Describe appearance only — do not name or guess at a real person, and do not describe the background, the photographer, or the setting.',
+  `- "suggestedAppearance": the same look again, but as a compact list of fixed physical facts an illustrator must match every time, in one or two sentences under ${MAX_APPEARANCE_LENGTH} characters: apparent age, build, skin tone, hair colour and style, eye colour, facial hair, glasses, headwear or head covering, clothing and its colours, and any distinctive feature. Only what is visible. No name, no personality, no mood, no background, no setting, no story. Use "" if you cannot see a character clearly enough to describe one.`,
   '- "suggestedFields": up to six short profile rows, each {"key","value"}, using labels like Age, Hair, Eyes, Outfit, Build, Distinctive. Omit anything you cannot see.',
-  "Write the description in a warm, plain, book-friendly voice. Never refuse; if the image is unreadable, say so in suggestedDescription, answer \"unknown\", and use 0 for subjectCount."
+  "Write the description in a warm, plain, book-friendly voice. Never refuse; if the image is unreadable, say so in suggestedDescription, answer \"unknown\", use 0 for subjectCount, and leave suggestedAppearance empty."
 ].join("\n");
 
 export type GeminiCharacterPhotoVisionAdapterOptions = {
@@ -146,6 +173,9 @@ export class FakeCharacterPhotoVisionAdapter implements CharacterPhotoVisionAdap
       confidence: 0.9,
       subjectCount: 1,
       suggestedDescription: `A mock reading of the photo attached to ${request.characterName}.`,
+      // No name in here, deliberately: this string is stored as the character's
+      // fixed look and is repeated verbatim into illustration prompts.
+      suggestedAppearance: "Mock adult with short brown hair, light brown skin, and a plain grey jacket.",
       suggestedFields: [{ key: "Hair", value: "Mock brown" }]
     };
   }

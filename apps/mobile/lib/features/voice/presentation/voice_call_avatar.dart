@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/config/app_config.dart';
 import '../../../shared/ui/motion.dart';
+import '../../characters/presentation/character_network_image.dart';
 import '../../projects/data/projects_repository.dart';
 import '../domain/voice_models.dart';
 
@@ -102,6 +103,12 @@ class _VoiceCallAvatarState extends State<VoiceCallAvatar>
 
 /// Character portraits are served behind the mobile bearer token, so they load
 /// with explicit auth headers rather than as a plain network image.
+///
+/// Two different pictures can answer here and they come from different routes:
+/// the cast image this book drew (a project asset) and, until that exists, the
+/// saved character's own portrait (a character asset). Each carries its own
+/// auth headers, which is why the library one goes through
+/// [CharacterNetworkImage] rather than being folded into the branch below.
 class _AvatarFace extends ConsumerWidget {
   const _AvatarFace({required this.character, required this.diameter});
 
@@ -112,6 +119,7 @@ class _AvatarFace extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final image = character.image;
     final initials = _Initials(name: character.name);
+    final standIn = character.standInPortraitUrl;
 
     Widget face = initials;
     if (image != null) {
@@ -127,6 +135,14 @@ class _AvatarFace extends ConsumerWidget {
               wasSynchronouslyLoaded || frame != null ? child : initials,
         );
       }
+    } else if (standIn != null) {
+      face = CharacterNetworkImage(
+        url: standIn,
+        decodeWidth: diameter,
+        semanticLabel: character.name,
+        placeholder: initials,
+        errorPlaceholder: initials,
+      );
     }
 
     return ClipOval(child: SizedBox.square(dimension: diameter, child: face));

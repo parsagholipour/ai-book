@@ -25,12 +25,19 @@ export function errorMessage(error: unknown): string {
 
 export function safeJsonStringify(value: unknown): string {
   const seen = new WeakSet<object>();
-  return JSON.stringify(value, (_key, item: unknown) => {
+  // A replacer is handed `toJSON()`'s output, never the object that owns it, so
+  // a Buffer arrives already expanded into `{ type: "Buffer", data: [ …every
+  // byte… ] }` — the megabyte of digits this compaction exists to keep out of a
+  // run log. The Buffer itself is still on the holder, which is `this`, so that
+  // is what the check has to read; a plain function is what makes `this` bound.
+  return JSON.stringify(value, function (this: unknown, key: string, item: unknown) {
+    const original =
+      this && typeof this === "object" ? (this as Record<string, unknown>)[key] : undefined;
+    if (Buffer.isBuffer(original)) {
+      return { type: "Buffer", bytes: original.byteLength };
+    }
     if (typeof item === "bigint") {
       return item.toString();
-    }
-    if (Buffer.isBuffer(item)) {
-      return { type: "Buffer", bytes: item.byteLength };
     }
     if (item && typeof item === "object") {
       if (seen.has(item)) {
@@ -42,6 +49,19 @@ export function safeJsonStringify(value: unknown): string {
   });
 }
 
+/**
+ * Makes one path segment safe to write. Every caller passes something that is
+ * already ASCII by construction — a cuid, a job name, a conversation id — so
+ * the `_` substitution is a guard and the `"unknown"` fallback is a last resort
+ * for a value that was empty to begin with.
+ *
+ * It is emphatically **not** a naming scheme for human text: a Persian, Cyrillic
+ * or CJK name survives neither step, and everything that reaches here from one
+ * ends up as the same `"unknown"`. `characterSlug` in
+ * `generation/characterReferences.ts` learned that the expensive way — a whole
+ * book's cast writing to one file — and now hashes such a name before it gets
+ * here rather than letting this decide.
+ */
 export function safePathPart(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "unknown";
 }

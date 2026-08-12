@@ -246,6 +246,14 @@ export function targetLanguageGenerationGuidance(language: string | null | undef
   return [
     `Target language: ${targetLanguage}.`,
     `Write all book-facing string values in ${targetLanguage}, including titles, chapter summaries, planning questions, page titles, Markdown prose, summaries, and continuity notes.`,
+    // The exemption exists because a name the user supplied is an identifier,
+    // not book-facing text. A saved library character is linked to their
+    // portrait by nothing but their name matched letter for letter, so
+    // translating or transliterating it into the target language silently
+    // unseeds them — the book keeps a character who reads like theirs and is
+    // drawn as a stranger. This rule is deliberately narrow: only names the
+    // user wrote themselves, never names the model invented.
+    "Proper names the user supplied are identifiers, not text to translate: keep every character, place, brand, and title name they wrote exactly as they wrote it, in its own script, and never translate, transliterate, localize, or re-spell one.",
     "Keep JSON field names exactly as requested; translate only the human-readable string values."
   ];
 }

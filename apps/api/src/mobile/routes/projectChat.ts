@@ -1,6 +1,6 @@
 import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
-import { libraryCharacterPromptBlock } from "@book-maker/core";
+import { libraryCharacterAppearanceRule, libraryCharacterPromptBlock } from "@book-maker/core";
 import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
 import {
   applyOrCancelEditProposal,
@@ -153,18 +153,26 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "A mentioned character is no longer in your library.");
       }
       const characterRefs = mentionedCharacters.map((character) => ({ id: character.id, name: character.name }));
+      // The appearance travels with the profile, and the rule travels with it.
+      // An edit is where a saved character is most likely to be *redrawn* —
+      // "put Natalia on the last page" — and a model given only a biography
+      // invents a look, writes it into the illustration prompt, and the prompt
+      // beats the reference image attached beside it.
+      const mentionSnapshots = mentionedCharacters.map((character) => ({
+        id: character.id,
+        name: character.name,
+        description: character.description,
+        ...(character.appearance ? { appearance: character.appearance } : {}),
+        fields: characterFieldsFromJson(character.fields)
+      }));
       const mentionContext = mentionedCharacters.length
         ? [
             "Mentioned character profiles (the user's own library characters; treat as authoritative canon):",
-            libraryCharacterPromptBlock(
-              mentionedCharacters.map((character) => ({
-                id: character.id,
-                name: character.name,
-                description: character.description,
-                fields: characterFieldsFromJson(character.fields)
-              }))
-            )
-          ].join("\n")
+            libraryCharacterPromptBlock(mentionSnapshots),
+            libraryCharacterAppearanceRule(mentionSnapshots)
+          ]
+            .filter(Boolean)
+            .join("\n")
         : undefined;
 
       const activeMessages = await loadActiveProjectChatMessages(id);

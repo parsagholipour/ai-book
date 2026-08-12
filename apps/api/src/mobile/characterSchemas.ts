@@ -1,3 +1,4 @@
+import { MAX_APPEARANCE_LENGTH } from "@book-maker/core";
 import { z } from "zod";
 import { requestIdSchema } from "./schemas.js";
 
@@ -10,7 +11,21 @@ import { requestIdSchema } from "./schemas.js";
 export const LIBRARY_CHARACTER_LIMIT_PER_USER = 100;
 export const LIBRARY_CHARACTER_NAME_MAX = 80;
 export const LIBRARY_CHARACTER_DESCRIPTION_MAX = 2_000;
+/**
+ * Shared with the snapshot reader in core rather than restated: the same string
+ * is capped here on the way in and again on the way out of
+ * `mediaSettings.mobile.characters`, and a wider cap here would be silently
+ * truncated there — mid-sentence, in the one field truncation is unsafe in.
+ */
+export const LIBRARY_CHARACTER_APPEARANCE_MAX = MAX_APPEARANCE_LENGTH;
 export const LIBRARY_CHARACTER_FIELDS_MAX = 12;
+
+/**
+ * What the character looks like, in words. Empty clears it — and clearing is a
+ * real choice rather than a no-op, because an absent appearance is what tells
+ * every model downstream to describe nothing and defer to the reference image.
+ */
+const appearanceSchema = z.string().trim().max(LIBRARY_CHARACTER_APPEARANCE_MAX);
 
 export const libraryCharacterFieldSchema = z
   .object({
@@ -23,6 +38,7 @@ export const mobileCharacterCreateBodySchema = z
   .object({
     name: z.string().trim().min(1).max(LIBRARY_CHARACTER_NAME_MAX),
     description: z.string().trim().max(LIBRARY_CHARACTER_DESCRIPTION_MAX).default(""),
+    appearance: appearanceSchema.default(""),
     fields: z.array(libraryCharacterFieldSchema).max(LIBRARY_CHARACTER_FIELDS_MAX).default([])
   })
   .strict();
@@ -31,6 +47,7 @@ export const mobileCharacterUpdateBodySchema = z
   .object({
     name: z.string().trim().min(1).max(LIBRARY_CHARACTER_NAME_MAX).optional(),
     description: z.string().trim().max(LIBRARY_CHARACTER_DESCRIPTION_MAX).optional(),
+    appearance: appearanceSchema.optional(),
     fields: z.array(libraryCharacterFieldSchema).max(LIBRARY_CHARACTER_FIELDS_MAX).optional(),
     /**
      * Turns down the description read off the photo. It is a change on its own
@@ -44,6 +61,7 @@ export const mobileCharacterUpdateBodySchema = z
     (body) =>
       body.name !== undefined ||
       body.description !== undefined ||
+      body.appearance !== undefined ||
       body.fields !== undefined ||
       body.dismissSuggestion !== undefined,
     { message: "Send at least one field to update." }
@@ -86,6 +104,7 @@ export const mobileCharacterCreateOpenApiBody = {
   properties: {
     name: { type: "string", minLength: 1, maxLength: LIBRARY_CHARACTER_NAME_MAX },
     description: { type: "string", maxLength: LIBRARY_CHARACTER_DESCRIPTION_MAX },
+    appearance: { type: "string", maxLength: LIBRARY_CHARACTER_APPEARANCE_MAX },
     fields: { type: "array", items: characterFieldOpenApi, maxItems: LIBRARY_CHARACTER_FIELDS_MAX }
   },
   required: ["name"]
@@ -97,6 +116,7 @@ export const mobileCharacterUpdateOpenApiBody = {
   properties: {
     name: { type: "string", minLength: 1, maxLength: LIBRARY_CHARACTER_NAME_MAX },
     description: { type: "string", maxLength: LIBRARY_CHARACTER_DESCRIPTION_MAX },
+    appearance: { type: "string", maxLength: LIBRARY_CHARACTER_APPEARANCE_MAX },
     fields: { type: "array", items: characterFieldOpenApi, maxItems: LIBRARY_CHARACTER_FIELDS_MAX },
     dismissSuggestion: { type: "boolean" }
   }

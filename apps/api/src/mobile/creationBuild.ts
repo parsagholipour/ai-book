@@ -48,6 +48,7 @@ import { fingerprintGenerationRequest, hashString, jsonInputValue, jsonRecord, p
 import {
   createFastRoutingTextModel,
   creditCostForOperation,
+  foldCharacterName,
   generateJsonWithRetry,
   libraryCharacterRelativeFile,
 } from "@book-maker/core";
@@ -459,9 +460,11 @@ async function libraryCharacterSnapshotsForBuild(
   // — each message caps its own mentions, but a chat is many messages, and an
   // over-long list would fail the re-parse below as a 500 no retry can clear.
   // First mentioned wins: that is the cast the chat was built around.
-  const ids = [
-    ...new Set(active.flatMap((message) => (message.characters ?? []).map((ref) => ref.id)))
-  ].slice(0, BUILD_CHARACTER_SNAPSHOT_LIMIT);
+  const tapped = active.flatMap((message) => (message.characters ?? []).map((ref) => ref.id));
+  const ids = [...new Set([...tapped, ...(await typedCharacterIds(userId, active))])].slice(
+    0,
+    BUILD_CHARACTER_SNAPSHOT_LIMIT
+  );
   if (ids.length === 0) {
     return [];
   }
@@ -470,6 +473,11 @@ async function libraryCharacterSnapshotsForBuild(
     id: row.id,
     name: row.name,
     description: row.description,
+    // The look, when one has been recorded. Absent rather than empty: the
+    // planner prompt branches on whether a character has one at all, and
+    // "" would read as "recorded, and it is nothing" — which is the invented
+    // -appearance bug wearing a different hat.
+    ...(row.appearance?.trim() ? { appearance: row.appearance.trim() } : {}),
     fields: characterFieldsFromJson(row.fields),
     // The same condition `serializeLibraryCharacter` calls `usedInBooks`, so
     // what the app says about a character is what the book actually gets.
@@ -483,6 +491,96 @@ async function libraryCharacterSnapshotsForBuild(
         }
       : {})
   }));
+}
+
+/**
+ * The mentions nobody tapped.
+ *
+ * `message.characters` is written only when the composer's suggestion chip was
+ * tapped, so a reader who typed "@Natalia" by hand — or who tapped the chip and
+ * then edited the message, which rebuilds the text and drops the refs — sent no
+ * id at all. The name still sits in the transcript the planner reads, so the
+ * book was built *about* the saved character while carrying no snapshot of
+ * them: no appearance, no portrait, and a planner free to invent both.
+ *
+ * Two properties this must not break:
+ *
+ * - **An edited-away mention stays out.** This reads the ACTIVE branch's
+ *   current text, never history, so a name the reader deleted is a name that is
+ *   no longer there. That is the same rule the tapped ids follow, expressed
+ *   against the text rather than against the refs.
+ * - **A common word is not a mention.** "Rose", "Hope" and "می" are ordinary
+ *   words, and matching bare prose would drag a character into every book that
+ *   used one. The literal "@" is required — it is what the composer writes and
+ *   what a reader types when they mean the saved character — and it must itself
+ *   start a word, so "me@luna.com" is an address rather than a cast list.
+ *
+ * Only user text is scanned: the assistant echoes names back constantly, and
+ * nothing it writes is a decision about who is in the book.
+ */
+async function typedCharacterIds(
+  userId: string,
+  active: readonly { role: string; content: string }[]
+): Promise<string[]> {
+  const texts = active.filter((message) => message.role === "user").map((message) => message.content);
+  if (!texts.some((text) => text.includes("@"))) {
+    return [];
+  }
+  const rows = await prisma.libraryCharacter.findMany({
+    where: { userId },
+    select: { id: true, name: true }
+  });
+  const folded = rows
+    .map((row) => ({ id: row.id, folded: foldCharacterName(row.name) }))
+    .filter((candidate) => candidate.folded.length > 0);
+  // Two library characters can fold to one name ("Luna" and "luna" are two
+  // distinct rows), and typed text carries no id to tell them apart. Neither is
+  // taken, for the reason `matchLibraryCharacter` refuses an ambiguous match: a
+  // missing seed is a character drawn from prose, a wrong one is a stranger
+  // wearing the reader's saved face. Tapping the chip still binds either.
+  const ambiguous = new Set(
+    folded
+      .map((candidate) => candidate.folded)
+      .filter((name, index, names) => names.indexOf(name) !== index)
+  );
+  // Longest first, so "@Luna Vega" binds Luna Vega and not the Luna inside her.
+  const candidates = folded
+    .filter((candidate) => !ambiguous.has(candidate.folded))
+    .sort((left, right) => right.folded.length - left.folded.length);
+  return texts.flatMap((text) => scanTypedMentions(text, candidates));
+}
+
+/** Ids of the library characters `text` @-mentions, in the order they appear. */
+function scanTypedMentions(
+  text: string,
+  candidates: readonly { id: string; folded: string }[]
+): string[] {
+  // Both sides folded, so a name typed from a Persian keyboard, decomposed by
+  // an IME, or wrapped in bidi marks is still the name that was saved. Folding
+  // moves offsets, which is why nothing here reports one to the caller.
+  const haystack = foldCharacterName(text);
+  const claimed: Array<{ start: number; end: number }> = [];
+  const found: Array<{ at: number; id: string }> = [];
+  for (const candidate of candidates) {
+    const needle = `@${candidate.folded}`;
+    for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+      const end = at + needle.length;
+      if (isNameCharacter(haystack[at - 1]) || isNameCharacter(haystack[end])) {
+        continue;
+      }
+      // A longer name got here first and this match is inside it.
+      if (claimed.some((span) => at < span.end && end > span.start)) {
+        continue;
+      }
+      claimed.push({ start: at, end });
+      found.push({ at, id: candidate.id });
+    }
+  }
+  return found.sort((left, right) => left.at - right.at).map((entry) => entry.id);
+}
+
+function isNameCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}]/u.test(character);
 }
 
 export function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcome): FastifyReply {

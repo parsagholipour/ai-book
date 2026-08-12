@@ -1,10 +1,11 @@
 import { config } from "../runtime/config.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type WorkerImageAsset } from "../runtime/jobTypes.js";
-import { safePathPart } from "../runtime/serialization.js";
+import { safeJsonStringify, safePathPart } from "../runtime/serialization.js";
 import {
   buildCharacterReferencePrompt,
   characterReferenceSeedInstruction,
+  foldCharacterName,
   libraryCharacterDiskPath,
   libraryCharacterFaceInstruction,
   libraryCharactersFromMediaSettings,
@@ -25,7 +26,8 @@ import {
 } from "@book-maker/core";
 import { imageGenerationMetadata, imageStorageMetadata } from "./bookHelpers.js";
 import { Prisma, prisma } from "@book-maker/db";
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { appendFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
@@ -124,6 +126,10 @@ async function generateCharacterReferenceAssets(
   // writes stay sequential below: an interactive transaction client must not
   // run queries concurrently.
   const characters = options.plan.characters;
+  // Names decide filenames, so the whole cast's stems are resolved together and
+  // up front: two characters must never share one, and the renders below run
+  // concurrently into this one directory.
+  const fileStems = characterReferenceFileStems(characters.map((character) => character.name));
   const librarySnapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
   // The snapshots are stored JSON that client flows can reach, so a portrait
   // may only be read out of the book owner's own characters directory: the
@@ -134,14 +140,18 @@ async function generateCharacterReferenceAssets(
     ? ((await prisma.project.findUnique({ where: { id: options.projectId }, select: { userId: true } }))?.userId ??
       null)
     : null;
+  // A book that @-mentioned nothing has no seed to lose. Recording a skip
+  // reason on its sheets would put "no_library_match" on every character of
+  // every ordinary book, which is noise standing exactly where the signal for
+  // the books that *did* mention someone has to be readable.
+  const bookHasLibraryCharacters = librarySnapshots.length > 0;
   type RenderedReference = {
     character: (typeof characters)[number];
     prompt: string;
     image: Awaited<ReturnType<typeof options.strategy.generateImageBytes>>;
     optimizedImage: Awaited<ReturnType<typeof optimizeImageForStorage>>;
     filename: string;
-    seededFromLibraryCharacterId?: string | undefined;
-    seedSource?: LibraryCharacterPortraitSource | undefined;
+    seeding: LibraryPortraitSeedOutcome;
   };
   const rendered = Array.from({ length: characters.length }) as RenderedReference[];
   let cursor = 0;
@@ -160,26 +170,38 @@ async function generateCharacterReferenceAssets(
         // the sheet keeps the face the user already approved. This whole
         // function runs only when the adapter supports reference images
         // (`shouldUseCharacterReferenceImages` above), and a portrait that has
-        // gone missing — the character was deleted since the build — is skipped
-        // silently rather than failing a book that no longer depends on it.
-        const seed = await libraryPortraitSeedForName(character.name, librarySnapshots, seedOwnerUserId);
+        // gone missing — the character was deleted since the build — does not
+        // fail a book that no longer depends on it. It is no longer *silent*,
+        // though: the reason is stamped on the row and written to the run log,
+        // because from the finished book a dropped seed and a character who was
+        // never in the library look exactly alike.
+        const seeding = await libraryPortraitSeedForName(character.name, librarySnapshots, seedOwnerUserId);
+        if (!seeding.seeded && bookHasLibraryCharacters) {
+          await logLibrarySeedSkipped({
+            projectId: options.projectId,
+            planId: options.planId,
+            generationJobId: options.generationJobId,
+            characterName: character.name,
+            outcome: seeding
+          });
+        }
         const prompt = [
           buildCharacterReferencePrompt({
             input: options.input,
             plan: options.plan,
             character
           }),
-          ...(seed ? [characterReferenceSeedInstruction(seed.source)] : [])
+          ...(seeding.seeded ? [characterReferenceSeedInstruction(seeding.seed.source)] : [])
         ].join("\n");
         const image = await options.strategy.generateImageBytes({
           image: options.providers.image,
           prompt,
           projectId: options.projectId,
-          ...(seed ? { referenceImagePaths: [seed.path] } : {}),
+          ...(seeding.seeded ? { referenceImagePaths: [seeding.seed.path] } : {}),
           aspectRatio: "4:3"
         });
         const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
-        const filename = `character-reference-${characterSlug(character.name)}.${optimizedImage.extension}`;
+        const filename = `${fileStems[index]!}.${optimizedImage.extension}`;
         await writeFile(join(projectImageDir, filename), optimizedImage.bytes);
         rendered[index] = {
           character,
@@ -187,7 +209,7 @@ async function generateCharacterReferenceAssets(
           image,
           optimizedImage,
           filename,
-          ...(seed ? { seededFromLibraryCharacterId: seed.id, seedSource: seed.source } : {})
+          seeding
         };
       } catch (error) {
         failed = true;
@@ -218,13 +240,7 @@ async function generateCharacterReferenceAssets(
           revisedPrompt: item.image.revisedPrompt,
           ...imageGenerationMetadata(item.image),
           fileName: item.filename,
-          ...(item.seededFromLibraryCharacterId
-            ? {
-                libraryCharacterId: item.seededFromLibraryCharacterId,
-                seededFromPortrait: true,
-                seedSource: item.seedSource ?? "generated"
-              }
-            : {})
+          ...librarySeedMetadata(item.seeding, bookHasLibraryCharacters)
         }
       }
     });
@@ -236,27 +252,136 @@ async function generateCharacterReferenceAssets(
 
 const CHARACTER_REFERENCE_RENDER_CONCURRENCY = 3;
 
+/**
+ * Why a plan character's reference sheet was rendered without the reader's own
+ * saved artwork.
+ *
+ * All six used to be one `return null` that recorded nothing, which is what
+ * made "my saved character came out as a different person" a database dig: the
+ * sheet, the plan and the book all look ordinary, and the only trace of the
+ * decision was its absence. They are kept apart because they need different
+ * answers — a rename by the planner (`no_library_match`) is a matcher problem,
+ * a `portrait_file_missing` is a character deleted since the build, and
+ * `portrait_owned_by_another_user` is a planted snapshot being refused and is
+ * working as intended.
+ */
+export type LibraryPortraitSeedSkipReason =
+  | "no_library_match"
+  | "no_portrait"
+  | "project_has_no_owner"
+  | "portrait_owned_by_another_user"
+  | "portrait_path_rejected"
+  | "portrait_file_missing";
+
+type LibraryPortraitSeed = { id: string; path: string; source: LibraryCharacterPortraitSource };
+
+type LibraryPortraitSeedOutcome =
+  | { seeded: true; seed: LibraryPortraitSeed }
+  | {
+      seeded: false;
+      reason: LibraryPortraitSeedSkipReason;
+      /** Present once a snapshot was matched — every reason but `no_library_match`. */
+      libraryCharacterId?: string | undefined;
+    };
+
 async function libraryPortraitSeedForName(
   name: string,
   snapshots: readonly LibraryCharacterSnapshot[],
   ownerUserId: string | null
-): Promise<{ id: string; path: string; source: LibraryCharacterPortraitSource } | null> {
-  const match = matchLibraryCharacter(name, snapshots);
-  if (!match?.portraitFile || !ownerUserId || !match.portraitFile.startsWith(`${ownerUserId}/`)) {
-    return null;
+): Promise<LibraryPortraitSeedOutcome> {
+  return resolveLibraryPortraitSeed(matchLibraryCharacter(name, snapshots), ownerUserId);
+}
+
+async function resolveLibraryPortraitSeed(
+  match: LibraryCharacterSnapshot | null,
+  ownerUserId: string | null
+): Promise<LibraryPortraitSeedOutcome> {
+  if (!match) {
+    return { seeded: false, reason: "no_library_match" };
+  }
+  const matched = { libraryCharacterId: match.id };
+  if (!match.portraitFile) {
+    return { seeded: false, reason: "no_portrait", ...matched };
+  }
+  if (!ownerUserId) {
+    return { seeded: false, reason: "project_has_no_owner", ...matched };
+  }
+  // The snapshots are stored JSON that client flows can reach, so a portrait is
+  // only ever read out of the book owner's own characters directory.
+  if (!match.portraitFile.startsWith(`${ownerUserId}/`)) {
+    return { seeded: false, reason: "portrait_owned_by_another_user", ...matched };
   }
   const path = libraryCharacterDiskPath(config.IMAGE_STORAGE_DIR, match.portraitFile);
   if (!path) {
-    return null;
+    return { seeded: false, reason: "portrait_path_rejected", ...matched };
   }
   try {
     if (!(await stat(path)).isFile()) {
-      return null;
+      return { seeded: false, reason: "portrait_file_missing", ...matched };
     }
   } catch {
-    return null;
+    return { seeded: false, reason: "portrait_file_missing", ...matched };
   }
-  return { id: match.id, path, source: match.portraitSource ?? "generated" };
+  return { seeded: true, seed: { id: match.id, path, source: match.portraitSource ?? "generated" } };
+}
+
+/** What a rendered sheet's row records about its seeding, successful or not. */
+function librarySeedMetadata(
+  outcome: LibraryPortraitSeedOutcome,
+  bookHasLibraryCharacters: boolean
+): Record<string, unknown> {
+  if (outcome.seeded) {
+    return {
+      libraryCharacterId: outcome.seed.id,
+      seededFromPortrait: true,
+      seedSource: outcome.seed.source
+    };
+  }
+  if (!bookHasLibraryCharacters) {
+    return {};
+  }
+  return {
+    seededFromPortrait: false,
+    librarySeedSkipped: outcome.reason,
+    ...(outcome.libraryCharacterId ? { libraryCharacterId: outcome.libraryCharacterId } : {})
+  };
+}
+
+/**
+ * One line per dropped seed, in the project's run log directory — the place
+ * this codebase keeps its debugging artifacts.
+ *
+ * This module has no bullmq `Job` (it is called from four handlers and from the
+ * book passes), so it cannot use `createRunLogger`; the file name follows the
+ * same `<run>-<job>.jsonl` convention with a fixed job part so the line lands
+ * beside the render that produced it. Writing it is never allowed to fail a
+ * book: a lost diagnostic is the cheapest thing in this function.
+ */
+async function logLibrarySeedSkipped(options: {
+  projectId: string;
+  planId: string;
+  generationJobId: string | undefined;
+  characterName: string;
+  outcome: Extract<LibraryPortraitSeedOutcome, { seeded: false }>;
+}): Promise<void> {
+  const logDir = join(config.BOOK_STORAGE_DIR, options.projectId, "runs");
+  const runId = safePathPart(options.generationJobId ?? "unknown-run");
+  const entry = {
+    timestamp: new Date().toISOString(),
+    event: "character.reference.library_seed_skipped",
+    projectId: options.projectId,
+    planId: options.planId,
+    generationJobId: options.generationJobId,
+    characterName: options.characterName,
+    reason: options.outcome.reason,
+    libraryCharacterId: options.outcome.libraryCharacterId
+  };
+  try {
+    await mkdir(logDir, { recursive: true });
+    await appendFile(join(logDir, `${runId}-character-references.jsonl`), `${safeJsonStringify(entry)}\n`, "utf8");
+  } catch (error) {
+    console.error(`Failed to record a skipped character portrait seed for ${options.projectId}`, error);
+  }
 }
 
 /**
@@ -338,16 +463,45 @@ async function libraryFacesForSheets(options: {
     if (faces.length >= options.budget) {
       break;
     }
-    const name = characterNameFromAssetMetadata(sheet.metadata);
-    if (!name) {
+    const match = librarySnapshotForSheet(sheet.metadata, snapshots);
+    if (!match) {
       continue;
     }
-    const seed = await libraryPortraitSeedForName(name, snapshots, ownerUserId);
-    if (seed) {
-      faces.push({ name, path: seed.path });
+    const outcome = await resolveLibraryPortraitSeed(match, ownerUserId);
+    if (outcome.seeded) {
+      // The book calls the character by the plan's name, so that is the name the
+      // face instruction has to use; the snapshot's own is the fallback for a
+      // sheet somehow written without one.
+      faces.push({ name: characterNameFromAssetMetadata(sheet.metadata) ?? match.name, path: outcome.seed.path });
     }
   }
   return faces;
+}
+
+/**
+ * Which library character a rendered sheet belongs to.
+ *
+ * The seeding pass already resolved this and wrote the answer onto the sheet's
+ * own row, so a page render reads that id back instead of running the name
+ * matcher a second time. Re-deriving it here reproduced every matching defect
+ * at render time and — worse — could reach a *different* answer than the sheet
+ * was actually drawn from, which is a face attached to the wrong character.
+ * The name match survives only for sheets rendered before the id was recorded.
+ *
+ * An id that names no snapshot resolves to nothing rather than falling back to
+ * the name: the snapshot set has moved out from under the sheet, and guessing
+ * by name against a moved set is precisely the wrong-face bug.
+ */
+function librarySnapshotForSheet(
+  metadata: unknown,
+  snapshots: readonly LibraryCharacterSnapshot[]
+): LibraryCharacterSnapshot | null {
+  const recordedId = libraryCharacterIdFromAssetMetadata(metadata);
+  if (recordedId) {
+    return snapshots.find((snapshot) => snapshot.id === recordedId) ?? null;
+  }
+  const name = characterNameFromAssetMetadata(metadata);
+  return name ? matchLibraryCharacter(name, snapshots) : null;
 }
 
 export function characterReferencePromptInstruction(selection: CharacterReferenceSelection): string {
@@ -393,6 +547,19 @@ export function characterNameFromAssetMetadata(metadata: unknown): string | unde
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+/**
+ * The library character a sheet was seeded from, as recorded at render time.
+ * Absent on sheets rendered before the id was written, and on every sheet of a
+ * book that mentioned no saved character.
+ */
+export function libraryCharacterIdFromAssetMetadata(metadata: unknown): string | undefined {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return undefined;
+  }
+  const value = (metadata as Record<string, unknown>).libraryCharacterId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 export function localImagePathForAsset(path: string, projectId: string): string | undefined {
   let pathname = path;
   try {
@@ -420,6 +587,51 @@ export function toWorkerImageAsset(asset: { id: string; path: string; metadata: 
   };
 }
 
+/**
+ * The filename-safe stem for one character's reference sheet.
+ *
+ * The ASCII path is deliberately byte-for-byte what it always was, so no
+ * existing book's files move. What it could not do is name a character whose
+ * name holds no ASCII at all: every Persian, Cyrillic, Hebrew or CJK name
+ * emptied out and `safePathPart`'s own fallback turned the empty string into
+ * the literal "unknown", so a Persian book's entire cast wrote to
+ * `character-reference-unknown.jpg` — one file, several concurrent writers, and
+ * every character afterwards drawn from whichever render happened to land last.
+ * Nothing rebuilt it either: `hasReferenceForEveryCharacter` compares names, so
+ * the set looked complete for the life of the plan.
+ *
+ * The fallback hashes the *folded* name, so the two spellings of one Persian
+ * name (an Arabic kaf against a Persian one, a stray ZWNJ, a diacritic the
+ * planner echoed back) still resolve to the same file rather than to two.
+ */
 export function characterSlug(value: string): string {
-  return safePathPart(value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+  const ascii = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (ascii) {
+    return safePathPart(ascii);
+  }
+  return `char-${createHash("sha256").update(foldCharacterName(value)).digest("hex").slice(0, 10)}`;
+}
+
+/**
+ * One filename stem per plan character, unique within the cast.
+ *
+ * `characterSlug` is per-name and so cannot promise that on its own: a name
+ * that is mostly non-Latin still yields an ASCII slug from whatever Latin it
+ * does contain, so "Ada بهرام" and "Ada کیوان" both reduce to `ada`. Uniqueness
+ * is a property of the cast, not of a name, and it has to hold before the
+ * renders start — they run concurrently into a single project directory, and
+ * two characters sharing a stem is one file written twice and a book whose
+ * whole cast wears one face.
+ */
+export function characterReferenceFileStems(names: readonly string[]): string[] {
+  const taken = new Set<string>();
+  return names.map((name) => {
+    const base = `character-reference-${characterSlug(name)}`;
+    let stem = base;
+    for (let suffix = 2; taken.has(stem); suffix += 1) {
+      stem = `${base}-${suffix}`;
+    }
+    taken.add(stem);
+    return stem;
+  });
 }

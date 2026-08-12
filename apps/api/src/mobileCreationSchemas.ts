@@ -266,6 +266,13 @@ export const mobileCreationCharacterSnapshotSchema = z
     id: z.string().trim().min(1).max(64),
     name: z.string().trim().min(1).max(80),
     description: z.string().trim().max(2000).default(""),
+    // What the character LOOKS like, separately from who they are. The look
+    // otherwise exists only in the portrait's pixels, which the planner never
+    // sees — so it invented one, and the invented one won at render time.
+    // Optional: every character saved before this field existed has none, and
+    // the object is `.strict()`, so a snapshot writer that emits a key missing
+    // here fails the re-parse as a 500 no retry can clear.
+    appearance: z.string().trim().max(600).optional(),
     fields: z
       .array(z.object({ key: z.string().trim().min(1).max(40), value: z.string().trim().min(1).max(300) }).strict())
       .max(12)

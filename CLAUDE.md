@@ -752,6 +752,12 @@ tells you when a listed file has dropped under the default so the entry can be d
   edit target): free, it sets `mediaSettings.includeSources` on the project and queues the same
   recompile undo uses. Read that flag with `includeSourcesPreference` from the **project row**,
   never from a plan version's `inputSnapshot`, or toggling it would need a replan to take effect.
+  **The chat may only offer what the compile will print**, which is not the same as "the project has
+  research": `formatResearchCitation` drops every row without a URL, so a book holding only
+  URL-less grounding summaries has no list to remove and none that turning the flag on could make
+  appear — it used to answer "Done, the sources list is back", bump `contentRevision` and recompile
+  an identical book. `hasReaderFacingSources` is the compiler's own citation builder asked as a
+  question, which is what keeps the two from drifting.
 - **A cited source is stored as the publisher's own address, never Google's.** Search grounding
   hands back every citation as a `vertexaisearch.cloud.google.com/grounding-api-redirect/...`
   wrapper: it names Google as the source in the chat, and it expires — fatal for a Sources list
@@ -759,7 +765,10 @@ tells you when a listed file has dropped under the default so the entry can be d
   (`packages/core/src/adapters/groundingRedirect.ts`), which is the only moment the wrapper is sure
   to still resolve, and `researchCitationsForExport` retries at compile time for rows written before
   that, writing the fix back. An unresolved wrapper is kept rather than dropped — a worse link still
-  beats a missing citation — and the app's `displayHost` names no publisher for one.
+  beats a missing citation — and the app's `displayHost` names no publisher for one. That retry
+  lives in `packages/db` because **two** processes compile a book: the API renders inline when a
+  compiled file is missing, and its own copy of the citation map skipped the unwrap entirely, so
+  the same book's Sources list named Google or the publisher depending on which side rendered it.
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.**
   `formatChapterHeading` (`packages/core/src/generation/markdown.ts`) synthesizes `Chapter N: Title`
   at export time from a label table, and its sibling `cleanChapterTitle` *strips* that prefix back
@@ -851,13 +860,70 @@ tells you when a listed file has dropped under the default so the entry can be d
   `composeMobileProjectPrompt`, the reference-sheet seeding — reads that copy off the input
   snapshot. The plan schema strips unknown keys, so the **verbatim name** is the only link from a
   plan character back to its portrait: `matchLibraryCharacter`
-  (`packages/core/src/generation/libraryCharacters.ts`) tries exact then word-boundary
-  containment, and a rename by the planner degrades to an unseeded sheet, never an error. Deleting
+  (`packages/core/src/generation/libraryCharacters.ts`) tries folded exact equality then
+  **whole-token** containment, and a rename by the planner degrades to an unseeded sheet, never an
+  error. Both halves of that are scars. Everything is compared through `foldCharacterName` (NFD
+  then strip marks, drop ZWNJ/ZWJ/bidi, fold Arabic kaf/yeh onto Persian, fold Arabic-Indic
+  digits) because a Persian name saved from one keyboard and echoed by a model trained on the
+  other was two different names; and containment is whole-token because sub-token matching put one
+  reader's saved face on a character they never saved — `Sam` seeded `Sam's Mother`, `Luna` seeded
+  `Luna-Bear`, and ZWNJ is category `Cf`, so the old `[^\p{L}\p{N}]` boundary read `علی‌رضا` as a
+  word break and matched a library `علی`. An **ambiguous** containment resolves to null: a missing
+  seed is a character drawn from prose, a wrong one is a stranger wearing the reader's face, and
+  only one of those is recoverable by reading the book. Deleting
   a character deletes rows and files but no book state; a seeding pass that finds the portrait
   file gone skips it silently, which is the deletion-safety valve. Character files live at
   `IMAGE_STORAGE_DIR/characters/<userId>/` — never swept, unreachable from the project asset
   route and the render allowlist — and every path to them resolves through
   `libraryCharacterDiskPath`, which returns null for anything but exactly `<userId>/<fileName>`.
+- **A character's look lives in pixels, so it has to be written down or the planner invents one.**
+  `LibraryCharacter.description` is who the character is — free text the reader writes, routinely
+  carrying no appearance at all ("she's a great wife and future mother") — while what they *look
+  like* existed only in the portrait, which the planner is a text model and never sees. Told to
+  reuse a character it could not picture, it invented a look, wrote it into
+  `illustrationPlan.characterReferencePrompts` and every page prompt, and **that text beat the
+  reference images attached beside it**: a woman in a black hijab was rendered as a bare-headed
+  child in a ponytail, on a page whose prompt did not even use her name. So there is an
+  `appearance` column, read off the picture by the same bounded vision call the photo upload
+  already makes, snapshotted beside the name, and printed by `libraryCharacterPromptBlock` as its
+  own labelled line under its own budget — truncating a look is not a shorter sentence, it is a
+  licence to finish the outfit. `libraryCharacterAppearanceRule` then says the only two honest
+  things: with an appearance recorded, reuse it word for word; **without** one, write no hair,
+  age, build, headwear or clothing anywhere and refer to the character by name only, because the
+  picture is attached to the image calls and invisible to the writer. "Invent something
+  consistent" is the instruction that caused this.
+- **Nothing used to check that the planner obeyed, and now one pass does.**
+  `reconcilePlanLibraryCharacters` (`packages/core/src/generation/planLibraryCharacters.ts`) runs
+  after **every** plan parse — `createPlanningPackage` and `revisePlanningPackage` both — and
+  renames a matched character back to the verbatim name, restores the library's own description
+  over the schema placeholder (`"Recurring character in the plan."`, `schemas/plan.ts`), sets
+  `visualRules` from the recorded appearance or leaves them empty, re-appends a snapshot character
+  the plan dropped, and collapses two entries that resolve to one snapshot. It is what turns
+  translation, rename, near-duplicate and invented-twin from silent wrong output into a no-op.
+  Revision needed it most: `mobileLibraryCharacterGuidance` was called from the initial planner
+  **only**, and `revisePlanningPackage` serialized no `userInput` and no `mediaSettings` at all, so
+  any "make it shorter" after approval re-decided the saved character against nothing. Arrays merge
+  as atomic replacements, so whatever came back won.
+- **A per-book character list is a copy, and it says which library character it is a copy of.**
+  `VoiceCharacter` rows (the "Talk to characters" cast, the only per-book character list the app
+  has) are built one-for-one from `plan.characters`, so a saved character reached the sheet as a
+  same-named twin with a planner-written description and an avatar re-drawn from that description.
+  `VoiceCharacter.libraryCharacterId` is that link — resolved through `matchLibraryCharacter` at
+  extraction, deliberately **not** a foreign key, because a book outlives the library row it was
+  made from. `loadVoiceCast` is also scoped to the approved plan version: the "do we have a cast
+  already" guard counts by `planVersionId` while the read did not, so a continuation or replan
+  appended a second cast and listed the same character twice. Do **not** delete superseded
+  `VoiceCharacter` rows to fix that — `VoiceCall` and `VoiceCallEvent` cascade from them, so it
+  would erase paid call history and the transcripts `voiceCallHistory.ts` reads back as memory.
+- **A reference-sheet filename must survive a non-Latin name.** `characterSlug` stripped everything
+  outside `[a-z0-9]`, so every Persian, Cyrillic and CJK name emptied out and `safePathPart`
+  returned the literal `"unknown"` — three characters in one book all wrote
+  `character-reference-unknown.jpg`, and because `hasReferenceForEveryCharacter` compares *names*
+  the set looked complete and was never rebuilt, so the whole cast wore whichever face rendered
+  last. It now hashes the folded name when the ASCII slug is empty, and
+  `characterReferenceFileStems` resolves the **whole cast's** stems together before the concurrent
+  renders start, since a per-name slug cannot promise cast-wide uniqueness. The ASCII path is
+  byte-for-byte unchanged so no existing book's files move.
 - **`photoPath` is not a reference; `portraitPath` is, and the upload decides which one an image
   becomes.** The snapshot writes `portraitFile` on `portraitStatus === "READY"` alone, so a photo
   that never became a portrait reached no book at all — the app showed the reader their own face on

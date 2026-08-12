@@ -172,6 +172,65 @@ describe("mobile back matter edits", () => {
     await app.close();
   });
 
+  it("says the list would be empty instead of promising one the compile cannot print", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProjectWithResearch({ research: [] }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Add the sources back at the end" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().reply.content).toMatch(/would be empty/i);
+    // Pinning the preference and recompiling would answer "the sources list is
+    // back" and change not one line of the book.
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("counts only research that carries a link, because that is all the compile prints", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProjectWithResearch({ research: [UNLINKED_RESEARCH] }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Add the sources back at the end" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().reply.content).toMatch(/would be empty/i);
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("has nothing to remove when the stored research carries no links", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProjectWithResearch({ research: [UNLINKED_RESEARCH] }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Remove the sources at the end of the book" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().reply.content).toMatch(/doesn’t have a sources list/i);
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("does not recompile a restore when a source-forward book already prints the list automatically", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(
@@ -195,6 +254,9 @@ describe("mobile back matter edits", () => {
     await app.close();
   });
 });
+
+/** A grounding summary the search returned without a citable address. */
+const UNLINKED_RESEARCH = { title: "Gemini grounded summary", url: null, summary: "No link." };
 
 function defaultMediaSettings() {
   return projectRecord().mediaSettings as Record<string, unknown>;

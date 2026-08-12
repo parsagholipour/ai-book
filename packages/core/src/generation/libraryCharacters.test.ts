@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildLibraryCharacterPortraitPrompt,
   characterReferenceSeedInstruction,
+  foldCharacterName,
+  libraryCharacterAppearanceRule,
   libraryCharacterDiskPath,
   libraryCharacterFaceInstruction,
   libraryCharacterFileName,
@@ -100,6 +102,71 @@ describe("matchLibraryCharacter", () => {
   it("returns null for blanks and strangers", () => {
     expect(matchLibraryCharacter("  ", snapshots)).toBeNull();
     expect(matchLibraryCharacter("Ada", snapshots)).toBeNull();
+  });
+
+  it("does not match a sub-token: a relation or a hyphenated name is someone else", () => {
+    // "Sam's Mother" and "Luna-Bear" are the cases that put one reader's saved
+    // face on a character they never saved. A missing seed is a character drawn
+    // from prose; a wrong seed is a stranger wearing their character's face.
+    const sam = [snapshot({ id: "sam", name: "Sam" })];
+    expect(matchLibraryCharacter("Sam's Mother", sam)).toBeNull();
+    expect(matchLibraryCharacter("Luna-Bear", snapshots)).toBeNull();
+  });
+
+  it("folds punctuation and spacing so 'Mr Whiskers' is 'Mr. Whiskers'", () => {
+    expect(matchLibraryCharacter("Mr Whiskers", snapshots)?.id).toBe("char-2");
+    expect(matchLibraryCharacter("Mr.  Whiskers", snapshots)?.id).toBe("char-2");
+    expect(matchLibraryCharacter("Mr. Whiskers", snapshots)?.id).toBe("char-2");
+  });
+
+  it("folds Unicode: composed and decomposed names are one name", () => {
+    const jose = [snapshot({ id: "jose", name: "José" })];
+    expect(matchLibraryCharacter("José", jose)?.id).toBe("jose");
+    expect(matchLibraryCharacter("Jose", jose)?.id).toBe("jose");
+  });
+
+  it("folds Arabic and Persian spellings of the same Persian name", () => {
+    // Arabic kaf/yeh and Persian kaf/yeh render identically and are typed
+    // interchangeably; a name saved from one keyboard and echoed by a model
+    // trained on the other was two different names.
+    const karim = [snapshot({ id: "karim", name: "کریم" })];
+    expect(matchLibraryCharacter("كريم", karim)?.id).toBe("karim");
+  });
+
+  it("treats a ZWNJ compound as one token, so على does not seed علیرضا", () => {
+    // ZWNJ is category Cf, so the old boundary class `[^\p{L}\p{N}]` accepted it
+    // as a word break and matched an unrelated character.
+    const ali = [snapshot({ id: "ali", name: "علی" })];
+    expect(matchLibraryCharacter("علی‌رضا", ali)).toBeNull();
+    expect(matchLibraryCharacter("علی", ali)?.id).toBe("ali");
+  });
+
+  it("refuses an ambiguous containment rather than guessing", () => {
+    const twins = [
+      snapshot({ id: "a", name: "Luna" }),
+      snapshot({ id: "b", name: "Vega" })
+    ];
+    expect(matchLibraryCharacter("Luna Vega", twins)).toBeNull();
+  });
+
+  it("still prefers an exact match when another name also contains it", () => {
+    const both = [
+      snapshot({ id: "long", name: "Captain Luna Vega" }),
+      snapshot({ id: "short", name: "Luna" })
+    ];
+    expect(matchLibraryCharacter("Luna", both)?.id).toBe("short");
+  });
+});
+
+describe("foldCharacterName", () => {
+  it("is idempotent and collapses every invisible the pipeline sees", () => {
+    const folded = foldCharacterName("  Mr.‌  Whiskers﻿ ");
+    expect(folded).toBe("mr. whiskers");
+    expect(foldCharacterName(folded)).toBe(folded);
+  });
+
+  it("normalizes Arabic-Indic and Persian digits to ASCII", () => {
+    expect(foldCharacterName("R2٠۱")).toBe("r201");
   });
 });
 
@@ -216,5 +283,58 @@ describe("libraryCharacterPromptBlock", () => {
       Array.from({ length: 15 }, (_, index) => snapshot({ id: `c${index}`, name: `Name${index}` }))
     );
     expect(block.split("\n")).toHaveLength(10);
+  });
+
+  it("gives the appearance its own labelled line and its own budget", () => {
+    // Truncating a look is not a shorter sentence, it is a licence to invent
+    // the rest — so the biography gives way and the appearance does not.
+    const block = libraryCharacterPromptBlock([
+      snapshot({
+        description: "y".repeat(600),
+        appearance: "Adult woman in a black hijab and a grey embroidered top."
+      })
+    ]);
+    const lines = block.split("\n");
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("…");
+    expect(lines[1]).toContain("Appearance (fixed — use verbatim, do not invent or alter)");
+    expect(lines[1]).toContain("black hijab");
+    expect(lines[1]).not.toContain("…");
+  });
+
+  it("writes no appearance line for a character who has none", () => {
+    expect(libraryCharacterPromptBlock([snapshot()]).split("\n")).toHaveLength(1);
+  });
+});
+
+describe("libraryCharacterAppearanceRule", () => {
+  it("says nothing when no library character travels with the plan", () => {
+    expect(libraryCharacterAppearanceRule([])).toBe("");
+  });
+
+  it("orders a recorded look reused verbatim", () => {
+    const rule = libraryCharacterAppearanceRule([snapshot({ appearance: "Black hijab, grey top." })]);
+    expect(rule).toContain('"Luna"');
+    expect(rule).toContain("word for word");
+    expect(rule).toContain("never write a physical detail that contradicts it");
+  });
+
+  it("forbids inventing a look for a character whose picture the model cannot see", () => {
+    // This is the actual bug: with no appearance in text the planner wrote
+    // "a young Brazilian girl with dark hair in a ponytail, wearing a simple
+    // dress" for a woman in a hijab, and that text beat the attached portrait.
+    const rule = libraryCharacterAppearanceRule([snapshot()]);
+    expect(rule).toContain("no appearance is recorded");
+    expect(rule).toContain("Leave their visualRules empty");
+    expect(rule).toContain("refer to them by name only");
+  });
+
+  it("splits a mixed cast into the two honest instructions", () => {
+    const rule = libraryCharacterAppearanceRule([
+      snapshot({ id: "a", name: "Luna", appearance: "Black hijab." }),
+      snapshot({ id: "b", name: "Bram" })
+    ]);
+    expect(rule).toContain('"Luna", the Appearance line');
+    expect(rule).toContain('"Bram", no appearance is recorded');
   });
 });

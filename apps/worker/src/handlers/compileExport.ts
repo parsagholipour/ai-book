@@ -21,7 +21,6 @@ import {
   readerChaptersFromPublishedMarkdown,
   readerChaptersWithCache
 } from "../generation/readerChapterCache.js";
-import { researchCitationsForExport } from "../generation/researchLinks.js";
 import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
@@ -64,7 +63,7 @@ import {
   type ProviderSet,
   type TextModelAdapter
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { Prisma, prisma, researchCitationsForExport } from "@book-maker/db";
 import { Job } from "bullmq";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

@@ -12,6 +12,7 @@ const reading = (overrides: Partial<CharacterPhotoVisionResult> = {}): Character
   confidence: 0.95,
   subjectCount: 1,
   suggestedDescription: "A round-faced girl with short black hair and a yellow raincoat.",
+  suggestedAppearance: "Around eight, short black hair, warm brown skin, yellow raincoat.",
   suggestedFields: [],
   ...overrides
 });
@@ -42,6 +43,10 @@ describe("FakeCharacterPhotoVisionAdapter", () => {
     expect(result.imageKind).toBe("photograph");
     expect(canAdoptCharacterPhoto(result)).toBe(false);
     expect(result.suggestedDescription).toContain("Luna");
+    // The appearance is stored to be repeated verbatim into illustration
+    // prompts, so it describes a look and never names the character.
+    expect(result.suggestedAppearance).not.toContain("Luna");
+    expect(result.suggestedAppearance.length).toBeGreaterThan(0);
   });
 });
 

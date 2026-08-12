@@ -62,6 +62,9 @@ export async function generateCharacterPortrait(job: Job): Promise<void> {
     {
       name: character.name,
       description: character.description,
+      // The recorded look, so a redraw lands on the same person rather than
+      // inventing a new one for every generation.
+      ...(character.appearance ? { appearance: character.appearance } : {}),
       fields: fieldsFromJson(character.fields)
     },
     { fromPhoto: photoPath !== null }

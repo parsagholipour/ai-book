@@ -37,7 +37,11 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCharacterCandidatePreparation: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db", () => ({
+  prisma: mocks.prisma,
+  Prisma: {},
+  researchCitationsForExport: async () => []
+}));
 vi.mock("../runtime/config.js", () => ({ config: mocks.config }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: mocks.inputForPlanVersion }));
 vi.mock("../generation/exportPublication.js", () => ({
@@ -60,7 +64,6 @@ vi.mock("../generation/semanticMemory.js", () => ({
   strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
     strategy?.executionMode === "sequential-pages"
 }));
-vi.mock("../generation/researchLinks.js", () => ({ researchCitationsForExport: async () => [] }));
 vi.mock("./characters.js", () => ({
   maybeEnqueueCharacterCandidatePreparation: mocks.maybeEnqueueCharacterCandidatePreparation
 }));

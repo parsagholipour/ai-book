@@ -1,3 +1,4 @@
+import { libraryCharacterPortraitUrl } from "./characterSerializer.js";
 import { type MobileVoiceCharacterDto, type MobileVoiceCharacterStatus } from "./dto.js";
 import { serializeImage } from "./projectSerializers.js";
 import {
@@ -19,6 +20,8 @@ import { prisma } from "@book-maker/db";
 export type VoiceCharacterRow = {
   id: string;
   projectId: string;
+  planVersionId: string | null;
+  libraryCharacterId: string | null;
   name: string;
   role: string;
   description: string;
@@ -29,9 +32,28 @@ export type VoiceCharacterRow = {
 };
 
 export async function loadVoiceCast(projectId: string): Promise<MobileVoiceCharacterDto[]> {
+  // The owner and the live plan in one read: the first scopes which library
+  // portraits may be served, the second which cast this book currently has.
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { userId: true, currentPlanId: true }
+  });
+  const currentPlanId = project?.currentPlanId ?? null;
+
   const [characters, profileImages] = await Promise.all([
     prisma.voiceCharacter.findMany({
-      where: { projectId, status: { not: "REJECTED" } },
+      where: {
+        projectId,
+        status: { not: "REJECTED" },
+        // A cast is never deleted: `replaceProjectPlanReferenceRecords` clears
+        // Character/Location/ResearchSource on a replan and nothing anywhere
+        // deletes a VoiceCharacter, while a continuation approves a brand new
+        // PlanVersion whose compile prepares a whole second cast. Unscoped,
+        // every one of those books listed each character twice, with two
+        // descriptions and two faces. A project with no current plan has no
+        // book either, so there is nothing to scope by and nothing to hide.
+        ...(currentPlanId ? { OR: [{ planVersionId: currentPlanId }, { planVersionId: null }] } : {})
+      },
       orderBy: [{ createdAt: "asc" }],
       select: voiceCharacterSelect
     }),
@@ -42,6 +64,8 @@ export async function loadVoiceCast(projectId: string): Promise<MobileVoiceChara
     })
   ]);
 
+  const cast = castForCurrentPlan(characters, currentPlanId);
+  const portraitUrls = await libraryPortraitUrls(cast, project?.userId ?? null);
   const imagesByCharacterId = new Map(
     profileImages.flatMap((image) => {
       const voiceCharacterId = characterIdFromMetadata(image.metadata);
@@ -49,12 +73,13 @@ export async function loadVoiceCast(projectId: string): Promise<MobileVoiceChara
     })
   );
 
-  return characters.map((character) => {
+  return cast.map((character) => {
     const image =
       profileImages.find((candidate) => candidate.id === character.profileImageAssetId) ??
       imagesByCharacterId.get(character.id) ??
       null;
     const status = mobileVoiceCharacterStatus(character.status);
+    const libraryCharacterId = character.libraryCharacterId ?? null;
     return {
       id: character.id,
       projectId: character.projectId,
@@ -64,14 +89,80 @@ export async function loadVoiceCast(projectId: string): Promise<MobileVoiceChara
       traits: traitList(character.traits),
       status,
       needsPreparation: character.status === "CANDIDATE" || character.status === "FAILED",
-      image: serializeImage(image, "character", `Portrait of ${character.name}`)
+      image: serializeImage(image, "character", `Portrait of ${character.name}`),
+      // Reported verbatim even when the library row has since been deleted:
+      // the link is a fact about how this book was made, and deleting a saved
+      // character is required to change no book state. Only the portrait URL —
+      // a promise about bytes the app will go and fetch — is checked against
+      // the row behind it.
+      libraryCharacterId,
+      libraryPortraitUrl: (libraryCharacterId && portraitUrls.get(libraryCharacterId)) || null
     } satisfies MobileVoiceCharacterDto;
   });
+}
+
+/**
+ * The pre-column rows are a fallback, not a second cast to merge in.
+ *
+ * A book made before `planVersionId` existed carries a cast of nulls; one made
+ * since carries the plan's. A book that is both — old, then continued — would
+ * otherwise show the current plan's cast *and* the original's, which is the
+ * duplication this scoping exists to remove. So the current plan's rows win
+ * outright wherever there are any.
+ */
+function castForCurrentPlan<T extends { planVersionId: string | null }>(
+  characters: T[],
+  currentPlanId: string | null
+): T[] {
+  if (!currentPlanId) {
+    return characters;
+  }
+  const currentPlanCast = characters.filter((character) => character.planVersionId === currentPlanId);
+  return currentPlanCast.length > 0 ? currentPlanCast : characters;
+}
+
+/**
+ * The saved characters' own portraits, by library character id.
+ *
+ * Same authenticated path `serializeLibraryCharacter` publishes, and the same
+ * condition behind it — a portrait exists only when the file is on the row and
+ * the drawing finished, which is also exactly what
+ * `libraryCharacterSnapshotsForBuild` requires before a character reaches a
+ * book at all. The lookup is scoped to the book's owner because that is who the
+ * `/api/mobile/characters/:id/portrait` route will serve: an id that has been
+ * reassigned or never belonged to them must yield no URL rather than a link
+ * that 404s.
+ */
+async function libraryPortraitUrls(
+  characters: Array<{ libraryCharacterId: string | null }>,
+  userId: string | null
+): Promise<Map<string, string>> {
+  const ids = [
+    ...new Set(characters.flatMap((character) => (character.libraryCharacterId ? [character.libraryCharacterId] : [])))
+  ];
+  if (ids.length === 0 || !userId) {
+    return new Map();
+  }
+  const libraryCharacters = await prisma.libraryCharacter.findMany({
+    where: { id: { in: ids }, userId },
+    select: { id: true, portraitPath: true, portraitStatus: true }
+  });
+  return new Map(
+    libraryCharacters.flatMap((character) => {
+      // Shared with `serializeLibraryCharacter`: one rule for "is there a
+      // portrait to fetch", so the cast sheet can never offer a URL the
+      // character screen would call absent.
+      const url = libraryCharacterPortraitUrl(character);
+      return url ? [[character.id, url] as const] : [];
+    })
+  );
 }
 
 export const voiceCharacterSelect = {
   id: true,
   projectId: true,
+  planVersionId: true,
+  libraryCharacterId: true,
   name: true,
   role: true,
   description: true,

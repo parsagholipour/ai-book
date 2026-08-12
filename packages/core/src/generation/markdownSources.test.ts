@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { compileBookMarkdown, includeSourcesPreference, shouldPrintSourcesBackMatter } from "./markdown.js";
+import {
+  compileBookMarkdown,
+  hasReaderFacingSources,
+  includeSourcesPreference,
+  shouldPrintSourcesBackMatter
+} from "./markdown.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookCategory } from "../categories.js";
 import type { CreateProjectInput } from "../schemas/book.js";
@@ -126,6 +131,23 @@ describe("compileBookMarkdown sources back matter", () => {
     expect(shouldPrintSourcesBackMatter({ category: "CUSTOM" })).toBe(false);
     expect(shouldPrintSourcesBackMatter({ category: "KIDS", includeSources: true })).toBe(true);
     expect(shouldPrintSourcesBackMatter({ category: "HEALTH", includeSources: false })).toBe(false);
+  });
+
+  it("reports whether any stored research row can become a citation", () => {
+    expect(hasReaderFacingSources([])).toBe(false);
+    // A grounding summary with no address prints nothing, so a book holding
+    // only these has no sources list for the chat to offer or remove.
+    expect(hasReaderFacingSources([{ title: "Gemini grounded summary", summary: "No link." }])).toBe(false);
+    expect(hasReaderFacingSources([{ title: "Sleep research", url: "  ", summary: "Blank link." }])).toBe(false);
+    expect(hasReaderFacingSources([{ title: "Sleep research", url: "https://example.com/sleep", summary: "" }])).toBe(
+      true
+    );
+    expect(
+      hasReaderFacingSources([
+        { title: "Sleep research", url: "https://example.com/sleep", summary: "" },
+        { title: "Same page", url: "https://example.com/sleep#notes", summary: "" }
+      ])
+    ).toBe(true);
   });
 
   it("omits source citations for fictional kid stories even when source rows exist", () => {

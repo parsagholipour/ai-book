@@ -52,6 +52,101 @@ const plan: BookPlan = {
   ]
 };
 
+/**
+ * A book built from one @-mentioned library character.
+ *
+ * Round-tripped through JSON rather than cast: `mediaSettings` is a stored JSON
+ * column, and going through the same serialization the real snapshot takes is
+ * what keeps the fixture honest about what `libraryCharactersFromMediaSettings`
+ * will actually be handed.
+ */
+function inputWithLibraryCharacter(character: Record<string, unknown>): CreateProjectInput {
+  return {
+    ...input,
+    mediaSettings: JSON.parse(JSON.stringify({ ...input.mediaSettings, mobile: { characters: [character] } }))
+  };
+}
+
+const savedNatalia = {
+  id: "library-natalia",
+  name: "Natalia",
+  // What the reader actually wrote: who she is, with no look in it at all.
+  description: "She's a great wife and future mother."
+};
+
+function planWith(character: BookPlan["characters"][number]): BookPlan {
+  return { ...plan, characters: [character] };
+}
+
+describe("cast members made from a saved library character", () => {
+  // The cast sheet is the only per-book character list in the app, and it was
+  // copied one-for-one from the plan: a same-named twin with the planner's
+  // description and an avatar drawn from it.
+  it("links the row back to the saved character and prefers the reader's own words", () => {
+    const candidates = candidatesFromPlanCharacters(
+      inputWithLibraryCharacter(savedNatalia),
+      planWith({
+        name: "Natalia",
+        role: "Protagonist",
+        // What the planner invents when it is handed a name and no look.
+        description: "A young Brazilian girl with dark hair in a ponytail.",
+        traits: [],
+        visualRules: []
+      })
+    );
+
+    expect(candidates[0]).toMatchObject({
+      name: "Natalia",
+      libraryCharacterId: "library-natalia",
+      description: savedNatalia.description
+    });
+    // And the invented age goes with the invented description: read off the
+    // planner's line in a children's book, "girl" made an adult woman a child.
+    expect(candidates[0]?.voiceProfile.ageBand).toBe("adult");
+  });
+
+  it("uses a recorded appearance as the visual rule only when the plan wrote none", () => {
+    const appearance = "Adult woman in a black hijab and a grey embroidered top.";
+    const withAppearance = { ...savedNatalia, appearance };
+    const emptyRules = candidatesFromPlanCharacters(
+      inputWithLibraryCharacter(withAppearance),
+      planWith({ name: "Natalia", role: "Protagonist", description: "", traits: [], visualRules: [] })
+    );
+    const plannerRules = candidatesFromPlanCharacters(
+      inputWithLibraryCharacter(withAppearance),
+      planWith({
+        name: "Natalia",
+        role: "Protagonist",
+        description: "",
+        traits: [],
+        visualRules: [appearance, "Always carries her father's whistle."]
+      })
+    );
+
+    expect(emptyRules[0]?.visualRules).toEqual([appearance]);
+    // The planner reuses a recorded appearance verbatim, so a non-empty rule
+    // set already carries it — replacing one would drop the continuity notes
+    // it earned from the prose.
+    expect(plannerRules[0]?.visualRules).toEqual([appearance, "Always carries her father's whistle."]);
+  });
+
+  it("leaves a character the book invented unlinked and keeps the planner's description", () => {
+    const candidates = candidatesFromPlanCharacters(
+      inputWithLibraryCharacter(savedNatalia),
+      planWith({
+        name: "Coach Pereira",
+        role: "Coach",
+        description: "A patient coach with a whistle on a red cord.",
+        traits: [],
+        visualRules: []
+      })
+    );
+
+    expect(candidates[0]?.libraryCharacterId).toBeUndefined();
+    expect(candidates[0]?.description).toBe("A patient coach with a whistle on a red cord.");
+  });
+});
+
 describe("voice character helpers", () => {
   it("uses existing plan characters and infers age/gender conservatively", () => {
     const candidates = candidatesFromPlanCharacters(input, plan);

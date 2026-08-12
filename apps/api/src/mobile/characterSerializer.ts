@@ -14,16 +14,42 @@ import type {
 } from "./dto.js";
 
 /**
+ * An appearance a photo upload read but did not apply, offered on that
+ * upload's own response.
+ *
+ * It is a parameter rather than a column because there is nowhere to keep it
+ * and nowhere it needs to be kept: the offer is only ever made when the
+ * character already has an appearance the user owns, it is answerable there and
+ * then with the picture still on screen, and re-reading it is one re-upload
+ * away. Every other read of a character serializes it as null.
+ */
+export type OfferedCharacterReading = { suggestedAppearance?: string | undefined };
+
+/**
  * The app-facing shape of a library character. Disk paths and provider details
  * stay out; the photo/portrait travel as authenticated fetch paths under this
  * route group, mirroring how project assets are served.
  */
-export function serializeLibraryCharacter(character: LibraryCharacterModel): MobileLibraryCharacterDto {
-  const id = encodeURIComponent(character.id);
+export function libraryCharacterPortraitUrl(
+  character: Pick<LibraryCharacterModel, "id" | "portraitPath" | "portraitStatus">
+): string | null {
   // The one condition that decides whether this character reaches a book —
   // `libraryCharacterSnapshotsForBuild` writes `portraitFile` on exactly this.
-  // Both readers share the expression so they cannot drift apart.
-  const hasReference = character.portraitPath !== null && character.portraitStatus === "READY";
+  // Exported because the cast sheet now serves the same portrait behind the
+  // same condition (`voiceCast.ts`), and a second copy of this expression is
+  // exactly the drift this comment has always warned about.
+  return character.portraitPath !== null && character.portraitStatus === "READY"
+    ? `/api/mobile/characters/${encodeURIComponent(character.id)}/portrait`
+    : null;
+}
+
+export function serializeLibraryCharacter(
+  character: LibraryCharacterModel,
+  offered: OfferedCharacterReading = {}
+): MobileLibraryCharacterDto {
+  const id = encodeURIComponent(character.id);
+  const portraitUrl = libraryCharacterPortraitUrl(character);
+  const hasReference = portraitUrl !== null;
   return {
     id: character.id,
     name: character.name,
@@ -35,9 +61,11 @@ export function serializeLibraryCharacter(character: LibraryCharacterModel): Mob
     hasPhoto: character.photoPath !== null,
     photoKind: character.photoKind ? PHOTO_KIND[character.photoKind] : null,
     suggestedDescription: character.suggestedDescription,
+    appearance: character.appearance,
+    suggestedAppearance: offered.suggestedAppearance ?? null,
     usedInBooks: hasReference,
     photoUrl: character.photoPath ? `/api/mobile/characters/${id}/photo` : null,
-    portraitUrl: hasReference ? `/api/mobile/characters/${id}/portrait` : null,
+    portraitUrl,
     createdAt: character.createdAt.toISOString(),
     updatedAt: character.updatedAt.toISOString()
   };

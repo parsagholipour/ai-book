@@ -880,6 +880,11 @@ model VoiceCharacter {
   id                  String               @id @default(cuid())
   projectId           String
   planVersionId       String?
+  /// The account-level character this cast row IS, when the book was built from
+  /// an @-mention. Deliberately not a relation: a book outlives the library row
+  /// it was made from, so this is the same copy-by-value the plan snapshot is —
+  /// it only ever decides what the cast sheet shows and which portrait it draws.
+  libraryCharacterId  String?
   name                String
   role                String
   description         String
@@ -906,6 +911,7 @@ model VoiceCharacter {
 
   @@index([projectId, status])
   @@index([planVersionId])
+  @@index([libraryCharacterId])
 }
 
 enum LibraryCharacterPortraitStatus {
@@ -961,6 +967,13 @@ model LibraryCharacter {
   /// A description derived from the photo, offered to the user and never
   /// applied on their behalf. Cleared once they accept, edit, or dismiss it.
   suggestedDescription String?
+  /// What this character LOOKS like, in words. `description` is who they are —
+  /// free text the user writes, routinely carrying no appearance at all — while
+  /// the look lives only in the portrait's pixels, which no text model ever
+  /// sees. Without this the planner invents a look for a character it was told
+  /// to reuse, and that invented look wins at render time because the scene
+  /// prompt outranks the attached reference images.
+  appearance           String?
   portraitPath   String?
   portraitSource LibraryCharacterPortraitSource?
   portraitStatus LibraryCharacterPortraitStatus @default(NONE)

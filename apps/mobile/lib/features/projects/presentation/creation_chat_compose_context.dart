@@ -24,6 +24,11 @@ mixin _CreationComposerContext on _OutputChatSend {
   FocusNode get _composerFocusNode;
   void _stopFollowingTranscript();
 
+  /// Provided by `_ComposerMentions`, which is mixed in after this one — an
+  /// edit has to restore the message's mentions before its text lands in the
+  /// composer, and the map that holds them lives over there.
+  void _seedMentionsFrom(Iterable<MobileCreationCharacterRef> characters);
+
   /// The message the composer is quoting, for either stage of this screen.
   ChatReplyTarget? _replyTarget;
 
@@ -54,6 +59,12 @@ mixin _CreationComposerContext on _OutputChatSend {
       _editingProjectMessageId = null;
       _editingCreationMessageId = message.id;
       _replyTarget = null;
+      // Before the text, never after: assigning it fires the composer listener,
+      // which prunes every mention the text does not contain. The stored refs
+      // are what make the `@Luna` already in that text a mention again — an
+      // edit used to re-send the sentence with an empty mention list, and a
+      // book built from it invented its own Luna.
+      _seedMentionsFrom(message.characters);
       _composerController.text = message.content;
       _composerController.selection = TextSelection.collapsed(
         offset: _composerController.text.length,

@@ -199,11 +199,23 @@ class _CastRow extends ConsumerWidget {
         connected: false,
         diameter: 44,
       ),
-      title: Text(
-        character.name,
-        style: theme.textTheme.titleMedium?.copyWith(
-          fontWeight: FontWeight.w600,
-        ),
+      title: Row(
+        children: [
+          Flexible(
+            child: Text(
+              character.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (character.fromLibrary) ...[
+            const SizedBox(width: 8),
+            const _FromLibraryBadge(),
+          ],
+        ],
       ),
       subtitle: Text(
         _subtitle(),
@@ -277,6 +289,43 @@ class _CastRow extends ConsumerWidget {
     }
     final role = character.role.trim();
     return role.isEmpty ? character.description : role;
+  }
+}
+
+/// Says that this cast member is one of the reader's own saved characters,
+/// rather than someone the book invented who happens to share the name.
+///
+/// A quiet readout, not a control: surface tones and no primary fill, because
+/// tapping the row still means "call", exactly as it does for every other name
+/// in this list.
+class _FromLibraryBadge extends StatelessWidget {
+  const _FromLibraryBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.people_outline, size: 13, color: colors.onSurfaceVariant),
+          const SizedBox(width: 4),
+          Text(
+            'From your characters',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

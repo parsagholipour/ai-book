@@ -41,6 +41,7 @@ export * from "./adapters/fake.js";
 export * from "./adapters/factory.js";
 export * from "./context/contextPack.js";
 export * from "./generation/planner.js";
+export * from "./generation/planLibraryCharacters.js";
 export * from "./generation/pages.js";
 export * from "./generation/bestOf.js";
 export * from "./generation/characterReferences.js";

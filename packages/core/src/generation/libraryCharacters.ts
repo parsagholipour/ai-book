@@ -17,6 +17,7 @@ const MAX_SNAPSHOT_CHARACTERS = 10;
 const MAX_FIELDS_PER_CHARACTER = 12;
 const MAX_NAME_LENGTH = 80;
 const MAX_DESCRIPTION_LENGTH = 2_000;
+export const MAX_APPEARANCE_LENGTH = 600;
 const MAX_FIELD_KEY_LENGTH = 40;
 const MAX_FIELD_VALUE_LENGTH = 300;
 
@@ -39,6 +40,18 @@ export type LibraryCharacterSnapshot = {
   id: string;
   name: string;
   description: string;
+  /**
+   * What the character LOOKS like, in words — absent until one has been read
+   * from their picture or written by hand.
+   *
+   * `description` is who they are ("she's a great wife and future mother") and
+   * routinely carries no appearance at all; the look lives in the portrait's
+   * pixels, which the planner never sees. Without this the planner invents a
+   * look for the character it was told to reuse, writes it into every
+   * illustration prompt, and that text beats the reference images attached
+   * beside it — the reader gets a stranger wearing their character's name.
+   */
+  appearance?: string | undefined;
   fields: LibraryCharacterField[];
   /**
    * `<userId>/<filename>` relative to `IMAGE_STORAGE_DIR/characters/`. Present
@@ -88,10 +101,12 @@ function snapshotFromUnknown(value: unknown): LibraryCharacterSnapshot | null {
   // An allowlist rather than boundedText: this value picks a prompt, so an
   // unrecognised string must fall back to the default rather than travel.
   const portraitSource = PORTRAIT_SOURCES.find((source) => source === record.portraitSource);
+  const appearance = boundedText(record.appearance, MAX_APPEARANCE_LENGTH);
   return {
     id,
     name,
     description: boundedText(record.description, MAX_DESCRIPTION_LENGTH),
+    ...(appearance ? { appearance } : {}),
     fields: snapshotFields(record.fields),
     ...(portraitFile ? { portraitFile } : {}),
     ...(portraitFile && portraitSource ? { portraitSource } : {})
@@ -122,43 +137,90 @@ export function libraryCharactersFromMediaSettings(mediaSettings: unknown): Libr
   return snapshots;
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/**
+ * The comparison form of a character name.
+ *
+ * Every step here is a case that silently unseeded a book. NFD-then-strip-marks
+ * makes NFC "José" and its decomposed twin the same string, and takes Arabic
+ * diacritics (a shadda the planner echoed back) with it. The kaf/yeh folds are
+ * the Arabic and Persian codepoints for letters that render identically and are
+ * typed interchangeably — a name saved from a Persian keyboard and echoed by a
+ * model trained on Arabic text is otherwise two different names. ZWNJ and ZWJ
+ * are *removed* rather than treated as separators, which is the whole reason
+ * "علی‌رضا" stopped matching a library "علی": they are Cf, so the old boundary
+ * class `[^\p{L}\p{N}]` accepted one as a word break and seeded an unrelated
+ * character with the reader's saved face.
+ */
+export function foldCharacterName(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/gu, "")
+    .replace(/\p{M}+/gu, "")
+    .replace(/ك/gu, "ک")
+    .replace(/[يى]/gu, "ی")
+    .replace(/[٠-٩]/gu, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/gu, (digit) => String(digit.charCodeAt(0) - 0x06f0))
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLowerCase();
 }
 
-function nameMentioned(haystack: string, name: string): boolean {
-  const trimmed = name.trim();
-  if (!trimmed) {
+/**
+ * Whole space-separated tokens, each stripped of leading and trailing
+ * punctuation so "Mr." and "Mr" are one token. Internal punctuation is kept on
+ * purpose: it is what keeps "Sam's" from being the token "Sam".
+ */
+function nameTokens(folded: string): string[] {
+  return folded
+    .split(" ")
+    .map((token) => token.replace(/^\p{P}+|\p{P}+$/gu, ""))
+    .filter(Boolean);
+}
+
+/** Whether `outer`'s tokens contain `inner`'s as a contiguous whole-token run. */
+function containsTokenRun(outer: readonly string[], inner: readonly string[]): boolean {
+  if (inner.length === 0 || inner.length > outer.length) {
     return false;
   }
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegex(trimmed)}([^\\p{L}\\p{N}]|$)`, "iu").test(haystack);
+  return outer.some((_token, start) =>
+    inner.every((wanted, offset) => outer[start + offset] === wanted)
+  );
 }
 
 /**
  * Links a plan character back to the library character it came from. The name
  * is the whole link — the plan schema strips unknown keys, so an id cannot ride
- * through the model. Exact (case-insensitive) equality wins; containment in
- * either direction covers the planner writing "Captain Luna Vega" for a library
- * "Luna", or trimming an honorific off.
+ * through the model.
+ *
+ * Folded equality wins. Failing that, containment covers the planner writing
+ * "Captain Luna Vega" for a library "Luna" or trimming an honorific off — but
+ * only as a run of *whole tokens*, because sub-token containment is how one
+ * portrait ended up on somebody else: "Sam" seeded "Sam's Mother", "Luna"
+ * seeded "Luna-Bear". An ambiguous containment resolves to null rather than to
+ * a guess. A missing seed is a character drawn from prose; a wrong one is a
+ * stranger wearing the reader's saved face, and only one of those is recoverable
+ * by reading the book.
  */
 export function matchLibraryCharacter(
   planCharacterName: string,
   snapshots: readonly LibraryCharacterSnapshot[]
 ): LibraryCharacterSnapshot | null {
-  const planName = planCharacterName.trim();
+  const planName = foldCharacterName(planCharacterName);
   if (!planName) {
     return null;
   }
-  const lowered = planName.toLowerCase();
-  const exact = snapshots.find((snapshot) => snapshot.name.trim().toLowerCase() === lowered);
+  const exact = snapshots.find((snapshot) => foldCharacterName(snapshot.name) === planName);
   if (exact) {
     return exact;
   }
-  return (
-    snapshots.find(
-      (snapshot) => nameMentioned(planName, snapshot.name) || nameMentioned(snapshot.name, planName)
-    ) ?? null
-  );
+  const planTokens = nameTokens(planName);
+  const contained = snapshots.filter((snapshot) => {
+    const snapshotTokens = nameTokens(foldCharacterName(snapshot.name));
+    return (
+      containsTokenRun(planTokens, snapshotTokens) || containsTokenRun(snapshotTokens, planTokens)
+    );
+  });
+  return contained.length === 1 ? (contained[0] ?? null) : null;
 }
 
 function fieldsSentence(fields: readonly LibraryCharacterField[]): string {
@@ -169,19 +231,29 @@ function fieldsSentence(fields: readonly LibraryCharacterField[]): string {
  * The portrait prompt, from the character sheet alone or stylizing an uploaded
  * photo. Modeled on `buildCharacterProfileImagePrompt` (voice characters): a
  * text-free square avatar with a readable silhouette.
+ *
+ * `appearance` is what makes a *redraw* land on the same person. Without a
+ * photo attached the design source used to be `description` alone — the field
+ * that carries who the character is and routinely nothing about how they look —
+ * so re-running the portrait produced a stranger, and that stranger then became
+ * the authority every page render was seeded from.
  */
 export function buildLibraryCharacterPortraitPrompt(
-  character: Pick<LibraryCharacterSnapshot, "name" | "description" | "fields">,
+  character: Pick<LibraryCharacterSnapshot, "name" | "description" | "fields" | "appearance">,
   options: { fromPhoto: boolean }
 ): string {
+  const appearance = character.appearance?.trim();
   return [
     "Text-free square profile portrait of a story character, for a character library avatar.",
     `Character name: ${character.name}.`,
     character.description ? `Description: ${character.description}.` : "",
+    appearance ? `Appearance (match exactly): ${appearance}.` : "",
     character.fields.length ? `Character details: ${fieldsSentence(character.fields)}.` : "",
     options.fromPhoto
       ? "Stylize the person in the attached reference photo as this character: preserve their identity, face shape, skin tone, hair, and distinctive features while rendering them as a warm storybook illustration."
-      : "Design the character's appearance from the description and details above.",
+      : appearance
+        ? "Draw the character exactly as the appearance above describes; take only what it leaves open from the description and details."
+        : "Design the character's appearance from the description and details above.",
     "Show one character from shoulders up, facing camera, friendly and expressive.",
     "Warm illustrated style with a clean background and strong readable silhouette.",
     "Do not include readable text, labels, captions, watermarks, logos, UI, speech bubbles, or multiple characters."
@@ -311,10 +383,28 @@ export function libraryCharacterDiskPath(imageStorageDir: string, relativeFile: 
 const PROMPT_BLOCK_CHARACTER_BUDGET = 220;
 
 /**
+ * The appearance gets a budget of its own rather than sharing the line's.
+ *
+ * Truncation here is not a shorter sentence, it is a licence to invent: a look
+ * cut off at "long dark hair, wearing a…" leaves the model to finish the outfit,
+ * and whatever it finishes with is what the illustration prompts carry. So the
+ * appearance is capped separately and the biography is what gives way.
+ */
+const PROMPT_BLOCK_APPEARANCE_BUDGET = 240;
+
+function capped(value: string, budget: number): string {
+  return value.length > budget ? `${value.slice(0, budget - 1).trimEnd()}…` : value;
+}
+
+/**
  * The bounded context block shared by the planner prompt and the edit chat's
  * stored request. One line per character, each hard-capped, so ten characters
  * with essay-length descriptions cannot crowd out the transcript budget the
  * caller carved this from.
+ *
+ * Appearance is labelled and comes first because it is the half a model is
+ * otherwise happy to supply for itself. Everything else on the line is
+ * biography, which it may freely build on.
  */
 export function libraryCharacterPromptBlock(
   snapshots: readonly LibraryCharacterSnapshot[],
@@ -324,9 +414,48 @@ export function libraryCharacterPromptBlock(
   return snapshots
     .slice(0, MAX_SNAPSHOT_CHARACTERS)
     .map((snapshot) => {
-      const details = [snapshot.description, fieldsSentence(snapshot.fields)].filter(Boolean).join(" — ");
+      const details = [snapshot.description, fieldsSentence(snapshot.fields)]
+        .filter(Boolean)
+        .join(" — ");
       const line = details ? `${snapshot.name}: ${details}` : snapshot.name;
-      return `- ${line.length > budget ? `${line.slice(0, budget - 1).trimEnd()}…` : line}`;
+      const appearance = snapshot.appearance?.trim();
+      return appearance
+        ? `- ${capped(line, budget)}\n  Appearance (fixed — use verbatim, do not invent or alter): ${capped(appearance, PROMPT_BLOCK_APPEARANCE_BUDGET)}`
+        : `- ${capped(line, budget)}`;
     })
     .join("\n");
+}
+
+/**
+ * The line that tells a model what it may and may not decide about a saved
+ * character's look.
+ *
+ * Two different sentences, because the honest instruction differs. With an
+ * appearance recorded there is a right answer and the model's job is to repeat
+ * it. Without one there is no right answer anywhere in text — the look exists
+ * only in a portrait that is attached to the *image* calls and invisible here —
+ * so the only safe instruction is to describe no appearance at all and let the
+ * reference images speak. Saying "invent something consistent" instead is what
+ * produced a hijab-wearing woman rendered as a bare-headed child: the invented
+ * sentence travels into every illustration prompt, and scene text outranks the
+ * reference image sitting beside it.
+ */
+export function libraryCharacterAppearanceRule(
+  snapshots: readonly LibraryCharacterSnapshot[]
+): string {
+  if (snapshots.length === 0) {
+    return "";
+  }
+  const described = snapshots.filter((snapshot) => snapshot.appearance?.trim());
+  const undescribed = snapshots.filter((snapshot) => !snapshot.appearance?.trim());
+  return [
+    described.length
+      ? `For ${described.map((snapshot) => `"${snapshot.name}"`).join(", ")}, the Appearance line above is the character's real, already-drawn look: reuse it word for word in visualRules and in every illustration prompt, and never write a physical detail that contradicts it.`
+      : "",
+    undescribed.length
+      ? `For ${undescribed.map((snapshot) => `"${snapshot.name}"`).join(", ")}, no appearance is recorded and their real picture is attached to the illustration calls, which you cannot see. Leave their visualRules empty and describe no hair, skin, age, build, headwear, or clothing for them anywhere — refer to them by name only and let the attached reference decide how they look.`
+      : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
 }

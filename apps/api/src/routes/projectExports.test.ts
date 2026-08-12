@@ -22,7 +22,10 @@ const mockProvenanceWrite = vi.hoisted(() => ({ failure: null as Error | null })
 
 vi.mock("@book-maker/db", () => ({
   Prisma: {},
-  prisma: mockPrisma
+  prisma: mockPrisma,
+  researchCitationsForExport: async (
+    sources: Array<{ title: string; url: string | null; summary: string }>
+  ) => sources.map((source) => ({ ...source, url: source.url ?? undefined }))
 }));
 
 vi.mock("@book-maker/core", async (importOriginal) => {

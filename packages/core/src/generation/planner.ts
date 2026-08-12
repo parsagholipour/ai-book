@@ -15,6 +15,7 @@ import {
 } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
+import { planLibraryCharacterGuidance, reconcilePlanLibraryCharacters } from "./planLibraryCharacters.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 
 export type CreatePlanPhase = "understand" | "shape" | "finalize";
@@ -52,11 +53,18 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
   const fallback = makeFallbackPlan(options.input);
   const researchNotes = await researchForPlan(options.input, template, fallback.researchQueries, options.research);
   const toneProfile = toneProfileFromMediaSettings(options.input.mediaSettings);
+  const librarySnapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
 
   await options.onPhase?.("shape");
   if (options.forceFallback) {
     await options.onPhase?.("finalize");
-    return normalizePlanPageTargets({ ...fallback, researchNotes }, options.input.targetPages);
+    // Reconciled too, so a MOCK_AI run exercises the same seeding path a real
+    // one does: the template fallback plans no characters at all, and without
+    // this an @-mentioned character simply vanishes in development.
+    return normalizePlanPageTargets(
+      reconcilePlanLibraryCharacters({ ...fallback, researchNotes }, librarySnapshots),
+      options.input.targetPages
+    );
   }
 
   const planningSchema = bookPlanModelOutputSchemaWithFallback({ ...fallback, researchNotes });
@@ -86,14 +94,21 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other choices you can make while drafting the plan.",
             "Any necessary question must be plain, self-contained, tied directly to words the user supplied, and must not mention an unexplained character or detail invented by the plan.",
             ...mobileAutoPlanningGuidance(options.input),
-            ...mobileLibraryCharacterGuidance(options.input),
             "For the single necessary question, include 2-4 concise premade answers only when a few complete answers really cover it, and make every option a full answer usable as-is. When the answer is a value only the reader can supply - a name, a title, a place, a number, a date - set options to [] and let them type it. Never write an option that only describes how the reader will answer. Allow a custom answer unless the question is informational only.",
             'Declare how many answers you accept in answerKind: "choice" when exactly one option can be true, "multi" (up to 6 options) when the reader can honestly combine several and you can honour every pick, "open" with no options otherwise. The app draws the picker from answerKind, so never say "choose one or more" in the prompt and never list the options inside the prompt text.',
             "For every recurring character, include concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details suitable for a reusable character reference sheet.",
             "Illustration prompts must use exact recurring character names whenever those characters appear.",
             ...targetLanguageGenerationGuidance(options.input.language),
             ...kidsReadingGuidanceLines(options.input),
-            ...plannerToneGuidance(toneProfile)
+            ...plannerToneGuidance(toneProfile),
+            // Last deliberately. Three earlier rules argue against a saved
+            // character, each in a way recency decides: "write all book-facing
+            // strings in <language>" (which translated the name), "for every
+            // recurring character include concrete visualRules" (which invented
+            // the look), and the kids vocabulary rule (which simplifies an
+            // unfamiliar name). The library rules must be the later half of
+            // every one of those pairs.
+            ...planLibraryCharacterGuidance(librarySnapshots)
           ].join(" ")
         },
         {
@@ -125,10 +140,13 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
       researchNotes
     });
     return normalizePlanPageTargets(
-      {
-        ...plan,
-        questions: plan.questions.slice(0, 1)
-      },
+      reconcilePlanLibraryCharacters(
+        {
+          ...plan,
+          questions: plan.questions.slice(0, 1)
+        },
+        librarySnapshots
+      ),
       options.input.targetPages
     );
   } catch (error) {
@@ -139,6 +157,11 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
 export async function revisePlanningPackage(options: RevisePlanOptions): Promise<BookPlan> {
   const targetPages = options.targetPages ?? sumChapterTargetPages(options.currentPlan.chapters);
   const toneProfile = options.toneProfile ?? "neutral";
+  // A revision is a patch whose arrays replace wholesale, so `characters` is
+  // re-decided in full by a model that used to be told nothing about the
+  // library at all: "make it shorter" after approval was enough to rewrite the
+  // reader's saved character out of their own book.
+  const librarySnapshots = libraryCharactersFromMediaSettings(options.input?.mediaSettings);
   // Questions are an explicit semantic decision on every revision. If the
   // model omits them, default to none instead of restoring legacy questions.
   const revisionSchema = bookPlanSchemaWithFallback({ ...options.currentPlan, questions: [] });
@@ -160,7 +183,10 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               "For recurring characters, preserve or add concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details; illustration prompts must use exact recurring character names whenever those characters appear.",
               ...targetLanguageGenerationGuidance(options.language),
               ...(options.input ? kidsReadingGuidanceLines(options.input) : []),
-              ...plannerToneGuidance(toneProfile)
+              ...plannerToneGuidance(toneProfile),
+              // Last for the same reason as in initial planning: the rules it
+              // has to outrank are all above it.
+              ...planLibraryCharacterGuidance(librarySnapshots)
             ].join(" ")
         },
         {
@@ -175,6 +201,7 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
               toneProfile,
               language: targetLanguagePayload(options.language),
               readingGuidance: options.input ? kidsReadingGuidancePayload(options.input) : undefined,
+              libraryCharacters: librarySnapshots.length > 0 ? librarySnapshots : undefined,
               pageBudget: {
                 targetPages
               }
@@ -191,11 +218,14 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
       options.respondedQuestionPrompts
     ).slice(0, 1);
     return normalizePlanPageTargets(
-      {
-        ...revised,
-        questions,
-        researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
-      },
+      reconcilePlanLibraryCharacters(
+        {
+          ...revised,
+          questions,
+          researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
+        },
+        librarySnapshots
+      ),
       targetPages
     );
   } catch (error) {
@@ -462,25 +492,4 @@ function mobileAutoPlanningGuidance(input: CreateProjectInput): string[] {
 
 function jsonRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
-
-/**
- * The user's @-mentioned library characters (snapshotted into
- * `mediaSettings.mobile.characters`, visible to the model inside userInput).
- * The verbatim-name demand is load-bearing: the plan schema strips unknown
- * keys, so the name is the only link the reference-sheet seeding has back to
- * the character's generated portrait.
- */
-function mobileLibraryCharacterGuidance(input: CreateProjectInput): string[] {
-  const snapshots = libraryCharactersFromMediaSettings(input.mediaSettings);
-  if (snapshots.length === 0) {
-    return [];
-  }
-  const names = snapshots.map((snapshot) => `"${snapshot.name}"`).join(", ");
-  return [
-    `The user defined these characters in their library and asked for them by name: ${names}. Find them under mediaSettings.mobile.characters in userInput.`,
-    "Each of them MUST appear in the plan's characters array with the name kept EXACTLY as given, letter for letter.",
-    "Derive each one's role, traits, and visualRules from their stored description and details, and never contradict a stated attribute such as age, job, or language.",
-    "Give them real presence in the chapters, not a cameo."
-  ];
 }
