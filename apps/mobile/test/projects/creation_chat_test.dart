@@ -2433,7 +2433,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Book plan approved'), findsOneWidget);
-      expect(find.text(planTitle), findsOneWidget);
+      // The plan card, plus the brief header naming the book by its title.
+      expect(find.text(planTitle), findsNWidgets(2));
       expect(find.text('Needs attention'), findsOneWidget);
       expect(
         find.text('We hit a problem while writing page 4.'),
@@ -2682,8 +2683,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // The built plan renders below the brainstorm before the edit.
-      expect(find.text(planTitle), findsOneWidget);
+      // The built plan renders below the brainstorm before the edit, and the
+      // brief header names the book by the same title.
+      expect(find.text(planTitle), findsNWidgets(2));
 
       await tester.longPress(bubbleText('Original brainstorm idea'));
       await tester.pumpAndSettle();
@@ -2902,7 +2904,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Original completed chat transcript'), findsOneWidget);
-    expect(find.text(planTitle), findsOneWidget);
+    // The plan card, plus the brief header naming the book by its title.
+    expect(find.text(planTitle), findsNWidgets(2));
 
     await tester.tap(find.byTooltip('New book chat'));
     await tester.pumpAndSettle();

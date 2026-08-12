@@ -27,7 +27,18 @@ class GenerationProgressOverviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final progress = status.progressPercent.clamp(0, 100).toInt();
+    // The percent follows the same source as the step list below: the
+    // whole-book `progressPercent` sits flat on 10 for the entire planning
+    // phase, which reads as stuck next to milestones that are moving.
+    final progress =
+        (status.editProgress?.percent ??
+                status.generationProgress?.percent ??
+                (status.status == 'planning'
+                    ? status.planningProgress?.percent
+                    : null) ??
+                status.progressPercent)
+            .clamp(0, 100)
+            .toInt();
     // While the plan is being written the finer planning milestones are what
     // the chat draws, and this card promises to agree with it. Only while
     // planning: once a plan is approved those three steps are all done and the

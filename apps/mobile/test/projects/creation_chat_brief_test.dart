@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/projects/domain/project_status_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 
@@ -65,6 +66,73 @@ void main() {
     expect(_inHeader(find.text('Writing')), findsOneWidget);
     // The readiness pill is a brief-stage concept and has retired.
     expect(_inHeader(find.text('80%')), findsNothing);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('planning header follows the planning progress percent', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    final projects = PlanProjectsRepository(
+      project: plannedProject(
+        status: 'planning',
+        currentAction: 'Creating your book plan.',
+        withoutPlan: true,
+      ),
+      status: projectStatus(
+        status: 'planning',
+        // The whole-book scale sits flat on 10 for the entire planning
+        // phase; the header must read the live planning percent instead.
+        progressPercent: 10,
+        currentAction: 'Shaping the chapters and flow',
+        planningProgress: const MobilePlanningProgress(
+          percent: 64,
+          steps: [
+            MobileProjectStatusStep(
+              key: 'understand',
+              label: 'Understanding your idea',
+              status: 'done',
+            ),
+            MobileProjectStatusStep(
+              key: 'shape',
+              label: 'Shaping the chapters and flow',
+              status: 'active',
+            ),
+            MobileProjectStatusStep(
+              key: 'finalize',
+              label: 'Finalizing your plan',
+              status: 'pending',
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pumpWidget(app(creation: creation, projects: projects));
+    await _buildBook(tester);
+
+    expect(
+      _inHeader(find.text('Building your outline · 64%')),
+      findsOneWidget,
+    );
+    expect(_inHeader(find.text('Planning')), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('the header takes the book title over the untitled snapshot', (
+    tester,
+  ) async {
+    // The build response's output snapshot carries the pre-plan placeholder;
+    // the polled project detail is where the plan's chosen title lands.
+    final creation = ScriptedCreationRepository()
+      ..buildOutputTitle = 'Untitled Book';
+    final projects = PlanProjectsRepository();
+    await tester.pumpWidget(app(creation: creation, projects: projects));
+    await _buildBook(tester);
+
+    expect(_inHeader(find.text(planTitle)), findsOneWidget);
+    expect(_inHeader(find.text('Untitled Book')), findsNothing);
 
     await tester.teardownScreen();
   });

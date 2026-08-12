@@ -42,11 +42,15 @@ _BuiltHeaderView? _builtHeaderView(
       .trim();
   // The step list's number when there is one, same as the bubble — but with
   // no monotonic guard: a stale tick moving a text line backwards does not
-  // read as work being undone the way an animating bar does.
+  // read as work being undone the way an animating bar does. The full
+  // fallback chain matters: `progressPercent` is the whole-book scale, which
+  // sits flat on 10 for the entire planning phase.
   final percent =
       (liveStatus == null
               ? (project?.progressPercent ?? 0)
-              : (liveStatus.generationProgress?.percent ??
+              : (liveStatus.editProgress?.percent ??
+                    liveStatus.generationProgress?.percent ??
+                    liveStatus.planningProgress?.percent ??
                     liveStatus.progressPercent))
           .clamp(0, 100)
           .toInt();
@@ -142,9 +146,10 @@ class _BriefHeader extends StatefulWidget {
 
   /// Non-null once the chat has a built book. The header then carries the
   /// screen's only title (the app bar names nothing), so it prefers the
-  /// active output's title — the server keeps it synced to the project row,
-  /// where a replan or rename lands — and retires the readiness pill, which
-  /// only describes a brief that is still forming.
+  /// project detail's title — polled while the book is live, it is where the
+  /// plan's chosen title, a replan or a rename lands first — over the stored
+  /// output's title, and retires the readiness pill, which only describes a
+  /// brief that is still forming.
   final String? activeProjectId;
 
   /// The built book's detail: the real cover art, and the settled status
@@ -169,13 +174,25 @@ class _BriefHeader extends StatefulWidget {
 class _BriefHeaderState extends State<_BriefHeader> {
   bool _expanded = false;
 
+  /// The stand-in title the server gives a book that has not chosen one yet.
+  /// Treated as no title at all: the brief's own working title reads better
+  /// than a literal "Untitled Book" while the plan is still picking the name.
+  static const _untitledPlaceholder = 'Untitled Book';
+
+  static String? _displayTitle(String? title) {
+    final trimmed = title?.trim();
+    if (trimmed == null || trimmed.isEmpty || trimmed == _untitledPlaceholder) {
+      return null;
+    }
+    return trimmed;
+  }
+
   String? _activeOutputTitle() {
     final projectId = widget.activeProjectId;
     if (projectId == null) return null;
     for (final output in widget.state.outputs) {
       if (output.projectId == projectId) {
-        final title = output.title.trim();
-        return title.isEmpty ? null : title;
+        return _displayTitle(output.title);
       }
     }
     return null;
@@ -196,7 +213,12 @@ class _BriefHeaderState extends State<_BriefHeader> {
           ? presets.bookTypeChoice
           : 'auto',
     );
+    // The project detail is the freshest source once built: it is polled
+    // while the book is live, so the title the plan chooses lands here first.
+    // The stored output title is a snapshot from the build response — before
+    // planning finishes it still says "Untitled Book".
     final workingTitle =
+        _displayTitle(project?.title) ??
         _activeOutputTitle() ??
         workingCreationTitle(
           optionalDetails: state.optionalDetails,

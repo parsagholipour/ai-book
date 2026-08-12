@@ -37,6 +37,7 @@ mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
   set _pendingRevisionOperationId(String? value);
   void _refreshOutput(String projectId, {bool refreshStatus});
   String? _activeProjectId(CreationChatState state);
+  Future<void> _syncOutputsSilently();
 
   /// Starts polling while the book is live, and refreshes once when it stops.
   ///
@@ -65,10 +66,13 @@ mixin _LiveOutputRefresh on ConsumerState<CreationChatScreen> {
     _planRefreshTimer = null;
     // The stream closes the moment the book settles, so this is the only
     // notice the screen gets that the plan, the pages and the exports are
-    // there to be read.
+    // there to be read. The outputs sync is what moves the plan's chosen
+    // title onto the stored output — its build-time snapshot still says
+    // "Untitled Book", and nothing else re-reads it.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _liveEdgeProjectId != projectId) return;
       _refreshOutput(projectId, refreshStatus: false);
+      unawaited(_syncOutputsSilently());
     });
   }
 

@@ -87,6 +87,10 @@ class ScriptedCreationRepository implements CreationRepository {
   String? buildDraftId;
   int buildCount = 0;
 
+  /// Overrides the title the build response stamps on its output — the real
+  /// server snapshots "Untitled Book" there until the plan chooses a name.
+  String? buildOutputTitle;
+
   @override
   Future<List<MobileChatSession>> listSessions() async {
     listSessionsCalls++;
@@ -391,7 +395,7 @@ class ScriptedCreationRepository implements CreationRepository {
         id: 'output-$buildCount',
         draftId: draftId,
         projectId: projectId,
-        title: project.title,
+        title: buildOutputTitle ?? project.title,
         sequence: buildCount,
         createdAt: DateTime.utc(2026, 6, 15, 12, buildCount),
         updatedAt: DateTime.utc(2026, 6, 15, 12, buildCount),

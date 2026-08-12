@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 
 /// Show a snack bar that a tap gets rid of.
@@ -85,6 +87,17 @@ class _TapToDismiss extends StatelessWidget {
           horizontal: resolved == SnackBarBehavior.floating ? 16 : 24,
           vertical: 14,
         ),
+        child: content,
+      );
+      // The theme's translucent fill is painted below the content, so this
+      // blur frosts both the page behind the bar and the tint over it. It can
+      // only stand in for the whole bar because owning the padding makes the
+      // content span it; a bar with an action or its own padding keeps the
+      // plain translucent fill instead of a blur patch under just the text.
+      // The SnackBar's Material clips to its shape (Clip.hardEdge), which is
+      // what bounds the blur to the bar's rounded rect.
+      content = BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
         child: content,
       );
     }

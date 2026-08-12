@@ -49,37 +49,47 @@ class ChatHistoryDrawer extends ConsumerWidget {
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  _DrawerHeader(),
-                  _NewBookButton(),
-                  SizedBox(height: 8),
-                  BookShelf(),
-                ],
+                children: [_DrawerHeader(), SizedBox(height: 4), BookShelf()],
               ),
             ),
             Expanded(
-              child: ClipRect(
-                key: const ValueKey('chat-history-scroll-clip'),
-                child: sessions.when(
-                  data: (items) => items.isEmpty && pending.isEmpty
-                      ? const AppEmptyState(
-                          title: 'No chats yet',
-                          message: 'Start a new book to begin a conversation.',
-                          icon: Icons.chat_bubble_outline,
-                        )
-                      : _ChatList(
-                          sessions: items,
-                          activeDraftId: activeDraftId,
-                          pending: pending,
+              // The chat list fills the region and "New book" floats over its
+              // bottom-left corner, so the drawer's primary action stays put
+              // however far down a long history the reader has scrolled.
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRect(
+                      key: const ValueKey('chat-history-scroll-clip'),
+                      child: sessions.when(
+                        data: (items) => items.isEmpty && pending.isEmpty
+                            ? const AppEmptyState(
+                                title: 'No chats yet',
+                                message:
+                                    'Start a new book to begin a conversation.',
+                                icon: Icons.chat_bubble_outline,
+                              )
+                            : _ChatList(
+                                sessions: items,
+                                activeDraftId: activeDraftId,
+                                pending: pending,
+                              ),
+                        loading: () =>
+                            const Center(child: CircularProgressIndicator()),
+                        error: (_, _) => AppErrorState(
+                          title: 'Chats unavailable',
+                          message: 'Could not load your chats.',
+                          onRetry: () => ref.invalidate(chatSessionsProvider),
                         ),
-                  loading: () =>
-                      const Center(child: CircularProgressIndicator()),
-                  error: (_, _) => AppErrorState(
-                    title: 'Chats unavailable',
-                    message: 'Could not load your chats.',
-                    onRetry: () => ref.invalidate(chatSessionsProvider),
+                      ),
+                    ),
                   ),
-                ),
+                  const Positioned(
+                    left: 12,
+                    bottom: 12,
+                    child: _NewBookButton(),
+                  ),
+                ],
               ),
             ),
             const Divider(height: 1),
@@ -123,13 +133,27 @@ class _DrawerHeader extends StatelessWidget {
   }
 }
 
+/// The drawer's primary action, hovering over the chat list rather than sitting
+/// in its scroll flow. It hugs its label so the corner it floats in reads as a
+/// deliberate anchor, and carries a shadow because chats scroll underneath it.
 class _NewBookButton extends StatelessWidget {
   const _NewBookButton();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
+        shadows: [
+          BoxShadow(
+            color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: AppButton.primary(
         label: 'New book',
         onPressed: () {
@@ -138,8 +162,6 @@ class _NewBookButton extends StatelessWidget {
           context.go(newBookChatLocation());
         },
         leading: const Icon(Icons.edit_document),
-        expanded: true,
-        alignStart: true,
       ),
     );
   }
@@ -260,6 +282,9 @@ class _ChatList extends StatelessWidget {
               ),
             ],
           ),
+        // Clearance for the floating "New book" button, so the last chat can
+        // still be scrolled out from under it.
+        const SliverToBoxAdapter(child: SizedBox(height: 76)),
       ],
     );
   }

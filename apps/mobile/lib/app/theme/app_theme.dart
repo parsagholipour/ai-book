@@ -304,11 +304,23 @@ ThemeData _themeFromScheme(ColorScheme scheme) {
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: scheme.inverseSurface,
-      contentTextStyle: textTheme.bodyMedium?.copyWith(
-        color: scheme.onInverseSurface,
+      // Lifted clear of the chat composer, which lives in the body where a
+      // floating bar would otherwise sit right on top of the text field.
+      insetPadding: const EdgeInsets.fromLTRB(
+        AppSpacing.md,
+        AppSpacing.md,
+        AppSpacing.md,
+        88,
       ),
-      shape: controlShape,
+      // Translucent on purpose: tapToDismissSnackBar backdrop-blurs the bar,
+      // so this tint composites over frosted page content.
+      backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.75),
+      elevation: 0,
+      contentTextStyle: textTheme.bodyMedium?.copyWith(color: scheme.onSurface),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.control),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.6)),
+      ),
     ),
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(

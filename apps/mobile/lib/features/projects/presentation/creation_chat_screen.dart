@@ -621,6 +621,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
     unawaited(_syncOutputsSilently());
   }
 
+  @override
   Future<void> _syncOutputsSilently() async {
     try {
       await ref.read(creationChatControllerProvider.notifier).syncOutputs();
