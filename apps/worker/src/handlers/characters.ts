@@ -286,7 +286,7 @@ export async function generateCharacterProfileImage(options: {
     where: { projectId: options.projectId, type: "CHARACTER_REFERENCE" },
     orderBy: { createdAt: "asc" }
   });
-  const referenceImagePaths = selectReferenceImagePaths({
+  const { paths: referenceImagePaths } = await selectReferenceImagePaths({
     input: options.input,
     plan: options.plan,
     assets: characterReferenceAssets.map(toWorkerImageAsset),

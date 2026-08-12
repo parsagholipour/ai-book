@@ -213,6 +213,9 @@ export const mobileProjectChatMessageBodySchema = z
     // The earlier message this one is a reply to. Any role can be replied to.
     // It is quoted for the model only — never folded into the routed text.
     replyToMessageId: z.string().trim().min(1).max(128).optional(),
+    // Library characters @-mentioned in this message. Their sheets ride the
+    // stored edit request, never the routed text or the visible transcript.
+    mentionedCharacterIds: z.array(z.string().trim().min(1).max(64)).max(10).optional(),
     requestId: requestIdSchema.optional()
   })
   .strict();
@@ -267,6 +270,8 @@ export const mobileCreationMessageBodySchema = z
     // Empty text is allowed when the message carries attachments.
     message: z.string().trim().max(4000).default(""),
     attachmentIds: z.array(z.string().trim().min(1).max(64)).max(6).optional(),
+    // Library characters @-mentioned in this message.
+    mentionedCharacterIds: z.array(z.string().trim().min(1).max(64)).max(10).optional(),
     presets: mobileCreationPresetsInputSchema.optional(),
     sourceNotes: z.string().trim().max(12000).optional(),
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
@@ -290,6 +295,8 @@ export const mobileCreationSessionStartBodySchema = z
     presets: mobileCreationPresetsInputSchema.optional(),
     sourceNotes: z.string().trim().max(12000).optional(),
     optionalDetails: mobileCreationOptionalDetailsSchema.optional(),
+    // Library characters @-mentioned in the opening message.
+    mentionedCharacterIds: z.array(z.string().trim().min(1).max(64)).max(10).optional(),
     requestId: requestIdSchema.optional()
   })
   .strict()
@@ -534,6 +541,7 @@ export const mobileProjectChatMessageOpenApiBody = {
     message: { type: "string", minLength: 1, maxLength: 5000 },
     editMessageId: { type: "string", minLength: 1, maxLength: 128 },
     replyToMessageId: { type: "string", minLength: 1, maxLength: 128 },
+    mentionedCharacterIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 10 },
     requestId: { type: "string", minLength: 8, maxLength: 64 }
   },
   required: ["message"]
@@ -568,6 +576,7 @@ export const mobileCreationSessionStartOpenApiBody = {
     presets: { type: "object" },
     sourceNotes: { type: "string", maxLength: 12000 },
     optionalDetails: { type: "object" },
+    mentionedCharacterIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 10 },
     requestId: { type: "string", minLength: 8, maxLength: 64 }
   }
 } as const;
@@ -578,6 +587,7 @@ export const mobileCreationMessageOpenApiBody = {
   properties: {
     message: { type: "string", maxLength: 4000 },
     attachmentIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 6 },
+    mentionedCharacterIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 10 },
     presets: { type: "object" },
     sourceNotes: { type: "string", maxLength: 12000 },
     optionalDetails: { type: "object" },

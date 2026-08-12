@@ -285,10 +285,20 @@ export function foldCreationTranscriptTree(
   }
   const droppedIds = new Set(dropped.map((message) => messageId(message)));
   const newRootParentId = messageId(dropped.at(-1)!);
+  // The summary keeps only prose, so @-mention refs on folded messages would
+  // vanish from every later turn and from the build snapshot. They are carried
+  // onto the new root instead — the fold spine is shared by every branch, so
+  // no branch gains a mention it did not have.
+  const droppedCharacterRefs = dropped.flatMap((message) => message.characters ?? []);
   const kept = tree
     .filter((candidate) => !droppedIds.has(messageId(candidate)))
-    .map((candidate) =>
-      parentKey(candidate.parentId) === parentKey(newRootParentId) ? { ...candidate, parentId: null } : candidate
-    );
+    .map((candidate) => {
+      if (parentKey(candidate.parentId) !== parentKey(newRootParentId)) {
+        return candidate;
+      }
+      const carried = [...droppedCharacterRefs, ...(candidate.characters ?? [])];
+      const deduped = [...new Map(carried.map((ref) => [ref.id, ref])).values()].slice(0, 10);
+      return { ...candidate, parentId: null, ...(deduped.length > 0 ? { characters: deduped } : {}) };
+    });
   return { messages: kept, conversationSummary: foldedSummary(dropped, existingSummary) };
 }

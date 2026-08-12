@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   projectUpdateMany: vi.fn(),
   projectFindUnique: vi.fn(),
   audiobookUpdateMany: vi.fn(),
+  libraryCharacterUpdateMany: vi.fn(),
   bookEditOperationFindUnique: vi.fn(),
   bookEditOperationUpdate: vi.fn(),
   bookEditOperationUpdateMany: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock("@book-maker/db", () => ({
       updateMany: mocks.projectUpdateMany
     },
     audiobook: { updateMany: mocks.audiobookUpdateMany },
+    libraryCharacter: { updateMany: mocks.libraryCharacterUpdateMany },
     bookEditOperation: {
       findUnique: mocks.bookEditOperationFindUnique,
       update: mocks.bookEditOperationUpdate,
@@ -69,6 +71,7 @@ describe("job lifecycle ownership", () => {
     mocks.projectUpdate.mockResolvedValue({});
     mocks.projectUpdateMany.mockResolvedValue({ count: 0 });
     mocks.audiobookUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.libraryCharacterUpdateMany.mockResolvedValue({ count: 1 });
     mocks.bookEditOperationFindUnique.mockResolvedValue(null);
     mocks.bookEditOperationUpdate.mockResolvedValue({});
     mocks.bookEditOperationUpdateMany.mockResolvedValue({ count: 1 });
@@ -264,6 +267,85 @@ describe("job lifecycle ownership", () => {
       expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
       expect(mocks.projectUpdate).not.toHaveBeenCalled();
     }
+  });
+
+  it("fails a character portrait by flipping its own row, settling through the attempt", async () => {
+    const portraitJob = () =>
+      job("generate-character-portrait", {
+        projectId: undefined,
+        libraryCharacterId: "char-1",
+        userId: "user-1",
+        attemptId: "attempt-1"
+      });
+
+    await markFailed(portraitJob(), new Error("image provider down"));
+
+    expect(mocks.libraryCharacterUpdateMany).toHaveBeenCalledWith({
+      where: { id: "char-1", portraitStatus: { in: ["QUEUED", "GENERATING"] } },
+      data: { portraitStatus: "FAILED", portraitError: "image provider down" }
+    });
+    expect(mocks.failGenerationAttempt).toHaveBeenCalledWith("attempt-1", "image provider down");
+    // The attempt settlement owns the refund; the ledger fallback stays quiet.
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+    expect(mocks.projectUpdateMany).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    mocks.generationJobFindUnique.mockResolvedValue({ steps: [] });
+    mocks.generationJobUpdateMany.mockResolvedValue({ count: 1 });
+    mocks.libraryCharacterUpdateMany.mockResolvedValue({ count: 1 });
+    await markStopped(portraitJob());
+
+    expect(mocks.libraryCharacterUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ portraitStatus: "FAILED" }) })
+    );
+    expect(mocks.projectUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refunds an attempt-less portrait against the payload's own ledger entry", async () => {
+    await markFailed(
+      job("generate-character-portrait", {
+        projectId: undefined,
+        libraryCharacterId: "char-1",
+        billingLedgerEntryId: "ledger-portrait"
+      }),
+      new Error("image provider down")
+    );
+
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("ledger-portrait", "image provider down");
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
+  it("still applies the CANCELED and settled-attempt stale checks to project-less jobs", async () => {
+    mocks.generationJobFindUnique.mockResolvedValue({
+      projectId: null,
+      type: "GENERATE_CHARACTER_PORTRAIT",
+      contentRevision: null,
+      status: "CANCELED"
+    });
+    await expect(
+      staleGenerationJobReason(job("generate-character-portrait", { projectId: undefined }))
+    ).resolves.toBe("The durable job was canceled before it could run.");
+
+    mocks.generationJobFindUnique.mockResolvedValue({
+      projectId: null,
+      type: "GENERATE_CHARACTER_PORTRAIT",
+      contentRevision: null,
+      status: "QUEUED",
+      attemptId: "attempt-1"
+    });
+    mocks.generationAttemptFindUnique.mockResolvedValue({ status: "FAILED" });
+    await expect(
+      staleGenerationJobReason(job("generate-character-portrait", { projectId: undefined }))
+    ).resolves.toBe("The paid attempt behind this job was already settled and refunded.");
+
+    // A healthy project-less row is simply not stale; there is no project to
+    // compare it against and the project section must not run.
+    mocks.generationAttemptFindUnique.mockResolvedValue({ status: "ACTIVE" });
+    await expect(
+      staleGenerationJobReason(job("generate-character-portrait", { projectId: undefined }))
+    ).resolves.toBeNull();
+    expect(mocks.projectFindUnique).not.toHaveBeenCalled();
   });
 
   it("refunds a failed plan against its own charge, not the book's", async () => {

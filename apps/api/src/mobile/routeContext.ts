@@ -17,6 +17,7 @@ import {
   DEFAULT_VOICE_CALL_RATE_LIMIT
 } from "./schemas.js";
 import {
+  createCharacterPhotoVisionAdapter,
   createFastRoutingTextModel,
   createFileDigestAdapter,
   createLanguageDetectionTextModel,
@@ -24,6 +25,8 @@ import {
   createVoiceProvider,
   ingestCreationAttachment,
   loadConfig,
+  type CharacterPhotoVisionRequest,
+  type CharacterPhotoVisionResult,
   type CreateGeminiLiveSessionRequest,
   type CreationAttachment,
   type GeminiLiveSessionResponse,
@@ -47,6 +50,17 @@ export type MobileProjectRoutesOptions = {
   voiceCallRateLimit?: Partial<RateLimitConfig>;
   /** Test seam for attachment ingestion; defaults to the core pipeline. */
   attachmentIngestion?: (input: IngestCreationAttachmentInput) => Promise<CreationAttachment>;
+  /**
+   * Test seam for reading a character photo. Undefined is the real behaviour
+   * with no vision provider configured, and the upload degrades to storing the
+   * file — so leaving it unset is a supported production state, not just a
+   * test one.
+   */
+  characterPhotoVision?:
+    | false
+    | ((request: CharacterPhotoVisionRequest) => Promise<CharacterPhotoVisionResult>);
+  /** Overrides `CHARACTER_PHOTO_VISION_BUDGET_MS`; only tests need this. */
+  characterPhotoVisionBudgetMs?: number;
   advisorTimeoutMs?: number;
   advisorEnrichment?:
     | false
@@ -73,6 +87,9 @@ export type MobileRouteContext = {
   attachmentLimiter: InMemoryRateLimiter;
   voiceCallLimiter: InMemoryRateLimiter;
   attachmentIngestion: (input: IngestCreationAttachmentInput) => Promise<CreationAttachment>;
+  characterPhotoVision:
+    | ((request: CharacterPhotoVisionRequest) => Promise<CharacterPhotoVisionResult>)
+    | undefined;
   safeFastRoutingTextModel: () => TextModelAdapter | undefined;
   advisorEnrichment:
     | ((payload: MobileCreationDraftPayload, base: MobileBookAdvisorResponse) => Promise<Partial<MobileBookAdvisorResponse>>)
@@ -124,6 +141,17 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
         fileDigest: createFileDigestAdapter(appConfig),
         summaryModel: safeFastRoutingTextModel()
       }));
+  const characterPhotoVision =
+    options.characterPhotoVision === false
+      ? undefined
+      : options.characterPhotoVision ??
+        (() => {
+          // Built once, here, rather than per request: the route must never
+          // reach for a provider factory itself, and a deployment with no
+          // vision key simply has no reader.
+          const adapter = createCharacterPhotoVisionAdapter(appConfig);
+          return adapter ? (request: CharacterPhotoVisionRequest) => adapter.describeCharacterPhoto(request) : undefined;
+        })();
   const advisorEnrichment =
     options.advisorEnrichment === false
       ? undefined
@@ -166,6 +194,7 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
     attachmentLimiter,
     voiceCallLimiter,
     attachmentIngestion,
+    characterPhotoVision,
     safeFastRoutingTextModel,
     advisorEnrichment,
     creationEnrichment,

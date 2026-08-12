@@ -1,5 +1,7 @@
 import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
+import { libraryCharacterPromptBlock } from "@book-maker/core";
+import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
 import {
   applyOrCancelEditProposal,
   busyEditReply,
@@ -139,6 +141,32 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       }
       const replyTo = repliedToMessage ? chatReplyQuoteFor(repliedToMessage) : null;
 
+      // @-mentioned library characters. Their sheets become a bounded context
+      // block that rides the *stored* edit request (pendingEdit states and job
+      // payloads) — never the routed text, whose words drive page targeting
+      // and exact-replacement parsing, and never the visible transcript.
+      const mentionedIds = [...new Set(parsed.data.mentionedCharacterIds ?? [])];
+      const mentionedCharacters = mentionedIds.length
+        ? await prisma.libraryCharacter.findMany({ where: { id: { in: mentionedIds }, userId: auth.user.id } })
+        : [];
+      if (mentionedCharacters.length !== mentionedIds.length) {
+        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "A mentioned character is no longer in your library.");
+      }
+      const characterRefs = mentionedCharacters.map((character) => ({ id: character.id, name: character.name }));
+      const mentionContext = mentionedCharacters.length
+        ? [
+            "Mentioned character profiles (the user's own library characters; treat as authoritative canon):",
+            libraryCharacterPromptBlock(
+              mentionedCharacters.map((character) => ({
+                id: character.id,
+                name: character.name,
+                description: character.description,
+                fields: characterFieldsFromJson(character.fields)
+              }))
+            )
+          ].join("\n")
+        : undefined;
+
       const activeMessages = await loadActiveProjectChatMessages(id);
       const activeEditedMessage = editedMessage
         ? activeMessages.find((message) => message.id === editedMessage.id)
@@ -168,7 +196,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
               : editedMessage
                 ? { editedFromMessageId: editedMessage.id }
                 : {}),
-            ...(replyTo ? { replyTo } : {})
+            ...(replyTo ? { replyTo } : {}),
+            ...(characterRefs.length > 0 ? { characters: characterRefs } : {})
           },
           selectSibling: Boolean(editedMessage)
         });
@@ -269,6 +298,10 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       // and queue a deduped recompile, so deflecting them into the pending-edit
       // machinery would make a zero-cost, idempotent switch wait on a job it
       // does not race.
+      // This turn's mentions win; a resumed pending edit otherwise keeps the
+      // sheets it was created with. Computed before the busy gate so a
+      // deflected mention edit saves its sheets for the resume.
+      const characterContext = mentionContext ?? pendingScope?.characterContext;
       const openEditBlocked = await hasOpenProjectWork(id);
       const alwaysAllowedWhileBusy = ["answer", "clarify", "show_content", "back_matter", "chapter_heading"];
       if (openEditBlocked && !alwaysAllowedWhileBusy.includes(intent.kind)) {
@@ -286,7 +319,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           request: resolvedMessage,
           // A deflected confirmation keeps its priced proposal, so the resume
           // after the job settles executes it instead of re-proposing.
-          ...(confirmedProposal ? { pendingState: confirmedProposal } : {})
+          ...(confirmedProposal ? { pendingState: confirmedProposal } : {}),
+          ...(characterContext ? { characterContext } : {})
         });
         return {
           ...(await loadProjectChatResponse(id)),
@@ -307,6 +341,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         ...(confirmedProposal?.credits !== undefined ? { quotedCredits: confirmedProposal.credits } : {}),
         ...(clarifyExhausted && pendingScope ? { pendingRequest: pendingScope.request } : {}),
         ...(replyTo ? { replyTo } : {}),
+        ...(characterContext ? { characterContext } : {}),
         activeMessages
       });
 

@@ -79,6 +79,11 @@ const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> 
     { key: "prepare", label: "Prepare narration" },
     { key: "synthesize", label: "Narrate chapters" },
     { key: "finalize", label: "Finish audiobook" }
+  ],
+  "generate-character-portrait": [
+    { key: "prompt", label: "Prepare portrait" },
+    { key: "render", label: "Draw portrait" },
+    { key: "store", label: "Save portrait" }
   ]
 };
 

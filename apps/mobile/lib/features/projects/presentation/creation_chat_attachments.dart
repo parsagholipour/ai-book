@@ -41,6 +41,15 @@ extension _CreationChatAttachments on _CreationChatScreenState {
                     : null,
                 onTap: () => Navigator.of(sheetContext).pop('notes'),
               ),
+              ListTile(
+                key: const ValueKey('attach-characters'),
+                leading: const Icon(Icons.people_outline),
+                title: const Text('My characters'),
+                subtitle: const Text(
+                  'Reusable characters you can @-mention in any book',
+                ),
+                onTap: () => Navigator.of(sheetContext).pop('characters'),
+              ),
               const Divider(height: 1),
               ListTile(
                 key: const ValueKey('attach-import-book'),
@@ -66,6 +75,8 @@ extension _CreationChatAttachments on _CreationChatScreenState {
         await _pickDocument();
       case 'notes':
         await openSourceNotesSheet(ref.read(creationChatControllerProvider));
+      case 'characters':
+        await _openCharacterLibrary();
       case 'import':
         if (mounted) context.push('/books/import');
     }

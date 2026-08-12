@@ -89,7 +89,8 @@ export type GeneratePageOptions = {
 export type GenerateImageBytesOptions = {
   image: ImageAdapter;
   prompt: string;
-  projectId: string;
+  /** Absent for account-level renders (a library-character portrait). */
+  projectId?: string | undefined;
   pageId?: string | undefined;
   referenceImagePaths?: string[] | undefined;
   aspectRatio?: string | undefined;
@@ -565,7 +566,7 @@ export function shouldIllustratePage(input: CreateProjectInput, plan: BookPlan, 
 export async function generateImageBytes(options: GenerateImageBytesOptions): Promise<GeneratedImageBytes> {
   const result = await options.image.generateImage({
     prompt: options.prompt,
-    projectId: options.projectId,
+    ...(options.projectId ? { projectId: options.projectId } : {}),
     aspectRatio: options.aspectRatio ?? "4:3",
     ...(options.referenceImagePaths?.length ? { referenceImagePaths: options.referenceImagePaths } : {}),
     ...(options.pageId ? { pageId: options.pageId } : {})

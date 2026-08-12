@@ -68,7 +68,17 @@ export async function registerMobileProjectRoutes(fastify: FastifyInstance, cont
         return;
       }
 
-      const project = await createMobileProjectRecord(auth.user.id, buildMobileCreateProjectInput(parsed.data));
+      // Character snapshots are only ever minted by the session build, which
+      // re-reads the user's own library rows. A client-supplied snapshot here
+      // could name another user's portrait file, so it is discarded, not
+      // trusted.
+      const createInput = parsed.data.creationPayload?.characters
+        ? {
+            ...parsed.data,
+            creationPayload: (({ characters: _characters, ...rest }) => rest)(parsed.data.creationPayload)
+          }
+        : parsed.data;
+      const project = await createMobileProjectRecord(auth.user.id, buildMobileCreateProjectInput(createInput));
 
       return reply.code(201).send({ project: await serializeProjectDetail(project, appConfig, auth.user.id) } satisfies MobileProjectCreateResponseDto);
     }

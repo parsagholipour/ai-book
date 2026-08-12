@@ -230,12 +230,64 @@ export const mobileCreationMessageAttachmentSchema = z
   })
   .strict();
 
+/**
+ * Lightweight reference from a chat message to an @-mentioned library
+ * character. The name is a display snapshot; the character's live sheet is
+ * re-read from the library on every turn so edits propagate.
+ */
+export const mobileCreationMessageCharacterSchema = z
+  .object({
+    id: z.string().trim().min(1).max(64),
+    name: z.string().trim().min(1).max(80)
+  })
+  .strict();
+
+/**
+ * The build-time copy of an @-mentioned library character, written into the
+ * payload (and from there `mediaSettings.mobile.characters`) when the plan is
+ * built. A copy, not a reference: deleting the library character afterwards
+ * must not change the book. Mirrors `LibraryCharacterSnapshot` in core.
+ */
+/**
+ * How many library characters one build may snapshot.
+ *
+ * Each message caps its own @-mentions at ten, but a chat is many messages and
+ * the build takes their *union* over the active branch — so the writer
+ * (`libraryCharacterSnapshotsForBuild`) has to clamp to this too, or a reader
+ * with eleven characters mentioned across two messages meets a 500 on Build
+ * that no retry can clear. It matches `MAX_SNAPSHOT_CHARACTERS` in
+ * `packages/core/src/generation/libraryCharacters.ts`, which is what the
+ * worker reads the stored copy back through.
+ */
+export const BUILD_CHARACTER_SNAPSHOT_LIMIT = 10;
+
+export const mobileCreationCharacterSnapshotSchema = z
+  .object({
+    id: z.string().trim().min(1).max(64),
+    name: z.string().trim().min(1).max(80),
+    description: z.string().trim().max(2000).default(""),
+    fields: z
+      .array(z.object({ key: z.string().trim().min(1).max(40), value: z.string().trim().min(1).max(300) }).strict())
+      .max(12)
+      .default([]),
+    // `<userId>/<fileName>` under IMAGE_STORAGE_DIR/characters/, only when a
+    // READY reference image existed at build time.
+    portraitFile: z.string().trim().min(1).max(200).optional(),
+    // Whether that image was drawn from the user's photo or is their own
+    // artwork adopted verbatim — the renderer says different things about the
+    // two. Optional: snapshots written before adoption existed carry neither.
+    portraitSource: z.enum(["generated", "adopted_upload"]).optional()
+  })
+  .strict();
+
 export const mobileCreationMessageSchema = z
   .object({
     role: mobileCreationMessageRoleSchema,
     // Attachment-only messages carry empty text, so emptiness is checked below.
     content: z.string().trim().max(4000),
     attachments: z.array(mobileCreationMessageAttachmentSchema).max(6).optional(),
+    // Library characters this message @-mentions.
+    characters: z.array(mobileCreationMessageCharacterSchema).max(10).optional(),
     // Grounded web research attached to an assistant answer. It travels with
     // the branch so edited-away research cannot leak into the active book.
     research: mobileCreationResearchSchema.optional(),
@@ -295,6 +347,10 @@ export const mobileCreationDraftPayloadSchema = z
     messages: z.array(mobileCreationMessageSchema).max(240).optional(),
     // Files uploaded into the chat, already digested into text at upload time.
     attachments: z.array(creationAttachmentSchema).max(CREATION_ATTACHMENT_MAX_COUNT).optional(),
+    // Snapshots of the @-mentioned library characters, written at build time
+    // from the active branch's mentions (never a live pool — see the message
+    // route, which resolves mentions fresh each turn).
+    characters: z.array(mobileCreationCharacterSnapshotSchema).max(BUILD_CHARACTER_SNAPSHOT_LIMIT).optional(),
     // Legacy V2 payloads are accepted so active drafts made before V3 can resume.
     brief: mobileCreationBriefSchema.optional()
   })

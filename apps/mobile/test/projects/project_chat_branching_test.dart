@@ -227,6 +227,7 @@ class _BranchingProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
+      List<String>? mentionedCharacterIds,
   }) async {
     return _appendTurn(parentId: _chat().messages.last.id, message: message);
   }
@@ -237,6 +238,7 @@ class _BranchingProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+      List<String>? mentionedCharacterIds,
   }) async {
     editedMessageIds.add(messageId);
     final edited = _nodes.firstWhere((node) => node.id == messageId);

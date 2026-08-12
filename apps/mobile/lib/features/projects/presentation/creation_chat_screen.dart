@@ -25,6 +25,10 @@ import '../../../shared/ui/motion.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../../characters/data/characters_repository.dart';
+import '../../characters/domain/character_models.dart';
+import '../../characters/presentation/character_avatar.dart';
+import '../../characters/presentation/character_library_screen.dart';
 import '../data/creation_prefs_store.dart';
 import '../data/projects_repository.dart';
 import '../domain/creation_message_models.dart';
@@ -71,6 +75,7 @@ part 'creation_chat_resume.dart';
 part 'creation_chat_liveness.dart';
 part 'creation_chat_transcript_actions.dart';
 part 'creation_chat_attachments.dart';
+part 'creation_chat_mentions.dart';
 part 'creation_chat_plan_actions.dart';
 
 class CreationChatScreen extends ConsumerStatefulWidget {
@@ -99,7 +104,8 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
         _OutputChatSend,
         _CreationComposerContext,
         _CreationChatResume,
-        _LiveOutputRefresh {
+        _LiveOutputRefresh,
+        _ComposerMentions {
   @override
   final _composerController = TextEditingController();
   @override
@@ -126,6 +132,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   int _planQuestionIndex = 0;
   Map<int, String> _planQuestionAnswers = {};
 
+  @override
   void _updateState(VoidCallback update) => setState(update);
   @override
   void _stopFollowingTranscript() => _stopFollowingTranscriptImpl();
@@ -135,6 +142,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   @override
   void initState() {
     super.initState();
+    _attachMentionListener();
     _initConversation();
   }
 
@@ -154,6 +162,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   void dispose() {
     _planRefreshTimer?.cancel();
     _stickScrollTimer?.cancel();
+    _detachMentionListener();
     _composerController.dispose();
     _composerFocusNode.dispose();
     _revisionController.dispose();
@@ -178,6 +187,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
   void _resetLocalConversationState() {
     _planRefreshTimer?.cancel();
     _planRefreshTimer = null;
+    _resetMentions();
     _composerController.clear();
     _revisionController.clear();
     _projectId = null;
@@ -471,6 +481,14 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
                           target: _replyTarget!,
                           onOpen: _scrollToReplyTarget,
                           onCancel: _cancelReply,
+                        ),
+                      // Above whichever footer is active: the same composer
+                      // serves both stages, so one strip serves both too.
+                      if (_mentionQuery != null)
+                        _MentionSuggestionStrip(
+                          query: _mentionQuery!.query,
+                          onSelect: _insertMention,
+                          onManage: () => unawaited(_openCharacterLibrary()),
                         ),
                       if (isInOutputStage)
                         _FooterLimiter(

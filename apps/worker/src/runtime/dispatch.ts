@@ -129,7 +129,9 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
       name,
       {
         ...payload,
-        projectId: generationJob.projectId,
+        // Absent rather than null for account-level jobs (character portraits):
+        // every payload read is `as string | undefined` behind a falsy guard.
+        ...(generationJob.projectId ? { projectId: generationJob.projectId } : {}),
         generationJobId: generationJob.id,
         ...(generationJob.attemptId ? { attemptId: generationJob.attemptId } : {})
       },

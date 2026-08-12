@@ -35,6 +35,13 @@ export type PendingEditState = {
    * ("apply it") may execute the proposal then.
    */
   requiresExplicitConfirmation?: boolean | undefined;
+  /**
+   * The @-mentioned library characters' sheets, as a prompt block. Appended to
+   * the request only where it reaches the worker's rewrite prompts — never to
+   * the routed text, the page targeting, or the visible transcript — and
+   * carried here so a clarify → confirm → Apply chain keeps it.
+   */
+  characterContext?: string | undefined;
 };
 
 /**
@@ -99,10 +106,17 @@ export async function findPendingProposalById(
       ...(proposal.intent ? { intent: proposal.intent } : {}),
       ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
       ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
+      ...characterContextFromPending(pending),
       proposalId
     };
   }
   return null;
+}
+
+function characterContextFromPending(pending: Record<string, unknown>): { characterContext?: string } {
+  return typeof pending.characterContext === "string" && pending.characterContext.trim()
+    ? { characterContext: pending.characterContext }
+    : {};
 }
 
 export async function findPendingScopeClarification(
@@ -161,6 +175,7 @@ export async function findPendingScopeClarification(
         ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
         ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
         ...(proposal.proposalId ? { proposalId: proposal.proposalId } : {}),
+        ...characterContextFromPending(pending),
         ...(sawNewerAssistantMessage && confirmationCharges ? { requiresExplicitConfirmation: true } : {})
       };
     }

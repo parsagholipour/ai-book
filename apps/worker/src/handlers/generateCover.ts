@@ -123,7 +123,7 @@ export async function generateCover(job: Job) {
     cover = await designedCover();
   } else {
     const baseArtworkPrompt = buildCoverArtworkPrompt({ input, plan, metadata });
-    const referenceImagePaths = selectReferenceImagePaths({
+    const references = await selectReferenceImagePaths({
       input,
       plan,
       assets: characterReferences,
@@ -131,9 +131,10 @@ export async function generateCover(job: Job) {
       image: providers.image,
       context: [baseArtworkPrompt, ...plan.characters.map((character) => `${character.name}: ${character.description}`)].join("\n")
     });
+    const referenceImagePaths = references.paths;
     const artworkPrompt = [
       baseArtworkPrompt,
-      referenceImagePaths.length > 0 ? characterReferencePromptInstruction(referenceImagePaths.length) : ""
+      characterReferencePromptInstruction(references)
     ].filter(Boolean).join("\n");
 
     await advanceJobStep(generationJobId, "render", 45, "Rendering cover artwork");

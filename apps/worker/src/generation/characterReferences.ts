@@ -4,6 +4,11 @@ import { type WorkerImageAsset } from "../runtime/jobTypes.js";
 import { safePathPart } from "../runtime/serialization.js";
 import {
   buildCharacterReferencePrompt,
+  characterReferenceSeedInstruction,
+  libraryCharacterDiskPath,
+  libraryCharacterFaceInstruction,
+  libraryCharactersFromMediaSettings,
+  matchLibraryCharacter,
   optimizeImageForStorage,
   publicAssetUrl,
   selectCharacterReferenceAssets,
@@ -14,11 +19,13 @@ import {
   type CreateProjectInput,
   type ImageAdapter,
   type ImageAdapterCapabilities,
+  type LibraryCharacterPortraitSource,
+  type LibraryCharacterSnapshot,
   type ProviderSet
 } from "@book-maker/core";
 import { imageGenerationMetadata, imageStorageMetadata } from "./bookHelpers.js";
 import { Prisma, prisma } from "@book-maker/db";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
@@ -117,12 +124,24 @@ async function generateCharacterReferenceAssets(
   // writes stay sequential below: an interactive transaction client must not
   // run queries concurrently.
   const characters = options.plan.characters;
+  const librarySnapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
+  // The snapshots are stored JSON that client flows can reach, so a portrait
+  // may only be read out of the book owner's own characters directory: the
+  // owner's id is required as the path's first segment, and a snapshot naming
+  // any other user's portrait resolves to nothing. Operator-console books have
+  // no owner and seed nothing.
+  const seedOwnerUserId = librarySnapshots.some((snapshot) => snapshot.portraitFile)
+    ? ((await prisma.project.findUnique({ where: { id: options.projectId }, select: { userId: true } }))?.userId ??
+      null)
+    : null;
   type RenderedReference = {
     character: (typeof characters)[number];
     prompt: string;
     image: Awaited<ReturnType<typeof options.strategy.generateImageBytes>>;
     optimizedImage: Awaited<ReturnType<typeof optimizeImageForStorage>>;
     filename: string;
+    seededFromLibraryCharacterId?: string | undefined;
+    seedSource?: LibraryCharacterPortraitSource | undefined;
   };
   const rendered = Array.from({ length: characters.length }) as RenderedReference[];
   let cursor = 0;
@@ -136,21 +155,40 @@ async function generateCharacterReferenceAssets(
         await updateJobProgress(options.generationJobId, {
           message: `Rendering character reference ${index + 1}/${characters.length}: ${character.name}`
         });
-        const prompt = buildCharacterReferencePrompt({
-          input: options.input,
-          plan: options.plan,
-          character
-        });
+        // A plan character matching a mentioned library character inherits its
+        // generated portrait: the portrait file is fed as a reference image so
+        // the sheet keeps the face the user already approved. This whole
+        // function runs only when the adapter supports reference images
+        // (`shouldUseCharacterReferenceImages` above), and a portrait that has
+        // gone missing — the character was deleted since the build — is skipped
+        // silently rather than failing a book that no longer depends on it.
+        const seed = await libraryPortraitSeedForName(character.name, librarySnapshots, seedOwnerUserId);
+        const prompt = [
+          buildCharacterReferencePrompt({
+            input: options.input,
+            plan: options.plan,
+            character
+          }),
+          ...(seed ? [characterReferenceSeedInstruction(seed.source)] : [])
+        ].join("\n");
         const image = await options.strategy.generateImageBytes({
           image: options.providers.image,
           prompt,
           projectId: options.projectId,
+          ...(seed ? { referenceImagePaths: [seed.path] } : {}),
           aspectRatio: "4:3"
         });
         const optimizedImage = await optimizeImageForStorage({ bytes: image.bytes, mimeType: image.mimeType });
         const filename = `character-reference-${characterSlug(character.name)}.${optimizedImage.extension}`;
         await writeFile(join(projectImageDir, filename), optimizedImage.bytes);
-        rendered[index] = { character, prompt, image, optimizedImage, filename };
+        rendered[index] = {
+          character,
+          prompt,
+          image,
+          optimizedImage,
+          filename,
+          ...(seed ? { seededFromLibraryCharacterId: seed.id, seedSource: seed.source } : {})
+        };
       } catch (error) {
         failed = true;
         throw error;
@@ -179,7 +217,14 @@ async function generateCharacterReferenceAssets(
           ...imageStorageMetadata(item.optimizedImage),
           revisedPrompt: item.image.revisedPrompt,
           ...imageGenerationMetadata(item.image),
-          fileName: item.filename
+          fileName: item.filename,
+          ...(item.seededFromLibraryCharacterId
+            ? {
+                libraryCharacterId: item.seededFromLibraryCharacterId,
+                seededFromPortrait: true,
+                seedSource: item.seedSource ?? "generated"
+              }
+            : {})
         }
       }
     });
@@ -191,36 +236,132 @@ async function generateCharacterReferenceAssets(
 
 const CHARACTER_REFERENCE_RENDER_CONCURRENCY = 3;
 
-export function selectReferenceImagePaths(options: {
+async function libraryPortraitSeedForName(
+  name: string,
+  snapshots: readonly LibraryCharacterSnapshot[],
+  ownerUserId: string | null
+): Promise<{ id: string; path: string; source: LibraryCharacterPortraitSource } | null> {
+  const match = matchLibraryCharacter(name, snapshots);
+  if (!match?.portraitFile || !ownerUserId || !match.portraitFile.startsWith(`${ownerUserId}/`)) {
+    return null;
+  }
+  const path = libraryCharacterDiskPath(config.IMAGE_STORAGE_DIR, match.portraitFile);
+  if (!path) {
+    return null;
+  }
+  try {
+    if (!(await stat(path)).isFile()) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return { id: match.id, path, source: match.portraitSource ?? "generated" };
+}
+
+/**
+ * What a page or cover render attaches: the per-book character sheets, plus —
+ * where the model's reference budget has room left — the reader's own saved
+ * artwork for those same characters.
+ *
+ * The sheet is a redraw of that artwork, so by the time it reaches a page the
+ * face is two generations from the one the reader recognises. Sending the
+ * original alongside it is what stops that compounding. It is strictly
+ * additive: the faces only ever fill slots the sheets did not want, so a page
+ * with as many characters as the budget allows still gets every sheet.
+ */
+export type CharacterReferenceSelection = {
+  paths: string[];
+  /** Characters whose own artwork travels at the end of `paths`, in that order. */
+  libraryFaceNames: string[];
+};
+
+export async function selectReferenceImagePaths(options: {
   input: CreateProjectInput;
   plan: BookPlan;
   assets: WorkerImageAsset[];
   projectId: string;
   image: ImageAdapter;
   context: string;
-}): string[] {
+}): Promise<CharacterReferenceSelection> {
   const capabilities = imageCapabilities(options.image);
   if (!capabilities.supportsReferenceImages || capabilities.maxReferenceImages <= 0) {
-    return [];
+    return { paths: [], libraryFaceNames: [] };
   }
   const localAssets = options.assets.flatMap((asset) => {
     const path = localImagePathForAsset(asset.path, options.projectId);
     return path ? [{ path, metadata: asset.metadata }] : [];
   });
-  return selectCharacterReferenceAssets({
+  const sheets = selectCharacterReferenceAssets({
     input: options.input,
     plan: options.plan,
     assets: localAssets,
     context: options.context,
     maxReferences: capabilities.maxReferenceImages
-  }).map((asset) => asset.path);
+  });
+  const paths = sheets.map((asset) => asset.path);
+  const faces = await libraryFacesForSheets({
+    sheets,
+    input: options.input,
+    projectId: options.projectId,
+    budget: capabilities.maxReferenceImages - paths.length
+  });
+  return {
+    paths: [...paths, ...faces.map((face) => face.path)],
+    libraryFaceNames: faces.map((face) => face.name)
+  };
 }
 
-export function characterReferencePromptInstruction(count: number): string {
+async function libraryFacesForSheets(options: {
+  sheets: Array<{ metadata?: unknown }>;
+  input: CreateProjectInput;
+  projectId: string;
+  budget: number;
+}): Promise<Array<{ name: string; path: string }>> {
+  if (options.budget <= 0) {
+    return [];
+  }
+  const snapshots = libraryCharactersFromMediaSettings(options.input.mediaSettings);
+  if (!snapshots.some((snapshot) => snapshot.portraitFile)) {
+    return [];
+  }
+  // Same ownership rule as the seeding path: a snapshot is stored JSON that
+  // client flows can reach, so a file is only read out of the book owner's own
+  // characters directory. An operator-console book has no owner and gets none.
+  const ownerUserId =
+    (await prisma.project.findUnique({ where: { id: options.projectId }, select: { userId: true } }))?.userId ?? null;
+  if (!ownerUserId) {
+    return [];
+  }
+  const faces: Array<{ name: string; path: string }> = [];
+  for (const sheet of options.sheets) {
+    if (faces.length >= options.budget) {
+      break;
+    }
+    const name = characterNameFromAssetMetadata(sheet.metadata);
+    if (!name) {
+      continue;
+    }
+    const seed = await libraryPortraitSeedForName(name, snapshots, ownerUserId);
+    if (seed) {
+      faces.push({ name, path: seed.path });
+    }
+  }
+  return faces;
+}
+
+export function characterReferencePromptInstruction(selection: CharacterReferenceSelection): string {
+  const count = selection.paths.length;
+  if (count === 0) {
+    return "";
+  }
   return [
     `Use the ${count} attached character reference image${count === 1 ? "" : "s"} as the authoritative design source.`,
-    "Preserve each referenced character's face, silhouette, outfit, colors, and distinctive details; change only pose, expression, lighting, and scene placement."
-  ].join(" ");
+    "Preserve each referenced character's face, silhouette, outfit, colors, and distinctive details; change only pose, expression, lighting, and scene placement.",
+    libraryCharacterFaceInstruction(selection.libraryFaceNames)
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function imageCapabilities(image: ImageAdapter): ImageAdapterCapabilities {

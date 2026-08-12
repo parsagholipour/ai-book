@@ -15,6 +15,17 @@ export type OptimizeImageForStorageOptions = {
   mimeType: string;
   maxWidth?: number | undefined;
   quality?: number | undefined;
+  /**
+   * Keep the re-encoded output even when it is larger than the input.
+   *
+   * The size comparison below is the right rule for our own renders, which
+   * carry no metadata and only ever need shrinking. It is the wrong rule for an
+   * upload: an already-compressed photo under `maxWidth` re-encodes *larger* at
+   * quality 82, so the original buffer is stored verbatim — EXIF, GPS and all.
+   * Any caller storing bytes a user supplied should pass true, because the
+   * re-encode is the only thing that strips that metadata.
+   */
+  alwaysReencode?: boolean | undefined;
 };
 
 export type OptimizedImage = {
@@ -54,7 +65,7 @@ export async function optimizeImageForStorage(options: OptimizeImageForStorageOp
 
     const optimizedBytes = await pipeline.jpeg({ quality, progressive: true, mozjpeg: true }).toBuffer();
     const output = await sharp(optimizedBytes).metadata();
-    const useOptimized = shouldResize || optimizedBytes.length < originalBytes;
+    const useOptimized = options.alwaysReencode === true || shouldResize || optimizedBytes.length < originalBytes;
 
     if (!useOptimized) {
       return {

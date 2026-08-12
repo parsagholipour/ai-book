@@ -87,7 +87,7 @@ export async function markActive(job: Job): Promise<boolean> {
 export async function staleGenerationJobReason(job: Job): Promise<string | null> {
   const generationJobId = job.data.generationJobId as string | undefined;
   const payloadProjectId = job.data.projectId as string | undefined;
-  if (!generationJobId || !payloadProjectId) {
+  if (!generationJobId) {
     return null;
   }
   const generationJob = await prisma.generationJob.findUnique({
@@ -118,6 +118,15 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
     if (attempt && (attempt.status === "FAILED" || attempt.status === "CANCELED")) {
       return "The paid attempt behind this job was already settled and refunded.";
     }
+  }
+  // Account-level jobs (a character portrait) have no project to be stale
+  // against; the CANCELED-row and settled-attempt checks above are the whole
+  // guard for them. Exactly one side naming a project is still a mismatch.
+  if (!payloadProjectId && !generationJob.projectId) {
+    return null;
+  }
+  if (!payloadProjectId || !generationJob.projectId) {
+    return "The job targets a different project than its durable record.";
   }
   const project = await prisma.project.findUnique({
     where: { id: payloadProjectId },
@@ -332,6 +341,10 @@ export async function markFailed(job: Job, error: unknown) {
     await failAudiobookForJob(job, errorMessage(error));
     return;
   }
+  if (job.name === "generate-character-portrait") {
+    await failCharacterPortraitForJob(job, errorMessage(error));
+    return;
+  }
   if (job.name === "plan-book") {
     await refundPlanGenerationForJob(job, errorMessage(error));
     if (projectId) {
@@ -396,6 +409,30 @@ async function failAudiobookForJob(job: Job, reason: string): Promise<void> {
   if (audiobookId) {
     await prisma.audiobook
       .updateMany({ where: { id: audiobookId, status: "GENERATING" }, data: { status: "FAILED", error: reason } })
+      .catch(() => ({ count: 0 }));
+  }
+}
+
+/**
+ * A character portrait belongs to the account's library, not to any book, so a
+ * failed one flips its own row and nothing else. The refund rides the attempt
+ * settlement above; the ledger-entry fallback covers a payload that somehow
+ * carries no attempt, mirroring the audiobook path.
+ */
+async function failCharacterPortraitForJob(job: Job, reason: string): Promise<void> {
+  const libraryCharacterId = typeof job.data.libraryCharacterId === "string" ? job.data.libraryCharacterId : undefined;
+  const ledgerEntryId = typeof job.data.billingLedgerEntryId === "string" ? job.data.billingLedgerEntryId : undefined;
+  if (!generationAttemptIdFromJob(job) && ledgerEntryId) {
+    await refundCreditLedgerEntry(ledgerEntryId, reason).catch((error) => {
+      console.error(`Failed to refund character portrait ${libraryCharacterId ?? "?"}`, error);
+    });
+  }
+  if (libraryCharacterId) {
+    await prisma.libraryCharacter
+      .updateMany({
+        where: { id: libraryCharacterId, portraitStatus: { in: ["QUEUED", "GENERATING"] } },
+        data: { portraitStatus: "FAILED", portraitError: reason }
+      })
       .catch(() => ({ count: 0 }));
   }
 }
@@ -512,6 +549,10 @@ export async function markStopped(job: Job) {
   }
   if (job.name === "generate-audiobook") {
     await failAudiobookForJob(job, STOPPED_JOB_ERROR);
+    return;
+  }
+  if (job.name === "generate-character-portrait") {
+    await failCharacterPortraitForJob(job, STOPPED_JOB_ERROR);
     return;
   }
   // A stopped edit settles like a failed one: refund the operation's own
@@ -639,7 +680,8 @@ function attemptCompletesWithJob(jobName: string): boolean {
     "compile-export",
     "apply-book-edit",
     "continue-book",
-    "generate-audiobook"
+    "generate-audiobook",
+    "generate-character-portrait"
   ].includes(jobName);
 }
 

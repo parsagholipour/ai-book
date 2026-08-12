@@ -113,12 +113,14 @@ export type BookPdfDocumentOptions = {
  */
 export async function buildBookPdfDocument(options: BookPdfDocumentOptions): Promise<string> {
   const { markdownCss, highlightCss } = await loadBaseStylesheets();
-  const html = stripEmbeddedDocuments(
-    getHtml(options.markdown, {
-      ...defaultConfig,
-      document_title: "",
-      body_class: []
-    })
+  const html = liftChapterAnchorsOntoHeadings(
+    stripEmbeddedDocuments(
+      getHtml(options.markdown, {
+        ...defaultConfig,
+        document_title: "",
+        body_class: []
+      })
+    )
   );
   const styles = [markdownCss, highlightCss, options.css]
     .map((css) => `<style>\n${css}\n</style>`)
@@ -127,6 +129,93 @@ export async function buildBookPdfDocument(options: BookPdfDocumentOptions): Pro
   // Function replacers throughout: a `$&` or `$'` inside a stylesheet or the
   // book's own prose would otherwise be expanded by `String.replace`.
   return withDocumentLanguage(html, options.profile).replace("</head>", () => `${styles}</head>`);
+}
+
+/**
+ * The chapter anchor a Contents link points at, moved onto the heading itself.
+ *
+ * `compileBookMarkdown` emits `<a id="chapter-N"></a>` on its own line *before*
+ * the `## ` heading, and markdown has no way to attach an inline to the block
+ * that follows it — so marked glues the anchor to the end of the block that
+ * came before, wherever that ends: `<p>…<a id></a></p>`, `<li>…<a id></a></li>`,
+ * `<blockquote><p>…<a id></a></p></blockquote>`, its own `<p><a id></a></p>`, or
+ * a bare block after the Contents `</section>`.
+ *
+ * Chrome derives a named destination from the target's layout rect, and
+ * `page-break-after: avoid` on `h2` (`pdfCss.ts`) pushes a heading that would
+ * straddle a break onto the next page — while that zero-height anchor stays
+ * behind at the foot of the previous one. So roughly one chapter link in seven
+ * landed a page early, which is what the reader's Contents page and
+ * `readerOutlineFromLinks` (the app's fallback table of contents) navigate by.
+ *
+ * A blank line before the anchor, or a block-level `<div id>` in its place, both
+ * leave the destination behind exactly as before — an empty box at a page
+ * boundary is fragmented onto the preceding page either way. The destination has
+ * to be *on* the heading, and the heading is a real box in every writing
+ * direction, which is why this is done here and not in the markdown: putting the
+ * anchor inside the `## ` line makes Chrome drop the entire `/Dests` table on a
+ * strongly-RTL heading, and it would leak `<a id=…>` into the EPUB's TOC labels
+ * through `splitIntoChapters`' `^##\s+(.+)$` capture.
+ *
+ * Layout is untouched: the anchor is empty, so deleting it leaves whatever box
+ * held it exactly the size it was — including the empty `<p></p>` shape, which
+ * is deliberately left standing rather than unwrapped. The `<h2>`'s own
+ * marked-generated slug is overwritten, and nothing reads it: no stylesheet here
+ * has an id selector or `:target`, the EPUB is rendered by a different marked
+ * that emits no heading ids at all, and the outline Chrome builds comes from the
+ * heading box rather than its id.
+ */
+export function liftChapterAnchorsOntoHeadings(html: string): string {
+  CHAPTER_ANCHOR_RE.lastIndex = 0;
+  let result = "";
+  let copiedThrough = 0;
+  let lifted = false;
+  let match: RegExpExecArray | null;
+  while ((match = CHAPTER_ANCHOR_RE.exec(html)) !== null) {
+    const anchorEnd = match.index + match[0].length;
+    const heading = findHeadingTag(html, anchorEnd);
+    // No heading to carry the id: leave the anchor exactly where it is, because
+    // a destination in the wrong place still beats a Contents link with no
+    // destination at all.
+    if (!heading) {
+      continue;
+    }
+    result += html.slice(copiedThrough, match.index);
+    result += html.slice(anchorEnd, heading.start);
+    result += `<h2${withAnchorId(heading.attributes, match[1] ?? "")}>`;
+    copiedThrough = heading.end + 1;
+    lifted = true;
+    CHAPTER_ANCHOR_RE.lastIndex = copiedThrough;
+  }
+  return lifted ? result + html.slice(copiedThrough) : html;
+}
+
+/**
+ * The anchor as `compileBookMarkdown` writes it: an `<a>` carrying a
+ * `chapter-…` id and nothing else. The id is captured from a double-quoted
+ * value, so it cannot contain a quote and is safe to write back verbatim.
+ */
+const CHAPTER_ANCHOR_RE = /<a\b[^>]*?\sid="(chapter-[^"]*)"[^>]*>\s*<\/a\s*>/gi;
+
+function findHeadingTag(html: string, from: number): { start: number; end: number; attributes: string } | undefined {
+  const opening = /<h2\b/i;
+  const rest = html.slice(from);
+  const found = opening.exec(rest);
+  if (!found) {
+    return undefined;
+  }
+  const start = from + found.index;
+  const end = findTagEnd(html, start + 1);
+  if (end < 0) {
+    return undefined;
+  }
+  return { start, end, attributes: html.slice(start + 3, end) };
+}
+
+/** Replaces whatever id the heading had — marked's slug — with the anchor's. */
+function withAnchorId(attributes: string, id: string): string {
+  const withoutId = attributes.replace(/\sid\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, () => "").replace(/\/$/, "");
+  return `${withoutId} id="${id}"`;
 }
 
 /**

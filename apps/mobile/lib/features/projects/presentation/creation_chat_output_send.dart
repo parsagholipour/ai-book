@@ -31,6 +31,10 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
   /// dropping the quoted turn from the replayed request.
   ChatReplyTarget? _pendingProjectReplyTo;
 
+  /// Mentioned character ids for the pending request, kept so a retry replays
+  /// the same structured mentions the original send carried.
+  List<String>? _pendingProjectMentionIds;
+
   /// The message the user just sent, echoed until the refreshed transcript
   /// carries it — or until it fails and offers itself back to retry.
   ///
@@ -112,6 +116,7 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
     required String projectId,
     required String message,
     ChatReplyTarget? replyTo,
+    List<String>? mentionedCharacterIds,
   }) async {
     final trimmed = message.trim();
     if (trimmed.isEmpty || _projectChatSending) return null;
@@ -127,9 +132,11 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
       _pendingProjectRequestText = trimmed;
       _pendingProjectEditMessageId = editingMessageId;
       _pendingProjectReplyTo = replyTo;
+      _pendingProjectMentionIds = mentionedCharacterIds;
       _pendingProjectRequestId =
           'project-chat-${DateTime.now().microsecondsSinceEpoch}';
     }
+    final mentionIds = mentionedCharacterIds ?? _pendingProjectMentionIds;
     final requestId = _pendingProjectRequestId!;
     final shouldRestoreComposer = _composerController.text.trim() == trimmed;
     if (shouldRestoreComposer) {
@@ -149,17 +156,20 @@ mixin _OutputChatSend on ConsumerState<CreationChatScreen> {
               messageId: editingMessageId,
               message: trimmed,
               requestId: requestId,
+              mentionedCharacterIds: mentionIds,
             )
           : await repository.sendProjectChatMessage(
               projectId: projectId,
               message: trimmed,
               requestId: requestId,
               replyToMessageId: replyTo?.messageId,
+              mentionedCharacterIds: mentionIds,
             );
       _pendingProjectRequestId = null;
       _pendingProjectRequestText = null;
       _pendingProjectEditMessageId = null;
       _pendingProjectReplyTo = null;
+      _pendingProjectMentionIds = null;
       _refreshOutput(projectId);
       ref.invalidate(projectsProvider);
       ref.invalidate(billingProvider);

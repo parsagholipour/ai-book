@@ -119,6 +119,16 @@ export async function withChargedEnqueue<T>(options: {
 }
 
 /**
+ * The request as the worker's prompts should see it: the reader's own words
+ * plus the mentioned characters' sheets. Only ever applied where the string is
+ * handed to a model — job payloads and the plan-revision message — because the
+ * bare `message` is what page targeting and exact-replacement parsing read.
+ */
+function requestWithCharacterContext(message: string, characterContext: string | undefined): string {
+  return characterContext ? `${message}\n\n${characterContext}` : message;
+}
+
+/**
  * The resume payload for a credits-blocked edit: the same pendingEdit +
  * editProposal pair `proposeBookEdit` writes, under a **fresh** proposalId.
  * The failed Apply's own id is spent — its USER row settled it and its FAILED
@@ -149,10 +159,12 @@ async function queueAttemptChatOperation(options: {
   billingOperation: "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN";
   description: string;
   metadata: Record<string, unknown>;
+  /** Rides the credits-blocked resume so a later Apply keeps the sheets. */
+  characterContext?: string | undefined;
   enqueue: (
     tx: Prisma.TransactionClient,
     context: { attemptId: string; ledgerEntry: CreditLedgerEntryRecord | null }
-  ) => Promise<{ id: string; projectId?: string | undefined }>;
+  ) => Promise<{ id: string; projectId?: string | null | undefined }>;
   operationData?: Prisma.BookEditOperationUncheckedUpdateInput | undefined;
   replyContent: string;
   replyMetadata: Record<string, unknown>;
@@ -214,7 +226,8 @@ async function queueAttemptChatOperation(options: {
           scope: options.intent.scope,
           intent: options.intent,
           affectedPageIndexes: options.operation.affectedPageIndexes,
-          credits: options.cost
+          credits: options.cost,
+          ...(options.characterContext ? { characterContext: options.characterContext } : {})
         })
       );
       return { reply, operation: null };
@@ -278,6 +291,7 @@ export async function queueChatPlanRevision(options: {
   userMessageId: string;
   message: string;
   intent: BookEditIntent;
+  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const planId = project.currentPlan!.id;
@@ -306,7 +320,15 @@ export async function queueChatPlanRevision(options: {
       intent
     });
     if (replay) return replay;
-    const reply = await busyEditReply({ projectId: project.id, parentMessageId: userMessageId, intent, request: message });
+    const reply = await busyEditReply({
+      projectId: project.id,
+      parentMessageId: userMessageId,
+      intent,
+      request: message,
+      ...("characterContext" in options && options.characterContext
+        ? { characterContext: options.characterContext }
+        : {})
+    });
     return { reply, operation: null };
   }
   let queued;
@@ -315,7 +337,7 @@ export async function queueChatPlanRevision(options: {
       userId,
       projectId: project.id,
       planId,
-      message,
+      message: requestWithCharacterContext(message, options.characterContext),
       operationId: operation.id,
       idempotencyKey: `mobile:project-chat:${project.id}:${operation.id}:plan-revision`,
       ...(respondedQuestionPrompts.length ? { respondedQuestionPrompts } : {})
@@ -339,7 +361,8 @@ export async function queueChatPlanRevision(options: {
           scope: intent.scope,
           intent,
           affectedPageIndexes: [],
-          credits
+          credits,
+          ...(options.characterContext ? { characterContext: options.characterContext } : {})
         })
       );
       return { reply, operation: null };
@@ -384,6 +407,7 @@ export async function queueChatBookReplanCopy(options: {
   executionCommandId?: string | undefined;
   /** What the proposal card showed; the recomputed cost may never exceed it. */
   quotedCredits?: number | undefined;
+  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   // Same settings the proposal was quoted from, or the user approves one price
@@ -395,7 +419,13 @@ export async function queueChatBookReplanCopy(options: {
     // between the card and Apply (a continuation landed, the page count
     // moved), so re-propose at the current price rather than silently
     // charging past the number the user confirmed.
-    return proposeBookEdit({ project, userMessageId, message, intent });
+    return proposeBookEdit({
+      project,
+      userMessageId,
+      message,
+      intent,
+      ...(options.characterContext ? { characterContext: options.characterContext } : {})
+    });
   }
   const targetLanguage = cleanTargetLanguage(intent.targetLanguage);
   const commandRequestId = options.executionCommandId ?? userMessageId;
@@ -418,7 +448,15 @@ export async function queueChatBookReplanCopy(options: {
       intent
     });
     if (replay) return replay;
-    const reply = await busyEditReply({ projectId: project.id, parentMessageId: userMessageId, intent, request: message });
+    const reply = await busyEditReply({
+      projectId: project.id,
+      parentMessageId: userMessageId,
+      intent,
+      request: message,
+      ...("characterContext" in options && options.characterContext
+        ? { characterContext: options.characterContext }
+        : {})
+    });
     return { reply, operation: null };
   }
 
@@ -438,6 +476,7 @@ export async function queueChatBookReplanCopy(options: {
     cost,
     billingOperation: "BOOK_REPLAN",
     description: "Mobile book replan copy",
+    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
     metadata: {
       intent,
       sourceProjectId: project.id,
@@ -445,6 +484,9 @@ export async function queueChatBookReplanCopy(options: {
       ...(targetLanguage ? { targetLanguage } : {})
     },
     enqueue: async (tx, { attemptId, ledgerEntry }) => {
+      // The copy's `request` becomes the user-visible "Rebuilt from" header on
+      // the book screen, so it stays as typed; the model-facing sheets ride
+      // only the job payload below.
       copy = await createReplanProjectCopy({
         userId,
         sourceProject: project,
@@ -466,7 +508,7 @@ export async function queueChatBookReplanCopy(options: {
           operationId: operation.id,
           sourceProjectId: project.id,
           sourcePlanId: project.currentPlanId,
-          request: message,
+          request: requestWithCharacterContext(message, options.characterContext),
           affectedPageIndexes: [],
           intentKind: intent.kind,
           ...(targetLanguage ? { targetLanguage } : {}),
@@ -517,6 +559,7 @@ export async function queueChatBookEdit(options: {
    * more than the user confirmed.
    */
   quotedCredits?: number | undefined;
+  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   if (intent.kind === "book_replan") {
@@ -527,7 +570,8 @@ export async function queueChatBookEdit(options: {
       message,
       intent,
       ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
-      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {})
+      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {}),
+      ...(options.characterContext ? { characterContext: options.characterContext } : {})
     });
   }
   if (intent.kind === "continue_book") {
@@ -538,7 +582,8 @@ export async function queueChatBookEdit(options: {
       message,
       intent,
       ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
-      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {})
+      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {}),
+      ...(options.characterContext ? { characterContext: options.characterContext } : {})
     });
   }
 
@@ -600,7 +645,13 @@ export async function queueChatBookEdit(options: {
     // The book changed between the quote and Apply and the edit now costs
     // more than the card showed. Never charge past the shown number — put a
     // fresh card up at the current price instead.
-    return proposeBookEdit({ project, userMessageId, message, intent });
+    return proposeBookEdit({
+      project,
+      userMessageId,
+      message,
+      intent,
+      ...(options.characterContext ? { characterContext: options.characterContext } : {})
+    });
   }
   const operationKind = operationKindForIntent(intent.kind);
   const billingOperation = billingOperationForIntent(intent.kind);
@@ -624,7 +675,15 @@ export async function queueChatBookEdit(options: {
       intent
     });
     if (replay) return replay;
-    const reply = await busyEditReply({ projectId: project.id, parentMessageId: userMessageId, intent, request: message });
+    const reply = await busyEditReply({
+      projectId: project.id,
+      parentMessageId: userMessageId,
+      intent,
+      request: message,
+      ...("characterContext" in options && options.characterContext
+        ? { characterContext: options.characterContext }
+        : {})
+    });
     return { reply, operation: null };
   }
 
@@ -638,6 +697,7 @@ export async function queueChatBookEdit(options: {
     cost,
     billingOperation,
     description: `Mobile ${operationKind.toLowerCase().replaceAll("_", " ")} edit`,
+    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
     metadata: { intent, affectedPageIndexes },
     enqueue: async (tx, { attemptId, ledgerEntry }) => {
       await tx.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
@@ -650,7 +710,7 @@ export async function queueChatBookEdit(options: {
         attemptId,
         payload: {
           operationId: operation.id,
-          request: message,
+          request: requestWithCharacterContext(message, options.characterContext),
           affectedPageIndexes,
           intentKind: intent.kind,
           ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
@@ -685,6 +745,7 @@ export async function queueChatContinueBook(options: {
   intent: BookEditIntent;
   executionCommandId?: string | undefined;
   quotedCredits?: number | undefined;
+  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const chapterCount = Math.min(8, Math.max(1, intent.continuation?.chapterCount ?? 1));
@@ -693,7 +754,13 @@ export async function queueChatContinueBook(options: {
   if (options.quotedCredits !== undefined && cost > options.quotedCredits) {
     // Same contract as queueChatBookEdit: the shown quote is a ceiling, so a
     // book that grew since the card re-proposes at the current price.
-    return proposeBookEdit({ project, userMessageId, message, intent });
+    return proposeBookEdit({
+      project,
+      userMessageId,
+      message,
+      intent,
+      ...(options.characterContext ? { characterContext: options.characterContext } : {})
+    });
   }
   const commandRequestId = options.executionCommandId ?? userMessageId;
   const operation = await createOpenBookEditOperation({
@@ -715,7 +782,15 @@ export async function queueChatContinueBook(options: {
       intent
     });
     if (replay) return replay;
-    const reply = await busyEditReply({ projectId: project.id, parentMessageId: userMessageId, intent, request: message });
+    const reply = await busyEditReply({
+      projectId: project.id,
+      parentMessageId: userMessageId,
+      intent,
+      request: message,
+      ...("characterContext" in options && options.characterContext
+        ? { characterContext: options.characterContext }
+        : {})
+    });
     return { reply, operation: null };
   }
 
@@ -729,6 +804,7 @@ export async function queueChatContinueBook(options: {
     cost,
     billingOperation: "PAGE_REGENERATION",
     description: "Mobile book continuation",
+    ...(options.characterContext ? { characterContext: options.characterContext } : {}),
     metadata: { intent, chapterCount, newPageCount },
     enqueue: async (tx, { attemptId, ledgerEntry }) => {
       await tx.project.update({ where: { id: project.id }, data: { status: "EDITING" } });
@@ -741,7 +817,7 @@ export async function queueChatContinueBook(options: {
         attemptId,
         payload: {
           operationId: operation.id,
-          request: message,
+          request: requestWithCharacterContext(message, options.characterContext),
           chapterCount,
           newPageCount,
           ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),

@@ -33,12 +33,14 @@ abstract interface class CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    List<String>? mentionedCharacterIds,
     String? requestId,
   });
 
   Future<MobileCreationConversationResponse> sendConversationMessage({
     required String draftId,
     required String message,
+    List<String>? mentionedCharacterIds,
     List<String>? attachmentIds,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -208,6 +210,7 @@ class MobileCreationRepository implements CreationRepository {
     MobileCreationPresets? presets,
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
+    List<String>? mentionedCharacterIds,
     String? requestId,
   }) async {
     final response = await apiClient.postJson(
@@ -217,6 +220,8 @@ class MobileCreationRepository implements CreationRepository {
         'presets': ?presets?.toJson(),
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),
+        if (mentionedCharacterIds != null && mentionedCharacterIds.isNotEmpty)
+          'mentionedCharacterIds': mentionedCharacterIds,
         'requestId': ?requestId,
       },
       receiveTimeout: llmReceiveTimeout,
@@ -230,6 +235,7 @@ class MobileCreationRepository implements CreationRepository {
   Future<MobileCreationConversationResponse> sendConversationMessage({
     required String draftId,
     required String message,
+    List<String>? mentionedCharacterIds,
     List<String>? attachmentIds,
     MobileCreationPresets? presets,
     String? sourceNotes,
@@ -246,6 +252,8 @@ class MobileCreationRepository implements CreationRepository {
         'message': message,
         if (attachmentIds != null && attachmentIds.isNotEmpty)
           'attachmentIds': attachmentIds,
+        if (mentionedCharacterIds != null && mentionedCharacterIds.isNotEmpty)
+          'mentionedCharacterIds': mentionedCharacterIds,
         'presets': ?presets?.toJson(),
         'sourceNotes': ?sourceNotes,
         'optionalDetails': ?optionalDetails?.toJson(),

@@ -14,6 +14,10 @@ import 'package:tomeza/features/billing/domain/billing_models.dart';
 import 'package:tomeza/features/billing/presentation/billing_buy_credits_sheet.dart';
 import 'package:tomeza/features/billing/presentation/billing_paywall.dart';
 import 'package:tomeza/features/billing/presentation/credit_log_screen.dart';
+import 'package:tomeza/features/characters/data/characters_repository.dart';
+import 'package:tomeza/features/characters/domain/character_image_models.dart';
+import 'package:tomeza/features/characters/domain/character_models.dart';
+import 'package:tomeza/features/characters/presentation/character_profile_screen.dart';
 import 'package:tomeza/features/projects/data/creation_repository.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/creation_message_models.dart';
@@ -163,7 +167,87 @@ void main() {
     await tester.pump();
     expect(find.text('Privacy and support'), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    // The character page is the one surface with a fixed-height row on it: the
+    // picture strip is 96dp whatever the typeface does, which only holds while
+    // nothing inside a tile is text.
+    await tester.pumpWidget(
+      ProviderScope(
+        key: UniqueKey(),
+        overrides: [
+          charactersRepositoryProvider.overrideWithValue(
+            _FakeCharactersRepository(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: buildTomezaLightTheme(),
+          darkTheme: buildTomezaDarkTheme(),
+          themeMode: ThemeMode.dark,
+          builder: (context, appChild) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.6)),
+            child: appChild ?? const SizedBox.shrink(),
+          ),
+          home: const CharacterProfileScreen(characterId: 'char-1'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Scroll the whole page rather than checking the first screen: the strip is
+    // the last sliver, and it is the part with a height that does not grow.
+    await tester.scrollUntilVisible(
+      find.text('Pictures'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Pictures'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
+}
+
+class _FakeCharactersRepository implements CharactersRepository {
+  final _character = LibraryCharacter(
+    id: 'char-1',
+    name: 'Mina Park',
+    description: 'Brave, curious, always muddy.',
+    hasPhoto: true,
+    photoKind: CharacterPhotoKind.photograph,
+    portraitStatus: CharacterPortraitStatus.ready,
+    portraitSource: CharacterPortraitSource.generated,
+    usedInBooks: true,
+    fields: const [
+      CharacterField(key: 'Age', value: '9'),
+      CharacterField(key: 'Likes', value: 'thunderstorms'),
+    ],
+    createdAt: DateTime.utc(2026, 8, 1),
+    updatedAt: DateTime.utc(2026, 8, 1),
+  );
+
+  @override
+  Future<CharacterLibrary> list() async =>
+      CharacterLibrary(characters: [_character], portraitCredits: 45);
+
+  @override
+  Future<List<CharacterImage>> images(String id) async => [
+    for (var index = 0; index < 3; index++)
+      CharacterImage(
+        id: 'img-$index',
+        url: '/api/mobile/characters/char-1/images/img-$index',
+        source: CharacterImageSource.generated,
+        isMain: index == 0,
+        isCurrentReference: index == 0,
+        canBeMain: index != 0,
+        createdAt: DateTime.utc(2026, 8, 2),
+      ),
+  ];
+
+  @override
+  Future<Map<String, String>> assetHeaders() async => const {};
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Widget _withProviders({
@@ -320,6 +404,7 @@ class _FakeCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
+      List<String>? mentionedCharacterIds,
   }) async {
     return fakeCreationConversation(withSession: true);
   }
@@ -337,6 +422,7 @@ class _FakeCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
     bool skippedQuestion = false,
+      List<String>? mentionedCharacterIds,
   }) async {
     return fakeCreationConversation(withSession: true);
   }

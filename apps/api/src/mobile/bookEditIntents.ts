@@ -168,7 +168,8 @@ export async function applyOrCancelEditProposal(options: {
     textModel,
     executeProposal: true,
     executionCommandId: proposalId,
-    ...(pending.credits !== undefined ? { quotedCredits: pending.credits } : {})
+    ...(pending.credits !== undefined ? { quotedCredits: pending.credits } : {}),
+    ...(pending.characterContext ? { characterContext: pending.characterContext } : {})
   });
 
   return {
@@ -209,11 +210,20 @@ export async function handleProjectChatIntent(options: {
    * what an edit costs or which pages it rewrites.
    */
   replyTo?: ChatReplyQuote | undefined;
+  /**
+   * The @-mentioned library characters' sheets, as a bounded prompt block.
+   * Appended to the request only where it reaches the worker's prompts (the
+   * job payload, the plan-revision message) — never to `message` itself, whose
+   * text drives page targeting and exact-replacement parsing — and stored on
+   * every pending state so a clarify → confirm → Apply chain keeps it.
+   */
+  characterContext?: string | undefined;
   /** The turn's already-loaded active messages; saves the grounded answer a re-read. */
   activeMessages?: MobileProjectChatMessageRecord[] | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const pendingRequest = options.pendingRequest?.trim() || message;
+  const characterContext = options.characterContext?.trim() || undefined;
   if (intent.kind === "answer" || intent.kind === "clarify") {
     const answer =
       intent.kind === "answer"
@@ -234,7 +244,13 @@ export async function handleProjectChatIntent(options: {
         intent,
         charged: false,
         ...(intent.kind === "clarify" && intent.clarification === "scope"
-          ? { pendingEdit: { request: pendingRequest, clarification: "scope" } }
+          ? {
+              pendingEdit: {
+                request: pendingRequest,
+                clarification: "scope",
+                ...(characterContext ? { characterContext } : {})
+              }
+            }
           : {})
       }
     });
@@ -261,7 +277,14 @@ export async function handleProjectChatIntent(options: {
       });
       return { reply, operation: null };
     }
-    return queueChatPlanRevision({ userId, project, userMessageId, message, intent });
+    return queueChatPlanRevision({
+      userId,
+      project,
+      userMessageId,
+      message,
+      intent,
+      ...(characterContext ? { characterContext } : {})
+    });
   }
 
   if (intent.kind === "back_matter" && ["COMPLETE", "REVIEW_REQUIRED"].includes(project.status)) {
@@ -292,7 +315,8 @@ export async function handleProjectChatIntent(options: {
       message,
       intent,
       ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
-      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {})
+      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {}),
+      ...(characterContext ? { characterContext } : {})
     });
   }
   return proposeBookEdit({
@@ -301,7 +325,8 @@ export async function handleProjectChatIntent(options: {
     message,
     intent,
     pendingRequest,
-    ...(options.clarifyExhausted ? { clarifyExhausted: true } : {})
+    ...(options.clarifyExhausted ? { clarifyExhausted: true } : {}),
+    ...(characterContext ? { characterContext } : {})
   });
 }
 
@@ -319,10 +344,13 @@ export async function proposeBookEdit(options: {
   pendingRequest?: string | undefined;
   /** The one clarifying question was already asked; never ask a second. */
   clarifyExhausted?: boolean | undefined;
+  /** Mentioned character sheets; stored on the pending state, never the card. */
+  characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message } = options;
   let intent = options.intent;
   const pendingRequest = options.pendingRequest?.trim() || message;
+  const characterContext = options.characterContext?.trim() || undefined;
   const proposalId = randomUUID();
   if (intent.kind === "continue_book") {
     const newPageCount = continuationNewPageCount(intent, project);
@@ -342,7 +370,8 @@ export async function proposeBookEdit(options: {
           intent: proposalIntent,
           affectedPageIndexes: [],
           credits: cost,
-          proposalId
+          proposalId,
+          ...(characterContext ? { characterContext } : {})
         }),
         editProposal: {
           id: proposalId,
@@ -373,7 +402,8 @@ export async function proposeBookEdit(options: {
           intent: proposalIntent,
           affectedPageIndexes: [],
           credits: cost,
-          proposalId
+          proposalId,
+          ...(characterContext ? { characterContext } : {})
         }),
         editProposal: {
           id: proposalId,
@@ -428,7 +458,11 @@ export async function proposeBookEdit(options: {
           : "Which page or exact phrase should I edit?",
       metadata: {
         intent: { ...intent, kind: "clarify", affectedPageIndexes, clarification: "scope" },
-        pendingEdit: { request: pendingRequest, clarification: "scope" },
+        pendingEdit: {
+          request: pendingRequest,
+          clarification: "scope",
+          ...(characterContext ? { characterContext } : {})
+        },
         charged: false
       }
     });
@@ -473,7 +507,8 @@ export async function proposeBookEdit(options: {
         intent: proposalIntent,
         affectedPageIndexes,
         credits: cost,
-        proposalId
+        proposalId,
+        ...(characterContext ? { characterContext } : {})
       }),
       editProposal: {
         id: proposalId,
@@ -498,7 +533,8 @@ export function pendingEditMetadataFromState(state: PendingEditState): Record<st
     ...(state.intent ? { intent: state.intent } : {}),
     ...(state.affectedPageIndexes ? { affectedPageIndexes: state.affectedPageIndexes } : {}),
     ...(state.credits !== undefined ? { credits: state.credits } : {}),
-    ...(state.proposalId ? { proposalId: state.proposalId } : {})
+    ...(state.proposalId ? { proposalId: state.proposalId } : {}),
+    ...(state.characterContext ? { characterContext: state.characterContext } : {})
   };
 }
 
@@ -614,9 +650,15 @@ export async function busyEditReply(options: {
   request: string;
   /** The confirmed proposal this busy reply deflected, when there is one. */
   pendingState?: PendingEditState | undefined;
+  /** Mentioned character sheets, kept on the saved pending edit for the resume. */
+  characterContext?: string | undefined;
 }): Promise<MobileProjectChatMessageRecord> {
   const pendingState: PendingEditState = {
-    ...(options.pendingState ?? { request: options.request, scope: "none" as const }),
+    ...(options.pendingState ?? {
+      request: options.request,
+      scope: "none" as const,
+      ...(options.characterContext ? { characterContext: options.characterContext } : {})
+    }),
     clarification: "busy"
   };
   return createAssistantChatMessage({

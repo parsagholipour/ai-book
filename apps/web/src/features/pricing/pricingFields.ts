@@ -54,7 +54,12 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
       { key: "exportUnlock", label: "Export unlock", help: "One-off unlock for PDF/EPUB download." },
       { key: "voiceCallPerMinute", label: "Voice call per minute", help: "Rounded up; calls are capped at 30 minutes." },
       { key: "audiobookBase", label: "Audiobook base", help: "Flat part of narrating a finished book." },
-      { key: "audiobookPerPage", label: "Audiobook per page", help: "Added for each page narrated. Charged against the real page count." }
+      { key: "audiobookPerPage", label: "Audiobook per page", help: "Added for each page narrated. Charged against the real page count." },
+      {
+        key: "characterPortraitGeneration",
+        label: "Character portrait",
+        help: "Drawing a profile portrait for a library character, from their photo or description."
+      }
     ]
   },
   {

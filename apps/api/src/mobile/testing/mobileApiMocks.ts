@@ -54,8 +54,51 @@ export const mockPrisma = ({
     update: vi.fn(),
     deleteMany: vi.fn()
   },
-  audiobookChapter: { findMany: vi.fn(), upsert: vi.fn(), update: vi.fn(), deleteMany: vi.fn() }
+  audiobookChapter: { findMany: vi.fn(), upsert: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
+  libraryCharacter: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    count: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    updateMany: vi.fn(),
+    deleteMany: vi.fn()
+  },
+  libraryCharacterImage: {
+    findFirst: vi.fn(),
+    findMany: vi.fn(),
+    create: vi.fn(),
+    delete: vi.fn(),
+    deleteMany: vi.fn()
+  }
 });
+
+/**
+ * Defaults for the retained character pictures, re-applied after each
+ * `vi.resetAllMocks()`.
+ *
+ * Every character write records one, so the useful default is "the row was
+ * written and there is no history yet" rather than `undefined` — which would
+ * 500 every upload in every suite that so much as touches a character. Lives
+ * here rather than in the harness because that file is at its size budget, and
+ * because everything this needs is already in this module.
+ */
+export function resetCharacterImageMocks(): void {
+  mockPrisma.libraryCharacterImage.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+    id: "character-image-1",
+    createdAt: new Date("2026-08-01T10:00:00.000Z"),
+    byteSize: null,
+    width: null,
+    height: null,
+    photoKind: null,
+    referenceEligible: false,
+    ...data
+  }));
+  mockPrisma.libraryCharacterImage.findMany.mockResolvedValue([]);
+  mockPrisma.libraryCharacterImage.findFirst.mockResolvedValue(null);
+  mockPrisma.libraryCharacterImage.deleteMany.mockResolvedValue({ count: 1 });
+  mockPrisma.libraryCharacterImage.delete.mockResolvedValue({ id: "character-image-1" });
+}
 
 export const mockBilling = (() => {
   class MockInsufficientCreditsError extends Error {

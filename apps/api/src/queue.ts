@@ -43,13 +43,14 @@ export const bookQueue = new Queue(BOOK_QUEUE_NAME, {
 
 type RequeueableGenerationJob = {
   id: string;
-  projectId: string;
+  projectId: string | null;
   type: GenerationJobType;
   payload: Prisma.JsonValue | Record<string, unknown>;
 };
 
 export async function enqueueGenerationJob(options: {
-  projectId: string;
+  /** Null for account-level work (a library-character portrait) with no book. */
+  projectId: string | null;
   type: GenerationJobType;
   payload: Record<string, unknown>;
   dedupeKey?: string | undefined;
@@ -72,7 +73,7 @@ export async function enqueueGenerationJob(options: {
   try {
     generationJob = await db.generationJob.create({
       data: {
-        projectId: options.projectId,
+        ...(options.projectId ? { projectId: options.projectId } : {}),
         type: options.type,
         payload: options.payload as Prisma.InputJsonValue,
         // Promoted out of the payload here for the same reason
@@ -161,7 +162,9 @@ export async function dispatchGenerationJob(generationJobId: string) {
       jobName,
       {
         ...payload,
-        projectId: generationJob.projectId,
+        // Absent rather than null for account-level jobs: every worker read is
+        // `as string | undefined` behind a falsy guard.
+        ...(generationJob.projectId ? { projectId: generationJob.projectId } : {}),
         generationJobId: generationJob.id,
         ...(generationJob.attemptId ? { attemptId: generationJob.attemptId } : {})
       },

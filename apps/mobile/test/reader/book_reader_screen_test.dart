@@ -230,6 +230,15 @@ void main() {
       hasLength(1),
       reason: 'every build must pass the identical params object',
     );
+    expect(
+      capturedParams.last.linkHandlerParams,
+      isNull,
+      reason:
+          'the reader follows links itself, through ReaderLinkIndex. Handing '
+          'them to the viewer as well gives one page two tap owners: '
+          'ReaderTapLayer is a raw Listener that cannot lose a tap, so a '
+          'chapter link would jump and hide the bars at the same time.',
+    );
   });
 
   testWidgets('drops the selection menu when the passage is deselected', (

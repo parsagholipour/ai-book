@@ -9,6 +9,8 @@ import '../../../shared/ui/haptics.dart';
 import '../../billing/data/billing_repository.dart';
 import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
+import '../../characters/data/characters_repository.dart';
+import '../../characters/presentation/character_library_screen.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'book_shelf.dart';
@@ -49,7 +51,12 @@ class ChatHistoryDrawer extends ConsumerWidget {
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
-                children: [_DrawerHeader(), SizedBox(height: 4), BookShelf()],
+                children: [
+                  _DrawerHeader(),
+                  SizedBox(height: 4),
+                  _CharactersRow(),
+                  BookShelf(),
+                ],
               ),
             ),
             Expanded(
@@ -96,6 +103,60 @@ class ChatHistoryDrawer extends ConsumerWidget {
             _DrawerFooter(billing: billing, colors: colors),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Entry to the account-wide character library, sitting above "Your books":
+/// characters outlive any one book the same way the shelf's books outlive any
+/// one chat.
+class _CharactersRow extends ConsumerWidget {
+  const _CharactersRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    // Count only when the library is already cached — the row must not make
+    // the drawer wait, and the screen behind it always loads fresh.
+    final count = ref.watch(charactersProvider).asData?.value.characters.length;
+    // Own Material: the drawer's header block paints a background color, and a
+    // bare ListTile's ink would vanish beneath it.
+    return Material(
+      type: MaterialType.transparency,
+      child: ListTile(
+        key: const ValueKey('drawer-characters-row'),
+        dense: true,
+        visualDensity: VisualDensity.compact,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        leading: Icon(Icons.people_outline, color: colors.onSurfaceVariant),
+        title: const Text('Characters'),
+        subtitle: Text(
+          'Reusable across all your books',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (count != null && count > 0)
+              Text(
+                '$count',
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+          ],
+        ),
+        onTap: () {
+          AppHaptics.tap();
+          Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => const CharacterLibraryScreen()),
+          );
+        },
       ),
     );
   }

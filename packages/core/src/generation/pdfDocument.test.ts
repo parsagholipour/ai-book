@@ -183,6 +183,54 @@ describe("buildBookPdfDocument", () => {
     expect(html).toContain("Not Front Matter");
     expect(html).toContain("Body text.");
   });
+
+  it("carries every chapter anchor onto the heading it names", async () => {
+    // The anchor `compileBookMarkdown` writes on its own line before a `## `
+    // heading is glued by marked to the end of whatever block came *before* it,
+    // so Chrome's named destination lands at the foot of the previous page
+    // whenever `page-break-after: avoid` pushes the heading onto the next one.
+    // This is the only automated thing that would catch a marked bump changing
+    // the shapes below — each one was measured coming out of md-to-pdf's marked.
+    const html = await buildBookPdfDocument({
+      markdown: [
+        "# Book",
+        "",
+        '<section class="book-contents"><a class="book-contents__link" href="#chapter-1">One</a></section>',
+        '<a id="chapter-1"></a>',
+        "",
+        "## Chapter 1: Opening",
+        "",
+        "Prose ending a paragraph.",
+        '<a id="chapter-2"></a>',
+        "",
+        "## Chapter 2: Second",
+        "",
+        "- one",
+        "- two",
+        '<a id="chapter-3"></a>',
+        "",
+        "## Chapter 3: Third",
+        "",
+        "```js",
+        "const answer = 42;",
+        "```",
+        "",
+        '<a id="chapter-4"></a>',
+        "",
+        "## Chapter 4: Fourth"
+      ].join("\n"),
+      css: "",
+      profile: latin
+    });
+
+    for (const index of [1, 2, 3, 4]) {
+      expect(html).toContain(`<h2 id="chapter-${index}">Chapter ${index}:`);
+    }
+    // No anchor left behind to take the destination with it, and the Contents
+    // link still points at the id that now sits on the heading.
+    expect(html).not.toMatch(/<a\b[^>]*\sid="chapter-\d+"/);
+    expect(html).toContain('href="#chapter-1"');
+  });
 });
 
 describe("BOOK_PDF_OPTIONS", () => {

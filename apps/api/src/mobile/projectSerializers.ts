@@ -512,7 +512,8 @@ export function failureMessageForJob(type: GenerationJobType, rawError: string |
     BUILD_CHARACTER_PERSONA: "building a voice character",
     IMPORT_BOOK: "importing your book",
     CONTINUE_BOOK: "writing new chapters",
-    GENERATE_AUDIOBOOK: "narrating your book"
+    GENERATE_AUDIOBOOK: "narrating your book",
+    GENERATE_CHARACTER_PORTRAIT: "drawing a character portrait"
   } satisfies Record<GenerationJobType, string>;
   const detail = rawError?.replace(/\s+/g, " ").trim();
   return detail ? `We hit a problem while ${phase[type]}: ${detail.slice(0, 240)}` : `We hit a problem while ${phase[type]}.`;

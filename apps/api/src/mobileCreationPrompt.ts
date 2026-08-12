@@ -1,3 +1,4 @@
+import { libraryCharacterPromptBlock } from "@book-maker/core";
 import { chatReplyQuoteLabel } from "./chatReplyQuote.js";
 import { clampBriefText, completeRecipe, normalizePayload } from "./mobileCreationAdvisor.js";
 import { intentForLane, laneLabel } from "./mobileCreationLanes.js";
@@ -47,12 +48,16 @@ export function composeMobileProjectPrompt(
       : `Create a ${laneLabel(recipe.lane).toLowerCase()}.`,
     fieldLine("Book type choice", autoMode ? "Auto - decide during planning" : laneLabel(recipe.lane))
   ].filter(Boolean);
+  const libraryCharacters = normalized.characters ?? [];
   const tail = [
     fieldLine("Artifact", recipe.artifact),
     fieldLine("Audience or reader", recipe.audience),
     fieldLine("Promise or story shape", recipe.promise),
     fieldLine("Tone or vibe", recipe.tone),
     fieldLine("Main character", recipe.mainCharacter),
+    libraryCharacters.length > 0
+      ? `Characters from the user's library (each must appear in the book; keep names exactly as written):\n${libraryCharacterPromptBlock(libraryCharacters)}`
+      : "",
     fieldLine("Conflict", recipe.conflict),
     fieldLine("Theme", recipe.theme),
     fieldLine("Ending feel", recipe.ending),
@@ -116,6 +121,9 @@ export function mobileBriefMetadata(
     sourceNotes: normalized.sourceNotes,
     messages: normalized.messages ?? [],
     attachments: normalized.attachments ?? [],
+    // The build-time character snapshots; `mediaSettings.mobile.characters` is
+    // what the planner guidance and the reference-sheet seeding read.
+    ...(normalized.characters && normalized.characters.length > 0 ? { characters: normalized.characters } : {}),
     detectedLane: recipe.lane,
     recipe,
     selectedPresets: normalized.selectedPresets ?? advisor.recommendation,

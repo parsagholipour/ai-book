@@ -63,6 +63,7 @@ enum JobType {
   IMPORT_BOOK
   CONTINUE_BOOK
   GENERATE_AUDIOBOOK
+  GENERATE_CHARACTER_PORTRAIT
 }
 
 enum AudiobookStatus {
@@ -166,6 +167,7 @@ enum CreditOperation {
   BOOK_REPLAN
   VOICE_CALL_MINUTE
   AUDIOBOOK_GENERATION
+  CHARACTER_PORTRAIT_GENERATION
   PURCHASE_CREDIT_GRANT
   SUBSCRIPTION_CREDIT_GRANT
   PLAN_ALLOWANCE_GRANT
@@ -283,6 +285,7 @@ model User {
   legalAcceptances        LegalAcceptance[]
   generationAttempts      GenerationAttempt[]
   passwordResetRequests   PasswordResetRequest[]
+  libraryCharacters       LibraryCharacter[]
 }
 
 /// Append-only proof that a user affirmatively accepted a specific pair of
@@ -905,6 +908,118 @@ model VoiceCharacter {
   @@index([planVersionId])
 }
 
+enum LibraryCharacterPortraitStatus {
+  NONE
+  QUEUED
+  GENERATING
+  READY
+  FAILED
+}
+
+/// What the uploaded photo turned out to be, as judged once at upload time.
+/// A real photograph has to be drawn before a book may use it; an illustration
+/// is already the character's look and is adopted as the reference verbatim.
+/// UNKNOWN is the honest answer when the vision read was unsure — it is treated
+/// as PHOTOGRAPH everywhere, because adopting a real face by mistake is the
+/// only failure here that cannot be undone.
+enum LibraryCharacterPhotoKind {
+  PHOTOGRAPH
+  ILLUSTRATION
+  UNKNOWN
+}
+
+/// Where `portraitPath` came from. ADOPTED_UPLOAD is the user's own artwork,
+/// copied rather than drawn — free, and deleted again with the photo it is.
+/// GENERATED is a paid redraw and outlives the photo it was made from.
+enum LibraryCharacterPortraitSource {
+  GENERATED
+  ADOPTED_UPLOAD
+}
+
+/// Where the bytes of one retained character image came from. GENERATED is a
+/// paid `generate-character-portrait` render; UPLOAD is a file the reader chose
+/// and cropped, whether or not it was ever adopted as the reference.
+enum LibraryCharacterImageSource {
+  UPLOAD
+  GENERATED
+}
+
+/// A user-defined character in the account-wide library. Books reference it by
+/// snapshot (`mediaSettings.mobile.characters`) and by name inside plans, never
+/// by foreign key, so deleting one can never break a book already made from it.
+model LibraryCharacter {
+  id             String                         @id @default(cuid())
+  userId         String
+  name           String
+  description    String
+  /// Ordered optional profile fields, e.g. [{"key":"Age","value":"9"}].
+  fields         Json
+  /// Filenames inside IMAGE_STORAGE_DIR/characters/<userId>/, never full paths.
+  photoPath      String?
+  /// Null on rows uploaded before the photo was ever read.
+  photoKind      LibraryCharacterPhotoKind?
+  /// A description derived from the photo, offered to the user and never
+  /// applied on their behalf. Cleared once they accept, edit, or dismiss it.
+  suggestedDescription String?
+  portraitPath   String?
+  portraitSource LibraryCharacterPortraitSource?
+  portraitStatus LibraryCharacterPortraitStatus @default(NONE)
+  portraitError  String?
+  portraitJobId  String?
+  createdAt      DateTime                       @default(now())
+  updatedAt      DateTime                       @updatedAt
+
+  user   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images LibraryCharacterImage[]
+
+  @@unique([userId, name])
+  @@index([userId, createdAt])
+}
+
+/// One retained version of a character's picture — every upload and every
+/// drawing, kept until the reader deletes it or the per-character cap prunes it.
+///
+/// `LibraryCharacter.photoPath` and `portraitPath` remain the pointers and this
+/// table is purely additive. That is deliberate: `usedInBooks`, `portraitUrl`,
+/// both asset routes and `libraryCharacterSnapshotsForBuild` all share one
+/// expression over those two columns, and the build snapshot is a copy-by-value
+/// that must never carry an id from here back into a book.
+///
+/// Rows are immutable and there is no `updatedAt`: the file is written once
+/// under a name nothing re-derives, so one image id means one set of bytes for
+/// good and the app may hold them for as long as it likes.
+model LibraryCharacterImage {
+  id          String                      @id @default(cuid())
+  characterId String
+  /// Denormalized from the character so a lookup can carry a third ownership
+  /// predicate. The disk path's user segment is still built from the bearer
+  /// token, never from this column.
+  userId      String
+  source      LibraryCharacterImageSource
+  /// A filename inside IMAGE_STORAGE_DIR/characters/<userId>/, never a path.
+  fileName    String
+  byteSize    Int?
+  width       Int?
+  height      Int?
+  /// What this upload was judged to be, kept per row because
+  /// `LibraryCharacter.photoKind` is overwritten by the next upload and would
+  /// then describe a different picture.
+  photoKind   LibraryCharacterPhotoKind?
+  /// Whether this image may become the book reference with no redraw: the
+  /// verdict `canAdoptCharacterPhoto` reached at ingest, frozen. Promoting an
+  /// image consults this and never re-derives it — the renderer is told an
+  /// adopted reference *is* the character and to reproduce its face exactly, so
+  /// a re-derivation would be a one-tap route from a photograph of a real
+  /// person to the authoritative design source for every page.
+  referenceEligible Boolean @default(false)
+  createdAt   DateTime @default(now())
+
+  character LibraryCharacter @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fileName])
+  @@index([characterId, createdAt])
+}
+
 model Location {
   id          String   @id @default(cuid())
   projectId   String
@@ -1005,7 +1120,9 @@ model AccountDeletionRequest {
 
 model GenerationJob {
   id         String    @id @default(cuid())
-  projectId  String
+  /// Null for account-level work with no book, e.g. GENERATE_CHARACTER_PORTRAIT.
+  /// Project-scoped queries (stop, status, settlement) never see those rows.
+  projectId  String?
   attemptId  String?
   type       JobType
   status     JobStatus @default(QUEUED)
@@ -1032,7 +1149,7 @@ model GenerationJob {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project      Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   providerLogs ProviderCallLog[]
   creditLedger CreditLedgerEntry[]
   editOperations BookEditOperation[]

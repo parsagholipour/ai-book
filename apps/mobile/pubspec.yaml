@@ -55,6 +55,16 @@ dependencies:
   just_audio: ^0.10.6
   just_audio_background: ^0.0.1-beta.17
   audio_session: ^0.2.4
+  # The character cropper. Pure Dart, so there is no Gradle activity and no
+  # Podfile entry to keep in sync — which is why the native uCrop wrapper
+  # (image_cropper) was not used.
+  crop_your_image: ^2.0.0
+  # Declared directly because character_crop_source.dart decodes, bakes EXIF
+  # orientation, downscales and re-encodes with it before the cropper ever sees
+  # the bytes. Already in the tree transitively (pdfrx_engine asks for ^4.8.0);
+  # never import a package you do not declare.
+  image: ^4.9.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

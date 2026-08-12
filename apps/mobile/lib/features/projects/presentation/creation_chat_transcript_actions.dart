@@ -97,6 +97,9 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
       await _sendCreationEdit(trimmed, editingCreationMessageId);
       return;
     }
+    // Captured before the clear below empties the composer and, through the
+    // mention listener, the mention set itself.
+    final mentionedCharacterIds = _mentionedCharacterIdsFor(trimmed);
     _composerController.clear();
     if (replyTo != null) {
       _updateState(() {
@@ -108,7 +111,11 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
     try {
       await ref
           .read(creationChatControllerProvider.notifier)
-          .sendMessage(trimmed, replyTo: replyTo);
+          .sendMessage(
+            trimmed,
+            replyTo: replyTo,
+            mentionedCharacterIds: mentionedCharacterIds,
+          );
     } catch (_) {}
   }
 
@@ -148,10 +155,12 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
       projectId: projectId,
       message: message,
       replyTo: replyTo,
+      mentionedCharacterIds: _mentionedCharacterIdsFor(message),
     );
   }
 
   Future<void> _sendCreationEdit(String message, String editMessageId) async {
+    final mentionedCharacterIds = _mentionedCharacterIdsFor(message);
     _updateState(() {
       _editingCreationMessageId = null;
       _messageAnchors.forget();
@@ -161,7 +170,11 @@ extension _CreationChatTranscriptActions on _CreationChatScreenState {
     try {
       await ref
           .read(creationChatControllerProvider.notifier)
-          .sendMessage(message, editMessageId: editMessageId);
+          .sendMessage(
+            message,
+            editMessageId: editMessageId,
+            mentionedCharacterIds: mentionedCharacterIds,
+          );
     } catch (_) {}
   }
 

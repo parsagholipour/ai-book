@@ -163,6 +163,7 @@ export function serializeCreationMessages(tree: MobileCreationMessage[]): Mobile
     role: message.role,
     content: message.content,
     ...(message.attachments && message.attachments.length > 0 ? { attachments: message.attachments } : {}),
+    ...(message.characters && message.characters.length > 0 ? { characters: message.characters } : {}),
     ...(message.research ? { research: message.research } : {}),
     ...(message.replyTo ? { replyTo: message.replyTo } : {}),
     branch: branches.get(message.id ?? "") ?? null

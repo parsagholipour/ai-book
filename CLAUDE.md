@@ -843,9 +843,82 @@ tells you when a listed file has dropped under the default so the entry can be d
   anything projecting revenue iterates `CREDIT_PRICE_KEYS`, not every key, or it invents income
   from the free tier. Paid tiers take their monthly credits from `DEFAULT_BILLING_PRODUCTS`
   instead, because those numbers are pinned to a Play price point that needs a release anyway.
+- **A library character reaches a book by copy and by name, never by foreign key.** The
+  account-wide `LibraryCharacter` table is the user's; at build time the active branch's
+  @-mentions are snapshotted into `mediaSettings.mobile.characters`
+  (`libraryCharacterSnapshotsForBuild` in `apps/api/src/mobile/creationBuild.ts`), and everything
+  downstream — the planner guidance in `planner.ts`, the prompt block in
+  `composeMobileProjectPrompt`, the reference-sheet seeding — reads that copy off the input
+  snapshot. The plan schema strips unknown keys, so the **verbatim name** is the only link from a
+  plan character back to its portrait: `matchLibraryCharacter`
+  (`packages/core/src/generation/libraryCharacters.ts`) tries exact then word-boundary
+  containment, and a rename by the planner degrades to an unseeded sheet, never an error. Deleting
+  a character deletes rows and files but no book state; a seeding pass that finds the portrait
+  file gone skips it silently, which is the deletion-safety valve. Character files live at
+  `IMAGE_STORAGE_DIR/characters/<userId>/` — never swept, unreachable from the project asset
+  route and the render allowlist — and every path to them resolves through
+  `libraryCharacterDiskPath`, which returns null for anything but exactly `<userId>/<fileName>`.
+- **`photoPath` is not a reference; `portraitPath` is, and the upload decides which one an image
+  becomes.** The snapshot writes `portraitFile` on `portraitStatus === "READY"` alone, so a photo
+  that never became a portrait reached no book at all — the app showed the reader their own face on
+  every character surface while the book invented one. `PUT /:id/photo` now makes one bounded, free
+  vision call (`characterPhotoVision.ts` in core, `readCharacterPhoto` in `mobile/`) that answers
+  two things at once: a `suggestedDescription`, and whether the upload is a photograph or already an
+  illustration. An illustration is **adopted** — the same optimized bytes written a second time
+  under the portrait name, `portraitSource: ADOPTED_UPLOAD`, no job, no ledger entry — so the
+  reader's own artwork is the character verbatim, with no redraw to drift through. A photograph is
+  not, and the ask is the existing priced portrait button: `canAdoptCharacterPhoto` demands a
+  confident **single-subject** illustration and reads `"unknown"` as a photograph, because a
+  mis-adopted face becomes the authoritative design source for every page render with no model in
+  the loop, while a mis-classified drawing costs one redraw. The verdict is stored rather than
+  recomputed (`photoKind`), and `serializeLibraryCharacter.usedInBooks` is *literally* the snapshot
+  writer's condition, so no surface can promise a look the build will not carry. The suggestion is
+  offered and never applied — it is screened through `assessCurrentContentRestrictions` like any
+  user text, since a photo's visible text reaches the model, and it is dropped rather than failing
+  the upload. Every failure here (no vision key, a refusal, a timeout) stores the photo and answers
+  200; `CHARACTER_PHOTO_VISION_BUDGET_MS` is not optional, because the Gemini client sets no request
+  timeout and Fastify sets none either. Deleting the photo takes an **adopted** reference with it
+  (it is the same image) and leaves a `GENERATED` one (a derived work that was paid for), and an
+  upload never lands on a READY generated portrait or on a row an open portrait job owns —
+  silently, because an upload is not a portrait request.
+- **The face is fed in twice, and only ever into spare budget.** A page render is two redraws from
+  the image the reader recognises (artwork → per-book sheet → page), so `selectReferenceImagePaths`
+  appends the character's own library file *after* the sheets, capped by
+  `maxReferenceImages - sheets.length` — 3 to 5 depending on the model. It may not displace a sheet:
+  losing another character's design to strengthen one character's face trades one consistency
+  problem for a worse one, and a page with as many characters as the budget allows keeps every
+  sheet. `libraryCharacterFaceInstruction` names those trailing images as the authority on **face
+  only**, because a shoulders-up avatar cannot supply pose, outfit or the book's art style. The
+  sheet render's own sentence is source-aware (`characterReferenceSeedInstruction`): a drawn
+  portrait is a likeness to *extend into* the book's style, adopted artwork is a design to *re-pose*
+  and not restyle. That is why `portraitSource` rides the snapshot at all — and the ownership trio
+  (owner-prefix, `libraryCharacterDiskPath`, `stat`) is shared by both paths, so a snapshot naming
+  another user's file resolves to nothing on the page path exactly as it does on the seeding path.
+- **The portrait job is the one `GenerationJob` with no project.** `GENERATE_CHARACTER_PORTRAIT`
+  runs with `projectId` null, which is why that column is nullable: every project-scoped query
+  (stop, settlement, status, `failureMessage`) simply never sees the row, and
+  `staleGenerationJobReason` still runs its CANCELED-row and settled-attempt checks before the
+  project section it skips. Failure settles through the attempt boundary plus
+  `failCharacterPortraitForJob` in `runtime/jobLifecycle.ts`, which flips the `LibraryCharacter`
+  row FAILED and touches nothing else; the row's QUEUED/GENERATING claim in
+  `POST /api/mobile/characters/:id/portrait` is what makes a second start a 409 rather than a
+  second charge.
+- **A mentioned character's sheet rides the stored edit request, never the routed text.** In the
+  finished-book chat the sheets become `characterContext`, carried on `PendingEditState` (so a
+  clarify → confirm → Apply chain keeps it) and appended only where the request reaches a model:
+  the `APPLY_BOOK_EDIT`/`CONTINUE_BOOK`/`REPLAN_BOOK` payloads and the plan-revision message
+  (`requestWithCharacterContext` in `editOperations.ts`). The bare message is what
+  `classifyProjectChatMessage`, `affectedPagesForIntent` and `exactReplacementFromMessage` read —
+  a sheet inside it would move page targeting — and the visible transcript and proposal card stay
+  as typed. In the creation chat mentions are message-level `{id, name}` refs, so
+  `activeThreadPayload` branch-filters them for free, and every turn re-reads the live rows so a
+  library edit propagates; the build snapshot is the moment that stops.
 - **The Flutter creation chat screen is one library split with `part` files**
   (`creation_chat_screen.dart` plus `creation_chat_*.dart`). Part files have no imports of their
-  own; add imports to the parent. This keeps the `_Private` widgets private.
+  own; add imports to the parent. This keeps the `_Private` widgets private. The @-mention
+  affordance (`creation_chat_mentions.dart`) derives its state from the composer text alone —
+  clearing the composer clears the mentions — and one strip serves both chat stages because the
+  composer does.
 - **The in-app reader renders the compiled `book.pdf` with pdfrx (PDFium).** `main.dart` must call
   `pdfrxFlutterInitialize()` before `runApp`, and the natives are not available under
   `flutter test` — `BookReaderScreen` takes its viewer through `readerViewerBuilderProvider` so

@@ -182,6 +182,7 @@ class ScriptedCreationRepository implements CreationRepository {
     String? sourceNotes,
     MobileCreationOptionalDetails? optionalDetails,
     String? requestId,
+      List<String>? mentionedCharacterIds,
   }) async {
     if (message != null) {
       startedMessages.add(message);
@@ -223,6 +224,7 @@ class ScriptedCreationRepository implements CreationRepository {
     String? requestId,
     int? expectedRevision,
     bool skippedQuestion = false,
+      List<String>? mentionedCharacterIds,
   }) async {
     await sendGate;
     final error = sendError;
@@ -721,6 +723,7 @@ class PlanProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
+      List<String>? mentionedCharacterIds,
   }) async {
     revisionMessages.add(message);
     sendRequests.add((
@@ -795,6 +798,7 @@ class PlanProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+      List<String>? mentionedCharacterIds,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }

@@ -13,6 +13,7 @@ import '../data/reader_pdf_page_text.dart';
 import '../data/reader_repository.dart';
 import '../domain/reader_annotation.dart';
 import '../domain/reader_annotation_geometry.dart';
+import '../domain/reader_link.dart';
 import '../domain/reader_models.dart';
 import '../domain/reader_settings.dart';
 import 'book_reader_screen.dart';
@@ -25,6 +26,7 @@ import 'reader_bottom_bar.dart';
 import 'reader_departures.dart';
 import 'reader_document_loader.dart';
 import 'reader_ink_layer.dart';
+import 'reader_links.dart';
 import 'reader_markup_actions.dart';
 import 'reader_markup_bar.dart';
 import 'reader_menu.dart';
@@ -89,6 +91,11 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     _paintMarkup,
     _paintSearchMatches,
   ];
+
+  /// The book's own links — the Contents page's chapter jumps and the Sources
+  /// list's citations. Resolved by the reader rather than by the viewer; see
+  /// [ReaderLinkIndex] for why.
+  final _links = ReaderLinkIndex();
 
   /// Held in a field because `dispose` saves the reading position, and `ref`
   /// cannot be read once the widget is unmounted.
@@ -244,7 +251,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   }
 
   void _onPageChanged(int? pageNumber) {
-    if (pageNumber == null || pageNumber == _state.lastPage) return;
+    if (pageNumber == null) return;
+    // Reading a page's links crosses to the render isolate, so the page being
+    // looked at is resolved before it is tapped rather than during. Ahead of
+    // the position check because a page can be arrived at more than once.
+    unawaited(_links.forPage(pageNumber));
+    if (pageNumber == _state.lastPage) return;
     _afterFrame(() => _state = _state.copyWith(lastPage: pageNumber));
     _scheduleSave();
   }
@@ -254,6 +266,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     // cannot exist before the viewer has one.
     _searcher ??= PdfTextSearcher(_controller);
     _document = document;
+    _links.attach(document);
     // A recompiled book can be shorter than the one the position was recorded
     // against, and jumping past the end throws.
     final pageCount = document.pages.length;
@@ -265,6 +278,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     if (clamped.lastPage > 1) {
       unawaited(_controller.goToPage(pageNumber: clamped.lastPage));
     }
+    // The page the book opens on gets no `onPageChanged` of its own.
+    unawaited(_links.forPage(clamped.lastPage));
     unawaited(_loadOutline(document));
     unawaited(_reanchorMarkup(document));
     unawaited(_seekToRequestedBookPage(document));
@@ -740,7 +755,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         overlays.add(
           ReaderTapLayer(
             key: ValueKey('read-${page.pageNumber}'),
-            onTap: (point) => _onReadingTap(page.pageNumber, point),
+            onTap: (point) =>
+                unawaited(_onReadingTap(page.pageNumber, point)),
           ),
         );
     }
@@ -752,15 +768,19 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// This is what lets the reader be mostly page. The bars do not have to be
   /// dismissed from a menu and then found again; they get out of the way and
   /// come back where they were.
-  /// What a tap on the page means while reading.
+  /// What a tap on the page means while reading: markup, then a link, then the
+  /// book itself.
   ///
   /// One owner for the whole page, rather than a handler per piece of markup
   /// plus a separate one for the chrome. Markup wins when the tap lands on it —
   /// a highlight is painted onto the page rather than being a widget, so this is
-  /// the only way to reach one without going through the index. Everything else
-  /// is a tap on the book, which is how the bars get out of the way and come
-  /// back.
-  void _onReadingTap(int page, NormPoint point) {
+  /// the only way to reach one without going through the index. A link is next,
+  /// and is resolved here rather than by the viewer's own link handler for the
+  /// same reason the order exists at all: two tap owners over one page is how a
+  /// chapter link ends up jumping *and* hiding the bars. See [ReaderLinkIndex].
+  /// Everything else is a tap on the book, which is how the bars get out of the
+  /// way and come back.
+  Future<void> _onReadingTap(int page, NormPoint point) async {
     if (_selection != null || _searching) return;
     final annotation = _annotations.annotationAt(page, point);
     if (annotation != null) {
@@ -768,6 +788,21 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       unawaited(_markup.open(annotation));
       return;
     }
+    // Already read for the page being looked at, so the ordinary tap does not
+    // wait; a page arrived at faster than its links could be read does.
+    final links = _links.resolved(page) ?? await _links.forPage(page);
+    if (!mounted || _selection != null || _searching) return;
+    final link = readerLinkAt(links, point);
+    if (link != null &&
+        await followReaderLink(
+          context: context,
+          ref: ref,
+          controller: _controller,
+          link: link,
+        )) {
+      return;
+    }
+    if (!mounted) return;
     setState(() => _immersive = !_immersive);
   }
 

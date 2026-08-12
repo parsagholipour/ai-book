@@ -12,7 +12,8 @@ import {
   mockBilling,
   mockPrisma,
   mockProjectStatus,
-  mockQueue
+  mockQueue,
+  resetCharacterImageMocks
 } from "./mobileApiMocks.js";
 import { installGenerationAttemptMock } from "./mobileApiGenerationAttemptMock.js";
 
@@ -56,6 +57,7 @@ export function resetMobileHarness(): void {
     }
     return (operationOrOperations as (tx: typeof mockPrisma) => Promise<unknown>)(mockPrisma);
   });
+  resetCharacterImageMocks();
   mockBilling.ensureDefaultProductCatalog.mockResolvedValue(undefined);
   mockPrisma.productCatalog.findUnique.mockResolvedValue({
     sku: "tomeza.one_book_export",

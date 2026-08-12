@@ -128,16 +128,33 @@ class ApiClient {
     return _request('PATCH', path, data: data, requiresAuth: requiresAuth);
   }
 
+  /// Same transport as [postBytes] with PUT semantics (idempotent replace).
+  Future<Response<dynamic>> putBytes(
+    String path, {
+    required List<int> bytes,
+    Map<String, String>? queryParameters,
+    void Function(int sent, int total)? onSendProgress,
+  }) {
+    return postBytes(
+      path,
+      bytes: bytes,
+      queryParameters: queryParameters,
+      onSendProgress: onSendProgress,
+      method: 'PUT',
+    );
+  }
+
   /// Uploads raw bytes (chat attachments); metadata travels as query params.
   Future<Response<dynamic>> postBytes(
     String path, {
     required List<int> bytes,
     Map<String, String>? queryParameters,
     void Function(int sent, int total)? onSendProgress,
+    String method = 'POST',
   }) async {
     Options buildOptions(String accessToken) {
       return Options(
-        method: 'POST',
+        method: method,
         contentType: 'application/octet-stream',
         sendTimeout: const Duration(minutes: 3),
         receiveTimeout: const Duration(minutes: 3),

@@ -110,7 +110,7 @@ async function renderAndStorePageIllustration(options: {
     strategy,
     generationJobId
   });
-  const referenceImagePaths = selectReferenceImagePaths({
+  const references = await selectReferenceImagePaths({
     input,
     plan,
     assets: characterReferences,
@@ -118,9 +118,10 @@ async function renderAndStorePageIllustration(options: {
     image: providers.image,
     context: [prompt, page.title, page.summary, page.markdown].filter(Boolean).join("\n")
   });
+  const referenceImagePaths = references.paths;
   const imagePrompt = [
     prompt,
-    referenceImagePaths.length > 0 ? characterReferencePromptInstruction(referenceImagePaths.length) : "",
+    characterReferencePromptInstruction(references),
     `Global visual style: ${plan.illustrationPlan.globalStyle}`,
     `Continuity rules: ${plan.illustrationPlan.pageRules.join(" ")}`
   ].filter(Boolean).join("\n");

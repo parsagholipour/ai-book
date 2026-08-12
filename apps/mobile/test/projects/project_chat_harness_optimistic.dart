@@ -241,6 +241,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
+      List<String>? mentionedCharacterIds,
   }) async {
     sendRequestIds.add(requestId);
     sentMessages.add(message);
@@ -256,6 +257,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+      List<String>? mentionedCharacterIds,
   }) async {
     editRequestIds.add(requestId);
     if (editGates.isNotEmpty) {

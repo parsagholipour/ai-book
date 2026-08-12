@@ -51,6 +51,7 @@ abstract interface class ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
+    List<String>? mentionedCharacterIds,
   });
 
   Future<MobileProjectChatSendResult> editProjectChatMessage({
@@ -58,6 +59,7 @@ abstract interface class ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+    List<String>? mentionedCharacterIds,
   });
 
   Future<MobileProjectChatSendResult> applyEditProposal({
@@ -280,6 +282,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
+    List<String>? mentionedCharacterIds,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/chat/messages',
@@ -287,6 +290,8 @@ class MobileProjectsRepository implements ProjectsRepository {
         'message': message,
         'requestId': ?requestId,
         'replyToMessageId': ?replyToMessageId,
+        if (mentionedCharacterIds != null && mentionedCharacterIds.isNotEmpty)
+          'mentionedCharacterIds': mentionedCharacterIds,
       },
       receiveTimeout: llmReceiveTimeout,
     );
@@ -301,6 +306,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+    List<String>? mentionedCharacterIds,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/chat/messages',
@@ -308,6 +314,8 @@ class MobileProjectsRepository implements ProjectsRepository {
         'message': message,
         'editMessageId': messageId,
         'requestId': ?requestId,
+        if (mentionedCharacterIds != null && mentionedCharacterIds.isNotEmpty)
+          'mentionedCharacterIds': mentionedCharacterIds,
       },
       receiveTimeout: llmReceiveTimeout,
     );

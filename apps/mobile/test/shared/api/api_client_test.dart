@@ -256,6 +256,79 @@ void main() {
       ),
     );
   });
+
+  // The raw-byte upload used to be duplicated inside the characters
+  // repository, and these three assertions lived beside that copy. It goes
+  // through `putBytes` now, so the coverage belongs where the transport does.
+  group('putBytes', () {
+    ApiClient clientFor(HttpClientAdapter adapter) => ApiClient(
+      dio: Dio(BaseOptions(baseUrl: 'http://localhost:4001'))
+        ..httpClientAdapter = adapter,
+      tokenStore: MemoryAuthTokenStore(validTokens()),
+    );
+
+    test('PUTs the raw bytes with auth and metadata', () async {
+      final adapter = RecordingHttpClientAdapter();
+      final apiClient = clientFor(adapter);
+
+      await apiClient.putBytes(
+        '/api/mobile/characters/char-1/photo',
+        bytes: [1, 2, 3],
+        queryParameters: {'filename': 'face.jpg', 'mimeType': 'image/jpeg'},
+      );
+
+      expect(adapter.lastOptions?.method, 'PUT');
+      expect(adapter.lastOptions?.path, '/api/mobile/characters/char-1/photo');
+      expect(adapter.lastOptions?.queryParameters, {
+        'filename': 'face.jpg',
+        'mimeType': 'image/jpeg',
+      });
+      expect(adapter.lastOptions?.contentType, 'application/octet-stream');
+      expect(
+        adapter.lastOptions?.headers['Authorization'],
+        'Bearer access-token',
+      );
+    });
+
+    test('reports upload progress, which a 20 MB photo needs', () async {
+      final adapter = RecordingHttpClientAdapter();
+      final apiClient = clientFor(adapter);
+      final progress = <int>[];
+
+      await apiClient.putBytes(
+        '/api/mobile/characters/char-1/photo',
+        bytes: List<int>.filled(2048, 7),
+        queryParameters: const {'filename': 'face.jpg'},
+        onSendProgress: (sent, total) => progress.add(sent),
+      );
+
+      expect(progress, isNotEmpty);
+      expect(progress.last, 2048);
+    });
+
+    test('maps the server error body onto ApiException', () async {
+      final apiClient = clientFor(
+        ErrorBodyHttpClientAdapter(
+          statusCode: 422,
+          code: 'PHOTO_UNSUPPORTED',
+          message: 'Use a JPEG, PNG, or WebP photo.',
+        ),
+      );
+
+      await expectLater(
+        apiClient.putBytes(
+          '/api/mobile/characters/char-1/photo',
+          bytes: const [1],
+          queryParameters: const {'filename': 'face.gif'},
+        ),
+        throwsA(
+          isA<ApiException>()
+              .having((error) => error.code, 'code', 'PHOTO_UNSUPPORTED')
+              .having((error) => error.statusCode, 'statusCode', 422),
+        ),
+      );
+    });
+  });
 }
 
 MobileSessionTokens staleAccessTokens() {

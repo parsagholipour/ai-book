@@ -9,7 +9,8 @@
 export const DERIVATIVE_GENERATION_JOBS = {
   PREPARE_CHARACTER_CANDIDATES: "prepare-character-candidates",
   BUILD_CHARACTER_PERSONA: "build-character-persona",
-  GENERATE_AUDIOBOOK: "generate-audiobook"
+  GENERATE_AUDIOBOOK: "generate-audiobook",
+  GENERATE_CHARACTER_PORTRAIT: "generate-character-portrait"
 } as const;
 
 export type DerivativeGenerationJobType = keyof typeof DERIVATIVE_GENERATION_JOBS;

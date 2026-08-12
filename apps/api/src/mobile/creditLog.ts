@@ -53,6 +53,7 @@ const OPERATION_TITLES: Record<string, string> = {
   BOOK_REPLAN: "Book replan",
   VOICE_CALL_MINUTE: "Character call",
   AUDIOBOOK_GENERATION: "Audiobook",
+  CHARACTER_PORTRAIT_GENERATION: "Character portrait",
   PURCHASE_CREDIT_GRANT: "Credits purchased",
   SUBSCRIPTION_CREDIT_GRANT: "Subscription credits",
   PLAN_ALLOWANCE_GRANT: "Monthly credits",

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +11,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
 import '../../reader/presentation/book_reader_screen.dart'
     show readerViewerBuilderProvider;
+import '../../reader/presentation/reader_links.dart';
 
 /// Whether the server publishes a try-before-signup sample book
 /// (`GET /api/mobile/sample-book`, unauthenticated; the operator opts in with
@@ -41,6 +44,32 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
   final PdfViewerController _controller = PdfViewerController();
   String? _path;
   bool _failed = false;
+
+  /// The sample's links work, and here the viewer is allowed to own them: this
+  /// screen lays nothing over the page, so there is no second tap owner to
+  /// collide with the way there is in the reader. Nothing is painted over a
+  /// link — the book prints its own citations blue and underlined — and the
+  /// address still goes through the reader's policy before anything opens.
+  ///
+  /// Held in a field because [PdfViewerParams] compares by value: rebuilt
+  /// inside `build`, every `setState` would read as a reason to relayout.
+  late final PdfViewerParams _params = PdfViewerParams(
+    linkHandlerParams: PdfLinkHandlerParams(
+      onLinkTap: _onLinkTap,
+      linkColor: Colors.transparent,
+    ),
+  );
+
+  void _onLinkTap(PdfLink link) {
+    unawaited(
+      followPdfLink(
+        context: context,
+        ref: ref,
+        controller: _controller,
+        link: link,
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -81,7 +110,7 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
                       context,
                       path,
                       _controller,
-                      const PdfViewerParams(),
+                      _params,
                       1,
                     ),
                   ),

@@ -15,6 +15,7 @@ export type CreditPricingKey =
   | "voiceCallPerMinute"
   | "audiobookBase"
   | "audiobookPerPage"
+  | "characterPortraitGeneration"
   // Not prices — the free tier's monthly limits. Same table, same audit trail.
   | "freeMonthlyCredits"
   | "freeIllustratedBooksPerMonth"

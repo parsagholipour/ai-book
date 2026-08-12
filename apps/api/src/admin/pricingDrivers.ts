@@ -87,7 +87,8 @@ function emptyDrivers(): PricingDrivers {
     bookReplanBase: 0,
     voiceCallPerMinute: 0,
     audiobookBase: 0,
-    audiobookPerPage: 0
+    audiobookPerPage: 0,
+    characterPortraitGeneration: 0
   };
 }
 
@@ -195,6 +196,7 @@ export async function loadPricingDrivers(
   drivers.planGeneration += countOf("PLAN_GENERATION");
   drivers.previewGeneration += countOf("PREVIEW_GENERATION");
   drivers.coverRegeneration += countOf("COVER_REGENERATION");
+  drivers.characterPortraitGeneration += countOf("CHARACTER_PORTRAIT_GENERATION");
 
   for (const call of voiceCalls) {
     drivers.voiceCallPerMinute += settleVoiceCall(call.elapsedSeconds).billableMinutes;

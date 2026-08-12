@@ -47,7 +47,8 @@ export class GenerationQuotaExceededError extends Error {
 }
 
 export type GenerationAttemptDomainResult = {
-  projectId: string;
+  /** Null for account-level work (a library-character portrait) with no book. */
+  projectId: string | null;
   primaryJobId: string;
   editOperationId?: string | null | undefined;
 };
@@ -193,7 +194,7 @@ export async function startGenerationAttempt(
             data: { projectId: domain.projectId, generationJobId: domain.primaryJobId }
           });
         }
-        if (options.grantExportEntitlement) {
+        if (options.grantExportEntitlement && domain.projectId) {
           await grantProjectEntitlementTx(tx, {
             userId: options.userId,
             projectId: domain.projectId,

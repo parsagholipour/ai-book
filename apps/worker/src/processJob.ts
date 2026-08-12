@@ -29,6 +29,7 @@ import { buildCharacterPersona, prepareCharacterCandidates } from "./handlers/ch
 import { compileExport } from "./handlers/compileExport.js";
 import { continueBook } from "./handlers/continueBook.js";
 import { generateAudiobook } from "./handlers/generateAudiobook.js";
+import { generateCharacterPortrait } from "./handlers/characterPortrait.js";
 import { generateBook } from "./handlers/generateBook.js";
 import { generateImage } from "./handlers/generateImage.js";
 import { generatePage } from "./handlers/generatePage.js";
@@ -111,6 +112,9 @@ export async function processWorkerJob(job: Job): Promise<void> {
             break;
           case "generate-audiobook":
             await generateAudiobook(job);
+            break;
+          case "generate-character-portrait":
+            await generateCharacterPortrait(job);
             break;
           default:
             throw new Error(`Unknown worker job: ${job.name}`);

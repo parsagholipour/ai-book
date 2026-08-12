@@ -357,6 +357,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
+      List<String>? mentionedCharacterIds,
   }) async {
     final reply = MobileProjectChatMessage(
       id: 'reply',
@@ -379,6 +380,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     required String messageId,
     required String message,
     String? requestId,
+      List<String>? mentionedCharacterIds,
   }) {
     return sendProjectChatMessage(projectId: projectId, message: message);
   }

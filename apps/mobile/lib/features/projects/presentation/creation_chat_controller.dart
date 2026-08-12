@@ -116,6 +116,7 @@ class CreationChatController extends Notifier<CreationChatState> {
     String? editMessageId,
     ChatReplyTarget? replyTo,
     bool skippedQuestion = false,
+    List<String>? mentionedCharacterIds,
   }) async {
     final trimmed = text.trim();
     final draftId = state.draftId;
@@ -157,6 +158,7 @@ class CreationChatController extends Notifier<CreationChatState> {
       // Carried on the optimistic message so the quote renders straight away
       // rather than appearing when the server's copy lands.
       replyTo: replyTo,
+      mentionedCharacterIds: mentionedCharacterIds ?? const [],
       attachments: [
         for (final pending in readyAttachments)
           MobileCreationMessageAttachment(
@@ -230,12 +232,14 @@ class CreationChatController extends Notifier<CreationChatState> {
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              mentionedCharacterIds: mentionedCharacterIds,
               requestId: serverRequestId,
             )
           : await _repository.sendConversationMessage(
               draftId: draftId,
               message: trimmed,
               attachmentIds: attachmentIds.isEmpty ? null : attachmentIds,
+              mentionedCharacterIds: mentionedCharacterIds,
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
@@ -415,6 +419,9 @@ class CreationChatController extends Notifier<CreationChatState> {
               presets: presets,
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
+              mentionedCharacterIds: failed.mentionedCharacterIds.isEmpty
+                  ? null
+                  : failed.mentionedCharacterIds,
               requestId: serverRequestId,
             )
           : await _repository.sendConversationMessage(
@@ -425,8 +432,12 @@ class CreationChatController extends Notifier<CreationChatState> {
               sourceNotes: sourceNotes,
               optionalDetails: optionalDetails,
               // A retry keeps the quote the failed send carried, or it would
-              // reach the model as a bare fragment the second time.
+              // reach the model as a bare fragment the second time — and the
+              // mentions, for the same reason.
               replyToMessageId: failed.replyTo?.messageId,
+              mentionedCharacterIds: failed.mentionedCharacterIds.isEmpty
+                  ? null
+                  : failed.mentionedCharacterIds,
               requestId: serverRequestId,
               expectedRevision: state.sessionRevision,
             );

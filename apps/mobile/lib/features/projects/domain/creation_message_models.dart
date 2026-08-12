@@ -25,6 +25,7 @@ class MobileCreationMessage {
     this.branch,
     this.requestId,
     this.replyTo,
+    this.mentionedCharacterIds = const [],
   });
 
   final String role;
@@ -56,6 +57,10 @@ class MobileCreationMessage {
 
   /// Stable id for optimistic messages so retry/dismiss can target them.
   final String? localId;
+
+  /// Library characters this message @-mentioned. Local-only: kept on the
+  /// optimistic message so a failed-send retry replays the same mentions.
+  final List<String> mentionedCharacterIds;
 
   /// True when this optimistic/user turn included pasted source notes.
   final bool includedSourceNotes;
@@ -89,6 +94,7 @@ class MobileCreationMessage {
       branch: branch,
       requestId: requestId,
       replyTo: replyTo,
+      mentionedCharacterIds: mentionedCharacterIds,
     );
   }
 

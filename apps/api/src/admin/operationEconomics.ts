@@ -162,7 +162,8 @@ const LABELS: Record<string, string> = {
   PAGE_REGENERATION: "Page regeneration",
   BOOK_REPLAN: "Book replan",
   VOICE_CALL_MINUTE: "Voice calls",
-  AUDIOBOOK_GENERATION: "Audiobook"
+  AUDIOBOOK_GENERATION: "Audiobook",
+  CHARACTER_PORTRAIT_GENERATION: "Character portraits"
 };
 
 export async function loadOperationEconomics(window: AdminWindow): Promise<AdminOperationEconomics> {
@@ -329,6 +330,7 @@ async function loadAttributedCostRows(window: AdminWindow): Promise<ProviderCost
           WHEN 'REPLAN_BOOK' THEN 'BOOK_REPLAN'
           WHEN 'CONTINUE_BOOK' THEN 'PAGE_REGENERATION'
           WHEN 'GENERATE_AUDIOBOOK' THEN 'AUDIOBOOK_GENERATION'
+          WHEN 'GENERATE_CHARACTER_PORTRAIT' THEN 'CHARACTER_PORTRAIT_GENERATION'
         END AS job_operation
       FROM "ProviderCallLog" l
       LEFT JOIN "GenerationJob" j ON j.id = l."generationJobId"

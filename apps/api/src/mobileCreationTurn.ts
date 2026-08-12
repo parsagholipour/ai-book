@@ -128,6 +128,14 @@ export type MobileCreationCoverPreview = NonNullable<MobileCreationTurn["coverPr
 export type MobileCreationResearch = z.infer<typeof mobileCreationResearchSchema>;
 export type { MobileCreationTurnQuestion };
 
+/** A library character sheet riding one turn, re-read fresh from the library. */
+export type CreationTurnCharacter = {
+  id: string;
+  name: string;
+  description: string;
+  fields: Array<{ key: string; value: string }>;
+};
+
 export type MobileCreationTurnRequest = {
   messages: MobileCreationMessage[];
   brief?: MobileBookRecipe | undefined;
@@ -136,6 +144,8 @@ export type MobileCreationTurnRequest = {
   sourceNotes?: string | undefined;
   /** Digested uploads for this chat; summaries/excerpts feed every turn. */
   attachments?: CreationAttachment[] | undefined;
+  /** Library characters @-mentioned on the active branch (messages reference them by name). */
+  characters?: CreationTurnCharacter[] | undefined;
   language?: string | undefined;
   conversationSummary?: string | undefined;
 };

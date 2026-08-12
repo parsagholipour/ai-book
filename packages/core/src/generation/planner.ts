@@ -14,6 +14,7 @@ import {
   type ToneProfile
 } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 
 export type CreatePlanPhase = "understand" | "shape" | "finalize";
@@ -85,6 +86,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "Never ask for optional tone, mood, conflict, ending, character names, scene details, chapter structure, exercises, calls to action, or other choices you can make while drafting the plan.",
             "Any necessary question must be plain, self-contained, tied directly to words the user supplied, and must not mention an unexplained character or detail invented by the plan.",
             ...mobileAutoPlanningGuidance(options.input),
+            ...mobileLibraryCharacterGuidance(options.input),
             "For the single necessary question, include 2-4 concise premade answers only when a few complete answers really cover it, and make every option a full answer usable as-is. When the answer is a value only the reader can supply - a name, a title, a place, a number, a date - set options to [] and let them type it. Never write an option that only describes how the reader will answer. Allow a custom answer unless the question is informational only.",
             'Declare how many answers you accept in answerKind: "choice" when exactly one option can be true, "multi" (up to 6 options) when the reader can honestly combine several and you can honour every pick, "open" with no options otherwise. The app draws the picker from answerKind, so never say "choose one or more" in the prompt and never list the options inside the prompt text.',
             "For every recurring character, include concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details suitable for a reusable character reference sheet.",
@@ -460,4 +462,25 @@ function mobileAutoPlanningGuidance(input: CreateProjectInput): string[] {
 
 function jsonRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+/**
+ * The user's @-mentioned library characters (snapshotted into
+ * `mediaSettings.mobile.characters`, visible to the model inside userInput).
+ * The verbatim-name demand is load-bearing: the plan schema strips unknown
+ * keys, so the name is the only link the reference-sheet seeding has back to
+ * the character's generated portrait.
+ */
+function mobileLibraryCharacterGuidance(input: CreateProjectInput): string[] {
+  const snapshots = libraryCharactersFromMediaSettings(input.mediaSettings);
+  if (snapshots.length === 0) {
+    return [];
+  }
+  const names = snapshots.map((snapshot) => `"${snapshot.name}"`).join(", ");
+  return [
+    `The user defined these characters in their library and asked for them by name: ${names}. Find them under mediaSettings.mobile.characters in userInput.`,
+    "Each of them MUST appear in the plan's characters array with the name kept EXACTLY as given, letter for letter.",
+    "Derive each one's role, traits, and visualRules from their stored description and details, and never contradict a stated attribute such as age, job, or language.",
+    "Give them real presence in the chapters, not a cameo."
+  ];
 }

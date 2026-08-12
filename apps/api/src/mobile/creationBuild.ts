@@ -10,6 +10,7 @@ import {
   type MobileBookAdvisorResponse,
   type MobileCreationDraftPayload,
 } from "../mobileCreation.js";
+import { BUILD_CHARACTER_SNAPSHOT_LIMIT } from "../mobileCreationSchemas.js";
 import { dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import {
   _chatTitleForPayload,
@@ -48,7 +49,10 @@ import {
   createFastRoutingTextModel,
   creditCostForOperation,
   generateJsonWithRetry,
+  libraryCharacterRelativeFile,
 } from "@book-maker/core";
+import { linearizeCreationMessages } from "../creationChatTree.js";
+import { fieldsFromJson as characterFieldsFromJson } from "./characterSerializer.js";
 import { prisma } from "@book-maker/db";
 import {
   GenerationAttemptConflictError,
@@ -232,8 +236,18 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
     const { draft } = prepared;
     const buildRequestId = overrides.requestId ?? `legacy-build-${draftId}-${draft.revision ?? 1}`;
     const selectedPresets = presetsWithResolvedPageCount(prepared.selectedPresets, prepared.pageCount);
+    // The @-mentioned characters are copied into the payload here — active
+    // branch only, read live from the library at this moment — so they ride
+    // `mediaSettings.mobile.characters` into the plan's inputSnapshot and the
+    // book stops depending on the library from now on. The stored payload's
+    // own `characters` is always discarded first: a draft payload is client
+    // JSON, and a planted snapshot naming another user's portraitFile must
+    // never survive into the book.
+    const characterSnapshots = await libraryCharacterSnapshotsForBuild(userId, prepared.finalPayload);
+    const { characters: _storedCharacters, ...preparedPayload } = prepared.finalPayload;
     const finalPayload = mobileCreationDraftPayloadSchema.parse({
-      ...prepared.finalPayload,
+      ...preparedPayload,
+      ...(characterSnapshots.length > 0 ? { characters: characterSnapshots } : {}),
       selectedPresets
     });
     const finalAdvisor: MobileBookAdvisorResponse = {
@@ -429,6 +443,46 @@ export function createCreationBuildHelpers(context: MobileRouteContext) {
   }
 
   return { prepareMobileCreationBuild, finalizeMobileCreationDraft, pageCountRecommendationsForPreflight };
+}
+
+/**
+ * The characters the book will actually carry: every @-mention on the ACTIVE
+ * branch (an edited-away mention stays out), resolved against the live library
+ * at build time. A character deleted since being mentioned simply drops out.
+ */
+async function libraryCharacterSnapshotsForBuild(
+  userId: string,
+  payload: MobileCreationDraftPayload
+): Promise<Array<Record<string, unknown>>> {
+  const active = linearizeCreationMessages(payload.messages ?? []).active;
+  // The union over a whole branch, clamped to what the payload schema accepts
+  // — each message caps its own mentions, but a chat is many messages, and an
+  // over-long list would fail the re-parse below as a 500 no retry can clear.
+  // First mentioned wins: that is the cast the chat was built around.
+  const ids = [
+    ...new Set(active.flatMap((message) => (message.characters ?? []).map((ref) => ref.id)))
+  ].slice(0, BUILD_CHARACTER_SNAPSHOT_LIMIT);
+  if (ids.length === 0) {
+    return [];
+  }
+  const rows = await prisma.libraryCharacter.findMany({ where: { id: { in: ids }, userId } });
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    fields: characterFieldsFromJson(row.fields),
+    // The same condition `serializeLibraryCharacter` calls `usedInBooks`, so
+    // what the app says about a character is what the book actually gets.
+    ...(row.portraitStatus === "READY" && row.portraitPath
+      ? {
+          portraitFile: libraryCharacterRelativeFile(userId, row.portraitPath),
+          // Adopted artwork is re-posed rather than reinterpreted, which is a
+          // different instruction to the renderer — so the provenance has to
+          // survive the copy into the book.
+          portraitSource: row.portraitSource === "ADOPTED_UPLOAD" ? "adopted_upload" : "generated"
+        }
+      : {})
+  }));
 }
 
 export function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcome): FastifyReply {

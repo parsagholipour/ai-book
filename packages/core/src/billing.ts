@@ -165,6 +165,7 @@ export type BillingOperation =
   | "BOOK_REPLAN"
   | "VOICE_CALL_MINUTE"
   | "AUDIOBOOK_GENERATION"
+  | "CHARACTER_PORTRAIT_GENERATION"
   | "PURCHASE_CREDIT_GRANT"
   | "SUBSCRIPTION_CREDIT_GRANT"
   | "PLAN_ALLOWANCE_GRANT"
@@ -240,6 +241,8 @@ export function creditCostForOperation(operation: BillingOperation, pricing: Cre
       return pricing.voiceCallPerMinute;
     case "AUDIOBOOK_GENERATION":
       return pricing.audiobookBase;
+    case "CHARACTER_PORTRAIT_GENERATION":
+      return pricing.characterPortraitGeneration;
     case "FULL_BOOK_GENERATION":
       return pricing.fullBookBase;
     case "PURCHASE_CREDIT_GRANT":

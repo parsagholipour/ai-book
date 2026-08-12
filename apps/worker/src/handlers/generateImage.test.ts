@@ -29,7 +29,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
 vi.mock("../generation/characterReferences.js", () => ({
   characterReferencePromptInstruction: () => "",
   ensureCharacterReferenceAssets: async () => [],
-  selectReferenceImagePaths: () => []
+  selectReferenceImagePaths: async () => ({ paths: [], libraryFaceNames: [] })
 }));
 vi.mock("./generateCover.js", () => ({ generateCover: vi.fn() }));
 vi.mock("@book-maker/core", async () => {
