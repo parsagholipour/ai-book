@@ -135,7 +135,8 @@ export const mediaSettingsSchema = z.object({
   finalReview: z.boolean().default(true),
   /**
    * Print the reader-facing Sources list at the end of the book. Unset leaves
-   * the automatic per-category decision in place; false suppresses it. Read it
+   * the automatic source-forward decision in place (SCIENCE, HEALTH, BIOGRAPHY,
+   * HISTORY); false suppresses it; true prints it when citations exist. Read it
    * with `includeSourcesPreference` from the live project row, not from a plan
    * snapshot — see that helper.
    */

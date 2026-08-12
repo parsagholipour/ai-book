@@ -1,31 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { compileBookMarkdown, includeSourcesPreference } from "./markdown.js";
+import { compileBookMarkdown, includeSourcesPreference, shouldPrintSourcesBackMatter } from "./markdown.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
+import type { BookCategory } from "../categories.js";
+import type { CreateProjectInput } from "../schemas/book.js";
 
 /**
  * The Sources list at the end of a book, which `compileBookMarkdown` rebuilds
  * from the project's research rows on every export rather than from page text.
- * Whether it prints at all is a per-category judgement plus a reader override,
- * and it is the one part of the compiler with nothing to do with chapters.
+ * Whether it prints at all is a source-forward category judgement plus a
+ * reader override, and it is the one part of the compiler with nothing to do
+ * with chapters.
  */
 describe("compileBookMarkdown sources back matter", () => {
-  it("renders source citations for factual kid-facing books without internal research summaries", () => {
-    const plan = makeFallbackPlan({
-      prompt: "An educational kids' picture book explaining how honeybees pollinate flowers.",
-      category: "KIDS",
-      targetPages: 1,
-      complexity: 3,
-      temperature: 0.7,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "every-page",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
+  it("omits source citations for educational kids books even when research rows exist", () => {
+    const plan = makeFallbackPlan(
+      compileInput("An educational kids' picture book explaining how honeybees pollinate flowers.", "KIDS")
+    );
 
     const markdown = compileBookMarkdown({
       plan,
@@ -44,65 +34,40 @@ describe("compileBookMarkdown sources back matter", () => {
       ]
     });
 
-    expect(markdown).toContain("## Sources");
-    expect(markdown).toContain("- [meetnewbooks.com](https://example.com/source)");
+    expect(markdown).not.toContain("## Sources");
+    expect(markdown).not.toContain("https://example.com/source");
     expect(markdown).not.toContain("For an AI book");
     expect(markdown).not.toContain("Gemini grounded summary");
     expect(markdown).not.toContain("No external citation");
   });
 
-  it("renders source citations for source-forward nonfiction categories", () => {
-    const plan = makeFallbackPlan({
-      prompt: "A careful patient education book about sleep and long-term health.",
-      category: "HEALTH",
-      targetPages: 1,
-      complexity: 6,
-      temperature: 0.45,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "template-driven",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
+  it.each(["SCIENCE", "HEALTH", "BIOGRAPHY", "HISTORY"] as const)(
+    "renders source citations for the %s category",
+    (category) => {
+      const plan = makeFallbackPlan(compileInput("A careful source-backed book about the topic.", category));
 
-    const markdown = compileBookMarkdown({
-      plan,
-      category: "HEALTH",
-      pages: [{ index: 1, title: "First", markdown: "The first page." }],
-      researchSources: [
-        {
-          title: "Sleep research",
-          url: "https://example.com/sleep",
-          summary: "A source that should appear in the back matter."
-        }
-      ]
-    });
+      const markdown = compileBookMarkdown({
+        plan,
+        category,
+        pages: [{ index: 1, title: "First", markdown: "The first page." }],
+        researchSources: [
+          {
+            title: "Sleep research",
+            url: "https://example.com/sleep",
+            summary: "A source that should appear in the back matter."
+          }
+        ]
+      });
 
-    expect(markdown).toContain("## Sources");
-    expect(markdown).toContain("- [Sleep research](https://example.com/sleep)");
-  });
+      expect(markdown).toContain("## Sources");
+      expect(markdown).toContain("- [Sleep research](https://example.com/sleep)");
+    }
+  );
 
   it("drops the sources back matter when the reader turned it off", () => {
-    const plan = makeFallbackPlan({
-      prompt: "A careful patient education book about sleep and long-term health.",
-      category: "HEALTH",
-      targetPages: 1,
-      complexity: 6,
-      temperature: 0.45,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "template-driven",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
+    const plan = makeFallbackPlan(
+      compileInput("A careful patient education book about sleep and long-term health.", "HEALTH")
+    );
 
     const markdown = compileBookMarkdown({
       plan,
@@ -122,6 +87,29 @@ describe("compileBookMarkdown sources back matter", () => {
     expect(markdown).not.toContain("https://example.com/sleep");
   });
 
+  it("prints source citations when the reader turned the list on for a non-source-forward book", () => {
+    const plan = makeFallbackPlan(
+      compileInput("A bedtime story about a rabbit who learns to listen to the rain.", "KIDS")
+    );
+
+    const markdown = compileBookMarkdown({
+      plan,
+      category: "KIDS",
+      pages: [{ index: 1, title: "First", markdown: "The rabbit tucked a blanket under his chin." }],
+      researchSources: [
+        {
+          title: "Rabbit facts",
+          url: "https://example.com/rabbits",
+          summary: "Background notes the reader asked to print."
+        }
+      ],
+      includeSources: true
+    });
+
+    expect(markdown).toContain("## Sources");
+    expect(markdown).toContain("- [Rabbit facts](https://example.com/rabbits)");
+  });
+
   it("reads the sources preference off a project's media settings", () => {
     expect(includeSourcesPreference({ includeSources: false })).toBe(false);
     expect(includeSourcesPreference({ includeSources: true })).toBe(true);
@@ -130,23 +118,20 @@ describe("compileBookMarkdown sources back matter", () => {
     expect(includeSourcesPreference(null)).toBeUndefined();
   });
 
+  it("prints automatically only for source-forward categories unless the reader overrides", () => {
+    expect(shouldPrintSourcesBackMatter({ category: "SCIENCE" })).toBe(true);
+    expect(shouldPrintSourcesBackMatter({ category: "HEALTH" })).toBe(true);
+    expect(shouldPrintSourcesBackMatter({ category: "KIDS" })).toBe(false);
+    expect(shouldPrintSourcesBackMatter({ category: "BUSINESS" })).toBe(false);
+    expect(shouldPrintSourcesBackMatter({ category: "CUSTOM" })).toBe(false);
+    expect(shouldPrintSourcesBackMatter({ category: "KIDS", includeSources: true })).toBe(true);
+    expect(shouldPrintSourcesBackMatter({ category: "HEALTH", includeSources: false })).toBe(false);
+  });
+
   it("omits source citations for fictional kid stories even when source rows exist", () => {
-    const plan = makeFallbackPlan({
-      prompt: "A bedtime story about a rabbit who learns to listen to the rain.",
-      category: "KIDS",
-      targetPages: 1,
-      complexity: 3,
-      temperature: 0.9,
-      language: "en",
-      mediaSettings: {
-        fullIllustrations: true,
-        illustrationCadence: "every-page",
-        includeCover: true,
-        coverTemplate: "auto",
-        finalReview: true,
-        toneProfile: "neutral" as const
-      }
-    });
+    const plan = makeFallbackPlan(
+      compileInput("A bedtime story about a rabbit who learns to listen to the rain.", "KIDS")
+    );
 
     const markdown = compileBookMarkdown({
       plan,
@@ -167,22 +152,7 @@ describe("compileBookMarkdown sources back matter", () => {
 
   it("omits source citations for kid fables with moral lessons", () => {
     const plan = {
-      ...makeFallbackPlan({
-        prompt: "A story for kids",
-        category: "KIDS",
-        targetPages: 1,
-        complexity: 3,
-        temperature: 0.8,
-        language: "en",
-        mediaSettings: {
-          fullIllustrations: true,
-          illustrationCadence: "template-driven",
-          includeCover: true,
-          coverTemplate: "kids",
-          finalReview: false,
-          toneProfile: "neutral" as const
-        }
-      }),
+      ...makeFallbackPlan(compileInput("A story for kids", "KIDS")),
       premise: "A retelling of the classic fable where slow and steady wins the race, with an instructional ending.",
       chapters: [
         {
@@ -218,22 +188,7 @@ describe("compileBookMarkdown sources back matter", () => {
 
   it("omits source citations for a custom-category bedtime story even when background research ran", () => {
     const plan = {
-      ...makeFallbackPlan({
-        prompt: "Write a 5 page book for children sleep",
-        category: "CUSTOM",
-        targetPages: 1,
-        complexity: 3,
-        temperature: 0.9,
-        language: "en",
-        mediaSettings: {
-          fullIllustrations: true,
-          illustrationCadence: "every-page",
-          includeCover: true,
-          coverTemplate: "auto",
-          finalReview: true,
-          toneProfile: "neutral" as const
-        }
-      }),
+      ...makeFallbackPlan(compileInput("Write a 5 page book for children sleep", "CUSTOM")),
       premise:
         "A gentle bedtime story where a child visits a magical vegetable garden at dusk, and each vegetable shares a calming sleep ritual, helping the child wind down for the night.",
       researchNotes: [
@@ -265,22 +220,7 @@ describe("compileBookMarkdown sources back matter", () => {
 
   it("omits source citations for story-category books even when the plan carries research", () => {
     const plan = {
-      ...makeFallbackPlan({
-        prompt: "A historical drama set in a lighthouse during a real storm.",
-        category: "STORY",
-        targetPages: 1,
-        complexity: 5,
-        temperature: 0.85,
-        language: "en",
-        mediaSettings: {
-          fullIllustrations: false,
-          illustrationCadence: "template-driven",
-          includeCover: true,
-          coverTemplate: "fiction",
-          finalReview: true,
-          toneProfile: "neutral" as const
-        }
-      }),
+      ...makeFallbackPlan(compileInput("A historical drama set in a lighthouse during a real storm.", "STORY")),
       researchQueries: ["historical lighthouse storms"],
       researchNotes: [
         {
@@ -309,3 +249,22 @@ describe("compileBookMarkdown sources back matter", () => {
     expect(markdown).not.toContain("https://example.com/storms");
   });
 });
+
+function compileInput(prompt: string, category: BookCategory): CreateProjectInput {
+  return {
+    prompt,
+    category,
+    targetPages: 1,
+    complexity: category === "KIDS" || category === "CUSTOM" || category === "STORY" ? 3 : 6,
+    temperature: 0.7,
+    language: "en",
+    mediaSettings: {
+      fullIllustrations: true,
+      illustrationCadence: category === "KIDS" ? "every-page" : "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      toneProfile: "neutral" as const
+    }
+  };
+}

@@ -1,5 +1,5 @@
 import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
-import { isNarrativeBookCategory, isSourceForwardBookCategory } from "../categories.js";
+import { isSourceForwardBookCategory } from "../categories.js";
 import { DEFAULT_MARKDOWN_LABELS, markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
 
 // Re-exported because `markdownLabels` was always part of this module's surface
@@ -36,8 +36,9 @@ export type CompileMarkdownInput = {
   researchSources?: Array<{ title: string; url?: string | undefined; summary: string }>;
   /**
    * Reader preference for the Sources back matter. `false` drops the section
-   * even when the category and plan would normally print it; `undefined` leaves
-   * the automatic decision in {@link shouldRenderSources} alone.
+   * even when the category would normally print it; `true` prints it when
+   * citations exist; `undefined` leaves the automatic decision in
+   * {@link shouldPrintSourcesBackMatter} alone.
    */
   includeSources?: boolean | undefined;
   /**
@@ -171,7 +172,7 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
   const heading = chapterHeadingFormat(input, labels, presentation);
   const contents =
     presentation === "chapters" && chapterStarts.length > 1 ? formatContentsSection(chapterStarts, labels, heading) : "";
-  const research = formatReaderFacingSources(input, pages);
+  const research = formatReaderFacingSources(input);
   const coverImagePath = input.cover?.imagePath;
   // The cover already carries the title, subtitle and byline. A title page is
   // only the no-cover fallback; rendering both repeats the same front matter
@@ -645,12 +646,36 @@ function escapeMarkdownLinkText(text: string): string {
   return text.replace(/[\\[\]]/g, "\\$&");
 }
 
-function formatReaderFacingSources(input: CompileMarkdownInput, pages: MarkdownPage[]): string {
-  if (input.includeSources === false) {
+/**
+ * Whether the Sources back matter should print, ignoring whether any citations
+ * actually exist. `false` always drops it; `true` always keeps it (the
+ * compiler still needs citations); unset follows the source-forward categories
+ * (SCIENCE, HEALTH, BIOGRAPHY, HISTORY).
+ */
+export function shouldPrintSourcesBackMatter(options: {
+  category?: string | undefined;
+  includeSources?: boolean | undefined;
+}): boolean {
+  if (options.includeSources === false) {
+    return false;
+  }
+  if (options.includeSources === true) {
+    return true;
+  }
+  return isSourceForwardBookCategory(options.category);
+}
+
+function formatReaderFacingSources(input: CompileMarkdownInput): string {
+  if (
+    !shouldPrintSourcesBackMatter({
+      category: input.category,
+      includeSources: input.includeSources
+    })
+  ) {
     return "";
   }
   const citations = uniqueResearchCitations(input.researchSources ?? []);
-  if (citations.length === 0 || !shouldRenderSources(input, pages)) {
+  if (citations.length === 0) {
     return "";
   }
   return citations.join("\n");
@@ -688,61 +713,6 @@ function normalizeSourceUrl(url: string): string {
   }
 }
 
-function shouldRenderSources(input: CompileMarkdownInput, pages: MarkdownPage[]): boolean {
-  if (isSourceForwardBookCategory(input.category)) {
-    return true;
-  }
-
-  if (isNarrativeBookCategory(input.category)) {
-    return false;
-  }
-
-  const decisionText = sourceDecisionText(input, pages);
-  if (hasNarrativeStorySignals(decisionText)) {
-    return false;
-  }
-
-  return hasPlannedResearchQueries(input.plan) || hasFactualBackMatterSignals(decisionText);
-}
-
-function hasPlannedResearchQueries(plan: BookPlan): boolean {
-  return plan.researchQueries.some((query) => query.trim().length > 0);
-}
-
-function sourceDecisionText(input: CompileMarkdownInput, pages: MarkdownPage[]): string {
-  const plan = input.plan;
-  return [
-    input.category ?? "",
-    plan.title,
-    plan.subtitle ?? "",
-    plan.premise,
-    plan.audience,
-    ...plan.voiceGuide,
-    ...plan.chapters.flatMap((chapter) => [chapter.title, chapter.summary, ...chapter.keyBeats]),
-    ...pages.map((page) => `${page.title} ${plainTextFromMarkdown(page.markdown)}`)
-  ]
-    .join("\n")
-    .toLowerCase();
-}
-
-function plainTextFromMarkdown(markdown: string): string {
-  return markdown
-    .replace(/!\[[^\]]*]\([^)]+\)/g, " ")
-    .replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, " ")
-    .replace(/[*_`>#|~-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function hasFactualBackMatterSignals(text: string): boolean {
-  return FACTUAL_BACK_MATTER_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-function hasNarrativeStorySignals(text: string): boolean {
-  return NARRATIVE_STORY_PATTERNS.some((pattern) => pattern.test(text));
-}
-
 const PROMPT_LEAK_PATTERNS = [
   /global visual style/i,
   /continuity rules:/i,
@@ -755,23 +725,4 @@ const PROMPT_LEAK_PATTERNS = [
   /research this for/i,
   /book generation/i,
   /generation plan/i
-];
-
-const NARRATIVE_STORY_PATTERNS = [
-  /\b(?:fiction|fictional|novel|novella|storybook)\b/i,
-  /\b(?:short|bedtime|adventure)\s+stor(?:y|ies)\b/i,
-  /\b(?:fable|fairy\s?tale|folk\s?tale|tall tale|parable)\b/i,
-  /\bonce upon a time\b/i,
-  /\b(?:lullab(?:y|ies)|nursery rhymes?)\b/i
-];
-
-const FACTUAL_BACK_MATTER_PATTERNS = [
-  /\b(?:nonfiction|non-fiction|factual|facts?|source-backed|research-grounded|evidence-based)\b/i,
-  /\b(?:science|scientific|experiment|biology|chemistry|physics|astronomy|geology|ecology)\b/i,
-  /\b(?:history|historical|biography|biographical|ancient|archaeology|civilization)\b/i,
-  /\b(?:current|recent|latest|today|real-world|real world|true story|based on real)\b/i,
-  /\b(?:medicine|medical|health|law|legal|finance|financial|safety)\b/i,
-  /\b(?:explainer|field guide|guidebook|educational|learn about|teach(?:es|ing)? about)\b/i,
-  /\b(?:life cycle|ecosystem|habitat|pollinat(?:e|es|ion|or)|climate|weather|planet|space|ocean)\b/i,
-  /\bhow\b.{0,80}\b(?:works?|happens?|changes?|grows?|moves?|forms?|pollinat(?:es|ion)|survives?)\b/i
 ];

@@ -2,7 +2,7 @@ import { type BookEditIntent } from "../bookEditIntent.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { applyPresentationPreference } from "./presentationEdits.js";
 import { createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
-import { includeSourcesPreference } from "@book-maker/core";
+import { includeSourcesPreference, shouldPrintSourcesBackMatter } from "@book-maker/core";
 
 /**
  * Applies a `back_matter` intent: the reader-facing Sources list at the end of
@@ -31,14 +31,14 @@ export async function applyBackMatterEdit(
   if (!includeSources && project.research.length === 0) {
     return reply("This book doesn’t have a sources list at the end, so there’s nothing to remove there.");
   }
-  // `undefined` is the automatic per-category decision, which already prints
-  // the list wherever it belongs — so it counts as "on" for a restore request.
-  if (includeSources === (current ?? true)) {
-    return reply(
-      includeSources
-        ? "The sources list is already set to print at the end of your book."
-        : "I’ve already taken the sources list out of this book."
-    );
+  if (includeSources) {
+    // Unset follows the source-forward categories; only no-op when that
+    // automatic decision (or an explicit true) would already print the list.
+    if (shouldPrintSourcesBackMatter({ category: project.category, includeSources: current })) {
+      return reply("The sources list is already set to print at the end of your book.");
+    }
+  } else if (current === false) {
+    return reply("I’ve already taken the sources list out of this book.");
   }
   if (!project.currentPlanId) {
     return reply("I can change that once this book has finished generating.");

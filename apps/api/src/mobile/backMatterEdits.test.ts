@@ -109,4 +109,105 @@ describe("mobile back matter edits", () => {
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
     await app.close();
   });
+
+  it("says the list is already gone when the reader already turned it off", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      completeProjectWithResearch({
+        mediaSettings: {
+          ...defaultMediaSettings(),
+          includeSources: false
+        }
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Remove the sources at the end of the book" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().reply.content).toMatch(/already taken the sources list out/i);
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("restores the sources list on a non-source-forward book by pinning includeSources true", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProjectWithResearch());
+    vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-compile", type: "COMPILE_EXPORT" }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Add the sources back at the end" }
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.operation).toBeNull();
+    expect(body.reply.metadata).toMatchObject({ charged: false, backMatter: { includeSources: true } });
+    expect(body.reply.content).toMatch(/sources list is back/i);
+    expect(mockPrisma.project.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          mediaSettings: expect.objectContaining({ includeSources: true })
+        })
+      })
+    );
+    expect(vi.mocked(enqueueGenerationJob)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "COMPILE_EXPORT",
+        payload: expect.objectContaining({
+          [PRESENTATION_ONLY_RECOMPILE]: true
+        })
+      })
+    );
+    await app.close();
+  });
+
+  it("does not recompile a restore when a source-forward book already prints the list automatically", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      completeProjectWithResearch({
+        category: "HEALTH"
+      })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/messages",
+      headers: bearer("token-a"),
+      payload: { message: "Add the sources back at the end" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().reply.content).toMatch(/already set to print/i);
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+    expect(vi.mocked(enqueueGenerationJob)).not.toHaveBeenCalled();
+    await app.close();
+  });
 });
+
+function defaultMediaSettings() {
+  return projectRecord().mediaSettings as Record<string, unknown>;
+}
+
+function completeProjectWithResearch(overrides: Record<string, unknown> = {}) {
+  return projectRecord({
+    id: "project-1",
+    status: "COMPLETE",
+    currentPlanId: "plan-1",
+    currentPlan: approvedPlanRecord(),
+    pages: generatedPages(),
+    research: [{ title: "Sleep research", url: "https://example.com/sleep", summary: "Background." }],
+    ...overrides
+  });
+}
