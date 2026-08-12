@@ -237,11 +237,10 @@ void main() {
       expect(zooms, [at(0.5, 0.5)]);
     });
 
-    testWidgets('the zoom goes out on the way down, not on the release', (
-      tester,
-    ) async {
-      // A double tap that waits for the second finger to lift trails the
-      // gesture. This is `onDoubleTapDown`, held to by the pointer stream.
+    testWidgets('the zoom waits for the second finger to lift', (tester) async {
+      // A second contact that is still on its way down might yet become a
+      // drag. Zooming before that is known is what made a tap-then-scroll
+      // zoom the page.
       final zooms = <Offset>[];
       await pumpLayer(
         tester,
@@ -253,10 +252,33 @@ void main() {
       final second = await tester.startGesture(at(0.5, 0.5));
       await tester.pump();
 
-      expect(zooms, hasLength(1));
+      expect(zooms, isEmpty);
 
       await second.up();
       await tester.pump();
+
+      expect(zooms, hasLength(1));
+    });
+
+    testWidgets('a drag on the second tap is scrolling, not a zoom', (
+      tester,
+    ) async {
+      final taps = <NormPoint>[];
+      final zooms = <Offset>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(onTap: taps.add, onDoubleTap: zooms.add),
+      );
+
+      await tester.tapAt(at(0.5, 0.5));
+      await tester.pump(const Duration(milliseconds: 40));
+      final second = await tester.startGesture(at(0.5, 0.5));
+      await second.moveTo(at(0.5, 0.1));
+      await second.up();
+      await tester.pump();
+
+      expect(zooms, isEmpty);
+      expect(taps, hasLength(1), reason: 'the drag is not a second tap');
     });
 
     testWidgets('two taps far apart in time are two taps', (tester) async {
