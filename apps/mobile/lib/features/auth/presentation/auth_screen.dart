@@ -221,6 +221,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               },
               onFieldSubmitted: (_) => _submit(),
             ),
+            if (!_isSignUp) ...[
+              const SizedBox(height: 6),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: AppButton.text(
+                  onPressed: isSubmitting
+                      ? null
+                      : () => context.push(
+                          '/auth/forgot-password',
+                          extra: _emailController.text,
+                        ),
+                  label: 'Forgot password?',
+                ),
+              ),
+            ],
             if (_isSignUp) ...[
               const SizedBox(height: 14),
               _LegalAttestation(

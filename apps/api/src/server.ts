@@ -12,8 +12,10 @@ import { sweepExpiredCreationAttachments } from "./attachmentStorage.js";
 import { registerAuth } from "./auth.js";
 import { createGooglePlayVerifierFromConfig } from "./googlePlayBilling.js";
 import { runSubscriptionRenewalSweep } from "./subscriptionRenewal.js";
+import { createMailerFromConfig } from "./mailer.js";
 import { mobileAuthRoutes } from "./mobileAuth.js";
 import { mobileImportRoutes } from "./mobileImports.js";
+import { mobilePasswordResetRoutes } from "./mobilePasswordReset.js";
 import { mobileProjectRoutes, reconcileRetryablePlanRevisionOperations } from "./mobileProjects.js";
 import { sweepStaleVoiceCalls } from "./mobile/voiceCalls.js";
 import { mobileSafetyRoutes } from "./mobileSafety.js";
@@ -31,6 +33,8 @@ const app = Fastify({
       "req.headers.cookie",
       "res.headers.set-cookie",
       "body.password",
+      "body.newPassword",
+      "body.code",
       "body.refreshToken",
       "body.purchaseToken",
       "body.comment",
@@ -151,6 +155,14 @@ await app.register(swagger, {
 });
 await app.register(swaggerUi, { routePrefix: "/docs" });
 await app.register(mobileAuthRoutes);
+const mailer = createMailerFromConfig(config, app.log);
+if (!mailer) {
+  app.log.warn(
+    { event: "email.unconfigured" },
+    "No SMTP_URL configured; password reset will answer 503 EMAIL_UNAVAILABLE"
+  );
+}
+await app.register(mobilePasswordResetRoutes, { mailer });
 await app.register(mobileProjectRoutes);
 await app.register(mobileImportRoutes);
 await app.register(mobileSafetyRoutes);

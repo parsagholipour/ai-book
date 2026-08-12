@@ -45,11 +45,17 @@ class FakeAuthRepository implements AuthRepository {
     AuthSession? initialSession,
     this.restoreError,
     this.signInError,
+    this.requestPasswordResetError,
+    this.resetPasswordError,
   }) : _session = initialSession;
 
   AuthSession? _session;
   final Object? restoreError;
   final Object? signInError;
+  final Object? requestPasswordResetError;
+  final Object? resetPasswordError;
+  final List<String> passwordResetRequests = [];
+  String? lastResetCode;
 
   @override
   Future<AuthSession?> restoreSession() async {
@@ -94,6 +100,30 @@ class FakeAuthRepository implements AuthRepository {
         tokens: current.tokens,
       );
     }
+  }
+
+  @override
+  Future<void> requestPasswordReset({required String email}) async {
+    final error = requestPasswordResetError;
+    if (error != null) {
+      throw error;
+    }
+    passwordResetRequests.add(email.trim());
+  }
+
+  @override
+  Future<AuthSession> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    final error = resetPasswordError;
+    if (error != null) {
+      throw error;
+    }
+    lastResetCode = code;
+    _session = fakeSession(email: email);
+    return _session!;
   }
 
   @override

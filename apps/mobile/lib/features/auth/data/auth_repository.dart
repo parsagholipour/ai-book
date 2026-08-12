@@ -16,6 +16,12 @@ abstract interface class AuthRepository {
     bool ageGuardianAttested = false,
   });
   Future<void> acceptCurrentLegalDocuments();
+  Future<void> requestPasswordReset({required String email});
+  Future<AuthSession> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  });
   Future<void> logout();
 }
 
@@ -99,6 +105,36 @@ class MobileAuthRepository implements AuthRepository {
     await apiClient.postJson(
       '/api/mobile/legal/acceptance',
       data: {'termsAccepted': true},
+    );
+  }
+
+  @override
+  Future<void> requestPasswordReset({required String email}) async {
+    // Always answers ok for a well-formed email — the server never says
+    // whether an account exists. Failures that do surface (rate limit, mail
+    // not configured) are real and worth showing.
+    await apiClient.postJson(
+      '/api/mobile/auth/password/forgot',
+      data: {'email': email.trim()},
+      requiresAuth: false,
+    );
+  }
+
+  @override
+  Future<AuthSession> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) {
+    // A successful reset answers with a fresh session — the reader lands in
+    // the app signed in, not back at the sign-in form.
+    return _createSession(
+      '/api/mobile/auth/password/reset',
+      data: {
+        'email': email.trim(),
+        'code': code.trim(),
+        'newPassword': newPassword,
+      },
     );
   }
 

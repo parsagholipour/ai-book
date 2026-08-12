@@ -6,6 +6,7 @@ import '../../features/account/presentation/account_screen.dart';
 import '../../features/auth/domain/legal_gate.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_screen.dart';
+import '../../features/auth/presentation/forgot_password_screen.dart';
 import '../../features/auth/presentation/legal_acceptance_screen.dart';
 import '../../features/auth/presentation/sample_book_screen.dart';
 import '../../features/projects/presentation/book_edit_screen.dart';
@@ -131,6 +132,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/auth/sign-up',
         pageBuilder: (context, state) =>
             _appPage(state, const AuthScreen(mode: AuthScreenMode.signUp)),
+      ),
+      GoRoute(
+        path: '/auth/forgot-password',
+        pageBuilder: (context, state) => _appPage(
+          state,
+          ForgotPasswordScreen(
+            initialEmail: state.extra is String ? state.extra as String : null,
+          ),
+        ),
       ),
       GoRoute(
         path: '/legal/acceptance',

@@ -282,6 +282,7 @@ model User {
   voiceCalls              VoiceCall[]
   legalAcceptances        LegalAcceptance[]
   generationAttempts      GenerationAttempt[]
+  passwordResetRequests   PasswordResetRequest[]
 }
 
 /// Append-only proof that a user affirmatively accepted a specific pair of
@@ -326,6 +327,26 @@ model UserPasswordCredential {
   updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// A pending "forgot password" verification. Only the scrypt hash of the
+/// emailed 6-digit code is stored; `attempts` caps guesses per code and a new
+/// request replaces any older pending ones, so the newest email is always the
+/// one that works.
+model PasswordResetRequest {
+  id            String    @id @default(cuid())
+  userId        String
+  codeHash      String
+  expiresAt     DateTime
+  attempts      Int       @default(0)
+  consumedAt    DateTime?
+  requestIpHash String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt, expiresAt])
 }
 
 model MobileSession {

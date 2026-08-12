@@ -94,6 +94,23 @@ const envSchema = z.object({
   TERMS_OF_SERVICE_URL: z.string().url().default(PUBLIC_TERMS_OF_SERVICE_URL),
   ACCOUNT_DELETION_URL: z.string().url().default(PUBLIC_ACCOUNT_DELETION_URL),
   SUPPORT_EMAIL: z.string().email().default(LEGAL_SUPPORT_EMAIL),
+  /**
+   * SMTP endpoint for transactional mail (password reset codes), e.g.
+   * `smtps://user:pass@smtp.example.com:465`. Unset in production disables the
+   * forgot-password route with an explicit 503 rather than pretending to send.
+   */
+  SMTP_URL: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const trimmed = value?.trim();
+      return trimmed ? trimmed : undefined;
+    }),
+  EMAIL_FROM: z.string().default("Tomeza <no-reply@ravanix.app>"),
+  MOCK_EMAIL: z
+    .string()
+    .optional()
+    .transform(booleanEnv("MOCK_EMAIL")),
   GOOGLE_PLAY_PACKAGE_NAME: z.string().optional(),
   GOOGLE_PLAY_ACCESS_TOKEN: z.string().optional(),
   GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: z.string().optional(),
@@ -143,7 +160,7 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform(booleanEnv("MOCK_GOOGLE_PLAY_BILLING"))
-}).transform(({ NODE_ENV, PORT, RAILWAY_ENVIRONMENT, API_PORT, MOCK_AI, MOCK_GOOGLE_PLAY_BILLING, ...env }) => {
+}).transform(({ NODE_ENV, PORT, RAILWAY_ENVIRONMENT, API_PORT, MOCK_AI, MOCK_GOOGLE_PLAY_BILLING, MOCK_EMAIL, ...env }) => {
   const nodeEnv = NODE_ENV?.trim() || undefined;
   const devMode = nodeEnv === "development" || nodeEnv === "test";
   return {
@@ -151,6 +168,9 @@ const envSchema = z.object({
     NODE_ENV: nodeEnv,
     MOCK_AI,
     MOCK_GOOGLE_PLAY_BILLING: devMode ? MOCK_GOOGLE_PLAY_BILLING ?? true : false,
+    // Same shape as the Play mock: on by default in dev so the reset code lands
+    // in the API log instead of requiring an SMTP server, never on in prod.
+    MOCK_EMAIL: devMode ? MOCK_EMAIL ?? true : false,
     API_PORT: RAILWAY_ENVIRONMENT ? PORT ?? API_PORT ?? 4001 : API_PORT ?? PORT ?? 4001
   };
 });

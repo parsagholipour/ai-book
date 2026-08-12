@@ -28,8 +28,8 @@ const SCRYPT_MAXMEM = 64 * 1024 * 1024;
 const DEFAULT_SIGN_UP_RATE_LIMIT = { maxAttempts: 5, windowMs: 15 * 60 * 1000 };
 const DEFAULT_SIGN_IN_RATE_LIMIT = { maxAttempts: 10, windowMs: 15 * 60 * 1000 };
 
-const emailSchema = z.string().trim().email().max(254).transform(normalizeEmail);
-const passwordSchema = z.string().min(8).max(200);
+export const emailSchema = z.string().trim().email().max(254).transform(normalizeEmail);
+export const passwordSchema = z.string().min(8).max(200);
 const loginPasswordSchema = z.string().min(1).max(200);
 const displayNameSchema = z
   .string()
@@ -588,7 +588,7 @@ function safeEqual(left: Buffer, right: Buffer): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-function requestSessionContext(request: FastifyRequest): MobileSessionContext {
+export function requestSessionContext(request: FastifyRequest): MobileSessionContext {
   const rawUserAgent = request.headers["user-agent"];
   const userAgent = Array.isArray(rawUserAgent) ? rawUserAgent.join(" ") : rawUserAgent;
   return {
@@ -601,7 +601,7 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function authSessionResponse(
+export function authSessionResponse(
   user: AuthUserRecord | AuthUser,
   session: IssuedMobileSession,
   legalAccepted: boolean
@@ -635,7 +635,7 @@ function isSerializedAuthUser(user: AuthUserRecord | AuthUser): user is AuthUser
   return typeof user.createdAt === "string";
 }
 
-function isActiveUser(user: AuthUserRecord): boolean {
+export function isActiveUser(user: AuthUserRecord): boolean {
   return user.status === "ACTIVE" && !user.disabledAt;
 }
 
@@ -661,7 +661,7 @@ function invalidCredentials(reply: FastifyReply): FastifyReply {
   return sendAuthError(reply, 401, "INVALID_CREDENTIALS", "Email or password is incorrect.");
 }
 
-function sendAuthError(reply: FastifyReply, statusCode: number, code: string, message: string): FastifyReply {
+export function sendAuthError(reply: FastifyReply, statusCode: number, code: string, message: string): FastifyReply {
   return reply.code(statusCode).send({
     error: {
       code,
@@ -683,7 +683,7 @@ function isUniqueConstraintError(error: unknown): boolean {
   );
 }
 
-const authErrorResponseSchema = {
+export const authErrorResponseSchema = {
   type: "object",
   required: ["error"],
   properties: {
@@ -727,7 +727,7 @@ const sessionResponseSchema = {
   additionalProperties: false
 } as const;
 
-const authSessionResponseSchema = {
+export const authSessionResponseSchema = {
   type: "object",
   required: ["user", "session"],
   properties: {

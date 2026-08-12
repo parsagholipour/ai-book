@@ -45,6 +45,14 @@ class AuthController extends AsyncNotifier<AuthSession?> {
     );
   }
 
+  /// Installs a session minted outside the sign-in/sign-up calls — the
+  /// password reset flow signs the reader in with the server's response. The
+  /// screen owns its own loading and error surface, so nothing here emits
+  /// loading or error states for other listeners to re-announce.
+  void adoptSession(AuthSession session) {
+    state = AsyncData(session);
+  }
+
   Future<void> acceptCurrentLegalDocuments() async {
     final current = state.asData?.value;
     if (current == null) return;
