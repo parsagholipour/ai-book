@@ -94,6 +94,15 @@ class MobileReaderRepository implements ReaderRepository {
 
   _LocatorCacheEntry? _locatorCache;
 
+  /// The last position write for a book, so the next one waits for it.
+  ///
+  /// The store publishes through a temporary file it names after the real one,
+  /// and three call sites write unawaited — the debounced page turn, a bookmark
+  /// change and the flush in `dispose`. Overlapping writes would otherwise race
+  /// on that one scratch name, and the loser renames a file the winner has
+  /// already moved.
+  final Map<String, Future<void>> _stateWrites = {};
+
   @override
   Future<CachedExport> ensureExport({
     required String projectId,
@@ -110,11 +119,19 @@ class MobileReaderRepository implements ReaderRepository {
   }
 
   @override
-  Future<ReaderState> loadState(String projectId) => _stateStore.load(projectId);
+  Future<ReaderState> loadState(String projectId) =>
+      _stateStore.load(projectId);
 
   @override
-  Future<void> saveState(String projectId, ReaderState state) =>
-      _stateStore.save(projectId, state);
+  Future<void> saveState(String projectId, ReaderState state) {
+    // Chained rather than concurrent — see [_stateWrites]. A failed write does
+    // not poison the chain: the next save still runs, against the same file.
+    final pending = (_stateWrites[projectId] ?? Future<void>.value())
+        .then((_) => _stateStore.save(projectId, state))
+        .catchError((_) {});
+    _stateWrites[projectId] = pending;
+    return pending;
+  }
 
   @override
   Future<List<ReaderAnnotation>> loadAnnotations(String projectId) =>
@@ -140,6 +157,7 @@ class MobileReaderRepository implements ReaderRepository {
     if (_locatorCache?.projectId == projectId) {
       _locatorCache = null;
     }
+    _stateWrites.remove(projectId);
     await _storage.clearProject(projectId);
   }
 

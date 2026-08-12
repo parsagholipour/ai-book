@@ -64,15 +64,26 @@ const _minimumNeedle = 4;
 /// Ink and placed text have no text to find. They keep their coordinates and
 /// are reported as [ReanchorResult.carried] so the reader can be told they came
 /// from an earlier version.
-Future<ReanchorResult> reanchorAnnotations({
+/// [isCancelled] stops the pass where it stands — the reader closed the book —
+/// and answers null so the caller writes nothing. A pass that ran to the end
+/// against a document that turned out to be unreadable answers null too: see
+/// [_readAnyPage].
+Future<ReanchorResult?> reanchorAnnotations({
   required List<ReaderAnnotation> annotations,
   required int pageCount,
   required int revision,
   required ReanchorPageLoader loadPage,
+  bool Function()? isCancelled,
   int searchRadius = 3,
   int maxPagesScanned = 40,
 }) async {
   final cache = <int, ReanchorPage?>{};
+  // Whether any page of this document yielded text. A disposed document — the
+  // reader left while the pass ran — answers every page with nothing rather
+  // than failing, and reading that as "the words are gone" is how closing the
+  // book orphaned all of its markup, with the new revision stamped on so
+  // nothing ever looked again.
+  var readAnyText = false;
   Future<ReanchorPage?> pageAt(int number) async {
     if (number < 1 || number > pageCount) {
       return null;
@@ -80,7 +91,12 @@ Future<ReanchorResult> reanchorAnnotations({
     if (cache.containsKey(number)) {
       return cache[number];
     }
-    return cache[number] = await loadPage(number);
+    final page = await loadPage(number);
+    // An empty page is not a page: a passage cannot be looked for in it, and a
+    // whole document of them is a document that is no longer there.
+    final usable = page != null && page.fullText.isNotEmpty ? page : null;
+    if (usable != null) readAnyText = true;
+    return cache[number] = usable;
   }
 
   final updated = <ReaderAnnotation>[];
@@ -88,11 +104,19 @@ Future<ReanchorResult> reanchorAnnotations({
   var orphaned = 0;
   var carried = 0;
 
+  /// Orphans that came from a search coming up empty, rather than from a page
+  /// the shorter book no longer has. Only these can be a lie told by a document
+  /// that has gone away.
+  var orphanedBySearch = 0;
+
   // Walked in page order so the outward searches of neighbouring annotations
   // hit the same cached pages.
   final ordered = [...annotations]..sort((a, b) => a.page.compareTo(b.page));
 
   for (final annotation in ordered) {
+    if (isCancelled?.call() ?? false) {
+      return null;
+    }
     if (annotation.isDeleted || !annotation.isStaleFor(revision)) {
       updated.add(annotation);
       continue;
@@ -133,6 +157,7 @@ Future<ReanchorResult> reanchorAnnotations({
       // rewritten. A later edit changes the revision again and re-tries it.
       updated.add(annotation.withAnchoring(revision: revision, orphaned: true));
       orphaned++;
+      orphanedBySearch++;
       continue;
     }
 
@@ -145,6 +170,14 @@ Future<ReanchorResult> reanchorAnnotations({
       ),
     );
     moved++;
+  }
+
+  // A search that found nothing anywhere, in a document that yielded no text
+  // anywhere, is the document being gone rather than the book being rewritten.
+  // The whole pass stands down together — ink and placed text are stamped with
+  // the new revision in the same write, so half-landing would be worse.
+  if (orphanedBySearch > 0 && !readAnyText) {
+    return null;
   }
 
   updated.sort(_byPageThenCreation);

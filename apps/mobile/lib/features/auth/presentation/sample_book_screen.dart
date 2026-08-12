@@ -108,7 +108,9 @@ class _SampleBookScreenState extends ConsumerState<SampleBookScreen> {
                   Expanded(
                     child: ref.watch(readerViewerBuilderProvider)(
                       context,
-                      path,
+                      // The sample is one fixed file that is never recompiled
+                      // under the reader, so its path is a whole identity.
+                      PdfDocumentRefFile(path),
                       _controller,
                       _params,
                       1,

@@ -108,6 +108,47 @@ void main() {
     });
   });
 
+  test('publishes through a temporary file and leaves none behind', () async {
+    await store.save('project-1', const ReaderState(lastPage: 9));
+
+    final directory = Directory(
+      '${root.path}/${ReaderStorage.directoryName}/project-1',
+    );
+    final names = await directory
+        .list()
+        .map((entry) => entry.uri.pathSegments.last)
+        .toList();
+
+    expect(names, contains('state.json'));
+    expect(names.where((name) => name.endsWith('.part')), isEmpty);
+  });
+
+  test('a truncated write cannot be what the next open reads', () async {
+    await store.save(
+      'project-1',
+      ReaderState(
+        lastPage: 42,
+        bookmarks: [
+          ReaderBookmark(
+            page: 12,
+            label: 'Page 12',
+            createdAt: DateTime.utc(2026),
+          ),
+        ],
+      ),
+    );
+    // What a process killed mid-write used to leave: the real file, half
+    // written. The scratch name absorbs that now, so the bookmarks survive.
+    await File(
+      '${root.path}/${ReaderStorage.directoryName}/project-1/state.json.part',
+    ).writeAsString('{"lastPage": 9');
+
+    final state = await store.load('project-1');
+
+    expect(state.lastPage, 42);
+    expect(state.bookmarks, hasLength(1));
+  });
+
   group('ReaderBookmark', () {
     test('is approximate once the book has been recompiled', () {
       final bookmark = ReaderBookmark(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import 'reader_menu.dart';
 
@@ -11,6 +12,7 @@ import 'reader_menu.dart';
 class ReaderAppBar extends StatefulWidget implements PreferredSizeWidget {
   const ReaderAppBar({
     required this.title,
+    required this.projectId,
     required this.bookmarked,
     required this.immersive,
     required this.markupCount,
@@ -24,6 +26,9 @@ class ReaderAppBar extends StatefulWidget implements PreferredSizeWidget {
   });
 
   final String title;
+
+  /// The book being read, for the case where there is nothing behind it to pop.
+  final String projectId;
   final bool bookmarked;
   final bool immersive;
   final int markupCount;
@@ -76,6 +81,17 @@ class _ReaderAppBarState extends State<ReaderAppBar> {
   Widget build(BuildContext context) {
     return AppBar(
       title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+      // A reader who arrived by deep link has nothing behind them to pop, and
+      // Android back would leave the app rather than the book. The same rule
+      // the waiting scaffold states, applied to the screen that shows it for
+      // the whole session rather than for a moment.
+      leading: Navigator.of(context).canPop()
+          ? null
+          : IconButton(
+              tooltip: 'Close',
+              icon: const Icon(Icons.close),
+              onPressed: () => context.go('/projects/${widget.projectId}'),
+            ),
       actions: [
         IconButton(
           icon: const Icon(Icons.search),

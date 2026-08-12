@@ -51,7 +51,15 @@ ReanchorPageLoader pdfReanchorLoader(PdfDocument document) {
     try {
       // The structured form, not the raw text: only fragments carry the
       // per-line bounding boxes a highlight needs.
-      return PdfReanchorPage(page: page, text: await page.loadStructuredText());
+      final text = await page.loadStructuredText();
+      // A document that has been disposed under the pass — the reader left
+      // while it ran — answers every page with empty text rather than throwing.
+      // Reported as unreadable, so it cannot be mistaken for a page whose words
+      // have genuinely gone.
+      if (text.fullText.isEmpty) {
+        return null;
+      }
+      return PdfReanchorPage(page: page, text: text);
     } catch (_) {
       // A page whose text cannot be extracted is skipped rather than failing
       // the whole pass — the rest of the book's markup still moves.

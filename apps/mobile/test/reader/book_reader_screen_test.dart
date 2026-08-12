@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfrx/pdfrx.dart';
-import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/reader/data/reader_repository.dart';
 import 'package:tomeza/features/reader/domain/reader_annotation.dart';
 import 'package:tomeza/features/reader/domain/reader_annotation_geometry.dart';
@@ -12,9 +11,7 @@ import 'package:tomeza/features/reader/domain/reader_models.dart';
 import 'package:tomeza/features/reader/presentation/book_reader_screen.dart';
 import 'package:tomeza/features/reader/presentation/reader_document_loader.dart';
 import 'package:tomeza/features/reader/presentation/reader_app_bar.dart';
-import 'package:tomeza/features/reader/presentation/reader_bottom_bar.dart';
 import 'package:tomeza/features/reader/presentation/reader_markup_bar.dart';
-import 'package:tomeza/features/reader/presentation/reader_markup_toolbar.dart';
 import 'package:tomeza/features/reader/presentation/reader_selection_menu.dart';
 import 'package:tomeza/features/reader/presentation/reader_view.dart';
 
@@ -78,15 +75,21 @@ class FakeTextSelection implements PdfTextSelectionDelegate {
   PdfViewerCoordinateConverter get doc2local => throw UnimplementedError();
 }
 
+/// Records the document identity handed to the viewer on each build.
+List<String> capturedDocuments = [];
+
 Widget capturingViewer(
   BuildContext context,
-  String path,
+  PdfDocumentRef documentRef,
   controller,
   params,
   int initialPageNumber,
 ) {
   capturedParams.add(params as PdfViewerParams);
-  return Center(child: Text('pdf:$path@$initialPageNumber'));
+  capturedDocuments.add(viewerIdentity(documentRef));
+  return Center(
+    child: Text('pdf:${viewerIdentity(documentRef)}@$initialPageNumber'),
+  );
 }
 
 /// Opacity the selection bar has settled at.
@@ -116,59 +119,6 @@ bool menuIgnoresPointers(WidgetTester tester) {
       .ignoring;
 }
 
-/// Opens the reader's overflow menu and picks an entry.
-Future<void> chooseFromMenu(WidgetTester tester, String label) async {
-  await tester.tap(find.byTooltip('More'));
-  await tester.pumpAndSettle();
-  await tester.tap(find.text(label));
-  await tester.pumpAndSettle();
-}
-
-Future<void> pumpReader(
-  WidgetTester tester, {
-  required FakeReaderRepository repository,
-  required MobileExportAvailability export,
-  ReaderDocumentLoader? loader,
-}) async {
-  final documentLoader = loader;
-  if (documentLoader == null) {
-    // Only own the disposal of a loader this helper created; a caller-supplied
-    // one is re-pumped across rebuilds and disposed by the test.
-    final owned = ReaderDocumentLoader(
-      repository: repository,
-      projectId: 'project-1',
-    );
-    addTearDown(owned.dispose);
-    return _pump(tester, repository, export, owned);
-  }
-  return _pump(tester, repository, export, documentLoader);
-}
-
-Future<void> _pump(
-  WidgetTester tester,
-  FakeReaderRepository repository,
-  MobileExportAvailability export,
-  ReaderDocumentLoader documentLoader,
-) async {
-  await tester.pumpWidget(
-    ProviderScope(
-      overrides: [
-        readerRepositoryProvider.overrideWithValue(repository),
-        readerViewerBuilderProvider.overrideWithValue(stubViewer),
-      ],
-      child: MaterialApp(
-        home: ReaderView(
-          projectId: 'project-1',
-          export: export,
-          loader: documentLoader,
-          status: statusWith(export),
-          onOpenPaywall: () {},
-        ),
-      ),
-    ),
-  );
-}
-
 void main() {
   testWidgets('shows download progress, then the book', (tester) async {
     final repository = FakeReaderRepository()..gate = Completer<void>();
@@ -182,7 +132,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Downloading your book'), findsNothing);
-    expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
+    expect(find.text(pdfAt(1)), findsOneWidget);
     expect(find.text('the-race'), findsOneWidget);
   });
 
@@ -329,7 +279,40 @@ void main() {
     await pumpReader(tester, repository: repository, export: pdfExport());
     await tester.pumpAndSettle();
 
-    expect(find.text('pdf:/tmp/book-1.pdf@17'), findsOneWidget);
+    expect(find.text(pdfAt(17)), findsOneWidget);
+  });
+
+  testWidgets('keeps a position that arrives after the book does', (
+    tester,
+  ) async {
+    final repository = FakeReaderRepository()
+      ..stateGate = Completer<void>()
+      ..state = ReaderState(
+        revision: 1,
+        lastPage: 17,
+        bookmarks: [
+          ReaderBookmark(
+            page: 4,
+            label: 'Page 4',
+            createdAt: DateTime.utc(2026),
+            revision: 1,
+          ),
+        ],
+      );
+
+    await pumpReader(tester, repository: repository, export: pdfExport());
+    await tester.pumpAndSettle();
+
+    // The book is up and the position is not: nothing may be written yet, or
+    // the default state publishes over the real one.
+    expect(find.text(pdfAt(1)), findsOneWidget);
+    expect(repository.saved, isEmpty);
+
+    repository.stateGate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(repository.state.lastPage, 17);
+    expect(repository.state.bookmarks, hasLength(1));
   });
 
   testWidgets('saves a bookmark for the current page', (tester) async {
@@ -340,7 +323,6 @@ void main() {
     await tester.pumpAndSettle();
 
     await chooseFromMenu(tester, 'Bookmark this page');
-
     expect(repository.state.bookmarks.single.page, 9);
     expect(repository.state.bookmarks.single.revision, 1);
 
@@ -488,7 +470,7 @@ void main() {
       loader: loader,
     );
     await tester.pumpAndSettle();
-    expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
+    expect(find.text(pdfAt(1)), findsOneWidget);
 
     // The edit has landed and the export was recompiled at a new revision.
     await pumpReader(
@@ -501,13 +483,16 @@ void main() {
 
     expect(find.text('Your edits are in. Reload to see them.'), findsOneWidget);
     // The old compile stays on screen until the reader asks for the new one.
-    expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
+    expect(find.text(pdfAt(1)), findsOneWidget);
 
     await tester.tap(find.text('Reload'));
     await tester.pumpAndSettle();
 
     expect(repository.downloadedRevisions, [1, 2]);
-    expect(find.text('pdf:/tmp/book-2.pdf@1'), findsOneWidget);
+    // A different document, not just a different banner: the path is the same
+    // `book.pdf` either way, so this is the whole difference between a reload
+    // that works and one that quietly re-renders the book already on screen.
+    expect(find.text(pdfAt(1, revision: 2, byteSize: 140)), findsOneWidget);
   });
 
   testWidgets('says the book is updating while the export is rebuilt', (
@@ -540,7 +525,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Updating this book with your changes…'), findsOneWidget);
-    expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
+    expect(find.text(pdfAt(1)), findsOneWidget);
   });
 
   testWidgets('offers a retry when the download fails', (tester) async {
@@ -555,89 +540,7 @@ void main() {
     await tester.tap(find.text('Try again'));
     await tester.pumpAndSettle();
 
-    expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
-  });
-
-  testWidgets('keeps the bar to three actions and the rest in the menu', (
-    tester,
-  ) async {
-    // The point of the overflow: a reading screen that spends a third of its
-    // width on buttons is a screen about its buttons.
-    await pumpReader(
-      tester,
-      repository: FakeReaderRepository(),
-      export: pdfExport(),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byTooltip('Search this book'), findsOneWidget);
-    expect(find.byTooltip('Mark up this book'), findsOneWidget);
-    expect(find.byTooltip('More'), findsOneWidget);
-    // Contents and Bookmark live in the bottom bar now, within reach of a
-    // thumb; the top bar must not grow a second copy of either.
-    for (final tooltip in const ['Contents', 'Bookmark', 'Saved places']) {
-      expect(
-        find.descendant(
-          of: find.byType(ReaderAppBar),
-          matching: find.byTooltip(tooltip),
-        ),
-        findsNothing,
-        reason: '"$tooltip" belongs below, not in the top bar',
-      );
-    }
-    expect(
-      find.descendant(
-        of: find.byType(ReaderBottomChrome),
-        matching: find.byTooltip('Contents'),
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.byTooltip('More'));
-    await tester.pumpAndSettle();
-
-    for (final label in const [
-      'Contents',
-      'Bookmark this page',
-      'Saved places',
-      'My markup',
-      'Share my notes',
-      'Appearance',
-      'Full screen',
-    ]) {
-      expect(find.text(label), findsOneWidget, reason: 'missing "$label"');
-    }
-  });
-
-  testWidgets('opens the tool tray and takes it away again', (tester) async {
-    final repository = FakeReaderRepository()
-      ..state = const ReaderState(revision: 1, lastPage: 3);
-
-    await pumpReader(tester, repository: repository, export: pdfExport());
-    await tester.pumpAndSettle();
-
-    expect(find.byType(ReaderMarkupToolbar), findsNothing);
-
-    await tester.tap(find.byTooltip('Mark up this book'));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(ReaderMarkupToolbar), findsOneWidget);
-    // Nothing is chosen yet, so selecting text still highlights.
-    expect(
-      find.text('Pick a tool, or select text to highlight it.'),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.text('Pen'));
-    await tester.pumpAndSettle();
-    expect(
-      find.text('Draw with one finger. Two fingers still move the page.'),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.text('Done'));
-    await tester.pumpAndSettle();
-    expect(find.byType(ReaderMarkupToolbar), findsNothing);
+    expect(find.text(pdfAt(1)), findsOneWidget);
   });
 
   testWidgets('rebuilds the viewer params only when the gesture mode changes', (

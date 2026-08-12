@@ -13,6 +13,7 @@ import '../../projects/data/projects_repository.dart';
 import '../../projects/domain/project_models.dart';
 import '../../projects/presentation/project_export_actions.dart';
 import '../data/reader_repository.dart';
+import '../domain/reader_models.dart';
 import 'reader_document_loader.dart';
 import 'reader_view.dart';
 
@@ -159,7 +160,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
 
     _statusSettled |= _refreshRequested && !statusValue.isLoading;
     if (!_statusSettled) {
-      return _ReaderScaffold(
+      return ReaderScaffold(
         title: 'Reading',
         projectId: widget.projectId,
         body: const AppLoadingState(message: 'Opening your book'),
@@ -167,12 +168,12 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     }
 
     return statusValue.when(
-      loading: () => _ReaderScaffold(
+      loading: () => ReaderScaffold(
         title: 'Reading',
         projectId: widget.projectId,
         body: const AppLoadingState(message: 'Opening your book'),
       ),
-      error: (error, _) => _ReaderScaffold(
+      error: (error, _) => ReaderScaffold(
         title: 'Reading',
         projectId: widget.projectId,
         body: AppErrorState(
@@ -191,7 +192,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     final loader = _loaderFor(ref.read(readerRepositoryProvider));
 
     if (!export.available && loader.document == null) {
-      return _ReaderScaffold(
+      return ReaderScaffold(
         title: 'Reading',
         projectId: widget.projectId,
         body: AppEmptyState(
@@ -212,7 +213,7 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           if (mounted && !_unlockOffered) unawaited(_offerUnlock(export));
         });
       }
-      return _ReaderScaffold(
+      return ReaderScaffold(
         title: 'Reading',
         projectId: widget.projectId,
         body: AppEmptyState(
@@ -237,11 +238,17 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   }
 }
 
-class _ReaderScaffold extends StatelessWidget {
-  const _ReaderScaffold({
+/// The chrome the reader wears before there is a book to render.
+///
+/// Public because [ReaderView] shows the same thing while the download runs;
+/// it used to hand-roll a second copy, which is how the escape hatch below
+/// ended up on one of them only.
+class ReaderScaffold extends StatelessWidget {
+  const ReaderScaffold({
     required this.title,
     required this.projectId,
     required this.body,
+    super.key,
   });
 
   final String title;
@@ -270,29 +277,57 @@ class _ReaderScaffold extends StatelessWidget {
   }
 }
 
-/// Builds the widget that renders a PDF file.
+/// Builds the widget that renders a PDF document.
 ///
 /// Overridable so widget tests can exercise the reader's chrome and state
 /// machine without PDFium, whose native libraries are not loaded under
 /// `flutter test`.
+///
+/// Takes a [PdfDocumentRef] rather than a path because the path is not an
+/// identity here: every compile of a book is published over the same
+/// `book.pdf`, and pdfrx canonicalizes documents by that name. See
+/// [readerDocumentRef].
 typedef ReaderViewerBuilder =
     Widget Function(
       BuildContext context,
-      String path,
+      PdfDocumentRef documentRef,
       PdfViewerController controller,
       PdfViewerParams params,
       int initialPageNumber,
     );
 
+/// Names a downloaded compile in a way pdfrx can tell apart from the last one.
+///
+/// `PdfDocumentRefFile` keys itself on the filename, `PdfViewer` skips its
+/// update when the key is unchanged, and the loader behind that key refuses to
+/// open a file it has already opened. Since `ExportCache` publishes every
+/// compile over `book.pdf`, all three of those conspire to keep the *previous*
+/// book on screen after a reload — with the banner cleared and new markup
+/// stamped with a revision it was never placed against.
+///
+/// The revision alone is not enough: a download the server could not vouch for
+/// carries none, and two such downloads must still be different documents. The
+/// size and the moment it arrived stand in.
+PdfDocumentRef readerDocumentRef(CachedExport export) {
+  return PdfDocumentRefFile(
+    export.path,
+    key: PdfDocumentRefKey(export.path, [
+      export.revision,
+      export.byteSize,
+      export.downloadedAt,
+    ]),
+  );
+}
+
 Widget defaultReaderViewerBuilder(
   BuildContext context,
-  String path,
+  PdfDocumentRef documentRef,
   PdfViewerController controller,
   PdfViewerParams params,
   int initialPageNumber,
 ) {
-  return PdfViewer.file(
-    path,
+  return PdfViewer(
+    documentRef,
     controller: controller,
     params: params,
     initialPageNumber: initialPageNumber,

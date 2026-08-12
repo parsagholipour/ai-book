@@ -50,6 +50,16 @@ class ReaderBottomChrome extends StatelessWidget {
   /// render".
   static const barHeight = 62.0;
 
+  /// The progress line drawn along the bar's top edge.
+  static const progressLineHeight = 2.0;
+
+  /// Everything the bar covers, safe-area padding included.
+  ///
+  /// The page is laid out with exactly this much blank space after its last
+  /// line, so the end of the book can be pushed clear of the bar lying over it.
+  static double heightFor(BuildContext context) =>
+      progressLineHeight + barHeight + MediaQuery.paddingOf(context).bottom;
+
   @override
   Widget build(BuildContext context) {
     final bar = _bar(context);
@@ -120,10 +130,10 @@ class ReaderBottomChrome extends StatelessWidget {
   /// How far through the book, drawn along the top edge of the bar.
   Widget _progressLine(ColorScheme colors) {
     return SizedBox(
-      height: 2,
+      height: progressLineHeight,
       child: LinearProgressIndicator(
         value: pageCount < 1 ? 0 : (currentPage / pageCount).clamp(0.0, 1.0),
-        minHeight: 2,
+        minHeight: progressLineHeight,
         backgroundColor: Colors.transparent,
         valueColor: AlwaysStoppedAnimation(colors.primary),
       ),

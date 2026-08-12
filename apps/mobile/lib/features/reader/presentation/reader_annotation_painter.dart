@@ -26,9 +26,29 @@ List<ReaderMarkupColor> readerMarkupPalette({required bool onDarkPage}) {
     const ReaderMarkupColor('Green', Color(0xFF81C784)),
     const ReaderMarkupColor('Blue', Color(0xFF64B5F6)),
     const ReaderMarkupColor('Pink', Color(0xFFF06292)),
-    ReaderMarkupColor('Ink', onDarkPage ? const Color(0xFFECEFF1) : const Color(0xFF1F2933)),
+    ReaderMarkupColor(
+      'Ink',
+      onDarkPage ? const Color(0xFFECEFF1) : const Color(0xFF1F2933),
+    ),
     const ReaderMarkupColor('Red', Color(0xFFE53935)),
   ];
+}
+
+/// The wash over a search hit, and over the one the reader is looking at.
+///
+/// pdfrx's defaults are a flat `Colors.yellow` and `Colors.orange`, and the
+/// search wash is painted *after* the night tint has inverted the page — so on
+/// a dark page they arrive at full saturation, which is exactly where a reader
+/// least wants to be shouted at. These follow the page instead, and are kept
+/// distinct enough that the current hit is obvious among its neighbours.
+///
+/// [onDarkPage] is about the *page*, which follows the tint, not the app.
+Color readerSearchMatchColor({required bool onDarkPage}) {
+  return onDarkPage ? const Color(0x4D64B5F6) : const Color(0x66FFD54F);
+}
+
+Color readerActiveSearchMatchColor({required bool onDarkPage}) {
+  return onDarkPage ? const Color(0x9964B5F6) : const Color(0xB3FFB300);
 }
 
 /// Reads a stored colour index, tolerating one that no longer exists.

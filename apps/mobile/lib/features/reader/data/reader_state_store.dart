@@ -33,9 +33,15 @@ class ReaderStateStore {
     }
   }
 
+  /// Written through a temporary file, for the same reason the markup store is:
+  /// a process killed mid-write would otherwise leave a truncated file, and
+  /// [load] reads a `FormatException` as "start over" — which drops every
+  /// bookmark the reader made, not just the page they were on.
   Future<void> save(String projectId, ReaderState state) async {
     final file = await _file(projectId);
-    await file.writeAsString(jsonEncode(state.toJson()));
+    final partial = File('${file.path}.part');
+    await partial.writeAsString(jsonEncode(state.toJson()), flush: true);
+    await partial.rename(file.path);
   }
 
   Future<File> _file(String projectId) async {

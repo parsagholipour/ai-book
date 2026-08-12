@@ -173,13 +173,19 @@ class ReaderMarkupActions {
     required int toRevision,
   }) async {
     if (!controller.needsReanchor) {
-      controller.revision = toRevision;
+      // Through the setter, not the field: it is what closes an open tool and
+      // tells the surface the revision moved, and `_canCreateMarkup` reads it.
+      controller.setDisplayedRevision(toRevision);
       return;
     }
     final result = await controller.reanchor(
       pageCount: document.pages.length,
       toRevision: toRevision,
       loadPage: pdfReanchorLoader(document),
+      // The document is disposed when the reader leaves, and a pass that kept
+      // going against it would read every page as empty and orphan the book's
+      // whole markup — permanently, because it stamps the new revision too.
+      isCancelled: () => !isMounted(),
     );
     if (!isMounted() || result == null) return;
     final lost = result.orphaned;

@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../shared/ui/haptics.dart';
+import '../../../shared/ui/motion.dart';
 import '../../projects/data/projects_repository.dart';
 import '../../projects/domain/project_models.dart';
 import '../data/reader_pdf_page_text.dart';
@@ -15,6 +17,7 @@ import '../domain/reader_annotation.dart';
 import '../domain/reader_annotation_geometry.dart';
 import '../domain/reader_link.dart';
 import '../domain/reader_models.dart';
+import '../domain/reader_page_layout.dart';
 import '../domain/reader_settings.dart';
 import 'book_reader_screen.dart';
 import 'reader_annotation_controller.dart';
@@ -36,11 +39,14 @@ import 'reader_places.dart';
 import 'reader_scroll_handle.dart';
 import 'reader_search_bar.dart';
 import 'reader_selection_actions.dart';
+import 'reader_selection_drag.dart';
 import 'reader_selection_menu.dart';
 import 'reader_selection_resolver.dart';
 import 'reader_update_banner.dart';
 
+part 'reader_view_selection.dart';
 part 'reader_view_surface.dart';
+part 'reader_view_viewer.dart';
 
 /// The reading surface: the rendered PDF plus everything layered over it.
 class ReaderView extends ConsumerStatefulWidget {
@@ -80,8 +86,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   final _controller = PdfViewerController();
   PdfTextSearcher? _searcher;
 
-  /// One set of viewer parameters per gesture mode — see [_viewerParams].
-  final Map<ReaderViewerMode, PdfViewerParams> _paramsByMode = {};
+  /// One set of viewer parameters per gesture mode and per look — see
+  /// [_viewerParams]. The look is part of the key because the params carry
+  /// colours, and a map keyed on the mode alone hands back yesterday's theme.
+  final Map<(ReaderViewerMode, Brightness, bool, _ReaderPageMetrics),
+  PdfViewerParams>
+  _paramsByMode = {};
 
   /// Paint order: the tint colours the paper, markup goes on top of it, and
   /// search matches sit above everything so a hit is never lost under a
@@ -96,6 +106,15 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// list's citations. Resolved by the reader rather than by the viewer; see
   /// [ReaderLinkIndex] for why.
   final _links = ReaderLinkIndex();
+
+  /// Long-press-and-keep-dragging text selection, which pdfrx cannot do on
+  /// touch. One instance for the whole reader rather than one per page overlay:
+  /// a drag runs off the page it started on, and the page text it caches is
+  /// what makes the next move cheap.
+  late final ReaderSelectionDrag _selectionDrag = ReaderSelectionDrag(
+    controller: _controller,
+    onChanged: _onSelectionDragChanged,
+  );
 
   /// Held in a field because `dispose` saves the reading position, and `ref`
   /// cannot be read once the widget is unmounted.
@@ -121,9 +140,19 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// start the search again.
   PdfDocument? _reanchoredFor;
 
-  /// The document a requested book page was already sought in, so a reload does
-  /// not drag the reader back to it after they have moved on.
-  PdfDocument? _seekedFor;
+  /// Whether the caller's requested page has already been sought.
+  ///
+  /// Once per screen rather than once per document: `openAtBookPage` is asked
+  /// for when the reader is opened, and a reload after an edit would otherwise
+  /// drag them back to it from wherever they had read on to.
+  bool _seekedRequestedPage = false;
+
+  /// Where the reader was when a reload started, as a `Page.index`.
+  ///
+  /// A recompiled book paginates differently, so the page *number* they were on
+  /// names different words in the new file. Carried across the swap and
+  /// resolved back to a rendered page once the new document is open.
+  int? _resumeBookPage;
 
   List<ReaderMarkupColor>? _palette;
   ReaderPageTint? _paletteTint;
@@ -136,10 +165,22 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   int _pageCount = 0;
   Timer? _saveDebounce;
 
+  /// Flushes the reading position and the markup when the app goes away.
+  ///
+  /// `dispose` is not enough on its own: the ordinary end of a reading session
+  /// is the OS killing a backgrounded app, where nothing gets to run. Without
+  /// this the last 600ms of page turns — and up to 700ms of markup — are lost
+  /// every time someone reads and then swipes the app away.
+  AppLifecycleListener? _lifecycle;
+
   @override
   void initState() {
     super.initState();
     _repository = ref.read(readerRepositoryProvider);
+    _lifecycle = AppLifecycleListener(
+      onPause: _flushForBackground,
+      onHide: _flushForBackground,
+    );
     _annotations = ReaderAnnotationController(
       repository: _repository,
       projectId: widget.projectId,
@@ -163,7 +204,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
   @override
   void dispose() {
+    _lifecycle?.dispose();
     _saveDebounce?.cancel();
+    // Leaving the reader mid-press: the gesture that would have ended the drag
+    // is torn down with the tree and reports nothing, and what it leaves behind
+    // is a ticker moving a book nobody is reading.
+    _selectionDrag.reset();
     _persistState();
     widget.loader.removeListener(_onLoaderChanged);
     _annotations
@@ -200,7 +246,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
   Future<void> _restoreState() async {
     final state = await _repository.loadState(widget.projectId);
-    if (!mounted) return;
+    if (!mounted || _stateLoaded) return;
     setState(() {
       _state = state;
       _stateLoaded = true;
@@ -219,8 +265,26 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     }
   }
 
+  /// Writes the reading position, once there is one worth writing.
+  ///
+  /// Before the stored state has been read back, `_state` is the default —
+  /// page 1, no bookmarks — and publishing that would destroy a real position
+  /// for anyone who opened the reader and left again immediately.
   void _persistState() {
+    if (!_stateLoaded) return;
     unawaited(_repository.saveState(widget.projectId, _state));
+  }
+
+  /// Writes everything unsaved before the process can be taken away.
+  ///
+  /// Both halves are debounced in normal use — the position by 600ms here, the
+  /// markup and settings by 700ms in the controller — and neither debounce
+  /// survives a background kill.
+  void _flushForBackground() {
+    _saveDebounce?.cancel();
+    _saveDebounce = null;
+    _persistState();
+    unawaited(_annotations.flush());
   }
 
   void _scheduleSave() {
@@ -258,6 +322,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     unawaited(_links.forPage(pageNumber));
     if (pageNumber == _state.lastPage) return;
     _afterFrame(() => _state = _state.copyWith(lastPage: pageNumber));
+    // Nothing is written until the stored position has been read back. Saving
+    // before then would publish the default state — page 1, no bookmarks —
+    // over a real one that is still in flight.
+    if (!_stateLoaded) return;
     _scheduleSave();
   }
 
@@ -267,15 +335,27 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     _searcher ??= PdfTextSearcher(_controller);
     _document = document;
     _links.attach(document);
+    // A selection point carries the page text its index is measured against, so
+    // anything cached against the book that was on screen a moment ago would
+    // index into the wrong characters of the one that just replaced it.
+    _selectionDrag.reset();
     // A recompiled book can be shorter than the one the position was recorded
     // against, and jumping past the end throws.
+    //
+    // The clamp is applied inside the deferred callback rather than computed
+    // here and assigned there: a `_restoreState` landing in the gap between the
+    // two would be overwritten by a snapshot taken before it — putting the
+    // reader back on page 1 with no bookmarks, durably, because the next page
+    // turn saves that.
     final pageCount = document.pages.length;
-    final clamped = _state.clampedTo(pageCount);
     _afterFrame(() {
       _pageCount = pageCount;
-      _state = clamped;
+      _state = _state.clampedTo(pageCount);
     });
-    if (clamped.lastPage > 1) {
+    final clamped = _state.clampedTo(pageCount);
+    // pdfrx has already gone to `initialPageNumber` with no animation, so this
+    // is only for the case where the position arrived after that was read.
+    if (clamped.lastPage > 1 && _controller.pageNumber != clamped.lastPage) {
       unawaited(_controller.goToPage(pageNumber: clamped.lastPage));
     }
     // The page the book opens on gets no `onPageChanged` of its own.
@@ -283,6 +363,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     unawaited(_loadOutline(document));
     unawaited(_reanchorMarkup(document));
     unawaited(_seekToRequestedBookPage(document));
+    unawaited(_resumeAfterReload(document));
   }
 
   /// Opens the book where the caller asked, once it is possible to know where
@@ -294,10 +375,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   Future<void> _seekToRequestedBookPage(PdfDocument document) async {
     final target = widget.openAtBookPage;
     final revision = _mappingRevision;
-    if (target == null || revision == null || identical(_seekedFor, document)) {
+    if (target == null || revision == null || _seekedRequestedPage) {
       return;
     }
-    _seekedFor = document;
+    _seekedRequestedPage = true;
     final pdfPage = await readerPdfPageForBookPage(
       document: document,
       repository: _repository,
@@ -414,14 +495,43 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         : ReaderUpdateStatus.none;
   }
 
+  /// Fetches the new compile and puts the reader back where they were reading.
+  ///
+  /// "Where" is a `Page.index` when the book can be read that way, because the
+  /// new file paginates differently — an edit that adds a paragraph to chapter
+  /// two moves every rendered page after it, so the old page *number* names
+  /// different words. The number is kept as the fallback: it is what the reader
+  /// had, and a page or two out beats the top of the book.
   Future<void> _reload() async {
     final page = _controller.isReady ? _controller.pageNumber : null;
+    final bookPage = await _currentBookPageIndex();
+    if (!mounted) return;
+    _resumeBookPage = bookPage;
     setState(() => _updateDismissed = false);
     await widget.loader.reload(widget.export);
     if (!mounted) return;
     if (page != null) {
       setState(() => _state = _state.copyWith(lastPage: page));
     }
+  }
+
+  /// Follows the reading position onto the compile that just replaced the one
+  /// it was taken from. A page that cannot be placed leaves the reader on the
+  /// page number `_reload` already restored.
+  Future<void> _resumeAfterReload(PdfDocument document) async {
+    final target = _resumeBookPage;
+    final revision = _mappingRevision;
+    _resumeBookPage = null;
+    if (target == null || revision == null) return;
+    final pdfPage = await readerPdfPageForBookPage(
+      document: document,
+      repository: _repository,
+      projectId: widget.projectId,
+      revision: revision,
+      bookPageIndex: target,
+    );
+    if (pdfPage == null || !mounted) return;
+    await _goToPage(pdfPage);
   }
 
   int get _currentPage => _controller.isReady
@@ -480,7 +590,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       case ReaderMenuAction.appearance:
         _markup.showAppearance();
       case ReaderMenuAction.toggleFullScreen:
-        setState(() => _immersive = !_immersive);
+        _setImmersive(!_immersive);
     }
   }
 
@@ -516,126 +626,6 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     onGoToPage: (page) => unawaited(_goToPage(page)),
   );
 
-  // ------------------------------------------------------------------ markup
-
-  /// Turns a PDF text selection into an action target.
-  ///
-  /// Two steps, because the bar has to open the instant text is selected while
-  /// placing the passage against the book's own text takes a beat. The second
-  /// step is dropped when the selection has moved on.
-  Future<void> _resolveSelection(
-    List<PdfPageTextRange> ranges,
-    Offset anchor,
-  ) async {
-    final preview = previewReaderSelection(ranges, _document);
-    if (preview == null) {
-      _clearSelection();
-      return;
-    }
-    _showSelection(preview.selection, anchor, preview.spans);
-
-    final placed = await placeReaderSelection(
-      preview: preview,
-      ranges: ranges,
-      repository: _repository,
-      projectId: widget.projectId,
-      revision: _mappingRevision,
-    );
-    if (!mounted || _selection?.text != preview.selection.text) return;
-    _showSelection(placed.selection, anchor, placed.spans);
-  }
-
-  void _showSelection(
-    ReaderSelection selection,
-    Offset anchor,
-    List<ReaderSelectionSpan> spans,
-  ) {
-    _afterFrame(() {
-      _selection = selection;
-      _menuSelection = selection;
-      _menuAnchor = anchor;
-      _selectionSpans = spans;
-    });
-  }
-
-  void _clearSelection() {
-    if (_selection == null) return;
-    _afterFrame(() => _selection = null);
-  }
-
-  /// Drops the viewer's own highlight as well as the menu — the passage has
-  /// been acted on, so leaving it selected would be stale.
-  void _dismissSelection() {
-    if (_controller.isReady) {
-      unawaited(_controller.textSelectionDelegate.clearTextSelection());
-    }
-    _clearSelection();
-  }
-
-  Future<void> _runAction(ReaderSelectionAction action) async {
-    final selection = _selection;
-    if (selection == null) return;
-    final localAction =
-        action == ReaderSelectionAction.copy ||
-        action == ReaderSelectionAction.share;
-    if (!localAction && !_canUseCurrentBook) {
-      _markup.showSnack(
-        'Reload this book before using actions that change or ask about it.',
-      );
-      return;
-    }
-    _dismissSelection();
-    await runReaderSelectionAction(
-      context: context,
-      projectId: widget.projectId,
-      selection: selection,
-      action: action,
-    );
-  }
-
-  /// Marks the selected passage.
-  void _markSelection(ReaderMarkupStyle style, int colorIndex) {
-    final selection = _selection;
-    final spans = _selectionSpans;
-    final markup = _markup;
-    _dismissSelection();
-    if (!_canCreateMarkup) {
-      markup.showSnack(
-        'Reload this book before adding markup so it stays on the right page.',
-      );
-      return;
-    }
-    if (selection == null || spans.isEmpty) {
-      // Without rectangles there is nothing to draw. Rather than fail silently,
-      // say so — this only happens when the document went away mid-selection.
-      markup.showSnack(
-        'That passage could not be marked. Try selecting it again.',
-      );
-      return;
-    }
-    markup.markSelection(
-      selection: selection,
-      spans: spans,
-      style: style,
-      colorIndex: colorIndex,
-    );
-  }
-
-  Future<void> _noteOnSelection() async {
-    final selection = _selection;
-    if (selection == null) return;
-    final spans = _selectionSpans;
-    final markup = _markup;
-    _dismissSelection();
-    if (!_canCreateMarkup) {
-      markup.showSnack(
-        'Reload this book before adding notes so they stay on the right page.',
-      );
-      return;
-    }
-    await markup.noteOnSelection(selection: selection, spans: spans);
-  }
-
   // ------------------------------------------------------------------ wakelock
 
   void _syncWakelock() {
@@ -659,7 +649,14 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     setState(() => _searching = searching);
   }
 
+  /// Full screen puts the reader's own bars away, and only those.
+  ///
+  /// The phone's status bar is deliberately left alone: taking it away is the
+  /// operating system's strip to lose, and a book that scrolls under the clock
+  /// reads as a rendering fault rather than as more page. The band at the top
+  /// of the surface keeps that strip opaque either way.
   void _setImmersive(bool immersive) {
+    if (_immersive == immersive) return;
     setState(() => _immersive = immersive);
   }
 
@@ -669,194 +666,4 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
   @override
   Widget build(BuildContext context) => _buildReaderSurface(context);
-
-  /// The viewer's parameters, built once per gesture mode and reused.
-  ///
-  /// [PdfViewerParams] compares by value, and the viewer treats a change as a
-  /// reason to rebuild its layout. Constructing the params — and especially the
-  /// paint-callback list and menu builder closures — inside `build` makes every
-  /// `setState` look like new params, which with a callback that itself calls
-  /// `setState` becomes a relayout loop that never leaves time to render a
-  /// page. Every callback here is therefore a stable tear-off, and the objects
-  /// are memoized so that a rebuild in the same mode hands back the identical
-  /// instance. Switching mode does relayout once, which is the point: that is
-  /// when panning and text selection have to change.
-  PdfViewerParams _viewerParams(ReaderViewerMode mode) {
-    return _paramsByMode.putIfAbsent(
-      mode,
-      () => PdfViewerParams(
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
-        onPageChanged: _onPageChanged,
-        onViewerReady: _onViewerReady,
-        pagePaintCallbacks: _paintCallbacks,
-        pageOverlaysBuilder: _buildPageOverlays,
-        // One finger has to be free to draw. Zooming stays on, so the familiar
-        // two-finger gesture still moves the page mid-drawing.
-        panEnabled: mode != ReaderViewerMode.drawing,
-        textSelectionParams: PdfTextSelectionParams(
-          enabled: mode == ReaderViewerMode.reading,
-          onTextSelectionChange: _onTextSelectionChange,
-        ),
-        buildContextMenu: _buildSelectionMenu,
-      ),
-    );
-  }
-
-  /// Everything on a page that has to be touched rather than merely drawn.
-  List<Widget> _buildPageOverlays(
-    BuildContext context,
-    Rect pageRect,
-    PdfPage page,
-  ) {
-    final mode = _canCreateMarkup
-        ? _annotations.viewerMode
-        : ReaderViewerMode.reading;
-    final annotations = _annotations.onPage(page.pageNumber);
-    final overlays = <Widget>[];
-
-    if (annotations.isNotEmpty) {
-      overlays.add(
-        ReaderPageAnnotationOverlay(
-          annotations: annotations,
-          palette: _markupPalette,
-        ),
-      );
-    }
-
-    switch (mode) {
-      case ReaderViewerMode.drawing:
-        final tool = _annotations.tool;
-        final settings = _annotations.settings;
-        overlays.add(
-          ReaderInkLayer(
-            key: ValueKey('ink-${page.pageNumber}'),
-            tool: tool,
-            colorIndex: settings.inkColorIndex,
-            color: readerMarkupColor(
-              _markupPalette,
-              settings.inkColorIndex,
-            ).color,
-            strokeWidth: settings.inkWidth,
-            onStroke: (stroke) =>
-                _annotations.addStroke(page: page.pageNumber, stroke: stroke),
-            onErase: (point) =>
-                _annotations.eraseAt(page: page.pageNumber, point: point),
-          ),
-        );
-      case ReaderViewerMode.placing:
-        overlays.add(
-          ReaderTapLayer(
-            key: ValueKey('place-${page.pageNumber}'),
-            onTap: (point) =>
-                unawaited(_markup.handlePlacementTap(page.pageNumber, point)),
-          ),
-        );
-      case ReaderViewerMode.reading:
-        overlays.add(
-          ReaderTapLayer(
-            key: ValueKey('read-${page.pageNumber}'),
-            onTap: (point) =>
-                unawaited(_onReadingTap(page.pageNumber, point)),
-          ),
-        );
-    }
-    return overlays;
-  }
-
-  /// A tap on the page hides the chrome, and another brings it back.
-  ///
-  /// This is what lets the reader be mostly page. The bars do not have to be
-  /// dismissed from a menu and then found again; they get out of the way and
-  /// come back where they were.
-  /// What a tap on the page means while reading: markup, then a link, then the
-  /// book itself.
-  ///
-  /// One owner for the whole page, rather than a handler per piece of markup
-  /// plus a separate one for the chrome. Markup wins when the tap lands on it —
-  /// a highlight is painted onto the page rather than being a widget, so this is
-  /// the only way to reach one without going through the index. A link is next,
-  /// and is resolved here rather than by the viewer's own link handler for the
-  /// same reason the order exists at all: two tap owners over one page is how a
-  /// chapter link ends up jumping *and* hiding the bars. See [ReaderLinkIndex].
-  /// Everything else is a tap on the book, which is how the bars get out of the
-  /// way and come back.
-  Future<void> _onReadingTap(int page, NormPoint point) async {
-    if (_selection != null || _searching) return;
-    final annotation = _annotations.annotationAt(page, point);
-    if (annotation != null) {
-      AppHaptics.selection();
-      unawaited(_markup.open(annotation));
-      return;
-    }
-    // Already read for the page being looked at, so the ordinary tap does not
-    // wait; a page arrived at faster than its links could be read does.
-    final links = _links.resolved(page) ?? await _links.forPage(page);
-    if (!mounted || _selection != null || _searching) return;
-    final link = readerLinkAt(links, point);
-    if (link != null &&
-        await followReaderLink(
-          context: context,
-          ref: ref,
-          controller: _controller,
-          link: link,
-        )) {
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _immersive = !_immersive);
-  }
-
-  /// Keeps the action menu tied to the live selection.
-  ///
-  /// Tapping the page to deselect dismisses the viewer's context menu without
-  /// building a new one, so [_buildSelectionMenu] never runs again and cannot
-  /// be what takes the menu down. This is the signal that actually reports the
-  /// selection going away.
-  void _onTextSelectionChange(PdfTextSelection selection) {
-    if (!selection.hasSelectedText) {
-      _clearSelection();
-    }
-  }
-
-  void _paintPageTint(Canvas canvas, Rect pageRect, PdfPage page) {
-    paintReaderPageTint(canvas, pageRect, _annotations.settings.tint);
-  }
-
-  void _paintMarkup(Canvas canvas, Rect pageRect, PdfPage page) {
-    final annotations = _annotations.onPage(page.pageNumber);
-    if (annotations.isEmpty) return;
-    paintReaderAnnotations(
-      canvas: canvas,
-      pageRect: pageRect,
-      annotations: annotations,
-      palette: _markupPalette,
-      onDarkPage: _onDarkPage,
-    );
-  }
-
-  /// Highlights search matches. Reads the searcher through the field because it
-  /// does not exist until the viewer is ready, after the params are built.
-  void _paintSearchMatches(Canvas canvas, Rect pageRect, PdfPage page) {
-    _searcher?.pageTextMatchPaintCallback(canvas, pageRect, page);
-  }
-
-  /// Replaces the default copy toolbar with the app's own selection actions.
-  Widget? _buildSelectionMenu(
-    BuildContext context,
-    PdfViewerContextMenuBuilderParams params,
-  ) {
-    if (!params.isTextSelectionEnabled ||
-        params.contextMenuFor != PdfViewerPart.selectedText) {
-      _clearSelection();
-      return null;
-    }
-    unawaited(
-      params.textSelectionDelegate.getSelectedTextRanges().then((ranges) {
-        if (mounted) unawaited(_resolveSelection(ranges, params.anchorA));
-      }),
-    );
-    // The menu itself is drawn by the reader's own overlay, so the viewer's
-    // slot stays empty.
-    return const SizedBox.shrink();
-  }
 }

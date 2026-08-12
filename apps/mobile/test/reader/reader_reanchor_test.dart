@@ -17,9 +17,40 @@ class FakePage implements ReanchorPage {
   List<NormRect> rectsForRange(int start, int end) {
     if (end <= start) return const [];
     return [
-      NormRect(start / fullText.length, 0.5, (end - start) / fullText.length, 0.02),
+      NormRect(
+        start / fullText.length,
+        0.5,
+        (end - start) / fullText.length,
+        0.02,
+      ),
     ];
   }
+}
+
+/// [reanchorAnnotations] for the cases that are expected to run to the end.
+///
+/// It answers null when the pass stands down — the reader left, or the document
+/// could not be read — which is its own group of tests below.
+Future<ReanchorResult> reanchorAnnotationsOrFail({
+  required List<ReaderAnnotation> annotations,
+  required int pageCount,
+  required int revision,
+  required ReanchorPageLoader loadPage,
+  bool Function()? isCancelled,
+  int searchRadius = 3,
+  int maxPagesScanned = 40,
+}) async {
+  final result = await reanchorAnnotations(
+    annotations: annotations,
+    pageCount: pageCount,
+    revision: revision,
+    loadPage: loadPage,
+    isCancelled: isCancelled,
+    searchRadius: searchRadius,
+    maxPagesScanned: maxPagesScanned,
+  );
+  expect(result, isNotNull, reason: 'the pass was expected to complete');
+  return result!;
 }
 
 /// A loader over a book, recording which pages were actually read.
@@ -82,7 +113,7 @@ void main() {
       3: 'The rabbit stretched in the long grass and yawned.',
     });
 
-    final result = await reanchorAnnotations(
+    final result = await reanchorAnnotationsOrFail(
       annotations: [
         markup(page: 2, quote: 'The rabbit stretched in the long grass'),
       ],
@@ -131,7 +162,7 @@ void main() {
       2: 'Nor here.',
     });
 
-    final result = await reanchorAnnotations(
+    final result = await reanchorAnnotationsOrFail(
       annotations: [
         markup(page: 1, quote: 'The rabbit stretched in the long grass'),
       ],
@@ -155,7 +186,7 @@ void main() {
   test('ink keeps its position and is reported as carried over', () async {
     final book = FakeBook({1: 'Some text.', 2: 'More text.'});
 
-    final result = await reanchorAnnotations(
+    final result = await reanchorAnnotationsOrFail(
       annotations: [ink(page: 2)],
       pageCount: 2,
       revision: 2,
@@ -173,7 +204,7 @@ void main() {
   test('ink on a page the shorter book no longer has comes loose', () async {
     final book = FakeBook({1: 'Some text.'});
 
-    final result = await reanchorAnnotations(
+    final result = await reanchorAnnotationsOrFail(
       annotations: [ink(page: 9)],
       pageCount: 1,
       revision: 2,
@@ -184,21 +215,24 @@ void main() {
     expect(result.annotations.single.orphaned, isTrue);
   });
 
-  test('markup already on the current revision is left entirely alone', () async {
-    final book = FakeBook({1: 'The rabbit stretched in the long grass.'});
-    final original = markup(page: 1, quote: 'The rabbit', revision: 2);
+  test(
+    'markup already on the current revision is left entirely alone',
+    () async {
+      final book = FakeBook({1: 'The rabbit stretched in the long grass.'});
+      final original = markup(page: 1, quote: 'The rabbit', revision: 2);
 
-    final result = await reanchorAnnotations(
-      annotations: [original],
-      pageCount: 1,
-      revision: 2,
-      loadPage: book.loader,
-    );
+      final result = await reanchorAnnotationsOrFail(
+        annotations: [original],
+        pageCount: 1,
+        revision: 2,
+        loadPage: book.loader,
+      );
 
-    expect(result.changed, isFalse);
-    expect(identical(result.annotations.single, original), isTrue);
-    expect(book.read, isEmpty);
-  });
+      expect(result.changed, isFalse);
+      expect(identical(result.annotations.single, original), isTrue);
+      expect(book.read, isEmpty);
+    },
+  );
 
   test('matches through the wrapping the renderer introduces', () async {
     // The quote was captured from a selection; the new PDF wraps it somewhere
@@ -207,7 +241,7 @@ void main() {
       1: 'the well-\nknown  rabbit\nstretched in the ﬁeld',
     });
 
-    final result = await reanchorAnnotations(
+    final result = await reanchorAnnotationsOrFail(
       annotations: [markup(page: 1, quote: 'the well-known rabbit stretched')],
       pageCount: 1,
       revision: 2,
@@ -222,23 +256,27 @@ void main() {
     const text = 'Before. The rabbit stretched in the long grass. After.';
     final book = FakeBook({1: text});
 
-    final result = await reanchorAnnotations(
+    final result = await reanchorAnnotationsOrFail(
       annotations: [markup(page: 1, quote: 'The rabbit stretched')],
       pageCount: 1,
       revision: 2,
       loadPage: book.loader,
     );
 
-    final rect = (result.annotations.single as TextMarkupAnnotation).rects.single;
+    final rect =
+        (result.annotations.single as TextMarkupAnnotation).rects.single;
     final expectedStart = text.indexOf('The rabbit stretched') / text.length;
     expect(rect.left, closeTo(expectedStart, 1e-9));
-    expect(rect.width, closeTo('The rabbit stretched'.length / text.length, 1e-9));
+    expect(
+      rect.width,
+      closeTo('The rabbit stretched'.length / text.length, 1e-9),
+    );
   });
 
   test('a quote too short to be distinctive is not guessed at', () async {
     final book = FakeBook({1: 'a the of', 2: 'the'});
 
-    final result = await reanchorAnnotations(
+    final result = await reanchorAnnotationsOrFail(
       annotations: [markup(page: 1, quote: 'the')],
       pageCount: 2,
       revision: 2,
@@ -249,6 +287,67 @@ void main() {
     // happens to contain a three-letter word.
     expect(result.carried, 1);
     expect(book.read, isEmpty);
+  });
+
+  group('a pass that must not write anything', () {
+    test('a document that reads as empty is not a book with no words', () async {
+      // What a disposed document does: every page answers, with nothing in it.
+      // Read as a rewrite, this orphaned a whole book's markup and stamped the
+      // new revision on, so nothing ever looked for it again.
+      final closed = FakeBook(<int, String>{
+        for (var p = 1; p <= 6; p++) p: '',
+      });
+
+      final result = await reanchorAnnotations(
+        annotations: [
+          markup(page: 2, quote: 'The rabbit stretched in the long grass'),
+        ],
+        pageCount: 6,
+        revision: 2,
+        loadPage: closed.loader,
+      );
+
+      expect(result, isNull);
+    });
+
+    test('leaving the book mid-pass writes nothing at all', () async {
+      final book = FakeBook(<int, String>{
+        for (var page = 1; page <= 6; page++) page: 'Filler on page $page.',
+      });
+
+      final result = await reanchorAnnotations(
+        annotations: [
+          markup(page: 2, quote: 'The rabbit stretched in the long grass'),
+          markup(page: 4, quote: 'Filler on page 4'),
+        ],
+        pageCount: 6,
+        revision: 2,
+        loadPage: book.loader,
+        isCancelled: () => true,
+      );
+
+      expect(result, isNull);
+      expect(book.read, isEmpty);
+    });
+
+    test('a book whose passages really did go is still reported', () async {
+      // The other side of the empty-document guard: pages that read fine and
+      // simply no longer hold the passage must still orphan it.
+      final rewritten = FakeBook(<int, String>{
+        for (var page = 1; page <= 6; page++) page: 'Something else entirely.',
+      });
+
+      final result = await reanchorAnnotationsOrFail(
+        annotations: [
+          markup(page: 2, quote: 'The rabbit stretched in the long grass'),
+        ],
+        pageCount: 6,
+        revision: 2,
+        loadPage: rewritten.loader,
+      );
+
+      expect(result.orphaned, 1);
+    });
   });
 
   group('normalize index map', () {

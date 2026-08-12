@@ -6,6 +6,7 @@ import 'package:tomeza/features/reader/domain/reader_annotation.dart';
 import 'package:tomeza/features/reader/domain/reader_annotation_geometry.dart';
 import 'package:tomeza/features/reader/domain/reader_models.dart';
 import 'package:tomeza/features/reader/domain/reader_page_locator.dart';
+import 'package:tomeza/features/reader/domain/reader_reanchor.dart';
 import 'package:tomeza/features/reader/domain/reader_settings.dart';
 import 'package:tomeza/features/reader/presentation/reader_annotation_controller.dart';
 
@@ -74,6 +75,19 @@ const stroke = InkStroke(
   colorIndex: 4,
   width: 0.004,
 );
+
+/// A page a re-anchoring search can actually find something in.
+class _SearchablePage implements ReanchorPage {
+  _SearchablePage(this.fullText);
+
+  @override
+  final String fullText;
+
+  @override
+  List<NormRect> rectsForRange(int start, int end) => const [
+    NormRect(0.1, 0.3, 0.4, 0.02),
+  ];
+}
 
 void main() {
   test(
@@ -568,5 +582,94 @@ void main() {
     expect(result?.carried, 1);
     expect(controller.revision, 2);
     expect(controller.needsReanchor, isFalse);
+  });
+
+  test('a mark made while the pass runs survives it', () async {
+    // The pass works from a snapshot taken before an await that can scan forty
+    // pages per stale mark. Replacing the list with its result reverted
+    // everything the reader did in between, and the write that follows made the
+    // revert durable.
+    final repository = MemoryReaderRepository()
+      ..annotations = [
+        TextMarkupAnnotation(
+          id: 'm1',
+          page: 1,
+          revision: 1,
+          colorIndex: 0,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          style: ReaderMarkupStyle.highlight,
+          rects: const [NormRect(0.1, 0.2, 0.3, 0.02)],
+          quote: 'The rabbit stretched in the long grass',
+        ),
+      ];
+    final controller = ReaderAnnotationController(
+      repository: repository,
+      projectId: 'project-1',
+      revision: 2,
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+
+    await controller.reanchor(
+      pageCount: 3,
+      toRevision: 2,
+      loadPage: (page) async {
+        // The reader draws while the search is out reading pages.
+        controller.addStroke(page: 3, stroke: stroke);
+        return _SearchablePage(
+          'The rabbit stretched in the long grass and yawned.',
+        );
+      },
+    );
+
+    expect(controller.onPage(3), hasLength(1), reason: 'the new drawing');
+    expect(controller.onPage(1), hasLength(1), reason: 'the re-anchored mark');
+    expect(repository.annotations, hasLength(2));
+  });
+
+  test('leaving the book mid-pass changes nothing', () async {
+    final repository = MemoryReaderRepository()
+      ..annotations = [
+        TextMarkupAnnotation(
+          id: 'm1',
+          page: 1,
+          revision: 1,
+          colorIndex: 0,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          style: ReaderMarkupStyle.highlight,
+          rects: const [NormRect(0.1, 0.2, 0.3, 0.02)],
+          quote: 'The rabbit stretched in the long grass',
+        ),
+      ];
+    final controller = ReaderAnnotationController(
+      repository: repository,
+      projectId: 'project-1',
+      revision: 2,
+    );
+    addTearDown(controller.dispose);
+    await controller.load();
+
+    final result = await controller.reanchor(
+      pageCount: 3,
+      toRevision: 2,
+      loadPage: (_) async => null,
+      isCancelled: () => true,
+    );
+
+    expect(result, isNull);
+    expect(controller.onPage(1), hasLength(1), reason: 'still on its page');
+    expect(
+      controller.revision,
+      2,
+      reason: 'the displayed revision was already this one',
+    );
+    expect(
+      controller.needsReanchor,
+      isTrue,
+      reason: 'the next open must try again rather than call it done',
+    );
+    expect(repository.annotationWrites, 0);
   });
 }

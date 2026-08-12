@@ -2,12 +2,18 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/reader/data/reader_repository.dart';
 import 'package:tomeza/features/reader/domain/reader_annotation.dart';
 import 'package:tomeza/features/reader/domain/reader_models.dart';
 import 'package:tomeza/features/reader/domain/reader_page_locator.dart';
 import 'package:tomeza/features/reader/domain/reader_settings.dart';
+import 'package:tomeza/features/reader/presentation/book_reader_screen.dart';
+import 'package:tomeza/features/reader/presentation/reader_document_loader.dart';
+import 'package:tomeza/features/reader/presentation/reader_view.dart';
 
 /// A reader repository with no filesystem or network behind it.
 class FakeReaderRepository implements ReaderRepository {
@@ -38,6 +44,11 @@ class FakeReaderRepository implements ReaderRepository {
   final clearedProjects = <String>[];
   Completer<void>? gate;
 
+  /// Holds the stored reading position back, so a test can put it after the
+  /// document rather than before it. On a warm cache the two are close enough
+  /// that either can win.
+  Completer<void>? stateGate;
+
   @override
   Future<CachedExport> ensureExport({
     required String projectId,
@@ -53,7 +64,11 @@ class FakeReaderRepository implements ReaderRepository {
     downloadedRevisions.add(export.revision);
     final delivered = answerWithRevision ?? export.revision;
     return CachedExport(
-      path: '/tmp/book-$delivered.pdf',
+      // One path for every compile, as `ExportCache` really does it: each one
+      // is published over `book.pdf`. A per-revision path here would hide the
+      // thing the reader has to get right — telling one compile from the next
+      // when the filename cannot.
+      path: '/tmp/book.pdf',
       revision: delivered,
       revisionIsExact: exactProvenance,
       byteSize: export.byteSize ?? 0,
@@ -62,7 +77,10 @@ class FakeReaderRepository implements ReaderRepository {
   }
 
   @override
-  Future<ReaderState> loadState(String projectId) async => state;
+  Future<ReaderState> loadState(String projectId) async {
+    await stateGate?.future;
+    return state;
+  }
 
   @override
   Future<void> saveState(String projectId, ReaderState next) async {
@@ -158,12 +176,116 @@ MobileProjectStatus statusWith(MobileExportAvailability export) {
 
 /// Stands in for PdfViewer, whose PDFium natives are not loaded under
 /// `flutter test`.
+///
+/// Reports the document's *key* rather than its path: the two are the same
+/// thing for the sample book and deliberately not for a project's book, where
+/// every compile is published over one filename.
 Widget stubViewer(
   BuildContext context,
-  String path,
+  PdfDocumentRef documentRef,
   controller,
   params,
   int initialPageNumber,
 ) {
-  return Center(child: Text('pdf:$path@$initialPageNumber'));
+  return Center(
+    child: Text('pdf:${viewerIdentity(documentRef)}@$initialPageNumber'),
+  );
+}
+
+/// The identity pdfrx would open the document under.
+String viewerIdentity(PdfDocumentRef documentRef) {
+  final key = documentRef.key;
+  return [key.sourceName, ...key.parts].join('|');
+}
+
+/// What [stubViewer] renders for a book downloaded at [revision], open at
+/// [page]. Two compiles of one book differ here and nowhere in the path.
+String pdfAt(int page, {int revision = 1, int byteSize = 100}) {
+  return 'pdf:/tmp/book.pdf|$revision|$byteSize|'
+      '${DateTime.utc(2026, 7, 25)}@$page';
+}
+
+/// The box the viewer was laid out in, on each build.
+List<Size> viewerBoxes = [];
+
+Widget measuringViewer(
+  BuildContext context,
+  PdfDocumentRef documentRef,
+  controller,
+  params,
+  int initialPageNumber,
+) {
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      viewerBoxes.add(constraints.biggest);
+      return const SizedBox.expand();
+    },
+  );
+}
+
+/// Every set of parameters the reader handed the viewer.
+List<PdfViewerParams> viewerParams = [];
+
+Widget capturingViewer(
+  BuildContext context,
+  PdfDocumentRef documentRef,
+  PdfViewerController controller,
+  PdfViewerParams params,
+  int initialPageNumber,
+) {
+  viewerParams.add(params);
+  return const SizedBox.expand();
+}
+
+/// Opens the reader's overflow menu and picks an entry.
+Future<void> chooseFromMenu(WidgetTester tester, String label) async {
+  await tester.tap(find.byTooltip('More'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label));
+  await tester.pumpAndSettle();
+}
+
+Future<void> pumpReader(
+  WidgetTester tester, {
+  required FakeReaderRepository repository,
+  required MobileExportAvailability export,
+  ReaderDocumentLoader? loader,
+}) async {
+  final documentLoader = loader;
+  if (documentLoader == null) {
+    // Only own the disposal of a loader this helper created; a caller-supplied
+    // one is re-pumped across rebuilds and disposed by the test.
+    final owned = ReaderDocumentLoader(
+      repository: repository,
+      projectId: 'project-1',
+    );
+    addTearDown(owned.dispose);
+    return _pump(tester, repository, export, owned);
+  }
+  return _pump(tester, repository, export, documentLoader);
+}
+
+Future<void> _pump(
+  WidgetTester tester,
+  FakeReaderRepository repository,
+  MobileExportAvailability export,
+  ReaderDocumentLoader documentLoader,
+) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        readerRepositoryProvider.overrideWithValue(repository),
+        readerViewerBuilderProvider.overrideWithValue(stubViewer),
+      ],
+      child: MaterialApp(
+        home: ReaderView(
+          projectId: 'project-1',
+          export: export,
+          loader: documentLoader,
+          status: statusWith(export),
+          onOpenPaywall: () {},
+        ),
+      ),
+    ),
+  );
 }

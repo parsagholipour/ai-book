@@ -195,11 +195,13 @@ class ReaderAnnotationController extends ChangeNotifier {
   /// Moves the markup onto a newly compiled edition.
   ///
   /// Returns the summary so the reader can be told what happened; nothing is
-  /// written when the pass changed nothing.
+  /// written when the pass changed nothing, when [isCancelled] says the reader
+  /// has gone, or when the document turned out to be unreadable.
   Future<ReanchorResult?> reanchor({
     required int pageCount,
     required int toRevision,
     required ReanchorPageLoader loadPage,
+    bool Function()? isCancelled,
   }) async {
     final revisionChanged = revision != toRevision;
     if (!_loaded || _annotations.isEmpty) {
@@ -214,7 +216,11 @@ class ReaderAnnotationController extends ChangeNotifier {
       pageCount: pageCount,
       revision: toRevision,
       loadPage: loadPage,
+      isCancelled: isCancelled,
     );
+    // A pass that stood down leaves the revision alone as well as the marks:
+    // advancing it would tell the next open there is nothing to re-anchor.
+    if (result == null) return null;
     revision = toRevision;
     if (!result.changed) {
       if (revisionChanged) {
@@ -222,13 +228,38 @@ class ReaderAnnotationController extends ChangeNotifier {
       }
       return null;
     }
-    _annotations
-      ..clear()
-      ..addAll(result.annotations);
+    _adopt(result.annotations);
     _reindex();
     notifyListeners();
     await _persist();
     return result;
+  }
+
+  /// Takes the re-anchored marks without discarding what the reader did while
+  /// the pass was running.
+  ///
+  /// The pass works from a snapshot taken before an await that can scan forty
+  /// pages per stale mark. Replacing the list with its result reverted every
+  /// highlight made, deleted or undone in between — and the write that follows
+  /// made the revert durable. So results are merged by id, and an entry the
+  /// reader has touched since the snapshot wins: it describes the book they are
+  /// looking at, which is the same thing re-anchoring is trying to achieve.
+  void _adopt(List<ReaderAnnotation> reanchored) {
+    final byId = {for (final entry in _annotations) entry.id: entry};
+    final merged = <ReaderAnnotation>[];
+    final taken = <String>{};
+    for (final entry in reanchored) {
+      final live = byId[entry.id];
+      taken.add(entry.id);
+      if (live == null) continue; // Deleted outright while the pass ran.
+      merged.add(live.updatedAt.isAfter(entry.updatedAt) ? live : entry);
+    }
+    // Anything created while the pass ran was placed against the document on
+    // screen, so it is already where it belongs.
+    merged.addAll(_annotations.where((entry) => !taken.contains(entry.id)));
+    _annotations
+      ..clear()
+      ..addAll(merged);
   }
 
   void setTool(ReaderTool tool) {

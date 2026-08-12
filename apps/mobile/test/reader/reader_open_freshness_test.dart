@@ -279,7 +279,7 @@ void main() {
       [2],
       reason: 'the retry has to re-read what is being offered before fetching',
     );
-    expect(find.text('pdf:/tmp/book-2.pdf@1'), findsOneWidget);
+    expect(find.text(pdfAt(1, revision: 2)), findsOneWidget);
   });
 
   testWidgets('a retry that cannot re-read the book still fetches', (
@@ -369,7 +369,7 @@ void main() {
     // The last subscription is the reader's own re-check on open.
     controllers.last.add(statusWith(pdfExport()));
     await tester.pumpAndSettle();
-    expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
+    expect(find.text(pdfAt(1)), findsOneWidget);
 
     // Something else refreshes the status while the reader is open.
     final scope = tester.element(find.byType(BookReaderScreen));
@@ -380,6 +380,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Opening your book'), findsNothing);
-    expect(find.text('pdf:/tmp/book-1.pdf@1'), findsOneWidget);
+    expect(find.text(pdfAt(1)), findsOneWidget);
   });
 }
