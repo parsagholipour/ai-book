@@ -4,6 +4,7 @@ import { mobileComposedProjectCreateSchema } from "./mobile/schemas.js";
 import {
   COMPOSED_PROJECT_PROMPT_MAX,
   adviseMobileBook,
+  applyCreationTurnPatch,
   attachmentContextForTurn,
   briefForMobilePayload,
   chatSettingChangesFromMessage,
@@ -360,6 +361,88 @@ describe("mobile creation title selection", () => {
 
     expect(titleForMobilePayload(optionalTitlePayload, deterministicAdvisor(optionalTitlePayload))).toBe("The Meadow Finish");
     expect(titleForMobilePayload(chatTitlePayload, deterministicAdvisor(chatTitlePayload))).toBe("Slow Steps Home");
+  });
+
+  it("never scaffolds a recipe title or title suggestions from the raw idea", () => {
+    // Regression: the deterministic advisor used to backfill recipe.title with
+    // the first six words of the message ("Make A About Flies And Their") and
+    // build title suggestions from it; both surfaced in the app as if they
+    // were the book's name. An unstated title stays empty until the plan
+    // names the book.
+    const payload = mobileCreationDraftPayloadSchema.parse({
+      payloadVersion: 3,
+      rawIdea: "Make a book about flies and their use in medicine",
+      messages: [{ role: "user", content: "Make a book about flies and their use in medicine" }]
+    });
+
+    const advisor = deterministicAdvisor(payload);
+
+    expect(advisor.recipe.title).toBe("");
+    expect(advisor.titleSuggestions).toEqual([]);
+  });
+
+  it("keeps a stated title but drops one remembered only by a stored recipe", () => {
+    const stated = mobileCreationDraftPayloadSchema.parse({
+      payloadVersion: 3,
+      rawIdea: "Story about a careful race.",
+      optionalDetails: { title: "The Meadow Finish" },
+      messages: [{ role: "user", content: "Story about a careful race." }]
+    });
+    // A draft stored before recipe titles became explicit-only still carries
+    // the derived echo in its recipe; it must not resurface.
+    const legacyEcho = mobileCreationDraftPayloadSchema.parse({
+      payloadVersion: 3,
+      rawIdea: "Make a book about flies and their use in medicine",
+      recipe: { lane: "lead_magnet", title: "Make A About Flies And Their" },
+      messages: [{ role: "user", content: "Make a book about flies and their use in medicine" }]
+    });
+
+    expect(deterministicAdvisor(stated).recipe.title).toBe("The Meadow Finish");
+    expect(deterministicAdvisor(legacyEcho).recipe.title).toBe("");
+  });
+
+  it("pins the recipe title against advisor enrichment inventions", async () => {
+    const payload = mobileCreationDraftPayloadSchema.parse({
+      payloadVersion: 3,
+      rawIdea:
+        "Make a book about flies and their use in medicine, covering maggot therapy history and how hospitals apply it today.",
+      messages: [
+        {
+          role: "user",
+          content:
+            "Make a book about flies and their use in medicine, covering maggot therapy history and how hospitals apply it today."
+        }
+      ]
+    });
+    const base = deterministicAdvisor(payload);
+
+    const advisor = await adviseMobileBook(payload, {
+      enrich: async () => ({
+        recipe: { ...base.recipe, title: "Healing Wings" },
+        titleSuggestions: ["Healing Wings", "The Maggot Cure"]
+      })
+    });
+
+    // The model's title ideas are welcome as suggestions, never as the title.
+    expect(advisor.recipe.title).toBe("");
+    expect(advisor.titleSuggestions).toEqual(["Healing Wings", "The Maggot Cure"]);
+  });
+
+  it("accepts a stated title from the settings channel but drops one written into the brief patch", () => {
+    const base = deterministicCreationTurn({
+      messages: [{ role: "user", content: "Make a book about flies and their use in medicine" }]
+    });
+
+    const invented = applyCreationTurnPatch(base, {
+      brief: { ...base.brief, title: "The Maggot Cure" }
+    });
+    const stated = applyCreationTurnPatch(base, {
+      title: "Healing Wings",
+      brief: { ...base.brief, title: "The Maggot Cure" }
+    });
+
+    expect(invented.brief.title).toBe("");
+    expect(stated.brief.title).toBe("Healing Wings");
   });
 });
 

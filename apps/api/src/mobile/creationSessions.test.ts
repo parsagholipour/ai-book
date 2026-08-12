@@ -6,6 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { reserveCredits } from "@book-maker/db/billing";
+import { deterministicCreationTurn } from "../mobileCreation.js";
 
 import {
   bearer,
@@ -431,6 +432,54 @@ describe("mobile creation sessions", () => {
     expect(response.statusCode).toBe(200);
     expect(body.turn.authorName).toBe("Parsa Gh.");
     expect(body.turn.title).toBe("The Lantern");
+    await app.close();
+  });
+
+  it("does not restore a stored turn's derived brief title or its echo suggestions", async () => {
+    // Regression: drafts saved before recipe titles became explicit-only carry
+    // a title mangled from the first message ("Make A About Flies And Their")
+    // in payload.recipe and lastTurn; replaying them verbatim put that text
+    // back in the app as the book's working title and as suggestion chips.
+    mockAccessTokens({ "token-a": "user-a" });
+    const rawIdea = "Make a book about flies and their use in medicine";
+    const echo = "Make A About Flies And Their";
+    const storedTurn = deterministicCreationTurn({ messages: [{ role: "user", content: rawIdea }] });
+    mockPrisma.mobileCreationDraft.findFirst.mockResolvedValueOnce(
+      creationDraftRecord({
+        id: "session-draft",
+        payload: {
+          payloadVersion: 3,
+          rawIdea,
+          optionalDetails: { mustInclude: "", tone: "" },
+          recipe: { ...storedTurn.brief, title: echo },
+          messages: [
+            { role: "assistant", content: "Hi!" },
+            { role: "user", content: rawIdea },
+            { role: "assistant", content: "Great idea." }
+          ]
+        },
+        lastTurn: {
+          ...storedTurn,
+          assistantMessage: "Great idea.",
+          brief: { ...storedTurn.brief, title: echo },
+          titleSuggestions: [echo, `${echo} Book`, `${echo} Story`]
+        }
+      })
+    );
+    const app = await buildMobileApp({ creationEnrichment: false });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/creation-sessions/session-draft",
+      headers: bearer("token-a")
+    });
+    const body = response.json();
+
+    expect(response.statusCode).toBe(200);
+    expect(body.turn.brief.title).toBe("");
+    expect(body.turn.titleSuggestions).toEqual([]);
+    // The chat keeps a label, but it is the user's own words, not the mangle.
+    expect(body.session.title).toBe(rawIdea);
     await app.close();
   });
 

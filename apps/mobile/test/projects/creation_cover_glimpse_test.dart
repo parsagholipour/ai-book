@@ -197,13 +197,11 @@ void main() {
   group('workingCreationTitle', () {
     const details = MobileCreationOptionalDetails();
 
-    test('prefers the chat-stated title and skips the New book default', () {
+    test('shows only a stated title, never the chat-derived session name', () {
       expect(
         workingCreationTitle(
           optionalDetails: const MobileCreationOptionalDetails(title: 'Stated'),
           brief: const MobileBookRecipe(lane: 'auto', title: 'Brief title'),
-          titleSuggestions: const ['Suggested'],
-          sessionTitle: 'New book',
         ),
         'Stated',
       );
@@ -211,35 +209,17 @@ void main() {
         workingCreationTitle(
           optionalDetails: details,
           brief: const MobileBookRecipe(lane: 'auto', title: 'Brief title'),
-          titleSuggestions: const [],
-          sessionTitle: 'New book',
         ),
         'Brief title',
       );
       expect(
-        workingCreationTitle(
-          optionalDetails: details,
-          brief: null,
-          titleSuggestions: const ['Suggested'],
-          sessionTitle: 'New book',
-        ),
-        'Suggested',
+        workingCreationTitle(optionalDetails: details, brief: null),
+        isNull,
       );
       expect(
         workingCreationTitle(
           optionalDetails: details,
-          brief: null,
-          titleSuggestions: const [],
-          sessionTitle: 'My renamed chat',
-        ),
-        'My renamed chat',
-      );
-      expect(
-        workingCreationTitle(
-          optionalDetails: details,
-          brief: null,
-          titleSuggestions: const [],
-          sessionTitle: 'New book',
+          brief: const MobileBookRecipe(lane: 'auto'),
         ),
         isNull,
       );

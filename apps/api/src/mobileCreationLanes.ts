@@ -36,14 +36,6 @@ export function audienceFallback(lane: MobileCreationLane): string {
   }[lane];
 }
 
-export function titleFromIdea(rawIdea: string, lane: MobileCreationLane): string {
-  const cleaned = cleanTitlePart(rawIdea);
-  if (cleaned) {
-    return cleaned;
-  }
-  return fallbackTopic(lane === "workbook" || lane === "client_tool" ? "workbook" : lane.includes("story") ? "short_story" : "lead_magnet");
-}
-
 export function artifactForLane(lane: MobileCreationLane): string {
   return {
     auto: "Book",
@@ -200,8 +192,4 @@ export function cleanTitlePart(value: string): string {
     .slice(0, 6)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
-}
-
-export function fallbackTopic(bookType: MobileCreationPresets["bookType"]): string {
-  return bookType === "workbook" ? "Practice" : bookType === "short_story" ? "Moon Garden" : "Starter";
 }

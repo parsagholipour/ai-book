@@ -331,21 +331,19 @@ int visualLimitFor(String bookType) {
 }
 
 /// The name the forming book is known by right now, or null while it has
-/// none. Priority: a title stated in chat, then the brief's own, then the
-/// first model suggestion, then a session title the user set — but never the
-/// 'New book' default, which is the absence of a title wearing a string.
+/// none: a title stated in chat, or the brief's own (also only ever a stated
+/// one). Never a model title suggestion — a suggestion nobody picked is not
+/// the book's name — and never the session's title, which names the chat and
+/// falls back to the first message's text; renaming a chat reaches here
+/// through optionalDetails anyway. An untitled book stays untitled until the
+/// plan names it.
 String? workingCreationTitle({
   required MobileCreationOptionalDetails optionalDetails,
   required MobileBookRecipe? brief,
-  required List<String> titleSuggestions,
-  required String? sessionTitle,
 }) {
-  final session = sessionTitle?.trim() ?? '';
   final candidates = <String>[
     optionalDetails.title,
     brief?.title ?? '',
-    if (titleSuggestions.isNotEmpty) titleSuggestions.first,
-    if (session != 'New book') session,
   ];
   for (final candidate in candidates) {
     final trimmed = candidate.trim();

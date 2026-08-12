@@ -46,8 +46,6 @@ extension _CreationChatSheets on _CreationChatScreenState {
     final working = workingCreationTitle(
       optionalDetails: state.optionalDetails,
       brief: state.brief,
-      titleSuggestions: state.titleSuggestions,
-      sessionTitle: state.sessionTitle,
     );
     final saved = await showModalBottomSheet<String>(
       context: context,

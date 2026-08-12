@@ -164,9 +164,9 @@ void main() {
     await tester.tap(find.text('A kids book'));
     await tester.pumpAndSettle();
 
-    // The first suggestion is already the working title — the headline —
-    // and the collapsed bar carries no pen of its own.
-    expect(_inHeader(find.text('First Idea')), findsOneWidget);
+    // A suggestion nobody picked is not the book's name: the headline never
+    // shows one, and the collapsed bar carries no pen of its own.
+    expect(_inHeader(find.text('First Idea')), findsNothing);
     expect(find.text('Edit title'), findsNothing);
 
     await _expandHeader(tester);

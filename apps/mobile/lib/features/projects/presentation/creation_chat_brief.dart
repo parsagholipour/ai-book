@@ -201,8 +201,6 @@ class _BriefHeaderState extends State<_BriefHeader> {
         workingCreationTitle(
           optionalDetails: state.optionalDetails,
           brief: brief,
-          titleSuggestions: state.titleSuggestions,
-          sessionTitle: state.sessionTitle,
         );
     // Untitled: name the detected shape rather than repeating 'New book'
     // (the sidebar's default) or the word 'Auto'.

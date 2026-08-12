@@ -1271,17 +1271,16 @@ void main() {
     await tester.pumpWidget(app(creation: creation, draftId: 'draft-a'));
     await tester.pumpAndSettle();
 
-    // The session title shows in the app bar and, as the working title, in
-    // the brief header's headline and on the mini cover.
-    expect(find.text('Title for draft-a'), findsWidgets);
+    // The chat is identified by its transcript. Its derived title names the
+    // chat in the drawer only — never the forming book in the header.
+    expect(find.text('Title for draft-a'), findsNothing);
     expect(find.text('Selected chat draft-a'), findsOneWidget);
 
     await tester.pumpWidget(app(creation: creation, draftId: 'draft-b'));
     await tester.pumpAndSettle();
 
     expect(creation.resumedDraftIds, ['draft-a', 'draft-b']);
-    expect(find.text('Title for draft-a'), findsNothing);
-    expect(find.text('Title for draft-b'), findsWidgets);
+    expect(find.text('Title for draft-b'), findsNothing);
     expect(find.text('Selected chat draft-a'), findsNothing);
     expect(find.text('Selected chat draft-b'), findsOneWidget);
 
@@ -1322,7 +1321,9 @@ void main() {
     },
   );
 
-  testWidgets('selected chat title shows once the chat loads', (tester) async {
+  testWidgets('a loaded chat never wears its derived title as the book name', (
+    tester,
+  ) async {
     final resumeGate = Completer<void>();
     final creation = ScriptedCreationRepository(
       resumeByIdGate: resumeGate.future,
@@ -1340,7 +1341,9 @@ void main() {
     resumeGate.complete();
     await tester.pumpAndSettle();
 
-    expect(find.text('Title for draft-a'), findsOneWidget);
+    // The session title labels the chat in the drawer; the header shows a
+    // stated or planned book title only, so an untitled chat shows none.
+    expect(find.text('Title for draft-a'), findsNothing);
     expect(find.text('Selected chat draft-a'), findsOneWidget);
 
     await tester.teardownScreen();
@@ -1435,6 +1438,9 @@ void main() {
           title: 'Completed idea',
           status: 'COMPLETED',
           createdProjectId: 'project-1',
+          outputs: [
+            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+          ],
         ),
       ],
     );
@@ -1456,9 +1462,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(creation.resumedDraftIds, contains('draft-done'));
-    expect(find.text('Completed idea'), findsOneWidget);
+    // The header names the built book; the chat's own title stays in the
+    // drawer.
+    expect(find.text('Completed idea'), findsNothing);
     expect(find.text('Original completed chat transcript'), findsOneWidget);
-    expect(find.text(planTitle), findsOneWidget);
+    expect(find.text(planTitle), findsWidgets);
     expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
     expect(find.text('Approve and start writing'), findsOneWidget);
 
@@ -1475,6 +1483,9 @@ void main() {
           title: 'Completed idea',
           status: 'COMPLETED',
           createdProjectId: 'project-1',
+          outputs: [
+            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+          ],
         ),
       ],
     );
@@ -1489,9 +1500,10 @@ void main() {
 
     expect(creation.resumedDraftIds, ['draft-done']);
     expect(projects.requestedProjectIds, ['project-1']);
-    expect(find.text('Completed idea'), findsOneWidget);
+    // The header names the built book, never the chat's derived title.
+    expect(find.text('Completed idea'), findsNothing);
     expect(find.text('Original completed chat transcript'), findsOneWidget);
-    expect(find.text(planTitle), findsOneWidget);
+    expect(find.text(planTitle), findsWidgets);
     expect(find.widgetWithText(FilledButton, 'Build the plan'), findsNothing);
     expect(find.text('Approve and start writing'), findsOneWidget);
 
@@ -2405,6 +2417,9 @@ void main() {
           title: 'Completed book',
           status: 'COMPLETED',
           createdProjectId: 'project-1',
+          outputs: [
+            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+          ],
         ),
       ],
     );
@@ -2432,7 +2447,8 @@ void main() {
     );
     expect(find.text('Rewrite page 1 to sound warmer'), findsOneWidget);
     expect(find.text('I can help edit this book.'), findsOneWidget);
-    expect(find.text('Completed book'), findsOneWidget);
+    // Still on the chat screen, whose header names the built book.
+    expect(find.text(planTitle), findsWidgets);
 
     await tester.teardownScreen();
   });

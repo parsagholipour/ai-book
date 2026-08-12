@@ -10,11 +10,9 @@ import {
   artifactForLane,
   audienceFallback,
   audienceFor,
-  cleanTitlePart,
   conflictFallback,
   endingFallback,
   exercisesFallback,
-  fallbackTopic,
   laneForLegacyIntent,
   laneFromBookTypeChoice,
   laneFromProductBookType,
@@ -24,7 +22,6 @@ import {
   productBookTypeForLane,
   promiseFallback,
   themeFallback,
-  titleFromIdea,
   toneFallback,
   wordCount
 } from "./mobileCreationLanes.js";
@@ -65,7 +62,12 @@ export async function adviseMobileBook(
   try {
     const patch = await withTimeout(options.enrich(parsed, base), options.timeoutMs ?? 2500);
     const cleaned = cleanAdvisorPatch(patch);
-    const recipe = cleaned.recipe ? mobileBookRecipeSchema.parse({ ...cleaned.recipe, lane: base.detectedLane }) : base.recipe;
+    // The title is pinned to the base's: recipe.title means "stated by the
+    // user", and the model's own title ideas travel as titleSuggestions. An
+    // invented recipe title would show in the app as the book's working name.
+    const recipe = cleaned.recipe
+      ? mobileBookRecipeSchema.parse({ ...cleaned.recipe, title: base.recipe.title, lane: base.detectedLane })
+      : base.recipe;
     return mobileBookAdvisorResponseSchema.parse({
       ...base,
       ...cleaned,
@@ -93,7 +95,6 @@ export function deterministicAdvisor(payload: MobileCreationDraftPayload): Mobil
   const followUpSuggestions = followUpSuggestionsFor(recipe);
   const briefScore = recipeStrengthScore(normalized, recipe, warnings);
   const bookShapePreview = shapePreview(recipe, recommendation);
-  const titleSuggestions = titleSuggestionsFor(recipe, recommendation.bookType);
   return {
     recommendation,
     detectedLane,
@@ -103,7 +104,10 @@ export function deterministicAdvisor(payload: MobileCreationDraftPayload): Mobil
     warnings,
     followUpSuggestions,
     bookShapePreview,
-    titleSuggestions,
+    // Title ideas are the enrichment model's to write; the deterministic side
+    // has nothing but the user's own words to offer, and mangling those into
+    // pseudo-titles ("Make A About Flies And Their") is worse than no chips.
+    titleSuggestions: [],
     rationale: rationaleFor(detectedLane)
   };
 }
@@ -207,14 +211,21 @@ export function completeRecipe(payload: MobileCreationDraftPayload, lane: Mobile
   const details = payload.optionalDetails;
   // Every other source here is already capped at the recipe's own limits by the
   // draft or brief schema, but rawIdea holds up to 2000 characters — it joins
-  // the user's chat turns — and audienceFor/promiseFallback/titleFromIdea echo
-  // spans of it back. Clamping is what keeps an overflow from throwing a
-  // ZodError out of adviseMobileBook and reaching the app as a 500.
+  // the user's chat turns — and audienceFor/promiseFallback echo spans of it
+  // back. Clamping is what keeps an overflow from throwing a ZodError out of
+  // adviseMobileBook and reaching the app as a 500.
   const audience = clampBriefText(
     existing?.audience || audienceFor(rawIdea, lane) || payload.brief?.audience || audienceFallback(lane),
     280
   );
-  const title = clampBriefText(details.title || existing?.title || payload.brief?.title || titleFromIdea(rawIdea, lane), 160);
+  // A recipe title means "the title the user stated" — via update_settings,
+  // the title sheet, or a legacy brief — never a phrase scaffolded from the
+  // idea. The book's real title is the planner's to decide; a derived echo of
+  // the first message here surfaced in the app as if it were the book's name.
+  // existing?.title is deliberately not consulted: stored recipes from before
+  // this rule carry that echo, and a stated title always reaches this function
+  // through optionalDetails or the brief.
+  const title = clampBriefText(details.title || payload.brief?.title || "", 160);
   const tone = details.tone || existing?.tone || payload.brief?.tone || toneFallback(lane);
   const promise = clampBriefText(existing?.promise || payload.brief?.desiredOutcome || promiseFallback(rawIdea, lane), 500);
   return mobileBookRecipeSchema.parse({
@@ -404,26 +415,6 @@ function shapePreview(recipe: MobileBookRecipe, recommendation: MobileCreationPr
     return ["Opening promise and reader checkpoint", "3-5 short lessons or framework steps", "Exercises, reflection prompts, and examples", "Recap checklist and next steps"];
   }
   return ["Clear reader promise", "Problem framing and quick diagnostic", "Practical framework with examples", "Checklist and call-to-action"];
-}
-
-function titleSuggestionsFor(
-  recipe: MobileBookRecipe,
-  bookType: MobileCreationPresets["bookType"]
-): string[] {
-  const topic = cleanTitlePart(recipe.title || recipe.promise || recipe.artifact) || fallbackTopic(bookType);
-  if (recipe.lane === "auto") {
-    return [`${topic}`, `${topic} Book`, `${topic} Story`];
-  }
-  if (recipe.lane === "children_story") {
-    return [`${topic}`, `${topic} at Bedtime`, `The Little ${topic}`];
-  }
-  if (bookType === "workbook") {
-    return [`${topic} Workbook`, `${topic} Practice Guide`, `${topic} Action Plan`];
-  }
-  if (bookType === "short_story") {
-    return [`The ${topic}`, `${topic} at First Light`, `${topic} and the Last Turn`];
-  }
-  return [`${topic} Guide`, `${topic} Checklist`, `${topic} Field Guide`];
 }
 
 function rationaleFor(lane: MobileCreationLane): string {

@@ -316,7 +316,16 @@ export function applyCreationTurnPatch(base: MobileCreationTurn, patch: Partial<
   // the model confirming a hand-off the stored state contradicted.
   const patchedToAuto = patchedChoice === "auto" && base.presets.bookTypeChoice !== "auto";
   const detectedLane = laneFromPatch ?? base.detectedLane;
-  const brief = mobileBookRecipeSchema.parse({ ...(patch.brief ?? base.brief), lane: detectedLane });
+  // The brief's title means "stated by the user". A stated title arrives on
+  // the update_settings channel (patch.title, folded into optionalDetails by
+  // the route); the base carries any previously stated one. A title the model
+  // writes into its brief patch instead is an invention — the prompt forbids
+  // it — and would show in the app as the book's working name.
+  const brief = mobileBookRecipeSchema.parse({
+    ...(patch.brief ?? base.brief),
+    title: patch.title ?? base.brief.title,
+    lane: detectedLane
+  });
   const patchedPresets = patch.presets
     ? mobileCreationPresetsSchema.parse({
         ...patch.presets,

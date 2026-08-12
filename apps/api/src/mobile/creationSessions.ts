@@ -30,8 +30,12 @@ import { type FastifyReply } from "fastify";
  */
 
 export function _chatTitleForPayload(payload: MobileCreationDraftPayload): string {
+  // Deliberately not payload.recipe?.title: a stated title always reaches
+  // optionalDetails (the rename route and the update_settings capture both
+  // write it there), while recipes stored before titles became explicit-only
+  // carry a mangled echo of the first message ("Make A About Flies And
+  // Their"). The user's own first words are the honest chat label.
   if (payload.optionalDetails?.title?.trim()) return payload.optionalDetails.title.trim();
-  if (payload.recipe?.title?.trim()) return payload.recipe.title.trim();
   if (payload.brief?.topic?.trim()) return payload.brief.topic.trim();
   const firstUser = payload.messages?.length
     ? conversationMessagesFromPayload(payload).find((m) => m.role === "user")
@@ -209,17 +213,24 @@ export function creationTurnForStoredDraft(
  * other way back to the byline and title the Advanced sheet was showing.
  * Echoing them onto the restored turn refills those fields, and it is safe to
  * do unconditionally: this is exactly what the client last sent us.
+ *
+ * The restored brief's title is pinned to the stated one for the same reason
+ * the live turn pins it: a turn persisted before recipe titles became
+ * explicit-only carries a title derived from the first message, and replaying
+ * it verbatim would put that text back in the app as the book's working name.
+ * A mismatched brief title is the signature of such a turn, so its stored
+ * title suggestions — built by mangling the same message — go with it.
  */
 function withStoredCreationMetadata(
   turn: MobileCreationTurn,
   payload: MobileCreationDraftPayload
 ): MobileCreationTurn {
   const { authorName, title } = payload.optionalDetails;
-  if (!authorName && !title) {
-    return turn;
-  }
+  const statedTitle = title || payload.brief?.title || "";
+  const staleTitle = turn.brief.title !== statedTitle;
   return {
     ...turn,
+    ...(staleTitle ? { brief: { ...turn.brief, title: statedTitle }, titleSuggestions: [] } : {}),
     ...(authorName ? { authorName } : {}),
     ...(title ? { title } : {})
   };
