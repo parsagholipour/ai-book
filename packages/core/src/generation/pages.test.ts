@@ -16,8 +16,7 @@ import {
   repairPageBrief,
   reviewPageDraft,
   reviewPageDraftLocally,
-  revisePageDraft,
-  shouldIllustratePage
+  revisePageDraft
 } from "./pages.js";
 
 const input: CreateProjectInput = {
@@ -39,18 +38,6 @@ const input: CreateProjectInput = {
 
 const plan = makeFallbackPlan(input);
 const textModel = new FakeTextModelAdapter(input);
-
-describe("illustration cadence", () => {
-  it("treats education and health as diagram-friendly nonfiction", () => {
-    const educationInput = { ...input, category: "EDUCATION" as const };
-    const healthInput = { ...input, category: "HEALTH" as const };
-    const businessInput = { ...input, category: "BUSINESS" as const };
-
-    expect(shouldIllustratePage(educationInput, makeFallbackPlan(educationInput), 4)).toBe(true);
-    expect(shouldIllustratePage(healthInput, makeFallbackPlan(healthInput), 4)).toBe(true);
-    expect(shouldIllustratePage(businessInput, makeFallbackPlan(businessInput), 4)).toBe(false);
-  });
-});
 
 describe("page quality review", () => {
   it("accepts common wrapped JSON shapes from model responses", () => {

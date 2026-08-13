@@ -11,13 +11,14 @@ import 'creation_chat_harness.dart';
 // The generated-image confirmation that sits between "Build the plan" and the
 // build request. It prices the cover and interior art independently.
 
-/// The quote the fakes produce: 8 pages, `lead_magnet`, `balanced`, and the
-/// empty `creditCosts` the fake billing repository returns.
+/// The quote the fakes produce: 8 pages, auto (charged as custom), `balanced`,
+/// and the empty `creditCosts` the fake billing repository returns.
 int _estimate({
   required bool coverEnabled,
   required bool illustrationsEnabled,
 }) => estimateProjectCredits(
   bookType: 'lead_magnet',
+  bookTypeChoice: 'auto',
   qualityPreset: 'balanced',
   coverEnabled: coverEnabled,
   illustrationsEnabled: illustrationsEnabled,
@@ -70,9 +71,9 @@ void main() {
     expect(withImages, greaterThan(coverOnly));
 
     // Both generated-image lines are called out rather than folded into a total
-    // nobody can take apart.
-    expect(find.text('+${coverOnly - base} credits'), findsOneWidget);
-    expect(find.text('+${withImages - coverOnly} credits'), findsOneWidget);
+    // nobody can take apart. Auto 8-page books charge one interior, same as
+    // the cover, so the two rows share a string.
+    expect(find.text('+${coverOnly - base} credits'), findsNWidgets(2));
     expect(find.text('$base credits'), findsOneWidget);
     expect(find.text('≈ $withImages credits'), findsOneWidget);
     expect(

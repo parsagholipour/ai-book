@@ -202,13 +202,13 @@ describe("bookEditCreditCost", () => {
 
   it("quotes a replan against the book being asked for, not the one being replaced", () => {
     // A 12-page illustrated lead magnet: 120 replan base + 350 book base
-    // + 12x8 pages + 3x45 interior images + 1x45 cover + 150 export.
+    // + 12x8 pages + 2x45 interior images + 1x45 cover + 150 export.
     const project = projectRecord({ id: "project-1" }) as never;
-    expect(bookEditCreditCost("book_replan", 0, project)).toBe(896);
+    expect(bookEditCreditCost("book_replan", 0, project)).toBe(851);
 
     // "make it 3 pages without illustrations" — 120 + 350 + 3x8 + 1x45 cover + 150.
-    // Quoted off the project row alone this stayed 896, so the reader paid for
-    // nine pages and three illustrations the rebuilt book was never going to have.
+    // Quoted off the project row alone this stayed 851, so the reader paid for
+    // nine pages and two illustrations the rebuilt book was never going to have.
     expect(
       bookEditCreditCost("book_replan", 0, project, {
         replanSettings: { targetPages: 3, fullIllustrations: false }

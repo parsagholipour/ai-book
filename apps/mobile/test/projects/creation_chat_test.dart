@@ -661,6 +661,7 @@ void main() {
       // matching the plan-approval estimator exactly.
       final expected14 = estimateProjectCredits(
         bookType: 'lead_magnet',
+        bookTypeChoice: 'auto',
         qualityPreset: 'balanced',
         coverEnabled: true,
         illustrationsEnabled: true,
@@ -837,6 +838,7 @@ void main() {
     // computed with the same estimator as the plan-approval dialog.
     int expectedCredits(int pages) => estimateProjectCredits(
       bookType: 'lead_magnet',
+      bookTypeChoice: 'auto',
       qualityPreset: 'balanced',
       coverEnabled: true,
       illustrationsEnabled: true,
@@ -1479,7 +1481,11 @@ void main() {
           status: 'COMPLETED',
           createdProjectId: 'project-1',
           outputs: [
-            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+            creationOutput(
+              projectId: 'project-1',
+              title: planTitle,
+              sequence: 1,
+            ),
           ],
         ),
       ],
@@ -1524,7 +1530,11 @@ void main() {
           status: 'COMPLETED',
           createdProjectId: 'project-1',
           outputs: [
-            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+            creationOutput(
+              projectId: 'project-1',
+              title: planTitle,
+              sequence: 1,
+            ),
           ],
         ),
       ],
@@ -2459,7 +2469,11 @@ void main() {
           status: 'COMPLETED',
           createdProjectId: 'project-1',
           outputs: [
-            creationOutput(projectId: 'project-1', title: planTitle, sequence: 1),
+            creationOutput(
+              projectId: 'project-1',
+              title: planTitle,
+              sequence: 1,
+            ),
           ],
         ),
       ],

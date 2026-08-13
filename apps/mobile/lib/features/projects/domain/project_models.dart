@@ -77,6 +77,7 @@ class MobileProjectSummary {
   final String bookType;
   final String lengthPreset;
   final String qualityPreset;
+
   /// True only when a model draws the cover. It is what the cover is priced on,
   /// so a book with a free designed cover reports false here — read
   /// [coverArtSource] to say what the book actually has.
@@ -691,6 +692,7 @@ int estimateApprovalCredits(
 
 int estimateProjectCredits({
   required String bookType,
+  String? bookTypeChoice,
   required String qualityPreset,
   bool? coverEnabled,
   bool? illustrationsEnabled,
@@ -705,20 +707,23 @@ int estimateProjectCredits({
     'balanced': 350,
     'premium': 500,
   });
-  final fullBookPerPage = _tierCost(creditCosts, 'fullBookPerPage', qualityPreset, {
-    'fast': 5,
-    'balanced': 8,
-    'premium': 30,
-  });
-  final imageGeneration = _tierCost(creditCosts, 'imageGeneration', qualityPreset, {
-    'fast': 45,
-    'balanced': 45,
-    'premium': 85,
-  });
+  final fullBookPerPage = _tierCost(
+    creditCosts,
+    'fullBookPerPage',
+    qualityPreset,
+    {'fast': 5, 'balanced': 8, 'premium': 30},
+  );
+  final imageGeneration = _tierCost(
+    creditCosts,
+    'imageGeneration',
+    qualityPreset,
+    {'fast': 45, 'balanced': 45, 'premium': 85},
+  );
   final premiumReview = _intCost(creditCosts, 'premiumReview', 200);
   final exportUnlock = _intCost(creditCosts, 'exportUnlock', 150);
   final imageCount = estimatedInteriorImageCount(
     bookType: bookType,
+    bookTypeChoice: bookTypeChoice,
     illustrationsEnabled: includeIllustrations,
     targetPages: targetPages,
   );
@@ -756,17 +761,33 @@ int _tierCost(
     'premium' => '${baseKey}Premium',
     _ => baseKey,
   };
-  return _intCost(creditCosts, key, fallbacks[tier] ?? fallbacks['balanced'] ?? 0);
+  return _intCost(
+    creditCosts,
+    key,
+    fallbacks[tier] ?? fallbacks['balanced'] ?? 0,
+  );
+}
+
+/// Book type the quote uses.
+///
+/// Auto is stored and charged as `custom` (`buildMobileCreateProjectInput`),
+/// so quoting the advisor's recommended concrete type would price a 5-page
+/// auto book as a lead magnet.
+String quotingBookType(String bookType, [String? bookTypeChoice]) {
+  return bookTypeChoice == 'auto' ? 'custom' : bookType;
 }
 
 /// How many interior illustrations a book of this shape is quoted for.
 ///
 /// Mirrors `estimateInteriorImageCount` in `packages/core/src/billing.ts`, which
 /// is what the server actually charges against, so the two must move together.
-/// The cover is excluded here because [estimateProjectCredits] prices it
-/// separately as exactly one image-generation unit.
+/// Counts the same pages generation will illustrate (page 1, then every 8th;
+/// workbooks every 4th), then the launch cap. The cover is excluded here
+/// because [estimateProjectCredits] prices it separately as exactly one
+/// image-generation unit.
 int estimatedInteriorImageCount({
   required String bookType,
+  String? bookTypeChoice,
   bool? illustrationsEnabled,
   @Deprecated('Use illustrationsEnabled.') bool? imagesEnabled,
   required int targetPages,
@@ -775,17 +796,21 @@ int estimatedInteriorImageCount({
   if (!includeIllustrations) {
     return 0;
   }
+  final type = quotingBookType(bookType, bookTypeChoice);
   final customCap = (targetPages / 8).ceil();
-  final launchCap = switch (bookType) {
+  final launchCap = switch (type) {
     'workbook' => 6,
     'lead_magnet' || 'short_story' => 4,
     _ => customCap < 1 ? 1 : customCap,
   };
-  final estimated = (targetPages / 4).ceil();
-  if (estimated < 0) {
-    return 0;
+  final step = type == 'workbook' ? 4 : 8;
+  var slots = 0;
+  for (var i = 1; i <= targetPages; i++) {
+    if (i == 1 || i % step == 0) {
+      slots++;
+    }
   }
-  return estimated > launchCap ? launchCap : estimated;
+  return slots > launchCap ? launchCap : slots;
 }
 
 /// Compact copy for places that summarize generated imagery in one phrase.

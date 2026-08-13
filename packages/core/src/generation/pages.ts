@@ -40,7 +40,10 @@ import {
   writerToneRules,
   type PriorPageContext
 } from "./pagesShared.js";
+import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
 import { pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
+
+export { shouldIllustratePage } from "./illustrationSlots.js";
 
 export {
   compactSummaryForQa,
@@ -227,8 +230,7 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
           "Treat previousPages as a phrase blacklist for distinctive action wording; do not reuse memorable clauses from earlier pages.",
           "Use pageScope to distinguish global page position from chapter-local position.",
           "The current pageBrief is authoritative; chapter keyBeats and futureChapterPageBriefs are context only unless assigned to this page.",
-          "Return JSON with title, markdown, summary, continuityNotes, and optional imagePrompt.",
-          IMAGE_PROMPT_CHARACTER_RULE,
+          ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -284,11 +286,9 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Return exactly one root JSON object with a pages array.",
-          "Each page object must include index, title, markdown, summary, continuityNotes, and optional imagePrompt.",
-          "Images are generated later, so imagePrompt must be a separate visual prompt field and must not appear in markdown.",
+          ...multiPageImagePromptGuidance(options.input, 1, options.input.targetPages),
           ...READER_FACING_PAGE_BRIEF_RULES,
           "Every page must add distinct progression; do not repeat the same scene, explanation, decision, or emotional beat across pages.",
-          IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -353,13 +353,12 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
         content: [
           "Write one complete chapter of the book as finished Markdown pages.",
           "Return exactly one root JSON object with a pages array.",
-          "Every returned page must include global index, title, markdown, summary, continuityNotes, and optional imagePrompt.",
           "Return exactly the requested global page indexes, in order.",
+          ...multiPageImagePromptGuidance(options.input, options.chapterPageStart, options.chapterPageEnd),
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions in reader-facing pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
-          IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -424,13 +423,12 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
         content: [
           "Write a small ordered batch of finished Markdown book pages.",
           "Return exactly one root JSON object with a pages array.",
-          "Every returned page must include global index, title, markdown, summary, continuityNotes, and optional imagePrompt.",
           "Return exactly the requested page indexes, in order.",
+          ...multiPageImagePromptGuidance(options.input, options.pageStart, options.pageEnd),
           INTERNAL_PAGE_TITLE_RULE,
           GROUNDED_FACTUALITY_RULE,
           "Make each page advance a distinct beat and avoid repeating recent pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
-          IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -500,7 +498,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
           GROUNDED_FACTUALITY_RULE,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions.",
           ...READER_FACING_PAGE_BRIEF_RULES,
-          IMAGE_PROMPT_CHARACTER_RULE,
+          ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -543,24 +541,40 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
   return result.data;
 }
 
-export function shouldIllustratePage(input: CreateProjectInput, plan: BookPlan, pageIndex: number): boolean {
-  if (!input.mediaSettings.fullIllustrations) {
-    return false;
+function pageDraftImagePromptGuidance(input: CreateProjectInput, pageIndex: number): string[] {
+  if (pageGetsInteriorIllustration(input, pageIndex)) {
+    return [
+      "Return JSON with title, markdown, summary, continuityNotes, and an imagePrompt for this page's illustration.",
+      "Images are generated later, so imagePrompt must be a separate visual prompt field and must not appear in markdown.",
+      IMAGE_PROMPT_CHARACTER_RULE
+    ];
   }
-  const cadence = input.mediaSettings.illustrationCadence;
-  if (cadence === "manual") {
-    return false;
+  return [
+    "Return JSON with title, markdown, summary, and continuityNotes.",
+    "Do not include imagePrompt; this page will not be illustrated."
+  ];
+}
+
+function multiPageImagePromptGuidance(input: CreateProjectInput, from: number, to: number): string[] {
+  const illustrated: number[] = [];
+  for (let i = from; i <= to; i++) {
+    if (pageGetsInteriorIllustration(input, i)) {
+      illustrated.push(i);
+    }
   }
-  if (cadence === "every-page") {
-    return true;
+  if (illustrated.length === 0) {
+    return [
+      "Every returned page must include global index, title, markdown, summary, and continuityNotes.",
+      "Do not include imagePrompt on any page; none of these pages will be illustrated."
+    ];
   }
-  if (input.category === "KIDS") {
-    return true;
-  }
-  if (isDiagramFriendlyBookCategory(input.category)) {
-    return pageIndex === 1 || pageIndex % 4 === 0;
-  }
-  return pageIndex === 1 || pageIndex % 8 === 0;
+  const listed = illustrated.join(", ");
+  return [
+    "Every returned page must include global index, title, markdown, summary, and continuityNotes.",
+    `Only include imagePrompt on page${illustrated.length === 1 ? "" : "s"} ${listed}; omit it on every other page.`,
+    "Images are generated later, so imagePrompt must be a separate visual prompt field and must not appear in markdown.",
+    IMAGE_PROMPT_CHARACTER_RULE
+  ];
 }
 
 export async function generateImageBytes(options: GenerateImageBytesOptions): Promise<GeneratedImageBytes> {

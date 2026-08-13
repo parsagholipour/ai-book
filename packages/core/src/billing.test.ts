@@ -189,14 +189,14 @@ describe("billing credit assumptions", () => {
         }
       });
 
-    // An 18-page lead magnet gets 4 interior illustrations plus a cover, so
-    // five image units. Spelled out rather than recomputed from the price
-    // table: the app mirrors this formula and there is no server quote route
-    // to fall back on, so a change here has to be a visible change here.
-    expect(estimateFullBookCreditCost(inputForTier("fast")).totalCredits).toBe(220 + 18 * 5 + 5 * 45 + 150);
-    expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(350 + 18 * 8 + 5 * 45 + 150);
+    // An 18-page lead magnet is illustrated on pages 1, 8 and 16, plus a
+    // cover — four image units. Spelled out rather than recomputed from the
+    // price table: the app mirrors this formula and there is no server quote
+    // route to fall back on, so a change here has to be a visible change here.
+    expect(estimateFullBookCreditCost(inputForTier("fast")).totalCredits).toBe(220 + 18 * 5 + 4 * 45 + 150);
+    expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(350 + 18 * 8 + 4 * 45 + 150);
     expect(estimateFullBookCreditCost(inputForTier("premium")).totalCredits).toBe(
-      500 + 18 * 30 + 5 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
+      500 + 18 * 30 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
     );
 
     // A book from before tiers existed pays the balanced rates, because that
@@ -300,11 +300,67 @@ describe("billing credit assumptions", () => {
       actualProviderCostUsd: 1.25
     });
 
-    expect(estimateInteriorImageCount(input)).toBe(4);
-    expect(margin.estimatedRevenueUsd).toBe(8.53);
+    expect(estimateInteriorImageCount(input)).toBe(3);
+    expect(margin.estimatedRevenueUsd).toBe(8.08);
     expect(margin.actualProviderCostUsd).toBe(1.25);
-    expect(margin.actualMarginUsd).toBe(7.28);
+    expect(margin.actualMarginUsd).toBe(6.83);
     expect(margin.actualMarginPercent).toBeGreaterThan(80);
+  });
+});
+
+describe("interior illustration billing matches generation slots", () => {
+  const illustrated = (overrides: Record<string, unknown>) =>
+    createProjectSchema.parse({
+      prompt: "Create a short illustrated book.",
+      complexity: 5,
+      temperature: 0.65,
+      mediaSettings: {
+        fullIllustrations: true,
+        illustrationCadence: "template-driven",
+        includeCover: true,
+        coverTemplate: "auto",
+        finalReview: true,
+        toneProfile: "neutral"
+      },
+      ...overrides
+    });
+
+  it("charges a 5-page short story or lead magnet for one interior, not two", () => {
+    // Generation only illustrates page 1 of a 5-page template-driven book.
+    // ceil(pages/4) used to quote 2 and overcharge the reader.
+    const story = illustrated({
+      category: "STORY",
+      subcategory: "Short Story",
+      targetPages: 5
+    });
+    const leadMagnet = illustrated({
+      category: "BUSINESS",
+      subcategory: "Lead Magnet Ebook",
+      targetPages: 5
+    });
+    const business = illustrated({ category: "BUSINESS", targetPages: 5 });
+
+    expect(estimateInteriorImageCount(story)).toBe(1);
+    expect(estimateInteriorImageCount(leadMagnet)).toBe(1);
+    expect(estimateInteriorImageCount(business)).toBe(1);
+  });
+
+  it("charges an 8-page default-cadence book for pages 1 and 8", () => {
+    const story = illustrated({
+      category: "STORY",
+      subcategory: "Short Story",
+      targetPages: 8
+    });
+    expect(estimateInteriorImageCount(story)).toBe(2);
+  });
+
+  it("still caps a 28-page education workbook at 6 interiors", () => {
+    const workbook = illustrated({
+      category: "EDUCATION",
+      subcategory: "Workbook or Study Guide",
+      targetPages: 28
+    });
+    expect(estimateInteriorImageCount(workbook)).toBe(6);
   });
 });
 

@@ -83,11 +83,11 @@ describe("plan approval prices by quality tier", () => {
     return response;
   }
 
-  // 12 pages, 3 interior illustrations (capped by book type) plus a cover.
+  // 12 pages, 2 interior illustrations plus a cover.
   const totals = {
-    fast: 220 + 12 * 5 + 4 * 45 + 150,
-    balanced: 350 + 12 * 8 + 4 * 45 + 150,
-    premium: 500 + 12 * 30 + 4 * 85 + 200 + 150
+    fast: 220 + 12 * 5 + 3 * 45 + 150,
+    balanced: 350 + 12 * 8 + 3 * 45 + 150,
+    premium: 500 + 12 * 30 + 3 * 85 + 200 + 150
   } as const;
 
   for (const tier of TIERS) {

@@ -345,8 +345,9 @@ describe("GET /api/admin/pricing/drivers", () => {
     expect(body.drivers.voiceCallPerMinute).toBe(2);
     expect(body.drivers.bookTextEditBase).toBe(1);
     expect(body.drivers.bookTextEditPerPage).toBe(2);
-    // Five interiors plus one initial cover, for each of two generations.
-    expect(body.drivers.imageGeneration).toBe(12);
+    // Six interiors (pages 1, 4, 8, 12, 16, 20) plus one initial cover, for
+    // each of two generations.
+    expect(body.drivers.imageGeneration).toBe(14);
     expect(body.providerUsd).toBe(4.5);
     expect(body.coverage.chargedCredits).toBe(9000);
   });

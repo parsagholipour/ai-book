@@ -83,11 +83,17 @@ void main() {
     // Declining AI cover art still leaves the book with a cover, so saying
     // 'Illustrations only' or 'No generated images' would be wrong.
     expect(
-      generatedImagesLabel(coverArtSource: 'design', illustrationsEnabled: true),
+      generatedImagesLabel(
+        coverArtSource: 'design',
+        illustrationsEnabled: true,
+      ),
       'Designed cover + illustrations',
     );
     expect(
-      generatedImagesLabel(coverArtSource: 'design', illustrationsEnabled: false),
+      generatedImagesLabel(
+        coverArtSource: 'design',
+        illustrationsEnabled: false,
+      ),
       'Designed cover',
     );
     expect(
@@ -114,10 +120,10 @@ void main() {
   });
 
   test('each quality tier is quoted at its own rates', () {
-    // The same three totals `packages/core/src/billing.test.ts` asserts for a
-    // 12-page illustrated lead magnet: 3 interior illustrations plus a cover.
-    // Two implementations of one formula, and no server quote route between
-    // them, so both have to spell the numbers out.
+    // The same three totals `apps/api/src/mobile/creditTierPricing.test.ts`
+    // asserts for a 12-page illustrated lead magnet: 2 interior illustrations
+    // plus a cover. Two implementations of one formula, and no server quote
+    // route between them, so both have to spell the numbers out.
     int estimate(String qualityPreset) => estimateProjectCredits(
       bookType: 'lead_magnet',
       qualityPreset: qualityPreset,
@@ -127,9 +133,9 @@ void main() {
       creditCosts: const {},
     );
 
-    expect(estimate('fast'), 220 + 12 * 5 + 4 * 45 + 150);
-    expect(estimate('balanced'), 350 + 12 * 8 + 4 * 45 + 150);
-    expect(estimate('premium'), 500 + 12 * 30 + 4 * 85 + 200 + 150);
+    expect(estimate('fast'), 220 + 12 * 5 + 3 * 45 + 150);
+    expect(estimate('balanced'), 350 + 12 * 8 + 3 * 45 + 150);
+    expect(estimate('premium'), 500 + 12 * 30 + 3 * 85 + 200 + 150);
 
     // "custom" is what the server sends for a book it has no preset for, and
     // it charges such a book the balanced rates.
@@ -154,10 +160,7 @@ void main() {
       'fullBookPerPagePremium': 40,
     };
     expect(estimate('balanced', costs) - estimate('balanced', const {}), 0);
-    expect(
-      estimate('fast', costs),
-      estimate('fast', const {}) - 10 * (5 - 3),
-    );
+    expect(estimate('fast', costs), estimate('fast', const {}) - 10 * (5 - 3));
     expect(
       estimate('premium', costs),
       estimate('premium', const {}) + 10 * (40 - 30),
@@ -233,6 +236,54 @@ void main() {
       ),
       0,
     );
+  });
+
+  test('a 5-page lead magnet is quoted for one interior, not two', () {
+    expect(
+      estimatedInteriorImageCount(
+        bookType: 'lead_magnet',
+        illustrationsEnabled: true,
+        targetPages: 5,
+      ),
+      1,
+    );
+  });
+
+  test('auto quotes as custom, not the advisor recommended type', () {
+    expect(
+      estimatedInteriorImageCount(
+        bookType: 'lead_magnet',
+        bookTypeChoice: 'auto',
+        illustrationsEnabled: true,
+        targetPages: 5,
+      ),
+      estimatedInteriorImageCount(
+        bookType: 'custom',
+        illustrationsEnabled: true,
+        targetPages: 5,
+      ),
+    );
+    // An 8-page lead magnet would bill two interiors; auto is stored as
+    // custom, whose cap is one, matching what generation will attempt.
+    expect(
+      estimatedInteriorImageCount(
+        bookType: 'lead_magnet',
+        illustrationsEnabled: true,
+        targetPages: 8,
+      ),
+      2,
+    );
+    expect(
+      estimatedInteriorImageCount(
+        bookType: 'lead_magnet',
+        bookTypeChoice: 'auto',
+        illustrationsEnabled: true,
+        targetPages: 8,
+      ),
+      1,
+    );
+    expect(quotingBookType('lead_magnet', 'auto'), 'custom');
+    expect(quotingBookType('lead_magnet', 'lead_magnet'), 'lead_magnet');
   });
 }
 

@@ -183,7 +183,7 @@ describe("mobile project chat book replan", () => {
     expect(proposalBody.reply.metadata.editProposal).toMatchObject({
       kind: "book_replan",
       summary: "Rebuild as a new 3-page copy without illustrations",
-      // The 12-page illustrated book quotes 896; this is the book asked for.
+      // The 12-page illustrated book quotes 851; this is the book asked for.
       credits: 689
     });
 

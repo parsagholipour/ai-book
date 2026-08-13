@@ -231,8 +231,7 @@ class _BriefQuickActions extends ConsumerStatefulWidget {
   final MobileProjectStatus? liveStatus;
 
   @override
-  ConsumerState<_BriefQuickActions> createState() =>
-      _BriefQuickActionsState();
+  ConsumerState<_BriefQuickActions> createState() => _BriefQuickActionsState();
 }
 
 class _BriefQuickActionsState extends ConsumerState<_BriefQuickActions> {
@@ -333,6 +332,7 @@ class _BriefCreditEstimate extends ConsumerWidget {
         : targetPageCountFor(presets.bookType, presets.lengthPreset);
     final credits = estimateProjectCredits(
       bookType: presets.bookType,
+      bookTypeChoice: presets.bookTypeChoice,
       qualityPreset: presets.qualityPreset,
       coverEnabled: presets.coverEnabled,
       illustrationsEnabled: presets.illustrationsEnabled,

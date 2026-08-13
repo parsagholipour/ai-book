@@ -97,6 +97,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
     int estimate({required bool withCover, required bool withIllustrations}) =>
         estimateProjectCredits(
           bookType: widget.presets.bookType,
+          bookTypeChoice: widget.presets.bookTypeChoice,
           qualityPreset: widget.presets.qualityPreset,
           coverEnabled: withCover,
           illustrationsEnabled: withIllustrations,
@@ -115,6 +116,7 @@ class _VisualsPromptDialogState extends ConsumerState<_VisualsPromptDialog> {
     );
     final imageCount = estimatedInteriorImageCount(
       bookType: widget.presets.bookType,
+      bookTypeChoice: widget.presets.bookTypeChoice,
       illustrationsEnabled: true,
       targetPages: widget.targetPages,
     );

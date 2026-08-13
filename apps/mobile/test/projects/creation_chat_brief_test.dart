@@ -112,10 +112,7 @@ void main() {
     await tester.pumpWidget(app(creation: creation, projects: projects));
     await _buildBook(tester);
 
-    expect(
-      _inHeader(find.text('Building your outline · 64%')),
-      findsOneWidget,
-    );
+    expect(_inHeader(find.text('Building your outline · 64%')), findsOneWidget);
     expect(_inHeader(find.text('Planning')), findsOneWidget);
 
     await tester.teardownScreen();
@@ -242,16 +239,16 @@ void main() {
     final pages = targetPageCountFor('lead_magnet', 'short');
     int perPage(String quality) =>
         (estimateProjectCredits(
-              bookType: 'lead_magnet',
-              qualityPreset: quality,
-              // Images are their own switch, priced per image below, so they
-              // are left out of the writing rate entirely.
-              coverEnabled: false,
-              illustrationsEnabled: false,
-              targetPages: pages,
-              creditCosts: const {},
-            ) /
-            pages)
+                  bookType: 'lead_magnet',
+                  qualityPreset: quality,
+                  // Images are their own switch, priced per image below, so they
+                  // are left out of the writing rate entirely.
+                  coverEnabled: false,
+                  illustrationsEnabled: false,
+                  targetPages: pages,
+                  creditCosts: const {},
+                ) /
+                pages)
             .round();
 
     for (final quality in ['fast', 'balanced', 'premium']) {
@@ -354,9 +351,9 @@ void main() {
       _inDetails(find.text('Estimated build cost · ~12 pages')),
       findsOneWidget,
     );
-    // 350 base + 12·8 pages + 45 cover + 3·45 interiors + 150 unlock, from
+    // 350 base + 12·8 pages + 45 cover + 2·45 interiors + 150 unlock, from
     // the harness billing costs — the same figure the page-count sheet quotes.
-    expect(_inDetails(find.text('776')), findsOneWidget);
+    expect(_inDetails(find.text('731')), findsOneWidget);
 
     await tester.teardownScreen();
   });

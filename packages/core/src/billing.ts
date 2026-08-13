@@ -1,5 +1,6 @@
 import { type CreditPricing, creditPricing } from "./creditPricing.js";
 import { coverArtSourceFor } from "./generation/coverSource.js";
+import { interiorIllustrationSlotCount } from "./generation/illustrationSlots.js";
 import { modelTierSchema } from "./schemas/book.js";
 import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
 
@@ -503,7 +504,11 @@ export function estimateInteriorImageCount(input: CreateProjectInput): number {
       : bookType === "lead_magnet" || bookType === "short_story"
         ? 4
         : Math.max(1, Math.ceil(input.targetPages / 8));
-  return Math.max(0, Math.min(launchCap, Math.ceil(input.targetPages / 4)));
+  // Slots are the pages generation will actually try to illustrate. The /4
+  // ceiling used to charge a 5-page short story for two interiors while
+  // `shouldIllustratePage` only fired for page 1. Cap still bounds KIDS
+  // every-page books so a 32-page picture book is not billed for 32 images.
+  return Math.max(0, Math.min(launchCap, interiorIllustrationSlotCount(input)));
 }
 
 /**

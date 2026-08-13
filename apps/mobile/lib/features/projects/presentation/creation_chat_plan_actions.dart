@@ -91,6 +91,7 @@ extension _CreationChatPlanActions on _CreationChatScreenState {
         const <String, dynamic>{};
     int estimateCredits(int pages) => estimateProjectCredits(
       bookType: presets.bookType,
+      bookTypeChoice: presets.bookTypeChoice,
       qualityPreset: presets.qualityPreset,
       coverEnabled: presets.coverEnabled,
       illustrationsEnabled: presets.illustrationsEnabled,

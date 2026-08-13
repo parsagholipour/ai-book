@@ -353,9 +353,9 @@ class _TitleSheetState extends State<_TitleSheet> {
               const SizedBox(height: 4),
               Text(
                 'Ideas from the chat',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -445,6 +445,7 @@ class _AdvancedSheet extends ConsumerWidget {
               onCustom: controller.setCustomTargetPages,
               estimateCredits: (pages) => estimateProjectCredits(
                 bookType: presets.bookType,
+                bookTypeChoice: presets.bookTypeChoice,
                 qualityPreset: presets.qualityPreset,
                 coverEnabled: presets.coverEnabled,
                 illustrationsEnabled: presets.illustrationsEnabled,
