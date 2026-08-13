@@ -223,7 +223,7 @@ void main() {
     await tester.teardownScreen();
   });
 
-  testWidgets('the Finish picker prices each quality tier on its own tile', (
+  testWidgets('the Effort picker prices each quality tier on its own tile', (
     tester,
   ) async {
     final creation = ScriptedCreationRepository();
@@ -236,26 +236,37 @@ void main() {
 
     // The tiers cost different amounts, so the choice is a choice of price and
     // has to say so where it is made — not afterwards, in the estimate badge.
-    // Priced at the preset's own page count, because 'auto' leaves the sheet
-    // with no explicit one and that is the default.
-    int expected(String quality) => estimateProjectCredits(
-      bookType: 'lead_magnet',
-      qualityPreset: quality,
-      coverEnabled: true,
-      illustrationsEnabled: true,
-      targetPages: targetPageCountFor('lead_magnet', 'short'),
-      creditCosts: const {},
-    );
+    // A rate, not a total: the page count is still 'auto' at this point, so the
+    // preset's own count stands in and the number quoted has to hold whatever
+    // length the book turns out to be.
+    final pages = targetPageCountFor('lead_magnet', 'short');
+    int perPage(String quality) =>
+        (estimateProjectCredits(
+              bookType: 'lead_magnet',
+              qualityPreset: quality,
+              // Images are their own switch, priced per image below, so they
+              // are left out of the writing rate entirely.
+              coverEnabled: false,
+              illustrationsEnabled: false,
+              targetPages: pages,
+              creditCosts: const {},
+            ) /
+            pages)
+            .round();
 
     for (final quality in ['fast', 'balanced', 'premium']) {
       expect(
-        find.textContaining('≈ ${expected(quality)} credits'),
+        find.textContaining('≈ ${perPage(quality)} credits per page'),
         findsOneWidget,
-        reason: 'the $quality tile should carry its own price',
+        reason: 'the $quality tile should carry its own per-page rate',
       );
     }
-    expect(expected('fast'), lessThan(expected('balanced')));
-    expect(expected('premium'), greaterThan(expected('balanced')));
+    expect(perPage('fast'), lessThan(perPage('balanced')));
+    expect(perPage('premium'), greaterThan(perPage('balanced')));
+
+    // Turning illustrations on or off must not move the writing rate, which is
+    // the whole point of quoting them apart.
+    expect(find.textContaining('credits each'), findsOneWidget);
 
     await tester.teardownScreen();
   });

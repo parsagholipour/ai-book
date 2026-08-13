@@ -621,6 +621,15 @@ void main() {
 
       expect(find.text('Advanced settings'), findsOneWidget);
       expect(find.text('Auto'), findsWidgets);
+      // The closed dropdown already draws the selected option's icon in
+      // the item; a prefixIcon would paint the same glyph twice.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('book-type-auto')),
+          matching: find.byIcon(Icons.auto_awesome_outlined),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('book-type-auto')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Workbook').last);

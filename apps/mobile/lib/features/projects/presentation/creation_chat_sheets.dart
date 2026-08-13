@@ -396,6 +396,9 @@ class _AdvancedSheet extends ConsumerWidget {
     final creditCosts =
         ref.watch(billingProvider).asData?.value.creditCosts ??
         const <String, dynamic>{};
+    // Named on both image switches. Effort changes it — the top tier draws on a
+    // better image model — so it is read against the chosen preset.
+    final imageCredits = _imageCredits(presets.qualityPreset, creditCosts);
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return Padding(
@@ -446,26 +449,13 @@ class _AdvancedSheet extends ConsumerWidget {
             ),
             const SizedBox(height: 14),
             _AdvancedGroup(
-              title: 'Finish',
+              title: 'Effort',
               yourChoice: state.userChoices.contains(CreationChoice.finish),
               options: qualityPresetOptions,
               selected: presets.qualityPreset,
               onChanged: controller.setQualityPreset,
-              // Priced against the page count this book would actually get.
-              // `presets.targetPages` is null for as long as the count is
-              // 'auto', which is the default — so the preset's own count
-              // stands in, exactly as the brief's estimate badge does.
-              estimateCredits: (quality) => estimateProjectCredits(
-                bookType: presets.bookType,
-                qualityPreset: quality,
-                coverEnabled: presets.coverEnabled,
-                illustrationsEnabled: presets.illustrationsEnabled,
-                targetPages:
-                    presets.pageCountMode == 'custom' && presets.targetPages != null
-                    ? presets.targetPages!
-                    : targetPageCountFor(presets.bookType, presets.lengthPreset),
-                creditCosts: creditCosts,
-              ),
+              creditsPerPage: (quality) =>
+                  _writingCreditsPerPage(presets, quality, creditCosts),
             ),
             const SizedBox(height: 8),
             SwitchListTile(
@@ -483,7 +473,12 @@ class _AdvancedSheet extends ConsumerWidget {
                     ),
                 ],
               ),
-              subtitle: Text(_coverSubtitle(presets.coverEnabled)),
+              subtitle: Text(
+                _coverSubtitle(
+                  presets.coverEnabled,
+                  imageCredits: imageCredits,
+                ),
+              ),
             ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -505,6 +500,7 @@ class _AdvancedSheet extends ConsumerWidget {
                   presets.illustrationsEnabled,
                   presets.bookType,
                   ref.watch(billingProvider).asData?.value.imageQuota,
+                  imageCredits: imageCredits,
                 ),
               ),
             ),
@@ -563,24 +559,93 @@ PaywallCreditsNeeded? _paywallCreditsNeededForError(ApiException error) {
   );
 }
 
-String _coverSubtitle(bool enabled) {
-  return enabled
+/// What one page of writing costs at an effort level, images excluded.
+///
+/// Images are a separate switch two rows down and are priced per image, so
+/// blending them into this rate would have one number answer for two
+/// independent choices — and it would move every time the reader toggled a
+/// picture. Everything the *writing* costs is in it, including the flat parts
+/// spread over the pages they produce, so the rates compare the way the bill
+/// will: it is the whole quote for a book with no generated images, divided by
+/// the pages that book has.
+///
+/// The page count is the one this book would actually get. `targetPages` is
+/// null for as long as the count is 'auto' — which is the default — so the
+/// preset's own count stands in, exactly as the brief's estimate badge does.
+int _writingCreditsPerPage(
+  MobileCreationPresets presets,
+  String qualityPreset,
+  Map<String, dynamic> creditCosts,
+) {
+  final pages = presets.pageCountMode == 'custom' && presets.targetPages != null
+      ? presets.targetPages!
+      : targetPageCountFor(presets.bookType, presets.lengthPreset);
+  if (pages < 1) {
+    return 0;
+  }
+  final writingCredits = estimateProjectCredits(
+    bookType: presets.bookType,
+    qualityPreset: qualityPreset,
+    coverEnabled: false,
+    illustrationsEnabled: false,
+    targetPages: pages,
+    creditCosts: creditCosts,
+  );
+  return (writingCredits / pages).round();
+}
+
+/// The per-image price at this effort level, which is what makes images
+/// "separate" true rather than merely unstated: the rate above leaves them out,
+/// so this is where their cost is named.
+int _imageCredits(String qualityPreset, Map<String, dynamic> creditCosts) {
+  final withCover = estimateProjectCredits(
+    bookType: 'lead_magnet',
+    qualityPreset: qualityPreset,
+    coverEnabled: true,
+    illustrationsEnabled: false,
+    targetPages: 1,
+    creditCosts: creditCosts,
+  );
+  final without = estimateProjectCredits(
+    bookType: 'lead_magnet',
+    qualityPreset: qualityPreset,
+    coverEnabled: false,
+    illustrationsEnabled: false,
+    targetPages: 1,
+    creditCosts: creditCosts,
+  );
+  return withCover - without;
+}
+
+/// [imageCredits] is omitted where the surface already itemises the cost —
+/// the visuals dialog prints a cover/illustrations/total table right below
+/// these switches, and saying it twice reads as two charges.
+String _coverSubtitle(bool enabled, {int? imageCredits}) {
+  if (!enabled) {
+    return 'Free: a designed cover is chosen to match your book.';
+  }
+  return imageCredits == null
       ? 'One cover image drawn for your book.'
-      : 'Free: a designed cover is chosen to match your book.';
+      : 'One cover image drawn for your book, $imageCredits credits.';
 }
 
 /// Says what illustrations will cost against the month's budget, when there is
 /// one.
 /// A null quota is a plan with no image limit, so it says nothing extra.
+/// See [_coverSubtitle] for why [imageCredits] is optional.
 String _illustrationsSubtitle(
   bool enabled,
   String bookType,
-  MobileImageQuota? quota,
-) {
+  MobileImageQuota? quota, {
+  int? imageCredits,
+}) {
   if (!enabled) {
     return 'No generated images inside the book.';
   }
-  final base = 'Up to ${visualLimitFor(bookType)} in-book illustrations.';
+  final base = imageCredits == null
+      ? 'Up to ${visualLimitFor(bookType)} in-book illustrations.'
+      : 'Up to ${visualLimitFor(bookType)} in-book illustrations, '
+            '$imageCredits credits each.';
   if (quota == null) {
     return base;
   }

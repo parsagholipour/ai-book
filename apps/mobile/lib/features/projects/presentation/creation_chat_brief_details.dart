@@ -85,7 +85,7 @@ class _BriefDetails extends StatelessWidget {
               onTap: onChipTap,
             ),
             _TappableBriefChip(
-              label: 'Finish',
+              label: 'Effort',
               value: qualityLabel(presets.qualityPreset),
               onTap: onChipTap,
             ),

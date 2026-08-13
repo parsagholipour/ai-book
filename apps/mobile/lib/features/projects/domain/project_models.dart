@@ -143,6 +143,14 @@ class MobileProjectSummary {
 
   bool get isImported => source == 'imported';
 
+  /// Whether the server is still working on this book. The same question
+  /// [MobileProjectStatus.isLive] answers, asked of a listed summary — which
+  /// carries no retry fields, so it answers on the status alone.
+  bool get isLive => switch (status.toLowerCase()) {
+    'planning' || 'generating' || 'editing' => true,
+    _ => false,
+  };
+
   String get bookTypeLabel {
     return switch (bookType) {
       'lead_magnet' => 'Lead magnet',

@@ -51,10 +51,7 @@ class _BookTypeDropdown extends StatelessWidget {
           key: ValueKey('book-type-$selected'),
           initialValue: selectedOption.value,
           isExpanded: true,
-          decoration: InputDecoration(
-            prefixIcon: Icon(selectedOption.icon),
-            helperText: selectedOption.subtitle,
-          ),
+          decoration: InputDecoration(helperText: selectedOption.subtitle),
           items: [
             for (final option in options)
               DropdownMenuItem(
@@ -233,7 +230,7 @@ class _AdvancedGroup extends StatelessWidget {
     required this.options,
     required this.selected,
     required this.onChanged,
-    this.estimateCredits,
+    this.creditsPerPage,
   });
 
   final String title;
@@ -242,20 +239,26 @@ class _AdvancedGroup extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
 
-  /// What this book would cost at each option, when the options are priced
-  /// apart. Shown on the tile itself: a reader choosing between quality tiers
+  /// What each option costs per page of writing, when the options are priced
+  /// apart. Shown on the tile itself: a reader choosing between effort levels
   /// is choosing between prices, and finding that out from the estimate badge
   /// after the fact is how a tap becomes a surprise.
-  final int Function(String value)? estimateCredits;
+  ///
+  /// A rate rather than a total, because the total answers a question the
+  /// reader has not been asked yet — the page count is still 'auto' here. And
+  /// writing only: illustrations are their own switch, priced per image a few
+  /// rows down, so folding them in would make one number answer for two
+  /// choices.
+  final int Function(String value)? creditsPerPage;
 
   /// The price leads, because it is the part that differs between options the
   /// blurbs all describe as good. Written into the subtitle rather than a
   /// trailing widget so `AppChoiceTile` reads it into its semantic label too.
   String _subtitleFor(CreationPresetOption option) {
-    final estimate = estimateCredits?.call(option.value);
-    return estimate == null
+    final rate = creditsPerPage?.call(option.value);
+    return rate == null
         ? option.subtitle
-        : '≈ $estimate credits · ${option.subtitle}';
+        : '≈ $rate credits per page · ${option.subtitle}';
   }
 
   @override

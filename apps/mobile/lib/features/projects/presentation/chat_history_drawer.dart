@@ -14,6 +14,7 @@ import '../../characters/presentation/character_library_screen.dart';
 import '../data/creation_repository.dart';
 import '../domain/creation_models.dart';
 import 'book_shelf.dart';
+import 'chat_session_activity.dart';
 import 'creation_chat_controller.dart';
 import 'creation_chat_navigation.dart';
 import 'pending_chat_sessions.dart';
@@ -415,6 +416,37 @@ class _GroupHeaderDelegate extends SliverPersistentHeaderDelegate {
   }
 }
 
+/// The leading glyph of a chat row: a spinner while that chat has work of its
+/// own running — its book being planned, written or edited, or its own turn
+/// still in flight — and the chat icon otherwise.
+///
+/// Both are drawn in the same 20px box, so a row does not shift sideways when
+/// the work starts or stops.
+class _ChatGlyph extends StatelessWidget {
+  const _ChatGlyph({required this.busy, required this.color});
+
+  final bool busy;
+
+  /// Drawn in this colour either way. Rows pass the brand colour while busy,
+  /// because work running is worth noticing from across the list.
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!busy) {
+      return Icon(Icons.chat_bubble_outline, size: 20, color: color);
+    }
+    return Semantics(
+      label: 'Working',
+      child: SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(strokeWidth: 2, color: color),
+      ),
+    );
+  }
+}
+
 class _PendingChatTile extends StatelessWidget {
   const _PendingChatTile({required this.entry});
 
@@ -423,6 +455,10 @@ class _PendingChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    // Spinning until the server has the chat, and no longer: an entry that
+    // already has its draftId is only waiting for its real tile to replace it,
+    // which is not work being done.
+    final creating = entry.draftId == null;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       child: ListTile(
@@ -430,10 +466,9 @@ class _PendingChatTile extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         minVerticalPadding: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        leading: Icon(
-          Icons.chat_bubble_outline,
-          size: 20,
-          color: colors.onSurfaceVariant,
+        leading: _ChatGlyph(
+          busy: creating,
+          color: creating ? colors.primary : colors.onSurfaceVariant,
         ),
         title: Text(
           entry.title,
@@ -449,13 +484,6 @@ class _PendingChatTile extends StatelessWidget {
             context,
           ).textTheme.labelSmall?.copyWith(color: colors.onSurfaceVariant),
         ),
-        trailing: entry.draftId == null
-            ? const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : null,
         onTap: () => _open(context),
       ),
     );
@@ -498,6 +526,21 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(12),
     );
+    // Two kinds of work, one glyph: the book this chat is making being planned,
+    // written or edited, and — for the chat that is open — its own turn still
+    // running. The second is only knowable for the open chat, since that is the
+    // only conversation the controller holds.
+    final session = widget.session;
+    final chatBusy = ref.watch(
+      creationChatControllerProvider.select((state) => state.isBusy),
+    );
+    final busy =
+        ref.watch(
+          chatBookBusyProvider(
+            session.activeProjectId ?? session.createdProjectId,
+          ),
+        ) ||
+        (selected && chatBusy);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -515,11 +558,12 @@ class _ChatTileState extends ConsumerState<_ChatTile> {
           tileColor: Colors.transparent,
           selectedTileColor: Colors.transparent,
           shape: shape,
-          leading: Icon(
-            Icons.chat_bubble_outline,
-            size: 20,
+          leading: _ChatGlyph(
+            busy: busy,
             color: selected
                 ? colors.onPrimaryContainer
+                : busy
+                ? colors.primary
                 : colors.onSurfaceVariant,
           ),
           title: Text(

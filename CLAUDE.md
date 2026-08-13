@@ -838,7 +838,7 @@ tells you when a listed file has dropped under the default so the entry can be d
   rate is the value of work actually done. They diverge because a reader buys on one day and spends
   over the next month, so pairing either alone against provider spend misstates the margin.
 - **A price key with no tier suffix is the *balanced* rate.** The quality preset a reader picks in
-  the app's Finish section (`fast` / `balanced` / `premium`) routes to genuinely different models,
+  the app's **Effort** section (`fast` / `balanced` / `premium`) routes to genuinely different models,
   so five rates carry a `Fast` and a `Premium` twin beside them — `fullBookBase`,
   `fullBookPerPage`, `imageGeneration`, `pageRegenerationPerPage`, `bookTextEditPerPage`
   (`TIER_PRICED_KEYS`). Read them **only** through `tierPrice(pricing, key, tier)`, and name the
@@ -858,6 +858,12 @@ tells you when a listed file has dropped under the default so the entry can be d
   balanced — a credit is worth $0.002832 to a Creator subscriber and only $0.002125 to a Max one
   after Play's cut, and Max is the plan someone can spend 80,000 credits of premium writing on, so
   a rate that merely tracked provider cost billed a long premium book at a loss.
+  The Effort picker quotes a **writing rate, not a total** (`_writingCreditsPerPage` in
+  `creation_chat_sheets.dart`): the page count is still "auto" while a reader is choosing, so a
+  total there answers a question they have not been asked, and images are a separate switch priced
+  per image (`_imageCredits`) — folding them in would make one number answer for two independent
+  choices and move every time a picture was toggled. It is the whole quote for a book with *no*
+  generated images divided by its pages, so the rates still compare the way the bill will.
   The app **re-implements this formula in Dart** (`estimateProjectCredits` in
   `project_models.dart`, which mirrors `tierPrice` in `_tierCost`) and there is no server quote
   route to fall back on, so the two must move together — which is why both sides spell their

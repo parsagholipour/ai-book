@@ -298,7 +298,7 @@ class BookHeaderCard extends StatelessWidget {
                   value: project.lengthPresetLabel,
                 ),
                 AppMetricChip(
-                  label: 'Finish',
+                  label: 'Effort',
                   value: project.qualityPresetLabel,
                 ),
               ],

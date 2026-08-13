@@ -158,8 +158,7 @@ class _ShelfBookState extends ConsumerState<_ShelfBook> {
   void didUpdateWidget(covariant _ShelfBook oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.project.id != widget.project.id ||
-        (!_summaryIsLive(oldWidget.project) &&
-            _summaryIsLive(widget.project))) {
+        (!oldWidget.project.isLive && widget.project.isLive)) {
       _requestedSettledRefresh = false;
     }
   }
@@ -167,7 +166,7 @@ class _ShelfBookState extends ConsumerState<_ShelfBook> {
   @override
   Widget build(BuildContext context) {
     final project = widget.project;
-    final liveStatus = _summaryIsLive(project)
+    final liveStatus = project.isLive
         ? ref.watch(projectStatusProvider(project.id)).asData?.value
         : null;
 
@@ -285,13 +284,6 @@ class _ShelfBookState extends ConsumerState<_ShelfBook> {
   }
 }
 
-bool _summaryIsLive(MobileProjectSummary project) {
-  return switch (project.status.toLowerCase()) {
-    'planning' || 'generating' || 'editing' => true,
-    _ => false,
-  };
-}
-
 /// Applies the streamed fields to the cached summary used by the shelf card.
 ///
 /// Keeping this merge local avoids making the whole project list refetch on
@@ -359,7 +351,7 @@ _ShelfStatus _shelfStatus(MobileProjectSummary project) {
   if (project.hasReadyExport) {
     return const _ShelfStatus(label: 'Ready', emphasize: true, showDot: true);
   }
-  if (_summaryIsLive(project)) {
+  if (project.isLive) {
     return _ShelfStatus(label: '${project.progressPercent}% complete');
   }
   if (project.status.toLowerCase() == 'plan_ready') {
