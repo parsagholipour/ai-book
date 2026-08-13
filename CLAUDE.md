@@ -837,6 +837,34 @@ tells you when a listed file has dropped under the default so the entry can be d
   (`PurchaseRecord.amountMicros`) is money banked in the window; credits delivered × the credit
   rate is the value of work actually done. They diverge because a reader buys on one day and spends
   over the next month, so pairing either alone against provider spend misstates the margin.
+- **A price key with no tier suffix is the *balanced* rate.** The quality preset a reader picks in
+  the app's Finish section (`fast` / `balanced` / `premium`) routes to genuinely different models,
+  so five rates carry a `Fast` and a `Premium` twin beside them — `fullBookBase`,
+  `fullBookPerPage`, `imageGeneration`, `pageRegenerationPerPage`, `bookTextEditPerPage`
+  (`TIER_PRICED_KEYS`). Read them **only** through `tierPrice(pricing, key, tier)`, and name the
+  key to charge with `tierPriceKey` — the dashboard's revenue projection buckets by the same
+  function, so a book cannot be quoted against one key and counted against another. Leaving the
+  base key meaning balanced is what makes this migration-free: `normalizeCreditPricing` backfills
+  the new keys from the defaults, so every `CreditPricingRevision` written before tiers were
+  priced still means what it meant. Everything else stays flat on purpose — `exportUnlock`
+  compiles the same PDF whatever wrote it, audiobooks and voice calls reach a tier-blind provider,
+  and the `…Base` charges are request overhead rather than model spend.
+  **Pricing reads `mediaSettings.modelTier`, never `mediaSettings.mobile.qualityPreset`**
+  (`modelTierForInput`): the tier is what routes the models and what the provider-cost table
+  already keys off, while the mobile echo is written only by the app — pricing off it let a
+  project that set the tier directly run premium models for free. No tier recorded is *balanced*,
+  which is right rather than merely safe: a book from before tier routing runs the legacy single
+  model. The per-page rates are floored at the **Max** plan's break-even, not at the ratio to
+  balanced — a credit is worth $0.002832 to a Creator subscriber and only $0.002125 to a Max one
+  after Play's cut, and Max is the plan someone can spend 80,000 credits of premium writing on, so
+  a rate that merely tracked provider cost billed a long premium book at a loss.
+  The app **re-implements this formula in Dart** (`estimateProjectCredits` in
+  `project_models.dart`, which mirrors `tierPrice` in `_tierCost`) and there is no server quote
+  route to fall back on, so the two must move together — which is why both sides spell their
+  totals out in tests rather than deriving them from the price table. The app picks its tier off
+  the project DTO's `qualityPreset`, which `qualityPresetForProject` fills in from the tier when
+  the mobile echo is missing; do not add a `modelTier` field beside it, because the mobile
+  responses' leak guard rejects any wire key containing "model".
 - **Credit prices are operator-editable, not constants.** Read them with `creditPricing()` from
   `packages/core/src/creditPricing.ts` — never capture a price at module load, which is why
   `VOICE_CALL_POLICY` no longer carries `creditsPerMinute`. The compiled `DEFAULT_CREDIT_COSTS` are

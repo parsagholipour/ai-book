@@ -1,5 +1,6 @@
 import { type CreditPricing, creditPricing } from "./creditPricing.js";
 import { coverArtSourceFor } from "./generation/coverSource.js";
+import { modelTierSchema } from "./schemas/book.js";
 import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
 
 export const CREDIT_USD_VALUE = 0.01;
@@ -39,6 +40,79 @@ const MODEL_TIER_COST_ASSUMPTIONS_USD: Partial<Record<ModelTier, ProviderCostAss
 export function providerCostAssumptionsForInput(input: CreateProjectInput): ProviderCostAssumptions {
   const tier = input.mediaSettings.modelTier;
   return (tier && MODEL_TIER_COST_ASSUMPTIONS_USD[tier]) || PROVIDER_COST_ASSUMPTIONS_USD;
+}
+
+/**
+ * Which tier a book is *priced* at.
+ *
+ * `mediaSettings.modelTier` and nothing else. It is the field that actually
+ * routes the models (`adapters/modelTiers.ts`), it is typed and validated, and
+ * it is what the provider-cost table above already reads — pricing off
+ * `mediaSettings.mobile.qualityPreset` instead, as this file used to, meant a
+ * project that set the tier directly got premium models for free, because that
+ * echo is only ever written by the app.
+ *
+ * No tier recorded is `balanced`, which is the honest answer rather than a
+ * default: a book from before tier routing runs the legacy single model, and
+ * balanced is what the unsuffixed price keys have always meant.
+ */
+export function modelTierForInput(input: CreateProjectInput): ModelTier {
+  return input.mediaSettings.modelTier ?? "balanced";
+}
+
+/** {@link modelTierForInput} for callers holding a raw `mediaSettings` JSON column. */
+export function modelTierFromMediaSettings(mediaSettings: unknown): ModelTier {
+  const parsed = modelTierSchema.safeParse(jsonRecord(mediaSettings).modelTier);
+  return parsed.success ? parsed.data : "balanced";
+}
+
+/**
+ * The rates that vary by tier, and the only ones.
+ *
+ * A tier changes which models run, so a price follows it exactly as far as the
+ * model spend does: the writing rate, the images, and the per-page rate every
+ * post-generation rewrite is billed at. Everything else is flat on purpose —
+ * `exportUnlock` compiles the same PDF whatever wrote it, an audiobook and a
+ * voice call reach a tier-blind provider, and `fullBookBase`'s siblings
+ * (`bookTextEditBase`, `bookReplanBase`) are fixed overheads rather than model
+ * spend.
+ *
+ * The unsuffixed key is the balanced rate; the other two are that key plus
+ * `Fast` / `Premium`. Keeping the convention mechanical is what lets one
+ * resolver serve every call site, here and in the app's mirror of it.
+ */
+export const TIER_PRICED_KEYS = [
+  "fullBookBase",
+  "fullBookPerPage",
+  "imageGeneration",
+  "pageRegenerationPerPage",
+  "bookTextEditPerPage"
+] as const;
+
+export type TierPricedKey = (typeof TIER_PRICED_KEYS)[number];
+
+/**
+ * Which price key a tier reads for one of {@link TIER_PRICED_KEYS}.
+ *
+ * The single place the suffix convention is written down, so the quote and the
+ * dashboard's revenue projection cannot disagree about which key a book drove.
+ */
+export function tierPriceKey<K extends TierPricedKey>(
+  key: K,
+  tier: ModelTier
+): K | `${K}Fast` | `${K}Premium` {
+  if (tier === "fast") {
+    return `${key}Fast`;
+  }
+  if (tier === "premium") {
+    return `${key}Premium`;
+  }
+  return key;
+}
+
+/** The tier's rate for one of {@link TIER_PRICED_KEYS}. */
+export function tierPrice(pricing: CreditPricing, key: TierPricedKey, tier: ModelTier): number {
+  return pricing[tierPriceKey(key, tier)];
 }
 
 /**
@@ -188,6 +262,12 @@ export type CreditCostEstimate = {
     includesCover: boolean;
     includesExportUnlock: boolean;
     includesPremiumReview: boolean;
+    /**
+     * The tier these prices came from. Recorded rather than derived, because
+     * this estimate is written into the reservation's metadata and read back
+     * long after the project row may have moved.
+     */
+    modelTier: ModelTier;
   };
 };
 
@@ -260,11 +340,16 @@ export function estimateFullBookCreditCost(
   input: CreateProjectInput,
   pricing: CreditPricing = creditPricing()
 ): CreditCostEstimate {
+  // Resolved once for the whole quote: reading it per line item would let a
+  // caller hand in one input and be priced at two different tiers.
+  const modelTier = modelTierForInput(input);
+  const perPageCredits = tierPrice(pricing, "fullBookPerPage", modelTier);
+  const imageCredits = tierPrice(pricing, "imageGeneration", modelTier);
   const estimatedInteriorImages = estimateInteriorImageCount(input);
   const includesCover = coverArtSourceFor(input.mediaSettings) === "ai";
-  const fullBookCredits = pricing.fullBookBase + input.targetPages * pricing.fullBookPerPage;
-  const interiorImageCredits = estimatedInteriorImages * pricing.imageGeneration;
-  const coverCredits = includesCover ? pricing.imageGeneration : 0;
+  const fullBookCredits = tierPrice(pricing, "fullBookBase", modelTier) + input.targetPages * perPageCredits;
+  const interiorImageCredits = estimatedInteriorImages * imageCredits;
+  const coverCredits = includesCover ? imageCredits : 0;
   const includesPremiumReview = isPremiumProject(input);
   const premiumCredits = includesPremiumReview ? pricing.premiumReview : 0;
   const lineItems: CreditLineItem[] = [
@@ -272,21 +357,21 @@ export function estimateFullBookCreditCost(
       code: "FULL_BOOK_GENERATION",
       label: "Full book generation",
       quantity: input.targetPages,
-      unitCredits: pricing.fullBookPerPage,
+      unitCredits: perPageCredits,
       credits: fullBookCredits
     },
     {
       code: "IMAGE_GENERATION",
       label: "Interior image generation",
       quantity: estimatedInteriorImages,
-      unitCredits: pricing.imageGeneration,
+      unitCredits: imageCredits,
       credits: interiorImageCredits
     },
     {
       code: "IMAGE_GENERATION",
       label: "Cover image generation",
       quantity: includesCover ? 1 : 0,
-      unitCredits: pricing.imageGeneration,
+      unitCredits: imageCredits,
       credits: coverCredits
     },
     {
@@ -313,7 +398,8 @@ export function estimateFullBookCreditCost(
       estimatedInteriorImages,
       includesCover,
       includesExportUnlock: true,
-      includesPremiumReview
+      includesPremiumReview,
+      modelTier
     }
   };
 }
@@ -347,7 +433,11 @@ export function estimateAudiobookCreditCost(
       estimatedInteriorImages: 0,
       includesCover: false,
       includesExportUnlock: false,
-      includesPremiumReview: false
+      includesPremiumReview: false,
+      // Narration reaches a tier-blind speech provider, so this estimate is the
+      // same at every tier. Recorded as balanced rather than left out because
+      // the field says which prices were used, and these are the flat ones.
+      modelTier: "balanced"
     }
   };
 }
@@ -416,27 +506,33 @@ export function estimateInteriorImageCount(input: CreateProjectInput): number {
   return Math.max(0, Math.min(launchCap, Math.ceil(input.targetPages / 4)));
 }
 
+/**
+ * Whether this book runs the extra premium review pass.
+ *
+ * The tier, deliberately not `draftCandidates`: best-of drafting is consumed
+ * only by the sequential-pages strategy (books past the mobile ceiling), so
+ * pricing on that knob charged premium review for a setting the routed strategy
+ * never read. And deliberately not `mediaSettings.mobile.qualityPreset`, which
+ * is only ever written by the app — see {@link modelTierForInput}.
+ */
 export function isPremiumProject(input: CreateProjectInput): boolean {
-  const mobile = mobileMetadata(input.mediaSettings);
-  // The preset alone, deliberately not `draftCandidates`: best-of drafting is
-  // consumed only by the sequential-pages strategy (books past the mobile
-  // ceiling), so pricing on the knob charged premium review for a setting the
-  // routed strategy never read. The preset's real value — premium model
-  // routing — applies to every strategy.
-  return mobile?.qualityPreset === "premium";
+  return modelTierForInput(input) === "premium";
 }
 
+/**
+ * The app's own metadata echo, read for the one thing only it knows: which of
+ * the mobile book shapes this is, which sets the illustration cap. The quality
+ * preset also lives here and is deliberately *not* read — pricing follows
+ * `mediaSettings.modelTier`, see {@link modelTierForInput}.
+ */
 function mobileMetadata(mediaSettings: CreateProjectInput["mediaSettings"]): {
   bookType?: "lead_magnet" | "workbook" | "short_story";
-  qualityPreset?: "fast" | "balanced" | "premium";
   imagesEnabled?: boolean;
 } | null {
   const record = jsonRecord((mediaSettings as CreateProjectInput["mediaSettings"] & { mobile?: unknown }).mobile);
   const bookType = stringValue(record.bookType);
-  const qualityPreset = stringValue(record.qualityPreset);
   return {
     ...(bookType === "lead_magnet" || bookType === "workbook" || bookType === "short_story" ? { bookType } : {}),
-    ...(qualityPreset === "fast" || qualityPreset === "balanced" || qualityPreset === "premium" ? { qualityPreset } : {}),
     ...(typeof record.imagesEnabled === "boolean" ? { imagesEnabled: record.imagesEnabled } : {})
   };
 }

@@ -291,7 +291,11 @@ function recommendedPresets(
     bookType: "lead_magnet",
     bookTypeChoice: "auto",
     lengthPreset: referenceLength > 1200 || lane === "offer_guide" || lane === "practical_guide" ? "standard" : "short",
-    qualityPreset: lane === "offer_guide" ? "premium" : "balanced",
+    // Never premium, for any lane. The tiers are priced apart now, so a lane
+    // that recommends the top one is the studio spending the reader's credits
+    // on a choice they did not make. Premium is opt-in, in the Finish picker,
+    // where its price is shown beside the others.
+    qualityPreset: "balanced",
     imagesEnabled: true,
     coverEnabled: true,
     illustrationsEnabled: true

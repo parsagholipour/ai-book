@@ -10,7 +10,7 @@ import {
   resetCreditPricing,
   setCreditPricing
 } from "./creditPricing.js";
-import { creditCostForOperation, estimateFullBookCreditCost } from "./billing.js";
+import { TIER_PRICED_KEYS, creditCostForOperation, estimateFullBookCreditCost, tierPrice } from "./billing.js";
 import { createProjectSchema } from "./schemas/book.js";
 
 afterEach(() => {
@@ -86,6 +86,41 @@ describe("creditPricingInputSchema", () => {
     // These multiply by page count or minutes, so a typo costs proportionally more.
     expect(CREDIT_PRICING_LIMITS.fullBookPerPage).toBeLessThan(CREDIT_PRICING_LIMITS.fullBookBase);
     expect(CREDIT_PRICING_LIMITS.bookTextEditPerPage).toBeLessThan(CREDIT_PRICING_LIMITS.bookTextEditBase);
+  });
+
+  it("bounds each tier rate exactly like the balanced rate it varies", () => {
+    // A tier rate given more room than the price it derives from would be a way
+    // to route around the ceiling that exists to stop a typo charging money.
+    for (const key of TIER_PRICED_KEYS) {
+      expect(CREDIT_PRICING_LIMITS[`${key}Fast`]).toBe(CREDIT_PRICING_LIMITS[key]);
+      expect(CREDIT_PRICING_LIMITS[`${key}Premium`]).toBe(CREDIT_PRICING_LIMITS[key]);
+    }
+  });
+});
+
+describe("tier rates", () => {
+  it("reads the unsuffixed key for balanced and the suffixed ones either side", () => {
+    for (const key of TIER_PRICED_KEYS) {
+      expect(tierPrice(DEFAULT_CREDIT_COSTS, key, "balanced")).toBe(DEFAULT_CREDIT_COSTS[key]);
+      expect(tierPrice(DEFAULT_CREDIT_COSTS, key, "fast")).toBe(DEFAULT_CREDIT_COSTS[`${key}Fast`]);
+      expect(tierPrice(DEFAULT_CREDIT_COSTS, key, "premium")).toBe(DEFAULT_CREDIT_COSTS[`${key}Premium`]);
+    }
+  });
+
+  it("keeps a price revision written before tiers existed meaning what it meant", () => {
+    // The unsuffixed key *is* the balanced rate, so a stored revision that
+    // predates the tier keys normalizes to today's defaults for them and keeps
+    // its own value for the one it set. Nothing to migrate.
+    const stored = { ...DEFAULT_CREDIT_COSTS, fullBookPerPage: 11 } as Record<string, number>;
+    for (const key of TIER_PRICED_KEYS) {
+      delete stored[`${key}Fast`];
+      delete stored[`${key}Premium`];
+    }
+
+    const values = normalizeCreditPricing(stored);
+    expect(tierPrice(values, "fullBookPerPage", "balanced")).toBe(11);
+    expect(tierPrice(values, "fullBookPerPage", "fast")).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPageFast);
+    expect(tierPrice(values, "fullBookPerPage", "premium")).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPagePremium);
   });
 });
 

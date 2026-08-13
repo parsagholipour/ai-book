@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tomeza/features/projects/domain/project_status_models.dart';
+import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_controller.dart';
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
+import 'package:tomeza/features/projects/presentation/creation_labels.dart';
 
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
@@ -218,6 +219,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Advanced settings'), findsOneWidget);
+
+    await tester.teardownScreen();
+  });
+
+  testWidgets('the Finish picker prices each quality tier on its own tile', (
+    tester,
+  ) async {
+    final creation = ScriptedCreationRepository();
+    await tester.pumpWidget(app(creation: creation));
+    await tester.pumpAndSettle();
+
+    await _expandHeader(tester);
+    await tester.tap(_inDetails(find.text('Type: Auto')));
+    await tester.pumpAndSettle();
+
+    // The tiers cost different amounts, so the choice is a choice of price and
+    // has to say so where it is made — not afterwards, in the estimate badge.
+    // Priced at the preset's own page count, because 'auto' leaves the sheet
+    // with no explicit one and that is the default.
+    int expected(String quality) => estimateProjectCredits(
+      bookType: 'lead_magnet',
+      qualityPreset: quality,
+      coverEnabled: true,
+      illustrationsEnabled: true,
+      targetPages: targetPageCountFor('lead_magnet', 'short'),
+      creditCosts: const {},
+    );
+
+    for (final quality in ['fast', 'balanced', 'premium']) {
+      expect(
+        find.textContaining('≈ ${expected(quality)} credits'),
+        findsOneWidget,
+        reason: 'the $quality tile should carry its own price',
+      );
+    }
+    expect(expected('fast'), lessThan(expected('balanced')));
+    expect(expected('premium'), greaterThan(expected('balanced')));
 
     await tester.teardownScreen();
   });

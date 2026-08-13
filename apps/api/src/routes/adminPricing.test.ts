@@ -144,6 +144,17 @@ describe("GET /api/admin/pricing", () => {
     // The same estimator production charges through, so the dashboard cannot drift.
     expect(body.preview.totalCredits).toBe(1_039);
     expect(body.preview.estimatedUsd).toBeCloseTo(10.39, 2);
+    // The tiers are priced apart, so one total describes a third of the books
+    // being sold. The top-level fields stay the balanced quote.
+    expect(body.preview.tiers.map((quote: { tier: string }) => quote.tier)).toEqual([
+      "fast",
+      "balanced",
+      "premium"
+    ]);
+    const [fast, balanced, premium] = body.preview.tiers;
+    expect(balanced.totalCredits).toBe(body.preview.totalCredits);
+    expect(fast.totalCredits).toBeLessThan(balanced.totalCredits);
+    expect(premium.totalCredits).toBeGreaterThan(balanced.totalCredits);
     expect(body.preview.lineItems).toContainEqual(
       expect.objectContaining({
         code: "IMAGE_GENERATION",

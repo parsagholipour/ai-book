@@ -27,6 +27,7 @@ import {
   type MobileProjectRevisionOriginDto,
   type MobileProjectStatusDto,
   type MobileProjectSummaryDto,
+  type MobileQualityPreset,
   type MobileQueuedJobDto,
   type ProjectStatusResult
 } from "./dto.js";
@@ -45,6 +46,7 @@ import {
   generationJobControlsProjectStatus,
   loadConfig,
   mediaSettingsSchema,
+  modelTierSchema,
   payloadOwnsProjectOutcome,
   type BookPlan
 } from "@book-maker/core";
@@ -80,7 +82,7 @@ export async function serializeProjectSummary(
     authorName: project.authorName ?? null,
     bookType: mobile?.bookType ?? inferBookType(project.category, project.subcategory),
     lengthPreset: mobile?.lengthPreset ?? "custom",
-    qualityPreset: mobile?.qualityPreset ?? "custom",
+    qualityPreset: qualityPresetForProject(project.mediaSettings, mobile?.qualityPreset),
     ...imageSettings,
     status: normalizeProjectStatus(project.status),
     statusLabel: statusLabel(project.status),
@@ -102,6 +104,27 @@ export async function serializeProjectSummary(
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString()
   };
+}
+
+/**
+ * The preset the app shows *and* prices with.
+ *
+ * The app mirrors the server's credit formula and picks its rates off this one
+ * field, so it has to name the tier the server would charge at. The mobile echo
+ * is the answer whenever the app created the book. When it is missing — an
+ * import, an operator-console project, a row older than the echo — the tier
+ * itself answers, because that is what `estimateFullBookCreditCost` prices from.
+ * Only a project with neither is "custom", which both sides read as balanced.
+ */
+function qualityPresetForProject(
+  mediaSettings: unknown,
+  echoed: MobileQualityPreset | undefined
+): MobileQualityPreset | "custom" {
+  if (echoed) {
+    return echoed;
+  }
+  const tier = modelTierSchema.safeParse(jsonRecord(mediaSettings).modelTier);
+  return tier.success ? tier.data : "custom";
 }
 
 export async function serializeProjectDetail(

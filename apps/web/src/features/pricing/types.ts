@@ -16,6 +16,17 @@ export type CreditPricingKey =
   | "audiobookBase"
   | "audiobookPerPage"
   | "characterPortraitGeneration"
+  // The quality tiers' own rates. The unsuffixed key above is the balanced one.
+  | "fullBookBaseFast"
+  | "fullBookBasePremium"
+  | "fullBookPerPageFast"
+  | "fullBookPerPagePremium"
+  | "imageGenerationFast"
+  | "imageGenerationPremium"
+  | "pageRegenerationPerPageFast"
+  | "pageRegenerationPerPagePremium"
+  | "bookTextEditPerPageFast"
+  | "bookTextEditPerPagePremium"
   // Not prices — the free tier's monthly limits. Same table, same audit trail.
   | "freeMonthlyCredits"
   | "freeIllustratedBooksPerMonth"
@@ -23,12 +34,22 @@ export type CreditPricingKey =
 
 export type CreditPricingValues = Record<CreditPricingKey, number>;
 
-export type PricingPreview = {
-  label: string;
-  targetPages: number;
+export type PricingTierQuote = {
+  tier: "fast" | "balanced" | "premium";
   totalCredits: number;
   estimatedUsd: number;
   lineItems: Array<{ code: string; label: string; quantity: number; unitCredits: number; credits: number }>;
+};
+
+export type PricingPreview = {
+  label: string;
+  targetPages: number;
+  /** The balanced quote, which is what the top-level fields have always meant. */
+  totalCredits: number;
+  estimatedUsd: number;
+  lineItems: Array<{ code: string; label: string; quantity: number; unitCredits: number; credits: number }>;
+  /** The same book at each quality tier, fast first. */
+  tiers: PricingTierQuote[];
 };
 
 export type PricingRevision = {

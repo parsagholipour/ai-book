@@ -23,15 +23,33 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
     title: "Making a book",
     blurb: "Charged once, when a plan is approved and the book is generated.",
     fields: [
-      { key: "fullBookBase", label: "Full book base", help: "Flat charge for generating any book." },
-      { key: "fullBookPerPage", label: "Per page", help: "Multiplied by the target page count." },
+      { key: "fullBookBaseFast", label: "Full book base — Quick draft", help: "Flat charge for generating any book on the Quick draft tier." },
+      { key: "fullBookBase", label: "Full book base — Balanced", help: "Flat charge for generating any book. Also the rate for a book with no tier recorded." },
+      { key: "fullBookBasePremium", label: "Full book base — Extra polish", help: "Flat charge for generating any book on the Extra polish tier." },
+      { key: "fullBookPerPageFast", label: "Per page — Quick draft", help: "Multiplied by the target page count." },
+      { key: "fullBookPerPage", label: "Per page — Balanced", help: "Multiplied by the target page count." },
       {
-        key: "imageGeneration",
-        label: "Generated image",
+        key: "fullBookPerPagePremium",
+        label: "Per page — Extra polish",
+        help: "Multiplied by the target page count. The tier's real cost is ~$0.05 a page, so this must stay above ~24 or a long premium book loses money on a Max subscription."
+      },
+      {
+        key: "imageGenerationFast",
+        label: "Generated image — Quick draft",
         help: "Per initial cover or interior illustration; the interior count is capped by book type."
       },
-      { key: "premiumReview", label: "Premium review", help: "Added for premium-preset or best-of-drafted books." },
-      { key: "coverRegeneration", label: "Cover regeneration", help: "Redrawing a cover on its own." },
+      {
+        key: "imageGeneration",
+        label: "Generated image — Balanced",
+        help: "Per initial cover or interior illustration. Quick draft and Balanced share an image model, so these two normally match."
+      },
+      {
+        key: "imageGenerationPremium",
+        label: "Generated image — Extra polish",
+        help: "Per image on the premium image model, which also draws a more expensive cover."
+      },
+      { key: "premiumReview", label: "Premium review", help: "Added once for a book on the Extra polish tier, which runs an extra review pass." },
+      { key: "coverRegeneration", label: "Cover regeneration", help: "Redrawing a cover on its own. No route charges this today." },
       { key: "planGeneration", label: "Plan generation", help: "Drafting the plan. Free today." },
       { key: "previewGeneration", label: "Preview generation", help: "Sample pages before committing. Free today." }
     ]
@@ -41,9 +59,17 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
     blurb: "Quoted in chat before the edit runs, then charged when it is confirmed.",
     fields: [
       { key: "planRevision", label: "Plan revision", help: "Reworking the plan before approval." },
-      { key: "bookTextEditBase", label: "Text edit base", help: "Flat part of a small in-place edit." },
-      { key: "bookTextEditPerPage", label: "Text edit per page", help: "Added for each page the edit touches." },
-      { key: "pageRegenerationPerPage", label: "Page rewrite per page", help: "Rewrites, chapter regenerations, continuations." },
+      { key: "bookTextEditBase", label: "Text edit base", help: "Flat part of a small in-place edit. Not tiered — request overhead, not model spend." },
+      { key: "bookTextEditPerPageFast", label: "Text edit per page — Quick draft", help: "Added for each page the edit touches." },
+      { key: "bookTextEditPerPage", label: "Text edit per page — Balanced", help: "Added for each page the edit touches." },
+      { key: "bookTextEditPerPagePremium", label: "Text edit per page — Extra polish", help: "Added for each page the edit touches, at premium prose rates." },
+      { key: "pageRegenerationPerPageFast", label: "Page rewrite per page — Quick draft", help: "Rewrites, chapter regenerations, continuations." },
+      { key: "pageRegenerationPerPage", label: "Page rewrite per page — Balanced", help: "Rewrites, chapter regenerations, continuations." },
+      {
+        key: "pageRegenerationPerPagePremium",
+        label: "Page rewrite per page — Extra polish",
+        help: "Rewrites, chapter regenerations, continuations, on the premium prose model."
+      },
       { key: "bookReplanBase", label: "Replan base", help: "Added on top of a full regeneration of the book." }
     ]
   },

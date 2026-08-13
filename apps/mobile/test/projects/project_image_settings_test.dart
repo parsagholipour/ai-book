@@ -113,6 +113,57 @@ void main() {
     );
   });
 
+  test('each quality tier is quoted at its own rates', () {
+    // The same three totals `packages/core/src/billing.test.ts` asserts for a
+    // 12-page illustrated lead magnet: 3 interior illustrations plus a cover.
+    // Two implementations of one formula, and no server quote route between
+    // them, so both have to spell the numbers out.
+    int estimate(String qualityPreset) => estimateProjectCredits(
+      bookType: 'lead_magnet',
+      qualityPreset: qualityPreset,
+      coverEnabled: true,
+      illustrationsEnabled: true,
+      targetPages: 12,
+      creditCosts: const {},
+    );
+
+    expect(estimate('fast'), 220 + 12 * 5 + 4 * 45 + 150);
+    expect(estimate('balanced'), 350 + 12 * 8 + 4 * 45 + 150);
+    expect(estimate('premium'), 500 + 12 * 30 + 4 * 85 + 200 + 150);
+
+    // "custom" is what the server sends for a book it has no preset for, and
+    // it charges such a book the balanced rates.
+    expect(estimate('custom'), estimate('balanced'));
+  });
+
+  test('a tier reads its own suffixed key out of the live price list', () {
+    int estimate(String qualityPreset, Map<String, dynamic> creditCosts) =>
+        estimateProjectCredits(
+          bookType: 'lead_magnet',
+          qualityPreset: qualityPreset,
+          coverEnabled: false,
+          illustrationsEnabled: false,
+          targetPages: 10,
+          creditCosts: creditCosts,
+        );
+
+    // Mirrors `tierPrice` in packages/core: the unsuffixed key is balanced.
+    const costs = {
+      'fullBookPerPage': 8,
+      'fullBookPerPageFast': 3,
+      'fullBookPerPagePremium': 40,
+    };
+    expect(estimate('balanced', costs) - estimate('balanced', const {}), 0);
+    expect(
+      estimate('fast', costs),
+      estimate('fast', const {}) - 10 * (5 - 3),
+    );
+    expect(
+      estimate('premium', costs),
+      estimate('premium', const {}) + 10 * (40 - 30),
+    );
+  });
+
   test('cover adds one image charge independently from illustrations', () {
     int estimate({
       required bool coverEnabled,

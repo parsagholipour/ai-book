@@ -39,6 +39,32 @@ export const DEFAULT_CREDIT_COSTS = {
   bookTextEditPerPage: 10,
   pageRegenerationPerPage: 80,
   bookReplanBase: 120,
+  // The quality tier's own rates. An unsuffixed key above *is* the balanced
+  // rate — the tier that existed when there was only one — so every price
+  // revision written before tiers were priced still means exactly what it
+  // meant, and `normalizeCreditPricing` backfills these from the defaults.
+  // Read them only through `tierPrice` in `billing.ts`; see `TIER_PRICED_KEYS`
+  // for why these five rates and not the flat charges beside them.
+  //
+  // The per-page rates are floored at the *Max* plan's break-even, not the
+  // ratio to balanced. A credit is worth $0.002832 to a Creator subscriber but
+  // only $0.002125 to a Max one after Google Play's cut, and Max is the plan
+  // someone can burn 80,000 credits of writing on — so a rate that merely
+  // tracked the provider-cost ratio (22 for premium, against $0.05 a page)
+  // billed a long premium book at a loss. 30 clears it by ~25%.
+  fullBookBaseFast: 220,
+  fullBookBasePremium: 500,
+  fullBookPerPageFast: 5,
+  fullBookPerPagePremium: 30,
+  // Fast and balanced share an image model, so this deliberately equals the
+  // balanced rate. It exists anyway so the resolver has no hole to special-case
+  // and an operator can separate them later without a deploy.
+  imageGenerationFast: 45,
+  imageGenerationPremium: 85,
+  pageRegenerationPerPageFast: 40,
+  pageRegenerationPerPagePremium: 220,
+  bookTextEditPerPageFast: 5,
+  bookTextEditPerPagePremium: 28,
   voiceCallPerMinute: 60,
   audiobookBase: 80,
   audiobookPerPage: 12,
@@ -101,6 +127,18 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   bookTextEditPerPage: 2_000,
   pageRegenerationPerPage: 5_000,
   bookReplanBase: 20_000,
+  // Each tier rate is bounded exactly like the balanced rate it varies, so a
+  // premium multiplier cannot be given more room than the price it derives from.
+  fullBookBaseFast: 100_000,
+  fullBookBasePremium: 100_000,
+  fullBookPerPageFast: 2_000,
+  fullBookPerPagePremium: 2_000,
+  imageGenerationFast: 5_000,
+  imageGenerationPremium: 5_000,
+  pageRegenerationPerPageFast: 5_000,
+  pageRegenerationPerPagePremium: 5_000,
+  bookTextEditPerPageFast: 2_000,
+  bookTextEditPerPagePremium: 2_000,
   voiceCallPerMinute: 2_000,
   audiobookBase: 20_000,
   audiobookPerPage: 2_000,

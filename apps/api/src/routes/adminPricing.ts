@@ -18,6 +18,7 @@ import {
   CREDIT_USD_VALUE,
   DEFAULT_CREDIT_COSTS,
   type CreditPricing,
+  type ModelTier,
   createProjectSchema,
   creditPricingInputSchema,
   estimateFullBookCreditCost
@@ -251,14 +252,36 @@ function serializeState(state: CreditPricingState) {
   };
 }
 
+/**
+ * The same book quoted at each quality tier.
+ *
+ * The tiers are priced apart, so a single total says nothing about what an
+ * operator's edit does to two thirds of the books being sold. The top-level
+ * fields stay the *balanced* quote — that is what this preview has always meant
+ * and what the console renders today — and `tiers` carries the ladder beside it.
+ */
 function previewFor(values: CreditPricing) {
-  const estimate = estimateFullBookCreditCost(PREVIEW_INPUT, values);
+  const quoteAt = (tier: ModelTier) => {
+    const input = createProjectSchema.parse({
+      ...PREVIEW_INPUT,
+      mediaSettings: { ...PREVIEW_INPUT.mediaSettings, modelTier: tier }
+    });
+    const estimate = estimateFullBookCreditCost(input, values);
+    return {
+      tier,
+      totalCredits: estimate.totalCredits,
+      estimatedUsd: Math.round(estimate.totalCredits * CREDIT_USD_VALUE * 100) / 100,
+      lineItems: estimate.lineItems
+    };
+  };
+  const balanced = quoteAt("balanced");
   return {
     label: `${PREVIEW_INPUT.targetPages}-page illustrated workbook`,
     targetPages: PREVIEW_INPUT.targetPages,
-    totalCredits: estimate.totalCredits,
-    estimatedUsd: Math.round(estimate.totalCredits * CREDIT_USD_VALUE * 100) / 100,
-    lineItems: estimate.lineItems
+    totalCredits: balanced.totalCredits,
+    estimatedUsd: balanced.estimatedUsd,
+    lineItems: balanced.lineItems,
+    tiers: [quoteAt("fast"), balanced, quoteAt("premium")]
   };
 }
 

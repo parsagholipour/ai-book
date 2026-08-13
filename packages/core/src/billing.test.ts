@@ -131,7 +131,7 @@ describe("billing credit assumptions", () => {
     expect(legacy(true).totalCredits - legacy(false).totalCredits).toBe(DEFAULT_CREDIT_COSTS.imageGeneration);
   });
 
-  it("adds premium review credits for the premium preset, not for an inert best-of knob", () => {
+  it("adds premium review credits for the premium tier, not for an inert best-of knob or the app's echo", () => {
     const inputWith = (mediaExtras: Record<string, unknown>) =>
       createProjectSchema.parse({
         prompt: "Create a premium guide about pricing consulting retainers.",
@@ -151,7 +151,7 @@ describe("billing credit assumptions", () => {
         }
       });
 
-    const premium = estimateFullBookCreditCost(inputWith({ mobile: { qualityPreset: "premium" } }));
+    const premium = estimateFullBookCreditCost(inputWith({ modelTier: "premium" }));
     expect(premium.assumptions.includesPremiumReview).toBe(true);
     expect(premium.lineItems).toContainEqual(
       expect.objectContaining({ code: "PREMIUM_REVIEW", credits: DEFAULT_CREDIT_COSTS.premiumReview })
@@ -161,9 +161,88 @@ describe("billing credit assumptions", () => {
     // route to strategies that never read the knob, so it charged for nothing.
     const knobOnly = estimateFullBookCreditCost(inputWith({ draftCandidates: 2 }));
     expect(knobOnly.assumptions.includesPremiumReview).toBe(false);
+
+    // Nor does the app's own metadata echo. It is written only by the mobile
+    // client, so pricing off it let a project that set the tier directly run
+    // premium models for free — and a row written before tier routing carries
+    // the echo while running the legacy model, which is balanced work.
+    const echoOnly = estimateFullBookCreditCost(inputWith({ mobile: { qualityPreset: "premium" } }));
+    expect(echoOnly.assumptions.includesPremiumReview).toBe(false);
+    expect(echoOnly.assumptions.modelTier).toBe("balanced");
   });
 
-  it("adjusts provider cost assumptions per model tier without changing credit prices", () => {
+  it("prices a book at its own tier's rates", () => {
+    const inputForTier = (modelTier?: "fast" | "balanced" | "premium") =>
+      createProjectSchema.parse({
+        prompt: "Create a practical guide about onboarding new managers.",
+        category: "BUSINESS",
+        subcategory: "Lead Magnet Ebook",
+        targetPages: 18,
+        mediaSettings: {
+          fullIllustrations: true,
+          illustrationCadence: "template-driven",
+          includeCover: true,
+          coverTemplate: "business",
+          finalReview: true,
+          toneProfile: "confident",
+          ...(modelTier ? { modelTier } : {})
+        }
+      });
+
+    // An 18-page lead magnet gets 4 interior illustrations plus a cover, so
+    // five image units. Spelled out rather than recomputed from the price
+    // table: the app mirrors this formula and there is no server quote route
+    // to fall back on, so a change here has to be a visible change here.
+    expect(estimateFullBookCreditCost(inputForTier("fast")).totalCredits).toBe(220 + 18 * 5 + 5 * 45 + 150);
+    expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(350 + 18 * 8 + 5 * 45 + 150);
+    expect(estimateFullBookCreditCost(inputForTier("premium")).totalCredits).toBe(
+      500 + 18 * 30 + 5 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
+    );
+
+    // A book from before tiers existed pays the balanced rates, because that
+    // is the work it runs and what the unsuffixed keys have always meant.
+    expect(estimateFullBookCreditCost(inputForTier()).totalCredits).toBe(
+      estimateFullBookCreditCost(inputForTier("balanced")).totalCredits
+    );
+    expect(estimateFullBookCreditCost(inputForTier()).assumptions.modelTier).toBe("balanced");
+  });
+
+  it("keeps the tier price ladder in the same order as what the tiers cost to run", () => {
+    const inputForTier = (modelTier: "fast" | "balanced" | "premium") =>
+      createProjectSchema.parse({
+        prompt: "Create a practical guide about onboarding new managers.",
+        category: "EDUCATION",
+        subcategory: "Workbook or Study Guide",
+        targetPages: 28,
+        mediaSettings: {
+          fullIllustrations: true,
+          illustrationCadence: "template-driven",
+          includeCover: true,
+          coverTemplate: "minimal",
+          finalReview: true,
+          toneProfile: "neutral",
+          modelTier
+        }
+      });
+
+    const credits = (tier: "fast" | "balanced" | "premium") => estimateFullBookCreditCost(inputForTier(tier)).totalCredits;
+    const cost = (tier: "fast" | "balanced" | "premium") => estimateProviderCostForProject(inputForTier(tier)).estimatedUsd;
+
+    expect(credits("fast")).toBeLessThan(credits("balanced"));
+    expect(credits("balanced")).toBeLessThan(credits("premium"));
+
+    // The property that matters is not the ordering but the margin: every tier
+    // has to clear its own provider cost at the *Max* plan's credit value
+    // ($199.99 for 80,000 credits, less Google Play's 15%), which is the
+    // cheapest a credit is ever sold for and the plan someone can burn 80,000
+    // of on long premium books.
+    const maxPlanUsdPerCredit = (199.99 * 0.85) / 80_000;
+    for (const tier of ["fast", "balanced", "premium"] as const) {
+      expect(credits(tier) * maxPlanUsdPerCredit).toBeGreaterThan(cost(tier));
+    }
+  });
+
+  it("adjusts provider cost assumptions per model tier", () => {
     const mediaSettings = {
       fullIllustrations: true,
       illustrationCadence: "template-driven",
@@ -195,11 +274,6 @@ describe("billing credit assumptions", () => {
     const premiumEstimate = estimateProviderCostForProject(inputForTier("premium"));
     expect(fastEstimate.estimatedUsd).toBeLessThan(balancedEstimate.estimatedUsd);
     expect(premiumEstimate.estimatedUsd).toBeGreaterThan(balancedEstimate.estimatedUsd);
-
-    // Credit charges are tier-independent: tiers change what we spend, not what users pay.
-    expect(estimateFullBookCreditCost(inputForTier("premium")).totalCredits).toBe(
-      estimateFullBookCreditCost(inputForTier("fast")).totalCredits
-    );
   });
 
   it("builds margin summaries from estimated revenue and actual provider cost", () => {

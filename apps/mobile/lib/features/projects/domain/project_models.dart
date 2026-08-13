@@ -692,9 +692,21 @@ int estimateProjectCredits({
 }) {
   final includeCover = coverEnabled ?? imagesEnabled ?? true;
   final includeIllustrations = illustrationsEnabled ?? imagesEnabled ?? true;
-  final fullBookBase = _intCost(creditCosts, 'fullBookBase', 350);
-  final fullBookPerPage = _intCost(creditCosts, 'fullBookPerPage', 8);
-  final imageGeneration = _intCost(creditCosts, 'imageGeneration', 45);
+  final fullBookBase = _tierCost(creditCosts, 'fullBookBase', qualityPreset, {
+    'fast': 220,
+    'balanced': 350,
+    'premium': 500,
+  });
+  final fullBookPerPage = _tierCost(creditCosts, 'fullBookPerPage', qualityPreset, {
+    'fast': 5,
+    'balanced': 8,
+    'premium': 30,
+  });
+  final imageGeneration = _tierCost(creditCosts, 'imageGeneration', qualityPreset, {
+    'fast': 45,
+    'balanced': 45,
+    'premium': 85,
+  });
   final premiumReview = _intCost(creditCosts, 'premiumReview', 200);
   final exportUnlock = _intCost(creditCosts, 'exportUnlock', 150);
   final imageCount = estimatedInteriorImageCount(
@@ -709,6 +721,34 @@ int estimateProjectCredits({
       imageCount * imageGeneration +
       premiumCredits +
       exportUnlock;
+}
+
+/// One rate at the tier this book is priced at.
+///
+/// Mirrors `tierPrice` in `packages/core/src/billing.ts`, including its key
+/// convention: the unsuffixed key is the balanced rate and the other two add
+/// `Fast` / `Premium`. Anything that is not one of the three tier names — the
+/// server sends `'custom'` for a book it has no preset for — is balanced,
+/// which is exactly what the server charges such a book.
+///
+/// The fallbacks are only reached before `/api/mobile/billing` has loaded; they
+/// duplicate `DEFAULT_CREDIT_COSTS`, so the two must move together.
+int _tierCost(
+  Map<String, dynamic> creditCosts,
+  String baseKey,
+  String qualityPreset,
+  Map<String, int> fallbacks,
+) {
+  final tier = switch (qualityPreset) {
+    'fast' || 'premium' => qualityPreset,
+    _ => 'balanced',
+  };
+  final key = switch (tier) {
+    'fast' => '${baseKey}Fast',
+    'premium' => '${baseKey}Premium',
+    _ => baseKey,
+  };
+  return _intCost(creditCosts, key, fallbacks[tier] ?? fallbacks['balanced'] ?? 0);
 }
 
 /// How many interior illustrations a book of this shape is quoted for.

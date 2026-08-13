@@ -233,6 +233,7 @@ class _AdvancedGroup extends StatelessWidget {
     required this.options,
     required this.selected,
     required this.onChanged,
+    this.estimateCredits,
   });
 
   final String title;
@@ -240,6 +241,22 @@ class _AdvancedGroup extends StatelessWidget {
   final List<CreationPresetOption> options;
   final String selected;
   final ValueChanged<String> onChanged;
+
+  /// What this book would cost at each option, when the options are priced
+  /// apart. Shown on the tile itself: a reader choosing between quality tiers
+  /// is choosing between prices, and finding that out from the estimate badge
+  /// after the fact is how a tap becomes a surprise.
+  final int Function(String value)? estimateCredits;
+
+  /// The price leads, because it is the part that differs between options the
+  /// blurbs all describe as good. Written into the subtitle rather than a
+  /// trailing widget so `AppChoiceTile` reads it into its semantic label too.
+  String _subtitleFor(CreationPresetOption option) {
+    final estimate = estimateCredits?.call(option.value);
+    return estimate == null
+        ? option.subtitle
+        : '≈ $estimate credits · ${option.subtitle}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -269,7 +286,7 @@ class _AdvancedGroup extends StatelessWidget {
             selected: selected == option.value,
             icon: option.icon,
             title: option.title,
-            subtitle: option.subtitle,
+            subtitle: _subtitleFor(option),
             onTap: () => onChanged(option.value),
           ),
           const SizedBox(height: 8),

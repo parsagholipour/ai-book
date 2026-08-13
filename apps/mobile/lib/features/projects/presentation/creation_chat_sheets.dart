@@ -451,6 +451,21 @@ class _AdvancedSheet extends ConsumerWidget {
               options: qualityPresetOptions,
               selected: presets.qualityPreset,
               onChanged: controller.setQualityPreset,
+              // Priced against the page count this book would actually get.
+              // `presets.targetPages` is null for as long as the count is
+              // 'auto', which is the default — so the preset's own count
+              // stands in, exactly as the brief's estimate badge does.
+              estimateCredits: (quality) => estimateProjectCredits(
+                bookType: presets.bookType,
+                qualityPreset: quality,
+                coverEnabled: presets.coverEnabled,
+                illustrationsEnabled: presets.illustrationsEnabled,
+                targetPages:
+                    presets.pageCountMode == 'custom' && presets.targetPages != null
+                    ? presets.targetPages!
+                    : targetPageCountFor(presets.bookType, presets.lengthPreset),
+                creditCosts: creditCosts,
+              ),
             ),
             const SizedBox(height: 8),
             SwitchListTile(

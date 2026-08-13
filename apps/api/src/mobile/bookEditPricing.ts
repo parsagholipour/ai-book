@@ -14,6 +14,8 @@ import {
   creditPricing,
   estimateFullBookCreditCost,
   inputWithReplanSettings,
+  modelTierFromMediaSettings,
+  tierPrice,
   type ReplanSettings
 } from "@book-maker/core";
 import { type BookEditIntentKind } from "../bookEditIntent.js";
@@ -45,15 +47,20 @@ export function bookEditCreditCost(
   // One snapshot for the whole quote. Reading the live prices twice could
   // straddle an operator's save and produce a total that no price list explains.
   const pricing = creditPricing();
+  // Rewriting a page of a premium book runs the premium prose model, so the
+  // per-page rates follow the book's own tier exactly as its generation did.
+  // The flat halves (`bookTextEditBase`) do not: they are request overhead, not
+  // model spend.
+  const tier = modelTierFromMediaSettings(project.mediaSettings);
   if (kind === "local_patch") {
     return options.deterministic
       ? 0
-      : pricing.bookTextEditBase + Math.max(1, affectedPageCount) * pricing.bookTextEditPerPage;
+      : pricing.bookTextEditBase + Math.max(1, affectedPageCount) * tierPrice(pricing, "bookTextEditPerPage", tier);
   }
   // Chapter regeneration is priced like a multi-page rewrite of that chapter;
   // continuation is priced like regenerating the pages it will append.
   if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
-    return Math.max(1, affectedPageCount) * pricing.pageRegenerationPerPage;
+    return Math.max(1, affectedPageCount) * tierPrice(pricing, "pageRegenerationPerPage", tier);
   }
   if (kind === "book_replan") {
     const current = createProjectSchema.parse(inputSnapshotFromProject(project));

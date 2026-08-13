@@ -61,6 +61,13 @@ export type MobileProjectSummaryDto = {
   authorName: string | null;
   bookType: MobileBookType | "custom";
   lengthPreset: MobileLengthPreset | "custom";
+  /**
+   * Also the tier the book is priced at — the app's credit mirror reads it as
+   * one. `"custom"` means no tier was recorded, which is charged at the
+   * balanced rates. Deliberately not a second `modelTier` field beside it: the
+   * two can only ever disagree by being derived apart, and a wire key with
+   * "model" in its name is exactly what this surface keeps out.
+   */
   qualityPreset: MobileQualityPreset | "custom";
   /** Compatibility aggregate: coverEnabled || illustrationsEnabled. */
   imagesEnabled: boolean;

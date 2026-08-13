@@ -22,13 +22,18 @@
  */
 
 import {
+  CREDIT_PRICE_KEYS,
   type CreditPriceKey,
   type CreditPricing,
+  type ModelTier,
   coverArtSourceFor,
   createProjectSchema,
   estimateInteriorImageCount,
   isPremiumProject,
-  settleVoiceCall
+  modelTierForInput,
+  modelTierFromMediaSettings,
+  settleVoiceCall,
+  tierPriceKey
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { inputSnapshotFromProject } from "../mobile/projectSerializers.js";
@@ -70,26 +75,13 @@ const projectSelect = {
   mediaSettings: true
 } as const;
 
+/**
+ * Built from the key list rather than written out, so a new price — a tier rate
+ * above all — cannot be added without a driver bucket to count it into. A key
+ * missing here would silently project zero revenue for whatever drives it.
+ */
 function emptyDrivers(): PricingDrivers {
-  return {
-    planGeneration: 0,
-    previewGeneration: 0,
-    fullBookBase: 0,
-    fullBookPerPage: 0,
-    imageGeneration: 0,
-    coverRegeneration: 0,
-    premiumReview: 0,
-    exportUnlock: 0,
-    planRevision: 0,
-    bookTextEditBase: 0,
-    bookTextEditPerPage: 0,
-    pageRegenerationPerPage: 0,
-    bookReplanBase: 0,
-    voiceCallPerMinute: 0,
-    audiobookBase: 0,
-    audiobookPerPage: 0,
-    characterPortraitGeneration: 0
-  };
+  return Object.fromEntries(CREDIT_PRICE_KEYS.map((key) => [key, 0])) as PricingDrivers;
 }
 
 function audiobookPageCount(metadata: unknown): number {
@@ -130,7 +122,11 @@ export async function loadPricingDrivers(
     prisma.voiceCall.findMany({ where: { startedAt: inWindow }, select: { elapsedSeconds: true } }),
     prisma.bookEditOperation.findMany({
       where: { createdAt: inWindow, creditsCharged: { gt: 0 } },
-      select: { kind: true, affectedPageIndexes: true }
+      // The book's settings come along because the per-page edit rates follow
+      // its quality tier. Without them every edit lands in the balanced bucket
+      // and `coverage` drifts the first time a premium book is edited — which
+      // is the one number here whose job is to notice that.
+      select: { kind: true, affectedPageIndexes: true, project: { select: { mediaSettings: true } } }
     }),
     // The per-page half of an audiobook charge is only recoverable from the
     // reservation metadata — the ledger row holds a total, not a page count.
@@ -148,11 +144,15 @@ export async function loadPricingDrivers(
     : [];
 
   // How much a single generation of each book contributes, at quantity 1.
-  const bookShapes = new Map<string, { pages: number; images: number; premium: number }>();
+  // The tier rides along because the rates it drove differ per tier, so a
+  // premium book counted into the balanced buckets would project revenue at
+  // prices nobody was charged.
+  const bookShapes = new Map<string, { tier: ModelTier; pages: number; images: number; premium: number }>();
   for (const project of projects) {
     try {
       const input = createProjectSchema.parse(inputSnapshotFromProject(project));
       bookShapes.set(project.id, {
+        tier: modelTierForInput(input),
         pages: input.targetPages,
         // Initial covers share the image-generation price. Cover regeneration
         // remains a separate, standalone operation counted from its own ledger rows.
@@ -171,9 +171,9 @@ export async function loadPricingDrivers(
     if (!shape) {
       return;
     }
-    drivers.fullBookBase += times;
-    drivers.fullBookPerPage += shape.pages * times;
-    drivers.imageGeneration += shape.images * times;
+    drivers[tierPriceKey("fullBookBase", shape.tier)] += times;
+    drivers[tierPriceKey("fullBookPerPage", shape.tier)] += shape.pages * times;
+    drivers[tierPriceKey("imageGeneration", shape.tier)] += shape.images * times;
     drivers.premiumReview += shape.premium * times;
     // A full generation bundles the export unlock.
     drivers.exportUnlock += times;
@@ -209,11 +209,12 @@ export async function loadPricingDrivers(
 
   for (const edit of edits) {
     const pages = Math.max(1, edit.affectedPageIndexes.length);
+    const tier = modelTierFromMediaSettings(edit.project?.mediaSettings);
     if (edit.kind === "LOCAL_PATCH") {
       drivers.bookTextEditBase += 1;
-      drivers.bookTextEditPerPage += pages;
+      drivers[tierPriceKey("bookTextEditPerPage", tier)] += pages;
     } else if (edit.kind === "PAGE_REWRITE" || edit.kind === "CHAPTER_REGENERATE" || edit.kind === "CONTINUE_BOOK") {
-      drivers.pageRegenerationPerPage += pages;
+      drivers[tierPriceKey("pageRegenerationPerPage", tier)] += pages;
     }
     // BOOK_REPLAN edits are already priced through the ledger above.
   }
@@ -225,7 +226,8 @@ export async function loadPricingDrivers(
     window: { days: window.days, since: window.since.toISOString(), until: window.until.toISOString() },
     drivers,
     providerUsd: round2(providerTotal._sum.costHint ?? 0),
-    books: drivers.fullBookBase,
+    // One book is one base charge, whichever tier's base it drove.
+    books: drivers.fullBookBaseFast + drivers.fullBookBase + drivers.fullBookBasePremium,
     voiceMinutes: drivers.voiceCallPerMinute,
     edits: edits.length,
     coverage: {

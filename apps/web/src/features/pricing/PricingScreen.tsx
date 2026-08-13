@@ -143,6 +143,13 @@ export function PricingScreen() {
   );
 }
 
+/** The reader-facing names, so the console and the app say the same words. */
+const TIER_LABELS = {
+  fast: "Quick draft",
+  balanced: "Balanced",
+  premium: "Extra polish"
+} as const;
+
 function PreviewPanel(props: { preview: PricingPreview | null; creditUsdValue: number }) {
   if (!props.preview) {
     return null;
@@ -160,6 +167,19 @@ function PreviewPanel(props: { preview: PricingPreview | null; creditUsdValue: n
         {props.preview.totalCredits.toLocaleString()} credits
         <span className="muted"> ≈ ${props.preview.estimatedUsd.toFixed(2)}</span>
       </p>
+      {/* The tiers are priced apart, so one total describes a third of the
+          books being sold. The breakdown below stays the balanced one. */}
+      <ul className="pricing-lines">
+        {(props.preview.tiers ?? []).map((quote) => (
+          <li key={quote.tier}>
+            <span>{TIER_LABELS[quote.tier]}</span>
+            <span className="muted">
+              {quote.totalCredits.toLocaleString()} → ${quote.estimatedUsd.toFixed(2)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted">Balanced, line by line:</p>
       <ul className="pricing-lines">
         {props.preview.lineItems.map((item) => (
           <li key={`${item.code}:${item.label}`}>
