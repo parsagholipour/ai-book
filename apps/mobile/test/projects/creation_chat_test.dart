@@ -17,6 +17,7 @@ import 'package:tomeza/features/projects/presentation/creation_chat_controller.d
 import 'package:tomeza/features/projects/presentation/creation_chat_screen.dart';
 import 'package:tomeza/features/projects/presentation/pending_chat_sessions.dart';
 import 'package:tomeza/shared/api/api_error.dart';
+import 'package:tomeza/shared/ui/app_components.dart';
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
 
@@ -926,21 +927,21 @@ void main() {
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
 
-    final cover = find.widgetWithText(SwitchListTile, 'AI cover art');
+    final cover = find.widgetWithText(AppToggleTile, 'AI cover art');
     final illustrations = find.widgetWithText(
-      SwitchListTile,
+      AppToggleTile,
       'In-book illustrations',
     );
     expect(cover, findsOneWidget);
     expect(illustrations, findsOneWidget);
-    expect(tester.widget<SwitchListTile>(cover).value, isTrue);
-    expect(tester.widget<SwitchListTile>(illustrations).value, isTrue);
+    expect(tester.widget<AppToggleTile>(cover).value, isTrue);
+    expect(tester.widget<AppToggleTile>(illustrations).value, isTrue);
 
     await tester.ensureVisible(cover);
     await tester.tap(cover);
     await tester.pumpAndSettle();
-    expect(tester.widget<SwitchListTile>(cover).value, isFalse);
-    expect(tester.widget<SwitchListTile>(illustrations).value, isTrue);
+    expect(tester.widget<AppToggleTile>(cover).value, isFalse);
+    expect(tester.widget<AppToggleTile>(illustrations).value, isTrue);
 
     final doneButton = find.widgetWithText(FilledButton, 'Done');
     await tester.ensureVisible(doneButton);
@@ -955,13 +956,13 @@ void main() {
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
 
-    final stickyCover = find.widgetWithText(SwitchListTile, 'AI cover art');
+    final stickyCover = find.widgetWithText(AppToggleTile, 'AI cover art');
     final stickyIllustrations = find.widgetWithText(
-      SwitchListTile,
+      AppToggleTile,
       'In-book illustrations',
     );
-    expect(tester.widget<SwitchListTile>(stickyCover).value, isFalse);
-    expect(tester.widget<SwitchListTile>(stickyIllustrations).value, isTrue);
+    expect(tester.widget<AppToggleTile>(stickyCover).value, isFalse);
+    expect(tester.widget<AppToggleTile>(stickyIllustrations).value, isTrue);
 
     await tester.teardownScreen();
   });

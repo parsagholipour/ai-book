@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/projects/data/creation_prefs_store.dart';
 import 'package:tomeza/features/projects/domain/creation_prefs.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
+import 'package:tomeza/shared/ui/app_components.dart';
 
 import 'creation_chat_fakes.dart';
 import 'creation_chat_harness.dart';
@@ -47,9 +48,9 @@ void main() {
     await _openPrompt(tester, creation);
 
     expect(find.text('Choose book images'), findsOneWidget);
-    expect(find.widgetWithText(SwitchListTile, 'AI cover art'), findsOneWidget);
+    expect(find.widgetWithText(AppToggleTile, 'AI cover art'), findsOneWidget);
     expect(
-      find.widgetWithText(SwitchListTile, 'In-book illustrations'),
+      find.widgetWithText(AppToggleTile, 'In-book illustrations'),
       findsOneWidget,
     );
     expect(find.text('One cover image drawn for your book.'), findsOneWidget);
@@ -91,7 +92,7 @@ void main() {
     await _openPrompt(tester, creation);
 
     await tester.tap(
-      find.widgetWithText(SwitchListTile, 'In-book illustrations'),
+      find.widgetWithText(AppToggleTile, 'In-book illustrations'),
     );
     await tester.pump();
 
@@ -146,7 +147,7 @@ void main() {
     await tester.tap(find.byTooltip('Advanced settings'));
     await tester.pumpAndSettle();
     final illustrations = find.widgetWithText(
-      SwitchListTile,
+      AppToggleTile,
       'In-book illustrations',
     );
     await tester.ensureVisible(illustrations);
@@ -283,9 +284,9 @@ void main() {
     );
     expect(find.text('≈ $illustratedTotal credits'), findsOneWidget);
 
-    final coverSwitch = find.widgetWithText(SwitchListTile, 'AI cover art');
+    final coverSwitch = find.widgetWithText(AppToggleTile, 'AI cover art');
     final illustrationSwitch = find.widgetWithText(
-      SwitchListTile,
+      AppToggleTile,
       'In-book illustrations',
     );
 

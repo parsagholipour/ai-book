@@ -165,6 +165,123 @@ class AppChoiceTile extends StatelessWidget {
   }
 }
 
+/// The on/off sibling of [AppChoiceTile]: the same card, icon and text
+/// arrangement with a switch in the radio's place, and the same tinted-card
+/// treatment while it is on. A toggle drawn as a bare list row next to a stack
+/// of choice cards reads as a different kind of thing — and the card frame is
+/// also what makes the top-aligned icon look placed rather than floating.
+class AppToggleTile extends StatelessWidget {
+  const AppToggleTile({
+    required this.value,
+    required this.onChanged,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.titleBadge,
+    super.key,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  /// Drawn beside the title and wrapping beneath it when space runs out, so a
+  /// long title never breaks mid-word to make room for it.
+  final Widget? titleBadge;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final foreground = value ? colors.onPrimaryContainer : colors.onSurface;
+    final support = value ? colors.onPrimaryContainer : colors.onSurfaceVariant;
+    final titleText = Text(
+      title,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+        fontWeight: FontWeight.w800,
+        color: foreground,
+      ),
+    );
+
+    return Semantics(
+      toggled: value,
+      label: '$title. $subtitle',
+      onTap: () => onChanged(!value),
+      child: ExcludeSemantics(
+        child: Card(
+          color: value ? colors.primaryContainer : null,
+          shape: value
+              ? RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.card),
+                  side: BorderSide(
+                    color: colors.primary.withValues(alpha: 0.45),
+                    width: 1.4,
+                  ),
+                )
+              : null,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            onTap: () => onChanged(!value),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 72),
+              child: Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox.square(
+                      dimension: AppSizes.minimumTouchTarget,
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Icon(
+                            icon,
+                            color: value
+                                ? colors.onPrimaryContainer
+                                : colors.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (titleBadge == null)
+                            titleText
+                          else
+                            Wrap(
+                              spacing: AppSpacing.xs,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [titleText, titleBadge!],
+                            ),
+                          const SizedBox(height: AppSpacing.xxs),
+                          Text(
+                            subtitle,
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.copyWith(color: support),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    Switch(value: value, onChanged: onChanged),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class AppStatusBadge extends StatelessWidget {
   const AppStatusBadge({
     required this.label,

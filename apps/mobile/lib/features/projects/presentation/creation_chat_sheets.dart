@@ -469,59 +469,41 @@ class _AdvancedSheet extends ConsumerWidget {
                 context,
               ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
             ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
+            const SizedBox(height: 8),
+            AppToggleTile(
               value: presets.coverEnabled,
               onChanged: controller.setCoverEnabled,
-              secondary: const Icon(Icons.auto_stories_outlined),
-              // A Wrap, not a Row: beside a Row's badge the longer titles run
-              // out of width and break mid-word, while a Wrap keeps the title
-              // whole and lets the badge drop under it when space is tight.
-              title: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text('AI cover art'),
-                  if (state.userChoices.contains(CreationChoice.cover))
-                    const AppStatusBadge(
+              icon: Icons.auto_stories_outlined,
+              title: 'AI cover art',
+              titleBadge: state.userChoices.contains(CreationChoice.cover)
+                  ? const AppStatusBadge(
                       label: 'Your choice',
                       icon: Icons.tune_outlined,
-                    ),
-                ],
-              ),
-              subtitle: Text(
-                _coverSubtitle(
-                  presets.coverEnabled,
-                  imageCredits: imageCredits,
-                ),
+                    )
+                  : null,
+              subtitle: _coverSubtitle(
+                presets.coverEnabled,
+                imageCredits: imageCredits,
               ),
             ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
+            const SizedBox(height: 8),
+            AppToggleTile(
               value: presets.illustrationsEnabled,
               onChanged: controller.setIllustrationsEnabled,
-              secondary: const Icon(Icons.image_outlined),
-              title: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text('In-book illustrations'),
-                  if (state.userChoices.contains(CreationChoice.illustrations))
-                    const AppStatusBadge(
+              icon: Icons.image_outlined,
+              title: 'In-book illustrations',
+              titleBadge:
+                  state.userChoices.contains(CreationChoice.illustrations)
+                  ? const AppStatusBadge(
                       label: 'Your choice',
                       icon: Icons.tune_outlined,
-                    ),
-                ],
-              ),
-              subtitle: Text(
-                _illustrationsSubtitle(
-                  presets.illustrationsEnabled,
-                  presets.bookType,
-                  ref.watch(billingProvider).asData?.value.imageQuota,
-                  imageCredits: imageCredits,
-                ),
+                    )
+                  : null,
+              subtitle: _illustrationsSubtitle(
+                presets.illustrationsEnabled,
+                presets.bookType,
+                ref.watch(billingProvider).asData?.value.imageQuota,
+                imageCredits: imageCredits,
               ),
             ),
             const SizedBox(height: 14),
