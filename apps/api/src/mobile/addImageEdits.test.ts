@@ -571,6 +571,15 @@ describe("add_image resume rebuild", () => {
       subject: "a castle"
     });
     expect(rebuild({ subject: "a castle", replace: "op-old" }).intent?.imageEdit).toEqual({ subject: "a castle" });
+    expect(
+      rebuild({
+        subject: "a more aggressive fox",
+        replace: { operationId: "", assetId: "asset-1", oldSubject: "the illustration on page 1" }
+      }).intent?.imageEdit
+    ).toEqual({
+      subject: "a more aggressive fox",
+      replace: { operationId: "", assetId: "asset-1", oldSubject: "the illustration on page 1" }
+    });
   });
 });
 

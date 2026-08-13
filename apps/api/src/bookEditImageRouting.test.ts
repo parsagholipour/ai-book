@@ -255,6 +255,7 @@ describe("image insertion routing", () => {
     // Replacement is taught, not implied: without the imageReplace rule the
     // model answers a correction with a second add.
     expect(String(call.messages[0]!.content)).toMatch(/imageReplace/);
+    expect(String(call.messages[0]!.content)).toMatch(/built-in illustration/);
     const decideTool = call.tools.find((tool) => tool.name === "decide")!;
     const parsed = decideTool.parameters.safeParse({
       ...decideBase,

@@ -21,6 +21,7 @@ import {
   markdownLabels,
   matchLibraryCharacter,
   optimizeImageForStorage,
+  publicAssetUrl,
   unwrapWholePageMarkdownFence,
   type BookPlan,
   type ImageAdapter
@@ -32,11 +33,13 @@ import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
- * The `apply-book-edit` image fork: render one chat-requested illustration and
- * append it to a saved page's markdown. Never a new Page row — an image-only
- * page trips the EMPTY_PAGE and PAGE_COUNT_MISMATCH QA blockers and re-partitions
- * the audiobook — and never an ImageAsset row, so the markdown line is the single
- * source of truth and undo removes it with the snapshot restore.
+ * The `apply-book-edit` image fork: render one chat-requested illustration.
+ * A new picture is appended to a saved page's markdown — never a new Page row,
+ * which would trip EMPTY_PAGE / PAGE_COUNT_MISMATCH and re-partition the
+ * audiobook. A replacement of a generation ImageAsset updates that row in
+ * place (compile and the in-app preview both read `page.images[0]`); a
+ * replacement of a chat-added line swaps the markdown marker. Undo restores
+ * the snapshot, and for an asset replace the previous path/prompt too.
  *
  * Failures THROW. A bundled page illustration may be swallowed because the page
  * it decorates is already paid for; this image is the whole purchase, so the
@@ -56,6 +59,12 @@ export type ImageInsertionPayload = {
    * so appending still matches what the reader asked for.
    */
   replaceMarker?: string;
+  /**
+   * Present when replacing a generation-time interior illustration. The
+   * worker updates that ImageAsset in place and does not append a markdown
+   * line — compile would otherwise print both.
+   */
+  replaceAssetId?: string;
 };
 
 export async function applyImageInsertion(job: Job, operation: { status: string }) {
@@ -115,10 +124,21 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
   // now; an explicit page that vanished fails cleanly and the attempt
   // settlement refunds the charge.
   const replaceMarker = typeof imageInsertion.replaceMarker === "string" ? imageInsertion.replaceMarker : undefined;
+  const replaceAssetId = typeof imageInsertion.replaceAssetId === "string" ? imageInsertion.replaceAssetId : undefined;
+  const replaceAsset = replaceAssetId
+    ? await prisma.imageAsset.findFirst({
+        where: { id: replaceAssetId, projectId, type: { in: ["SCENE_ILLUSTRATION", "DIAGRAM"] } },
+        select: { id: true, path: true, prompt: true, page: true }
+      })
+    : null;
+  if (replaceAssetId && !replaceAsset?.page) {
+    throw new Error("The illustration to replace is no longer in this book");
+  }
   const markerPage = replaceMarker
     ? await prisma.page.findFirst({ where: { projectId, markdown: { contains: replaceMarker } } })
     : null;
   const targetPage =
+    replaceAsset?.page ??
     markerPage ??
     (imageInsertion.placement === "end_of_book"
       ? await prisma.page.findFirst({ where: { projectId }, orderBy: { index: "desc" } })
@@ -181,7 +201,9 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
   // silently swapped the artwork under the winner's published markdown.
   // A losing delivery's file is a harmless orphan instead, removed below.
   const marker = `chat-image-${operationId}`;
-  const filename = `${marker}-${randomUUID()}.${optimizedImage.extension}`;
+  const filename = replaceAsset
+    ? `page-${targetPage.index}-${operationId}-${randomUUID()}.${optimizedImage.extension}`
+    : `${marker}-${randomUUID()}.${optimizedImage.extension}`;
   const projectImageDir = join(config.IMAGE_STORAGE_DIR, projectId);
   const imagePath = join(projectImageDir, filename);
   await mkdir(projectImageDir, { recursive: true });
@@ -189,6 +211,10 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
 
   const alt = imageAltFromSubject(imageInsertion.subject, markdownLabels(project.language).illustration);
   const imageLine = `![${alt}](/assets/images/${projectId}/${filename})`;
+  const publicPath = publicAssetUrl(
+    config.PUBLIC_API_URL ?? "http://localhost:4001",
+    `/assets/images/${projectId}/${filename}`
+  );
   // One transaction holds everything that must live or die with the APPLIED
   // claim: the page re-read, the append, the undo snapshot, and the
   // contentRevision bump. `markActive` deliberately re-claims ACTIVE rows for
@@ -208,6 +234,17 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
       const current = await tx.page.findUnique({ where: { id: targetPage.id } });
       if (!current) {
         throw new Error(`Page ${targetPage.index} disappeared while the illustration was being added`);
+      }
+      if (replaceAsset) {
+        return applyAssetReplacementInTx(tx as unknown as InsertionTransaction, {
+          operationId,
+          projectId,
+          current,
+          replaceAsset,
+          subject: imageInsertion.subject,
+          publicPath,
+          storedPrompt: imagePrompt
+        });
       }
       if (current.markdown.includes(marker)) {
         // Belt over the claim: this operation's line is already on the page, so
@@ -335,6 +372,121 @@ async function removeInsertionImage(path: string): Promise<void> {
   } catch {
     // Including ENOENT: the other end of the race working is not an error.
   }
+}
+
+type InsertionTransaction = {
+  imageAsset: {
+    findUnique: (args: { where: { id: string } }) => Promise<{ id: string; path: string; prompt: string } | null>;
+    update: (args: { where: { id: string }; data: { path: string; prompt: string } }) => Promise<unknown>;
+  };
+  bookEditOperation: {
+    findUnique: (args: { where: { id: string }; select: { classifier: true } }) => Promise<{ classifier: unknown } | null>;
+    update: (args: { where: { id: string }; data: { classifier: Record<string, unknown> } }) => Promise<unknown>;
+  };
+  page: {
+    update: (args: {
+      where: { id: string };
+      data: { imagePrompt: string; revision: { increment: number } };
+    }) => Promise<{
+      id: string;
+      index: number;
+      title: string;
+      markdown: string;
+      summary: string;
+      revision: number;
+    }>;
+  };
+  pageEditSnapshot: {
+    create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
+  };
+  project: {
+    update: (args: { where: { id: string }; data: { contentRevision: { increment: number } } }) => Promise<unknown>;
+  };
+};
+
+/**
+ * Swap a generation illustration in place: new file, same ImageAsset id, no
+ * markdown line. The previous path/prompt ride the classifier so undo can
+ * put the old picture back without the old bytes having been overwritten.
+ */
+async function applyAssetReplacementInTx(
+  tx: InsertionTransaction,
+  options: {
+    operationId: string;
+    projectId: string;
+    current: {
+      id: string;
+      index: number;
+      title: string;
+      markdown: string;
+      summary: string;
+      revision: number;
+      imagePrompt?: string | null;
+    };
+    replaceAsset: { id: string; path: string; prompt: string };
+    subject: string;
+    publicPath: string;
+    storedPrompt: string;
+  }
+): Promise<boolean> {
+  const live = await tx.imageAsset.findUnique({ where: { id: options.replaceAsset.id } });
+  if (!live) {
+    throw new Error("The illustration to replace is no longer in this book");
+  }
+  if (live.path.includes(options.operationId)) {
+    return true;
+  }
+  const row = await tx.bookEditOperation.findUnique({
+    where: { id: options.operationId },
+    select: { classifier: true }
+  });
+  const previousImagePrompt = options.current.imagePrompt;
+  await tx.bookEditOperation.update({
+    where: { id: options.operationId },
+    data: {
+      classifier: {
+        ...(row && typeof row.classifier === "object" && row.classifier !== null ? row.classifier : {}),
+        previousAsset: {
+          id: live.id,
+          pageId: options.current.id,
+          path: live.path,
+          prompt: live.prompt,
+          ...(typeof previousImagePrompt === "string" || previousImagePrompt === null
+            ? { imagePrompt: previousImagePrompt }
+            : {})
+        }
+      }
+    }
+  });
+  await tx.imageAsset.update({
+    where: { id: live.id },
+    data: { path: options.publicPath, prompt: options.storedPrompt }
+  });
+  const saved = await tx.page.update({
+    where: { id: options.current.id },
+    data: { imagePrompt: options.subject, revision: { increment: 1 } }
+  });
+  await tx.pageEditSnapshot.create({
+    data: {
+      projectId: options.projectId,
+      pageId: options.current.id,
+      operationId: options.operationId,
+      pageIndex: options.current.index,
+      titleBefore: options.current.title,
+      markdownBefore: options.current.markdown,
+      summaryBefore: options.current.summary,
+      revisionBefore: options.current.revision,
+      titleAfter: saved.title,
+      markdownAfter: saved.markdown,
+      summaryAfter: saved.summary,
+      revisionAfter: saved.revision
+    }
+  });
+  await tx.project.update({
+    where: { id: options.projectId },
+    data: { contentRevision: { increment: 1 } }
+  });
+  return true;
 }
 
 /**

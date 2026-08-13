@@ -42,7 +42,7 @@ export const mockPrisma = ({
   creditLedgerEntry: { findMany: vi.fn(), update: vi.fn() },
   subscriptionState: { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   providerCallLog: { aggregate: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
-  imageAsset: { findFirst: vi.fn(), findMany: vi.fn() },
+  imageAsset: { findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
   voiceCharacter: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
   voiceCall: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), delete: vi.fn() },
   voiceCallEvent: { create: vi.fn() },

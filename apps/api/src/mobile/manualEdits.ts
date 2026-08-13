@@ -323,6 +323,7 @@ export async function undoLastBookEdit(
   }
 
   const restoredPageIndexes: number[] = [];
+  const previousAsset = previousAssetFromClassifier(operation.classifier);
   const contentRevision = await prisma.$transaction(async (tx) => {
     const editRevision = project.currentPlanId
       ? await tx.project.update({
@@ -332,6 +333,10 @@ export async function undoLastBookEdit(
         })
       : null;
     for (const snapshot of operation.snapshots) {
+      const restoreImagePrompt =
+        previousAsset &&
+        previousAsset.pageId === snapshot.pageId &&
+        (typeof previousAsset.imagePrompt === "string" || previousAsset.imagePrompt === null);
       await tx.page.update({
         where: { id: snapshot.pageId },
         data: {
@@ -339,10 +344,17 @@ export async function undoLastBookEdit(
           markdown: snapshot.markdownBefore,
           summary: snapshot.summaryBefore,
           status: "COMPLETED",
-          revision: { increment: 1 }
+          revision: { increment: 1 },
+          ...(restoreImagePrompt ? { imagePrompt: previousAsset.imagePrompt } : {})
         }
       });
       restoredPageIndexes.push(snapshot.pageIndex);
+    }
+    if (previousAsset) {
+      await tx.imageAsset.updateMany({
+        where: { id: previousAsset.id, projectId: project.id },
+        data: { path: previousAsset.path, prompt: previousAsset.prompt }
+      });
     }
     await tx.bookEditOperation.update({
       where: { id: operation.id },
@@ -380,6 +392,36 @@ export async function undoLastBookEdit(
       undo: { operationId: operation.id, restoredPageIndexes }
     }
   });
+}
+
+function previousAssetFromClassifier(classifier: unknown): {
+  id: string;
+  pageId: string;
+  path: string;
+  prompt: string;
+  imagePrompt?: string | null;
+} | null {
+  const stored = jsonRecord(jsonRecord(classifier).previousAsset);
+  if (
+    typeof stored.id !== "string" ||
+    !stored.id ||
+    typeof stored.pageId !== "string" ||
+    !stored.pageId ||
+    typeof stored.path !== "string" ||
+    !stored.path ||
+    typeof stored.prompt !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: stored.id,
+    pageId: stored.pageId,
+    path: stored.path,
+    prompt: stored.prompt,
+    ...(typeof stored.imagePrompt === "string" || stored.imagePrompt === null
+      ? { imagePrompt: stored.imagePrompt }
+      : {})
+  };
 }
 
 export const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE", "MANUAL_EDIT", "ADD_IMAGE"] as const;

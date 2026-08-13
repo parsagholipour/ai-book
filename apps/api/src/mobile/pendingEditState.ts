@@ -326,19 +326,31 @@ function imageEditFromMetadata(value: unknown): { imageEdit?: ImageInsertionEdit
   // whole replace field, degrading to a plain add — visible on the card.
   const replaceStored = jsonRecord(stored.replace);
   const replaceOperationId = typeof replaceStored.operationId === "string" ? replaceStored.operationId : undefined;
+  const replaceAssetId =
+    typeof replaceStored.assetId === "string" && replaceStored.assetId.trim()
+      ? replaceStored.assetId.trim().slice(0, 80)
+      : undefined;
+  const replaceMarker =
+    typeof replaceStored.marker === "string" && replaceStored.marker.trim()
+      ? replaceStored.marker.trim().slice(0, 200)
+      : undefined;
   const replaceOldSubject =
     typeof replaceStored.oldSubject === "string" && replaceStored.oldSubject.trim()
       ? replaceStored.oldSubject.trim().slice(0, 300)
       : undefined;
+  const hasReplace =
+    replaceOperationId !== undefined || replaceAssetId !== undefined || replaceMarker !== undefined;
   return {
     imageEdit: {
       subject,
       ...(placement ? { placement } : {}),
       ...(pageIndex !== undefined ? { pageIndex } : {}),
-      ...(stored.replace !== undefined && replaceOperationId !== undefined
+      ...(stored.replace !== undefined && hasReplace
         ? {
             replace: {
-              operationId: replaceOperationId,
+              operationId: replaceOperationId ?? "",
+              ...(replaceAssetId ? { assetId: replaceAssetId } : {}),
+              ...(replaceMarker ? { marker: replaceMarker } : {}),
               ...(replaceOldSubject ? { oldSubject: replaceOldSubject } : {})
             }
           }

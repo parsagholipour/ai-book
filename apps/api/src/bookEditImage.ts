@@ -25,13 +25,13 @@ export type ImageInsertionEdit = {
   /** Only meaningful with placement "page". Validated against real pages later. */
   pageIndex?: number;
   /**
-   * Present when the request replaces an earlier chat-added image instead of
+   * Present when the request replaces an existing illustration instead of
    * adding another. The router only *raises* the request (empty operationId —
-   * it cannot know which insertions exist); the proposal path resolves it to a
-   * real APPLIED ADD_IMAGE operation whose marker is still on a page, and
-   * records that image's subject for the card copy.
+   * it cannot know which pictures exist); the proposal path resolves it to a
+   * live target: a chat-added marker (`operationId`), a generation ImageAsset
+   * (`assetId`), or another in-page markdown ref (`marker`).
    */
-  replace?: { operationId: string; oldSubject?: string };
+  replace?: { operationId: string; assetId?: string; marker?: string; oldSubject?: string };
 };
 
 /** The intent a recognised image request routes to. Proposal-gated and priced as one image. */
@@ -107,9 +107,9 @@ export function imageInsertionIntentFromDecision(
     // generic stands in — never the raw message, which reads as prose in an
     // image prompt.
     subject: subject || "a scene from this book",
-    // A replacement request, not yet a target: the proposal path resolves the
-    // operationId against the live book (and answers, rather than proposing,
-    // when there is no chat-added image to replace).
+    // A replacement request, not yet a target: the proposal path resolves it
+    // against the live book (and answers, rather than proposing, when there
+    // is no illustration to replace).
     ...(decision.imageReplace ? { replace: { operationId: "" } } : {}),
     ...(explicitPage
       ? { placement: "page" as const, pageIndex: explicitPage }

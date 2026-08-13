@@ -79,6 +79,14 @@ export function imageRouterModel() {
         // flag — never a second add.
         return decide({ ...decideBase, imageSubject: "a castle", imageReplace: true });
       }
+      if (message.includes("first image") || message.includes("more aggressive")) {
+        return decide({
+          ...decideBase,
+          imageSubject: "a more aggressive fox",
+          imageReplace: true,
+          pageIndexes: [1]
+        });
+      }
       if (message.includes("castle")) {
         return decide({ ...decideBase, imageSubject: "the castle", pageIndexes: [1] });
       }

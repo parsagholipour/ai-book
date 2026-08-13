@@ -8,14 +8,15 @@ const mocks = vi.hoisted(() => ({
     project: { update: vi.fn(), updateMany: vi.fn() },
     planVersion: { findUnique: vi.fn() },
     page: { findFirst: vi.fn() },
-    imageAsset: { findMany: vi.fn() },
+    imageAsset: { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() },
     $transaction: vi.fn()
   },
   tx: {
     bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     page: { findUnique: vi.fn(), update: vi.fn() },
     pageEditSnapshot: { create: vi.fn() },
-    project: { update: vi.fn() }
+    project: { update: vi.fn() },
+    imageAsset: { findUnique: vi.fn(), update: vi.fn() }
   },
   getProjectOrThrow: vi.fn(),
   invalidateProjectExports: vi.fn(),
@@ -33,7 +34,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
 vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnqueueCompile }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
-vi.mock("../runtime/config.js", () => ({ config: { IMAGE_STORAGE_DIR: "/img" } }));
+vi.mock("../runtime/config.js", () => ({
+  config: { IMAGE_STORAGE_DIR: "/img", PUBLIC_API_URL: "http://localhost:4001" }
+}));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ image: { kind: "image" } }) }));
 vi.mock("../generation/projectInput.js", () => ({
   inputForPlanVersion: (_project: unknown, snapshot: unknown) => ({
@@ -146,14 +149,18 @@ beforeEach(() => {
   );
   mocks.prisma.page.findFirst.mockResolvedValue({ ...targetPage });
   mocks.prisma.imageAsset.findMany.mockResolvedValue([]);
+  mocks.prisma.imageAsset.findFirst.mockResolvedValue(null);
+  mocks.tx.imageAsset.findUnique.mockResolvedValue(null);
+  mocks.tx.imageAsset.update.mockResolvedValue({});
   mocks.tx.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
   mocks.tx.bookEditOperation.findUnique.mockResolvedValue({ classifier: {} });
   mocks.tx.bookEditOperation.update.mockResolvedValue({});
   mocks.tx.page.findUnique.mockResolvedValue({ ...targetPage });
   mocks.tx.page.update.mockImplementation(
-    async ({ data }: { data: { markdown: string } }) => ({
+    async ({ data }: { data: { markdown?: string; imagePrompt?: string } }) => ({
       ...targetPage,
-      markdown: data.markdown,
+      ...data,
+      markdown: data.markdown ?? targetPage.markdown,
       revision: targetPage.revision + 1
     })
   );
@@ -525,6 +532,98 @@ describe("applyImageInsertion", () => {
       where: { id: "op-1" },
       data: { classifier: { imageEdit: { subject: "a castle" }, replacedMissing: true } }
     });
+  });
+
+  it("replaces a generation ImageAsset in place and leaves the page markdown alone", async () => {
+    const illustratedPage = {
+      ...targetPage,
+      id: "page-1",
+      index: 1,
+      markdown: "Mae unlocked the garden gate.",
+      imagePrompt: "Mae in the garden with a fox."
+    };
+    const asset = {
+      id: "asset-1",
+      path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+      prompt: "Mae in the garden with a fox.",
+      page: illustratedPage
+    };
+    mocks.prisma.imageAsset.findFirst.mockResolvedValue(asset);
+    mocks.tx.imageAsset.findUnique.mockResolvedValue({
+      id: asset.id,
+      path: asset.path,
+      prompt: asset.prompt
+    });
+    mocks.tx.page.findUnique.mockResolvedValue({ ...illustratedPage });
+    mocks.tx.page.update.mockImplementation(
+      async ({ data }: { data: { markdown?: string; imagePrompt?: string } }) => ({
+        ...illustratedPage,
+        markdown: data.markdown ?? illustratedPage.markdown,
+        revision: illustratedPage.revision + 1
+      })
+    );
+
+    await applyImageInsertion(
+      job({
+        request: "change the first image to more aggressive",
+        imageInsertion: {
+          subject: "a more aggressive fox",
+          placement: "page",
+          targetPageIndex: 1,
+          replaceAssetId: "asset-1"
+        }
+      }),
+      operation()
+    );
+
+    expect(writtenFilename()).toMatch(/^page-1-op-1-[0-9a-f-]+\.jpg$/);
+    expect(mocks.tx.imageAsset.update).toHaveBeenCalledWith({
+      where: { id: "asset-1" },
+      data: {
+        path: `http://localhost:4001/assets/images/project-1/${writtenFilename()}`,
+        prompt: expect.stringContaining("a more aggressive fox")
+      }
+    });
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: { imagePrompt: "a more aggressive fox", revision: { increment: 1 } }
+    });
+    expect(mocks.tx.page.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ markdown: expect.any(String) }) })
+    );
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith({
+      where: { id: "op-1" },
+      data: {
+        classifier: {
+          previousAsset: {
+            id: "asset-1",
+            pageId: "page-1",
+            path: asset.path,
+            prompt: asset.prompt,
+            imagePrompt: "Mae in the garden with a fox."
+          }
+        }
+      }
+    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
+  });
+
+  it("throws when the generation asset vanished before delivery", async () => {
+    await expect(
+      applyImageInsertion(
+        job({
+          imageInsertion: {
+            subject: "a more aggressive fox",
+            placement: "page",
+            targetPageIndex: 1,
+            replaceAssetId: "asset-gone"
+          }
+        }),
+        operation()
+      )
+    ).rejects.toThrow(/no longer in this book/);
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it("throws on a provider failure instead of completing without the image", async () => {
