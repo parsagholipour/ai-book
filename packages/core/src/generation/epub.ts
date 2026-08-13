@@ -4,11 +4,9 @@ import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { marked } from "marked";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
-import { resolveBookImageAsset } from "./bookImageAssets.js";
+import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
 import { markdownLabels } from "./markdown.js";
 import { stripEmbeddedDocuments } from "./pdfDocument.js";
-
-const IMAGE_MARKDOWN_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
 const MIME_BY_EXT: Record<string, string> = {
   ".png": "image/png",
@@ -191,7 +189,7 @@ async function packageLocalImages(
   // A Set keeps insertion order, which is what makes the numbering below
   // first-appearance rather than filesystem-completion order.
   const orderedPaths = new Set<string>();
-  for (const match of markdown.matchAll(IMAGE_MARKDOWN_RE)) {
+  for (const match of markdown.matchAll(imageMarkdownRe())) {
     const localPath = localPathFor(match[2] ?? "");
     if (localPath) {
       orderedPaths.add(localPath);
@@ -222,7 +220,7 @@ async function packageLocalImages(
     });
   }
 
-  return markdown.replace(IMAGE_MARKDOWN_RE, (_full, alt: string, src: string) => {
+  return markdown.replace(imageMarkdownRe(), (_full, alt: string, src: string) => {
     const localPath = localPathFor(src);
     const image = localPath ? images.get(localPath) : undefined;
     // Remote, unresolvable and unreadable images are all stripped, so the EPUB

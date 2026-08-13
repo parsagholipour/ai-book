@@ -1,4 +1,6 @@
 import { type BookEditIntent, type BookEditIntentKind } from "../bookEditIntent.js";
+import { clippedImageSubject } from "../bookEditImage.js";
+import { proposeAddImageEdit } from "./addImageOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
 import { applyBackMatterEdit } from "./backMatterEdits.js";
 import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
@@ -420,6 +422,21 @@ export async function proposeBookEdit(options: {
     return { reply, operation: null };
   }
 
+  if (intent.kind === "add_image") {
+    // Dedicated branch (implemented next door with the rest of the image
+    // machinery): the target comes from the placement or the subject-anchored
+    // default, never from affectedPagesForIntent, so an image request can
+    // never reach the generic zero-page "which page?" question below.
+    return proposeAddImageEdit({
+      project,
+      userMessageId,
+      message,
+      intent,
+      proposalId,
+      ...(characterContext ? { characterContext } : {})
+    });
+  }
+
   let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
   if (affectedPageIndexes.length === 0 && options.clarifyExhausted && intent.kind !== "chapter_regenerate") {
     // The one clarifying question is spent, so an unresolvable scope widens to
@@ -572,6 +589,26 @@ export function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexe
   }
   if (kind === "book_replan") {
     return replanProposalSummary(intent);
+  }
+  if (kind === "add_image") {
+    const subject = clippedImageSubject(intent.imageEdit?.subject ?? "a scene from this book");
+    const replace = intent.imageEdit?.replace;
+    if (replace) {
+      // The card is the "shall I replace it?" ask — its summary names both
+      // pictures so Apply confirms exactly the swap.
+      return replace.oldSubject
+        ? `Replace the illustration of “${clippedImageSubject(replace.oldSubject)}” with “${subject}”`
+        : `Replace the latest illustration with one of “${subject}”`;
+    }
+    const onPage =
+      intent.imageEdit?.placement === "end_of_book"
+        ? undefined
+        : intent.imageEdit?.placement === "page"
+          ? intent.imageEdit.pageIndex ?? affectedPageIndexes[0]
+          : affectedPageIndexes[0];
+    return onPage !== undefined
+      ? `Add an illustration of “${subject}” on page ${onPage}`
+      : `Add an illustration of “${subject}” at the end of the book`;
   }
   if (kind === "chapter_regenerate") {
     return intent.affectedChapterIndex
@@ -803,6 +840,21 @@ export function operationQueuedMessage(kind: BookEditIntentKind, affectedPageInd
   }
   if (kind === "book_replan") {
     return "I’ll rebuild the plan and regenerate the book.";
+  }
+  if (kind === "add_image") {
+    const targetPage = affectedPageIndexes[0];
+    if (intent.imageEdit?.replace) {
+      const where = targetPage === undefined ? "" : ` on page ${targetPage}`;
+      return `I’m creating that illustration now and replacing the one${where}, then I’ll refresh the exports.`;
+    }
+    // The card said "at the end of the book" for an end placement, so the
+    // queued reply says the same — the resolved target page is still a page
+    // number, which read as a place the user never named.
+    const destination =
+      intent.imageEdit?.placement === "end_of_book" || targetPage === undefined
+        ? "at the end of the book"
+        : `to page ${targetPage}`;
+    return `I’m creating that illustration now and adding it ${destination}, then I’ll refresh the exports.`;
   }
   if (kind === "chapter_regenerate") {
     const chapterText = intent.affectedChapterIndex ? `chapter ${intent.affectedChapterIndex}` : "that chapter";

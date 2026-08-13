@@ -1,6 +1,6 @@
 import { join, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveBookImageAsset } from "./bookImageAssets.js";
+import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
 
 const imageStorageDir = resolve("/srv/storage/images");
 const publicApiBase = "http://localhost:4001";
@@ -95,5 +95,27 @@ describe("resolveBookImageAsset", () => {
       const asset = resolveAsset(input);
       expect(asset === null || asset.localPath.startsWith(imageStorageDir + sep)).toBe(true);
     }
+  });
+});
+
+describe("imageMarkdownRe", () => {
+  it("captures alt and src of an inline image", () => {
+    const match = imageMarkdownRe().exec("before ![An owl](/assets/images/proj-1/page-3.png) after");
+    expect(match?.[1]).toBe("An owl");
+    expect(match?.[2]).toBe("/assets/images/proj-1/page-3.png");
+  });
+
+  it("does not match an image whose alt contains a closing bracket", () => {
+    // The exporters have always refused this shape; the shared export must too.
+    expect(imageMarkdownRe().test("![bad]alt](/assets/images/proj-1/page-1.png)")).toBe(false);
+  });
+
+  it("hands every caller a fresh instance, so no lastIndex is shared", () => {
+    const text = "![a](one.png) ![b](two.png)";
+    const first = imageMarkdownRe();
+    expect(first.exec(text)?.[2]).toBe("one.png");
+    // A second caller starts from the top even while the first is mid-scan.
+    expect(imageMarkdownRe().exec(text)?.[2]).toBe("one.png");
+    expect(first.exec(text)?.[2]).toBe("two.png");
   });
 });

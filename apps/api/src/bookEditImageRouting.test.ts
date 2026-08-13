@@ -1,0 +1,269 @@
+import { describe, expect, it, vi } from "vitest";
+import type { GenerateWithToolsOptions, TextModelAdapter, ToolCallsResult } from "@book-maker/core";
+import { classifyProjectChatMessage } from "./bookEditIntent.js";
+
+/**
+ * How image-insertion requests travel through classifyProjectChatMessage: the
+ * router's insert_image target is the ONLY classifier (the regex fast path was
+ * deliberately removed — extraction is model work), plus the subject
+ * clarification budget and the documented degraded-mode behavior. Lives beside
+ * bookEditImage.test.ts rather than inside bookEditIntent.test.ts, which is at
+ * its size budget.
+ */
+
+const pages = [
+  {
+    id: "page-1",
+    index: 1,
+    title: "Opening",
+    summary: "Rabbit brags before the race.",
+    previewText: "Rabbit hops to the starting line while Turtle smiles."
+  },
+  {
+    id: "page-2",
+    index: 2,
+    title: "Practice",
+    summary: "Turtle keeps moving.",
+    previewText: "The old phrase appears in the practice scene."
+  }
+];
+
+const chapters = [
+  { index: 1, title: "The Race Begins", pageIndexes: [1] },
+  { index: 2, title: "Steady Wins", pageIndexes: [2] }
+];
+
+type DecideArgs = Record<string, unknown>;
+
+function routerAdapter(
+  generateWithTools: (options: GenerateWithToolsOptions) => Promise<ToolCallsResult>
+): TextModelAdapter {
+  return {
+    generateText: async () => ({ text: "", model: "test-router", provider: "test" }),
+    generateJson: async () => {
+      throw new Error("generateJson is not used by the tool-calling router");
+    },
+    generateWithTools: generateWithTools as TextModelAdapter["generateWithTools"],
+    async *streamText() {
+      yield "";
+    }
+  };
+}
+
+function fakeDecideModel(args: DecideArgs): TextModelAdapter & { generateWithTools: ReturnType<typeof vi.fn> } {
+  const generateWithTools = vi.fn(async () => ({
+    text: "",
+    model: "test-router",
+    provider: "test",
+    toolCalls: [{ id: "call-decide", name: "decide", arguments: args }]
+  }));
+  return Object.assign(routerAdapter(generateWithTools), { generateWithTools });
+}
+
+const decideBase: DecideArgs = {
+  confidence: 0.93,
+  reasoning: "Routing decision.",
+  assistantMessage: "ok",
+  clarification: "none",
+  pageIndexes: [],
+  chapterIndex: null,
+  targetLanguage: null
+};
+
+describe("image insertion routing", () => {
+  it("routes every image request through the model, which extracts subject and ordinal placements", async () => {
+    const model = fakeDecideModel({
+      ...decideBase,
+      action: "propose_edit",
+      assistantMessage: "I’ll add that picture to page 3.",
+      pageIndexes: [3],
+      editTarget: "insert_image",
+      imageSubject: "her signature"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Add the photo of her signature on the 3rd page",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    // No regex fast path: the model is the one classifier for image requests.
+    expect(model.generateWithTools).toHaveBeenCalledOnce();
+    expect(intent.kind).toBe("add_image");
+    expect(intent.imageEdit).toEqual({ subject: "her signature", placement: "page", pageIndex: 3 });
+    expect(intent.affectedPageIndexes).toEqual([3]);
+  });
+
+  it("degrades to the heuristics' clarify when no router model is available", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Add a photo of a dragon at the end of the book",
+      stage: "complete",
+      pages,
+      chapters
+    });
+
+    // The accepted cost of removing the regex recognizer: without a model
+    // there is no image detection, and the degraded heuristics never invent a
+    // charged kind — their catch-all is the one clarifying question.
+    expect(intent.kind).toBe("clarify");
+  });
+
+  it("degrades the same way when the router throws", async () => {
+    const failing = routerAdapter(async () => {
+      throw new Error("router unavailable");
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Add a photo of a dragon at the end of the book",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: failing
+    });
+
+    expect(intent.kind).toBe("clarify");
+  });
+
+  it("widens to a whole-book rewrite card on the exhausted degraded turn — the accepted outage behavior", async () => {
+    const failing = routerAdapter(async () => {
+      throw new Error("router unavailable");
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Add a photo of a dragon\n\nFollow-up from the user: just add it",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: failing,
+      clarifyExhausted: true
+    });
+
+    // Consciously accepted when the regex recognizer was deleted: with the
+    // router down AND the one question already spent, forcedDecision coerces
+    // the surviving clarify into a whole-book page_rewrite PROPOSAL — bounded
+    // by the card, nothing charged until Apply. If this trade-off is ever
+    // revisited, an image-aware fallback belongs in the degraded lane, not in
+    // front of the router.
+    expect(intent.kind).toBe("page_rewrite");
+    expect(intent.scope).toBe("all_pages");
+  });
+
+  it("never produces add_image while the book is still at the plan stage", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Add a photo of a dragon at the end of the book",
+      stage: "approved_plan",
+      pages
+    });
+
+    expect(intent.kind).toBe("plan_revision");
+  });
+
+  it("maps the router's insert_image target onto add_image", async () => {
+    const model = fakeDecideModel({
+      ...decideBase,
+      action: "propose_edit",
+      assistantMessage: "Ich füge das Bild hinzu.",
+      editTarget: "insert_image",
+      imageSubject: "ein Drache",
+      imagePlacement: "end_of_book"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "Füge am Ende ein Bild von einem Drachen hinzu",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    expect(model.generateWithTools).toHaveBeenCalledOnce();
+    expect(intent).toMatchObject({
+      kind: "add_image",
+      assistantMessage: "Ich füge das Bild hinzu.",
+      imageEdit: { subject: "ein Drache", placement: "end_of_book" }
+    });
+  });
+
+  it("routes a Persian page placement through pageIndexes", async () => {
+    const model = fakeDecideModel({
+      ...decideBase,
+      action: "propose_edit",
+      assistantMessage: "این تصویر را اضافه می‌کنم.",
+      pageIndexes: [2],
+      editTarget: "insert_image",
+      imageSubject: "یک اژدها"
+    });
+
+    const intent = await classifyProjectChatMessage({
+      message: "در صفحه ۲ یک عکس از اژدها اضافه کن",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: model
+    });
+
+    expect(intent.kind).toBe("add_image");
+    expect(intent.imageEdit).toEqual({ subject: "یک اژدها", placement: "page", pageIndex: 2 });
+    expect(intent.affectedPageIndexes).toEqual([2]);
+  });
+
+  it("asks the one subject question, then defaults to the generic subject when spent", async () => {
+    const subjectless: DecideArgs = {
+      ...decideBase,
+      action: "propose_edit",
+      assistantMessage: "I'll add a picture.",
+      editTarget: "insert_image"
+    };
+
+    const first = await classifyProjectChatMessage({
+      message: "Can you add a picture somewhere?",
+      stage: "complete",
+      pages,
+      textModel: fakeDecideModel(subjectless)
+    });
+    expect(first.kind).toBe("clarify");
+    // "scope" is the tautology that stores the resumable pendingEdit.
+    expect(first.clarification).toBe("scope");
+    // Any question must state the default it will apply.
+    expect(first.assistantMessage).toMatch(/go ahead/i);
+
+    const second = await classifyProjectChatMessage({
+      message: "Can you add a picture somewhere?\n\nFollow-up from the user: just add",
+      stage: "complete",
+      pages,
+      textModel: fakeDecideModel(subjectless),
+      clarifyExhausted: true
+    });
+    expect(second.kind).toBe("add_image");
+    expect(second.imageEdit?.subject).toBe("a scene from this book");
+  });
+
+  it("offers imageSubject and imagePlacement in the decide schema at the complete stage", async () => {
+    const model = fakeDecideModel({ ...decideBase, action: "answer" });
+
+    await classifyProjectChatMessage({
+      message: "Could you add one small picture near the front",
+      stage: "complete",
+      pages,
+      textModel: model
+    });
+
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0] as GenerateWithToolsOptions;
+    expect(String(call.messages[0]!.content)).toMatch(/insert_image/);
+    // Replacement is taught, not implied: without the imageReplace rule the
+    // model answers a correction with a second add.
+    expect(String(call.messages[0]!.content)).toMatch(/imageReplace/);
+    const decideTool = call.tools.find((tool) => tool.name === "decide")!;
+    const parsed = decideTool.parameters.safeParse({
+      ...decideBase,
+      action: "propose_edit",
+      editTarget: "insert_image",
+      imageSubject: "a dragon",
+      imagePlacement: "end_of_book",
+      imageReplace: true
+    });
+    expect(parsed.success).toBe(true);
+  });
+});

@@ -39,6 +39,21 @@ export type BookImageAsset = {
 
 const ASSET_URL_RE = /\/assets\/images\/([^/]+)\/([^)\s]+)/;
 
+/**
+ * The one shape an inline image takes in book markdown: `![alt](src)`, with the
+ * alt in group 1 and the src in group 2. Both exporters walk the compiled
+ * markdown with it, and the API uses it to ask whether a page already carries an
+ * inline illustration.
+ *
+ * A factory rather than a shared const because the flag is `g`: a global RegExp
+ * carries `lastIndex` between `exec`/`test` calls, so one module's half-finished
+ * scan would silently skip matches in another's. Every caller gets a fresh
+ * instance.
+ */
+export function imageMarkdownRe(): RegExp {
+  return /!\[([^\]]*)\]\(([^)]+)\)/g;
+}
+
 export function resolveBookImageAsset(
   src: string,
   options: { imageStorageDir: string; publicApiBase: string; projectId?: string | undefined }

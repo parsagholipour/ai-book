@@ -51,6 +51,12 @@ export type MobileProjectRoutesOptions = {
   /** Test seam for attachment ingestion; defaults to the core pipeline. */
   attachmentIngestion?: (input: IngestCreationAttachmentInput) => Promise<CreationAttachment>;
   /**
+   * Test seam for the chat router's text model; defaults to the config-derived
+   * fast model. Image requests have no model-free fast path, so suites that
+   * exercise the add_image flow inject a canned decide-tool model here.
+   */
+  routingTextModel?: TextModelAdapter;
+  /**
    * Test seam for reading a character photo. Undefined is the real behaviour
    * with no vision provider configured, and the upload degrades to storing the
    * file — so leaving it unset is a supported production state, not just a
@@ -103,6 +109,9 @@ export type MobileRouteContext = {
 export function createMobileRouteContext(options: MobileProjectRoutesOptions): MobileRouteContext {
   const appConfig = loadConfig();
   const safeFastRoutingTextModel = (): TextModelAdapter | undefined => {
+    if (options.routingTextModel) {
+      return options.routingTextModel;
+    }
     try {
       return createFastRoutingTextModel(appConfig);
     } catch {

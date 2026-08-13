@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   rewritePageForUserRequest: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
   storeEmbedding: vi.fn(),
-  invalidateProjectExports: vi.fn()
+  invalidateProjectExports: vi.fn(),
+  applyImageInsertion: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -32,6 +33,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
   invalidateProjectExports: mocks.invalidateProjectExports,
   strategyForInput: () => ({})
 }));
+vi.mock("./applyImageInsertion.js", () => ({ applyImageInsertion: mocks.applyImageInsertion }));
 vi.mock("./replanBook.js", async () => {
   const actual = await import("./replanBook.js");
   return { locallyPatchedPage: actual.locallyPatchedPage, rewritePageForUserRequest: mocks.rewritePageForUserRequest };
@@ -129,6 +131,28 @@ describe("applyBookEdit in exact mode", () => {
         data: expect.objectContaining({ classifier: expect.objectContaining({ skippedPageIndexes: [2] }) })
       })
     );
+  });
+
+  it("skips the guaranteed-null plan lookup when the payload carries no planId", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Replace rabbit with fly",
+        affectedPageIndexes: [1],
+        exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+        mode: "exact"
+      })
+    );
+
+    // Only the project's current plan is looked up — never `{ id: "" }`.
+    const lookedUp = mocks.prisma.planVersion.findUnique.mock.calls.map(
+      (call) => (call[0] as { where: { id: string } }).where.id
+    );
+    expect(lookedUp).toEqual(["plan-1"]);
+    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
   });
 
   it("patches a page whose only match is the title instead of skipping it", async () => {
@@ -349,6 +373,54 @@ describe("applyBookEdit in exact mode", () => {
       where: { id: "project-1" },
       data: { contentRevision: { increment: 1 } }
     });
+  });
+
+  it("forks an imageInsertion payload before the ACTIVE and EDITING writes", async () => {
+    const operation = { id: "op-1", status: "QUEUED" };
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(operation);
+    const payload = {
+      projectId: "project-1",
+      operationId: "op-1",
+      request: "Add a photo of a dragon at the end of the book",
+      affectedPageIndexes: [5],
+      planId: "plan-1",
+      intentKind: "add_image",
+      imageInsertion: { subject: "a dragon", placement: "end_of_book", targetPageIndex: 5 }
+    };
+
+    await applyBookEdit(job(payload));
+
+    // The insertion runs its own redelivery fence against the operation's
+    // pre-write status, so the fork must hand over the record as read — before
+    // the unconditional op-ACTIVE and project-EDITING writes.
+    expect(mocks.applyImageInsertion).toHaveBeenCalledTimes(1);
+    expect(mocks.applyImageInsertion.mock.calls[0]?.[1]).toBe(operation);
+    const forkedJob = mocks.applyImageInsertion.mock.calls[0]?.[0] as { data: unknown } | undefined;
+    expect(forkedJob?.data).toMatchObject(payload);
+    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    // Nothing of the text-rewrite path runs.
+    expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+  });
+
+  it("keeps a payload without imageInsertion on the text-rewrite path", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Replace rabbit with fly",
+        affectedPageIndexes: [1],
+        planId: "plan-1",
+        exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+        mode: "exact"
+      })
+    );
+
+    expect(mocks.applyImageInsertion).not.toHaveBeenCalled();
   });
 
   it("saves a rewrite whose best candidate still failed review as FAILED_QA", async () => {

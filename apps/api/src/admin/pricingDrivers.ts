@@ -215,6 +215,10 @@ export async function loadPricingDrivers(
       drivers[tierPriceKey("bookTextEditPerPage", tier)] += pages;
     } else if (edit.kind === "PAGE_REWRITE" || edit.kind === "CHAPTER_REGENERATE" || edit.kind === "CONTINUE_BOOK") {
       drivers[tierPriceKey("pageRegenerationPerPage", tier)] += pages;
+    } else if (edit.kind === "ADD_IMAGE") {
+      // A chat-inserted illustration is one image at the book's tier — the
+      // target page rides along in affectedPageIndexes but is not a quantity.
+      drivers[tierPriceKey("imageGeneration", tier)] += 1;
     }
     // BOOK_REPLAN edits are already priced through the ledger above.
   }

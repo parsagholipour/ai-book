@@ -52,6 +52,10 @@ export { createOpenBookEditOperation } from "./editOperationClaims.js";
 // seam; re-exported because routes and tests import it from here.
 export { queueChargedPlanRevision, queueDirectPlanRevision } from "./planRevisionOperations.js";
 import { queueChargedPlanRevision } from "./planRevisionOperations.js";
+// The add_image queue branch lives beside this module for the same reason the
+// direct plan revision does: this file is at its size budget, and the quota
+// predicate is a seam of its own.
+import { queueChatAddImage } from "./addImageOperations.js";
 
 /**
  * The one reserve → commit → enqueue → compensate skeleton every charged edit
@@ -124,7 +128,7 @@ export async function withChargedEnqueue<T>(options: {
  * handed to a model — job payloads and the plan-revision message — because the
  * bare `message` is what page targeting and exact-replacement parsing read.
  */
-function requestWithCharacterContext(message: string, characterContext: string | undefined): string {
+export function requestWithCharacterContext(message: string, characterContext: string | undefined): string {
   return characterContext ? `${message}\n\n${characterContext}` : message;
 }
 
@@ -136,7 +140,7 @@ function requestWithCharacterContext(message: string, characterContext: string |
  * re-proposal turns "add credits, then start over" into an Apply that works.
  * The quoted credits ride along and stay the ceiling on the eventual charge.
  */
-function creditsBlockedResume(
+export function creditsBlockedResume(
   state: Omit<PendingEditState, "clarification" | "proposalId">
 ): { pendingEdit: Record<string, unknown>; editProposal?: Record<string, unknown> } {
   const resumable: PendingEditState = { ...state, clarification: "confirm", proposalId: randomUUID() };
@@ -147,7 +151,7 @@ function creditsBlockedResume(
   };
 }
 
-async function queueAttemptChatOperation(options: {
+export async function queueAttemptChatOperation(options: {
   userId: string;
   project: ProjectForChat;
   userMessageId: string;
@@ -156,9 +160,11 @@ async function queueAttemptChatOperation(options: {
   intent: BookEditIntent;
   operation: MobileBookEditOperationRecord;
   cost: number;
-  billingOperation: "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN";
+  billingOperation: "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" | "IMAGE_GENERATION";
   description: string;
   metadata: Record<string, unknown>;
+  /** Free-tier illustrated-book slot to claim inside the attempt tx; null claims nothing. */
+  imageQuotaLimit?: number | null | undefined;
   /** Rides the credits-blocked resume so a later Apply keeps the sheets. */
   characterContext?: string | undefined;
   enqueue: (
@@ -186,6 +192,7 @@ async function queueAttemptChatOperation(options: {
       quotedCredits: options.cost,
       description: options.description,
       metadata: options.metadata,
+      imageQuotaLimit: options.imageQuotaLimit ?? null,
       create: async (tx, context) => {
         const job = await options.enqueue(tx, context);
         await tx.bookEditOperation.update({
@@ -563,28 +570,13 @@ export async function queueChatBookEdit(options: {
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   if (intent.kind === "book_replan") {
-    return queueChatBookReplanCopy({
-      userId,
-      project,
-      userMessageId,
-      message,
-      intent,
-      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
-      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {}),
-      ...(options.characterContext ? { characterContext: options.characterContext } : {})
-    });
+    return queueChatBookReplanCopy(options);
   }
   if (intent.kind === "continue_book") {
-    return queueChatContinueBook({
-      userId,
-      project,
-      userMessageId,
-      message,
-      intent,
-      ...(options.executionCommandId ? { executionCommandId: options.executionCommandId } : {}),
-      ...(options.quotedCredits !== undefined ? { quotedCredits: options.quotedCredits } : {}),
-      ...(options.characterContext ? { characterContext: options.characterContext } : {})
-    });
+    return queueChatContinueBook(options);
+  }
+  if (intent.kind === "add_image") {
+    return queueChatAddImage(options);
   }
 
   let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);

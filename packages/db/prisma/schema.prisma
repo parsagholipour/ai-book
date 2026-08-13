@@ -196,6 +196,7 @@ enum BookEditOperationKind {
   BOOK_REPLAN
   MANUAL_EDIT
   CONTINUE_BOOK
+  ADD_IMAGE
 }
 
 enum BookEditOperationStatus {

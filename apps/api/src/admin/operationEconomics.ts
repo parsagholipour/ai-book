@@ -128,7 +128,8 @@ const OPERATION_NOTES: Record<string, string> = {
     "The app holds its own socket to Gemini, so realtime audio never reaches our server and none of its cost is in these logs. Real margin is lower.",
   EXPORT_UNLOCK: "Compiled from text that was already generated and paid for, so it makes no provider calls of its own.",
   PREMIUM_REVIEW: "Charged as part of a book generation; its calls are attributed to that generation rather than counted here.",
-  IMAGE_GENERATION: "Charged as part of a book generation; its calls are attributed to that generation rather than counted here."
+  IMAGE_GENERATION:
+    "Chat-added images charge here in their own right — the job payload names the ledger entry, so their calls land under this row. Images bundled into a book generation, and every charge from before standalone image edits existed, are still attributed to that generation instead."
 };
 
 const UNBILLED_REASONS: Record<string, { label: string; description: string }> = {

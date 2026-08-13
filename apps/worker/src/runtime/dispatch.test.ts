@@ -639,6 +639,25 @@ describe("maybeEnqueueCompile", () => {
     expect(expectCreatedJobOfType("GENERATE_IMAGE").ownsQualityVerdict).toBe(false);
   });
 
+  it("stamps an add_image recompile as not owning the quality verdict", async () => {
+    mocks.prisma.imageAsset.count.mockResolvedValue(1);
+    mocks.prisma.project.findUnique.mockResolvedValue({ status: "EDITING", contentRevision: 7 });
+
+    await maybeEnqueueCompile("project-1", "plan-1", { skipFinalReview: true, withoutQualityVerdict: true });
+
+    const compile = expectCreatedJobOfType("COMPILE_EXPORT");
+    expect(compile.payload).toEqual({
+      planId: "plan-1",
+      contentRevision: 7,
+      exportPublicationProjectStatus: "EDITING",
+      skipFinalReview: true,
+      markdownRecompileWithoutVerdict: true
+    });
+    // The appended image line moved the markdown but not the prose, so the
+    // book's earned model-QA verdict stays with the compile that wrote it.
+    expect(compile.ownsQualityVerdict).toBe(false);
+  });
+
   it("counts a FAILED_QA page that kept a draft as terminal", async () => {
     // One stubborn page must not hold the export hostage; the final review
     // pass repairs it after compile is queued.

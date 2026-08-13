@@ -488,6 +488,46 @@ describe("stopping a run", () => {
     expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
   });
 
+  it("fails an EDITING project when an in-flight chat image insertion is stopped", async () => {
+    // Accepted outcome, documented on purpose (design D3): a user Stop lands
+    // here while the worker holds the book EDITING for the image edit, and
+    // EDITING is not in SETTLED_PROJECT_STATUSES — so the project is written
+    // FAILED, exactly as stopping a text edit is today. The worker's
+    // EDITING→COMPLETE restore is only promised for worker-internal failures,
+    // never for a user-initiated stop. What must hold is the settlement: the
+    // charge refunds through the attempt (which also hands back any
+    // metadata.imageQuota slot), never through the legacy charge walk.
+    mocks.projectUpdate.mockResolvedValue({ status: "EDITING" });
+    mocks.findMany.mockResolvedValue([
+      {
+        id: "job-image-edit",
+        bullJobId: null,
+        status: "ACTIVE",
+        type: "APPLY_BOOK_EDIT",
+        payload: {
+          operationId: "op-image",
+          request: "Add a photo of a dragon at the end of the book",
+          intentKind: "add_image",
+          affectedPageIndexes: [11],
+          imageInsertion: { subject: "a dragon", placement: "end_of_book", targetPageIndex: 11 },
+          planId: "plan-1",
+          billingLedgerEntryId: "entry-image"
+        },
+        attemptId: "attempt-image"
+      }
+    ]);
+
+    await stopProjectGenerationJobs("project-1");
+
+    expect(mocks.projectUpdateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: { notIn: ["COMPLETE", "REVIEW_REQUIRED"] } },
+      data: { status: "FAILED" }
+    });
+    expect(mocks.failGenerationAttempt.mock.calls).toEqual([["attempt-image", "Stopped by user", "CANCELED"]]);
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(mocks.refundLatestProjectOperationCredits).not.toHaveBeenCalled();
+  });
+
   it("cannot fail a project that is already finished", async () => {
     // The stop's project write is guarded on the *status*, never on what was
     // stopped. A repair, a narration or an edit that has not started yet is

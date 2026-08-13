@@ -3,7 +3,7 @@ import { access, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { scriptProfileForLanguage, type ScriptProfile } from "../prompting/script.js";
-import { resolveBookImageAsset } from "./bookImageAssets.js";
+import { imageMarkdownRe, resolveBookImageAsset } from "./bookImageAssets.js";
 import { withRenderPage } from "./browserPool.js";
 import { renderDocumentTempPath } from "./exportTempSweep.js";
 import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
@@ -11,8 +11,6 @@ import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
 import { bookPdfCss } from "./pdfCss.js";
 import { BOOK_PDF_MEDIA_TYPE, BOOK_PDF_OPTIONS, buildBookPdfDocument } from "./pdfDocument.js";
 import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
-
-const IMAGE_MARKDOWN_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
 export type GenerateBookPdfOptions = {
   imageStorageDir: string;
@@ -78,7 +76,7 @@ async function prepareMarkdownImagesForPdf(
     });
 
   const localPaths = new Map<string, string>();
-  for (const match of markdown.matchAll(IMAGE_MARKDOWN_RE)) {
+  for (const match of markdown.matchAll(imageMarkdownRe())) {
     const resolved = resolve(match[2] ?? "");
     if (resolved) {
       localPaths.set(resolved.assetPath, resolved.localPath);
@@ -97,7 +95,7 @@ async function prepareMarkdownImagesForPdf(
     })
   );
 
-  return markdown.replace(IMAGE_MARKDOWN_RE, (full: string, alt: string, src: string) => {
+  return markdown.replace(imageMarkdownRe(), (full: string, alt: string, src: string) => {
     const resolved = resolve(src);
     return resolved && readable.has(resolved.assetPath) ? `![${alt}](${resolved.assetPath})` : full;
   });

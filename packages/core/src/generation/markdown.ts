@@ -539,7 +539,7 @@ function sanitizePageMarkdown(
   return lines.join("\n").trim();
 }
 
-function unwrapWholePageMarkdownFence(markdown: string): string {
+export function unwrapWholePageMarkdownFence(markdown: string): string {
   const trimmed = markdown.trim();
   const match = trimmed.match(/^```(?:markdown|md|text|plain(?:text)?|prose)?[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/i);
   return match?.[1]?.trim() ?? trimmed;

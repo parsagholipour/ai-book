@@ -7,6 +7,7 @@ import {
   EXPORT_PUBLICATION_PROJECT_STATUS,
   isDetachedFromProjectLifecycle,
   jobOwnsQualityVerdict,
+  MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
   resolveBookGenerationStrategy,
   retryJobOptions,
   workerJobNameForType,
@@ -321,6 +322,13 @@ export async function maybeEnqueueCompile(
   options: {
     skipFinalReview?: boolean;
     /**
+     * The recompile's markdown change carries no new quality information — the
+     * chat `add_image` apply appended one image line to a saved page — so this
+     * compile must not write the book's verdict. Unlike `detached`, it still
+     * owns the project's status and failure lifecycle.
+     */
+    withoutQualityVerdict?: boolean;
+    /**
      * Queue the compile as detached repair work: it owns neither the project's
      * status nor its charge, so its own failure cannot flip a settled book to
      * FAILED or refund the book's generation. Used by failure paths that must
@@ -405,6 +413,7 @@ export async function maybeEnqueueCompile(
         contentRevision,
         [EXPORT_PUBLICATION_PROJECT_STATUS]: project.status,
         ...(options.skipFinalReview ? { skipFinalReview: true } : {}),
+        ...(options.withoutQualityVerdict ? { [MARKDOWN_RECOMPILE_WITHOUT_VERDICT]: true } : {}),
         ...(options.detached ? { [DETACHED_FROM_PROJECT_LIFECYCLE]: true } : {})
       },
       dedupeKey: `compile-export:${projectId}:${planId}:${contentFingerprint}`,

@@ -318,7 +318,15 @@ export type MobileProjectChatBranchDto = {
 export type MobileBookEditOperationDto = {
   id: string;
   projectId: string;
-  kind: "plan_revision" | "local_patch" | "page_rewrite" | "chapter_regenerate" | "book_replan" | "manual_edit";
+  kind:
+    | "plan_revision"
+    | "local_patch"
+    | "page_rewrite"
+    | "chapter_regenerate"
+    | "book_replan"
+    | "continue_book"
+    | "add_image"
+    | "manual_edit";
   status: "queued" | "active" | "applied" | "failed" | "canceled";
   affectedPageIndexes: number[];
   creditsCharged: number;

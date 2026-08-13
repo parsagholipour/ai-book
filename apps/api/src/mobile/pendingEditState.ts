@@ -1,9 +1,11 @@
 import {
   bookEditScopeFromMessage,
   isBookEditScopeOnlyMessage,
+  PROPOSAL_GATED_EDIT_KINDS,
   type BookEditIntent,
   type BookEditScope
 } from "../bookEditIntent.js";
+import { type ImageInsertionEdit } from "../bookEditImage.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { loadActiveProjectChatMessages } from "./projectChat.js";
 import { jsonRecord } from "./support.js";
@@ -17,6 +19,17 @@ import { type ReplanSettings } from "@book-maker/core";
  */
 
 export type PendingEditClarification = "scope" | "busy" | "confirm";
+
+/**
+ * The kinds an "apply it" may resume: every proposal-gated edit kind, plus the
+ * plan-stage revision, which rides the same card mechanics. Derived rather
+ * than re-spelled so a new proposal-gated kind cannot be resumable in the
+ * classifier and dead on resume.
+ */
+const RESUMABLE_PROPOSAL_KINDS: ReadonlySet<string> = new Set<string>([
+  ...PROPOSAL_GATED_EDIT_KINDS,
+  "plan_revision"
+]);
 
 /** A saved edit waiting on scope, busy clearance, or an explicit Apply confirmation. */
 export type PendingEditState = {
@@ -216,9 +229,7 @@ export function pendingEditProposalFromMetadata(
   const proposalId = typeof proposalIdRaw === "string" && proposalIdRaw.trim().length > 0 ? proposalIdRaw : undefined;
   const intentSource = jsonRecord(pending.intent);
   const kind = typeof intentSource.kind === "string" ? intentSource.kind : typeof card.kind === "string" ? card.kind : "";
-  if (
-    !["local_patch", "page_rewrite", "chapter_regenerate", "book_replan", "continue_book", "plan_revision"].includes(kind)
-  ) {
+  if (!RESUMABLE_PROPOSAL_KINDS.has(kind)) {
     return proposalId ? { proposalId } : {};
   }
   const affectedPageIndexes = Array.isArray(pending.affectedPageIndexes)
@@ -280,13 +291,59 @@ export function pendingEditProposalFromMetadata(
                 : 1
           }
         }
-      : {})
+      : {}),
+    ...(kind === "add_image" ? imageEditFromMetadata(intentSource.imageEdit) : {})
   };
   return {
     intent,
     ...(affectedPageIndexes.length > 0 ? { affectedPageIndexes } : {}),
     ...(credits !== undefined ? { credits } : {}),
     ...(proposalId ? { proposalId } : {})
+  };
+}
+
+/**
+ * Reads a stored `imageEdit` blob back, dropping malformed fields. Without a
+ * usable subject the whole field is dropped; the proposal path then falls back
+ * to its deterministic generic subject rather than dead-ending the resume.
+ */
+function imageEditFromMetadata(value: unknown): { imageEdit?: ImageInsertionEdit } {
+  const stored = jsonRecord(value);
+  const subject = typeof stored.subject === "string" ? stored.subject.trim().slice(0, 300) : "";
+  if (!subject) {
+    return {};
+  }
+  const placement = stored.placement === "end_of_book" || stored.placement === "page" ? stored.placement : undefined;
+  const pageIndex =
+    placement === "page" &&
+    typeof stored.pageIndex === "number" &&
+    Number.isInteger(stored.pageIndex) &&
+    stored.pageIndex > 0
+      ? stored.pageIndex
+      : undefined;
+  // A replacement must survive the resume, or the retried Apply silently adds
+  // a second picture instead of swapping the first. Malformed blobs drop the
+  // whole replace field, degrading to a plain add — visible on the card.
+  const replaceStored = jsonRecord(stored.replace);
+  const replaceOperationId = typeof replaceStored.operationId === "string" ? replaceStored.operationId : undefined;
+  const replaceOldSubject =
+    typeof replaceStored.oldSubject === "string" && replaceStored.oldSubject.trim()
+      ? replaceStored.oldSubject.trim().slice(0, 300)
+      : undefined;
+  return {
+    imageEdit: {
+      subject,
+      ...(placement ? { placement } : {}),
+      ...(pageIndex !== undefined ? { pageIndex } : {}),
+      ...(stored.replace !== undefined && replaceOperationId !== undefined
+        ? {
+            replace: {
+              operationId: replaceOperationId,
+              ...(replaceOldSubject ? { oldSubject: replaceOldSubject } : {})
+            }
+          }
+        : {})
+    }
   };
 }
 

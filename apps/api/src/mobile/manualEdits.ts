@@ -382,4 +382,4 @@ export async function undoLastBookEdit(
   });
 }
 
-export const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE", "MANUAL_EDIT"] as const;
+export const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE", "MANUAL_EDIT", "ADD_IMAGE"] as const;

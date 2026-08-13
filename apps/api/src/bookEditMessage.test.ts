@@ -22,6 +22,14 @@ describe("pageIndexesFromMessage", () => {
   it("still reads the reader's own English references", () => {
     expect(pageIndexesFromMessage('On page 3, rewrite this passage: "x".', pages)).toEqual([3]);
   });
+
+  it("reads ordinal and word-number page references", () => {
+    expect(pageIndexesFromMessage("fix the typo on the 3rd page", pages)).toEqual([3]);
+    expect(pageIndexesFromMessage("the second page is too long", pages)).toEqual([2]);
+    expect(pageIndexesFromMessage("rewrite page four", pages)).toEqual([4]);
+    // Named pages that don't exist are still filtered against the real book.
+    expect(pageIndexesFromMessage("the twelfth page", pages)).toEqual([]);
+  });
 });
 
 describe("targetLanguageFromLanguageVersionRequest", () => {

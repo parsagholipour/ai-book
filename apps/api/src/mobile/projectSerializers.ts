@@ -802,6 +802,9 @@ export function currentActionForEditOperation(operation: MobileBookEditOperation
   if (operation.kind === "CONTINUE_BOOK") {
     return "Writing new chapters.";
   }
+  if (operation.kind === "ADD_IMAGE") {
+    return "Creating your illustration.";
+  }
   if (operation.kind === "PLAN_REVISION") {
     return "Revising the plan.";
   }

@@ -382,6 +382,40 @@ export async function insufficientCreditsChatMessage(
 }
 
 /**
+ * The chat twin of `sendImageLimitReached`: the free tier's illustrated-book
+ * budget is spent, so the requested illustration could not start. Mirrors
+ * {@link insufficientCreditsChatMessage} — the blocked edit stays resumable
+ * through a fresh proposal pair, and the reply names the book limit, never a
+ * credit price.
+ */
+export async function imageLimitChatMessage(
+  projectId: string,
+  parentId: string,
+  intent: BookEditIntent,
+  quota: { used: number; limit: number; resetsAt: Date | string },
+  resume?: { pendingEdit: Record<string, unknown>; editProposal?: Record<string, unknown> } | undefined
+): Promise<MobileProjectChatMessageRecord> {
+  const bookText = `illustrated book${quota.limit === 1 ? "" : "s"}`;
+  return createAssistantChatMessage({
+    projectId,
+    parentId,
+    content: resume
+      ? `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that illustration. Upgrade for unlimited illustrated books — or wait for next month — then tap Apply and I’ll run it.`
+      : `Free plans include ${quota.limit} ${bookText} a month, and this month’s are used up, so I couldn’t start that illustration. Upgrade for unlimited illustrated books, or try again next month.`,
+    metadata: {
+      intent,
+      charged: false,
+      imageLimit: {
+        used: quota.used,
+        limit: quota.limit,
+        resetsAt: quota.resetsAt instanceof Date ? quota.resetsAt.toISOString() : quota.resetsAt
+      },
+      ...resume
+    }
+  });
+}
+
+/**
  * Assistant replies used to announce the price in prose ("This uses 800
  * credits."). The app now shows that number as a tappable badge sourced from
  * `metadata.creditsCharged` / `metadata.editProposal.credits`, so the sentence

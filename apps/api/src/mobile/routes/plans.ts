@@ -4,6 +4,7 @@ import {
   isBullJobActive,
   type GenerationJobType
 } from "../../queue.js";
+import { addImageQuotaLimit } from "../addImageOperations.js";
 import { type MobileProjectRecoveryDto } from "../dto.js";
 import { queueDirectPlanRevision } from "../editOperations.js";
 import { retryPlanRevisionOperation } from "../planRevisionRetries.js";
@@ -547,6 +548,15 @@ export async function registerMobilePlanRoutes(fastify: FastifyInstance, context
         if (estimateFullBookCreditCost(generationInput).assumptions.estimatedInteriorImages > 0) {
           imageQuotaLimit = (await getImageQuota(auth.user.id))?.limit ?? null;
         }
+      } else if (
+        sourceAttempt.operation === "IMAGE_GENERATION" &&
+        sourceJobs.some((job) => jsonRecord(job.payload).imageInsertion !== undefined)
+      ) {
+        // A failed chat add_image was refunded slot and all — the failed render
+        // left the book text-only — so the paid retry re-claims through the
+        // same decision the original Apply used: nothing on a paid tier, for a
+        // zero quote, or for a book illustrated by now.
+        imageQuotaLimit = await addImageQuotaLimit(auth.user.id, id, sourceAttempt.quotedCredits);
       }
       let started;
       try {

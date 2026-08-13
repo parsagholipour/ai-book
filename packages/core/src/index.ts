@@ -60,6 +60,7 @@ export * from "./generation/coverDesignArtwork.js";
 export * from "./generation/coverDesignSelection.js";
 export * from "./generation/imageOptimization.js";
 export * from "./generation/markdown.js";
+export * from "./generation/bookImageAssets.js";
 export * from "./generation/epub.js";
 export * from "./generation/exportProvenance.js";
 export * from "./generation/exportTempSweep.js";

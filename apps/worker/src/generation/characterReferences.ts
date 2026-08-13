@@ -275,7 +275,7 @@ export type LibraryPortraitSeedSkipReason =
 
 type LibraryPortraitSeed = { id: string; path: string; source: LibraryCharacterPortraitSource };
 
-type LibraryPortraitSeedOutcome =
+export type LibraryPortraitSeedOutcome =
   | { seeded: true; seed: LibraryPortraitSeed }
   | {
       seeded: false;
@@ -292,7 +292,13 @@ async function libraryPortraitSeedForName(
   return resolveLibraryPortraitSeed(matchLibraryCharacter(name, snapshots), ownerUserId);
 }
 
-async function resolveLibraryPortraitSeed(
+/**
+ * The security-relevant ownership trio — owner-prefix check,
+ * `libraryCharacterDiskPath`, `stat` — lives here and only here; every path
+ * that reads a portrait off a stored snapshot (seeding, page faces, the chat
+ * `add_image` insertion) resolves through it.
+ */
+export async function resolveLibraryPortraitSeed(
   match: LibraryCharacterSnapshot | null,
   ownerUserId: string | null
 ): Promise<LibraryPortraitSeedOutcome> {
@@ -492,7 +498,7 @@ async function libraryFacesForSheets(options: {
  * the name: the snapshot set has moved out from under the sheet, and guessing
  * by name against a moved set is precisely the wrong-face bug.
  */
-function librarySnapshotForSheet(
+export function librarySnapshotForSheet(
   metadata: unknown,
   snapshots: readonly LibraryCharacterSnapshot[]
 ): LibraryCharacterSnapshot | null {

@@ -5,6 +5,7 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
+import { applyImageInsertion, type ImageInsertionPayload } from "./applyImageInsertion.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
 import { bookPlanSchema, createProviders, hasExactMatch, jsonPayloadToRecord, type ExactReplacement } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -32,7 +33,8 @@ export async function applyBookEdit(job: Job) {
     affectedPageIndexes,
     planId,
     exactReplacement,
-    mode
+    mode,
+    imageInsertion
   } = job.data as {
     projectId: string;
     operationId: string;
@@ -47,11 +49,19 @@ export async function applyBookEdit(job: Job) {
      * paid for, so a page that no longer matches is skipped instead.
      */
     mode?: "exact";
+    imageInsertion?: ImageInsertionPayload;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
   const operation = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
   if (!operation) {
     throw new Error("Book edit operation not found");
+  }
+  if (imageInsertion) {
+    // A paid one-off illustration, not a text rewrite. Forked before the
+    // unconditional ACTIVE/EDITING writes below so the insertion can run its
+    // own redelivery fence against the operation's pre-write status.
+    await applyImageInsertion(job, operation);
+    return;
   }
   await prisma.bookEditOperation.update({ where: { id: operationId }, data: { status: "ACTIVE" } });
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
@@ -59,7 +69,7 @@ export async function applyBookEdit(job: Job) {
 
   const [project, planVersion] = await Promise.all([
     getProjectOrThrow(projectId),
-    prisma.planVersion.findUnique({ where: { id: planId ?? "" } })
+    planId ? prisma.planVersion.findUnique({ where: { id: planId } }) : null
   ]);
   if (!project.currentPlanId && !planId) {
     throw new Error("Cannot edit a book without a current plan");

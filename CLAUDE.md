@@ -201,12 +201,21 @@ tells you when a listed file has dropped under the default so the entry can be d
   property, because the race it must not disturb runs under `runSerializable` and re-reads the
   winner's key. `planCreditsPerPeriod` still gets the period's full size, so the app reads
   "0 of 1,000 monthly credits left" rather than a plan with no allowance at all.
-- **The free tier's illustrated-book limit is enforced in exactly one place.**
-  `POST /api/mobile/plans/:id/approve` is the only mobile route that starts an image-producing
-  generation, so that is where the `UsageCounter` slot is claimed (403 `IMAGE_LIMIT_REACHED` when
-  it is gone — never a silent downgrade to text-only). The claim is stamped onto the reservation as
-  `metadata.imageQuota`, so `refundCreditLedgerEntry` hands the slot back on every failure path
-  without each of them knowing about quotas.
+- **The free tier's illustrated-book limit has two claiming doors — plan approval and the chat
+  `add_image` Apply.** `POST /api/mobile/plans/:id/approve` claims the `UsageCounter` slot for a
+  generation planned with images (403 `IMAGE_LIMIT_REACHED` when it is gone — never a silent
+  downgrade to text-only), and the chat `add_image` Apply claims one when it is about to make a
+  *text-only* book illustrated — only then, and only when the recomputed cost is above zero: an
+  already-illustrated book spent its slot at approve (or at a prior `ADD_IMAGE`, which the
+  predicate counts even after an undo), and a zero-priced image writes no ledger entry to carry
+  the claim, so a failure would leak the slot for good. Either claim is stamped onto the
+  reservation as `metadata.imageQuota`, so `refundCreditLedgerEntry` hands the slot back on every
+  failure path without each of them knowing about quotas — which is why the confirmed `/resume`
+  retry lane, which re-charges a failed attempt, also re-claims: for a `FULL_BOOK_GENERATION`
+  retry priced with interior images, and for an `IMAGE_GENERATION` retry whose payload carries
+  `imageInsertion`, through the same `addImageQuotaLimit` decision the original Apply used.
+  **Known, pre-existing gap:** a chat replan copy carrying `illustrationsEnabled` generates an
+  illustrated book through the worker's self-approval, with no approve step and no claim.
 - **Chat replies never name a credit price.** The number travels as
   `metadata.creditsCharged` (queued work) or `metadata.editProposal.credits` (a proposal), and the
   app draws it as the tappable badge in `credit_cost_badge.dart` — one place that also explains what

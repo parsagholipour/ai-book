@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   DERIVATIVE_GENERATION_JOBS,
   DETACHED_FROM_PROJECT_LIFECYCLE,
+  MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
   PRESENTATION_ONLY_RECOMPILE,
   generationJobControlsProjectStatus,
   isDerivativeGenerationJobType,
   isDerivativeWorkerJobName,
   jobOwnsQualityVerdict,
-  workerJobControlsProjectStatus
+  payloadOwnsProjectOutcome,
+  workerJobControlsProjectStatus,
+  workerJobOwnsFailureLifecycle
 } from "./jobScope.js";
 
 describe("generation job scope", () => {
@@ -69,6 +72,28 @@ describe("jobOwnsQualityVerdict", () => {
         [PRESENTATION_ONLY_RECOMPILE]: true
       })
     ).toBe(false);
+  });
+
+  it("refuses a markdown recompile that disowned the verdict", () => {
+    // The chat add_image apply appended one image line: Page.markdown moved,
+    // but no prose changed, so the earned model-QA findings still describe
+    // every page and this deterministic-only report must not replace them.
+    expect(
+      jobOwnsQualityVerdict("COMPILE_EXPORT", {
+        planId: "plan-1",
+        skipFinalReview: true,
+        [MARKDOWN_RECOMPILE_WITHOUT_VERDICT]: true
+      })
+    ).toBe(false);
+  });
+
+  it("keeps the verdictless markdown recompile owning the project outcome", () => {
+    // Unlike the detached and presentation flags, this one only disowns the
+    // verdict: the add_image recompile still owns EDITING -> settled and the
+    // failure lifecycle of the edit it finishes.
+    const payload = { planId: "plan-1", skipFinalReview: true, [MARKDOWN_RECOMPILE_WITHOUT_VERDICT]: true };
+    expect(payloadOwnsProjectOutcome(payload)).toBe(true);
+    expect(workerJobOwnsFailureLifecycle("compile-export", payload)).toBe(true);
   });
 
   it("refuses every job that is not a compile", () => {

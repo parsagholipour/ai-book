@@ -14,6 +14,7 @@ import {
   type ChapterHeadingEdit
 } from "./bookEditChapterHeading.js";
 import { classifyWithDegradedHeuristics, classifyWithHeuristics } from "./bookEditHeuristics.js";
+import { imageInsertionIntentFromDecision, type ImageInsertionEdit } from "./bookEditImage.js";
 import { chatReplyQuoteForPrompt, type ChatReplyQuote } from "./chatReplyQuote.js";
 import {
   chapterRegenerateFromMessage,
@@ -62,7 +63,8 @@ export type BookEditIntentKind =
   | "book_replan"
   | "continue_book"
   | "back_matter"
-  | "chapter_heading";
+  | "chapter_heading"
+  | "add_image";
 
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
 export type BookEditScope = "none" | "explicit_pages" | "matching_pages" | "all_pages";
@@ -115,6 +117,8 @@ export type BookEditIntent = {
   backMatter?: BackMatterEdit | null;
   /** Set for chapter_heading intents: how a chapter heading should read. */
   chapterHeading?: ChapterHeadingEdit | null;
+  /** Set for add_image intents: the picture to generate and where it goes. */
+  imageEdit?: ImageInsertionEdit | null;
   /**
    * Set for book_replan intents: the generation settings the request named.
    *
@@ -136,12 +140,13 @@ export const BOOK_EDIT_CONFIDENCE_THRESHOLD = 0.72;
  * while proposing nothing, and the user's only way out was to insist ("Do
  * it") until the spent clarification forced the edit through.
  */
-const PROPOSAL_GATED_EDIT_KINDS: ReadonlySet<BookEditIntentKind> = new Set([
+export const PROPOSAL_GATED_EDIT_KINDS: ReadonlySet<BookEditIntentKind> = new Set([
   "local_patch",
   "page_rewrite",
   "chapter_regenerate",
   "book_replan",
-  "continue_book"
+  "continue_book",
+  "add_image"
 ]);
 
 /**
@@ -207,7 +212,8 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
           "language_copy",
           "continuation",
           "back_matter",
-          "chapter_heading"
+          "chapter_heading",
+          "insert_image"
         ])
         .optional(),
       editStyle: z.enum(["exact_replace", "rewrite"]).optional(),
@@ -217,6 +223,12 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       chapterHeadingStyle: z.enum(["label_number_title", "number_title", "title_only"]).nullish(),
       /** A word to use in place of "Chapter", when editTarget is chapter_heading. */
       chapterHeadingLabel: z.string().trim().min(1).max(24).nullish(),
+      /** What the new picture should show, when editTarget is insert_image. */
+      imageSubject: z.string().trim().min(1).max(300).nullish(),
+      /** Where the new picture goes, when editTarget is insert_image and no page is named. */
+      imagePlacement: z.enum(["end_of_book", "page"]).nullish(),
+      /** True when the new picture replaces an earlier chat-added one instead of adding another. */
+      imageReplace: z.boolean().nullish(),
       pageIndexes: z.array(z.number().int().positive()).max(100).default([]),
       chapterIndex: z.number().int().positive().nullable().default(null),
       /** How many chapters to append when editTarget is continuation. */
@@ -334,6 +346,11 @@ export async function classifyProjectChatMessage(options: {
   if (chapterHeading) {
     return chapterHeading;
   }
+  // Image requests have no regex fast path: the router's insert_image target is
+  // the one classifier (a deliberate product call — extraction from free text is
+  // model work). Without a model they degrade to the heuristics' clarify, and a
+  // spent clarification then takes forcedDecision's whole-book widening; that
+  // outage-only cost was accepted when the recognizer was removed.
   const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters);
   // Only ultra-high-precision read/undo shortcuts skip the model; everything
   // else (including chapter regen and language copies) goes through the tool agent.
@@ -466,7 +483,9 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
   if (result.status !== "finished" || !result.finish) {
     throw new Error("Edit-intent router did not produce a routing decision.");
   }
-  return intentFromDecideAction(result.finish, options.message, options.chapters);
+  return intentFromDecideAction(result.finish, options.message, options.chapters, {
+    clarifyExhausted: options.clarifyExhausted
+  });
 }
 
 /**
@@ -477,10 +496,11 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
 export function intentFromDecideAction(
   decision: DecideActionPayload,
   message: string,
-  chapters: BookEditChapterContext[] = []
+  chapters: BookEditChapterContext[] = [],
+  context: { clarifyExhausted?: boolean | undefined } = {}
 ): BookEditIntent {
   if (decision.action === "propose_edit") {
-    return intentFromProposeEdit(decision, message, chapters);
+    return intentFromProposeEdit(decision, message, chapters, context);
   }
   if (decision.action === "show_content") {
     return {
@@ -551,7 +571,8 @@ export function intentFromDecideAction(
 export function intentFromProposeEdit(
   decision: DecideActionPayload,
   message: string,
-  chapters: BookEditChapterContext[] = []
+  chapters: BookEditChapterContext[] = [],
+  context: { clarifyExhausted?: boolean | undefined } = {}
 ): BookEditIntent {
   const target = decision.editTarget ?? "pages";
   const style = decision.editStyle ?? (decision.replacementFrom ? "exact_replace" : "rewrite");
@@ -589,6 +610,10 @@ export function intentFromProposeEdit(
       chapterHeadingEditFromDecision(decision.chapterHeadingStyle, decision.chapterHeadingLabel),
       decision
     );
+  }
+
+  if (target === "insert_image") {
+    return imageInsertionIntentFromDecision(decision, message, context);
   }
 
   if (target === "language_copy" || target === "structural") {
@@ -718,6 +743,9 @@ function routerSystemPrompt(
           "Use action undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
           "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (replacing the premise/main character/audience/ending/structure/visual identity), language_copy (new language version), or continuation (continue the book: write the next chapter(s), keep writing, finish the story; set newChapterCount when the user says how many).",
           "Adding something new to the finished book — a character, a scene, an object, a mention — is propose_edit, not clarify. Set editTarget to pages for the scenes where it belongs, or whole_book when it should run through the story. Reserve structural for replacing the book's premise or main character, because it regenerates the entire book.",
+          "Adding a new picture, photo, image, illustration or drawing is propose_edit with editTarget insert_image — never a page edit and never a clarify. Set imageSubject to what the picture should show, in the user's own words but WITHOUT any placement words; when a follow-up adjusts an earlier image request, restate the full imageSubject from the conversation. Set pageIndexes to the one page it belongs on whenever the user names a place in any language or form — \"on page 3\", \"on the 3rd page\", \"the third page\", \"صفحه ۳\" all mean pageIndexes [3] — or imagePlacement to end_of_book for the end/back of the book. Example: \"Add the photo of her signature on the 3rd page\" → imageSubject \"her signature\", pageIndexes [3]. Never ask where the picture should go: when no place is named, the default is the end of the book.",
+          "When the user corrects or replaces a picture they added earlier — \"no, I actually want…\", \"instead…\", \"change it to…\", \"replace the photo with a castle\" — that is still insert_image, with imageReplace true and imageSubject set to the NEW subject; set placement fields only when they name a new place, because a replacement keeps the old picture's spot (the most recent chat-added image, or the one on the page they name). The server swaps the old picture out; without imageReplace the book ends up with both.",
+          "Requests to remove, move or resize an existing picture — or to replace one WITHOUT saying what the new picture should show — and negated requests (\"don't add a photo of…\") are not insert_image and must never be priced as a page rewrite: use action answer; for removal, explain that Edit Mode on that page can remove an image, and Undo reverts the latest edit.",
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
@@ -762,7 +790,9 @@ function normalizeIntentForStage(
   };
   if (
     (stage === "plan_ready" || stage === "approved_plan") &&
-    ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate", "continue_book"].includes(bounded.kind)
+    ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate", "continue_book", "add_image"].includes(
+      bounded.kind
+    )
   ) {
     return { ...bounded, kind: "plan_revision" };
   }

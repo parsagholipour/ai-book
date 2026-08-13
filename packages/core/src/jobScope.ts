@@ -98,6 +98,21 @@ export function isPresentationOnlyRecompile(payload: unknown): boolean {
 }
 
 /**
+ * Payload flag for a recompile whose markdown change carries no new quality
+ * information: the chat `add_image` apply appended one image line to a saved
+ * page. `Page.markdown` moved, so this is not `PRESENTATION_ONLY_RECOMPILE` —
+ * the compile still owns the project's status and failure lifecycle like any
+ * edit recompile — but no prose changed, so the model-QA findings the book
+ * earned still describe every page and this compile's deterministic-only
+ * report must not replace them.
+ */
+export const MARKDOWN_RECOMPILE_WITHOUT_VERDICT = "markdownRecompileWithoutVerdict";
+
+export function isMarkdownRecompileWithoutVerdict(payload: unknown): boolean {
+  return payloadFlag(payload, MARKDOWN_RECOMPILE_WITHOUT_VERDICT);
+}
+
+/**
  * Whether this payload belongs to work whose outcome is the paid book's own.
  *
  * False for the two payload-flagged kinds that settle alone — a detached export
@@ -187,14 +202,19 @@ export function workerJobOwnsFailureLifecycle(name: string, payload: unknown): b
  *
  * Only `compile-export` writes a manuscript quality report at all, and it is two
  * jobs wearing one name. The compile that ends a generation, or applies an edit,
- * reviews the book it just produced and owns the answer. Two kinds do not: a
+ * reviews the book it just produced and owns the answer. Three kinds do not: a
  * detached export repair rebuilds a file for a book that is already finished and
  * already paid for (`skipFinalReview`, so its report is the deterministic checks
- * alone), and a presentation-only recompile reprints an unchanged manuscript.
- * Letting either speak replaces real model QA — chapter coherence, transitions,
- * the `affectedPageIndexes` the card's "Fix page N" button is built from — with
- * a report that never asked a model anything.
+ * alone), a presentation-only recompile reprints an unchanged manuscript, and a
+ * `MARKDOWN_RECOMPILE_WITHOUT_VERDICT` recompile follows a markdown append that
+ * touched no prose. Letting any of them speak replaces real model QA — chapter
+ * coherence, transitions, the `affectedPageIndexes` the card's "Fix page N"
+ * button is built from — with a report that never asked a model anything.
  */
 export function jobOwnsQualityVerdict(type: string, payload: unknown): boolean {
-  return type === "COMPILE_EXPORT" && payloadOwnsProjectOutcome(payload);
+  return (
+    type === "COMPILE_EXPORT" &&
+    payloadOwnsProjectOutcome(payload) &&
+    !isMarkdownRecompileWithoutVerdict(payload)
+  );
 }

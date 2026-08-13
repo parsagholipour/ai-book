@@ -62,6 +62,11 @@ export function bookEditCreditCost(
   if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
     return Math.max(1, affectedPageCount) * tierPrice(pricing, "pageRegenerationPerPage", tier);
   }
+  if (kind === "add_image") {
+    // One generated illustration at the book's own tier. No base fee: the
+    // request overhead the flat halves cover elsewhere is dwarfed by the image.
+    return tierPrice(pricing, "imageGeneration", tier);
+  }
   if (kind === "book_replan") {
     const current = createProjectSchema.parse(inputSnapshotFromProject(project));
     const requested = inputWithReplanSettings(current, options.replanSettings);
@@ -72,9 +77,12 @@ export function bookEditCreditCost(
 
 export function operationKindForIntent(
   kind: BookEditIntentKind
-): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" | "CONTINUE_BOOK" | "PLAN_REVISION" {
+): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" | "CONTINUE_BOOK" | "PLAN_REVISION" | "ADD_IMAGE" {
   if (kind === "page_rewrite") {
     return "PAGE_REWRITE";
+  }
+  if (kind === "add_image") {
+    return "ADD_IMAGE";
   }
   if (kind === "chapter_regenerate") {
     return "CHAPTER_REGENERATE";
@@ -94,12 +102,17 @@ export function operationKindForIntent(
   return "LOCAL_PATCH";
 }
 
-export function billingOperationForIntent(kind: BookEditIntentKind): "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" {
+export function billingOperationForIntent(
+  kind: BookEditIntentKind
+): "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" | "IMAGE_GENERATION" {
   if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
     return "PAGE_REGENERATION";
   }
   if (kind === "book_replan") {
     return "BOOK_REPLAN";
+  }
+  if (kind === "add_image") {
+    return "IMAGE_GENERATION";
   }
   return "BOOK_TEXT_EDIT";
 }

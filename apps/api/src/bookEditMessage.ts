@@ -326,16 +326,116 @@ export function replanSettingsFromEditMessage(
   return Object.keys(settings).length > 0 ? settings : undefined;
 }
 
+/** Where an image request asked to go, before validation against real pages. */
+export type BookEditImagePlacement =
+  | { placement: "end_of_book" }
+  | { placement: "page"; pageIndex: number };
+
+/**
+ * Readers name pages three ways — "page 3", "page three", "the 3rd page" — and
+ * all three have to read as the same page. Word forms stop at twenty: past
+ * that, people write digits.
+ */
+const CARDINAL_WORDS = [
+  "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+  "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+  "eighteen", "nineteen", "twenty"
+];
+const ORDINAL_WORDS = [
+  "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth",
+  "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth",
+  "fifteenth", "sixteenth", "seventeenth", "eighteenth", "nineteenth",
+  "twentieth"
+];
+
+function numberWordValue(word: string): number | null {
+  const lower = word.toLowerCase();
+  const cardinal = CARDINAL_WORDS.indexOf(lower);
+  if (cardinal !== -1) {
+    return cardinal + 1;
+  }
+  const ordinal = ORDINAL_WORDS.indexOf(lower);
+  return ordinal === -1 ? null : ordinal + 1;
+}
+
+/**
+ * Pattern sources (no flags, no capture groups) shared with the image
+ * recognizer's subject-excision clauses, so "on the 3rd page" is cut from the
+ * subject by exactly the grammar that will then read it as a placement.
+ */
+export const NAMED_PAGE_SOURCE = `pages?\\s+(?:\\d{1,3}|${CARDINAL_WORDS.join("|")})(?!\\d)`;
+export const ORDINAL_PAGE_SOURCE = `(?:the\\s+)?(?:\\d{1,3}(?:st|nd|rd|th)|${ORDINAL_WORDS.join("|")})\\s+page`;
+
+const NAMED_PAGE = new RegExp(`\\b${NAMED_PAGE_SOURCE}\\b`, "i");
+const ORDINAL_PAGE = new RegExp(`\\b${ORDINAL_PAGE_SOURCE}\\b`, "i");
+
+function namedPageIndex(match: string): number | null {
+  // The suffix strip must not touch word ordinals: "third" is not "thi" + "rd".
+  const token = match
+    .replace(/^pages?\s+|^the\s+|\s+page$/gi, "")
+    .replace(/(?<=\d)(?:st|nd|rd|th)$/i, "");
+  const value = /^\d{1,3}$/.test(token) ? Number(token) : numberWordValue(token);
+  return value !== null && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * "At the end of the book", "on the last page", "as the final page". English
+ * only, like every message reader here — non-English placement travels through
+ * the router's `pageIndexes`, which is why that channel wins over this one.
+ *
+ * "The end" has to be the book's: either named ("of the book/story", "the
+ * last page", "the back of the book") or a bare "at the end" closing the
+ * sentence. "At the end of chapter 2" and "the light at the end of the
+ * tunnel" name an end that is not the book's and place nothing here.
+ */
+export function endOfBookPlacementFromMessage(message: string): boolean {
+  return (
+    /\b(?:at|to|near)\s+the\s+(?:very\s+)?end\s+of\s+the\s+(?:book|story|manuscript)\b/i.test(message) ||
+    /\b(?:at|to|near)\s+the\s+(?:very\s+)?end\s*(?:[.!?;\n]|$)/i.test(message) ||
+    /\bat\s+the\s+back\s+of\s+the\s+book\b/i.test(message) ||
+    /\b(?:the\s+)?(?:last|final|closing)\s+page\b/i.test(message) ||
+    /\bas\s+the\s+(?:last|final)\s+(?:page|image|picture|illustration)\b/i.test(message)
+  );
+}
+
+/**
+ * The placement an image request names, read without the book's page list: a
+ * named page ("page 3", "page three", "the 3rd page") is returned as-is and
+ * validated against real pages by the proposal path. Numerals are normalized
+ * so "page ۵" reads as page 5.
+ */
+export function imagePlacementFromMessage(message: string): BookEditImagePlacement | null {
+  const normalized = normalizeNumerals(message);
+  const named = NAMED_PAGE.exec(normalized) ?? ORDINAL_PAGE.exec(normalized);
+  if (named) {
+    const pageIndex = namedPageIndex(named[0]);
+    if (pageIndex !== null) {
+      return { placement: "page", pageIndex };
+    }
+  }
+  return endOfBookPlacementFromMessage(message) ? { placement: "end_of_book" } : null;
+}
+
 export function pageIndexesFromMessage(message: string, pages: BookEditPageContext[]): number[] {
   const indexes = new Set<number>();
   // Numerals are normalized but the word "page" is not translated: the reader
   // writes its own references in English ("On page 4") whatever the book's
   // language, so this only has to survive a reader typing their own digits.
-  for (const match of normalizeNumerals(message).matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
+  const normalized = normalizeNumerals(message);
+  for (const match of normalized.matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
     const start = Number(match[1]);
     const end = match[2] ? Number(match[2]) : start;
     for (let index = Math.min(start, end); index <= Math.max(start, end); index += 1) {
       indexes.add(index);
+    }
+  }
+  // "page three" and "the 3rd page" name single pages; ranges stay digits-only.
+  for (const source of [NAMED_PAGE_SOURCE, ORDINAL_PAGE_SOURCE]) {
+    for (const match of normalized.matchAll(new RegExp(`\\b${source}\\b`, "gi"))) {
+      const index = namedPageIndex(match[0]);
+      if (index !== null) {
+        indexes.add(index);
+      }
     }
   }
   for (const page of pages) {
