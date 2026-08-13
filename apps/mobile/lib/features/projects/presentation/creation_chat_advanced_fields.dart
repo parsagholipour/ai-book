@@ -51,7 +51,11 @@ class _BookTypeDropdown extends StatelessWidget {
           key: ValueKey('book-type-$selected'),
           initialValue: selectedOption.value,
           isExpanded: true,
-          decoration: InputDecoration(helperText: selectedOption.subtitle),
+          decoration: InputDecoration(
+            helperText: selectedOption.subtitle,
+            // Subtitles are whole sentences; one line ellipsizes mid-word.
+            helperMaxLines: 3,
+          ),
           items: [
             for (final option in options)
               DropdownMenuItem(

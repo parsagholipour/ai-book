@@ -142,6 +142,18 @@ extension _ReaderViewSurface on _ReaderViewState {
           _viewerParams(_annotations.viewerMode),
           _state.lastPage,
         ),
+        if (_backgroundTapEnabled)
+          // Covers the gap between sheets and the blank paper at either end —
+          // the per-page overlay never reaches those, and a viewer overlay
+          // would vanish under the test stub. `acceptTap` leaves presses that
+          // landed on a page to that page's own overlay.
+          Positioned.fill(
+            child: ReaderTapLayer(
+              key: const Key('reader-background-tap'),
+              onTap: (_) => _onBackgroundTap(),
+              acceptTap: (global) => !_globalPointIsOnPage(global),
+            ),
+          ),
         ReaderDimOverlay(level: _annotations.settings.dimLevel),
         ReaderScrollHandle(
           controller: _controller,

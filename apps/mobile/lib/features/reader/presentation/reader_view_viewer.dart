@@ -284,6 +284,48 @@ extension _ReaderViewViewer on _ReaderViewState {
     _chromeToggledByTap = true;
   }
 
+  /// A tap on the gutter, the end-paper, or anywhere else that is not a page.
+  ///
+  /// Page overlays only cover the sheets. The 14-pixel gap between them, the
+  /// blank paper that clears the bars at either end, and the side gutter of a
+  /// mixed-size book have no overlay of their own — without this they would
+  /// swallow a tap that, everywhere else in the book, puts the bars away.
+  void _onBackgroundTap() {
+    _chromeToggledByTap = false;
+    if (_selection != null || _searching) return;
+    if (_selectionDrag.active) return;
+    if (_annotations.isMarkingUp) return;
+    _setImmersive(!_immersive);
+  }
+
+  /// The gutter layer belongs in reading mode, the same as the per-page one.
+  ///
+  /// Drawing and placing own the page; a tap that hid the bars then would take
+  /// the tray with them. Lives on the reader's stack rather than in a viewer
+  /// overlay so the test stub, which never builds those, still has a tap
+  /// target — the same reason the scroll handle is here.
+  bool get _backgroundTapEnabled {
+    final mode = _canCreateMarkup
+        ? _annotations.viewerMode
+        : ReaderViewerMode.reading;
+    return mode == ReaderViewerMode.reading;
+  }
+
+  /// Whether a press in the viewer's box landed on a sheet rather than beside
+  /// one.
+  ///
+  /// False when the controller is not ready, which is the test stub: there are
+  /// no pages to miss, so a tap on the viewer is a tap on the book.
+  bool _globalPointIsOnPage(Offset global) {
+    if (!_controller.isReady) return false;
+    final document = _controller.globalToDocument(global);
+    if (document == null) return false;
+    return readerDocumentPointIsOnPage(
+      document,
+      _controller.layout.pageLayouts,
+    );
+  }
+
   /// A second tap in quick succession zooms the page in, and the one after that
   /// puts the book back the way it was.
   ///

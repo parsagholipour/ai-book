@@ -76,3 +76,15 @@ ReaderPageGeometry readerPageGeometry(
     documentSize: Size(width, y - gap + bottomBar * perPixel),
   );
 }
+
+/// Whether [point] in document space sits on a sheet of paper.
+///
+/// False is the gap between two pages, the blank paper that clears the bars at
+/// either end, or the side gutter of a mixed-size book. Those have no page
+/// overlay, so a tap there has to be owned by the viewer rather than by a page.
+bool readerDocumentPointIsOnPage(Offset point, List<Rect> pageRects) {
+  for (final rect in pageRects) {
+    if (rect.contains(point)) return true;
+  }
+  return false;
+}

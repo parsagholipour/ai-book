@@ -22,9 +22,7 @@ import 'book_reader_test_support.dart';
 /// downloading it, telling one compile from the next, and keeping a place in
 /// it. These are about the furniture around it.
 void main() {
-  testWidgets('the bars lie over the page and never resize it', (
-    tester,
-  ) async {
+  testWidgets('the bars lie over the page and never resize it', (tester) async {
     // The whole point of the layout: pdfrx answers a view-size change by
     // keeping the same document point at the box's origin, so a box that grows
     // moves the paragraph being read. Here the box never changes and the bars
@@ -127,6 +125,44 @@ void main() {
     expect(barsHidden(), isFalse);
     expect(find.byTooltip('Exit full screen'), findsNothing);
   });
+
+  testWidgets(
+    'a tap between the pages hides the bars, and another shows them',
+    (tester) async {
+      // The per-page overlay only covers the sheets. The gap between them, and
+      // the blank paper at either end, used to swallow a tap that everywhere
+      // else in the book puts the bars away. The background layer is that tap
+      // owner, and the stub has no pages, so a tap on the viewer *is* a tap
+      // between them.
+      await pumpReader(
+        tester,
+        repository: FakeReaderRepository(),
+        export: pdfExport(),
+      );
+      await tester.pumpAndSettle();
+
+      bool barsHidden() => tester
+          .widget<ExcludeSemantics>(
+            find
+                .ancestor(
+                  of: find.byType(ReaderBottomChrome),
+                  matching: find.byType(ExcludeSemantics),
+                )
+                .first,
+          )
+          .excluding;
+
+      expect(barsHidden(), isFalse);
+
+      await tester.tap(find.byKey(const Key('reader-background-tap')));
+      await tester.pumpAndSettle();
+      expect(barsHidden(), isTrue);
+
+      await tester.tap(find.byKey(const Key('reader-background-tap')));
+      await tester.pumpAndSettle();
+      expect(barsHidden(), isFalse);
+    },
+  );
 
   testWidgets('keeps a way out when there is nothing behind the book', (
     tester,

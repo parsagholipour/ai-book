@@ -12,6 +12,7 @@ extension _CreationChatSheets on _CreationChatScreenState {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      useSafeArea: true,
       builder: (_) => _SourceNotesSheet(controller: controller),
     );
     controller.dispose();
@@ -33,10 +34,13 @@ extension _CreationChatSheets on _CreationChatScreenState {
 
   Future<void> openAdvancedSheet() async {
     final controller = ref.read(creationChatControllerProvider.notifier);
+    // useSafeArea: a scroll-controlled sheet may grow to full height, and
+    // without it the drag handle disappears up into the status bar.
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      useSafeArea: true,
       builder: (_) => _AdvancedSheet(controller: controller),
     );
   }
@@ -51,6 +55,7 @@ extension _CreationChatSheets on _CreationChatScreenState {
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
+      useSafeArea: true,
       builder: (_) => _TitleSheet(
         initial: working ?? '',
         suggestions: state.titleSuggestions,
@@ -457,15 +462,27 @@ class _AdvancedSheet extends ConsumerWidget {
               creditsPerPage: (quality) =>
                   _writingCreditsPerPage(presets, quality, creditCosts),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
+            Text(
+              'Visuals',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: presets.coverEnabled,
               onChanged: controller.setCoverEnabled,
               secondary: const Icon(Icons.auto_stories_outlined),
-              title: Row(
+              // A Wrap, not a Row: beside a Row's badge the longer titles run
+              // out of width and break mid-word, while a Wrap keeps the title
+              // whole and lets the badge drop under it when space is tight.
+              title: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Expanded(child: Text('AI cover art')),
+                  const Text('AI cover art'),
                   if (state.userChoices.contains(CreationChoice.cover))
                     const AppStatusBadge(
                       label: 'Your choice',
@@ -485,9 +502,12 @@ class _AdvancedSheet extends ConsumerWidget {
               value: presets.illustrationsEnabled,
               onChanged: controller.setIllustrationsEnabled,
               secondary: const Icon(Icons.image_outlined),
-              title: Row(
+              title: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const Expanded(child: Text('In-book illustrations')),
+                  const Text('In-book illustrations'),
                   if (state.userChoices.contains(CreationChoice.illustrations))
                     const AppStatusBadge(
                       label: 'Your choice',
@@ -504,7 +524,7 @@ class _AdvancedSheet extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
             _LanguageField(
               language: state.language,
               yourChoice: state.userChoices.contains(CreationChoice.language),

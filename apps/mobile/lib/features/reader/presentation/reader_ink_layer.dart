@@ -161,7 +161,12 @@ class _ReaderInkLayerState extends State<ReaderInkLayer> {
 /// page still pans and zooms underneath while the reader looks for the right
 /// spot — and a drag is read as scrolling, not as a placement.
 class ReaderTapLayer extends StatefulWidget {
-  const ReaderTapLayer({required this.onTap, this.onDoubleTap, super.key});
+  const ReaderTapLayer({
+    required this.onTap,
+    this.onDoubleTap,
+    this.acceptTap,
+    super.key,
+  });
 
   final void Function(NormPoint point) onTap;
 
@@ -179,6 +184,16 @@ class ReaderTapLayer extends StatefulWidget {
   /// `_onReadingDoubleTap`.
   final void Function(Offset globalPosition)? onDoubleTap;
 
+  /// A still release is a tap only when this returns true.
+  ///
+  /// The background layer uses it to leave presses that landed on a page to
+  /// that page's own overlay — those already toggle the bars, and answering
+  /// again would put them back in the same tap.
+  ///
+  /// The point is where the finger went *down*, in global coordinates: the
+  /// owner is who you pressed, not where a 12-pixel wobble ended up.
+  final bool Function(Offset globalPosition)? acceptTap;
+
   /// How far a finger may travel and still count as a tap rather than a drag.
   static const slop = 12.0;
 
@@ -188,6 +203,7 @@ class ReaderTapLayer extends StatefulWidget {
 
 class _ReaderTapLayerState extends State<ReaderTapLayer> {
   Offset? _down;
+  Offset? _downGlobal;
   int? _pointer;
 
   /// Where the last tap landed, for as long as a second one could still join it
@@ -265,11 +281,13 @@ class _ReaderTapLayerState extends State<ReaderTapLayer> {
               // fingers at once are not the second half of a double tap.
               _pointer = null;
               _down = null;
+              _downGlobal = null;
               _cancelPairing();
               return;
             }
             _pointer = event.pointer;
             _down = event.localPosition;
+            _downGlobal = event.position;
             _paired = _beginsDoubleTap(event);
           },
           onPointerMove: (event) {
@@ -283,13 +301,21 @@ class _ReaderTapLayerState extends State<ReaderTapLayer> {
           },
           onPointerUp: (event) {
             final down = _down;
+            final downGlobal = _downGlobal;
             final pointer = _pointer;
             final paired = _paired;
             _pointer = null;
             _down = null;
+            _downGlobal = null;
             _paired = false;
             if (down == null || pointer != event.pointer) return;
             if (_draggedPastSlop(event.localPosition, down)) {
+              if (paired) _closeDoubleTapWindow();
+              return;
+            }
+            final acceptTap = widget.acceptTap;
+            if (acceptTap != null &&
+                (downGlobal == null || !acceptTap(downGlobal))) {
               if (paired) _closeDoubleTapWindow();
               return;
             }
@@ -304,14 +330,13 @@ class _ReaderTapLayerState extends State<ReaderTapLayer> {
             if (widget.onDoubleTap != null) {
               _openDoubleTapWindow(event.localPosition);
             }
-            widget.onTap(
-              NormPoint.fromOffset(event.localPosition, pageRect),
-            );
+            widget.onTap(NormPoint.fromOffset(event.localPosition, pageRect));
           },
           onPointerCancel: (_) {
             final paired = _paired;
             _pointer = null;
             _down = null;
+            _downGlobal = null;
             _paired = false;
             // A candidate has already stopped the 300ms timer; leaving
             // `_firstTap` set would let a tap much later still zoom.

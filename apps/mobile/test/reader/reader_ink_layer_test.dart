@@ -13,9 +13,7 @@ Future<void> pumpLayer(WidgetTester tester, Widget layer) {
   return tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
-        body: Center(
-          child: SizedBox(width: 400, height: 600, child: layer),
-        ),
+        body: Center(child: SizedBox(width: 400, height: 600, child: layer)),
       ),
     ),
   );
@@ -196,6 +194,24 @@ void main() {
       await tester.pump();
 
       expect(taps, isEmpty);
+    });
+
+    testWidgets('a rejected tap is not a tap', (tester) async {
+      final taps = <NormPoint>[];
+      await pumpLayer(
+        tester,
+        ReaderTapLayer(
+          onTap: taps.add,
+          acceptTap: (global) => global.dx < at(0.5, 0.5).dx,
+        ),
+      );
+
+      await tester.tapAt(at(0.2, 0.5));
+      await tester.tapAt(at(0.8, 0.5));
+      await tester.pump();
+
+      expect(taps, hasLength(1));
+      expect(taps.single.x, closeTo(0.2, 1e-6));
     });
 
     testWidgets('a placement never becomes a double tap', (tester) async {

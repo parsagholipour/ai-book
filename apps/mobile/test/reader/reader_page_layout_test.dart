@@ -42,7 +42,10 @@ void main() {
   test('the space before the book is exactly the top bar', () {
     final geometry = layout(const [_a4, _a4]);
 
-    expect(geometry.rects.first.top * zoomFor(geometry), closeTo(_topBar, 1e-9));
+    expect(
+      geometry.rects.first.top * zoomFor(geometry),
+      closeTo(_topBar, 1e-9),
+    );
   });
 
   test('the space after it is exactly the bottom bar', () {
@@ -111,6 +114,21 @@ void main() {
 
     expect(geometry.rects, isEmpty);
     expect(geometry.documentSize, Size.zero);
+  });
+
+  test('a tap on a sheet is on a page, a tap in the gap is not', () {
+    final geometry = layout(const [_a4, _a4]);
+    final first = geometry.rects.first;
+    final second = geometry.rects.last;
+    final gap = Offset(first.center.dx, (first.bottom + second.top) / 2);
+
+    expect(readerDocumentPointIsOnPage(first.center, geometry.rects), isTrue);
+    expect(readerDocumentPointIsOnPage(gap, geometry.rects), isFalse);
+    expect(
+      readerDocumentPointIsOnPage(Offset(first.center.dx, 0), geometry.rects),
+      isFalse,
+      reason: 'the end-paper that clears the top bar',
+    );
   });
 
   test('a viewport that has not been measured yet does not divide by zero', () {
