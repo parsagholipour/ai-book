@@ -1,6 +1,12 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
-import { resolveImageLayoutDest, type ImageLayoutEdit } from "../bookEditImage.js";
-import { layoutTargetFromReplaceable, resolveReplaceableImage } from "./addImageTargets.js";
+import { resolveImageLayoutDest, type ImageLayoutEdit, type ImageLayoutTarget } from "../bookEditImage.js";
+import { layoutTargetFromReplaceable } from "./addImageTargets.js";
+import {
+  layoutScopeMissReply,
+  reresolveLayoutTargets,
+  resolveLayoutTargetImages,
+  type QueuedLayoutImage
+} from "./imageLayoutTargets.js";
 import { enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import { queueAttemptChatOperation, requestWithCharacterContext } from "./editOperations.js";
@@ -16,13 +22,13 @@ import { bookEditCreditCost, operationKindForIntent } from "./bookEditPricing.js
 import { type MobileBookEditOperationRecord, type MobileProjectChatMessageRecord } from "./dto.js";
 import { chatPagesForProject, createAssistantChatMessage, type ProjectForChat } from "./projectChat.js";
 import { jsonInputValue } from "./support.js";
-import { prisma } from "@book-maker/db";
 
 /**
- * proposeBookEdit's move_image / remove_image branch. The picture is resolved
- * the same way a replacement is — named page, else newest chat-added, else
- * first in reading order — and a move's destination is the named page or the
- * end of the book. Nothing is generated or charged; the card is the confirm.
+ * proposeBookEdit's move_image / remove_image branch. The pictures are resolved
+ * the same way a replacement's one picture is — named page, else newest
+ * chat-added, else first in reading order — widened by `selection` for a bulk
+ * remove. Nothing is generated or charged; the card is the confirm, and for a
+ * bulk remove the *count* on that card is the confirmation that matters.
  */
 export async function proposeImageLayoutEdit(options: {
   project: ProjectForChat;
@@ -35,22 +41,25 @@ export async function proposeImageLayoutEdit(options: {
   const { project, userMessageId, message, intent, proposalId } = options;
   const action = intent.kind === "move_image" ? ("move" as const) : ("remove" as const);
   const layout = intent.imageLayout ?? { action };
-  const targetImage = await resolveLiveLayoutImage(project.id, layout);
-  if (!targetImage) {
-    const verb = action === "move" ? "move" : "remove";
+  const { images, miss } = await resolveLayoutTargetImages({ project, layout });
+  if (miss || images.length === 0) {
     const reply = await createAssistantChatMessage({
       projectId: project.id,
       parentId: userMessageId,
-      content: `I couldn’t find an illustration in this book to ${verb}. Nothing was changed or charged.`,
+      content: layoutScopeMissReply(miss ?? "no_images", action, layout.selection),
       metadata: { intent, charged: false, pendingEditCancelled: true }
     });
     return { reply, operation: null };
   }
 
+  // A move is always about one picture: nobody asks to move seven pictures to
+  // one place, and a card could not honestly summarise it if they did.
+  const targets: ImageLayoutTarget[] = (action === "move" ? images.slice(0, 1) : images).map(layoutTargetFromReplaceable);
+  const sourcePageIndex = targets[0]?.pageIndex;
+
   let dest: { destPageIndex: number; destPlacement: "end_of_book" | "page" } | undefined;
   if (action === "move") {
-    const pages = chatPagesForProject(project);
-    const resolvedDest = resolveImageLayoutDest(layout, pages);
+    const resolvedDest = resolveImageLayoutDest(layout, chatPagesForProject(project), sourcePageIndex);
     if (!resolvedDest) {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
@@ -63,11 +72,13 @@ export async function proposeImageLayoutEdit(options: {
       });
       return { reply, operation: null };
     }
-    if (resolvedDest.destPageIndex === targetImage.pageIndex) {
+    // A same-page move is a no-op only when no position was named — with one,
+    // moving the picture within its own page is the whole request.
+    if (resolvedDest.destPageIndex === sourcePageIndex && !layout.destPosition) {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: `That picture is already on page ${targetImage.pageIndex}, so nothing was changed or charged.`,
+        content: `That picture is already on page ${sourcePageIndex}, so nothing was changed or charged.`,
         metadata: { intent, charged: false, pendingEditCancelled: true }
       });
       return { reply, operation: null };
@@ -75,21 +86,8 @@ export async function proposeImageLayoutEdit(options: {
     dest = resolvedDest;
   }
 
-  const resolvedLayout: ImageLayoutEdit = {
-    action,
-    pageIndex: targetImage.pageIndex,
-    target: layoutTargetFromReplaceable(targetImage),
-    ...(dest
-      ? {
-          destPlacement: dest.destPlacement,
-          ...(dest.destPlacement === "page" ? { destPageIndex: dest.destPageIndex } : {})
-        }
-      : {})
-  };
-  const affected =
-    dest && dest.destPageIndex !== targetImage.pageIndex
-      ? [targetImage.pageIndex, dest.destPageIndex]
-      : [targetImage.pageIndex];
+  const resolvedLayout = layoutWithResolution(layout, action, targets, dest);
+  const affected = affectedPagesForLayout(targets, dest);
   const cost = bookEditCreditCost(intent.kind, affected.length, project);
   const proposalIntent: BookEditIntent = {
     ...intent,
@@ -136,40 +134,34 @@ export async function queueChatImageLayout(options: {
   message: string;
   intent: BookEditIntent;
   executionCommandId?: string | undefined;
-  quotedCredits?: number | undefined;
   characterContext?: string | undefined;
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: MobileBookEditOperationRecord | null }> {
   const { userId, project, userMessageId, message, intent } = options;
   const action = intent.kind === "move_image" ? ("move" as const) : ("remove" as const);
   const layout = intent.imageLayout ?? { action };
-  const live = await resolveQueuedLayoutImage(project.id, layout);
-  if (!live) {
-    return proposeBookEdit({
-      project,
-      userMessageId,
-      message,
-      intent,
-      ...(options.characterContext ? { characterContext: options.characterContext } : {})
-    });
+  const reproposal = { project, userMessageId, message, intent, ...(options.characterContext ? { characterContext: options.characterContext } : {}) };
+
+  // The card's own pictures, re-read one by one. Never the bulk query again:
+  // Apply removes what the reader confirmed, not what the book holds now.
+  const stored = layout.targets ?? [];
+  const { live } = stored.length > 0
+    ? await reresolveLayoutTargets(project.id, stored)
+    : await resolveUnproposedTargets(project, layout, action);
+  if (live.length === 0) {
+    return proposeBookEdit(reproposal);
   }
 
   let dest: { destPageIndex: number; destPlacement: "end_of_book" | "page" } | undefined;
   if (action === "move") {
-    const resolvedDest = resolveImageLayoutDest(layout, chatPagesForProject(project));
+    const resolvedDest = resolveImageLayoutDest(layout, chatPagesForProject(project), live[0]?.pageIndex);
     if (!resolvedDest) {
-      return proposeBookEdit({
-        project,
-        userMessageId,
-        message,
-        intent,
-        ...(options.characterContext ? { characterContext: options.characterContext } : {})
-      });
+      return proposeBookEdit(reproposal);
     }
-    if (resolvedDest.destPageIndex === live.pageIndex) {
+    if (resolvedDest.destPageIndex === live[0]?.pageIndex && !layout.destPosition) {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: `That picture is already on page ${live.pageIndex}, so nothing was changed or charged.`,
+        content: `That picture is already on page ${live[0]?.pageIndex}, so nothing was changed or charged.`,
         metadata: {
           intent,
           charged: false,
@@ -182,21 +174,9 @@ export async function queueChatImageLayout(options: {
     dest = resolvedDest;
   }
 
-  const resolvedLayout: ImageLayoutEdit = {
-    action,
-    pageIndex: live.pageIndex,
-    target: layout.target ?? layoutTargetFromReplaceable(live.image),
-    ...(dest
-      ? {
-          destPlacement: dest.destPlacement,
-          ...(dest.destPlacement === "page" ? { destPageIndex: dest.destPageIndex } : {})
-        }
-      : {})
-  };
-  const affected =
-    dest && dest.destPageIndex !== live.pageIndex
-      ? [live.pageIndex, dest.destPageIndex]
-      : [live.pageIndex];
+  const targets = live.map((entry) => layoutTargetFromReplaceable(entry.image));
+  const resolvedLayout = layoutWithResolution(layout, action, targets, dest);
+  const affected = affectedPagesForLayout(targets, dest);
   const resolvedIntent: BookEditIntent = {
     ...intent,
     kind: action === "move" ? "move_image" : "remove_image",
@@ -237,8 +217,6 @@ export async function queueChatImageLayout(options: {
     return { reply, operation: null };
   }
 
-  const replaceMarker = live.kind === "markdown" ? live.marker : undefined;
-  const replaceAssetId = live.kind === "asset" ? live.assetId : undefined;
   return queueAttemptChatOperation({
     userId,
     project,
@@ -267,12 +245,20 @@ export async function queueChatImageLayout(options: {
           intentKind: resolvedIntent.kind,
           imageLayout: {
             action,
-            source: {
-              pageIndex: live.pageIndex,
-              ...(replaceMarker ? { replaceMarker } : {}),
-              ...(replaceAssetId ? { replaceAssetId } : {})
-            },
-            ...(dest ? { dest: { placement: dest.destPlacement, pageIndex: dest.destPageIndex } } : {})
+            sources: live.map((entry) => ({
+              pageIndex: entry.pageIndex,
+              ...(entry.kind === "markdown" ? { replaceMarker: entry.marker } : {}),
+              ...(entry.kind === "asset" ? { replaceAssetId: entry.assetId } : {})
+            })),
+            ...(dest
+              ? {
+                  dest: {
+                    placement: dest.destPlacement,
+                    pageIndex: dest.destPageIndex,
+                    ...(layout.destPosition ? { position: layout.destPosition } : {})
+                  }
+                }
+              : {})
           },
           ...(project.currentPlanId ? { planId: project.currentPlanId } : {}),
           ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
@@ -284,83 +270,53 @@ export async function queueChatImageLayout(options: {
   });
 }
 
-async function resolveLiveLayoutImage(projectId: string, layout: ImageLayoutEdit) {
-  if (layout.target) {
-    const queued = await resolveQueuedLayoutImage(projectId, layout);
-    return queued?.image ?? null;
-  }
-  return resolveReplaceableImage(projectId, layout.pageIndex);
+/**
+ * An Apply whose stored card carried no resolved pictures — a pendingEdit
+ * written before bulk removal existed, or one whose targets all failed to
+ * sanitize. Resolving from scratch is the honest fallback: the alternative is
+ * telling the reader their confirmed edit found nothing.
+ */
+async function resolveUnproposedTargets(
+  project: ProjectForChat,
+  layout: ImageLayoutEdit,
+  action: "move" | "remove"
+): Promise<{ live: QueuedLayoutImage[] }> {
+  const { images } = await resolveLayoutTargetImages({ project, layout });
+  const chosen = action === "move" ? images.slice(0, 1) : images;
+  const { live } = await reresolveLayoutTargets(project.id, chosen.map(layoutTargetFromReplaceable));
+  return { live };
 }
 
-type QueuedLayoutImage = {
-  pageIndex: number;
-  image: NonNullable<Awaited<ReturnType<typeof resolveReplaceableImage>>>;
-} & (
-  | { kind: "asset"; assetId: string; marker?: undefined }
-  | { kind: "markdown"; marker: string; assetId?: undefined }
-);
+/** The layout blob as the card and the job both see it, with its pictures pinned. */
+function layoutWithResolution(
+  layout: ImageLayoutEdit,
+  action: "move" | "remove",
+  targets: ImageLayoutTarget[],
+  dest: { destPageIndex: number; destPlacement: "end_of_book" | "page" } | undefined
+): ImageLayoutEdit {
+  return {
+    action,
+    ...(targets[0] ? { pageIndex: targets[0].pageIndex } : {}),
+    ...(layout.selection ? { selection: layout.selection } : {}),
+    targets,
+    ...(dest
+      ? {
+          destPlacement: dest.destPlacement,
+          ...(dest.destPlacement === "page" ? { destPageIndex: dest.destPageIndex } : {}),
+          ...(layout.destPosition ? { destPosition: layout.destPosition } : {})
+        }
+      : {})
+  };
+}
 
-async function resolveQueuedLayoutImage(
-  projectId: string,
-  layout: ImageLayoutEdit
-): Promise<QueuedLayoutImage | null> {
-  const target = layout.target;
-  if (target?.assetId) {
-    const asset = await prisma.imageAsset.findFirst({
-      where: {
-        id: target.assetId,
-        projectId,
-        type: { in: ["SCENE_ILLUSTRATION", "DIAGRAM"] }
-      },
-      select: { id: true, page: { select: { index: true } } }
-    });
-    if (!asset?.page) {
-      return null;
-    }
-    return {
-      kind: "asset",
-      assetId: asset.id,
-      pageIndex: asset.page.index,
-      image: {
-        kind: "asset",
-        assetId: asset.id,
-        pageIndex: asset.page.index,
-        ...(target.oldSubject ? { oldSubject: target.oldSubject } : {})
-      }
-    };
+/** Every page the edit writes: each picture's own, plus a move's destination. */
+function affectedPagesForLayout(
+  targets: ImageLayoutTarget[],
+  dest: { destPageIndex: number } | undefined
+): number[] {
+  const pages = new Set(targets.map((target) => target.pageIndex));
+  if (dest) {
+    pages.add(dest.destPageIndex);
   }
-  const marker = target?.marker
-    ? target.marker
-    : target?.operationId
-      ? `chat-image-${target.operationId}`
-      : undefined;
-  if (marker) {
-    const page = await prisma.page.findFirst({
-      where: { projectId, markdown: { contains: marker } },
-      select: { index: true }
-    });
-    if (!page) {
-      return null;
-    }
-    return {
-      kind: "markdown",
-      marker,
-      pageIndex: page.index,
-      image: {
-        kind: "markdown",
-        marker,
-        operationId: target?.operationId ?? "",
-        pageIndex: page.index,
-        ...(target?.oldSubject ? { oldSubject: target.oldSubject } : {})
-      }
-    };
-  }
-  const resolved = await resolveReplaceableImage(projectId, layout.pageIndex);
-  if (!resolved) {
-    return null;
-  }
-  if (resolved.kind === "asset") {
-    return { kind: "asset", assetId: resolved.assetId, pageIndex: resolved.pageIndex, image: resolved };
-  }
-  return { kind: "markdown", marker: resolved.marker, pageIndex: resolved.pageIndex, image: resolved };
+  return [...pages].sort((a, b) => a - b);
 }

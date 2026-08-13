@@ -246,8 +246,54 @@ tells you when a listed file has dropped under the default so the entry can be d
   (`intentFromDecideAction`), because that is what makes `handleProjectChatIntent` store the
   resumable `pendingEdit`; "fixing" that tautology strands the next turn with a bare fragment.
   `bookEditIntent.ts` splits into `bookEditMessage.ts` (reading a message: pages, quotes, scope,
-  languages — a leaf) and `bookEditHeuristics.ts` (the model-free classifier), which is why those
-  import types back from it but never values.
+  languages — a leaf), `bookEditHeuristics.ts` (the model-free classifier) and
+  `bookEditRouterPrompt.ts` (the action list, the decide schema and the prose — everything the
+  model is *told*, as opposed to how its answer is read), which is why those import types back
+  from it but never values.
+- **Moving and removing a picture are free, and neither is a page edit.** `move_image` and
+  `remove_image` are their own intent kinds and their own `BookEditOperationKind`s, priced at 0 in
+  `bookEditCreditCost` and applied by `apply-book-edit`'s layout fork
+  (`apps/worker/src/handlers/applyImageLayout.ts`) with no generation at all. Routing them as page
+  rewrites is the expensive mistake this exists to stop — the router prompt says so in as many
+  words, and the plan stage demotes both to `answer` because a book with no pages has no pictures.
+  **Positioning inside a page is markdown-only, and that is forced rather than chosen**:
+  `compileBookMarkdown` prints a page's `ImageAsset` hero above the prose *always*, and a
+  chat-added picture has no `ImageAsset` row at all — `applyImageInsertion` writes a file and a
+  markdown line and nothing else. So "below the text" demotes a hero to an inline line and clears
+  `Page.imagePrompt`, "to the top" of a hero is already true and reports itself as such, and an
+  inline line just moves within its own page's markdown — landing *after* a leading ATX heading,
+  never before it, because `sanitizePageMarkdown` only strips that heading while it is still line
+  one. There is no way to promote an inline picture into a hero, because there is no row to
+  promote.
+  **A bulk remove is planned in memory and flushed once per page.** "Remove all the pictures" is
+  ordinarily two pictures on one page, and undo replays `PageEditSnapshot` rows —
+  `undoLastBookEdit` loads them with no ordering, and there is no unique index on
+  `(operationId, pageId)` — so a second snapshot for one page would carry the half-stripped
+  markdown as its `markdownBefore` and undo would restore a page missing the first picture.
+  `generation/imageLayoutPlan.ts` therefore reads every affected page once, mutates them in
+  memory, and writes and snapshots each exactly once; `affectedPageIndexes` is written from that
+  flush rather than guessed before it, so a target that had already gone leaves its page unclaimed.
+  A stale target is skipped and counted, never fatal: one gone picture must not lose the other
+  eleven. The classifier's `previousAssets` / `demotedAssets` are arrays for the same reason, and
+  `mobile/imageEditRecords.ts` still reads the singular `previousAsset` / `demotedAsset` keys —
+  an operation applied before that change is still inside its undo window and still has a card
+  to draw.
+  **The card's count is the confirmation, so Apply may not widen it.** The proposal resolves the
+  whole set through `listReplaceableBookImages` and pins it as `imageLayout.targets`; Apply
+  re-resolves *those* one by one and never re-runs the scope query, so a picture added between the
+  card and the tap is not swept into an edit the reader never saw. A layout edit that finds
+  nothing writes `classifier.layoutMissing` with a reason: the worker cannot write a chat message,
+  so `layoutSkipSummary` in `mobile/projectSerializers.ts` is where the queued reply's promise gets
+  corrected, and `operationCanUndo` refuses those rows — they have no snapshots, so
+  `undoLastBookEdit`'s `snapshots.length > 0` filter would skip them and revert the *previous*
+  edit instead.
+  **A hero leaves `pageId` only in the same step that gives it a markdown line.** The demote path
+  used to write the destination page without the line and unlink the asset anyway whenever
+  `assetsImagePathFrom` came back null, which took the picture out of the book with nothing in the
+  manuscript to show for it — reachable in any deployment whose `PUBLIC_API_URL` carries a path
+  prefix, since `new URL(path).pathname` is then `/api/assets/images/…`. That resolver
+  (`packages/core/src/generation/bookImageAssets.ts`) is shared with `editChanges.ts` for the same
+  reason, and a null answer refuses the whole move rather than half-applying it.
 - **A question declares how many of its answers count, and the picker follows.** Both question
   surfaces — the planner's `questions` (`planQuestionSchema` in `packages/core/src/schemas/book.ts`)
   and the creation interviewer's clarification (`apps/api/src/creationQuestion.ts`) — carry

@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   clippedImageSubject,
+  imageLayoutProposalSummary,
+  imageLayoutQueuedMessage,
   imageInsertionIntentFromDecision,
   imageLayoutIntentFromDecision,
-  resolveImageInsertionTarget
+  resolveImageInsertionTarget,
+  resolveImageLayoutDest
 } from "./bookEditImage.js";
-import { endOfBookPlacementFromMessage, imagePlacementFromMessage } from "./bookEditMessage.js";
+import {
+  bulkImageSelectionFromMessage,
+  endOfBookPlacementFromMessage,
+  imagePlacementFromMessage,
+  imagePositionFromMessage
+} from "./bookEditMessage.js";
 import { type BookEditPageContext } from "./bookEditIntent.js";
 
 const pages: BookEditPageContext[] = [
@@ -264,6 +272,104 @@ describe("imageLayoutIntentFromDecision", () => {
       destPlacement: "page",
       destPageIndex: 5
     });
+  });
+});
+
+describe("layout message backstops", () => {
+  it("reads a place inside a page, and not the book's end", () => {
+    expect(imagePositionFromMessage("move it to the top")).toBe("top");
+    expect(imagePositionFromMessage("put the picture below the text")).toBe("bottom");
+    expect(imagePositionFromMessage("at the bottom of the page")).toBe("bottom");
+    expect(imagePositionFromMessage("at the end of the page")).toBe("bottom");
+    // A page is not the book: these belong to the end-of-book reader.
+    expect(imagePositionFromMessage("move it to the end of the book")).toBeNull();
+    expect(imagePositionFromMessage("move it to page 4")).toBeNull();
+  });
+
+  it("reads a whole-book removal from the reader's own words", () => {
+    expect(bulkImageSelectionFromMessage("remove all the pictures")).toBe("all");
+    expect(bulkImageSelectionFromMessage("take every illustration out")).toBe("all");
+    expect(bulkImageSelectionFromMessage("I don't want any images")).toBe("all");
+    expect(bulkImageSelectionFromMessage("remove the pictures from the book")).toBe("all");
+    // One picture is not all of them.
+    expect(bulkImageSelectionFromMessage("remove the picture on page 3")).toBeNull();
+    expect(bulkImageSelectionFromMessage("remove the first illustration")).toBeNull();
+  });
+});
+
+describe("resolveImageLayoutDest", () => {
+  it("keeps a positional move on the picture's own page", () => {
+    expect(resolveImageLayoutDest({ destPlacement: "page", destPosition: "bottom" }, pages, 2)).toEqual({
+      destPageIndex: 2,
+      destPlacement: "page"
+    });
+  });
+
+  it("still refuses a named page that is no longer in the book", () => {
+    expect(resolveImageLayoutDest({ destPlacement: "page", destPageIndex: 9 }, pages)).toBeNull();
+  });
+});
+
+describe("layout copy", () => {
+  const target = { operationId: "", assetId: "a", pageIndex: 1, oldSubject: "a dragon" };
+
+  it("names the count for a bulk removal", () => {
+    expect(
+      imageLayoutProposalSummary("remove_image", [1, 2], {
+        action: "remove",
+        selection: { kind: "all" },
+        targets: [target, { ...target, pageIndex: 2 }]
+      })
+    ).toBe("Remove all 2 illustrations");
+    expect(
+      imageLayoutProposalSummary("remove_image", [2], {
+        action: "remove",
+        selection: { kind: "chapter", chapterIndex: 2 },
+        targets: [{ ...target, pageIndex: 2 }]
+      })
+    ).toBe("Remove the illustration in chapter 2");
+    expect(
+      imageLayoutQueuedMessage("remove_image", [1, 2], {
+        action: "remove",
+        selection: { kind: "all" },
+        targets: [target, { ...target, pageIndex: 2 }]
+      })
+    ).toBe("I’ll remove all 2 illustrations and refresh the exports.");
+  });
+
+  it("names a place inside a page, without saying the page twice", () => {
+    expect(
+      imageLayoutProposalSummary("move_image", [4], {
+        action: "move",
+        destPlacement: "page",
+        destPageIndex: 4,
+        destPosition: "bottom",
+        targets: [{ ...target, pageIndex: 4 }]
+      })
+    ).toBe("Move the illustration of “a dragon” to the bottom of page 4");
+    expect(
+      imageLayoutQueuedMessage("move_image", [4], {
+        action: "move",
+        destPlacement: "page",
+        destPageIndex: 4,
+        destPosition: "bottom",
+        targets: [{ ...target, pageIndex: 4 }]
+      })
+    ).toBe("I’ll move that illustration to the bottom of page 4 and refresh the exports.");
+  });
+
+  it("keeps the single-picture wording it always had", () => {
+    expect(imageLayoutProposalSummary("remove_image", [1], { action: "remove", targets: [target] })).toBe(
+      "Remove the illustration of “a dragon” from page 1"
+    );
+    expect(
+      imageLayoutProposalSummary("move_image", [1, 2], {
+        action: "move",
+        destPlacement: "page",
+        destPageIndex: 2,
+        targets: [target]
+      })
+    ).toBe("Move the illustration of “a dragon” from page 1 to page 2");
   });
 });
 

@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
   tx: {
     bookEditOperation: { updateMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    page: { findUnique: vi.fn(), update: vi.fn() },
+    page: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     pageEditSnapshot: { create: vi.fn() },
     project: { update: vi.fn(), findUnique: vi.fn() },
     imageAsset: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() }
@@ -51,6 +51,18 @@ const destPage = {
   imagePrompt: "a fox"
 };
 
+/**
+ * What the pages look like *inside* the transaction. The handler re-reads them
+ * there rather than trusting the resolve pass, so a test that gives a page a
+ * hero has to say so here and not only on the ImageAsset lookup.
+ */
+const txPages = new Map<string, Record<string, unknown>>();
+
+const withTxPage = (page: Record<string, unknown>) => {
+  txPages.set(page.id as string, page);
+  return page;
+};
+
 const job = (data: Record<string, unknown> = {}) =>
   ({
     id: "job-1",
@@ -77,15 +89,15 @@ beforeEach(() => {
   mocks.tx.bookEditOperation.updateMany.mockResolvedValue({ count: 1 });
   mocks.tx.bookEditOperation.findUnique.mockResolvedValue({ classifier: {} });
   mocks.tx.bookEditOperation.update.mockResolvedValue({});
-  mocks.tx.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => {
-    if (where.id === "page-1") {
-      return { ...sourcePage };
-    }
-    if (where.id === "page-2") {
-      return { ...destPage };
-    }
-    return null;
-  });
+  txPages.clear();
+  txPages.set("page-1", { ...sourcePage });
+  txPages.set("page-2", { ...destPage });
+  mocks.tx.page.findUnique.mockImplementation(async ({ where }: { where: { id: string } }) => txPages.get(where.id) ?? null);
+  // The batch reads every page it may touch in one query — the read that makes
+  // one snapshot per page possible.
+  mocks.tx.page.findMany.mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) =>
+    where.id.in.map((id) => txPages.get(id)).filter(Boolean)
+  );
   mocks.tx.project.update.mockResolvedValue({});
   mocks.tx.project.findUnique.mockResolvedValue({ language: "en" });
   mocks.tx.pageEditSnapshot.create.mockResolvedValue({ id: "snap-1" });
@@ -107,7 +119,7 @@ describe("applyImageLayout", () => {
       job({
         imageLayout: {
           action: "move",
-          source: { pageIndex: 1, replaceMarker: "chat-image-op-old" },
+          sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }],
           dest: { placement: "page", pageIndex: 2 }
         }
       }),
@@ -128,8 +140,10 @@ describe("applyImageLayout", () => {
         revision: { increment: 1 }
       }
     });
-    expect(mocks.tx.page.update.mock.calls[0]?.[0]?.where).toEqual({ id: "page-2" });
-    expect(mocks.tx.page.update.mock.calls[1]?.[0]?.where).toEqual({ id: "page-1" });
+    // Pages are flushed in reading order, so the snapshot rows land in a stable
+    // order too rather than in whatever order the targets happened to resolve.
+    expect(mocks.tx.page.update.mock.calls[0]?.[0]?.where).toEqual({ id: "page-1" });
+    expect(mocks.tx.page.update.mock.calls[1]?.[0]?.where).toEqual({ id: "page-2" });
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
       skipFinalReview: true,
       withoutQualityVerdict: true
@@ -143,7 +157,7 @@ describe("applyImageLayout", () => {
     await applyImageLayout(
       job({
         intentKind: "remove_image",
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceMarker: "chat-image-op-old" } }
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }] }
       }),
       { status: "QUEUED", classifier: {} }
     );
@@ -160,7 +174,7 @@ describe("applyImageLayout", () => {
 
     await applyImageLayout(
       job({
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceMarker: "chat-image-op-old" } }
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }] }
       }),
       { status: "QUEUED", classifier: {} }
     );
@@ -180,12 +194,14 @@ describe("applyImageLayout", () => {
 
   it("skips without compiling when the marker is on the page but the image line is already gone", async () => {
     mocks.prisma.page.findFirst.mockResolvedValue({ ...sourcePage });
-    mocks.tx.page.findUnique.mockResolvedValue({ ...sourcePage, markdown: "Prose.\n\nMore." });
+    // Found by the resolve pass, but the line is already gone by the time the
+    // transaction re-reads the page.
+    withTxPage({ ...sourcePage, markdown: "Prose.\n\nMore." });
 
     await applyImageLayout(
       job({
         intentKind: "remove_image",
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceMarker: "chat-image-op-old" } }
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }] }
       }),
       { status: "QUEUED", classifier: {} }
     );
@@ -213,7 +229,7 @@ describe("applyImageLayout", () => {
     await applyImageLayout(
       job({
         intentKind: "remove_image",
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceAssetId: "asset-1" } }
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }] }
       }),
       { status: "QUEUED", classifier: {} }
     );
@@ -233,73 +249,7 @@ describe("applyImageLayout", () => {
 
     await applyImageLayout(
       job({
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceMarker: "chat-image-op-old" } }
-      }),
-      { status: "QUEUED", classifier: {} }
-    );
-
-    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
-      where: { id: "project-1", status: "EDITING" },
-      data: { status: "REVIEW_REQUIRED" }
-    });
-  });
-
-  it("skips without compiling when the marker is on the page but the image line is already gone", async () => {
-    mocks.prisma.page.findFirst.mockResolvedValue({ ...sourcePage });
-    mocks.tx.page.findUnique.mockResolvedValue({ ...sourcePage, markdown: "Prose.\n\nMore." });
-
-    await applyImageLayout(
-      job({
-        intentKind: "remove_image",
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceMarker: "chat-image-op-old" } }
-      }),
-      { status: "QUEUED", classifier: {} }
-    );
-
-    expect(mocks.tx.page.update).not.toHaveBeenCalled();
-    expect(mocks.tx.project.update).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: "APPLIED",
-          classifier: expect.objectContaining({ layoutMissing: true })
-        })
-      })
-    );
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-  });
-
-  it("skips without compiling when the ImageAsset vanishes after queue", async () => {
-    mocks.prisma.imageAsset.findFirst.mockResolvedValue({
-      id: "asset-1",
-      page: { ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" }
-    });
-    mocks.tx.imageAsset.findUnique.mockResolvedValue(null);
-
-    await applyImageLayout(
-      job({
-        intentKind: "remove_image",
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceAssetId: "asset-1" } }
-      }),
-      { status: "QUEUED", classifier: {} }
-    );
-
-    expect(mocks.tx.page.update).not.toHaveBeenCalled();
-    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
-    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ classifier: expect.objectContaining({ layoutMissing: true }) })
-      })
-    );
-  });
-
-  it("restores REVIEW_REQUIRED when a skipped layout edit never compiled", async () => {
-    mocks.prisma.project.findUnique.mockResolvedValue({ status: "REVIEW_REQUIRED", currentPlanId: "plan-1" });
-    mocks.prisma.page.findFirst.mockResolvedValue(null);
-
-    await applyImageLayout(
-      job({
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceMarker: "chat-image-op-old" } }
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }] }
       }),
       { status: "QUEUED", classifier: {} }
     );
@@ -311,7 +261,7 @@ describe("applyImageLayout", () => {
   });
 
   it("reassigns a generation ImageAsset onto an empty dest page", async () => {
-    const assetPage = { ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" };
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
     mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-1", page: assetPage });
     mocks.prisma.page.findFirst.mockResolvedValue({ ...destPage, imagePrompt: null });
     mocks.tx.imageAsset.findUnique.mockResolvedValue({
@@ -329,7 +279,7 @@ describe("applyImageLayout", () => {
       job({
         imageLayout: {
           action: "move",
-          source: { pageIndex: 1, replaceAssetId: "asset-1" },
+          sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }],
           dest: { placement: "page", pageIndex: 2 }
         }
       }),
@@ -347,7 +297,7 @@ describe("applyImageLayout", () => {
   });
 
   it("demotes the dest page's existing hero to markdown when moving another hero onto it", async () => {
-    const assetPage = { ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" };
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
     mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-moved", page: assetPage });
     mocks.prisma.page.findFirst.mockResolvedValue({ ...destPage });
     mocks.tx.imageAsset.findUnique.mockResolvedValue({
@@ -371,7 +321,7 @@ describe("applyImageLayout", () => {
       job({
         imageLayout: {
           action: "move",
-          source: { pageIndex: 1, replaceAssetId: "asset-moved" },
+          sources: [{ pageIndex: 1, replaceAssetId: "asset-moved" }],
           dest: { placement: "page", pageIndex: 2 }
         }
       }),
@@ -395,17 +345,336 @@ describe("applyImageLayout", () => {
     expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          affectedPageIndexes: [1, 2],
           classifier: expect.objectContaining({
-            previousAsset: expect.objectContaining({ id: "asset-moved", pageId: "page-1", destPageId: "page-2" }),
-            demotedAsset: expect.objectContaining({ id: "asset-dest", pageId: "page-2" })
+            previousAssets: [
+              expect.objectContaining({ id: "asset-moved", pageId: "page-1", destPageId: "page-2" })
+            ],
+            demotedAssets: [expect.objectContaining({ id: "asset-dest", pageId: "page-2" })]
           })
         })
       })
     );
   });
 
+  // The demote used to skip the markdown write and unlink the asset anyway, so
+  // the dest page's own illustration left the book with nothing in the
+  // manuscript to show for it. Reachable in any deployment whose PUBLIC_API_URL
+  // carries a path prefix: `new URL(path).pathname` is then `/api/assets/...`,
+  // which the old `startsWith("/assets/images/")` rejected.
+  it("demotes a hero whose stored path carries an API path prefix", async () => {
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
+    mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-moved", page: assetPage });
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...destPage });
+    mocks.tx.imageAsset.findUnique.mockResolvedValue({
+      id: "asset-moved",
+      path: "https://example.com/api/assets/images/project-1/page-1.jpg",
+      prompt: "a dragon",
+      pageId: "page-1"
+    });
+    mocks.tx.imageAsset.findFirst.mockResolvedValue({
+      id: "asset-dest",
+      path: "https://example.com/api/assets/images/project-1/page-2.jpg",
+      prompt: "a fox"
+    });
+    mocks.tx.page.update.mockImplementation(async ({ where, data }: { where: { id: string }; data: { markdown?: string } }) =>
+      where.id === "page-2"
+        ? { ...destPage, markdown: data.markdown ?? destPage.markdown, revision: 5 }
+        : { ...assetPage, revision: 4 }
+    );
+
+    await applyImageLayout(
+      job({
+        imageLayout: {
+          action: "move",
+          sources: [{ pageIndex: 1, replaceAssetId: "asset-moved" }],
+          dest: { placement: "page", pageIndex: 2 }
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-2" },
+      data: expect.objectContaining({
+        markdown: expect.stringContaining("/assets/images/project-1/page-2.jpg")
+      })
+    });
+    expect(mocks.tx.imageAsset.update).toHaveBeenCalledWith({
+      where: { id: "asset-dest" },
+      data: { pageId: null }
+    });
+  });
+
+  it("refuses the whole move rather than unlinking a hero it cannot write a line for", async () => {
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
+    mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-moved", page: assetPage });
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...destPage });
+    mocks.tx.imageAsset.findUnique.mockResolvedValue({
+      id: "asset-moved",
+      path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+      prompt: "a dragon",
+      pageId: "page-1"
+    });
+    mocks.tx.imageAsset.findFirst.mockResolvedValue({
+      id: "asset-dest",
+      path: "s3://bucket/opaque-object-key",
+      prompt: "a fox"
+    });
+
+    await applyImageLayout(
+      job({
+        imageLayout: {
+          action: "move",
+          sources: [{ pageIndex: 1, replaceAssetId: "asset-moved" }],
+          dest: { placement: "page", pageIndex: 2 }
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.tx.imageAsset.update).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ classifier: expect.objectContaining({ layoutMissing: true }) })
+      })
+    );
+  });
+
+  it("records why it skipped so the card can say the picture was already in place", async () => {
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...sourcePage });
+
+    await applyImageLayout(
+      job({
+        imageLayout: {
+          action: "move",
+          sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }],
+          dest: { placement: "page", pageIndex: 1 }
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          classifier: expect.objectContaining({ layoutMissing: true, layoutSkippedReason: "already_positioned" })
+        })
+      })
+    );
+  });
+
+  // The reason the batch is planned in memory rather than applied target by
+  // target. Undo replays PageEditSnapshot rows, there is no unique index on
+  // (operationId, pageId), and undoLastBookEdit loads them unordered — so a
+  // second snapshot for this page would carry the half-stripped markdown as its
+  // `markdownBefore` and undo would restore a page missing the first picture.
+  it("writes one page update and one snapshot when two pictures share a page", async () => {
+    const twoPictures = withTxPage({
+      ...sourcePage,
+      markdown:
+        "Prose.\n\n![one](/assets/images/project-1/chat-image-op-a-1.jpg)\n\nMore.\n\n![two](/assets/images/project-1/chat-image-op-b-2.jpg)"
+    });
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...twoPictures });
+    mocks.tx.page.update.mockImplementation(async ({ data }: { data: { markdown?: string } }) => ({
+      ...twoPictures,
+      markdown: data.markdown ?? twoPictures.markdown,
+      revision: 4
+    }));
+
+    await applyImageLayout(
+      job({
+        intentKind: "remove_image",
+        imageLayout: {
+          action: "remove",
+          sources: [
+            { pageIndex: 1, replaceMarker: "chat-image-op-a" },
+            { pageIndex: 1, replaceMarker: "chat-image-op-b" }
+          ]
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.tx.page.update).toHaveBeenCalledTimes(1);
+    expect(mocks.tx.pageEditSnapshot.create).toHaveBeenCalledTimes(1);
+    // Both pictures gone in the single write...
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: { markdown: "Prose.\n\nMore.", revision: { increment: 1 } }
+    });
+    // ...and the snapshot's "before" is the page as it stood before either.
+    expect(mocks.tx.pageEditSnapshot.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ pageId: "page-1", markdownBefore: twoPictures.markdown })
+      })
+    );
+  });
+
+  it("applies the rest of a batch when one picture has already gone", async () => {
+    const page = withTxPage({
+      ...sourcePage,
+      markdown: "Prose.\n\n![one](/assets/images/project-1/chat-image-op-a-1.jpg)\n\nMore."
+    });
+    mocks.prisma.page.findFirst.mockImplementation(
+      async ({ where }: { where: { markdown?: { contains?: string } } }) =>
+        where.markdown?.contains === "chat-image-op-gone" ? null : { ...page }
+    );
+    mocks.tx.page.update.mockResolvedValue({ ...page, markdown: "Prose.\n\nMore.", revision: 4 });
+
+    await applyImageLayout(
+      job({
+        intentKind: "remove_image",
+        imageLayout: {
+          action: "remove",
+          sources: [
+            { pageIndex: 1, replaceMarker: "chat-image-op-gone" },
+            { pageIndex: 1, replaceMarker: "chat-image-op-a" }
+          ]
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.tx.page.update).toHaveBeenCalledTimes(1);
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalled();
+    expect(mocks.tx.bookEditOperation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ affectedPageIndexes: [1] })
+      })
+    );
+  });
+
+  it("still applies a job enqueued with the pre-bulk singular source", async () => {
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...sourcePage });
+    mocks.tx.page.update.mockResolvedValue({ ...sourcePage, markdown: "Prose.\n\nMore.", revision: 4 });
+
+    await applyImageLayout(
+      job({
+        intentKind: "remove_image",
+        imageLayout: { action: "remove", source: { pageIndex: 1, replaceMarker: "chat-image-op-old" } }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: { markdown: "Prose.\n\nMore.", revision: { increment: 1 } }
+    });
+  });
+
+  it("moves an inline picture to the top of its own page, under a leading heading", async () => {
+    const headed = withTxPage({
+      ...sourcePage,
+      markdown: "# One\n\nProse.\n\n![a dragon](/assets/images/project-1/chat-image-op-old-aaaa.jpg)\n\nMore."
+    });
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...headed });
+    mocks.tx.page.update.mockImplementation(async ({ data }: { data: { markdown?: string } }) => ({
+      ...headed,
+      markdown: data.markdown ?? headed.markdown,
+      revision: 4
+    }));
+
+    await applyImageLayout(
+      job({
+        imageLayout: {
+          action: "move",
+          sources: [{ pageIndex: 1, replaceMarker: "chat-image-op-old" }],
+          dest: { placement: "page", pageIndex: 1, position: "top" }
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    // Under the heading, never above it: the compiler only strips a page's
+    // leading heading while it is still line one.
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: {
+        markdown:
+          "# One\n\n![a dragon](/assets/images/project-1/chat-image-op-old-aaaa.jpg)\n\nProse.\n\nMore.",
+        revision: { increment: 1 }
+      }
+    });
+  });
+
+  it("demotes a hero to an inline line when it is moved below its own page's text", async () => {
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
+    mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-1", page: assetPage });
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...assetPage });
+    mocks.tx.imageAsset.findUnique.mockResolvedValue({
+      id: "asset-1",
+      path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+      prompt: "a dragon",
+      pageId: "page-1"
+    });
+    mocks.tx.imageAsset.findFirst.mockResolvedValue(null);
+    mocks.tx.page.update.mockImplementation(async ({ data }: { data: { markdown?: string } }) => ({
+      ...assetPage,
+      markdown: data.markdown ?? assetPage.markdown,
+      revision: 4
+    }));
+
+    await applyImageLayout(
+      job({
+        imageLayout: {
+          action: "move",
+          sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }],
+          dest: { placement: "page", pageIndex: 1, position: "bottom" }
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    // The compiler prints a hero above the prose, always — so "below the text"
+    // means giving up hero status for an inline line.
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: {
+        markdown: "Prose.\n\n![a dragon](/assets/images/project-1/page-1.jpg)",
+        imagePrompt: null,
+        revision: { increment: 1 }
+      }
+    });
+    expect(mocks.tx.imageAsset.update).toHaveBeenCalledWith({ where: { id: "asset-1" }, data: { pageId: null } });
+  });
+
+  it("reports a hero asked to move to the top of its own page as already in place", async () => {
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
+    mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-1", page: assetPage });
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...assetPage });
+    mocks.tx.imageAsset.findUnique.mockResolvedValue({
+      id: "asset-1",
+      path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+      prompt: "a dragon",
+      pageId: "page-1"
+    });
+
+    await applyImageLayout(
+      job({
+        imageLayout: {
+          action: "move",
+          sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }],
+          dest: { placement: "page", pageIndex: 1, position: "top" }
+        }
+      }),
+      { status: "QUEUED", classifier: {} }
+    );
+
+    expect(mocks.tx.page.update).not.toHaveBeenCalled();
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          classifier: expect.objectContaining({ layoutSkippedReason: "already_positioned" })
+        })
+      })
+    );
+  });
+
   it("unlinks a generation ImageAsset on remove", async () => {
-    const assetPage = { ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" };
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
     mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-1", page: assetPage });
     mocks.tx.imageAsset.findUnique.mockResolvedValue({
       id: "asset-1",
@@ -419,7 +688,7 @@ describe("applyImageLayout", () => {
     await applyImageLayout(
       job({
         intentKind: "remove_image",
-        imageLayout: { action: "remove", source: { pageIndex: 1, replaceAssetId: "asset-1" } }
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }] }
       }),
       { status: "QUEUED", classifier: {} }
     );

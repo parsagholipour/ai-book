@@ -9,6 +9,11 @@ import {
   toWorkerImageAsset,
   type CharacterReferenceSelection
 } from "../generation/characterReferences.js";
+import {
+  imageAltFromSubject,
+  markdownWithAppendedImage,
+  markdownWithReplacedImage
+} from "../generation/imageMarkdown.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -22,7 +27,6 @@ import {
   matchLibraryCharacter,
   optimizeImageForStorage,
   publicAssetUrl,
-  unwrapWholePageMarkdownFence,
   type BookPlan,
   type ImageAdapter
 } from "@book-maker/core";
@@ -577,65 +581,17 @@ async function insertionReferenceSelection(options: {
   };
 }
 
-/**
- * Append the image line after the page's prose, blank-line separated. A page
- * whose whole body is one fence-wrapped block is unwrapped first: appended
- * after the closing ``` the compiler's own unwrap no longer matches and the
- * fence turns the prose into a literal code block in both exports. But the
- * compiler's pattern spans the first opener to the LAST closer, so a page that
- * merely starts and ends with distinct fences would "unwrap" to a body whose
- * interior fence lines swap prose and code in both exports — and this handler
- * SAVES its result to `Page.markdown`, making that permanent. Such a page is
- * left exactly as written: a plain append after it compiles correctly.
- */
-export function markdownWithAppendedImage(markdown: string, imageLine: string): string {
-  const trimmed = markdown.trim();
-  const unwrapped = unwrapWholePageMarkdownFence(trimmed);
-  const base = unwrapped.includes("```") ? trimmed : unwrapped;
-  return base ? `${base}\n\n${imageLine}` : imageLine;
-}
+// The page-markdown image helpers moved to `generation/imageMarkdown.ts` when
+// the layout handler needed them too — a handler may not import a sibling
+// handler. Re-exported here because they are this module's long-standing
+// public surface and several tests import them from this path.
+export {
+  extractMarkdownImageLine,
+  imageAltFromSubject,
+  markdownWithAppendedImage,
+  markdownWithMovedImage,
+  markdownWithPrependedImage,
+  markdownWithRemovedImage,
+  markdownWithReplacedImage
+} from "../generation/imageMarkdown.js";
 
-/**
- * Swaps the line carrying `replaceMarker` for the new image line, in place —
- * a replacement keeps the old picture's spot. Null when no line carries the
- * marker, which is the caller's cue to append instead.
- */
-export function markdownWithReplacedImage(markdown: string, replaceMarker: string, imageLine: string): string | null {
-  const markerLine = new RegExp(`^.*${replaceMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*$`, "m");
-  return markerLine.test(markdown) ? markdown.replace(markerLine, imageLine) : null;
-}
-
-/** Deletes the line carrying `replaceMarker`. Null when no line carries it. */
-export function markdownWithRemovedImage(markdown: string, replaceMarker: string): string | null {
-  const escaped = replaceMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const markerLine = new RegExp(`^.*${escaped}.*$\\n?`, "m");
-  if (!markerLine.test(markdown)) {
-    return null;
-  }
-  return markdown.replace(markerLine, "").replace(/\n{3,}/g, "\n\n").trimEnd();
-}
-
-/** The exact markdown line that carries `replaceMarker`, so a move can paste it. */
-export function extractMarkdownImageLine(markdown: string, replaceMarker: string): string | null {
-  const markerLine = new RegExp(`^.*${replaceMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*$`, "m");
-  return markdown.match(markerLine)?.[0] ?? null;
-}
-
-/**
- * Alt text from the subject. `]` or `)` breaks the exporters' image-markdown
- * regex and the image silently vanishes from both exports, and the exact
- * "Illustration for page N" shape is rejected by `findBookLikeMarkdownIssues`
- * as a generation artifact — both degrade to the localized generic label.
- */
-export function imageAltFromSubject(subject: string, fallbackLabel: string): string {
-  const stripped = subject
-    .replace(/[[\]()]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 120)
-    .trim();
-  if (!stripped || /^illustration for page \d+$/i.test(stripped)) {
-    return fallbackLabel;
-  }
-  return stripped;
-}

@@ -22,7 +22,7 @@ import {
 } from "./testing/mobileApiHarness.js";
 import { currentActionForEditOperation } from "./projectSerializers.js";
 import { UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
-import { serializeBookEditOperation } from "./projectChat.js";
+import { operationCanUndo, serializeBookEditOperation } from "./projectChat.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";
 
 function layoutRouterModel() {
@@ -60,22 +60,30 @@ function layoutRouterModel() {
         }
       }
       if (message.toLowerCase().includes("remove")) {
+        const chapter = /chapter (\d+)/i.exec(message);
         return decide({
           ...decideBase,
           editTarget: "remove_image",
-          pageIndexes: message.includes("page 1") ? [1] : []
+          pageIndexes: message.includes("page 1") ? [1] : [],
+          ...(chapter
+            ? { imageSelection: "chapter", chapterIndex: Number(chapter[1]) }
+            : /\ball\b|\bevery\b/i.test(message)
+              ? { imageSelection: "all" }
+              : {})
         });
       }
-      if (message.toLowerCase().includes("move")) {
+      if (message.toLowerCase().includes("move") || /\bput the (picture|image)\b/i.test(message)) {
         const onPage1 = /on page 1/i.test(message);
         const toPage1 = /to page 1/i.test(message);
         const toPage2 = /to page 2/i.test(message);
+        const position = /\b(top|bottom)\b/i.exec(message)?.[1]?.toLowerCase();
         return decide({
           ...decideBase,
           editTarget: "move_image",
           pageIndexes: onPage1 ? [1] : [],
           ...(toPage1 ? { imageDestPageIndexes: [1] } : toPage2 ? { imageDestPageIndexes: [2] } : {}),
-          ...(message.includes("end") ? { imagePlacement: "end_of_book" } : {})
+          ...(position ? { imagePosition: position } : {}),
+          ...(message.includes("end of the book") ? { imagePlacement: "end_of_book" } : {})
         });
       }
       throw new Error(`no canned decision for: ${message}`);
@@ -113,9 +121,113 @@ describe("chat image layout", () => {
     expect(body.reply.metadata.pendingEdit.intent.imageLayout).toEqual({
       action: "remove",
       pageIndex: 1,
-      target: { operationId: "", assetId: "asset-1", oldSubject: "the illustration on page 1", pageIndex: 1 }
+      targets: [{ operationId: "", assetId: "asset-1", oldSubject: "the illustration on page 1", pageIndex: 1 }]
     });
     expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("proposes one free card naming every illustration for a whole-book remove", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([]);
+    mockPrisma.imageAsset.findMany.mockResolvedValue([
+      { id: "asset-1", page: { index: 1 } },
+      { id: "asset-2", page: { index: 2 } }
+    ]);
+    const app = await buildMobileApp(withLayoutRouter());
+
+    const response = await sendChat(app, "Remove all the pictures");
+    const body = response.json();
+
+    expect(body.reply.metadata.editProposal).toMatchObject({
+      kind: "remove_image",
+      affectedPageIndexes: [1, 2],
+      credits: 0,
+      summary: "Remove all 2 illustrations"
+    });
+    // The count is the confirmation, so the card has to have resolved the whole
+    // set before it is shown — not left it to Apply.
+    expect(body.reply.metadata.pendingEdit.intent.imageLayout.targets).toHaveLength(2);
+    expect(body.reply.metadata.pendingEdit.intent.imageLayout.selection).toEqual({ kind: "all" });
+    expect(vi.mocked(reserveCredits)).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("scopes a chapter remove to that chapter's pages", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      completeProject({
+        chapters: [
+          { id: "chapter-1", index: 1, title: "One", summary: "" },
+          { id: "chapter-2", index: 2, title: "Two", summary: "" }
+        ],
+        pages: [
+          { id: "page-1", index: 1, title: "One", summary: "", status: "COMPLETED", chapter: { index: 1 } },
+          { id: "page-2", index: 2, title: "Two", summary: "", status: "COMPLETED", chapter: { index: 2 } }
+        ]
+      })
+    );
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([]);
+    mockPrisma.imageAsset.findMany.mockResolvedValue([
+      { id: "asset-1", page: { index: 1 } },
+      { id: "asset-2", page: { index: 2 } }
+    ]);
+    const app = await buildMobileApp(withLayoutRouter());
+
+    const response = await sendChat(app, "Remove the images from chapter 2");
+    const body = response.json();
+
+    expect(body.reply.metadata.editProposal).toMatchObject({
+      kind: "remove_image",
+      affectedPageIndexes: [2],
+      credits: 0,
+      summary: "Remove the illustration in chapter 2"
+    });
+    expect(body.reply.metadata.pendingEdit.intent.imageLayout.targets).toHaveLength(1);
+    await app.close();
+  });
+
+  it("answers rather than proposing when a named chapter has no illustrations", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      completeProject({
+        chapters: [{ id: "chapter-1", index: 1, title: "One", summary: "" }],
+        pages: [
+          { id: "page-1", index: 1, title: "One", summary: "", status: "COMPLETED", chapter: { index: 1 } }
+        ]
+      })
+    );
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([]);
+    mockPrisma.imageAsset.findMany.mockResolvedValue([{ id: "asset-1", page: { index: 1 } }]);
+    const app = await buildMobileApp(withLayoutRouter());
+
+    const response = await sendChat(app, "Remove the images from chapter 2");
+    const body = response.json();
+
+    expect(body.reply.metadata.editProposal).toBeUndefined();
+    expect(body.reply.content).toMatch(/couldn’t find chapter 2/i);
+    await app.close();
+  });
+
+  it("proposes a within-page move rather than answering “already on page 1”", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([]);
+    mockPrisma.imageAsset.findMany.mockResolvedValue([{ id: "asset-1", page: { index: 1 } }]);
+    const app = await buildMobileApp(withLayoutRouter());
+
+    const response = await sendChat(app, "Move the picture on page 1 to the bottom of the page");
+    const body = response.json();
+
+    expect(body.reply.content).not.toMatch(/already on page/i);
+    expect(body.reply.metadata.editProposal).toMatchObject({
+      kind: "move_image",
+      affectedPageIndexes: [1],
+      credits: 0,
+      summary: "Move the illustration of “the illustration on page 1” to the bottom of page 1"
+    });
+    expect(body.reply.metadata.pendingEdit.intent.imageLayout.destPosition).toBe("bottom");
     await app.close();
   });
 
@@ -198,13 +310,57 @@ describe("chat image layout", () => {
           intentKind: "remove_image",
           imageLayout: {
             action: "remove",
-            source: { pageIndex: 1, replaceAssetId: "asset-1" }
+            sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }]
           }
         })
       })
     );
     expect(vi.mocked(reserveCredits)).toHaveBeenCalledWith(expect.objectContaining({ amountCredits: 0 }));
     expect(mockBilling.consumeIllustratedBookUse).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  // The card said "Remove all 2 illustrations", so 2 is what Apply removes. A
+  // picture added between the card and the tap is not swept into an edit the
+  // reader never saw — the same rule the charged edits follow about never going
+  // past the number they quoted.
+  it("removes exactly the illustrations the card named, not the book's current set", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([]);
+    mockPrisma.imageAsset.findMany.mockResolvedValue([
+      { id: "asset-1", page: { index: 1 } },
+      { id: "asset-2", page: { index: 2 } }
+    ]);
+    mockPrisma.imageAsset.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id === "asset-1"
+        ? { id: "asset-1", page: { index: 1 } }
+        : where.id === "asset-2"
+          ? { id: "asset-2", page: { index: 2 } }
+          : null
+    );
+    const app = await buildMobileApp(withLayoutRouter());
+
+    const proposal = await sendChat(app, "Remove all the pictures");
+    const proposalId = proposal.json().reply.metadata.editProposal.id;
+
+    // A third picture arrives between the card and the tap.
+    mockPrisma.imageAsset.findMany.mockResolvedValue([
+      { id: "asset-1", page: { index: 1 } },
+      { id: "asset-2", page: { index: 2 } },
+      { id: "asset-3", page: { index: 2 } }
+    ]);
+    mockPrisma.imageAsset.findFirst.mockImplementation(async ({ where }: { where: { id?: string } }) =>
+      where.id === "asset-3" ? { id: "asset-3", page: { index: 2 } } : { id: where.id, page: { index: 1 } }
+    );
+
+    await applyProposal(app, proposalId);
+
+    const call = vi.mocked(enqueueGenerationJob).mock.calls.at(-1)?.[0] as unknown as {
+      payload: { imageLayout: { sources: Array<{ replaceAssetId?: string }> } };
+    };
+    expect(call.payload.imageLayout.sources).toHaveLength(2);
+    expect(call.payload.imageLayout.sources.map((source) => source.replaceAssetId)).not.toContain("asset-3");
     await app.close();
   });
 
@@ -248,6 +404,35 @@ describe("chat image layout", () => {
     expect(serializeBookEditOperation(appliedEditOperationRecord({ kind: "REMOVE_IMAGE" }) as never).kind).toBe(
       "remove_image"
     );
+  });
+
+  // The worker cannot write a chat message, so the card is the only place a
+  // layout edit that found nothing can correct the reply that already promised
+  // the change — and offering Undo there would revert the *previous* edit,
+  // because `undoLastBookEdit` skips an operation with no snapshots.
+  it("says a skipped layout edit changed nothing, and does not offer Undo for it", () => {
+    const missing = appliedEditOperationRecord({
+      kind: "REMOVE_IMAGE",
+      affectedPageIndexes: [],
+      classifier: { layoutMissing: true, layoutSkippedReason: "missing" }
+    });
+    expect(currentActionForEditOperation(missing as never)).toBe(
+      "Nothing was changed: that illustration had already gone."
+    );
+    expect(operationCanUndo(missing as never)).toBe(false);
+
+    const inPlace = appliedEditOperationRecord({
+      kind: "MOVE_IMAGE",
+      affectedPageIndexes: [],
+      classifier: { layoutMissing: true, layoutSkippedReason: "already_positioned" }
+    });
+    expect(currentActionForEditOperation(inPlace as never)).toBe(
+      "Nothing was changed: that picture is already where you asked for it."
+    );
+    expect(operationCanUndo(inPlace as never)).toBe(false);
+
+    // An ordinary applied layout edit is untouched by any of that.
+    expect(operationCanUndo(appliedEditOperationRecord({ kind: "REMOVE_IMAGE" }) as never)).toBe(true);
   });
 
   it("prices move and remove at zero", () => {
@@ -314,6 +499,81 @@ describe("chat image layout", () => {
         pageId: "page-1"
       }
     });
+    await app.close();
+  });
+
+  it("restores every picture when undoing a bulk remove", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(completeProject());
+    const operation = appliedEditOperationRecord({
+      id: "op-remove-all",
+      kind: "REMOVE_IMAGE",
+      request: "Remove all the pictures",
+      affectedPageIndexes: [1, 2],
+      classifier: {
+        previousAssets: [
+          {
+            id: "asset-1",
+            pageId: "page-1",
+            path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+            prompt: "a dragon",
+            imagePrompt: "a dragon"
+          },
+          {
+            id: "asset-2",
+            pageId: "page-2",
+            path: "http://localhost:4001/assets/images/project-1/page-2.jpg",
+            prompt: "a fox",
+            imagePrompt: "a fox"
+          }
+        ]
+      },
+      snapshots: [
+        {
+          pageId: "page-1",
+          pageIndex: 1,
+          titleBefore: "One",
+          markdownBefore: "Prose one.",
+          summaryBefore: "S",
+          revisionBefore: 1
+        },
+        {
+          pageId: "page-2",
+          pageIndex: 2,
+          titleBefore: "Two",
+          markdownBefore: "Prose two.",
+          summaryBefore: "T",
+          revisionBefore: 1
+        }
+      ]
+    });
+    state.bookEditOperations.push(operation);
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([operation]);
+    mockPrisma.imageAsset.updateMany.mockResolvedValue({ count: 1 });
+    for (const page of [
+      { id: "page-1", index: 1, title: "One", markdown: "Prose one.", summary: "S" },
+      { id: "page-2", index: 2, title: "Two", markdown: "Prose two.", summary: "T" }
+    ]) {
+      state.pages.push({ ...page, projectId: "project-1", revision: 2, status: "COMPLETED" });
+    }
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/edits/undo",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    // Every picture goes back, not just the first — the singular reader this
+    // replaced would have restored one and silently left the rest unlinked.
+    expect(mockPrisma.imageAsset.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "asset-1", projectId: "project-1" } })
+    );
+    expect(mockPrisma.imageAsset.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "asset-2", projectId: "project-1" } })
+    );
     await app.close();
   });
 

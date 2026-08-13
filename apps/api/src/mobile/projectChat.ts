@@ -546,7 +546,16 @@ export function operationCanUndo(operation: MobileBookEditOperationRecord): bool
   if (!(UNDOABLE_EDIT_KINDS as readonly string[]).includes(operation.kind)) {
     return false;
   }
-  return jsonRecord(operation.classifier).undoneAt === undefined;
+  const classifier = jsonRecord(operation.classifier);
+  // A layout edit that found nothing to move or remove is APPLIED with no
+  // snapshots, and `undoLastBookEdit` picks its candidate with
+  // `snapshots.length > 0` — so an Undo offered here would skip this operation
+  // and silently revert the *previous* edit instead. The two have to agree about
+  // which operation is undoable.
+  if (classifier.layoutMissing === true) {
+    return false;
+  }
+  return classifier.undoneAt === undefined;
 }
 
 export async function loadProjectForChat(userId: string, projectId: string) {

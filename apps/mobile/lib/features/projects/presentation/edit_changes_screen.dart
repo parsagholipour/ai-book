@@ -99,7 +99,11 @@ class _EditChangesBody extends StatelessWidget {
           _ChangesSummary(changes: changes),
           const SizedBox(height: 16),
           for (final page in changes.pages) ...[
-            _PageChangeSection(projectId: projectId, page: page),
+            _PageChangeSection(
+              projectId: projectId,
+              page: page,
+              kind: changes.kind,
+            ),
             const SizedBox(height: 20),
           ],
         ],
@@ -177,10 +181,17 @@ class _ChangesSummary extends StatelessWidget {
 }
 
 class _PageChangeSection extends StatelessWidget {
-  const _PageChangeSection({required this.projectId, required this.page});
+  const _PageChangeSection({
+    required this.projectId,
+    required this.page,
+    required this.kind,
+  });
 
   final String projectId;
   final MobileEditPageChange page;
+
+  /// The operation kind, so a page can say whether its picture moved or went.
+  final String kind;
 
   @override
   Widget build(BuildContext context) {
@@ -253,7 +264,7 @@ class _PageChangeSection extends StatelessWidget {
         if (page.illustrationChanged) ...[
           const SizedBox(height: 10),
           Text(
-            _illustrationCopy(page),
+            _illustrationCopy(page, kind),
             style: theme.textTheme.bodyMedium,
           ),
           if (page.illustrationBefore != null ||
@@ -286,30 +297,44 @@ String _summaryTitle(MobileEditChanges changes) {
         (page) => page.illustrationChanged && !page.titleChanged,
       );
   if (illustrationOnly) {
-    if (changes.kind == 'remove_image' ||
-        changes.pages.every(
-          (page) => page.illustrationBefore != null && page.illustrationAfter == null,
-        )) {
-      return pageCount == 1 ? 'Illustration removed' : '$pageCount illustrations removed';
-    }
-    if (changes.kind == 'move_image' || pageCount > 1) {
+    // A move is checked first, and by kind: within one page it produces a
+    // single change whose before and after are both set, which is exactly the
+    // shape a replacement has.
+    if (changes.kind == 'move_image') {
       return 'Illustration moved';
     }
-    return pageCount == 1
-        ? 'Illustration replaced'
-        : '$pageCount illustrations replaced';
+    final removed = changes.pages
+        .where(
+          (page) => page.illustrationBefore != null && page.illustrationAfter == null,
+        )
+        .length;
+    if (changes.kind == 'remove_image' || removed == pageCount) {
+      // Counted in illustrations, not pages: removing two pictures from one
+      // page is two illustrations gone, and the card said so when it asked.
+      final count = removed > 0 ? removed : pageCount;
+      return count == 1 ? 'Illustration removed' : '$count illustrations removed';
+    }
+    if (pageCount > 1) {
+      return 'Illustration moved';
+    }
+    return 'Illustration replaced';
   }
   return pageCount == 1 ? '1 page changed' : '$pageCount pages changed';
 }
 
-String _illustrationCopy(MobileEditPageChange page) {
+String _illustrationCopy(MobileEditPageChange page, String kind) {
   if (page.illustrationBefore != null && page.illustrationAfter == null) {
-    return 'The illustration on this page was removed.';
+    return kind == 'move_image'
+        ? 'The illustration was moved off this page.'
+        : 'The illustration on this page was removed.';
   }
   if (page.illustrationBefore == null && page.illustrationAfter != null) {
     return 'An illustration was moved onto this page.';
   }
-  return 'The illustration on this page was replaced.';
+  // Both sides set: a replacement, or a move within this same page.
+  return kind == 'move_image'
+      ? 'The illustration moved to a different place on this page.'
+      : 'The illustration on this page was replaced.';
 }
 
 class _IllustrationSwapPreview extends StatelessWidget {

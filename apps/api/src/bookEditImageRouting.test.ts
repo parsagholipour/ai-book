@@ -306,6 +306,117 @@ describe("image insertion routing", () => {
     });
   });
 
+  it("maps imageSelection onto a whole-book or chapter removal", async () => {
+    const all = await classifyProjectChatMessage({
+      message: "Remove all the pictures",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "remove_image",
+        imageSelection: "all"
+      })
+    });
+    expect(all.imageLayout?.selection).toEqual({ kind: "all" });
+
+    const chapter = await classifyProjectChatMessage({
+      message: "Remove the images from chapter 2",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "remove_image",
+        imageSelection: "chapter",
+        chapterIndex: 2
+      })
+    });
+    expect(chapter.imageLayout?.selection).toEqual({ kind: "chapter", chapterIndex: 2 });
+  });
+
+  // Under-doing is one more sentence away; over-doing needs an undo.
+  it("degrades a chapter removal with no usable index to a single picture", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Remove the images from that chapter",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "remove_image",
+        imageSelection: "chapter",
+        chapterIndex: null
+      })
+    });
+    expect(intent.kind).toBe("remove_image");
+    expect(intent.imageLayout?.selection).toBeUndefined();
+  });
+
+  // Without the field, a model that forgets it removes exactly one picture from
+  // a "remove all" request — the headline case for the whole feature.
+  it("reads a whole-book removal off the message when the router omits the field", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Take all the illustrations out",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "remove_image"
+      })
+    });
+    expect(intent.imageLayout?.selection).toEqual({ kind: "all" });
+  });
+
+  it("treats a place inside a page as a complete destination, with no question", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Move the picture on page 1 to the bottom of the page",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "move_image",
+        pageIndexes: [1],
+        imagePosition: "bottom"
+      })
+    });
+    expect(intent.kind).toBe("move_image");
+    expect(intent.clarification).toBe("none");
+    expect(intent.imageLayout).toEqual({
+      action: "move",
+      pageIndex: 1,
+      destPlacement: "page",
+      destPageIndex: 1,
+      destPosition: "bottom"
+    });
+  });
+
+  // "the last page" is an end-of-book phrase, so the position has to be read
+  // first or the picture lands on a different page than the reader named.
+  it("keeps a position on the named page rather than sending it to the end", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Put the picture at the bottom of the last page",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "move_image",
+        pageIndexes: [2]
+      })
+    });
+    expect(intent.imageLayout?.destPosition).toBe("bottom");
+    expect(intent.imageLayout?.destPlacement).toBe("page");
+  });
+
   it("still answers a resize request rather than pricing a rewrite", async () => {
     const intent = await classifyProjectChatMessage({
       message: "Make the picture on page 1 bigger",

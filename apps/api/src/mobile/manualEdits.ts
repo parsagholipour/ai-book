@@ -6,6 +6,12 @@ import {
   type MobileProjectChatMessageRecord
 } from "./dto.js";
 import {
+  demotedImageAssetsFromClassifier,
+  previousImageAssetsFromClassifier,
+  type DemotedImageAssetRecord,
+  type PreviousImageAssetRecord
+} from "./imageEditRecords.js";
+import {
   activeProjectChatLeafId,
   createAssistantChatMessage,
   loadActiveProjectChatMessages,
@@ -329,8 +335,8 @@ export async function undoLastBookEdit(
   }
 
   const restoredPageIndexes: number[] = [];
-  const previousAsset = previousAssetFromClassifier(operation.classifier);
-  const demotedAsset = demotedAssetFromClassifier(operation.classifier);
+  const previousAssets = previousImageAssetsFromClassifier(operation.classifier);
+  const demotedAssets = demotedImageAssetsFromClassifier(operation.classifier);
   const contentRevision = await prisma.$transaction(async (tx) => {
     const editRevision = project.currentPlanId
       ? await tx.project.update({
@@ -340,7 +346,7 @@ export async function undoLastBookEdit(
         })
       : null;
     for (const snapshot of operation.snapshots) {
-      const imagePrompt = imagePromptToRestore(snapshot.pageId, previousAsset, demotedAsset);
+      const imagePrompt = imagePromptToRestore(snapshot.pageId, previousAssets, demotedAssets);
       await tx.page.update({
         where: { id: snapshot.pageId },
         data: {
@@ -354,16 +360,12 @@ export async function undoLastBookEdit(
       });
       restoredPageIndexes.push(snapshot.pageIndex);
     }
-    if (previousAsset) {
+    // Every picture the edit touched goes back where it was — a bulk remove
+    // unlinked as many as the book had.
+    for (const asset of [...previousAssets, ...demotedAssets]) {
       await tx.imageAsset.updateMany({
-        where: { id: previousAsset.id, projectId: project.id },
-        data: { path: previousAsset.path, prompt: previousAsset.prompt, pageId: previousAsset.pageId }
-      });
-    }
-    if (demotedAsset) {
-      await tx.imageAsset.updateMany({
-        where: { id: demotedAsset.id, projectId: project.id },
-        data: { path: demotedAsset.path, prompt: demotedAsset.prompt, pageId: demotedAsset.pageId }
+        where: { id: asset.id, projectId: project.id },
+        data: { path: asset.path, prompt: asset.prompt, pageId: asset.pageId }
       });
     }
     await tx.bookEditOperation.update({
@@ -404,99 +406,38 @@ export async function undoLastBookEdit(
   });
 }
 
-function previousAssetFromClassifier(classifier: unknown): {
-  id: string;
-  pageId: string;
-  path: string;
-  prompt: string;
-  imagePrompt?: string | null;
-  destPageId?: string;
-  destImagePrompt?: string | null;
-} | null {
-  const stored = jsonRecord(jsonRecord(classifier).previousAsset);
-  if (
-    typeof stored.id !== "string" ||
-    !stored.id ||
-    typeof stored.pageId !== "string" ||
-    !stored.pageId ||
-    typeof stored.path !== "string" ||
-    !stored.path ||
-    typeof stored.prompt !== "string"
-  ) {
-    return null;
-  }
-  return {
-    id: stored.id,
-    pageId: stored.pageId,
-    path: stored.path,
-    prompt: stored.prompt,
-    ...(typeof stored.imagePrompt === "string" || stored.imagePrompt === null
-      ? { imagePrompt: stored.imagePrompt }
-      : {}),
-    ...(typeof stored.destPageId === "string" && stored.destPageId ? { destPageId: stored.destPageId } : {}),
-    ...(typeof stored.destImagePrompt === "string" || stored.destImagePrompt === null
-      ? { destImagePrompt: stored.destImagePrompt }
-      : {})
-  };
-}
-
-function demotedAssetFromClassifier(classifier: unknown): {
-  id: string;
-  pageId: string;
-  path: string;
-  prompt: string;
-  imagePrompt?: string | null;
-} | null {
-  const stored = jsonRecord(jsonRecord(classifier).demotedAsset);
-  if (
-    typeof stored.id !== "string" ||
-    !stored.id ||
-    typeof stored.pageId !== "string" ||
-    !stored.pageId ||
-    typeof stored.path !== "string" ||
-    !stored.path ||
-    typeof stored.prompt !== "string"
-  ) {
-    return null;
-  }
-  return {
-    id: stored.id,
-    pageId: stored.pageId,
-    path: stored.path,
-    prompt: stored.prompt,
-    ...(typeof stored.imagePrompt === "string" || stored.imagePrompt === null
-      ? { imagePrompt: stored.imagePrompt }
-      : {})
-  };
-}
-
+/**
+ * The `imagePrompt` a page had before the edit, or undefined to leave it alone.
+ *
+ * Three ways a page can appear in an image edit, in precedence order: it held
+ * the picture that moved or was removed, it held a hero that a move demoted, or
+ * it received the picture. A page can be more than one of those in a single
+ * batch — the picture leaving page 3 while another arrives — and the *source*
+ * reading wins, because that is the value the page had before anything ran.
+ */
 function imagePromptToRestore(
   pageId: string,
-  previousAsset: ReturnType<typeof previousAssetFromClassifier>,
-  demotedAsset: ReturnType<typeof demotedAssetFromClassifier>
+  previousAssets: PreviousImageAssetRecord[],
+  demotedAssets: DemotedImageAssetRecord[]
 ): string | null | undefined {
-  if (
-    previousAsset &&
-    previousAsset.pageId === pageId &&
-    (typeof previousAsset.imagePrompt === "string" || previousAsset.imagePrompt === null)
-  ) {
-    return previousAsset.imagePrompt;
+  const source = previousAssets.find(
+    (asset) => asset.pageId === pageId && (typeof asset.imagePrompt === "string" || asset.imagePrompt === null)
+  );
+  if (source) {
+    return source.imagePrompt;
   }
-  if (
-    demotedAsset &&
-    demotedAsset.pageId === pageId &&
-    (typeof demotedAsset.imagePrompt === "string" || demotedAsset.imagePrompt === null)
-  ) {
-    return demotedAsset.imagePrompt;
+  const demoted = demotedAssets.find(
+    (asset) => asset.pageId === pageId && (typeof asset.imagePrompt === "string" || asset.imagePrompt === null)
+  );
+  if (demoted) {
+    return demoted.imagePrompt;
   }
-  if (
-    previousAsset &&
-    previousAsset.destPageId === pageId &&
-    (typeof previousAsset.destImagePrompt === "string" || previousAsset.destImagePrompt === null)
-  ) {
-    return previousAsset.destImagePrompt;
-  }
-  return undefined;
+  const dest = previousAssets.find(
+    (asset) =>
+      asset.destPageId === pageId &&
+      (typeof asset.destImagePrompt === "string" || asset.destImagePrompt === null)
+  );
+  return dest ? dest.destImagePrompt : undefined;
 }
 
 export const UNDOABLE_EDIT_KINDS = [

@@ -54,6 +54,29 @@ export function imageMarkdownRe(): RegExp {
   return /!\[([^\]]*)\]\(([^)]+)\)/g;
 }
 
+/**
+ * The `/assets/images/<projectId>/<filename>` path inside a stored image path,
+ * whatever host or path prefix it carries — or null when there is none.
+ *
+ * `ImageAsset.path` is written as `publicAssetUrl(PUBLIC_API_URL, "/assets/images/…")`,
+ * so it is a bare path when no public URL is configured and an absolute URL
+ * otherwise, carrying whatever prefix that base has. Two callers need the segment
+ * back: the layout handler rebuilding a markdown line for a page hero it is
+ * demoting, and the edit-changes card handing the app a client-relative path. Both
+ * used to test `new URL(path).pathname.startsWith("/assets/images/")` and lose it
+ * whenever the base had a path of its own — `https://example.com/api` yields
+ * `/api/assets/images/…`, which that test rejects, and both had their regex
+ * fallback stranded in a `catch` that a parseable URL never reaches. The demote
+ * was the costly one: it skipped writing the line and unlinked the asset anyway,
+ * so the picture left the book with no record in the manuscript.
+ *
+ * Matching the segment wherever it sits is what keeps the two agreeing, and a
+ * null answer is a real one — the caller must refuse rather than half-apply.
+ */
+export function assetsImagePathFrom(path: string): string | null {
+  return ASSET_URL_RE.exec(path.split(/[?#]/)[0] ?? "")?.[0] ?? null;
+}
+
 export function resolveBookImageAsset(
   src: string,
   options: { imageStorageDir: string; publicApiBase: string; projectId?: string | undefined }

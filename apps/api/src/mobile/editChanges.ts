@@ -1,7 +1,8 @@
-import { diffProse, proseChanged } from "@book-maker/core";
+import { assetsImagePathFrom, diffProse, proseChanged } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
 import { type MobileEditChangesDto, type MobileEditPageChangeDto } from "./dto.js";
+import { demotedImageAssetsFromClassifier, previousImageAssetsFromClassifier } from "./imageEditRecords.js";
 import { jsonRecord } from "./support.js";
 
 /**
@@ -131,42 +132,55 @@ function illustrationChangesFromClassifier(
   operation: Pick<EditChangesOperationRecord, "kind" | "classifier">,
   afterPathFallback?: string
 ): IllustrationChange[] {
-  const stored = jsonRecord(jsonRecord(operation.classifier).previousAsset);
-  if (
-    typeof stored.id !== "string" ||
-    !stored.id ||
-    typeof stored.pageId !== "string" ||
-    !stored.pageId ||
-    typeof stored.path !== "string" ||
-    !stored.path
-  ) {
+  const previous = previousImageAssetsFromClassifier(operation.classifier);
+  if (previous.length === 0) {
     return [];
   }
-  const before = illustrationPublicPath(stored.path);
   if (operation.kind === "REMOVE_IMAGE") {
-    return [{ assetId: stored.id, pageId: stored.pageId, before, after: null }];
+    // One entry per picture: a bulk remove reports every page it emptied.
+    return previous.map((asset) => ({
+      assetId: asset.id,
+      pageId: asset.pageId,
+      before: illustrationPublicPath(asset.path),
+      after: null
+    }));
   }
   if (operation.kind === "MOVE_IMAGE") {
-    const destPageId = typeof stored.destPageId === "string" ? stored.destPageId : undefined;
-    const demoted = jsonRecord(jsonRecord(operation.classifier).demotedAsset);
-    const demotedBefore =
-      typeof demoted.path === "string" ? illustrationPublicPath(demoted.path) : null;
-    return [
-      { assetId: stored.id, pageId: stored.pageId, before, after: null },
-      ...(destPageId
-        ? [{ assetId: stored.id, pageId: destPageId, before: demotedBefore, after: before }]
-        : [])
-    ];
+    const demoted = demotedImageAssetsFromClassifier(operation.classifier);
+    return previous.flatMap((asset) => {
+      const before = illustrationPublicPath(asset.path);
+      // A move within one page has the same picture on both sides of the same
+      // page. Reporting it as a leave-and-arrive pair would render as two
+      // changes on one page, one of them a removal that never happened.
+      if (asset.destPageId && asset.destPageId === asset.pageId) {
+        return [{ assetId: asset.id, pageId: asset.pageId, before, after: before }];
+      }
+      const demotedBefore = demoted.find((entry) => entry.pageId === asset.destPageId);
+      return [
+        { assetId: asset.id, pageId: asset.pageId, before, after: null },
+        ...(asset.destPageId
+          ? [
+              {
+                assetId: asset.id,
+                pageId: asset.destPageId,
+                before: demotedBefore ? illustrationPublicPath(demotedBefore.path) : null,
+                after: before
+              }
+            ]
+          : [])
+      ];
+    });
   }
-  const afterPath =
-    typeof stored.afterPath === "string" && stored.afterPath
-      ? stored.afterPath
-      : afterPathFallback;
+  const first = previous[0];
+  if (!first) {
+    return [];
+  }
+  const afterPath = first.afterPath ?? afterPathFallback;
   return [
     {
-      assetId: stored.id,
-      pageId: stored.pageId,
-      before,
+      assetId: first.id,
+      pageId: first.pageId,
+      before: illustrationPublicPath(first.path),
       after: afterPath ? illustrationPublicPath(afterPath) : null,
       ...(afterPath ? { afterPath } : {})
     }
@@ -187,19 +201,12 @@ function matchesIllustrationChange(
   return writtenCount === 1 ? (changes[0] ?? null) : null;
 }
 
-/** Client-relative `/assets/images/...` so the app can resolve it against its API host. */
+/**
+ * Client-relative `/assets/images/...` so the app can resolve it against its API
+ * host. Shared with the worker's demote path through `assetsImagePathFrom`,
+ * because a stored path carries whatever prefix `PUBLIC_API_URL` has and the
+ * hand-rolled copy this replaced dropped the whole thumbnail for those.
+ */
 function illustrationPublicPath(path: string): string | null {
-  try {
-    if (path.startsWith("/assets/images/")) {
-      return path.split(/[?#]/)[0] ?? null;
-    }
-    const url = new URL(path);
-    if (url.pathname.startsWith("/assets/images/")) {
-      return url.pathname;
-    }
-  } catch {
-    const match = path.match(/\/assets\/images\/[^\s?#)]+/);
-    return match?.[0] ?? null;
-  }
-  return null;
+  return assetsImagePathFrom(path);
 }

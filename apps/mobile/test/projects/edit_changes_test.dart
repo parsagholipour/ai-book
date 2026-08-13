@@ -310,6 +310,93 @@ void main() {
     );
   });
 
+  testWidgets('counts illustrations rather than pages for a bulk remove', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileEditChanges(
+          operationId: 'operation-1',
+          kind: 'remove_image',
+          status: 'applied',
+          request: 'Remove all the pictures',
+          creditsCharged: 0,
+          pages: [
+            MobileEditPageChange(
+              pageIndex: 1,
+              titleBefore: 'One',
+              titleAfter: 'One',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+              illustrationBefore: '/assets/images/project-1/page-1.jpg',
+            ),
+            MobileEditPageChange(
+              pageIndex: 2,
+              titleBefore: 'Two',
+              titleAfter: 'Two',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+              illustrationBefore: '/assets/images/project-1/page-2.jpg',
+            ),
+          ],
+          addedWords: 0,
+          removedWords: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 illustrations removed'), findsOneWidget);
+  });
+
+  testWidgets('says a within-page move moved the picture, not replaced it', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileEditChanges(
+          operationId: 'operation-1',
+          kind: 'move_image',
+          status: 'applied',
+          request: 'Put the picture below the text',
+          creditsCharged: 0,
+          pages: [
+            // One page, both sides set — the same shape a replacement has, which
+            // is why the summary has to read the kind and not the nullability.
+            MobileEditPageChange(
+              pageIndex: 1,
+              titleBefore: 'One',
+              titleAfter: 'One',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+              illustrationBefore: '/assets/images/project-1/page-1.jpg',
+              illustrationAfter: '/assets/images/project-1/page-1.jpg',
+            ),
+          ],
+          addedWords: 0,
+          removedWords: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Illustration moved'), findsOneWidget);
+    expect(find.text('Illustration replaced'), findsNothing);
+    expect(
+      find.text('The illustration moved to a different place on this page.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('says when an illustration was moved onto a page', (tester) async {
     await tester.pumpWidget(
       _app(
@@ -351,8 +438,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Illustration moved'), findsOneWidget);
+    // "Removed" would be wrong here: the picture is still in the book, one page
+    // further on, and the next section says so.
     expect(
-      find.text('The illustration on this page was removed.'),
+      find.text('The illustration was moved off this page.'),
       findsOneWidget,
     );
     expect(

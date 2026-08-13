@@ -5,7 +5,12 @@ import {
   type BookEditIntent,
   type BookEditScope
 } from "../bookEditIntent.js";
-import { type ImageInsertionEdit, type ImageLayoutEdit } from "../bookEditImage.js";
+import {
+  type ImageInsertionEdit,
+  type ImageLayoutEdit,
+  type ImageLayoutSelection,
+  type ImageLayoutTarget
+} from "../bookEditImage.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { jsonRecord } from "./support.js";
 import { type ReplanSettings } from "@book-maker/core";
@@ -385,9 +390,51 @@ function imageEditFromMetadata(value: unknown): { imageEdit?: ImageInsertionEdit
 }
 
 /**
+ * A bulk remove can name every picture in a long illustrated book. The cap is
+ * a bound on a stored blob, not on real books — nothing legitimate approaches
+ * it, and a malformed one may not fan out into hundreds of page reads.
+ */
+const MAX_STORED_LAYOUT_TARGETS = 200;
+
+/** One stored picture reference, or null when it names no picture at all. */
+function layoutTargetFromMetadata(value: unknown): ImageLayoutTarget | null {
+  const stored = jsonRecord(value);
+  const operationId = typeof stored.operationId === "string" ? stored.operationId : undefined;
+  const assetId =
+    typeof stored.assetId === "string" && stored.assetId.trim() ? stored.assetId.trim().slice(0, 80) : undefined;
+  const marker =
+    typeof stored.marker === "string" && stored.marker.trim() ? stored.marker.trim().slice(0, 200) : undefined;
+  const oldSubject =
+    typeof stored.oldSubject === "string" && stored.oldSubject.trim()
+      ? stored.oldSubject.trim().slice(0, 300)
+      : undefined;
+  const pageIndex =
+    typeof stored.pageIndex === "number" && Number.isInteger(stored.pageIndex) && stored.pageIndex > 0
+      ? stored.pageIndex
+      : undefined;
+  // A page alone is not a picture, and neither is an empty operationId: the
+  // worker finds a picture by asset id or by marker, so an entry carrying
+  // neither would resolve to whatever happens to be on the page.
+  if (pageIndex === undefined || (operationId === undefined && assetId === undefined && marker === undefined)) {
+    return null;
+  }
+  return {
+    operationId: operationId ?? "",
+    pageIndex,
+    ...(assetId ? { assetId } : {}),
+    ...(marker ? { marker } : {}),
+    ...(oldSubject ? { oldSubject } : {})
+  };
+}
+
+/**
  * Reads a stored `imageLayout` blob back. Without a usable action the whole
  * field is dropped; the proposal path then answers rather than inventing a
  * move or remove the card never showed.
+ *
+ * `targets` falls back to the singular `target` written before bulk removal
+ * existed, so a proposal card still sitting in a transcript from before that
+ * change still applies to the picture it named.
  */
 function imageLayoutFromMetadata(value: unknown): { imageLayout?: ImageLayoutEdit } {
   const stored = jsonRecord(value);
@@ -408,45 +455,49 @@ function imageLayoutFromMetadata(value: unknown): { imageLayout?: ImageLayoutEdi
     stored.destPageIndex > 0
       ? stored.destPageIndex
       : undefined;
-  const targetStored = jsonRecord(stored.target);
-  const targetOperationId = typeof targetStored.operationId === "string" ? targetStored.operationId : undefined;
-  const targetAssetId =
-    typeof targetStored.assetId === "string" && targetStored.assetId.trim()
-      ? targetStored.assetId.trim().slice(0, 80)
-      : undefined;
-  const targetMarker =
-    typeof targetStored.marker === "string" && targetStored.marker.trim()
-      ? targetStored.marker.trim().slice(0, 200)
-      : undefined;
-  const targetOldSubject =
-    typeof targetStored.oldSubject === "string" && targetStored.oldSubject.trim()
-      ? targetStored.oldSubject.trim().slice(0, 300)
-      : undefined;
-  const targetPageIndex =
-    typeof targetStored.pageIndex === "number" && Number.isInteger(targetStored.pageIndex) && targetStored.pageIndex > 0
-      ? targetStored.pageIndex
-      : undefined;
-  const hasTarget =
-    targetOperationId !== undefined || targetAssetId !== undefined || targetMarker !== undefined;
+  const destPosition = stored.destPosition === "top" || stored.destPosition === "bottom" ? stored.destPosition : undefined;
+  const storedTargets = Array.isArray(stored.targets)
+    ? stored.targets.slice(0, MAX_STORED_LAYOUT_TARGETS)
+    : stored.target !== undefined
+      ? [stored.target]
+      : [];
+  const targets = storedTargets
+    .map((entry) => layoutTargetFromMetadata(entry))
+    .filter((entry): entry is ImageLayoutTarget => entry !== null);
   return {
     imageLayout: {
       action,
       ...(pageIndex !== undefined ? { pageIndex } : {}),
+      ...layoutSelectionFromMetadata(stored.selection),
       ...(destPlacement ? { destPlacement } : {}),
       ...(destPageIndex !== undefined ? { destPageIndex } : {}),
-      ...(stored.target !== undefined && hasTarget && targetPageIndex !== undefined
-        ? {
-            target: {
-              operationId: targetOperationId ?? "",
-              pageIndex: targetPageIndex,
-              ...(targetAssetId ? { assetId: targetAssetId } : {}),
-              ...(targetMarker ? { marker: targetMarker } : {}),
-              ...(targetOldSubject ? { oldSubject: targetOldSubject } : {})
-            }
-          }
-        : {})
+      ...(destPosition ? { destPosition } : {}),
+      // Dropped entirely rather than kept empty: an absent `targets` makes the
+      // queue path re-resolve against the live book, while `targets: []` would
+      // apply nothing at all and report it as a success.
+      ...(targets.length > 0 ? { targets } : {})
     }
   };
+}
+
+/**
+ * A stored `selection`. A `chapter` without a usable index is dropped rather
+ * than kept, because it would resolve to no pictures and dead-end the Apply.
+ */
+function layoutSelectionFromMetadata(value: unknown): { selection: ImageLayoutSelection } | null {
+  const stored = jsonRecord(value);
+  if (stored.kind === "all") {
+    return { selection: { kind: "all" } };
+  }
+  if (
+    stored.kind === "chapter" &&
+    typeof stored.chapterIndex === "number" &&
+    Number.isInteger(stored.chapterIndex) &&
+    stored.chapterIndex > 0
+  ) {
+    return { selection: { kind: "chapter", chapterIndex: stored.chapterIndex } };
+  }
+  return null;
 }
 
 /** Reads a stored `replanSettings` blob back, dropping anything malformed. */

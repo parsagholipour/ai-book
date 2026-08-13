@@ -810,6 +810,30 @@ function appliedEditSummary(operation: MobileBookEditOperationRecord): string {
   }
 }
 
+/**
+ * What a move or remove says when it found nothing to do.
+ *
+ * The queued reply already promised the reader "I'll remove the illustration on
+ * page 3", so a layout edit that reaches the worker to find the picture gone —
+ * or already exactly where it was asked to go — has to say so somewhere, and the
+ * worker cannot: it never writes a chat message and cannot reach the API to. The
+ * card is the one surface that can, which is the same reason
+ * `skippedPageIndexes` is read just above.
+ *
+ * Null for every other operation, so the ordinary applied summary stands.
+ */
+function layoutSkipSummary(operation: MobileBookEditOperationRecord): string | null {
+  const classifier = jsonRecord(operation.classifier);
+  if (classifier.layoutMissing !== true) {
+    return null;
+  }
+  return classifier.layoutSkippedReason === "already_positioned"
+    ? "Nothing was changed: that picture is already where you asked for it."
+    : operation.kind === "MOVE_IMAGE"
+      ? "Nothing was changed: that illustration isn’t in the book any more."
+      : "Nothing was changed: that illustration had already gone.";
+}
+
 export function currentActionForEditOperation(operation: MobileBookEditOperationRecord): string {
   if (operation.status === "FAILED") {
     if (operation.kind === "PLAN_REVISION") {
@@ -830,6 +854,10 @@ export function currentActionForEditOperation(operation: MobileBookEditOperation
       return operation.affectedPageIndexes.length === 0
         ? `Nothing was changed: ${describeEditPages(skippedPages)} no longer contained that text.`
         : `${appliedEditSummary(operation)} ${capitalizeFirst(describeEditPages(skippedPages))} no longer contained that text and ${skippedPages.length === 1 ? "was" : "were"} left unchanged.`;
+    }
+    const layoutSkip = layoutSkipSummary(operation);
+    if (layoutSkip) {
+      return layoutSkip;
     }
     return appliedEditSummary(operation);
   }

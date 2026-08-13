@@ -399,6 +399,47 @@ export function endOfBookPlacementFromMessage(message: string): boolean {
 }
 
 /**
+ * A place *inside* a page: "to the top", "above the text", "below the text",
+ * "at the bottom of the page". Field backstop, not a classifier — the router
+ * has already chosen move_image by the time this is asked, and this only fills
+ * the `imagePosition` it may have left off.
+ *
+ * Consulted **before** {@link endOfBookPlacementFromMessage}, whose "the last
+ * page" rule would otherwise swallow "at the bottom of the last page" and send
+ * the picture to a different page than the one the reader named.
+ */
+export function imagePositionFromMessage(message: string): "top" | "bottom" | null {
+  if (/\b(?:to|at|near|on)\s+the\s+(?:very\s+)?top\b/i.test(message) || /\babove\s+the\s+(?:text|prose|words|story)\b/i.test(message)) {
+    return "top";
+  }
+  if (
+    /\b(?:to|at|near|on)\s+the\s+(?:very\s+)?bottom\b/i.test(message) ||
+    /\bbelow\s+the\s+(?:text|prose|words|story)\b/i.test(message) ||
+    /\b(?:under|underneath)\s+the\s+(?:text|prose|words|story)\b/i.test(message) ||
+    /\b(?:at|to)\s+the\s+end\s+of\s+the\s+page\b/i.test(message)
+  ) {
+    return "bottom";
+  }
+  return null;
+}
+
+/**
+ * "All the pictures", "every illustration", "any images". The same field
+ * backstop rule: the router has already chosen remove_image, and this only
+ * fills the `imageSelection` it may have left off. Without it a model that
+ * forgets the field removes exactly one picture from a "remove all" request,
+ * which is the headline case for the whole feature.
+ */
+export function bulkImageSelectionFromMessage(message: string): "all" | null {
+  return /\b(?:all|every|any)\s+(?:of\s+)?(?:the\s+|my\s+)?(?:images?|pictures?|photos?|illustrations?|drawings?|artwork)\b/i.test(
+    message
+  ) ||
+    /\b(?:images?|pictures?|photos?|illustrations?|drawings?)\s+(?:from|in|out\s+of)\s+the\s+(?:whole\s+)?book\b/i.test(message)
+    ? "all"
+    : null;
+}
+
+/**
  * The placement an image request names, read without the book's page list: a
  * named page ("page 3", "page three", "the 3rd page") is returned as-is and
  * validated against real pages by the proposal path. Numerals are normalized

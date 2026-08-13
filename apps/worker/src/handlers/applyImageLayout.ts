@@ -1,53 +1,50 @@
 import { getProjectOrThrow, invalidateProjectExports } from "../generation/bookHelpers.js";
+import {
+  applyLayoutBatchInTx,
+  LayoutUnwritableError,
+  type LayoutDestRef,
+  type LayoutSourceRef,
+  type PageRow,
+  type ResolvedLayoutSource
+} from "../generation/imageLayoutPlan.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
-import {
-  extractMarkdownImageLine,
-  imageAltFromSubject,
-  markdownWithAppendedImage,
-  markdownWithRemovedImage
-} from "./applyImageInsertion.js";
-import { markdownLabels } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
 /**
- * The `apply-book-edit` layout fork: move or remove an existing illustration
- * with no generation. A chat-added line is cut from its page (and appended on
- * a move). A generation ImageAsset is unlinked or reassigned; if the dest page
- * already has a hero, that hero is demoted to an in-body markdown line so it
- * is not lost. Undo restores `pageId` from the classifier plus the snapshots.
+ * The `apply-book-edit` layout fork: move or remove existing illustrations with
+ * no generation. A chat-added line is cut from its page (and pasted on a move);
+ * a generation `ImageAsset` is unlinked or reassigned, and a destination page's
+ * own hero is demoted to an in-body line rather than lost. Undo restores
+ * `pageId` from the classifier plus the page snapshots.
+ *
+ * This file owns the job: the replay, the claim, the status, and the compile.
+ * `generation/imageLayoutPlan.ts` owns what happens to the pages — including
+ * the rule that makes a batch safe, one snapshot per page.
  */
 
 const INTERIOR_ASSET_TYPES = ["SCENE_ILLUSTRATION", "DIAGRAM"] as const;
 
 export type ImageLayoutPayload = {
   action: "move" | "remove";
-  source: {
-    pageIndex: number;
-    replaceMarker?: string;
-    replaceAssetId?: string;
-  };
-  dest?: {
-    placement: "end_of_book" | "page";
-    pageIndex: number;
-  };
+  /** Every picture the edit covers. One entry for a move. */
+  sources?: LayoutSourceRef[];
+  /** The pre-bulk shape. Still read: a job enqueued before that change may still be delivered. */
+  source?: LayoutSourceRef;
+  dest?: LayoutDestRef;
 };
 
-type PageRow = {
-  id: string;
-  index: number;
-  title: string;
-  markdown: string;
-  summary: string;
-  revision: number;
-  imagePrompt: string | null;
-};
+/** Why a layout edit wrote nothing. Read back by the card, never by the reader. */
+type LayoutSkipReason = "missing" | "already_positioned";
 
 class LayoutUnavailableError extends Error {
-  constructor() {
+  readonly reason: LayoutSkipReason;
+
+  constructor(reason: LayoutSkipReason = "missing") {
     super("The illustration to move or remove is no longer in this book");
     this.name = "LayoutUnavailableError";
+    this.reason = reason;
   }
 }
 
@@ -84,80 +81,80 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
   await advanceJobStep(generationJobId, "prepare", 20, "Preparing the illustration change");
 
-  const source = await resolveLayoutSource(projectId, imageLayout.source);
-  const dest =
-    imageLayout.action === "move" ? await resolveLayoutDest(projectId, imageLayout.dest) : null;
-  if (!source || (imageLayout.action === "move" && !dest) || (dest && dest.id === source.page.id)) {
+  const payloadSources = imageLayout.sources ?? (imageLayout.source ? [imageLayout.source] : []);
+  const sources = (await Promise.all(payloadSources.map((source) => resolveLayoutSource(projectId, source)))).filter(
+    (source): source is ResolvedLayoutSource => source !== null
+  );
+  const dest = imageLayout.action === "move" ? await resolveLayoutDest(projectId, imageLayout.dest) : null;
+  if (sources.length === 0 || (imageLayout.action === "move" && !dest)) {
     await markLayoutSkipped(projectId, operationId, fallbackStatus);
     return;
   }
 
-  await advanceJobStep(generationJobId, "snapshot", 35, `Snapshotting page ${source.page.index}`);
-  await advanceJobStep(
-    generationJobId,
-    "apply",
-    50,
-    imageLayout.action === "move"
-      ? `Moving the illustration to page ${dest!.index}`
-      : `Removing the illustration on page ${source.page.index}`
-  );
+  await advanceJobStep(generationJobId, "snapshot", 35, snapshotStepLabel(sources));
+  await advanceJobStep(generationJobId, "apply", 50, applyStepLabel(imageLayout, sources, dest));
 
   let applied: boolean;
+  let skipReason: LayoutSkipReason | null = null;
   try {
     applied = await prisma.$transaction(async (tx) => {
       const claimed = await tx.bookEditOperation.updateMany({
         where: { id: operationId, status: { in: ["QUEUED", "ACTIVE"] } },
-        data: {
-          status: "APPLIED",
-          affectedPageIndexes:
-            dest && dest.id !== source.page.id ? [source.page.index, dest.index] : [source.page.index],
-          appliedAt: new Date()
-        }
+        data: { status: "APPLIED", appliedAt: new Date() }
       });
       if (claimed.count !== 1) {
         return false;
       }
-      const currentSource = await tx.page.findUnique({ where: { id: source.page.id } });
-      if (!currentSource) {
-        throw new Error(`Page ${source.page.index} disappeared while the illustration was being changed`);
+      const language = (await tx.project.findUnique({ where: { id: projectId }, select: { language: true } }))?.language;
+      const batch = await applyLayoutBatchInTx(tx, {
+        projectId,
+        operationId,
+        action: imageLayout.action,
+        sources,
+        dest,
+        ...(imageLayout.dest?.position ? { destPosition: imageLayout.dest.position } : {}),
+        ...(language ? { language } : {})
+      });
+      if (batch.empty) {
+        throw new LayoutUnavailableError(batch.allAlreadyPositioned ? "already_positioned" : "missing");
       }
-      let wrote: boolean;
-      if (source.kind === "asset") {
-        const language = (await tx.project.findUnique({ where: { id: projectId }, select: { language: true } }))
-          ?.language;
-        wrote = await applyAssetLayoutInTx(tx, {
-          operationId,
-          projectId,
-          action: imageLayout.action,
-          source: currentSource,
-          assetId: source.assetId,
-          dest,
-          ...(language ? { language } : {})
-        });
-      } else {
-        wrote = await applyMarkdownLayoutInTx(tx, {
-          operationId,
-          projectId,
-          action: imageLayout.action,
-          source: currentSource,
-          marker: source.marker,
-          dest
-        });
-      }
-      if (!wrote) {
-        throw new LayoutUnavailableError();
-      }
+      const row = await tx.bookEditOperation.findUnique({
+        where: { id: operationId },
+        select: { classifier: true }
+      });
+      await tx.bookEditOperation.update({
+        where: { id: operationId },
+        data: {
+          // Written from the flush rather than guessed before it: a target that
+          // had already gone must not leave its page claimed as edited.
+          affectedPageIndexes: batch.writtenPageIndexes,
+          classifier: {
+            ...(row && typeof row.classifier === "object" && row.classifier !== null ? row.classifier : {}),
+            ...(batch.previousAssets.length > 0 ? { previousAssets: batch.previousAssets } : {}),
+            ...(batch.demotedAssets.length > 0 ? { demotedAssets: batch.demotedAssets } : {}),
+            ...(batch.skipped > 0 ? { layoutSkippedCount: batch.skipped } : {})
+          }
+        }
+      });
       await tx.project.update({ where: { id: projectId }, data: { contentRevision: { increment: 1 } } });
       return true;
     });
   } catch (error) {
     if (error instanceof LayoutUnavailableError) {
-      await markLayoutSkipped(projectId, operationId, fallbackStatus);
-      return;
+      skipReason = error.reason;
+      applied = false;
+    } else if (error instanceof LayoutUnwritableError) {
+      skipReason = "missing";
+      applied = false;
+    } else {
+      throw error;
     }
-    throw error;
   }
 
+  if (skipReason) {
+    await markLayoutSkipped(projectId, operationId, fallbackStatus, skipReason);
+    return;
+  }
   if (!applied) {
     return;
   }
@@ -176,14 +173,28 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
   await refreshExports(projectId, compilePlanId, fallbackStatus);
 }
 
+function snapshotStepLabel(sources: ResolvedLayoutSource[]): string {
+  const pages = [...new Set(sources.map((source) => source.page.index))].sort((a, b) => a - b);
+  return pages.length === 1 ? `Snapshotting page ${pages[0]}` : `Snapshotting ${pages.length} pages`;
+}
+
+function applyStepLabel(
+  imageLayout: ImageLayoutPayload,
+  sources: ResolvedLayoutSource[],
+  dest: PageRow | null
+): string {
+  if (imageLayout.action === "move") {
+    return `Moving the illustration to page ${dest?.index ?? ""}`.trim();
+  }
+  return sources.length === 1
+    ? `Removing the illustration on page ${sources[0]?.page.index}`
+    : `Removing ${sources.length} illustrations`;
+}
+
 async function resolveLayoutSource(
   projectId: string,
-  source: ImageLayoutPayload["source"]
-): Promise<
-  | { kind: "asset"; assetId: string; page: PageRow }
-  | { kind: "markdown"; marker: string; page: PageRow }
-  | null
-> {
+  source: LayoutSourceRef
+): Promise<ResolvedLayoutSource | null> {
   if (source.replaceAssetId) {
     const asset = await prisma.imageAsset.findFirst({
       where: { id: source.replaceAssetId, projectId, type: { in: [...INTERIOR_ASSET_TYPES] } },
@@ -201,10 +212,7 @@ async function resolveLayoutSource(
   return page ? { kind: "markdown", marker, page: page as PageRow } : null;
 }
 
-async function resolveLayoutDest(
-  projectId: string,
-  dest: ImageLayoutPayload["dest"] | undefined
-): Promise<PageRow | null> {
+async function resolveLayoutDest(projectId: string, dest: LayoutDestRef | undefined): Promise<PageRow | null> {
   if (!dest) {
     return null;
   }
@@ -219,10 +227,21 @@ async function resolveLayoutDest(
   })) as PageRow | null;
 }
 
+/**
+ * A layout edit that found nothing to do. It is APPLIED rather than FAILED —
+ * nothing broke, and failing it would mark a finished book FAILED and refund it
+ * — but the queued chat reply already promised the reader a change, so the
+ * reason is recorded for the card to say. That is the only surface that can:
+ * this process never writes chat messages.
+ *
+ * `layoutMissing` also switches `operationCanUndo` off, because there are no
+ * snapshots here and an Undo would revert the previous edit instead.
+ */
 async function markLayoutSkipped(
   projectId: string,
   operationId: string,
-  fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED"
+  fallbackStatus: "COMPLETE" | "REVIEW_REQUIRED",
+  reason: LayoutSkipReason = "missing"
 ): Promise<void> {
   const row = await prisma.bookEditOperation.findUnique({
     where: { id: operationId },
@@ -236,7 +255,8 @@ async function markLayoutSkipped(
       affectedPageIndexes: [],
       classifier: {
         ...(row && typeof row.classifier === "object" && row.classifier !== null ? row.classifier : {}),
-        layoutMissing: true
+        layoutMissing: true,
+        layoutSkippedReason: reason
       }
     }
   });
@@ -244,230 +264,6 @@ async function markLayoutSkipped(
     where: { id: projectId, status: "EDITING" },
     data: { status: fallbackStatus }
   });
-}
-
-async function applyMarkdownLayoutInTx(
-  tx: Prisma.TransactionClient,
-  options: {
-    operationId: string;
-    projectId: string;
-    action: "move" | "remove";
-    source: PageRow;
-    marker: string;
-    dest: PageRow | null;
-  }
-): Promise<boolean> {
-  const line = extractMarkdownImageLine(options.source.markdown, options.marker);
-  const removed = markdownWithRemovedImage(options.source.markdown, options.marker);
-  const hasSourceLine = Boolean(line && removed !== null);
-
-  if (options.action === "move" && options.dest) {
-    const currentDest = await tx.page.findUnique({ where: { id: options.dest.id } });
-    if (!currentDest) {
-      throw new Error(`Page ${options.dest.index} disappeared while the illustration was being moved`);
-    }
-    const destHas = currentDest.markdown.includes(options.marker);
-    if (!hasSourceLine) {
-      return false;
-    }
-    if (!destHas && line) {
-      const savedDest = await tx.page.update({
-        where: { id: currentDest.id },
-        data: { markdown: markdownWithAppendedImage(currentDest.markdown, line), revision: { increment: 1 } }
-      });
-      await writeSnapshot(tx, {
-        projectId: options.projectId,
-        operationId: options.operationId,
-        before: currentDest,
-        after: savedDest
-      });
-    }
-    const savedSource = await tx.page.update({
-      where: { id: options.source.id },
-      data: { markdown: removed!, revision: { increment: 1 } }
-    });
-    await writeSnapshot(tx, {
-      projectId: options.projectId,
-      operationId: options.operationId,
-      before: options.source,
-      after: savedSource
-    });
-    return true;
-  }
-
-  if (!hasSourceLine) {
-    return false;
-  }
-  const savedSource = await tx.page.update({
-    where: { id: options.source.id },
-    data: { markdown: removed!, revision: { increment: 1 } }
-  });
-  await writeSnapshot(tx, {
-    projectId: options.projectId,
-    operationId: options.operationId,
-    before: options.source,
-    after: savedSource
-  });
-  return true;
-}
-
-async function applyAssetLayoutInTx(
-  tx: Prisma.TransactionClient,
-  options: {
-    operationId: string;
-    projectId: string;
-    action: "move" | "remove";
-    source: PageRow;
-    assetId: string;
-    dest: PageRow | null;
-    language?: string | null;
-  }
-): Promise<boolean> {
-  const live = await tx.imageAsset.findUnique({ where: { id: options.assetId } });
-  if (!live) {
-    return false;
-  }
-  const currentDest =
-    options.action === "move" && options.dest ? await tx.page.findUnique({ where: { id: options.dest.id } } ) : null;
-  if (options.action === "move" && !currentDest) {
-    throw new Error("The destination page disappeared while the illustration was being moved");
-  }
-
-  const destHero =
-    currentDest &&
-    (await tx.imageAsset.findFirst({
-      where: {
-        projectId: options.projectId,
-        pageId: currentDest.id,
-        type: { in: [...INTERIOR_ASSET_TYPES] },
-        NOT: { id: live.id }
-      }
-    }));
-
-  const row = await tx.bookEditOperation.findUnique({
-    where: { id: options.operationId },
-    select: { classifier: true }
-  });
-  const previousImagePrompt = options.source.imagePrompt;
-  await tx.bookEditOperation.update({
-    where: { id: options.operationId },
-    data: {
-      classifier: {
-        ...(row && typeof row.classifier === "object" && row.classifier !== null ? row.classifier : {}),
-        previousAsset: {
-          id: live.id,
-          pageId: options.source.id,
-          path: live.path,
-          prompt: live.prompt,
-          ...(typeof previousImagePrompt === "string" || previousImagePrompt === null
-            ? { imagePrompt: previousImagePrompt }
-            : {}),
-          ...(currentDest
-            ? {
-                destPageId: currentDest.id,
-                destImagePrompt: currentDest.imagePrompt
-              }
-            : {})
-        },
-        ...(destHero
-          ? {
-              demotedAsset: {
-                id: destHero.id,
-                pageId: currentDest!.id,
-                path: destHero.path,
-                prompt: destHero.prompt,
-                imagePrompt: currentDest!.imagePrompt
-              }
-            }
-          : {})
-      }
-    }
-  });
-
-  if (destHero && currentDest) {
-    const src = assetsMarkdownSrc(destHero.path);
-    const alt = imageAltFromSubject(destHero.prompt, markdownLabels(options.language ?? "en").illustration);
-    const savedDest = await tx.page.update({
-      where: { id: currentDest.id },
-      data: {
-        ...(src ? { markdown: markdownWithAppendedImage(currentDest.markdown, `![${alt}](${src})`) } : {}),
-        imagePrompt: live.prompt,
-        revision: { increment: 1 }
-      }
-    });
-    await writeSnapshot(tx, {
-      projectId: options.projectId,
-      operationId: options.operationId,
-      before: currentDest,
-      after: savedDest
-    });
-    await tx.imageAsset.update({ where: { id: destHero.id }, data: { pageId: null } });
-  } else if (currentDest) {
-    const savedDest = await tx.page.update({
-      where: { id: currentDest.id },
-      data: { imagePrompt: live.prompt, revision: { increment: 1 } }
-    });
-    await writeSnapshot(tx, {
-      projectId: options.projectId,
-      operationId: options.operationId,
-      before: currentDest,
-      after: savedDest
-    });
-  }
-
-  await tx.imageAsset.update({
-    where: { id: live.id },
-    data: { pageId: currentDest ? currentDest.id : null }
-  });
-  const savedSource = await tx.page.update({
-    where: { id: options.source.id },
-    data: { imagePrompt: null, revision: { increment: 1 } }
-  });
-  await writeSnapshot(tx, {
-    projectId: options.projectId,
-    operationId: options.operationId,
-    before: options.source,
-    after: savedSource
-  });
-  return true;
-}
-
-async function writeSnapshot(
-  tx: Prisma.TransactionClient,
-  options: { projectId: string; operationId: string; before: PageRow; after: PageRow }
-): Promise<void> {
-  await tx.pageEditSnapshot.create({
-    data: {
-      projectId: options.projectId,
-      pageId: options.before.id,
-      operationId: options.operationId,
-      pageIndex: options.before.index,
-      titleBefore: options.before.title,
-      markdownBefore: options.before.markdown,
-      summaryBefore: options.before.summary,
-      revisionBefore: options.before.revision,
-      titleAfter: options.after.title,
-      markdownAfter: options.after.markdown,
-      summaryAfter: options.after.summary,
-      revisionAfter: options.after.revision
-    }
-  });
-}
-
-function assetsMarkdownSrc(path: string): string | null {
-  if (path.startsWith("/assets/images/")) {
-    return path.split(/[?#]/)[0] ?? null;
-  }
-  try {
-    const url = new URL(path);
-    if (url.pathname.startsWith("/assets/images/")) {
-      return url.pathname;
-    }
-  } catch {
-    const match = path.match(/\/assets\/images\/[^\s?#)]+/);
-    return match?.[0] ?? null;
-  }
-  return null;
 }
 
 async function replayAppliedLayout(projectId: string, planId: string | undefined, classifier: unknown): Promise<void> {
