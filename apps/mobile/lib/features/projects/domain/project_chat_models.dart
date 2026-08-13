@@ -446,6 +446,7 @@ class MobileProjectChat {
     this.plans = const [],
     this.hasMore = false,
     this.nextCursor,
+    this.openProposalId,
   });
 
   final List<MobileProjectChatMessage> messages;
@@ -453,6 +454,11 @@ class MobileProjectChat {
   final List<MobileBookEditOperation> operations;
   final bool hasMore;
   final String? nextCursor;
+
+  /// The one priced proposal the server would still accept an Apply for. Null
+  /// once every proposal has been applied or cancelled, which is what retires
+  /// a spent card's buttons.
+  final String? openProposalId;
 
   factory MobileProjectChat.fromJson(Map<String, dynamic> json) {
     final messages = json['messages'] as List<dynamic>? ?? const [];
@@ -478,6 +484,7 @@ class MobileProjectChat {
           .toList(),
       hasMore: json['hasMore'] as bool? ?? false,
       nextCursor: json['nextCursor'] as String?,
+      openProposalId: json['openProposalId'] as String?,
     );
   }
 }
@@ -489,6 +496,7 @@ class MobileProjectChatSendResult extends MobileProjectChat {
     super.plans,
     super.hasMore,
     super.nextCursor,
+    super.openProposalId,
     required this.reply,
     this.operation,
   });
@@ -504,6 +512,7 @@ class MobileProjectChatSendResult extends MobileProjectChat {
       operations: chat.operations,
       hasMore: chat.hasMore,
       nextCursor: chat.nextCursor,
+      openProposalId: chat.openProposalId,
       reply: MobileProjectChatMessage.fromJson(
         json['reply'] as Map<String, dynamic>,
       ),

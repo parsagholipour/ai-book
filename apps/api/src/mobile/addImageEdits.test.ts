@@ -596,6 +596,47 @@ describe("add_image presentation", () => {
     expect(UNDOABLE_EDIT_KINDS).toContain("ADD_IMAGE");
   });
 
+  it("says what the finished edit did, not just that it is done", () => {
+    // The card used to read "Edit applied." for every kind, so the one line
+    // the reader gets after paying said the least of anything in the turn.
+    const applied = (overrides: Record<string, unknown>) =>
+      currentActionForEditOperation(appliedEditOperationRecord(overrides) as never);
+
+    expect(applied({ kind: "ADD_IMAGE" })).toBe("New illustration on page 1.");
+    // The worker records what it swapped out; that is the only thing that
+    // separates a replacement from a picture the book did not have before.
+    expect(
+      applied({ kind: "ADD_IMAGE", classifier: { previousAsset: { id: "asset-1" } } })
+    ).toBe("Illustration replaced on page 1.");
+    expect(applied({ kind: "PAGE_REWRITE", affectedPageIndexes: [2, 3] })).toBe("Pages 2 and 3 rewritten.");
+    expect(applied({ kind: "CONTINUE_BOOK", affectedPageIndexes: [] })).toBe("New chapters added.");
+    expect(applied({ kind: "PLAN_REVISION", affectedPageIndexes: [] })).toBe("Plan revised.");
+    expect(applied({ kind: "LOCAL_PATCH" })).toBe("Edit applied.");
+  });
+
+  it("names no page when the edit recorded none", () => {
+    // `describeEditPages([])` answers "the selected pages", which is a fine
+    // fallback mid-sentence and nonsense as a statement of what just happened.
+    expect(
+      currentActionForEditOperation(
+        appliedEditOperationRecord({ kind: "ADD_IMAGE", affectedPageIndexes: [] }) as never
+      )
+    ).toBe("New illustration.");
+  });
+
+  it("still explains pages it had to skip", () => {
+    expect(
+      currentActionForEditOperation(
+        appliedEditOperationRecord({
+          kind: "ADD_IMAGE",
+          classifier: { previousAsset: { id: "asset-1" }, skippedPageIndexes: [4] }
+        }) as never
+      )
+    ).toBe(
+      "Illustration replaced on page 1. Page 4 no longer contained that text and was left unchanged."
+    );
+  });
+
   it("serializes add_image and continue_book operations under their own DTO kinds", () => {
     expect(serializeBookEditOperation(appliedEditOperationRecord({ kind: "ADD_IMAGE" }) as never).kind).toBe(
       "add_image"

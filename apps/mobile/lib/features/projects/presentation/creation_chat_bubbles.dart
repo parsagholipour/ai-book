@@ -14,6 +14,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
     this.onOpenReplanCopy,
     this.onOpenPaywall,
     this.showProposalActions = false,
+    this.proposalsBusy = false,
     this.showCreditCost = true,
     this.onApplyProposal,
     this.onCancelProposal,
@@ -35,6 +36,10 @@ class _ProjectChatMessageBubble extends StatelessWidget {
   final ValueChanged<String>? onOpenReplanCopy;
   final void Function(MobileProjectChatMessage message)? onOpenPaywall;
   final bool showProposalActions;
+
+  /// Whether something is already in flight, which greys Apply out rather than
+  /// hiding it: the proposal is still the reader's to take, just not yet.
+  final bool proposalsBusy;
   final VoidCallback? onApplyProposal;
   final VoidCallback? onCancelProposal;
 
@@ -171,7 +176,7 @@ class _ProjectChatMessageBubble extends StatelessWidget {
           if (editProposal != null)
             EditProposalCard(
               proposal: editProposal,
-              enabled: true,
+              enabled: !proposalsBusy,
               onApply: showProposalActions ? onApplyProposal : null,
               onCancel: showProposalActions ? onCancelProposal : null,
             ),

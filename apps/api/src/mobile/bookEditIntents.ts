@@ -77,7 +77,7 @@ export async function applyOrCancelEditProposal(options: {
 
   // Loaded once for both the proposal lookup and the leaf resolution below.
   const activeMessages = await loadActiveProjectChatMessages(projectId);
-  const pending = await findPendingProposalById(projectId, proposalId, activeMessages);
+  const pending = findPendingProposalById(activeMessages, proposalId);
   if (!pending?.intent || pending.clarification !== "confirm") {
     return sendMobileError(reply, 404, "PROPOSAL_NOT_FOUND", "That edit proposal is no longer available.");
   }

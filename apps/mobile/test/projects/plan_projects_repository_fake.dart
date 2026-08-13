@@ -29,6 +29,10 @@ class PlanProjectsRepository implements ProjectsRepository {
   final chatMessages = <MobileProjectChatMessage>[];
   final planSnapshots = <MobilePlan>[];
   final chatOperations = <MobileBookEditOperation>[];
+
+  /// The proposal the server would still accept an Apply for. Null once every
+  /// proposal has been settled, which is what retires a spent card's buttons.
+  String? openProposalId;
   final downloadedFormats = <String>[];
   final openedFormats = <String>[];
   final resumedProjectIds = <String>[];
@@ -147,6 +151,7 @@ class PlanProjectsRepository implements ProjectsRepository {
       messages: List.unmodifiable(chatMessages),
       plans: List.unmodifiable(planSnapshots),
       operations: List.unmodifiable(chatOperations),
+      openProposalId: openProposalId,
     );
   }
 
@@ -172,6 +177,7 @@ class PlanProjectsRepository implements ProjectsRepository {
       ),
       createdAt: operation.createdAt,
       appliedAt: operation.appliedAt,
+      anchorMessageId: operation.anchorMessageId,
     );
     project = plannedProject(
       status: 'plan_ready',
@@ -276,6 +282,9 @@ class PlanProjectsRepository implements ProjectsRepository {
         creditsCharged: 100,
         currentAction: 'Revising the plan.',
         createdAt: DateTime.utc(2026, 6, 15),
+        // The server stamps the reply onto the operation, which is what places
+        // the card under the turn that asked for the revision.
+        anchorMessageId: assistantMessage.id,
       );
       chatOperations.add(operation);
     }

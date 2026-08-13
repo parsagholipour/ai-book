@@ -1296,13 +1296,19 @@ void main() {
       await tester.pump();
       await tester.pump();
 
+      expect(find.textContaining('Revising your book plan'), findsNothing);
+      // Scoped to the transcript: the brief header also carries the title.
+      expect(bubbleText(planTitle), findsOneWidget);
+
+      // The failure card sits with the turn that asked for the revision, which
+      // is the end of the transcript rather than the top of it.
+      await tester.drag(find.byType(ListView).first, const Offset(0, -2000));
+      await tester.pump();
+
       expect(
         find.text('Plan revision failed. Your current plan is unchanged.'),
         findsOneWidget,
       );
-      expect(find.textContaining('Revising your book plan'), findsNothing);
-      // Scoped to the transcript: the brief header also carries the title.
-      expect(bubbleText(planTitle), findsOneWidget);
 
       await tester.teardownScreen();
     },

@@ -406,6 +406,8 @@ export type MobileProjectChatResponseDto = {
   operations: MobileBookEditOperationDto[];
   hasMore: boolean;
   nextCursor: string | null;
+  /** The one proposal an Apply would still be accepted for; null once settled. */
+  openProposalId: string | null;
 };
 
 export type MobileProjectChatMessageResponseDto = MobileProjectChatResponseDto & {

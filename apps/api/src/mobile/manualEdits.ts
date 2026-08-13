@@ -193,7 +193,13 @@ export async function applyManualBookEdit(options: {
       where: { id: operation.id },
       data: { assistantMessageId: message.id }
     });
-    return { message, operation, contentRevision: editRevision?.contentRevision ?? null };
+    return {
+      message,
+      // The row was read before this message existed, so its anchor would put
+      // the card above the reply announcing the save.
+      operation: { ...operation, assistantMessageId: message.id },
+      contentRevision: editRevision?.contentRevision ?? null
+    };
   });
 
   await invalidateCompiledProjectExports(options.bookStorageDir, projectId);

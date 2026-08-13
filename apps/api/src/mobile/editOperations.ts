@@ -279,7 +279,10 @@ export async function queueAttemptChatOperation(options: {
     where: { id: options.operation.id },
     data: { assistantMessageId: reply.id }
   });
-  return { reply, operation: updated as MobileBookEditOperationRecord };
+  // Folded in rather than re-read: `updated` predates the reply, so its anchor
+  // would place the card above the reply announcing it — and a second read would
+  // widen the window in which the worker flips this row to APPLIED.
+  return { reply, operation: { ...updated, assistantMessageId: reply.id } as MobileBookEditOperationRecord };
 }
 
 /** The current plan's question prompts that appear verbatim in the message. */
@@ -403,7 +406,8 @@ export async function queueChatPlanRevision(options: {
     where: { id: operation.id },
     data: { assistantMessageId: reply.id }
   });
-  return { reply, operation: updated };
+  // See `queueAttemptChatOperation`: `updated` predates this reply.
+  return { reply, operation: { ...updated, assistantMessageId: reply.id } };
 }
 
 export async function queueChatBookReplanCopy(options: {

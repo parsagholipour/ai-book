@@ -269,7 +269,7 @@ class _CreationChatScreenState extends ConsumerState<CreationChatScreen>
       state.messages.length,
       chat?.plans.length ?? (isInOutputStage ? 1 : 0),
       chat?.messages.length ?? 0,
-      chat?.operations.where(_showsOperationInTranscript).length ?? 0,
+      _operationScrollKey(chat),
       state.assistantTyping,
       _generationScrollKey(generationStatusValue),
     );

@@ -7,7 +7,6 @@ import {
 } from "../bookEditIntent.js";
 import { type ImageInsertionEdit, type ImageLayoutEdit } from "../bookEditImage.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
-import { loadActiveProjectChatMessages } from "./projectChat.js";
 import { jsonRecord } from "./support.js";
 import { type ReplanSettings } from "@book-maker/core";
 
@@ -74,19 +73,42 @@ export function settlesPendingEdit(message: { role: string; metadata: unknown })
   return message.role === "ASSISTANT" && metadata.pendingEditCancelled === true;
 }
 
-export async function findPendingProposalById(
-  projectId: string,
-  proposalId: string,
-  preloadedMessages?: MobileProjectChatMessageRecord[] | undefined
-): Promise<PendingEditState | null> {
-  const messages = [...(preloadedMessages ?? (await loadActiveProjectChatMessages(projectId)))]
-    .reverse()
-    .slice(0, 40);
+export function findPendingProposalById(
+  activeMessages: MobileProjectChatMessageRecord[],
+  proposalId: string
+): PendingEditState | null {
+  return findOpenPendingProposal(activeMessages, proposalId);
+}
+
+/**
+ * The one proposal a fresh Apply would still be accepted for, or null.
+ *
+ * The app reads this off the chat response to retire a spent card: Apply and
+ * Cancel settle the proposal here, so a card still offering them afterwards
+ * invites a tap this module can only replay or refuse — which reads as if the
+ * Apply had not gone through.
+ */
+export function findOpenProposalId(activeMessages: MobileProjectChatMessageRecord[]): string | null {
+  return findOpenPendingProposal(activeMessages)?.proposalId ?? null;
+}
+
+/**
+ * The walk both proposal questions share, newest message first. Given a
+ * `proposalId` it answers "is this proposal still applicable"; without one,
+ * "which proposal is still open" — and there the *first* undeflected
+ * settlement ends the walk, because a newer proposal is always reached before
+ * an older one's Apply row.
+ */
+function findOpenPendingProposal(
+  activeMessages: MobileProjectChatMessageRecord[],
+  proposalId?: string | undefined
+): PendingEditState | null {
+  const messages = [...activeMessages].reverse().slice(0, 40);
   let newer: (typeof messages)[number] | null = null;
   for (const message of messages) {
     if (settlesPendingEdit(message)) {
       const settledId = jsonRecord(message.metadata).proposalId;
-      if (typeof settledId !== "string" || settledId === proposalId) {
+      if (proposalId === undefined || typeof settledId !== "string" || settledId === proposalId) {
         // An Apply the busy gate deflected never ran: its reply — the message
         // right after it — says so, and the proposal must stay retryable.
         const deflected =
@@ -109,7 +131,10 @@ export async function findPendingProposalById(
       continue;
     }
     const proposal = pendingEditProposalFromMetadata(metadata, pending, request);
-    if (proposal.proposalId !== proposalId) {
+    // With an id, only that proposal answers; without one, the newest proposal
+    // that carries an id at all — a card with none has no Apply to offer.
+    const resolvedId = proposalId ?? proposal.proposalId;
+    if (resolvedId === undefined || proposal.proposalId !== resolvedId) {
       continue;
     }
     return {
@@ -120,7 +145,7 @@ export async function findPendingProposalById(
       ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
       ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
       ...characterContextFromPending(pending),
-      proposalId
+      proposalId: resolvedId
     };
   }
   return null;
@@ -132,16 +157,13 @@ function characterContextFromPending(pending: Record<string, unknown>): { charac
     : {};
 }
 
-export async function findPendingScopeClarification(
-  projectId: string,
+export function findPendingScopeClarification(
+  /** The turn's already-loaded active messages. */
+  activeMessages: MobileProjectChatMessageRecord[],
   currentMessage: string,
-  currentScope: BookEditScope = bookEditScopeFromMessage(currentMessage),
-  /** The turn's already-loaded active messages; saves a full transcript re-read. */
-  preloadedMessages?: MobileProjectChatMessageRecord[] | undefined
-): Promise<PendingEditState | null> {
-  const messages = [...(preloadedMessages ?? (await loadActiveProjectChatMessages(projectId)))]
-    .reverse()
-    .slice(0, 24);
+  currentScope: BookEditScope = bookEditScopeFromMessage(currentMessage)
+): PendingEditState | null {
+  const messages = [...activeMessages].reverse().slice(0, 24);
   // Set once the walk passes an assistant message that is *not* the pending
   // edit's own presentation. Recovery cards and busy replies re-present the
   // pending edit with its full metadata, so they are found and returned before

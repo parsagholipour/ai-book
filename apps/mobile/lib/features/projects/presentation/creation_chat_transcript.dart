@@ -94,19 +94,21 @@ class _Transcript extends StatelessWidget {
     final currentPlanKey = currentPlan == null ? null : _planKey(currentPlan);
     final showGenerationForCurrentPlan =
         generationStatusValue != null && (currentPlan?.isApproved ?? false);
-    final projectItems = _projectTranscriptItems(projectChat);
+    final projectOperations = _projectTranscriptOperations(projectChat);
+    final projectItems = _projectTranscriptItems(
+      projectChat,
+      projectOperations,
+    );
     final hasLivePlanBubble =
         planValue != null &&
         _showsLivePlanBubble(planValue!, projectChat, planBusyAction);
     final hasTyping = state.assistantTyping && !hasLivePlanBubble;
     final hasProjectEcho = pendingProjectEcho != null;
+    final bookIsLive = generationStatusValue?.asData?.value.isLive ?? false;
     // Same rule the creation side uses: one busy affordance at a time. Once the
     // worker has the job, the generation bubble is the better signal.
     final hasOutputThinking =
-        projectChatSending &&
-        !hasTyping &&
-        !hasLivePlanBubble &&
-        !(generationStatusValue?.asData?.value.isLive ?? false);
+        projectChatSending && !hasTyping && !hasLivePlanBubble && !bookIsLive;
     final itemCount =
         state.messages.length +
         (hasTyping ? 1 : 0) +
@@ -126,6 +128,11 @@ class _Transcript extends StatelessWidget {
           context: context,
           index: index,
           projectItems: projectItems,
+          projectOperations: projectOperations,
+          openProposalId: projectChat?.openProposalId,
+          // A live edit closes the proposal card's Apply for the same reason it
+          // closes the composer: it would queue a second edit the API refuses.
+          proposalsBusy: projectChatSending || bookIsLive,
           currentProject: currentProject,
           currentPlanKey: currentPlanKey,
           showGenerationForCurrentPlan: showGenerationForCurrentPlan,
@@ -153,6 +160,9 @@ class _Transcript extends StatelessWidget {
     required BuildContext context,
     required int index,
     required List<_ProjectTranscriptItem> projectItems,
+    required TranscriptOperations projectOperations,
+    required String? openProposalId,
+    required bool proposalsBusy,
     required MobileProjectDetail? currentProject,
     required String? currentPlanKey,
     required bool showGenerationForCurrentPlan,
@@ -199,10 +209,7 @@ class _Transcript extends StatelessWidget {
         message: item.message!,
         // While the edit runs it has no card yet, so the reply itself carries
         // the charge; once the card appears it owns the number.
-        showCreditCost: !projectItems.any(
-          (candidate) =>
-              candidate.operation?.anchorMessageId == item.message!.id,
-        ),
+        showCreditCost: projectOperations.anchoredTo(item.message!.id).isEmpty,
         switchingBranch: switchingProjectBranch,
         activeProjectId: activeProjectId,
         onSwitchBranch: onSwitchProjectBranch,
@@ -220,10 +227,13 @@ class _Transcript extends StatelessWidget {
         onOpenPaywall: item.message!.hasInsufficientCredits
             ? onOpenPaywall
             : null,
-        showProposalActions: _isActiveCreationEditProposal(
-          projectItems,
-          item.message!,
-        ),
+        // Only a proposal the server would still accept shows Apply/Cancel.
+        // Applying or cancelling one settles it there, so a card left asking
+        // after that invites a tap the API can only replay.
+        showProposalActions:
+            item.message!.editProposal != null &&
+            item.message!.editProposal!.id == openProposalId,
+        proposalsBusy: proposalsBusy,
         onApplyProposal:
             onApplyEditProposal == null || item.message!.editProposal == null
             ? null
@@ -305,36 +315,57 @@ class _Transcript extends StatelessWidget {
   }
 }
 
-bool _isActiveCreationEditProposal(
-  List<_ProjectTranscriptItem> projectItems,
-  MobileProjectChatMessage message,
-) {
-  if (message.editProposal == null) return false;
-  for (var index = projectItems.length - 1; index >= 0; index -= 1) {
-    final candidate = projectItems[index].message;
-    if (candidate?.editProposal != null) {
-      return candidate!.id == message.id;
-    }
-  }
-  return false;
+/// The operation cards by id *and* status, so the transcript follows an edit to
+/// its outcome. Counting them alone moved nothing when work settled — the
+/// spinner card becoming a result with Open book, See changes and Undo on it is
+/// exactly the moment worth scrolling to, and it is the one that leaves the
+/// count untouched.
+String _operationScrollKey(MobileProjectChat? chat) {
+  final operations =
+      chat?.operations.where(_showsOperationInTranscript) ??
+      const <MobileBookEditOperation>[];
+  return operations
+      .map((operation) => '${operation.id}:${operation.status}')
+      .join(',');
 }
 
-List<_ProjectTranscriptItem> _projectTranscriptItems(MobileProjectChat? chat) {
+TranscriptOperations _projectTranscriptOperations(MobileProjectChat? chat) {
+  return splitTranscriptOperations(
+    operations: chat?.operations ?? const <MobileBookEditOperation>[],
+    messages: chat?.messages ?? const <MobileProjectChatMessage>[],
+    shows: _showsOperationInTranscript,
+  );
+}
+
+List<_ProjectTranscriptItem> _projectTranscriptItems(
+  MobileProjectChat? chat,
+  TranscriptOperations operations,
+) {
   if (chat == null) return const <_ProjectTranscriptItem>[];
-  final items = <_ProjectTranscriptItem>[
+  final timeline = <_ProjectTranscriptItem>[
     for (final plan in chat.plans) _ProjectTranscriptItem.plan(plan),
     for (final message in chat.messages)
       _ProjectTranscriptItem.message(message),
-    for (final operation
-        in chat.operations.where(_showsOperationInTranscript).take(3))
-      _ProjectTranscriptItem.operation(operation),
   ];
-  items.sort((a, b) {
+  timeline.sort((a, b) {
     final byTime = a.createdAt.compareTo(b.createdAt);
     if (byTime != 0) return byTime;
     return a.sortPriority.compareTo(b.sortPriority);
   });
-  return items;
+  return <_ProjectTranscriptItem>[
+    for (final item in timeline) ...[
+      item,
+      // Directly under the turn that produced it. Sorting operations into the
+      // timeline by their own createdAt put them above it, because the server
+      // writes the operation row before the reply that announces it — so an
+      // applied edit read as if it had happened before it was asked for.
+      if (item.message != null)
+        for (final operation in operations.anchoredTo(item.message!.id))
+          _ProjectTranscriptItem.operation(operation),
+    ],
+    for (final operation in operations.unanchored)
+      _ProjectTranscriptItem.operation(operation),
+  ];
 }
 
 bool _showsLivePlanBubble(
@@ -372,11 +403,9 @@ class _ProjectTranscriptItem {
   DateTime get createdAt =>
       plan?.createdAt ?? message?.createdAt ?? operation!.createdAt;
 
-  int get sortPriority {
-    if (plan != null) return 0;
-    if (message != null) return 1;
-    return 2;
-  }
+  /// Only plans and messages are sorted; operation cards are placed against the
+  /// message that produced them rather than by time.
+  int get sortPriority => plan != null ? 0 : 1;
 }
 
 class _ChatWarningsBanner extends StatelessWidget {

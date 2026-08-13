@@ -767,6 +767,49 @@ function capitalizeFirst(text: string): string {
   return text.length > 0 ? text[0]!.toUpperCase() + text.slice(1) : text;
 }
 
+/**
+ * What the finished card says an edit did. The queued reply above it already
+ * named the work in the reader's own terms, so a flat "Edit applied." for every
+ * kind made the card the least informative line of the turn — and for an
+ * illustration swap it did not even say a picture had changed.
+ *
+ * The page phrase is dropped rather than faked when no page was recorded:
+ * `describeEditPages([])` answers "the selected pages", which is a fine
+ * fallback mid-sentence and nonsense in a summary of what just happened.
+ */
+function appliedEditSummary(operation: MobileBookEditOperationRecord): string {
+  const pages = operation.affectedPageIndexes;
+  const on = pages.length > 0 ? ` on ${describeEditPages(pages)}` : "";
+  switch (operation.kind) {
+    case "ADD_IMAGE":
+      // The worker records what it swapped out, which is the only thing that
+      // separates a replacement from a picture the book did not have before.
+      return jsonRecord(jsonRecord(operation.classifier).previousAsset).id !== undefined
+        ? `Illustration replaced${on}.`
+        : `New illustration${on}.`;
+    case "MOVE_IMAGE":
+      return `Illustration moved${on}.`;
+    case "REMOVE_IMAGE":
+      return pages.length > 0
+        ? `Illustration removed from ${describeEditPages(pages)}.`
+        : "Illustration removed.";
+    case "PAGE_REWRITE":
+      return pages.length > 0 ? `${capitalizeFirst(describeEditPages(pages))} rewritten.` : "Pages rewritten.";
+    case "CHAPTER_REGENERATE":
+      return "Chapter rewritten.";
+    case "CONTINUE_BOOK":
+      return "New chapters added.";
+    case "BOOK_REPLAN":
+      return "The new copy is ready.";
+    case "PLAN_REVISION":
+      return "Plan revised.";
+    case "MANUAL_EDIT":
+      return "Your edits are saved.";
+    default:
+      return "Edit applied.";
+  }
+}
+
 export function currentActionForEditOperation(operation: MobileBookEditOperationRecord): string {
   if (operation.status === "FAILED") {
     if (operation.kind === "PLAN_REVISION") {
@@ -786,9 +829,9 @@ export function currentActionForEditOperation(operation: MobileBookEditOperation
     if (skippedPages.length > 0) {
       return operation.affectedPageIndexes.length === 0
         ? `Nothing was changed: ${describeEditPages(skippedPages)} no longer contained that text.`
-        : `Edit applied. ${capitalizeFirst(describeEditPages(skippedPages))} no longer contained that text and ${skippedPages.length === 1 ? "was" : "were"} left unchanged.`;
+        : `${appliedEditSummary(operation)} ${capitalizeFirst(describeEditPages(skippedPages))} no longer contained that text and ${skippedPages.length === 1 ? "was" : "were"} left unchanged.`;
     }
-    return "Edit applied.";
+    return appliedEditSummary(operation);
   }
   if (operation.kind === "BOOK_REPLAN") {
     return "Rebuilding a new copy.";

@@ -120,6 +120,7 @@ class _ReplanRepository implements ProjectsRepository {
         ),
       ],
       operations: const [],
+      openProposalId: 'proposal-1',
     );
   }
 

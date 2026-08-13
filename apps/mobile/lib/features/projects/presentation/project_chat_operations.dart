@@ -21,26 +21,56 @@ class TranscriptOperations {
       anchored[messageId] ?? const [];
 }
 
+/// Settled work, whose outcome the reader can act on. The creation chat widens
+/// this to running work: that transcript has no separate progress card, so the
+/// spinner lives on the operation card itself.
+bool _isSettledOperation(MobileBookEditOperation operation) =>
+    operation.isApplied || operation.isFailed;
+
 /// Splits the operations worth showing into the ones that belong under a
-/// visible message and the ones with nowhere else to go.
+/// visible message and the ones with nowhere else to go. [shows] decides which
+/// operations are worth showing at all, defaulting to the settled ones.
 ///
 /// Every applied and failed edit appears, each under the turn that produced it,
 /// so the transcript reads as the book's history. Rendering them at the end of
 /// the list instead put "Edit applied" and its credit charge underneath
 /// whatever the user asked most recently — including a proposal still waiting
 /// on Apply, which read as if that proposal had gone through and been billed.
+///
+/// The reply's own `operationId` outranks `anchorMessageId`, because the server
+/// writes the operation row, then the reply announcing it, then stamps the
+/// reply back onto the row — so a transcript read inside that window carries an
+/// anchor still pointing at the user's message, and the card would render above
+/// the sentence introducing it. The same preference re-homes an operation whose
+/// stored message ids belong to a branch the reader is no longer on.
 TranscriptOperations splitTranscriptOperations({
   required List<MobileBookEditOperation> operations,
-  required Set<String> visibleMessageIds,
+  required List<MobileProjectChatMessage> messages,
+  bool Function(MobileBookEditOperation operation)? shows,
 }) {
+  final showsOperation = shows ?? _isSettledOperation;
+  final visibleMessageIds = <String>{};
+  final replyForOperation = <String, String>{};
+  for (final message in messages) {
+    visibleMessageIds.add(message.id);
+    final operationId = message.operationId;
+    // Last one wins: a replayed Apply writes a second reply about the same
+    // operation, and the card belongs under the turn the reader is looking at.
+    if (operationId != null && operationId.isNotEmpty) {
+      replyForOperation[operationId] = message.id;
+    }
+  }
   final anchored = <String, List<MobileBookEditOperation>>{};
   final unanchored = <MobileBookEditOperation>[];
   for (final operation in operations) {
-    if (!operation.isFailed && !operation.isApplied) {
+    if (!showsOperation(operation)) {
       continue;
     }
-    final anchor = operation.anchorMessageId;
-    if (anchor != null && visibleMessageIds.contains(anchor)) {
+    final stored = operation.anchorMessageId;
+    final anchor =
+        replyForOperation[operation.id] ??
+        (stored != null && visibleMessageIds.contains(stored) ? stored : null);
+    if (anchor != null) {
       (anchored[anchor] ??= []).add(operation);
       continue;
     }

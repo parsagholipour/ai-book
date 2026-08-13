@@ -318,10 +318,14 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
                             submittingEdit:
                                 _editing && _editingMessageId == message.id,
                             switchingBranch: _switchingBranch,
-                            showProposalActions: _isActiveEditProposal(
-                              chat,
-                              message,
-                            ),
+                            // Only a proposal the server would still accept
+                            // shows Apply/Cancel. Applying or cancelling one
+                            // settles it there, so a card left asking after
+                            // that invites a tap the API can only replay.
+                            showProposalActions:
+                                message.editProposal != null &&
+                                message.editProposal!.id ==
+                                    chat.openProposalId,
                             // A live job closes the proposal card's Apply for
                             // the same reason it closes the composer: it would
                             // queue a second edit the API has to refuse.
@@ -459,9 +463,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   TranscriptOperations _transcriptOperations(MobileProjectChat chat) {
     return splitTranscriptOperations(
       operations: chat.operations,
-      visibleMessageIds: _visibleMessages(
-        chat,
-      ).map((message) => message.id).toSet(),
+      messages: _visibleMessages(chat),
     );
   }
 
@@ -481,23 +483,6 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
     final targetProjectId = message.replanCopyTargetProjectId;
     if (targetProjectId == widget.projectId) return null;
     return targetProjectId;
-  }
-
-  /// Only the newest priced proposal shows Apply/Cancel, so older cards stay
-  /// read-only history after the user continues chatting.
-  bool _isActiveEditProposal(
-    MobileProjectChat chat,
-    MobileProjectChatMessage message,
-  ) {
-    if (message.editProposal == null) return false;
-    final messages = _visibleMessages(chat);
-    for (var index = messages.length - 1; index >= 0; index -= 1) {
-      final candidate = messages[index];
-      if (candidate.editProposal != null) {
-        return candidate.id == message.id;
-      }
-    }
-    return false;
   }
 
   Future<void> _send() async {

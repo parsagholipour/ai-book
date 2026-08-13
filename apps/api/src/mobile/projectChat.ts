@@ -15,6 +15,7 @@ import {
   type MobileProjectChatResponseDto
 } from "./dto.js";
 import { UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
+import { findOpenProposalId } from "./pendingEditState.js";
 import { currentActionForEditOperation, normalizeJobStatus, serializePlan } from "./projectSerializers.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { clipText, jsonInputValue, jsonRecord, jsonValue } from "./support.js";
@@ -95,7 +96,10 @@ export async function loadProjectChatResponse(
       serializeBookEditOperation(operation, { canUndo: operation.id === latestUndoableId })
     ),
     hasMore,
-    nextCursor: hasMore ? exposedMessages[0]?.id ?? null : null
+    nextCursor: hasMore ? exposedMessages[0]?.id ?? null : null,
+    // Computed over the whole active chain rather than the exposed window: a
+    // proposal scrolled out of the window is still the one an Apply would run.
+    openProposalId: findOpenProposalId(activeChat.messages)
   };
 }
 
