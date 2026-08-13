@@ -1,5 +1,9 @@
 import { type BookEditIntent, type BookEditPageContext } from "./bookEditIntent.js";
-import { imagePlacementFromMessage, pageIndexesMatchingSubject } from "./bookEditMessage.js";
+import {
+  endOfBookPlacementFromMessage,
+  imagePlacementFromMessage,
+  pageIndexesMatchingSubject
+} from "./bookEditMessage.js";
 
 /**
  * The model side of "add a photo of X": what the router's insert_image
@@ -32,6 +36,27 @@ export type ImageInsertionEdit = {
    * (`assetId`), or another in-page markdown ref (`marker`).
    */
   replace?: { operationId: string; assetId?: string; marker?: string; oldSubject?: string };
+};
+
+/**
+ * Move or remove an existing picture. No subject and no generation — the
+ * proposal path resolves `target` against the live book the same way a
+ * replacement does. Destination is required for a move; a missing one is the
+ * one allowed question, and a spent budget defaults to the end of the book.
+ */
+export type ImageLayoutEdit = {
+  action: "move" | "remove";
+  /** Source-page hint from the router; the proposal path resolves the picture. */
+  pageIndex?: number;
+  destPlacement?: "end_of_book" | "page";
+  destPageIndex?: number;
+  target?: {
+    operationId: string;
+    assetId?: string;
+    marker?: string;
+    oldSubject?: string;
+    pageIndex: number;
+  };
 };
 
 /** The intent a recognised image request routes to. Proposal-gated and priced as one image. */
@@ -128,6 +153,114 @@ export function imageInsertionIntentFromDecision(
   return imageInsertionIntent(edit, decision);
 }
 
+function positivePageIndexes(indexes: number[] | null | undefined): number[] {
+  const seen = new Set<number>();
+  const ordered: number[] = [];
+  for (const index of indexes ?? []) {
+    if (!Number.isInteger(index) || index <= 0 || seen.has(index)) {
+      continue;
+    }
+    seen.add(index);
+    ordered.push(index);
+  }
+  return ordered;
+}
+
+function layoutIntent(
+  edit: ImageLayoutEdit,
+  decision: { confidence: number; reasoning: string; assistantMessage: string }
+): BookEditIntent {
+  const affected = [
+    ...(edit.pageIndex ? [edit.pageIndex] : []),
+    ...(edit.destPlacement === "page" && edit.destPageIndex ? [edit.destPageIndex] : [])
+  ];
+  return {
+    kind: edit.action === "move" ? "move_image" : "remove_image",
+    confidence: decision.confidence,
+    reasoning: decision.reasoning,
+    affectedPageIndexes: [...new Set(affected)],
+    assistantMessage: decision.assistantMessage,
+    scope: "none",
+    impact: "small_text",
+    clarification: "none",
+    imageLayout: edit
+  };
+}
+
+/**
+ * What the router's move_image / remove_image decision maps to. Remove never
+ * clarifies. Move clarifies only when no destination was named; a spent
+ * budget defaults to the end of the book rather than a whole-book rewrite.
+ */
+export function imageLayoutIntentFromDecision(
+  action: "move" | "remove",
+  decision: {
+    confidence: number;
+    reasoning: string;
+    assistantMessage: string;
+    imagePlacement?: "end_of_book" | "page" | null | undefined;
+    pageIndexes?: number[] | undefined;
+    imageDestPageIndexes?: number[] | null | undefined;
+  },
+  message: string,
+  context: { clarifyExhausted?: boolean | undefined } = {}
+): BookEditIntent {
+  const named = positivePageIndexes(decision.pageIndexes);
+  const destNamed = positivePageIndexes(decision.imageDestPageIndexes);
+  const sourcePage = named[0];
+  const destFromChannel = destNamed[0] ?? (named.length >= 2 ? named[1] : undefined);
+
+  if (action === "remove") {
+    return layoutIntent({ action, ...(sourcePage !== undefined ? { pageIndex: sourcePage } : {}) }, decision);
+  }
+
+  let destPlacement: "end_of_book" | "page" | undefined;
+  let destPageIndex: number | undefined;
+  if (destFromChannel !== undefined) {
+    destPlacement = "page";
+    destPageIndex = destFromChannel;
+  } else if (decision.imagePlacement === "end_of_book") {
+    destPlacement = "end_of_book";
+  } else if (sourcePage === undefined) {
+    const fromMessage = imagePlacementFromMessage(message);
+    if (fromMessage?.placement === "page") {
+      destPlacement = "page";
+      destPageIndex = fromMessage.pageIndex;
+    } else if (fromMessage?.placement === "end_of_book") {
+      destPlacement = "end_of_book";
+    }
+  } else if (endOfBookPlacementFromMessage(message)) {
+    destPlacement = "end_of_book";
+  }
+
+  if (!destPlacement) {
+    if (!context.clarifyExhausted) {
+      return {
+        kind: "clarify",
+        confidence: decision.confidence,
+        reasoning: decision.reasoning,
+        affectedPageIndexes: sourcePage !== undefined ? [sourcePage] : [],
+        assistantMessage:
+          "Which page should I move the picture to? If you’d rather leave it to me, say “go ahead” and I’ll put it at the end of the book.",
+        scope: "none",
+        impact: "small_text",
+        clarification: "scope"
+      };
+    }
+    destPlacement = "end_of_book";
+  }
+
+  return layoutIntent(
+    {
+      action: "move",
+      ...(sourcePage !== undefined ? { pageIndex: sourcePage } : {}),
+      destPlacement,
+      ...(destPlacement === "page" && destPageIndex !== undefined ? { destPageIndex } : {})
+    },
+    decision
+  );
+}
+
 /**
  * Resolves where the image actually goes, against the live pages. Shared by
  * the proposal and queue paths so the card and the charge agree.
@@ -160,8 +293,73 @@ export function resolveImageInsertionTarget(
     : { targetPageIndex: lastPageIndex, placement: "end_of_book" };
 }
 
+/** Resolves a move destination against the live pages. A vanished explicit page returns null. */
+export function resolveImageLayoutDest(
+  edit: Pick<ImageLayoutEdit, "destPlacement" | "destPageIndex">,
+  pages: BookEditPageContext[]
+): { destPageIndex: number; destPlacement: "end_of_book" | "page" } | null {
+  if (pages.length === 0) {
+    return null;
+  }
+  const lastPageIndex = Math.max(...pages.map((page) => page.index));
+  if (edit.destPlacement === "page" && edit.destPageIndex !== undefined) {
+    return pages.some((page) => page.index === edit.destPageIndex)
+      ? { destPageIndex: edit.destPageIndex, destPlacement: "page" }
+      : null;
+  }
+  if (edit.destPlacement === "end_of_book") {
+    return { destPageIndex: lastPageIndex, destPlacement: "end_of_book" };
+  }
+  return { destPageIndex: lastPageIndex, destPlacement: "end_of_book" };
+}
+
 /** Summaries stay one line; a long subject is capped rather than wrapped. */
 export function clippedImageSubject(subject: string): string {
   const clean = subject.trim().replace(/\s+/g, " ");
   return clean.length > 60 ? `${clean.slice(0, 59)}…` : clean;
+}
+
+export function imageLayoutProposalSummary(
+  kind: "move_image" | "remove_image",
+  affectedPageIndexes: number[],
+  layout: ImageLayoutEdit | null | undefined
+): string {
+  if (kind === "remove_image") {
+    const named = layout?.target?.oldSubject;
+    const page = layout?.target?.pageIndex ?? affectedPageIndexes[0];
+    if (named && page !== undefined) {
+      return `Remove the illustration of “${clippedImageSubject(named)}” from page ${page}`;
+    }
+    return page !== undefined ? `Remove the illustration on page ${page}` : "Remove the latest illustration";
+  }
+  const named = layout?.target?.oldSubject;
+  const fromPage = layout?.target?.pageIndex;
+  const destEnd = layout?.destPlacement === "end_of_book";
+  const toPage = destEnd ? undefined : layout?.destPageIndex ?? affectedPageIndexes.at(-1);
+  const dest = destEnd || toPage === undefined ? "the end of the book" : `page ${toPage}`;
+  if (named && fromPage !== undefined) {
+    return `Move the illustration of “${clippedImageSubject(named)}” from page ${fromPage} to ${dest}`;
+  }
+  if (fromPage !== undefined) {
+    return `Move the illustration on page ${fromPage} to ${dest}`;
+  }
+  return `Move the illustration to ${dest}`;
+}
+
+export function imageLayoutQueuedMessage(
+  kind: "move_image" | "remove_image",
+  affectedPageIndexes: number[],
+  layout: ImageLayoutEdit | null | undefined
+): string {
+  if (kind === "remove_image") {
+    const page = affectedPageIndexes[0];
+    return page === undefined
+      ? "I’ll remove that illustration and refresh the exports."
+      : `I’ll remove the illustration on page ${page} and refresh the exports.`;
+  }
+  const destEnd = layout?.destPlacement === "end_of_book";
+  const dest = destEnd
+    ? "the end of the book"
+    : `page ${layout?.destPageIndex ?? affectedPageIndexes.at(-1) ?? ""}`.trim();
+  return `I’ll move that illustration to ${dest} and refresh the exports.`;
 }

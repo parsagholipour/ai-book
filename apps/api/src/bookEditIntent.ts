@@ -14,7 +14,12 @@ import {
   type ChapterHeadingEdit
 } from "./bookEditChapterHeading.js";
 import { classifyWithDegradedHeuristics, classifyWithHeuristics } from "./bookEditHeuristics.js";
-import { imageInsertionIntentFromDecision, type ImageInsertionEdit } from "./bookEditImage.js";
+import {
+  imageInsertionIntentFromDecision,
+  imageLayoutIntentFromDecision,
+  type ImageInsertionEdit,
+  type ImageLayoutEdit
+} from "./bookEditImage.js";
 import { chatReplyQuoteForPrompt, type ChatReplyQuote } from "./chatReplyQuote.js";
 import {
   chapterRegenerateFromMessage,
@@ -64,7 +69,9 @@ export type BookEditIntentKind =
   | "continue_book"
   | "back_matter"
   | "chapter_heading"
-  | "add_image";
+  | "add_image"
+  | "move_image"
+  | "remove_image";
 
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
 export type BookEditScope = "none" | "explicit_pages" | "matching_pages" | "all_pages";
@@ -119,6 +126,8 @@ export type BookEditIntent = {
   chapterHeading?: ChapterHeadingEdit | null;
   /** Set for add_image intents: the picture to generate and where it goes. */
   imageEdit?: ImageInsertionEdit | null;
+  /** Set for move_image / remove_image: which picture, and for a move where it goes. */
+  imageLayout?: ImageLayoutEdit | null;
   /**
    * Set for book_replan intents: the generation settings the request named.
    *
@@ -146,7 +155,9 @@ export const PROPOSAL_GATED_EDIT_KINDS: ReadonlySet<BookEditIntentKind> = new Se
   "chapter_regenerate",
   "book_replan",
   "continue_book",
-  "add_image"
+  "add_image",
+  "move_image",
+  "remove_image"
 ]);
 
 /**
@@ -213,7 +224,9 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
           "continuation",
           "back_matter",
           "chapter_heading",
-          "insert_image"
+          "insert_image",
+          "move_image",
+          "remove_image"
         ])
         .optional(),
       editStyle: z.enum(["exact_replace", "rewrite"]).optional(),
@@ -230,6 +243,8 @@ function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       /** True when the new picture replaces an existing illustration instead of adding another. */
       imageReplace: z.boolean().nullish(),
       pageIndexes: z.array(z.number().int().positive()).max(100).default([]),
+      /** Destination page for move_image. Source stays pageIndexes. */
+      imageDestPageIndexes: z.array(z.number().int().positive()).max(100).nullish(),
       chapterIndex: z.number().int().positive().nullable().default(null),
       /** How many chapters to append when editTarget is continuation. */
       newChapterCount: z.number().int().min(1).max(8).nullish(),
@@ -616,6 +631,10 @@ export function intentFromProposeEdit(
     return imageInsertionIntentFromDecision(decision, message, context);
   }
 
+  if (target === "move_image" || target === "remove_image") {
+    return imageLayoutIntentFromDecision(target === "move_image" ? "move" : "remove", decision, message, context);
+  }
+
   if (target === "language_copy" || target === "structural") {
     const replanSettings = replanSettingsFromEditMessage(message, {
       targetPages: decision.newTargetPages,
@@ -745,7 +764,9 @@ function routerSystemPrompt(
           "Adding something new to the finished book — a character, a scene, an object, a mention — is propose_edit, not clarify. Set editTarget to pages for the scenes where it belongs, or whole_book when it should run through the story. Reserve structural for replacing the book's premise or main character, because it regenerates the entire book.",
           "Adding a new picture, photo, image, illustration or drawing is propose_edit with editTarget insert_image — never a page edit and never a clarify. Set imageSubject to what the picture should show, in the user's own words but WITHOUT any placement words; when a follow-up adjusts an earlier image request, restate the full imageSubject from the conversation. Set pageIndexes to the one page it belongs on whenever the user names a place in any language or form — \"on page 3\", \"on the 3rd page\", \"the third page\", \"صفحه ۳\" all mean pageIndexes [3] — or imagePlacement to end_of_book for the end/back of the book. Example: \"Add the photo of her signature on the 3rd page\" → imageSubject \"her signature\", pageIndexes [3]. Never ask where the picture should go: when no place is named, the default is the end of the book.",
           "When the user corrects or replaces any existing picture — a built-in illustration or one they added — \"change the first image to…\", \"no, I actually want…\", \"instead…\", \"replace the photo with a castle\" — that is still insert_image, with imageReplace true and imageSubject set to the NEW subject; set pageIndexes when they name a page or an ordinal (\"the first image\", \"on page 1\"). A replacement keeps the old picture's spot; the server picks which picture. Without imageReplace the book ends up with both.",
-          "Requests to remove, move or resize an existing picture — or to replace one WITHOUT saying what the new picture should show — and negated requests (\"don't add a photo of…\") are not insert_image and must never be priced as a page rewrite: use action answer; for removal, explain that Edit Mode on that page can remove an image, and Undo reverts the latest edit.",
+          "Removing an existing picture is propose_edit with editTarget remove_image — never a page rewrite. Set pageIndexes to the page that currently holds it when they name one. The server picks which picture; never ask.",
+          "Moving an existing picture is propose_edit with editTarget move_image — never a page rewrite. Set pageIndexes to the SOURCE page (where it is now) when they name one; set imageDestPageIndexes to the destination page when they name where it should go, or imagePlacement to end_of_book for the end/back of the book. If they name no destination, ask once which page, stating you will put it at the end of the book if they don't say.",
+          "Requests to resize an existing picture — or to replace one WITHOUT saying what the new picture should show — and negated requests (\"don't add a photo of…\") are not insert_image, move_image or remove_image and must never be priced as a page rewrite: use action answer.",
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
@@ -788,6 +809,12 @@ function normalizeIntentForStage(
     impact: intent.impact ?? "small_text",
     clarification: intent.clarification ?? "none"
   };
+  if (
+    (stage === "plan_ready" || stage === "approved_plan") &&
+    (bounded.kind === "move_image" || bounded.kind === "remove_image")
+  ) {
+    return { ...bounded, kind: "answer", clarification: "none" };
+  }
   if (
     (stage === "plan_ready" || stage === "approved_plan") &&
     ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate", "continue_book", "add_image"].includes(

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clippedImageSubject,
   imageInsertionIntentFromDecision,
+  imageLayoutIntentFromDecision,
   resolveImageInsertionTarget
 } from "./bookEditImage.js";
 import { endOfBookPlacementFromMessage, imagePlacementFromMessage } from "./bookEditMessage.js";
@@ -205,6 +206,64 @@ describe("imageInsertionIntentFromDecision", () => {
     );
     expect(intent.kind).toBe("add_image");
     expect(intent.imageEdit?.subject).toBe("a scene from this book");
+  });
+});
+
+describe("imageLayoutIntentFromDecision", () => {
+  const base = {
+    confidence: 0.9,
+    reasoning: "Routed layout.",
+    assistantMessage: "I’ll move that picture."
+  };
+
+  it("maps remove_image with a named source page and never asks a subject", () => {
+    const intent = imageLayoutIntentFromDecision("remove", { ...base, pageIndexes: [3] }, "remove the picture on page 3");
+    expect(intent.kind).toBe("remove_image");
+    expect(intent.imageLayout).toEqual({ action: "remove", pageIndex: 3 });
+    expect(intent.affectedPageIndexes).toEqual([3]);
+  });
+
+  it("maps a move with source and dest page channels", () => {
+    const intent = imageLayoutIntentFromDecision(
+      "move",
+      { ...base, pageIndexes: [3], imageDestPageIndexes: [5] },
+      "move the picture on page 3 to page 5"
+    );
+    expect(intent.kind).toBe("move_image");
+    expect(intent.imageLayout).toEqual({
+      action: "move",
+      pageIndex: 3,
+      destPlacement: "page",
+      destPageIndex: 5
+    });
+  });
+
+  it("asks the one dest question when a move names no destination", () => {
+    const intent = imageLayoutIntentFromDecision("move", { ...base, pageIndexes: [3] }, "move the picture on page 3");
+    expect(intent.kind).toBe("clarify");
+    expect(intent.clarification).toBe("scope");
+    expect(intent.assistantMessage).toMatch(/end of the book/i);
+  });
+
+  it("defaults a spent dest question to the end of the book", () => {
+    const intent = imageLayoutIntentFromDecision(
+      "move",
+      { ...base, pageIndexes: [3] },
+      "move the picture on page 3\n\nFollow-up from the user: just do it",
+      { clarifyExhausted: true }
+    );
+    expect(intent.kind).toBe("move_image");
+    expect(intent.imageLayout).toEqual({ action: "move", pageIndex: 3, destPlacement: "end_of_book" });
+  });
+
+  it("reads two pageIndexes as source then dest when the dest channel is empty", () => {
+    const intent = imageLayoutIntentFromDecision("move", { ...base, pageIndexes: [3, 5] }, "move it");
+    expect(intent.imageLayout).toEqual({
+      action: "move",
+      pageIndex: 3,
+      destPlacement: "page",
+      destPageIndex: 5
+    });
   });
 });
 

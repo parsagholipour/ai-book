@@ -274,6 +274,93 @@ void main() {
     expect(find.textContaining('unchanged'), findsNothing);
   });
 
+  testWidgets('says when an illustration was removed', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileEditChanges(
+          operationId: 'operation-1',
+          kind: 'remove_image',
+          status: 'applied',
+          request: 'Remove the picture on page 1',
+          creditsCharged: 0,
+          pages: [
+            MobileEditPageChange(
+              pageIndex: 1,
+              titleBefore: 'The garden',
+              titleAfter: 'The garden',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+              illustrationBefore: '/assets/images/project-1/page-1.jpg',
+            ),
+          ],
+          addedWords: 0,
+          removedWords: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Illustration removed'), findsOneWidget);
+    expect(
+      find.text('The illustration on this page was removed.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('says when an illustration was moved onto a page', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileEditChanges(
+          operationId: 'operation-1',
+          kind: 'move_image',
+          status: 'applied',
+          request: 'Move the picture to page 2',
+          creditsCharged: 0,
+          pages: [
+            MobileEditPageChange(
+              pageIndex: 1,
+              titleBefore: 'One',
+              titleAfter: 'One',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+              illustrationBefore: '/assets/images/project-1/page-1.jpg',
+            ),
+            MobileEditPageChange(
+              pageIndex: 2,
+              titleBefore: 'Two',
+              titleAfter: 'Two',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+              illustrationAfter: '/assets/images/project-1/page-1.jpg',
+            ),
+          ],
+          addedWords: 0,
+          removedWords: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Illustration moved'), findsOneWidget);
+    expect(
+      find.text('The illustration on this page was removed.'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('An illustration was moved onto this page.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('opens the shared image viewer from a replaced illustration', (
     tester,
   ) async {

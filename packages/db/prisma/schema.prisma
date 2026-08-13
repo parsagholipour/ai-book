@@ -197,6 +197,8 @@ enum BookEditOperationKind {
   MANUAL_EDIT
   CONTINUE_BOOK
   ADD_IMAGE
+  MOVE_IMAGE
+  REMOVE_IMAGE
 }
 
 enum BookEditOperationStatus {

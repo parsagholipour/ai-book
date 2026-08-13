@@ -5,7 +5,7 @@ import {
   type BookEditIntent,
   type BookEditScope
 } from "../bookEditIntent.js";
-import { type ImageInsertionEdit } from "../bookEditImage.js";
+import { type ImageInsertionEdit, type ImageLayoutEdit } from "../bookEditImage.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { loadActiveProjectChatMessages } from "./projectChat.js";
 import { jsonRecord } from "./support.js";
@@ -292,7 +292,10 @@ export function pendingEditProposalFromMetadata(
           }
         }
       : {}),
-    ...(kind === "add_image" ? imageEditFromMetadata(intentSource.imageEdit) : {})
+    ...(kind === "add_image" ? imageEditFromMetadata(intentSource.imageEdit) : {}),
+    ...(kind === "move_image" || kind === "remove_image"
+      ? imageLayoutFromMetadata(intentSource.imageLayout)
+      : {})
   };
   return {
     intent,
@@ -352,6 +355,71 @@ function imageEditFromMetadata(value: unknown): { imageEdit?: ImageInsertionEdit
               ...(replaceAssetId ? { assetId: replaceAssetId } : {}),
               ...(replaceMarker ? { marker: replaceMarker } : {}),
               ...(replaceOldSubject ? { oldSubject: replaceOldSubject } : {})
+            }
+          }
+        : {})
+    }
+  };
+}
+
+/**
+ * Reads a stored `imageLayout` blob back. Without a usable action the whole
+ * field is dropped; the proposal path then answers rather than inventing a
+ * move or remove the card never showed.
+ */
+function imageLayoutFromMetadata(value: unknown): { imageLayout?: ImageLayoutEdit } {
+  const stored = jsonRecord(value);
+  const action = stored.action === "move" || stored.action === "remove" ? stored.action : undefined;
+  if (!action) {
+    return {};
+  }
+  const pageIndex =
+    typeof stored.pageIndex === "number" && Number.isInteger(stored.pageIndex) && stored.pageIndex > 0
+      ? stored.pageIndex
+      : undefined;
+  const destPlacement =
+    stored.destPlacement === "end_of_book" || stored.destPlacement === "page" ? stored.destPlacement : undefined;
+  const destPageIndex =
+    destPlacement === "page" &&
+    typeof stored.destPageIndex === "number" &&
+    Number.isInteger(stored.destPageIndex) &&
+    stored.destPageIndex > 0
+      ? stored.destPageIndex
+      : undefined;
+  const targetStored = jsonRecord(stored.target);
+  const targetOperationId = typeof targetStored.operationId === "string" ? targetStored.operationId : undefined;
+  const targetAssetId =
+    typeof targetStored.assetId === "string" && targetStored.assetId.trim()
+      ? targetStored.assetId.trim().slice(0, 80)
+      : undefined;
+  const targetMarker =
+    typeof targetStored.marker === "string" && targetStored.marker.trim()
+      ? targetStored.marker.trim().slice(0, 200)
+      : undefined;
+  const targetOldSubject =
+    typeof targetStored.oldSubject === "string" && targetStored.oldSubject.trim()
+      ? targetStored.oldSubject.trim().slice(0, 300)
+      : undefined;
+  const targetPageIndex =
+    typeof targetStored.pageIndex === "number" && Number.isInteger(targetStored.pageIndex) && targetStored.pageIndex > 0
+      ? targetStored.pageIndex
+      : undefined;
+  const hasTarget =
+    targetOperationId !== undefined || targetAssetId !== undefined || targetMarker !== undefined;
+  return {
+    imageLayout: {
+      action,
+      ...(pageIndex !== undefined ? { pageIndex } : {}),
+      ...(destPlacement ? { destPlacement } : {}),
+      ...(destPageIndex !== undefined ? { destPageIndex } : {}),
+      ...(stored.target !== undefined && hasTarget && targetPageIndex !== undefined
+        ? {
+            target: {
+              operationId: targetOperationId ?? "",
+              pageIndex: targetPageIndex,
+              ...(targetAssetId ? { assetId: targetAssetId } : {}),
+              ...(targetMarker ? { marker: targetMarker } : {}),
+              ...(targetOldSubject ? { oldSubject: targetOldSubject } : {})
             }
           }
         : {})

@@ -253,7 +253,7 @@ class _PageChangeSection extends StatelessWidget {
         if (page.illustrationChanged) ...[
           const SizedBox(height: 10),
           Text(
-            'The illustration on this page was replaced.',
+            _illustrationCopy(page),
             style: theme.textTheme.bodyMedium,
           ),
           if (page.illustrationBefore != null ||
@@ -286,11 +286,30 @@ String _summaryTitle(MobileEditChanges changes) {
         (page) => page.illustrationChanged && !page.titleChanged,
       );
   if (illustrationOnly) {
+    if (changes.kind == 'remove_image' ||
+        changes.pages.every(
+          (page) => page.illustrationBefore != null && page.illustrationAfter == null,
+        )) {
+      return pageCount == 1 ? 'Illustration removed' : '$pageCount illustrations removed';
+    }
+    if (changes.kind == 'move_image' || pageCount > 1) {
+      return 'Illustration moved';
+    }
     return pageCount == 1
         ? 'Illustration replaced'
         : '$pageCount illustrations replaced';
   }
   return pageCount == 1 ? '1 page changed' : '$pageCount pages changed';
+}
+
+String _illustrationCopy(MobileEditPageChange page) {
+  if (page.illustrationBefore != null && page.illustrationAfter == null) {
+    return 'The illustration on this page was removed.';
+  }
+  if (page.illustrationBefore == null && page.illustrationAfter != null) {
+    return 'An illustration was moved onto this page.';
+  }
+  return 'The illustration on this page was replaced.';
 }
 
 class _IllustrationSwapPreview extends StatelessWidget {

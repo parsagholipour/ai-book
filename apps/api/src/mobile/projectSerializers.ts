@@ -805,6 +805,12 @@ export function currentActionForEditOperation(operation: MobileBookEditOperation
   if (operation.kind === "ADD_IMAGE") {
     return "Creating your illustration.";
   }
+  if (operation.kind === "MOVE_IMAGE") {
+    return "Moving the illustration.";
+  }
+  if (operation.kind === "REMOVE_IMAGE") {
+    return "Removing the illustration.";
+  }
   if (operation.kind === "PLAN_REVISION") {
     return "Revising the plan.";
   }

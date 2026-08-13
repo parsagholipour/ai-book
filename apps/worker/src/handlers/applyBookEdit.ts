@@ -6,6 +6,7 @@ import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { applyImageInsertion, type ImageInsertionPayload } from "./applyImageInsertion.js";
+import { applyImageLayout, type ImageLayoutPayload } from "./applyImageLayout.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
 import { bookPlanSchema, createProviders, hasExactMatch, jsonPayloadToRecord, type ExactReplacement } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -34,7 +35,8 @@ export async function applyBookEdit(job: Job) {
     planId,
     exactReplacement,
     mode,
-    imageInsertion
+    imageInsertion,
+    imageLayout
   } = job.data as {
     projectId: string;
     operationId: string;
@@ -50,11 +52,16 @@ export async function applyBookEdit(job: Job) {
      */
     mode?: "exact";
     imageInsertion?: ImageInsertionPayload;
+    imageLayout?: ImageLayoutPayload;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
   const operation = await prisma.bookEditOperation.findUnique({ where: { id: operationId } });
   if (!operation) {
     throw new Error("Book edit operation not found");
+  }
+  if (imageLayout) {
+    await applyImageLayout(job, operation);
+    return;
   }
   if (imageInsertion) {
     // A paid one-off illustration, not a text rewrite. Forked before the

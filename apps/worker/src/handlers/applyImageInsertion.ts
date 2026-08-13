@@ -605,6 +605,22 @@ export function markdownWithReplacedImage(markdown: string, replaceMarker: strin
   return markerLine.test(markdown) ? markdown.replace(markerLine, imageLine) : null;
 }
 
+/** Deletes the line carrying `replaceMarker`. Null when no line carries it. */
+export function markdownWithRemovedImage(markdown: string, replaceMarker: string): string | null {
+  const escaped = replaceMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const markerLine = new RegExp(`^.*${escaped}.*$\\n?`, "m");
+  if (!markerLine.test(markdown)) {
+    return null;
+  }
+  return markdown.replace(markerLine, "").replace(/\n{3,}/g, "\n\n").trimEnd();
+}
+
+/** The exact markdown line that carries `replaceMarker`, so a move can paste it. */
+export function extractMarkdownImageLine(markdown: string, replaceMarker: string): string | null {
+  const markerLine = new RegExp(`^.*${replaceMarker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*$`, "m");
+  return markdown.match(markerLine)?.[0] ?? null;
+}
+
 /**
  * Alt text from the subject. `]` or `)` breaks the exporters' image-markdown
  * regex and the image silently vanishes from both exports, and the exact

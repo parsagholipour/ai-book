@@ -269,7 +269,6 @@ void main() {
     // Export entries do not change shape mid-generation, while chat stays
     // available so the user can continue working on the book.
     expect(find.text('Go to chat'), findsOneWidget);
-    expect(find.text('Read in Tomeza — preparing'), findsOneWidget);
     expect(find.text('Open PDF — preparing'), findsOneWidget);
     expect(find.text('Open EPUB — preparing'), findsOneWidget);
     expect(find.text('Share PDF — preparing'), findsOneWidget);
@@ -279,7 +278,7 @@ void main() {
     // can be tapped into a dead end.
     expect(
       find.byWidgetPredicate((w) => w is PopupMenuItem && !w.enabled),
-      findsNWidgets(5),
+      findsNWidgets(4),
     );
     expect(
       find.byWidgetPredicate((w) => w is PopupMenuItem && w.enabled),
@@ -323,9 +322,8 @@ void main() {
     await tester.longPress(find.byType(BookCover));
     await tester.pumpAndSettle();
 
-    // One lock each for Read, Open PDF and Share PDF — reading downloads
-    // through the same entitlement-gated route as the other two.
-    expect(find.byIcon(Icons.lock_outline), findsNWidgets(3));
+    // One lock each for Open PDF and Share PDF.
+    expect(find.byIcon(Icons.lock_outline), findsNWidgets(2));
   });
 
   testWidgets('reopening the shelf paints known books before refetching', (

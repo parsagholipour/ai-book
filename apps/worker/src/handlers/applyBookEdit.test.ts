@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   storeEmbedding: vi.fn(),
   invalidateProjectExports: vi.fn(),
-  applyImageInsertion: vi.fn()
+  applyImageInsertion: vi.fn(),
+  applyImageLayout: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -34,6 +35,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
   strategyForInput: () => ({})
 }));
 vi.mock("./applyImageInsertion.js", () => ({ applyImageInsertion: mocks.applyImageInsertion }));
+vi.mock("./applyImageLayout.js", () => ({ applyImageLayout: mocks.applyImageLayout }));
 vi.mock("./replanBook.js", async () => {
   const actual = await import("./replanBook.js");
   return { locallyPatchedPage: actual.locallyPatchedPage, rewritePageForUserRequest: mocks.rewritePageForUserRequest };
@@ -403,6 +405,29 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
     expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+  });
+
+  it("forks an imageLayout payload before the ACTIVE and EDITING writes", async () => {
+    const operation = { id: "op-1", status: "QUEUED", classifier: {} };
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(operation);
+    const payload = {
+      projectId: "project-1",
+      operationId: "op-1",
+      request: "Remove the picture on page 1",
+      affectedPageIndexes: [1],
+      planId: "plan-1",
+      intentKind: "remove_image",
+      imageLayout: { action: "remove", source: { pageIndex: 1, replaceAssetId: "asset-1" } }
+    };
+
+    await applyBookEdit(job(payload));
+
+    expect(mocks.applyImageLayout).toHaveBeenCalledTimes(1);
+    expect(mocks.applyImageLayout.mock.calls[0]?.[1]).toBe(operation);
+    expect(mocks.applyImageInsertion).not.toHaveBeenCalled();
+    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
   });
 
   it("keeps a payload without imageInsertion on the text-rewrite path", async () => {

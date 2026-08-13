@@ -326,6 +326,8 @@ export type MobileBookEditOperationDto = {
     | "book_replan"
     | "continue_book"
     | "add_image"
+    | "move_image"
+    | "remove_image"
     | "manual_edit";
   status: "queued" | "active" | "applied" | "failed" | "canceled";
   affectedPageIndexes: number[];

@@ -6,7 +6,7 @@ import '../../voice/presentation/character_cast_sheet.dart';
 import '../domain/project_models.dart';
 import 'project_export_actions.dart';
 
-enum _BookAction { chat, call, listen, read, openPdf, openEpub, sharePdf, shareEpub }
+enum _BookAction { chat, call, listen, openPdf, openEpub, sharePdf, shareEpub }
 
 /// Long-press menu for a book on the shelf.
 ///
@@ -91,13 +91,6 @@ Future<void> showBookActionsMenu({
           ),
         ),
       _bookActionItem(
-        value: _BookAction.read,
-        icon: Icons.auto_stories_outlined,
-        label: 'Read in Tomeza',
-        export: pdf,
-        credits: credits,
-      ),
-      _bookActionItem(
         value: _BookAction.openPdf,
         icon: Icons.picture_as_pdf_outlined,
         label: 'Open PDF',
@@ -151,7 +144,7 @@ Future<void> showBookActionsMenu({
   }
 
   final export = switch (action) {
-    _BookAction.read || _BookAction.openPdf || _BookAction.sharePdf => pdf,
+    _BookAction.openPdf || _BookAction.sharePdf => pdf,
     _BookAction.openEpub || _BookAction.shareEpub => epub,
     _BookAction.chat || _BookAction.call || _BookAction.listen => throw StateError(
       'Chat, calls and listening are handled before export actions',
@@ -179,10 +172,6 @@ Future<void> showBookActionsMenu({
     case _BookAction.listen:
       // Handled above because none of them requires an export.
       return;
-    case _BookAction.read:
-      // The reader downloads through the same entitlement-gated route, so a
-      // covered unlock is spent there exactly as it would be by "Open PDF".
-      context.push('/projects/${project.id}/read');
     case _BookAction.openPdf:
     case _BookAction.openEpub:
       await openProjectExport(

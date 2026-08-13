@@ -1,4 +1,4 @@
-import { type ImageInsertionEdit } from "../bookEditImage.js";
+import { type ImageInsertionEdit, type ImageLayoutEdit } from "../bookEditImage.js";
 import { jsonRecord } from "./support.js";
 import { imageMarkdownRe, resolveBookImageAsset } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -45,6 +45,13 @@ export function replaceEditFromTarget(target: ReplaceableBookImage): NonNullable
     ...(target.operationId ? {} : { marker: target.marker }),
     ...(target.oldSubject ? { oldSubject: target.oldSubject } : {})
   };
+}
+
+export function layoutTargetFromReplaceable(
+  target: ReplaceableBookImage
+): NonNullable<ImageLayoutEdit["target"]> {
+  const replace = replaceEditFromTarget(target);
+  return { ...replace, pageIndex: target.pageIndex };
 }
 
 /**

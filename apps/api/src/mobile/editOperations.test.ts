@@ -46,13 +46,17 @@ vi.mock("./bookEditPricing.js", () => ({
   operationKindForIntent: vi.fn()
 }));
 vi.mock("./exactReplacementPreview.js", () => ({ planExactReplacement: vi.fn() }));
-// Cuts the add_image queue branch's import subtree (bookEditImage →
+// Cuts the add_image / layout queue branches' import subtree (bookEditImage →
 // bookEditMessage calls core's languageNamePattern at module load, which the
 // core mock below does not provide).
 vi.mock("./addImageOperations.js", () => ({
   addImageQuotaLimit: vi.fn(),
   proposeAddImageEdit: vi.fn(),
   queueChatAddImage: vi.fn()
+}));
+vi.mock("./imageLayoutOperations.js", () => ({
+  proposeImageLayoutEdit: vi.fn(),
+  queueChatImageLayout: vi.fn()
 }));
 vi.mock("./projectChat.js", () => ({
   createAssistantChatMessage: vi.fn(),

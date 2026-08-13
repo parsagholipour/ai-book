@@ -1,6 +1,7 @@
 import { type BookEditIntent, type BookEditIntentKind } from "../bookEditIntent.js";
-import { clippedImageSubject } from "../bookEditImage.js";
+import { clippedImageSubject, imageLayoutProposalSummary, imageLayoutQueuedMessage } from "../bookEditImage.js";
 import { proposeAddImageEdit } from "./addImageOperations.js";
+import { proposeImageLayoutEdit } from "./imageLayoutOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
 import { applyBackMatterEdit } from "./backMatterEdits.js";
 import { applyChapterHeadingEdit } from "./chapterHeadingEdits.js";
@@ -437,6 +438,17 @@ export async function proposeBookEdit(options: {
     });
   }
 
+  if (intent.kind === "move_image" || intent.kind === "remove_image") {
+    return proposeImageLayoutEdit({
+      project,
+      userMessageId,
+      message,
+      intent,
+      proposalId,
+      ...(characterContext ? { characterContext } : {})
+    });
+  }
+
   let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);
   if (affectedPageIndexes.length === 0 && options.clarifyExhausted && intent.kind !== "chapter_regenerate") {
     // The one clarifying question is spent, so an unresolvable scope widens to
@@ -609,6 +621,9 @@ export function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexe
     return onPage !== undefined
       ? `Add an illustration of “${subject}” on page ${onPage}`
       : `Add an illustration of “${subject}” at the end of the book`;
+  }
+  if (kind === "remove_image" || kind === "move_image") {
+    return imageLayoutProposalSummary(kind, affectedPageIndexes, intent.imageLayout);
   }
   if (kind === "chapter_regenerate") {
     return intent.affectedChapterIndex
@@ -855,6 +870,9 @@ export function operationQueuedMessage(kind: BookEditIntentKind, affectedPageInd
         ? "at the end of the book"
         : `to page ${targetPage}`;
     return `I’m creating that illustration now and adding it ${destination}, then I’ll refresh the exports.`;
+  }
+  if (kind === "remove_image" || kind === "move_image") {
+    return imageLayoutQueuedMessage(kind, affectedPageIndexes, intent.imageLayout);
   }
   if (kind === "chapter_regenerate") {
     const chapterText = intent.affectedChapterIndex ? `chapter ${intent.affectedChapterIndex}` : "that chapter";

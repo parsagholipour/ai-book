@@ -359,6 +359,213 @@ describe("mobile editable book and manual edits", () => {
     await app.close();
   });
 
+  it("keeps an illustration removal whose markdown did not move", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(
+      appliedEditOperationRecord({
+        kind: "REMOVE_IMAGE",
+        request: "Remove the picture on page 1",
+        creditsCharged: 0,
+        classifier: {
+          previousAsset: {
+            id: "asset-1",
+            pageId: "page-1",
+            path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+            prompt: "a fox",
+            imagePrompt: "a fox"
+          }
+        }
+      })
+    );
+    state.pageEditSnapshots.push({
+      id: "snapshot-1",
+      projectId: "project-1",
+      pageId: "page-1",
+      operationId: "operation-applied",
+      pageIndex: 1,
+      titleBefore: "The garden",
+      markdownBefore: "Mae unlocked the garden gate.",
+      summaryBefore: "Mae.",
+      revisionBefore: 1,
+      titleAfter: "The garden",
+      markdownAfter: "Mae unlocked the garden gate.",
+      summaryAfter: "Mae.",
+      revisionAfter: 2
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+    const page = response.json().changes.pages[0];
+
+    expect(page).toMatchObject({
+      illustrationChanged: true,
+      illustrationBefore: "/assets/images/project-1/page-1.jpg"
+    });
+    expect(page.illustrationAfter).toBeUndefined();
+    await app.close();
+  });
+
+  it("shows a moved illustration on both the source and dest pages", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(
+      appliedEditOperationRecord({
+        kind: "MOVE_IMAGE",
+        request: "Move the picture to page 2",
+        creditsCharged: 0,
+        classifier: {
+          previousAsset: {
+            id: "asset-1",
+            pageId: "page-1",
+            destPageId: "page-2",
+            path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+            prompt: "a fox",
+            imagePrompt: "a fox",
+            destImagePrompt: null
+          }
+        }
+      })
+    );
+    state.pageEditSnapshots.push(
+      {
+        id: "snapshot-1",
+        projectId: "project-1",
+        pageId: "page-1",
+        operationId: "operation-applied",
+        pageIndex: 1,
+        titleBefore: "One",
+        markdownBefore: "Prose.",
+        summaryBefore: "S",
+        revisionBefore: 1,
+        titleAfter: "One",
+        markdownAfter: "Prose.",
+        summaryAfter: "S",
+        revisionAfter: 2
+      },
+      {
+        id: "snapshot-2",
+        projectId: "project-1",
+        pageId: "page-2",
+        operationId: "operation-applied",
+        pageIndex: 2,
+        titleBefore: "Two",
+        markdownBefore: "Later.",
+        summaryBefore: "T",
+        revisionBefore: 1,
+        titleAfter: "Two",
+        markdownAfter: "Later.",
+        summaryAfter: "T",
+        revisionAfter: 2
+      }
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+    const pages = response.json().changes.pages;
+
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toMatchObject({
+      pageIndex: 1,
+      illustrationChanged: true,
+      illustrationBefore: "/assets/images/project-1/page-1.jpg"
+    });
+    expect(pages[0].illustrationAfter).toBeUndefined();
+    expect(pages[1]).toMatchObject({
+      pageIndex: 2,
+      illustrationChanged: true,
+      illustrationAfter: "/assets/images/project-1/page-1.jpg"
+    });
+    expect(pages[1].illustrationBefore).toBeUndefined();
+    await app.close();
+  });
+
+  it("shows the dest page's old hero as the before image when a move demotes it", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(
+      appliedEditOperationRecord({
+        kind: "MOVE_IMAGE",
+        request: "Move the picture to page 2",
+        creditsCharged: 0,
+        classifier: {
+          previousAsset: {
+            id: "asset-moved",
+            pageId: "page-1",
+            destPageId: "page-2",
+            path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+            prompt: "a dragon",
+            imagePrompt: "a dragon",
+            destImagePrompt: "a fox"
+          },
+          demotedAsset: {
+            id: "asset-dest",
+            pageId: "page-2",
+            path: "http://localhost:4001/assets/images/project-1/page-2.jpg",
+            prompt: "a fox",
+            imagePrompt: "a fox"
+          }
+        }
+      })
+    );
+    state.pageEditSnapshots.push(
+      {
+        id: "snapshot-1",
+        projectId: "project-1",
+        pageId: "page-1",
+        operationId: "operation-applied",
+        pageIndex: 1,
+        titleBefore: "One",
+        markdownBefore: "Prose.",
+        summaryBefore: "S",
+        revisionBefore: 1,
+        titleAfter: "One",
+        markdownAfter: "Prose.",
+        summaryAfter: "S",
+        revisionAfter: 2
+      },
+      {
+        id: "snapshot-2",
+        projectId: "project-1",
+        pageId: "page-2",
+        operationId: "operation-applied",
+        pageIndex: 2,
+        titleBefore: "Two",
+        markdownBefore: "Later.",
+        summaryBefore: "T",
+        revisionBefore: 1,
+        titleAfter: "Two",
+        markdownAfter: "Later.\n\n![a fox](/assets/images/project-1/page-2.jpg)",
+        summaryAfter: "T",
+        revisionAfter: 2
+      }
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+    const pages = response.json().changes.pages;
+
+    expect(pages[1]).toMatchObject({
+      pageIndex: 2,
+      illustrationChanged: true,
+      illustrationBefore: "/assets/images/project-1/page-2.jpg",
+      illustrationAfter: "/assets/images/project-1/page-1.jpg"
+    });
+    await app.close();
+  });
+
   it("does not read another user's edit", async () => {
     mockAccessTokens({ "token-a": "user-a" });
     mockPrisma.project.findFirst.mockResolvedValue(null);

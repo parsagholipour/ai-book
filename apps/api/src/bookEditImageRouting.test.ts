@@ -267,4 +267,126 @@ describe("image insertion routing", () => {
     });
     expect(parsed.success).toBe(true);
   });
+
+  it("maps remove_image and move_image onto their own kinds", async () => {
+    const remove = await classifyProjectChatMessage({
+      message: "Remove the picture on page 1",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "remove_image",
+        pageIndexes: [1]
+      })
+    });
+    expect(remove.kind).toBe("remove_image");
+    expect(remove.imageLayout).toEqual({ action: "remove", pageIndex: 1 });
+
+    const move = await classifyProjectChatMessage({
+      message: "Move the picture on page 1 to page 2",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "move_image",
+        pageIndexes: [1],
+        imageDestPageIndexes: [2]
+      })
+    });
+    expect(move.kind).toBe("move_image");
+    expect(move.imageLayout).toEqual({
+      action: "move",
+      pageIndex: 1,
+      destPlacement: "page",
+      destPageIndex: 2
+    });
+  });
+
+  it("still answers a resize request rather than pricing a rewrite", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Make the picture on page 1 bigger",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({ ...decideBase, action: "answer" })
+    });
+    expect(intent.kind).toBe("answer");
+  });
+
+  it("does not teach move_image or remove_image while the book is still at the plan stage", async () => {
+    const model = fakeDecideModel({ ...decideBase, action: "plan_revision" });
+    await classifyProjectChatMessage({
+      message: "Remove the picture",
+      stage: "approved_plan",
+      pages,
+      textModel: model
+    });
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0] as GenerateWithToolsOptions;
+    expect(String(call.messages[0]!.content)).not.toMatch(/remove_image/);
+    expect(String(call.messages[0]!.content)).not.toMatch(/move_image/);
+  });
+
+  it("asks which page when a move names no destination", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Move the picture on page 1",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "move_image",
+        pageIndexes: [1]
+      })
+    });
+    expect(intent.kind).toBe("clarify");
+    expect(intent.clarification).toBe("scope");
+    expect(intent.assistantMessage).toMatch(/end of the book/i);
+  });
+
+  it("defaults a spent dest question to the end of the book rather than a rewrite", async () => {
+    const intent = await classifyProjectChatMessage({
+      message: "Move the picture on page 1\n\nFollow-up from the user: just do it",
+      stage: "complete",
+      pages,
+      chapters,
+      textModel: fakeDecideModel({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "move_image",
+        pageIndexes: [1]
+      }),
+      clarifyExhausted: true
+    });
+    expect(intent.kind).toBe("move_image");
+    expect(intent.imageLayout).toEqual({ action: "move", pageIndex: 1, destPlacement: "end_of_book" });
+  });
+
+  it("offers move_image and remove_image in the decide schema at the complete stage", async () => {
+    const model = fakeDecideModel({ ...decideBase, action: "answer" });
+    await classifyProjectChatMessage({
+      message: "Could you move one picture",
+      stage: "complete",
+      pages,
+      textModel: model
+    });
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0] as GenerateWithToolsOptions;
+    expect(String(call.messages[0]!.content)).toMatch(/remove_image/);
+    expect(String(call.messages[0]!.content)).toMatch(/move_image/);
+    expect(String(call.messages[0]!.content)).not.toMatch(/Edit Mode on that page can remove/);
+    const decideTool = call.tools.find((tool) => tool.name === "decide")!;
+    expect(
+      decideTool.parameters.safeParse({
+        ...decideBase,
+        action: "propose_edit",
+        editTarget: "move_image",
+        pageIndexes: [1],
+        imageDestPageIndexes: [2]
+      }).success
+    ).toBe(true);
+  });
 });

@@ -330,7 +330,8 @@ describe("chat image replacement", () => {
         where: { id: "asset-1", projectId: "project-1" },
         data: {
           path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
-          prompt: "old prompt"
+          prompt: "old prompt",
+          pageId: "page-1"
         }
       });
       expect(mockPrisma.page.update).toHaveBeenCalledWith({

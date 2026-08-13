@@ -324,6 +324,7 @@ export async function undoLastBookEdit(
 
   const restoredPageIndexes: number[] = [];
   const previousAsset = previousAssetFromClassifier(operation.classifier);
+  const demotedAsset = demotedAssetFromClassifier(operation.classifier);
   const contentRevision = await prisma.$transaction(async (tx) => {
     const editRevision = project.currentPlanId
       ? await tx.project.update({
@@ -333,10 +334,7 @@ export async function undoLastBookEdit(
         })
       : null;
     for (const snapshot of operation.snapshots) {
-      const restoreImagePrompt =
-        previousAsset &&
-        previousAsset.pageId === snapshot.pageId &&
-        (typeof previousAsset.imagePrompt === "string" || previousAsset.imagePrompt === null);
+      const imagePrompt = imagePromptToRestore(snapshot.pageId, previousAsset, demotedAsset);
       await tx.page.update({
         where: { id: snapshot.pageId },
         data: {
@@ -345,7 +343,7 @@ export async function undoLastBookEdit(
           summary: snapshot.summaryBefore,
           status: "COMPLETED",
           revision: { increment: 1 },
-          ...(restoreImagePrompt ? { imagePrompt: previousAsset.imagePrompt } : {})
+          ...(imagePrompt !== undefined ? { imagePrompt } : {})
         }
       });
       restoredPageIndexes.push(snapshot.pageIndex);
@@ -353,7 +351,13 @@ export async function undoLastBookEdit(
     if (previousAsset) {
       await tx.imageAsset.updateMany({
         where: { id: previousAsset.id, projectId: project.id },
-        data: { path: previousAsset.path, prompt: previousAsset.prompt }
+        data: { path: previousAsset.path, prompt: previousAsset.prompt, pageId: previousAsset.pageId }
+      });
+    }
+    if (demotedAsset) {
+      await tx.imageAsset.updateMany({
+        where: { id: demotedAsset.id, projectId: project.id },
+        data: { path: demotedAsset.path, prompt: demotedAsset.prompt, pageId: demotedAsset.pageId }
       });
     }
     await tx.bookEditOperation.update({
@@ -400,8 +404,44 @@ function previousAssetFromClassifier(classifier: unknown): {
   path: string;
   prompt: string;
   imagePrompt?: string | null;
+  destPageId?: string;
+  destImagePrompt?: string | null;
 } | null {
   const stored = jsonRecord(jsonRecord(classifier).previousAsset);
+  if (
+    typeof stored.id !== "string" ||
+    !stored.id ||
+    typeof stored.pageId !== "string" ||
+    !stored.pageId ||
+    typeof stored.path !== "string" ||
+    !stored.path ||
+    typeof stored.prompt !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: stored.id,
+    pageId: stored.pageId,
+    path: stored.path,
+    prompt: stored.prompt,
+    ...(typeof stored.imagePrompt === "string" || stored.imagePrompt === null
+      ? { imagePrompt: stored.imagePrompt }
+      : {}),
+    ...(typeof stored.destPageId === "string" && stored.destPageId ? { destPageId: stored.destPageId } : {}),
+    ...(typeof stored.destImagePrompt === "string" || stored.destImagePrompt === null
+      ? { destImagePrompt: stored.destImagePrompt }
+      : {})
+  };
+}
+
+function demotedAssetFromClassifier(classifier: unknown): {
+  id: string;
+  pageId: string;
+  path: string;
+  prompt: string;
+  imagePrompt?: string | null;
+} | null {
+  const stored = jsonRecord(jsonRecord(classifier).demotedAsset);
   if (
     typeof stored.id !== "string" ||
     !stored.id ||
@@ -424,4 +464,41 @@ function previousAssetFromClassifier(classifier: unknown): {
   };
 }
 
-export const UNDOABLE_EDIT_KINDS = ["LOCAL_PATCH", "PAGE_REWRITE", "CHAPTER_REGENERATE", "MANUAL_EDIT", "ADD_IMAGE"] as const;
+function imagePromptToRestore(
+  pageId: string,
+  previousAsset: ReturnType<typeof previousAssetFromClassifier>,
+  demotedAsset: ReturnType<typeof demotedAssetFromClassifier>
+): string | null | undefined {
+  if (
+    previousAsset &&
+    previousAsset.pageId === pageId &&
+    (typeof previousAsset.imagePrompt === "string" || previousAsset.imagePrompt === null)
+  ) {
+    return previousAsset.imagePrompt;
+  }
+  if (
+    demotedAsset &&
+    demotedAsset.pageId === pageId &&
+    (typeof demotedAsset.imagePrompt === "string" || demotedAsset.imagePrompt === null)
+  ) {
+    return demotedAsset.imagePrompt;
+  }
+  if (
+    previousAsset &&
+    previousAsset.destPageId === pageId &&
+    (typeof previousAsset.destImagePrompt === "string" || previousAsset.destImagePrompt === null)
+  ) {
+    return previousAsset.destImagePrompt;
+  }
+  return undefined;
+}
+
+export const UNDOABLE_EDIT_KINDS = [
+  "LOCAL_PATCH",
+  "PAGE_REWRITE",
+  "CHAPTER_REGENERATE",
+  "MANUAL_EDIT",
+  "ADD_IMAGE",
+  "MOVE_IMAGE",
+  "REMOVE_IMAGE"
+] as const;

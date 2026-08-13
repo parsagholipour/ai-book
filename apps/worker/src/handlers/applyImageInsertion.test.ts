@@ -84,6 +84,7 @@ import {
   applyImageInsertion,
   imageAltFromSubject,
   markdownWithAppendedImage,
+  markdownWithRemovedImage,
   markdownWithReplacedImage
 } from "./applyImageInsertion.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
@@ -780,6 +781,17 @@ describe("markdownWithReplacedImage", () => {
 
   it("returns null when no line carries the marker — the caller's cue to append", () => {
     expect(markdownWithReplacedImage("Just prose.", "chat-image-op-old", newLine)).toBeNull();
+  });
+});
+
+describe("markdownWithRemovedImage", () => {
+  it("deletes the line carrying the marker and collapses the gap", () => {
+    const markdown = "Intro.\n\n![old](/assets/images/p/chat-image-op-old-aaaa.jpg)\n\nOutro.";
+    expect(markdownWithRemovedImage(markdown, "chat-image-op-old")).toBe("Intro.\n\nOutro.");
+  });
+
+  it("returns null when no line carries the marker", () => {
+    expect(markdownWithRemovedImage("Just prose.", "chat-image-op-old")).toBeNull();
   });
 });
 

@@ -56,6 +56,7 @@ import { queueChargedPlanRevision } from "./planRevisionOperations.js";
 // direct plan revision does: this file is at its size budget, and the quota
 // predicate is a seam of its own.
 import { queueChatAddImage } from "./addImageOperations.js";
+import { queueChatImageLayout } from "./imageLayoutOperations.js";
 
 /**
  * The one reserve → commit → enqueue → compensate skeleton every charged edit
@@ -577,6 +578,9 @@ export async function queueChatBookEdit(options: {
   }
   if (intent.kind === "add_image") {
     return queueChatAddImage(options);
+  }
+  if (intent.kind === "move_image" || intent.kind === "remove_image") {
+    return queueChatImageLayout(options);
   }
 
   let affectedPageIndexes = await affectedPagesForIntent(intent, message, project);

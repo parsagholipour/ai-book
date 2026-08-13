@@ -83,4 +83,21 @@ describe("loadPricingDrivers", () => {
     expect(report.coverage.modelledCredits).toBe(45);
     expect(report.coverage.accuracyPercent).toBe(100);
   });
+
+  it("does not count MOVE_IMAGE or REMOVE_IMAGE as generated images", async () => {
+    primeWindow({
+      edits: [
+        { kind: "MOVE_IMAGE", affectedPageIndexes: [1, 2], project: { mediaSettings: null } },
+        { kind: "REMOVE_IMAGE", affectedPageIndexes: [3], project: { mediaSettings: { modelTier: "premium" } } }
+      ],
+      chargedCredits: 0
+    });
+
+    const report = await loadPricingDrivers(resolveWindow(7), creditPricing());
+
+    expect(report.drivers.imageGeneration).toBe(0);
+    expect(report.drivers.imageGenerationPremium).toBe(0);
+    expect(report.edits).toBe(2);
+    expect(report.coverage.modelledCredits).toBe(0);
+  });
 });
