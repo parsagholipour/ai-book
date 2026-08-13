@@ -9,6 +9,7 @@ import 'character_network_image.dart';
 
 const double _tile = 84;
 const double _row = 96;
+const EdgeInsets _gutter = EdgeInsets.symmetric(horizontal: 18);
 
 /// Every picture this character has ever had, newest first.
 ///
@@ -51,20 +52,25 @@ class CharacterImageStrip extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        AppSectionHeader(
-          title: 'Pictures',
-          subtitle: empty
-              ? 'Add a photo, or have one drawn.'
-              : 'Newest first. The main one is what your books draw from. '
-                    'The last 20 are kept.',
-          action: empty
-              ? null
-              : IconButton(
-                  key: const ValueKey('character-strip-add'),
-                  tooltip: 'Add a picture',
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                ),
+        // The row bleeds to the screen edges so it reads as scrollable; the
+        // title and hint stay on the same 18px gutter as About above.
+        Padding(
+          padding: _gutter,
+          child: AppSectionHeader(
+            title: 'Pictures',
+            subtitle: empty
+                ? 'Add a photo, or have one drawn.'
+                : 'Newest first. The main one is what your books draw from. '
+                      'The last 20 are kept.',
+            action: empty
+                ? null
+                : IconButton(
+                    key: const ValueKey('character-strip-add'),
+                    tooltip: 'Add a picture',
+                    onPressed: onAdd,
+                    icon: const Icon(Icons.add_photo_alternate_outlined),
+                  ),
+          ),
         ),
         const SizedBox(height: AppSpacing.xs),
         SizedBox(
@@ -73,8 +79,7 @@ class CharacterImageStrip extends StatelessWidget {
               ? _skeletons()
               : ListView(
                   scrollDirection: Axis.horizontal,
-                  // Bleeds off both edges so the row reads as scrollable.
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  padding: _gutter,
                   children: [
                     if (pendingUpload != null) ...[
                       _PendingTile(
@@ -115,10 +120,13 @@ class CharacterImageStrip extends StatelessWidget {
         ),
         if (!empty) ...[
           const SizedBox(height: AppSpacing.xxs),
-          Text(
-            'Hold a picture for more.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+          Padding(
+            padding: _gutter,
+            child: Text(
+              'Hold a picture for more.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         ],
@@ -129,7 +137,7 @@ class CharacterImageStrip extends StatelessWidget {
   Widget _skeletons() {
     return ListView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      padding: _gutter,
       children: [
         for (var index = 0; index < 3; index++) ...[
           const _TileFrame(child: _TileShimmer()),

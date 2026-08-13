@@ -26,6 +26,7 @@ import 'character_portrait_polling.dart';
 import 'character_profile_details.dart';
 import 'character_profile_header.dart';
 import 'character_reference_card.dart';
+import 'character_reference_copy.dart';
 
 /// Pushes one character's profile.
 ///
@@ -161,6 +162,24 @@ class _CharacterProfileScreenState
 
   Future<void> _generatePortrait(LibraryCharacter character) async {
     if (_busy) return;
+    // The redraw is the one draw that asks first, and the gate lives here
+    // rather than on the button because three surfaces reach this: the card's
+    // call to action, the per-picture sheet, and the retry on a failed
+    // drawing. Only the first can ever be a redraw, but a guard the other two
+    // route around is a guard that stops holding the day one of them can.
+    if (referenceIsRedraw(character)) {
+      final credits =
+          ref.read(charactersProvider).value?.portraitCredits ?? 0;
+      final confirmed = await showAppConfirmationDialog(
+        context,
+        title: redrawConfirmationTitle(character),
+        message: redrawConfirmationMessage(character, credits),
+        confirmLabel: 'Redraw',
+      );
+      // Not `destructive`: red is for what cannot be taken back, and the
+      // picture this replaces is still in the strip afterwards.
+      if (!confirmed || !mounted) return;
+    }
     final messenger = ScaffoldMessenger.of(context);
     // Reused across retries: the API treats a repeated requestId as the same
     // attempt, so a tap after a timeout cannot charge twice.

@@ -261,6 +261,28 @@ void main() {
       );
     });
 
+    testWidgets('the Pictures heading sits on the same gutter as About', (
+      tester,
+    ) async {
+      await pumpProfile(
+        tester,
+        testCharacter(
+          portraitStatus: CharacterPortraitStatus.ready,
+          portraitSource: CharacterPortraitSource.generated,
+        ),
+        images: [testImage(id: 'img-new', isMain: true, isCurrentReference: true)],
+      );
+
+      expect(
+        tester.getTopLeft(find.text('Pictures')).dx,
+        tester.getTopLeft(find.text('About')).dx,
+      );
+      expect(
+        tester.getTopLeft(find.text('Hold a picture for more.')).dx,
+        tester.getTopLeft(find.text('About')).dx,
+      );
+    });
+
     testWidgets('holding a picture promotes it, and says what changed', (
       tester,
     ) async {
@@ -413,6 +435,89 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+  });
+
+  group('the redraw asks first', () {
+    LibraryCharacter drawn() => testCharacter(
+      portraitStatus: CharacterPortraitStatus.ready,
+      portraitSource: CharacterPortraitSource.generated,
+      usedInBooks: true,
+    );
+
+    Finder cta() => find.byKey(const ValueKey('character-generate-portrait'));
+
+    testWidgets('a redraw spends nothing until it is confirmed', (
+      tester,
+    ) async {
+      final repository = await pumpProfile(tester, drawn());
+
+      await tester.tap(cta());
+      await tester.pumpAndSettle();
+
+      expect(find.text('Redraw Mina Park?'), findsOneWidget);
+      // The price is the reason to ask at all, so it has to be in the
+      // question and not only on the button behind it.
+      expect(find.textContaining('for 45 credits'), findsOneWidget);
+      expect(repository.portraitRequests, isEmpty);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(repository.portraitRequests, isEmpty);
+      expect(find.text('Redraw Mina Park?'), findsNothing);
+    });
+
+    testWidgets('the question says what a redraw does not take away', (
+      tester,
+    ) async {
+      await pumpProfile(tester, drawn());
+
+      await tester.tap(cta());
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('stays in Pictures'), findsOneWidget);
+      expect(
+        find.textContaining('Books you have already made keep their look'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('confirming draws once', (tester) async {
+      final repository = await pumpProfile(tester, drawn());
+
+      await tester.tap(cta());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Redraw'));
+      await tester.pumpAndSettle();
+
+      expect(repository.portraitRequests, hasLength(1));
+    });
+
+    testWidgets('the first illustration is not gated', (tester) async {
+      // The draw the whole screen has been asking for. A dialog here would
+      // stand between the reader and the step they are being pushed towards.
+      final repository = await pumpProfile(
+        tester,
+        testCharacter(photoKind: CharacterPhotoKind.photograph),
+      );
+
+      await tester.tap(cta());
+      await tester.pumpAndSettle();
+
+      expect(repository.portraitRequests, hasLength(1));
+    });
+
+    testWidgets('retrying a refunded failure is not gated', (tester) async {
+      final repository = await pumpProfile(
+        tester,
+        testCharacter(portraitStatus: CharacterPortraitStatus.failed),
+      );
+
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+
+      expect(repository.portraitRequests, hasLength(1));
     });
   });
 
