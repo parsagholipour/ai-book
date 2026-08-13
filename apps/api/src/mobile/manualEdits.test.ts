@@ -199,7 +199,8 @@ describe("mobile editable book and manual edits", () => {
       pageIndex: 1,
       titleBefore: "Night Falls",
       titleAfter: "Day Breaks",
-      titleChanged: true
+      titleChanged: true,
+      illustrationChanged: false
     });
     // The word that moved, not the whole paragraph reprinted twice.
     expect(changes.pages[0].blocks).toEqual([
@@ -244,6 +245,117 @@ describe("mobile editable book and manual edits", () => {
     });
 
     expect(response.json().changes.pages).toEqual([]);
+    await app.close();
+  });
+
+  it("keeps an illustration replacement whose markdown did not move", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    state.bookEditOperations.push(
+      appliedEditOperationRecord({
+        kind: "ADD_IMAGE",
+        request: "change the first image to more aggressive",
+        creditsCharged: 40,
+        classifier: {
+          previousAsset: {
+            id: "asset-1",
+            pageId: "page-1",
+            path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+            afterPath: "http://localhost:4001/assets/images/project-1/page-1-op-applied-uuid.jpg",
+            prompt: "a fox",
+            imagePrompt: "a fox"
+          }
+        }
+      })
+    );
+    state.pageEditSnapshots.push({
+      id: "snapshot-1",
+      projectId: "project-1",
+      pageId: "page-1",
+      operationId: "operation-applied",
+      pageIndex: 1,
+      titleBefore: "The garden",
+      markdownBefore: "Mae unlocked the garden gate.",
+      summaryBefore: "Mae.",
+      revisionBefore: 1,
+      titleAfter: "The garden",
+      markdownAfter: "Mae unlocked the garden gate.",
+      summaryAfter: "Mae.",
+      revisionAfter: 2
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+    const changes = response.json().changes;
+
+    expect(response.statusCode).toBe(200);
+    expect(changes.pages).toHaveLength(1);
+    expect(changes.pages[0]).toMatchObject({
+      pageIndex: 1,
+      titleChanged: false,
+      addedWords: 0,
+      removedWords: 0,
+      illustrationChanged: true,
+      illustrationBefore: "/assets/images/project-1/page-1.jpg",
+      illustrationAfter: "/assets/images/project-1/page-1-op-applied-uuid.jpg"
+    });
+    await app.close();
+  });
+
+  it("fills a missing after-image from the live asset so already-applied swaps still review", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(projectRecord({ id: "project-1" }));
+    mockPrisma.imageAsset.findUnique.mockResolvedValue({
+      path: "http://localhost:4001/assets/images/project-1/page-1-new.jpg",
+      projectId: "project-1"
+    });
+    state.bookEditOperations.push(
+      appliedEditOperationRecord({
+        kind: "ADD_IMAGE",
+        request: "change the first image to more aggressive",
+        classifier: {
+          previousAsset: {
+            id: "asset-1",
+            pageId: "page-1",
+            path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+            prompt: "a fox",
+            imagePrompt: "a fox"
+          }
+        }
+      })
+    );
+    state.pageEditSnapshots.push({
+      id: "snapshot-1",
+      projectId: "project-1",
+      pageId: "page-1",
+      operationId: "operation-applied",
+      pageIndex: 1,
+      titleBefore: "The garden",
+      markdownBefore: "Mae unlocked the garden gate.",
+      summaryBefore: "Mae.",
+      revisionBefore: 1,
+      titleAfter: "The garden",
+      markdownAfter: "Mae unlocked the garden gate.",
+      summaryAfter: "Mae.",
+      revisionAfter: 2
+    });
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/mobile/projects/project-1/operations/operation-applied/changes",
+      headers: bearer("token-a")
+    });
+
+    expect(response.json().changes.pages[0]).toMatchObject({
+      illustrationChanged: true,
+      illustrationBefore: "/assets/images/project-1/page-1.jpg",
+      illustrationAfter: "/assets/images/project-1/page-1-new.jpg"
+    });
     await app.close();
   });
 

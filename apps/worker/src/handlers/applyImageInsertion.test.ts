@@ -599,6 +599,7 @@ describe("applyImageInsertion", () => {
             id: "asset-1",
             pageId: "page-1",
             path: asset.path,
+            afterPath: `http://localhost:4001/assets/images/project-1/${writtenFilename()}`,
             prompt: asset.prompt,
             imagePrompt: "Mae in the garden with a fox."
           }

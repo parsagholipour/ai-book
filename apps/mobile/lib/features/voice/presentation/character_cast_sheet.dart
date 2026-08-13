@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/api/api_error.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_feedback.dart';
+import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../../../shared/ui/haptics.dart';
 import '../data/voice_repository.dart';
 import '../data/voice_disclosure_store.dart';
@@ -152,6 +153,7 @@ class _CastList extends StatelessWidget {
             itemBuilder: (context, index) => _CastRow(
               character: cast.characters[index],
               affordable: cast.canAfford,
+              creditsToStart: cast.creditsToStart,
               projectId: projectId,
               pageIndex: pageIndex,
             ),
@@ -163,7 +165,7 @@ class _CastList extends StatelessWidget {
 
   String _costLine(VoiceCast cast) {
     if (!cast.canAfford) {
-      return 'You need ${cast.creditsToStart} credits to start a call.';
+      return creditsNeededToStartCallMessage(cast.creditsToStart);
     }
     final minutes = cast.affordableMinutes;
     return '${cast.creditsPerMinute} credits a minute · about $minutes '
@@ -175,12 +177,14 @@ class _CastRow extends ConsumerWidget {
   const _CastRow({
     required this.character,
     required this.affordable,
+    required this.creditsToStart,
     required this.projectId,
     this.pageIndex,
   });
 
   final VoiceCharacter character;
   final bool affordable;
+  final int creditsToStart;
   final String projectId;
   final int? pageIndex;
 
@@ -188,7 +192,10 @@ class _CastRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final enabled = character.callable && affordable;
+    // Still tappable when the balance cannot cover the opening hold: a
+    // disabled row swallows the tap, and the cost line above is easy to miss.
+    // The toast is what names the number.
+    final enabled = character.callable;
 
     return ListTile(
       contentPadding: EdgeInsets.zero,
@@ -227,7 +234,7 @@ class _CastRow extends ConsumerWidget {
       ),
       trailing: Icon(
         Icons.call,
-        color: enabled
+        color: enabled && affordable
             ? colors.primary
             : colors.onSurfaceVariant.withValues(alpha: 0.4),
       ),
@@ -236,6 +243,19 @@ class _CastRow extends ConsumerWidget {
   }
 
   Future<void> _placeCall(BuildContext context, WidgetRef ref) async {
+    if (!affordable) {
+      AppHaptics.warning();
+      final messenger = ScaffoldMessenger.of(context);
+      Navigator.of(context).pop();
+      messenger
+        ..hideCurrentSnackBar()
+        ..showAppSnackBar(
+          SnackBar(
+            content: Text(creditsNeededToStartCallMessage(creditsToStart)),
+          ),
+        );
+      return;
+    }
     final store = ref.read(voiceDisclosureStoreProvider);
     if (!await store.hasAcknowledged()) {
       if (!context.mounted) return;

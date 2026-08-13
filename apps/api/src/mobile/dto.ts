@@ -378,6 +378,10 @@ export type MobileEditPageChangeDto = {
   blocks: MobileEditDiffBlockDto[];
   addedWords: number;
   removedWords: number;
+  /** True when this page's compiled illustration was swapped in place. */
+  illustrationChanged: boolean;
+  illustrationBefore?: string;
+  illustrationAfter?: string;
 };
 
 /** What one applied edit did to the book, page by page. */

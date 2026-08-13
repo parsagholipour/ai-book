@@ -363,7 +363,7 @@ class VoiceCallController extends Notifier<VoiceCallState> {
       } on ApiException catch (error) {
         if (error.code == 'INSUFFICIENT_CREDITS') {
           throw InsufficientCreditsForCallException(
-            'You need more credits to start a call.',
+            creditsNeededToStartCallMessage(_requiredCreditsFrom(error)),
           );
         }
         rethrow;
@@ -708,6 +708,13 @@ class VoiceCallController extends Notifier<VoiceCallState> {
     // the same retry tick.
     final jitter = Random().nextInt(base.inMilliseconds ~/ 4 + 1);
     return base + Duration(milliseconds: jitter);
+  }
+
+  static int? _requiredCreditsFrom(ApiException error) {
+    final raw = error.details['requiredCredits'];
+    if (raw is int) return raw;
+    if (raw is num) return raw.toInt();
+    return null;
   }
 }
 

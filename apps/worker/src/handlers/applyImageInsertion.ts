@@ -450,6 +450,7 @@ async function applyAssetReplacementInTx(
           id: live.id,
           pageId: options.current.id,
           path: live.path,
+          afterPath: options.publicPath,
           prompt: live.prompt,
           ...(typeof previousImagePrompt === "string" || previousImagePrompt === null
             ? { imagePrompt: previousImagePrompt }

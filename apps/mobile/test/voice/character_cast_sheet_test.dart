@@ -131,6 +131,23 @@ void main() {
     expect(find.text('You need 180 credits to start a call.'), findsOneWidget);
   });
 
+  testWidgets('toasts the opening hold when a call is tapped without the credits', (
+    tester,
+  ) async {
+    // A disabled row used to swallow the tap, so the cost line was the only
+    // explanation and easy to miss. The tap is the attempt; the toast names
+    // the number.
+    await pumpCastSheet(tester, FakeVoiceRepository(cast(availableCredits: 20)));
+    await tester.tap(find.text('Marlow'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.text('You need 180 credits to start a call.'), findsOneWidget);
+    expect(find.text('Call a character'), findsNothing);
+    expect(find.text('Before your first voice call'), findsNothing);
+  });
+
   testWidgets('lists a callable character with their role', (tester) async {
     await pumpCastSheet(tester, FakeVoiceRepository(cast()));
 

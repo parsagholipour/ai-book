@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/app/config/app_config.dart';
 import 'package:tomeza/features/projects/data/projects_repository.dart';
 import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/edit_changes_screen.dart';
+import 'package:tomeza/shared/ui/zoomable_image_viewer.dart';
 
 const _target = (projectId: 'project-1', operationId: 'operation-1');
 
@@ -66,6 +68,10 @@ MobileEditChanges _changes({
 Widget _app(MobileEditChanges? changes) {
   return ProviderScope(
     overrides: [
+      appConfigProvider.overrideWithValue(_testConfig),
+      projectAssetHeadersProvider.overrideWith(
+        (ref) async => const <String, String>{},
+      ),
       editChangesProvider(_target).overrideWith(
         (ref) async =>
             changes ??
@@ -90,6 +96,15 @@ Widget _app(MobileEditChanges? changes) {
   );
 }
 
+final _testConfig = AppConfig(
+  environment: AppEnvironment.local,
+  apiBaseUrl: Uri.parse('http://localhost:4001'),
+  privacyPolicyUrl: Uri.parse('https://example.com/privacy'),
+  termsOfServiceUrl: Uri.parse('https://example.com/terms'),
+  accountDeletionUrl: Uri.parse('https://example.com/delete'),
+  supportEmail: 'support@example.com',
+);
+
 void main() {
   testWidgets('shows what the edit asked for and what it moved', (
     tester,
@@ -107,27 +122,28 @@ void main() {
     expect(find.text('−1'), findsWidgets);
   });
 
-  testWidgets('marks the words that moved rather than reprinting the paragraph', (
-    tester,
-  ) async {
-    await tester.pumpWidget(_app(_changes()));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'marks the words that moved rather than reprinting the paragraph',
+    (tester) async {
+      await tester.pumpWidget(_app(_changes()));
+      await tester.pumpAndSettle();
 
-    final paragraph = tester.widget<SelectableText>(
-      find.byType(SelectableText).first,
-    );
-    final spans = (paragraph.textSpan!.children ?? []).cast<TextSpan>();
+      final paragraph = tester.widget<SelectableText>(
+        find.byType(SelectableText).first,
+      );
+      final spans = (paragraph.textSpan!.children ?? []).cast<TextSpan>();
 
-    expect(spans.map((span) => span.text), [
-      'The city slept under a heavy ',
-      'night ',
-      'day ',
-      'sky.',
-    ]);
-    expect(spans[1].style?.decoration, TextDecoration.lineThrough);
-    expect(spans[2].style?.decoration, isNot(TextDecoration.lineThrough));
-    expect(spans[1].style?.color, isNot(spans[2].style?.color));
-  });
+      expect(spans.map((span) => span.text), [
+        'The city slept under a heavy ',
+        'night ',
+        'day ',
+        'sky.',
+      ]);
+      expect(spans[1].style?.decoration, TextDecoration.lineThrough);
+      expect(spans[2].style?.decoration, isNot(TextDecoration.lineThrough));
+      expect(spans[1].style?.color, isNot(spans[2].style?.color));
+    },
+  );
 
   testWidgets('folds away long stretches the edit never touched', (
     tester,
@@ -199,13 +215,109 @@ void main() {
     expect(find.text('Nothing was changed'), findsOneWidget);
   });
 
+  test('reads an illustration replacement from the server payload', () {
+    final page = MobileEditPageChange.fromJson({
+      'pageIndex': 1,
+      'titleBefore': 'The garden',
+      'titleAfter': 'The garden',
+      'titleChanged': false,
+      'blocks': <dynamic>[],
+      'addedWords': 0,
+      'removedWords': 0,
+      'illustrationChanged': true,
+      'illustrationBefore': '/assets/images/project-1/page-1.jpg',
+      'illustrationAfter': '/assets/images/project-1/page-1-new.jpg',
+    });
+
+    expect(page.illustrationChanged, isTrue);
+    expect(page.illustrationBefore, '/assets/images/project-1/page-1.jpg');
+    expect(page.illustrationAfter, '/assets/images/project-1/page-1-new.jpg');
+  });
+
+  testWidgets('shows an illustration replacement instead of an empty diff', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileEditChanges(
+          operationId: 'operation-1',
+          kind: 'add_image',
+          status: 'applied',
+          request: 'change the first image to more aggressive',
+          creditsCharged: 40,
+          pages: [
+            MobileEditPageChange(
+              pageIndex: 1,
+              titleBefore: 'The garden',
+              titleAfter: 'The garden',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+            ),
+          ],
+          addedWords: 0,
+          removedWords: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Nothing was changed'), findsNothing);
+    expect(find.text('Illustration replaced'), findsOneWidget);
+    expect(
+      find.text('The illustration on this page was replaced.'),
+      findsOneWidget,
+    );
+    expect(find.text('Page 1'), findsOneWidget);
+    expect(find.textContaining('unchanged'), findsNothing);
+  });
+
+  testWidgets('opens the shared image viewer from a replaced illustration', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _app(
+        const MobileEditChanges(
+          operationId: 'operation-1',
+          kind: 'add_image',
+          status: 'applied',
+          request: 'change the first image to more aggressive',
+          creditsCharged: 40,
+          pages: [
+            MobileEditPageChange(
+              pageIndex: 1,
+              titleBefore: 'The garden',
+              titleAfter: 'The garden',
+              titleChanged: false,
+              blocks: [],
+              addedWords: 0,
+              removedWords: 0,
+              illustrationChanged: true,
+              illustrationBefore: '/assets/images/project-1/page-1.jpg',
+              illustrationAfter: '/assets/images/project-1/page-1-new.jpg',
+            ),
+          ],
+          addedWords: 0,
+          removedWords: 0,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('view-illustration-Before')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ZoomableImageViewer), findsOneWidget);
+    expect(find.text('1 of 2'), findsOneWidget);
+    expect(find.text('Before'), findsWidgets);
+  });
+
   testWidgets('flags an edit that was undone', (tester) async {
     await tester.pumpWidget(_app(_changes(undone: true)));
     await tester.pumpAndSettle();
 
-    expect(
-      find.textContaining('This edit was undone'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('This edit was undone'), findsOneWidget);
   });
 }

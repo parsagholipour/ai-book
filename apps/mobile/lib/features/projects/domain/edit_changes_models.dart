@@ -68,6 +68,9 @@ class MobileEditPageChange {
     required this.blocks,
     required this.addedWords,
     required this.removedWords,
+    this.illustrationChanged = false,
+    this.illustrationBefore,
+    this.illustrationAfter,
   });
 
   final int pageIndex;
@@ -80,6 +83,12 @@ class MobileEditPageChange {
   final List<MobileEditDiffBlock> blocks;
   final int addedWords;
   final int removedWords;
+
+  /// True when this page's compiled illustration was swapped in place, which
+  /// leaves the markdown (and therefore the word diff) unchanged.
+  final bool illustrationChanged;
+  final String? illustrationBefore;
+  final String? illustrationAfter;
 
   factory MobileEditPageChange.fromJson(Map<String, dynamic> json) {
     final blocks = json['blocks'] as List<dynamic>? ?? const [];
@@ -96,6 +105,9 @@ class MobileEditPageChange {
           .toList(),
       addedWords: json['addedWords'] as int? ?? 0,
       removedWords: json['removedWords'] as int? ?? 0,
+      illustrationChanged: json['illustrationChanged'] as bool? ?? false,
+      illustrationBefore: json['illustrationBefore'] as String?,
+      illustrationAfter: json['illustrationAfter'] as String?,
     );
   }
 }

@@ -134,6 +134,15 @@ class VoiceCast {
       creditsPerMinute <= 0 ? 0 : availableCredits ~/ creditsPerMinute;
 }
 
+/// Why a call did not start: the hold it needs, named so the toast, the cast
+/// sheet, and a 402 from the server all say the same sentence.
+String creditsNeededToStartCallMessage([int? credits]) {
+  if (credits != null && credits > 0) {
+    return 'You need $credits credits to start a call.';
+  }
+  return 'You need more credits to start a call.';
+}
+
 /// Everything needed to open a Gemini Live socket for one call.
 class VoiceCallSession {
   const VoiceCallSession({

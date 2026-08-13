@@ -239,6 +239,9 @@ class EditDiffWordCount extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (addedWords == 0 && removedWords == 0) {
+      return const SizedBox.shrink();
+    }
     final palette = EditDiffPalette.of(context);
     final style = Theme.of(context).textTheme.labelMedium;
     return Semantics(
