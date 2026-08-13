@@ -44,6 +44,23 @@ export function workerJobNameForType(type: string): string {
   return name;
 }
 
+const generationJobTypesByWorkerName = new Map<string, GenerationJobType>(
+  Object.entries(jobNames).map(([type, name]) => [name, type as GenerationJobType])
+);
+
+/**
+ * The inverse of `workerJobNameForType`, for the sites that only ever hold the
+ * kebab BullMQ name — a running `Job` — and need to reach a table keyed by
+ * `GenerationJobType`.
+ *
+ * Returns null rather than throwing: its callers are display paths (the step
+ * template a job's progress row is seeded with), where an unrecognised name is
+ * an empty list, not a failed job.
+ */
+export function generationJobTypeForWorkerName(name: string): GenerationJobType | null {
+  return generationJobTypesByWorkerName.get(name) ?? null;
+}
+
 /** The message/error pair a user-stopped job is marked with. */
 export const STOPPED_JOB_MESSAGE = "Stopped";
 export const STOPPED_JOB_ERROR = "Stopped by user";

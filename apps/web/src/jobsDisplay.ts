@@ -1,7 +1,22 @@
 import type { GenerationJobRow, JobStep, JobStepStatus, PipelineStep, ProjectStatus } from "./api.js";
 
-// Fallback step labels for rows without server-provided steps — mirror
-// JOB_STEP_TEMPLATES in apps/worker/src/runtime/jobLifecycle.ts.
+/*
+ * Fallback step labels for rows the API sent with no steps — a job that has not
+ * gone ACTIVE yet, so `buildStepTemplate` has not written any.
+ *
+ * The authored table is `JOB_STEP_TEMPLATES` in `packages/core/src/jobSteps.ts`,
+ * exhaustive over `GenerationJobType`, and this should be derived from it rather
+ * than restated. **It cannot be, today**: `apps/web` declares no dependency on
+ * `@book-maker/core` (there is no `node_modules/@book-maker` link under it and
+ * no file here imports it), a relative import into `packages/core/src` fails
+ * this project's `rootDir: "src"`, and `@book-maker/core`'s only export is a
+ * barrel that pulls in puppeteer, sharp and `node:fs` — none of which survive a
+ * browser build. Unblocking it needs two `package.json` edits this change was
+ * not allowed to make: a `workspace:*` dependency here, and a `"./jobSteps"`
+ * subpath export on core so the barrel stays out of the bundle. Until then this
+ * is a hand-copy and the copying is the risk: `GENERATE_CHARACTER_PORTRAIT` was
+ * already missing from it, which renders as a silently empty step list.
+ */
 const JOB_STEP_LABELS: Record<string, string[]> = {
   PLAN_BOOK: ["Research", "Create plan", "Save plan"],
   REVISE_PLAN: ["Revise plan", "Save revision"],
@@ -15,7 +30,8 @@ const JOB_STEP_LABELS: Record<string, string[]> = {
   BUILD_CHARACTER_PERSONA: ["Build persona", "Create profile picture", "Save character"],
   IMPORT_BOOK: ["Read manuscript", "Split into chapters", "Learn writing style", "Save your book"],
   CONTINUE_BOOK: ["Outline new chapters", "Write new pages", "Save chapters", "Refresh exports"],
-  GENERATE_AUDIOBOOK: ["Prepare narration", "Narrate chapters", "Finish audiobook"]
+  GENERATE_AUDIOBOOK: ["Prepare narration", "Narrate chapters", "Finish audiobook"],
+  GENERATE_CHARACTER_PORTRAIT: ["Prepare portrait", "Draw portrait", "Save portrait"]
 };
 
 export function parseJobSteps(value: unknown): JobStep[] {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   bookGenerationChargeFromPayloads,
   dispatchBackoffMs,
+  generationJobTypeForWorkerName,
   jobNames,
   jsonPayloadToRecord,
   retryJobOptions,
@@ -18,6 +19,16 @@ describe("worker job names", () => {
     // RESEARCH exists in the Prisma enum but nothing handles it; naming it
     // would let the API dispatch a job that could only die.
     expect(() => workerJobNameForType("RESEARCH")).toThrow(/Unknown generation job type/);
+  });
+
+  it("round-trips every name back to its type and answers null for an unknown one", () => {
+    for (const [type, name] of Object.entries(jobNames)) {
+      expect(generationJobTypeForWorkerName(name)).toBe(type);
+    }
+    // Null rather than a throw: the callers are display paths, where an
+    // unrecognised name is an empty step list and not a failed job.
+    expect(generationJobTypeForWorkerName("research")).toBeNull();
+    expect(generationJobTypeForWorkerName("GENERATE_PAGE")).toBeNull();
   });
 });
 

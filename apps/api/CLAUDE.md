@@ -9,37 +9,56 @@ call a fast model inline with an explicit timeout (see `mobile/creationBuild.ts`
 
 ## Route surfaces
 
-- `src/mobile/routes/` — `/api/mobile/*`, used by the Flutter app. This is the product surface.
-- `src/routes/projects.ts` — the older operator API behind `WEB_PASSWORD`, used by `apps/web`.
+- `src/mobile/routes/` — `/api/mobile/*`, used by the Flutter app. This is the product surface, and
+  it has its own `CLAUDE.md` carrying the "adding a route" checklist and the domain invariants.
+- `src/routes/` — the older operator API behind `WEB_PASSWORD`, used by `apps/web`. Also has its
+  own `CLAUDE.md`; the short version is that a mobile bearer token is rejected there before any
+  handler runs, and that is a security property rather than tidiness.
+- `src/admin/` — `/api/admin`, read by the operator dashboard only.
 
 `src/mobileProjects.ts` is the composition root: it builds one `MobileRouteContext` and calls each
 `registerMobile*Routes(fastify, context)` in turn. They run on the same Fastify instance rather
-than through `fastify.register`, so they share one encapsulation context — the `application/octet-stream`
-parser registered there covers the attachment upload routes. Moving to `register` would break that.
+than through `fastify.register`, so they share one encapsulation context — the
+`application/octet-stream` parser registered there covers the attachment upload routes. Moving to
+`register` would break that. Everything `mobileProjects.ts` re-exports is public API consumed by
+`server.ts`, `mobileImports.ts` or tests; don't narrow those exports without checking callers.
 
-## Adding a mobile route
+## The two auth systems are unrelated
 
-1. Put the handler in the matching group under `src/mobile/routes/`, or add a group and call it
-   from `mobileProjects.ts`.
-2. Body validation: a Zod schema in `src/mobile/schemas.ts`. If the route is documented, add the
-   parallel JSON-schema fragment there too — Fastify's OpenAPI output uses that copy, so the two
-   drift unless changed together.
-3. Response shape: a DTO type in `src/mobile/dto.ts`, returned with `satisfies`.
-4. Auth: `requireMobileAuth(request, reply)` and bail when it returns null.
-5. Anything priced goes through the credit reserve/commit/refund flow in `@book-maker/db/billing`.
+- **Mobile users** — database-backed accounts under `/api/mobile/auth/*`. Bearer access tokens,
+  refresh tokens, only hashes stored in `MobileSession`. Real multi-user auth.
+- **Operator console** — a single optional `WEB_PASSWORD` cookie guarding `/api/*`, `/docs` and
+  generated assets. Not per-user.
 
-## Serializers are the API contract
+Everything protected is cookie-only except `/api/mobile/*` and the two asset prefixes.
+`allowsMobileBearer` in `src/requestAuth.ts` names that surface; `isOperatorOnlyPath` in
+`src/auth.ts` is literally its complement.
 
-`src/mobile/projectSerializers.ts` decides what the app sees. Provider names, model ids, raw queue
-state and internal error text stay out of mobile responses — the `serialize*` functions there, and
-`sanitizePublicChatMetadata` in `src/mobile/projectChat.ts`, exist to enforce that. Widen them
-deliberately, not by spreading a row.
+## Where the rest of the invariants live
+
+- `src/mobile/CLAUDE.md` — billing surfaces, the edit chat router, free presentation edits, export
+  repair, the quality verdict, characters, voice and audiobook routes.
+- `src/admin/CLAUDE.md` — how provider spend may and may not be summed.
+- `src/routes/CLAUDE.md` — operator-only authorization, and the inline export render.
+- `packages/db/CLAUDE.md` — the reserve/commit/refund loop. Any new priced route closes it on
+  **every** failure path.
+- `packages/core/CLAUDE.md` — credit prices are operator-editable and re-read every 15s by
+  `server.ts`; never capture one at module load.
+- `packages/core/src/generation/CLAUDE.md` — the browser pool. `server.ts` renders exports inline
+  when a compiled file is missing, so its `shutdown()` must await `closeSharedBrowser()` and it
+  must trap **SIGHUP** alongside INT/TERM.
+- `apps/worker/CLAUDE.md` — `src/queue.ts` `enqueueGenerationJob` must write the `GenerationJob`
+  row *before* pushing to BullMQ; a crash between the two is what
+  `reconcileUndispatchedWorkerJobs` repairs.
+
+Two things in this app are parallel implementations of worker logic and must move together with it:
+`src/queue.ts` `stopProjectGenerationJobs` (settlement on stop and delete) and the export render in
+`src/routes/projectExports.ts` (publication). Neither is a wrapper — they are second copies.
 
 ## Tests
 
 `src/mobile/*.test.ts` share `src/mobile/testing/mobileApiHarness.ts`. Add fixtures and record
-factories there rather than duplicating them per suite.
+factories there rather than duplicating them per suite. `src/mobile/testing/mobileApiMocks.ts` must
+import only `vitest` — see `src/mobile/CLAUDE.md` for why the suite hangs otherwise.
 
-`src/mobile/testing/mobileApiMocks.ts` must import only `vitest`. Its factories run inside
-`vi.mock(...)`, so importing anything that transitively reaches a mocked module deadlocks the
-suite — it hangs rather than failing, which is slow to diagnose.
+<!-- gotcha-index: pointer-only -->

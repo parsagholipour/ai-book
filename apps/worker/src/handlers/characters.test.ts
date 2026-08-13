@@ -81,7 +81,6 @@ describe("maybeEnqueueCharacterCandidatePreparation", () => {
     expect(mocks.enqueueWorkerJob).toHaveBeenCalledWith({
       projectId: "project-1",
       type: "PREPARE_CHARACTER_CANDIDATES",
-      name: "prepare-character-candidates",
       payload: { planId: "plan-1" },
       dedupeKey: "prepare-characters:project-1:plan-1"
     });

@@ -2,6 +2,10 @@ import { loadConfig, type JobStep } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+// The four recovery lists live in one leaf module. This file, `routes/projects.ts`
+// and `mobile/schemas.ts` each kept a byte-identical copy with no import between
+// them, which is how a new job type becomes recoverable on one surface only.
+import { generationFailureJobTypes, retryablePlanningJobTypes } from "./generationJobTypes.js";
 // What the app *reports* as recoverable and what a resume route will actually
 // requeue have to be the same answer — this file used to carry its own copy of
 // the predicate, which is how a book could offer a retry that queued nothing.
@@ -83,10 +87,6 @@ export type ProjectQualityStatus = {
   affectedPageIndexes: number[];
 };
 
-const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
-const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
-const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
-const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
 const config = loadConfig();
 
 export async function buildProjectStatus(projectId: string) {

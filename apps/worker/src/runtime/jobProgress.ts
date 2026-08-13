@@ -1,94 +1,22 @@
-import { type JobStep } from "@book-maker/core";
+import { generationJobTypeForWorkerName, JOB_STEP_TEMPLATES, type JobStep } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { StopRequestedError, isStoppedGenerationJob } from "./jobTypes.js";
 
 /**
- * Per-job step templates and progress reporting for `GenerationJob` rows. The
- * status transitions that consume these live in jobLifecycle.ts; handlers
- * report movement through here.
+ * Progress reporting for `GenerationJob` rows. The status transitions that
+ * consume these live in jobLifecycle.ts; handlers report movement through here.
+ *
+ * The step templates themselves are `JOB_STEP_TEMPLATES` in
+ * `packages/core/src/jobSteps.ts` — exhaustive over `GenerationJobType`, so a
+ * new job type cannot ship without them, and shared with the operator console
+ * rather than hand-mirrored into it.
  */
 
-
-const JOB_STEP_TEMPLATES: Record<string, Array<{ key: string; label: string }>> = {
-  "plan-book": [
-    { key: "research", label: "Research" },
-    { key: "plan", label: "Create plan" },
-    { key: "save", label: "Save plan" }
-  ],
-  "revise-plan": [
-    { key: "revise", label: "Revise plan" },
-    { key: "save", label: "Save revision" }
-  ],
-  "generate-book": [
-    { key: "briefs", label: "Prepare book" },
-    { key: "setup", label: "Create pages" },
-    { key: "enqueue", label: "Queue follow-ups" }
-  ],
-  "generate-page": [
-    { key: "prepare", label: "Prepare context" },
-    { key: "draft", label: "Draft page" },
-    { key: "qa", label: "Quality review" },
-    { key: "revise", label: "Revise draft" },
-    { key: "save", label: "Save page" }
-  ],
-  "generate-image": [
-    { key: "prompt", label: "Build prompt" },
-    { key: "render", label: "Render image" },
-    { key: "store", label: "Store asset" }
-  ],
-  "compile-export": [
-    { key: "qa", label: "Final review" },
-    { key: "compile", label: "Compile markdown" },
-    { key: "write", label: "Write Markdown" },
-    { key: "pdf", label: "Generate PDF" },
-    { key: "epub", label: "Generate EPUB" }
-  ],
-  "apply-book-edit": [
-    { key: "prepare", label: "Prepare edit" },
-    { key: "snapshot", label: "Snapshot pages" },
-    { key: "apply", label: "Apply edits" },
-    { key: "export", label: "Refresh exports" }
-  ],
-  "replan-book": [
-    { key: "revise", label: "Revise plan" },
-    { key: "save", label: "Save approved plan" },
-    { key: "generate", label: "Queue regeneration" }
-  ],
-  "prepare-character-candidates": [
-    { key: "detect", label: "Detect characters" },
-    { key: "save", label: "Save candidates" }
-  ],
-  "build-character-persona": [
-    { key: "persona", label: "Build persona" },
-    { key: "portrait", label: "Create profile picture" },
-    { key: "save", label: "Save character" }
-  ],
-  "import-book": [
-    { key: "read", label: "Read manuscript" },
-    { key: "segment", label: "Split into chapters" },
-    { key: "analyze", label: "Learn writing style" },
-    { key: "save", label: "Save your book" }
-  ],
-  "continue-book": [
-    { key: "outline", label: "Outline new chapters" },
-    { key: "draft", label: "Write new pages" },
-    { key: "save", label: "Save chapters" },
-    { key: "export", label: "Refresh exports" }
-  ],
-  "generate-audiobook": [
-    { key: "prepare", label: "Prepare narration" },
-    { key: "synthesize", label: "Narrate chapters" },
-    { key: "finalize", label: "Finish audiobook" }
-  ],
-  "generate-character-portrait": [
-    { key: "prompt", label: "Prepare portrait" },
-    { key: "render", label: "Draw portrait" },
-    { key: "store", label: "Save portrait" }
-  ]
-};
-
 export function buildStepTemplate(jobName: string): JobStep[] {
-  const template = JOB_STEP_TEMPLATES[jobName];
+  // The table is keyed by `GenerationJobType`; a running BullMQ job only knows
+  // its kebab name. An unrecognised name yields no steps, exactly as before.
+  const type = generationJobTypeForWorkerName(jobName);
+  const template = type ? JOB_STEP_TEMPLATES[type] : undefined;
   if (!template) {
     return [];
   }

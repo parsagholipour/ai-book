@@ -668,7 +668,6 @@ export async function generateBookWholePass(options: {
       await enqueueWorkerJob({
         projectId: options.projectId,
         type: "GENERATE_IMAGE",
-        name: "generate-image",
         payload: { pageId: page.id, planId: options.planId, prompt: page.imagePrompt },
         dedupeKey: `generate-image:${page.id}:${options.planId}:${page.revision}`
       });

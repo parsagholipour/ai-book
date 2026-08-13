@@ -11,7 +11,8 @@ import {
   resolveBookGenerationStrategy,
   retryJobOptions,
   workerJobNameForType,
-  type CreateProjectInput
+  type CreateProjectInput,
+  type GenerationJobType
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { acceptedSavedPageTarget, terminalSavedPageCount } from "../generation/wholeBookTolerance.js";
@@ -32,24 +33,36 @@ import { currentGenerationAttemptId } from "./generationAttemptContext.js";
 
 export { dispatchBackoffMs, workerJobNameForType } from "@book-maker/core";
 
+/**
+ * The subset of job types the worker fans out to itself.
+ *
+ * Deliberately narrower than `GenerationJobType`: planning, edits, replans and
+ * imports are started by the API, which owns their charge and their retry
+ * budget, so a handler reaching for one of those is a mistake the compiler
+ * should catch. The `satisfies` clause is what keeps the narrowing honest —
+ * renaming or removing an entry in `jobNames` fails here rather than silently
+ * enqueueing a job the dispatch switch cannot name.
+ *
+ * There is deliberately no `name` beside this. The BullMQ job name is derived
+ * from the type by `workerJobNameForType` at dispatch time, so the two can no
+ * longer disagree; they were once independent unions, which typechecked
+ * `{ type: "GENERATE_BOOK", name: "generate-page" }`.
+ */
+const WORKER_FANOUT_JOB_TYPES = [
+  "GENERATE_BOOK",
+  "GENERATE_PAGE",
+  "GENERATE_IMAGE",
+  "COMPILE_EXPORT",
+  "PREPARE_CHARACTER_CANDIDATES",
+  "BUILD_CHARACTER_PERSONA",
+  "GENERATE_AUDIOBOOK"
+] as const satisfies readonly GenerationJobType[];
+
+export type WorkerFanoutJobType = (typeof WORKER_FANOUT_JOB_TYPES)[number];
+
 export async function enqueueWorkerJob(options: {
   projectId: string;
-  type:
-    | "GENERATE_BOOK"
-    | "GENERATE_PAGE"
-    | "GENERATE_IMAGE"
-    | "COMPILE_EXPORT"
-    | "PREPARE_CHARACTER_CANDIDATES"
-    | "BUILD_CHARACTER_PERSONA"
-    | "GENERATE_AUDIOBOOK";
-  name:
-    | "generate-book"
-    | "generate-page"
-    | "generate-image"
-    | "compile-export"
-    | "prepare-character-candidates"
-    | "build-character-persona"
-    | "generate-audiobook";
+  type: WorkerFanoutJobType;
   payload: Record<string, unknown>;
   dedupeKey?: string | undefined;
   contentRevision?: number | undefined;
@@ -217,7 +230,6 @@ export async function maybeEnqueueCover(projectId: string, planId: string, input
   await enqueueWorkerJob({
     projectId,
     type: "GENERATE_IMAGE",
-    name: "generate-image",
     payload: { planId, assetType: "COVER" },
     dedupeKey: `generate-cover:${projectId}:${planId}`
   });
@@ -288,7 +300,6 @@ export async function enqueueNextPageIfReady(projectId: string, planId: string, 
     await enqueueWorkerJob({
       projectId,
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: { pageId: nextPage.id, planId },
       dedupeKey: `generate-page:${nextPage.id}:${planId}`
     });
@@ -407,7 +418,6 @@ export async function maybeEnqueueCompile(
     await enqueueWorkerJob({
       projectId,
       type: "COMPILE_EXPORT",
-      name: "compile-export",
       payload: {
         planId,
         contentRevision,

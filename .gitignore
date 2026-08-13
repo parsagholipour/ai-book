@@ -39,5 +39,8 @@ yarn-error.log*
 .pnpm-store
 .codex-delegations/
 docs/english-regeneration-chat-router-incident.md
-.claude/**
-.claude
+
+# Agent tooling is committed (skills, hooks, shared settings). Only the
+# per-machine bits are ignored.
+.claude/settings.local.json
+.claude/worktrees/

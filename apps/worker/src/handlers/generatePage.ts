@@ -193,7 +193,6 @@ export async function generatePage(job: Job) {
     await enqueueWorkerJob({
       projectId,
       type: "GENERATE_IMAGE",
-      name: "generate-image",
       payload: { pageId, planId, prompt: draft.imagePrompt },
       dedupeKey: `generate-image:${pageId}:${planId}:${revision}`
     });

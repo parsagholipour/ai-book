@@ -133,7 +133,6 @@ describe("enqueueWorkerJob", () => {
     await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: { pageId: "page-1", planId: "plan-1" }
     });
 
@@ -153,6 +152,32 @@ describe("enqueueWorkerJob", () => {
     );
   });
 
+  it("names the BullMQ job from the durable row's type rather than from the caller", async () => {
+    mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+      const row = generationRow({
+        type: data.type as string,
+        payload: data.payload as Record<string, unknown>
+      });
+      mocks.prisma.generationJob.findUnique.mockResolvedValue(row);
+      return row;
+    });
+
+    await enqueueWorkerJob({
+      projectId: "project-1",
+      type: "COMPILE_EXPORT",
+      payload: { planId: "plan-1" }
+    });
+
+    // `enqueueWorkerJob` takes no `name`. It used to, as an independent literal
+    // union beside `type`, so `{ type: "GENERATE_BOOK", name: "generate-page" }`
+    // typechecked and pushed the wrong handler onto the queue.
+    expect(mocks.queueAdd).toHaveBeenCalledWith(
+      workerJobNameForType("COMPILE_EXPORT"),
+      expect.objectContaining({ planId: "plan-1", projectId: "project-1" }),
+      expect.objectContaining({ jobId: "gj-1" })
+    );
+  });
+
   it("scopes descendant dedupe and queue payloads to the paid attempt", async () => {
     mocks.prisma.generationJob.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
       const row = { ...generationRow(), ...data };
@@ -164,7 +189,6 @@ describe("enqueueWorkerJob", () => {
       enqueueWorkerJob({
         projectId: "project-1",
         type: "GENERATE_IMAGE",
-        name: "generate-image",
         dedupeKey: "page-image:page-1",
         payload: { pageId: "page-1" }
       })
@@ -190,7 +214,6 @@ describe("enqueueWorkerJob", () => {
     await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: {}
     });
 
@@ -198,7 +221,6 @@ describe("enqueueWorkerJob", () => {
     await enqueueWorkerJob({
       projectId: "project-2",
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: {}
     });
 
@@ -215,7 +237,6 @@ describe("enqueueWorkerJob", () => {
     const result = await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: {},
       dedupeKey: "dk-1"
     });
@@ -233,7 +254,6 @@ describe("enqueueWorkerJob", () => {
     const second = await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: {},
       dedupeKey: "dk-1"
     });
@@ -254,7 +274,6 @@ describe("enqueueWorkerJob", () => {
     const result = await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: {},
       dedupeKey: "dk-1"
     });
@@ -272,7 +291,6 @@ describe("enqueueWorkerJob", () => {
     await enqueueWorkerJob({
       projectId: "project-1",
       type: "GENERATE_PAGE",
-      name: "generate-page",
       payload: {}
     });
 

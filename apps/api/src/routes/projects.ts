@@ -29,6 +29,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ensureSeedTemplates, PLAN_REVISION_AUTOMATIC_RETRY_LIMIT, Prisma, prisma } from "@book-maker/db";
+import { generationFailureJobTypes } from "../generationJobTypes.js";
 import { jobsWithoutRefundedCharges } from "../resumeGuards.js";
 // One implementation of "can this failed row be resumed", shared with the
 // mobile retry route. It used to be copied here, and the copies drifted: the
@@ -190,11 +191,6 @@ const voiceCallEventBodySchema = z
       .default({})
   })
   .strict();
-const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
-const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
-const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
-const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
-
 
 export const projectRoutes: FastifyPluginAsync = async (fastify) => {
   await ensureSeedTemplates();

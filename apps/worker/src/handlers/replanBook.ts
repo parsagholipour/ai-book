@@ -162,7 +162,6 @@ export async function replanBook(job: Job) {
   const generateJob = await enqueueWorkerJob({
     projectId,
     type: "GENERATE_BOOK",
-    name: "generate-book",
     dedupeKey: `generate-book:${projectId}:${newPlanId}`,
     payload: {
       planId: newPlanId,

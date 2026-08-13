@@ -10,7 +10,6 @@ import {
   mobileTargetPagesSchema,
   resolveMobileImageSettings
 } from "../mobileCreation.js";
-import { type GenerationJobType } from "../queue.js";
 import { type MobileBookType, type MobileLengthPreset, type MobileQualityPreset } from "./dto.js";
 import { PROJECT_PROMPT_MAX_LENGTH, type CreateProjectInput, type ModelTier, type ToneProfile } from "@book-maker/core";
 import { z } from "zod";
@@ -77,13 +76,16 @@ export const mobileGenerationRetryOpenApiBody = {
 
 export const mobileAssetFilenameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,180}$/);
 
-export const retryablePlanningJobTypes: GenerationJobType[] = ["PLAN_BOOK", "REVISE_PLAN"];
-
-export const resumableJobTypes: GenerationJobType[] = ["GENERATE_PAGE", "GENERATE_IMAGE", "COMPILE_EXPORT", "APPLY_BOOK_EDIT"];
-
-export const restartableJobTypes: GenerationJobType[] = ["GENERATE_BOOK", "REPLAN_BOOK"];
-
-export const generationFailureJobTypes = [...retryablePlanningJobTypes, ...resumableJobTypes, ...restartableJobTypes];
+// One definition, in a leaf: `projectStatus.ts` and `routes/projects.ts` carried
+// byte-identical copies, and they cannot import them from here because this file
+// reaches `projectStatus.ts` through `./dto.js`. Re-exported under the original
+// names so every existing importer of this module is unaffected.
+export {
+  generationFailureJobTypes,
+  restartableJobTypes,
+  resumableJobTypes,
+  retryablePlanningJobTypes
+} from "../generationJobTypes.js";
 
 export const DEFAULT_GENERATION_RATE_LIMIT = { maxAttempts: 12, windowMs: 60 * 60 * 1000 };
 

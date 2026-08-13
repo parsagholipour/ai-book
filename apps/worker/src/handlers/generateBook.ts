@@ -203,7 +203,6 @@ export async function generateBookSequential(options: {
       await enqueueWorkerJob({
         projectId: options.projectId,
         type: "GENERATE_PAGE",
-        name: "generate-page",
         payload: { pageId: pageToStart.id, planId: options.planId },
         dedupeKey: `generate-page:${pageToStart.id}:${options.planId}`
       });

@@ -96,7 +96,6 @@ export async function maybeEnqueueCharacterCandidatePreparation(
   await enqueueWorkerJob({
     projectId,
     type: "PREPARE_CHARACTER_CANDIDATES",
-    name: "prepare-character-candidates",
     payload: { planId },
     // `enqueueWorkerJob` appends the current attempt id; the shared helper is
     // called with null here to produce that base key.

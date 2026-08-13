@@ -138,9 +138,26 @@ For other TURN providers, set `VOICE_RTC_TURN_URLS` with `VOICE_RTC_TURN_SHARED_
 ## Verification
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm build
+pnpm check
 ```
+
+That is the gate. It runs typecheck, lint, the file-size budget, and all tests, and it runs every one of them even when an earlier one fails — so a single run reports the complete state of the repo instead of stopping at the first error. The summary block at the end names every failed gate with its duration; read that rather than scrolling back through the output.
+
+If you touched `apps/mobile`, also run:
+
+```bash
+pnpm check:mobile
+```
+
+That is `flutter analyze` plus `flutter test`, and `pnpm check` deliberately does not cover it: `apps/mobile` is not a pnpm workspace, and a worker-only change should not require a Flutter SDK.
+
+While iterating, run one thing instead of all five workspaces:
+
+```bash
+pnpm -F @book-maker/api exec vitest run src/mobile/foo.test.ts   # one test file (~1-4s)
+pnpm -F @book-maker/core typecheck                              # one workspace (~3s, vs ~19s for all five)
+```
+
+The test path is relative to the **workspace**, not the repo root. A mistyped path exits 1 with `No test files found, exiting with code 1` in well under a second — that reads like a failing test and is not one.
 
 The core tests include Markdown compilation, context-budget behavior, and a deterministic 320-page dry-run plan.
