@@ -8,6 +8,7 @@ import {
   serializeProjectChatMessage
 } from "./projectChat.js";
 import { prisma } from "@book-maker/db";
+import { MODEL_PAGE_NUMBERING, numberingForProject } from "../bookPageNumbering.js";
 
 /**
  * Proposal IDs are permanent execution claims, not just transient card IDs.
@@ -42,9 +43,15 @@ export async function replayClaimedProposal(
           : "This edit request is already being handled.",
       metadata: { replayedOperation: true, charged: false, proposalId }
     }));
+  const projectRow = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { pdfPageMap: true, contentRevision: true }
+  });
   return {
     ...(await loadProjectChatResponse(projectId)),
     reply: serializeProjectChatMessage(replyMessage),
-    operation: serializeBookEditOperation(operation)
+    operation: serializeBookEditOperation(operation, {
+      pageNumbering: projectRow ? numberingForProject(projectRow) : MODEL_PAGE_NUMBERING
+    })
   };
 }

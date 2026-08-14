@@ -256,7 +256,19 @@ describe("generatePage quality loop", () => {
     );
   });
 
-  it("still best-ofs sequential drafts when draftCandidates is 2 even if quality bestOfPolish is off", async () => {
+  it("does not best-of sequential drafts when quality bestOfPolish is off even if draftCandidates is 2", async () => {
+    mocks.inputForPlanVersion.mockReturnValue({ mediaSettings: { draftCandidates: 2 } });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.generateBestOfPageDrafts).not.toHaveBeenCalled();
+    expect(mocks.generatePageDraft).toHaveBeenCalled();
+  });
+
+  it("best-ofs sequential drafts when bestOfPolish is on and draftCandidates is 2", async () => {
+    mocks.qualityEnabled.mockImplementation((feature?: string) => feature === "bestOfPolish");
     mocks.inputForPlanVersion.mockReturnValue({ mediaSettings: { draftCandidates: 2 } });
     mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
     mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });

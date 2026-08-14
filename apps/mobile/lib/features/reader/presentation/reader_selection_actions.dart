@@ -13,46 +13,48 @@ enum ReaderSelectionAction { copy, ask, rewrite, replace, editPage, share }
 
 /// Composes the chat message for a rewrite request.
 ///
-/// The page number and the quoted excerpt are both load-bearing: the API's
-/// intent classifier reads the page from `page N` and the passage from the
-/// quotes, which is how a selection in a continuously-rendered PDF becomes an
-/// edit against a specific book page.
+/// [pageNumber] is the page number the reader can see — the printed PDF page —
+/// so the visible bubble agrees with the reader chrome. Targeting does not
+/// depend on parsing it back out: the resolved book page rides the request as
+/// structured `readerContext`, and the quoted excerpt narrows it further.
 ///
-/// [pageIndex] is null when the passage could not be placed. The quote still
+/// [pageNumber] is null when the passage could not be placed. The quote still
 /// goes through — the server can often find it, and where it cannot the chat
 /// asks rather than the reader hitting a dead end.
 String readerRewriteMessage({
-  required int? pageIndex,
+  required int? pageNumber,
   required String excerpt,
   required String instruction,
 }) {
   final trimmed = instruction.trim();
-  final base = pageIndex == null
+  final base = pageNumber == null
       ? 'Rewrite this passage: "$excerpt".'
-      : 'On page $pageIndex, rewrite this passage: "$excerpt".';
+      : 'On page $pageNumber, rewrite this passage: "$excerpt".';
   return trimmed.isEmpty ? base : '$base $trimmed';
 }
 
 /// Composes the chat message for an exact replacement.
 ///
 /// Two quoted terms in this order are what the API turns into an
-/// `exact_replace` patch rather than a full rewrite.
+/// `exact_replace` patch rather than a full rewrite. [pageNumber] is the
+/// printed PDF page, as in [readerRewriteMessage].
 String readerReplaceMessage({
-  required int? pageIndex,
+  required int? pageNumber,
   required String from,
   required String to,
 }) {
   final replacement = 'replace "${from.trim()}" with "${to.trim()}".';
-  return pageIndex == null
+  return pageNumber == null
       ? 'In the book, $replacement'
-      : 'On page $pageIndex, $replacement';
+      : 'On page $pageNumber, $replacement';
 }
 
 /// Prefills the chat composer with the passage the reader asked about.
-String readerAskDraft({required int? pageIndex, required String excerpt}) {
-  return pageIndex == null
+/// [pageNumber] is the printed PDF page, as in [readerRewriteMessage].
+String readerAskDraft({required int? pageNumber, required String excerpt}) {
+  return pageNumber == null
       ? 'About this passage: "$excerpt" — '
-      : 'About page $pageIndex: "$excerpt" — ';
+      : 'About page $pageNumber: "$excerpt" — ';
 }
 
 /// Runs a selection action, sending edits through the existing chat pipeline.
@@ -85,7 +87,9 @@ Future<void> runReaderSelectionAction({
         '/projects/$projectId/chat',
         extra: ProjectChatLaunch(
           draft: readerAskDraft(
-            pageIndex: selection.bookPageIndex,
+            pageNumber: selection.bookPageIndex == null
+                ? null
+                : selection.pdfPageNumber,
             excerpt: selection.excerpt,
           ),
         ),
@@ -108,10 +112,13 @@ Future<void> runReaderSelectionAction({
         router: router,
         projectId: projectId,
         message: readerRewriteMessage(
-          pageIndex: selection.bookPageIndex,
+          pageNumber: selection.bookPageIndex == null
+              ? null
+              : selection.pdfPageNumber,
           excerpt: selection.excerpt,
           instruction: instruction,
         ),
+        readerContext: selection.chatReaderContext,
       );
 
     case ReaderSelectionAction.replace:
@@ -121,10 +128,13 @@ Future<void> runReaderSelectionAction({
         router: router,
         projectId: projectId,
         message: readerReplaceMessage(
-          pageIndex: selection.bookPageIndex,
+          pageNumber: selection.bookPageIndex == null
+              ? null
+              : selection.pdfPageNumber,
           from: replacement.from,
           to: replacement.to,
         ),
+        readerContext: selection.chatReaderContext,
       );
   }
 }
@@ -139,11 +149,12 @@ void _sendEdit({
   required GoRouter router,
   required String projectId,
   required String message,
+  Map<String, int>? readerContext,
 }) {
   AppHaptics.tap();
   router.push(
     '/projects/$projectId/chat',
-    extra: ProjectChatLaunch(send: message),
+    extra: ProjectChatLaunch(send: message, readerContext: readerContext),
   );
 }
 

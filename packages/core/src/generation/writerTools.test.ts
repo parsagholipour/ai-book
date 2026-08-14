@@ -3,7 +3,7 @@ import { MECHANICAL_TEXT_PURPOSES } from "../adapters/modelTiers.js";
 import type { ChatMessage } from "../adapters/types.js";
 import { FakeTextModelAdapter } from "../adapters/fake.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
-import type { CreateProjectInput, PageDraft } from "../schemas/book.js";
+import { pageDraftSchema, type CreateProjectInput, type PageDraft } from "../schemas/book.js";
 import type { GeneratePageOptions } from "./pagesShared.js";
 import { emptyStoryState, type StoryState } from "./storyState.js";
 
@@ -116,6 +116,7 @@ describe("generatePageDraftWithWriterTools", () => {
     const loop = runToolLoopMock.mock.calls[0]?.[0] as {
       purpose: string;
       maxModelCalls: number;
+      temperature: number;
       messages: ChatMessage[];
       tools: Array<{ name: string }>;
     };
@@ -123,6 +124,7 @@ describe("generatePageDraftWithWriterTools", () => {
     expect(loop.purpose).toBe("write-page-with-tools");
     expect(MECHANICAL_TEXT_PURPOSES.has(loop.purpose)).toBe(false);
     expect(loop.maxModelCalls).toBe(3);
+    expect(loop.temperature).toBe(0.8);
     expect(loop.tools.map((tool) => tool.name)).toEqual(["lookup_page", "lookup_entity", "search_research"]);
 
     const systemMessage = loop.messages.find((message) => message.role === "system")?.content ?? "";
@@ -150,6 +152,41 @@ describe("generatePageDraftWithWriterTools", () => {
     expect(payload.illustrationPlan).toEqual(plan.illustrationPlan);
     expect(payload.recentPages?.[0]?.excerpt).toContain("checkpoint");
     expect(payload.pageInstruction).toMatch(/Write exactly this page/i);
+  });
+
+  it("forwards a raised input temperature into the tool loop", async () => {
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({ input: { ...input, temperature: 1.1 } }),
+      storyState,
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    expect(runToolLoopMock.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ temperature: 1.1 }));
+  });
+
+  it("titles an unscripted writer-tools draft from pageScope.globalPageIndex", async () => {
+    const adapter = new FakeTextModelAdapter(input);
+    const result = await adapter.generateWithTools({
+      purpose: "write-page-with-tools",
+      messages: [
+        { role: "system", content: "Write the page." },
+        { role: "user", content: JSON.stringify({ pageScope: { globalPageIndex: 7 } }) }
+      ],
+      tools: [
+        {
+          name: "finish_turn",
+          description: "Submit the finished page draft.",
+          parameters: pageDraftSchema
+        }
+      ]
+    });
+
+    expect(result.toolCalls?.[0]?.arguments).toMatchObject({
+      title: "Dry Run Turn 7",
+      summary: expect.stringMatching(/Page 7/)
+    });
   });
 
   it("falls back when the tool loop fails", async () => {

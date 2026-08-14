@@ -3,7 +3,7 @@ import { chapterSetupsForPlan, normalizedChapters, planInputSnapshot } from "./b
 import { chapterSetupForPage } from "./generationContext.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "./qualitySettings.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
-import { type ChapterSetup } from "../runtime/jobTypes.js";
+import { isStopRequestedError, type ChapterSetup } from "../runtime/jobTypes.js";
 import { jsonInputValue, range } from "../runtime/serialization.js";
 import {
   chapterBriefSchema,
@@ -18,7 +18,8 @@ import {
   type PriorPageContext,
   type ProviderSet,
   type WholeBookDraft,
-  type WholeBookPageDraft
+  type WholeBookPageDraft,
+  seedStoryStateFromPromises
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 
@@ -60,6 +61,9 @@ export async function prepareChapterSetups(options: {
         });
         mapped = mergePageMapCriticPatch(briefs, patch);
       } catch (error) {
+        if (isStopRequestedError(error)) {
+          throw error;
+        }
         console.warn(`Page-map critic skipped for plan`, error);
       }
     }
@@ -105,14 +109,24 @@ export function requireBriefForChapter(briefs: ChapterBrief[], setup: ChapterSet
   return brief;
 }
 
-export async function resetBookForDirectGeneration(projectId: string, chapterSetups: ChapterSetup[]): Promise<Map<number, string>> {
+export async function resetBookForDirectGeneration(
+  projectId: string,
+  chapterSetups: ChapterSetup[],
+  promises: readonly string[] = []
+): Promise<Map<number, string>> {
   return prisma.$transaction(async (tx) => {
     await tx.imageAsset.deleteMany({ where: { projectId } });
     await tx.page.deleteMany({ where: { projectId } });
     await tx.chapter.deleteMany({ where: { projectId } });
     await tx.continuityNote.deleteMany({ where: { projectId } });
     await tx.embedding.deleteMany({ where: { projectId, scope: { startsWith: "page:" } } });
-    await tx.project.update({ where: { id: projectId }, data: { status: "GENERATING" } });
+    await tx.project.update({
+      where: { id: projectId },
+      data: {
+        status: "GENERATING",
+        storyState: seedStoryStateFromPromises(promises) as Prisma.InputJsonValue
+      }
+    });
 
     const chapterIds = new Map<number, string>();
     for (const setup of chapterSetups) {

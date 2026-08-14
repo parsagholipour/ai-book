@@ -6,7 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
-import { Prisma } from "@book-maker/db";
+import { Prisma, casRebuildProjectStoryState } from "@book-maker/db";
 import { enqueueGenerationJob } from "../queue.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -881,10 +881,7 @@ describe("mobile editable book and manual edits", () => {
       where: { id: "page-2" },
       data: expect.objectContaining({ storyDelta: Prisma.DbNull })
     });
-    expect(mockPrisma.project.update).toHaveBeenCalledWith({
-      where: { id: "project-1" },
-      data: { storyState: expect.objectContaining({ facts: [{ text: "The lantern is green.", pageIndex: 1 }] }) }
-    });
+    expect(casRebuildProjectStoryState).toHaveBeenCalledWith("project-1", expect.any(Array));
     await app.close();
   });
 });

@@ -52,6 +52,7 @@ abstract interface class ProjectsRepository {
     String? requestId,
     String? replyToMessageId,
     List<String>? mentionedCharacterIds,
+    Map<String, int>? readerContext,
   });
 
   Future<MobileProjectChatSendResult> editProjectChatMessage({
@@ -283,6 +284,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     String? requestId,
     String? replyToMessageId,
     List<String>? mentionedCharacterIds,
+    Map<String, int>? readerContext,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/chat/messages',
@@ -292,6 +294,8 @@ class MobileProjectsRepository implements ProjectsRepository {
         'replyToMessageId': ?replyToMessageId,
         if (mentionedCharacterIds != null && mentionedCharacterIds.isNotEmpty)
           'mentionedCharacterIds': mentionedCharacterIds,
+        if (readerContext != null && readerContext.isNotEmpty)
+          'readerContext': readerContext,
       },
       receiveTimeout: llmReceiveTimeout,
     );

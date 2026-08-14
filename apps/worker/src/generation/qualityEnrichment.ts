@@ -16,11 +16,12 @@ import {
   type PageDraft,
   type PageQualityReport,
   type PriorPageContext,
+  type QualityFeatureId,
   type StoryExtractResult,
   type StoryState,
   type TextModelAdapter
 } from "@book-maker/core";
-import { loadProjectStoryState, persistPageStoryDelta } from "./storyStateStore.js";
+import { loadProjectStoryState, persistPageStoryDelta, rebuildStoryStateFromPages } from "./storyStateStore.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 
@@ -29,6 +30,10 @@ export type EnrichedPageReview = {
   extract: StoryExtractResult | null;
   storyState: StoryState;
   styleExcerpts: string[];
+};
+
+type QualityGateContext = {
+  enabled: (feature: QualityFeatureId) => boolean;
 };
 
 export async function enrichPageQualityReport(options: {
@@ -43,9 +48,12 @@ export async function enrichPageQualityReport(options: {
   projectId: string;
   /** Precomputed style lock (pages 1–2). When absent, pinned from previousPages. */
   styleExcerpts?: string[] | undefined;
+  quality?: QualityGateContext | undefined;
+  storyState?: StoryState | undefined;
 }): Promise<EnrichedPageReview> {
-  const quality = await loadQualityContext(options.input);
-  const storyState = await loadProjectStoryState(options.projectId, options.plan.promises ?? []);
+  const quality = options.quality ?? (await loadQualityContext(options.input));
+  const storyState =
+    options.storyState ?? (await loadProjectStoryState(options.projectId, options.plan.promises ?? []));
   const styleExcerpts =
     options.styleExcerpts ??
     (quality.enabled("styleExcerpts")
@@ -71,9 +79,13 @@ export async function enrichPageQualityReport(options: {
       }
       console.warn(`Story extract skipped for project ${options.projectId} page ${options.pageIndex}`, error);
     }
-    const stateForUnpaid = extract
-      ? applyStoryDelta(storyState, extract.storyDelta, options.pageIndex)
+    const isLastPage = options.pageIndex === options.input.targetPages;
+    const baseState = isLastPage
+      ? await rebuildStoryStateFromPages(options.projectId, options.plan.promises ?? [])
       : storyState;
+    const stateForUnpaid = extract
+      ? applyStoryDelta(baseState, extract.storyDelta, options.pageIndex)
+      : baseState;
     report = withStoryContradictions(
       report,
       [],
@@ -150,10 +162,11 @@ export async function persistKeeperStoryDelta(options: {
   previousExtract: StoryExtractResult | null;
   keeperWasRevised: boolean;
   currentState: StoryState;
-}): Promise<void> {
-  const quality = await loadQualityContext(options.input);
+  quality?: QualityGateContext | undefined;
+}): Promise<StoryState | null> {
+  const quality = options.quality ?? (await loadQualityContext(options.input));
   if (!quality.enabled("storyExtractAudit")) {
-    return;
+    return null;
   }
   let extract = options.previousExtract;
   if (options.keeperWasRevised || !extract) {
@@ -171,10 +184,13 @@ export async function persistKeeperStoryDelta(options: {
         throw error;
       }
       console.warn(`Keeper story extract skipped for project ${options.projectId} page ${options.pageIndex}`, error);
-      return;
+      return null;
     }
   }
-  await persistPageStoryDelta({
+  if (!extract) {
+    return null;
+  }
+  return persistPageStoryDelta({
     projectId: options.projectId,
     pageIndex: options.pageIndex,
     delta: extract.storyDelta,

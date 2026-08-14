@@ -224,6 +224,54 @@ holds the event loop open and vitest will never exit.
   because nodemon handles that and not `SIGHUP` — sent verbatim it dies and orphans the app holding
   the browser.
 
+- **The page map is measured from the published PDF's own bytes, and measuring must move nothing.**
+  The numbers a reader can see — the pdfrx indicator, the printed footer, the Contents column — are
+  physical PDF pages, and nothing about a model page says where it lands: pages join on a single
+  newline, so adjacent pages routinely share one paragraph. `compileBookMarkdownWithPageAnchors`
+  therefore returns, beside the byte-identical `book.md`, one destination name per model page — the
+  existing `chapter-N` for a chapter opener, `bp-N` plus a markdown offset otherwise — and the PDF
+  render injects markers into **its own copy only** (`pdfPageAnchors.ts`): an empty inline
+  `<span id>` glued to plain content, an HTML comment line before block syntax, a span *inside* a
+  quote or list line when one container straddles the boundary — and no marker at all inside a
+  straddling table, where a comment ejects the following rows as pipe text and a span shifts the
+  cells, so that page stays unanchored and the whole map fails soft instead. Each shape is measured
+  against marked@4.3.0 to leave the rendered blocks identical, and manuscript-authored `bp-*` ids
+  are renamed at equal byte length so user text cannot point a destination somewhere else.
+  **`chapter-*` needs the same guard and cannot take the same shortcut, because the compiler writes
+  those ids itself.** Chrome resolves a link against the first element wearing a name, so a page that
+  merely *reads* like a chapter opener outranks the real one — and that misplaces the Contents link,
+  the number rewritten into its row and the reader's fallback outline as well as the map, since
+  `buildBookPdfPageMap` only refuses a *decreasing* run of anchors and a stolen destination landing
+  in order still yields a full map of the wrong pages. A manuscript reaches the name two ways, so
+  there are two renames. In the markdown, `<a id="chapter-2"></a>` is what an author writes for a
+  chapter of their own — markdown has no attribute syntax and it is the name anyone would pick, which
+  is why the compiler picked it too; nothing in the bytes tells the two apart, so
+  `compileBookMarkdownWithPageAnchors` records `existingIdOffset` for each anchor it writes,
+  `chapterAnchorMarkup` is the shape both sides agree on, and every *other* tag holding the name is
+  renamed — never one inside a fenced block, where it is printed as code rather than rendered. If a
+  single recorded offset does not hold its anchor, **nothing** is renamed: a chapter that lost its id
+  takes its Contents link with it, which is worse than a stolen destination. After the render,
+  `neutralizeRenderedReservedIds` catches what no offset could — `## Chapter 2` is handed
+  `id="chapter-2"` by marked's own slugger, an id that exists on neither side of the markdown — and
+  renames every reserved id except the renderer's own two marks, the compiled `<a id="chapter-N"></a>`
+  (recognised by the heading that must follow it) and the injected empty `<span>`. Names match
+  *whole*, so a heading slugging to `chapter-2-the-return` keeps its id and the links to it.
+  `placeBookPageAnchorIds` then moves
+  every marker onto a box with extent (the following block, the first word, the `<img>`), because a
+  zero-height marker at a fragmentation boundary lands its destination a page early — the same
+  incident `liftChapterAnchorsOntoHeadings` exists for. A `display:none` nav of internal links
+  makes Skia emit `/Dests` at all (ids alone emit nothing; hidden links add no annotations, no
+  layout — measured). `extractPdfNamedDestinations` (`pdfPageMap.ts`) reads the names back out of
+  the rendered bytes through the classic xref, and `buildBookPdfPageMap` turns starts into
+  inclusive ranges, deciding shared boundary pages by the anchor's y against the top-margin band.
+  **Failure anywhere returns `undefined`, and no compile may fail, publish differently, or retry
+  over the map** — a book without one simply keeps the old model-index chat behaviour. When the
+  book prints a Contents, its rows' numbers — which the markdown could only write as model indexes
+  — are rewritten to the measured chapter pages and the document rendered once more, re-measured,
+  and re-checked once: the printed column and the footer now count the same pages. Keep anchor ids
+  ASCII `[a-z0-9-]` (PDF name escaping never applies) and keep the injection out of `book.md`,
+  whose bytes are the provenance sha, the EPUB input and the reader-chapter fingerprint.
+
 ## Export provenance and scratch files
 
 - **A download says which compile answered it, because the URL cannot.** Every compile of a book is

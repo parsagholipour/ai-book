@@ -123,6 +123,33 @@ hangs rather than failing, which is slow to diagnose.
   `bookEditRouterPrompt.ts` (the action list, the decide schema and the prose — everything the
   model is *told*, as opposed to how its answer is read), which is why those import types back
   from it but never values.
+- **The chat speaks the printed page numbers, and the model indexes never reach the reader.**
+  A reader saying "page 10" means the number on the PDF page in front of them — the pdfrx
+  indicator, the printed footer and the Contents column all count physical PDF pages — while every
+  internal target is a model `Page.index`. The translation is `Project.pdfPageMap`: measured at
+  publish time from the rendered bytes by both publishers, stamped with the revision they claimed,
+  and read through `bookPageMapForProject` (`apps/api/src/bookPageNumbering.ts`), which refuses a
+  map from any other revision. On the way in, `pageIndexesFromMessage` and friends resolve spoken
+  numbers through the map — an edit target landing on furniture (cover, Contents, Sources) resolves
+  to **nothing** rather than to whichever model page shares the number, while read/placement
+  targets take the nearest page of prose — and the router model is given each page's `readerPages`
+  plus the furniture ranges and told to return model indexes. **Told, and then checked**: a
+  decision whose page channels name exactly the printed numbers the message speaks is the
+  signature of a model that copied instead of translating, so `modelPagesForCopiedPrintedPages`
+  re-reads them through the map before `intentFromProposeEdit` builds the intent — the same
+  refusal to trust the model that `withDeterministicContentTarget` already makes for
+  `show_content`. It stays deliberately narrow: a translated index (one the message never
+  mentions), a printed number that holds no prose, and a request that names its page only in
+  another script ("در صفحه ۵") all keep the router's own answer. On the way out, every proposal card,
+  queued reply and operation card renders through a `ReaderPageNumbering`
+  (`mobile/bookEditCopy.ts`, `mobile/editOperationCopy.ts`), and the DTOs carry a separate
+  `readerPageNumbers` array — `affectedPageIndexes` stay model indexes on purpose, because the
+  Edit-Mode deep links and the worker payloads navigate by them. A selection composed in the
+  reader sends its resolved model page as structured `readerContext` (authoritative over parsing
+  its own text, whose visible number is now the PDF page). **No map means the old behaviour
+  exactly**: books compiled before the map, or whose measurement failed, keep model-index parsing
+  and copy byte for byte, which is also the graceful path for every test and every legacy
+  transcript.
 - **Moving and removing a picture are free, and neither is a page edit.** `move_image` and
   `remove_image` are their own intent kinds and their own `BookEditOperationKind`s, priced at 0 in
   `bookEditCreditCost` and applied by `apply-book-edit`'s layout fork

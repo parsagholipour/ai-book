@@ -365,7 +365,7 @@ void main() {
       // quotedTexts in apps/api/src/bookEditIntent.ts.
       expect(
         readerRewriteMessage(
-          pageIndex: 12,
+          pageNumber: 12,
           excerpt: 'The rabbit stretched.',
           instruction: readerRewritePresets.first,
         ),

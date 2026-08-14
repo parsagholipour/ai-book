@@ -11,7 +11,7 @@ void main() {
   group('readerRewriteMessage', () {
     test('names the page and quotes the passage', () {
       final message = readerRewriteMessage(
-        pageIndex: 12,
+        pageNumber: 12,
         excerpt: 'The rabbit stretched in the long grass.',
         instruction: 'Make it warmer.',
       );
@@ -23,7 +23,7 @@ void main() {
 
     test('stands alone when no instruction was given', () {
       final message = readerRewriteMessage(
-        pageIndex: 3,
+        pageNumber: 3,
         excerpt: 'A short passage.',
         instruction: '   ',
       );
@@ -35,7 +35,7 @@ void main() {
   group('readerReplaceMessage', () {
     test('puts the old and new terms in quotes, in order', () {
       final message = readerReplaceMessage(
-        pageIndex: 7,
+        pageNumber: 7,
         from: 'Rabbit',
         to: 'Hare',
       );
@@ -52,7 +52,7 @@ void main() {
 
     test('trims stray whitespace from the terms', () {
       expect(
-        readerReplaceMessage(pageIndex: 1, from: '  Rabbit ', to: ' Hare  '),
+        readerReplaceMessage(pageNumber: 1, from: '  Rabbit ', to: ' Hare  '),
         'On page 1, replace "Rabbit" with "Hare".',
       );
     });
@@ -61,7 +61,7 @@ void main() {
   group('messages without a resolved page', () {
     test('rewrite still quotes the passage', () {
       final message = readerRewriteMessage(
-        pageIndex: null,
+        pageNumber: null,
         excerpt: 'The rabbit ran.',
         instruction: 'Make it slower.',
       );
@@ -73,7 +73,7 @@ void main() {
 
     test('replace keeps both quoted terms in order', () {
       final message = readerReplaceMessage(
-        pageIndex: null,
+        pageNumber: null,
         from: 'Rabbit',
         to: 'Hare',
       );
@@ -88,7 +88,7 @@ void main() {
 
     test('ask still prefills the excerpt', () {
       expect(
-        readerAskDraft(pageIndex: null, excerpt: 'Why this scene?'),
+        readerAskDraft(pageNumber: null, excerpt: 'Why this scene?'),
         'About this passage: "Why this scene?" — ',
       );
     });
@@ -96,7 +96,7 @@ void main() {
 
   group('readerAskDraft', () {
     test('prefills the composer with the passage and leaves room to type', () {
-      final draft = readerAskDraft(pageIndex: 5, excerpt: 'Why this scene?');
+      final draft = readerAskDraft(pageNumber: 5, excerpt: 'Why this scene?');
 
       expect(draft, 'About page 5: "Why this scene?" — ');
       expect(draft, endsWith(' '));
@@ -151,7 +151,8 @@ void main() {
 
       expect(resolving.placementLabel, 'Finding page…');
       expect(failed.placementLabel, 'Page not identified');
-      expect(found.placementLabel, 'Page 14');
+      // The label shows the PDF page the reader can see, not the book index.
+      expect(found.placementLabel, 'Page 2');
     });
   });
 }

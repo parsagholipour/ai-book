@@ -25,6 +25,17 @@ import type {
   BookEditScope,
   ShowContentTarget
 } from "./bookEditIntent.js";
+import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "./bookPageNumbering.js";
+
+/**
+ * How this classification run reads and speaks page numbers, plus the model
+ * page a reader-selection message was sent from. Both default to the old
+ * model-index behaviour, so no caller and no book without a map moves.
+ */
+export type HeuristicReaderContext = {
+  numbering?: ReaderPageNumbering | undefined;
+  selectionPageIndex?: number | undefined;
+};
 
 /**
  * The model-free classifier: an English regex tree that routes a chat message
@@ -47,11 +58,13 @@ export function classifyWithHeuristics(
   stage: BookEditProjectStage,
   pages: BookEditPageContext[],
   planSummary?: string | undefined,
-  _chapters: BookEditChapterContext[] = []
+  _chapters: BookEditChapterContext[] = [],
+  reader: HeuristicReaderContext = {}
 ): BookEditIntent {
+  const numbering = reader.numbering ?? MODEL_PAGE_NUMBERING;
   const isPlanStage = stage === "plan_ready" || stage === "approved_plan";
   const asksQuestion = /\?$|^(what|why|how|can you explain|tell me|summari[sz]e|where|when)\b/i.test(message.trim());
-  const contentTarget = showContentTargetFromMessage(message);
+  const contentTarget = showContentTargetFromMessage(message, { pdfPageMap: numbering.pdfPageMap });
 
   if (contentTarget && !hasEditVerbBeyondShow(message)) {
     return {
@@ -59,7 +72,7 @@ export function classifyWithHeuristics(
       confidence: 0.9,
       reasoning: "The user wants to read book content, not change it.",
       affectedPageIndexes: contentTarget.type === "page" ? [contentTarget.index] : [],
-      assistantMessage: showContentAcknowledgement(contentTarget),
+      assistantMessage: showContentAcknowledgement(contentTarget, numbering),
       scope: "none",
       impact: "small_text",
       clarification: "none",
@@ -86,7 +99,7 @@ export function classifyWithHeuristics(
       confidence: 0.78,
       reasoning: "The message reads as a question or general chat, not a change request.",
       affectedPageIndexes: [],
-      assistantMessage: isPlanStage ? answerPlanQuestion(message, planSummary) : answerMessage(message, pages),
+      assistantMessage: isPlanStage ? answerPlanQuestion(message, planSummary) : answerMessage(message, pages, numbering),
       scope: "none",
       impact: "small_text",
       clarification: "none"
@@ -119,11 +132,18 @@ export function classifyWithDegradedHeuristics(
   stage: BookEditProjectStage,
   pages: BookEditPageContext[],
   planSummary?: string | undefined,
-  chapters: BookEditChapterContext[] = []
+  chapters: BookEditChapterContext[] = [],
+  reader: HeuristicReaderContext = {}
 ): BookEditIntent {
+  const numbering = reader.numbering ?? MODEL_PAGE_NUMBERING;
   const lower = message.toLowerCase();
   const isPlanStage = stage === "plan_ready" || stage === "approved_plan";
-  const explicitPages = pageIndexesFromMessage(message, pages);
+  // The selection the reader acted on is authoritative over re-parsing its own
+  // composed message; a typed message has no selection and parses as before.
+  const explicitPages =
+    reader.selectionPageIndex !== undefined && pages.some((page) => page.index === reader.selectionPageIndex)
+      ? [reader.selectionPageIndex]
+      : pageIndexesFromMessage(message, pages, { pdfPageMap: numbering.pdfPageMap });
   const broadScope = hasAllPagesScope(message);
   const explicitScope: BookEditScope = explicitPages.length > 0 ? "explicit_pages" : broadScope ? "all_pages" : "none";
   const replacement = replacementTermsFromMessage(message);
@@ -138,7 +158,7 @@ export function classifyWithDegradedHeuristics(
   const hasChangeIntent = hasEditVerb || dislike !== null;
   const asksQuestion = /\?$|^(what|why|how|can you explain|tell me|summari[sz]e|where|when)\b/i.test(message.trim());
   const scopeOnly = isBookEditScopeOnlyMessage(message);
-  const contentTarget = showContentTargetFromMessage(message);
+  const contentTarget = showContentTargetFromMessage(message, { pdfPageMap: numbering.pdfPageMap });
   const undoRequest = isUndoRequestMessage(message);
   const chapterRegen = chapterRegenerateFromMessage(message);
   // A new length or a decision about pictures can only be honoured by replanning
@@ -165,7 +185,7 @@ export function classifyWithDegradedHeuristics(
       confidence: 0.9,
       reasoning: "The user wants to read book content, not change it.",
       affectedPageIndexes: contentTarget.type === "page" ? [contentTarget.index] : [],
-      assistantMessage: showContentAcknowledgement(contentTarget),
+      assistantMessage: showContentAcknowledgement(contentTarget, numbering),
       scope: "none",
       impact: "small_text",
       clarification: "none",
@@ -308,7 +328,7 @@ export function classifyWithDegradedHeuristics(
       confidence: 0.86,
       reasoning: "The user is asking a general question.",
       affectedPageIndexes: [],
-      assistantMessage: answerMessage(message, pages),
+      assistantMessage: answerMessage(message, pages, numbering),
       scope: "none",
       impact: "small_text",
       clarification: "none"
@@ -377,7 +397,7 @@ export function classifyWithDegradedHeuristics(
       affectedPageIndexes,
       assistantMessage:
         scope === "explicit_pages"
-          ? `I’ll apply that text edit to page ${formatPageList(explicitPages)}.`
+          ? `I’ll apply that text edit to page ${formatPageList(numbering.displayPages(explicitPages))}.`
           : scope === "matching_pages" || scope === "all_pages"
             ? "I’ll apply that text edit throughout the book where it matches."
             : "Should I change a specific page, matching phrase, or the whole book?",
@@ -396,7 +416,7 @@ export function classifyWithDegradedHeuristics(
       affectedPageIndexes: explicitPages,
       assistantMessage:
         explicitScope === "explicit_pages"
-          ? `I’ll rewrite page ${formatPageList(explicitPages)} with that direction.`
+          ? `I’ll rewrite page ${formatPageList(numbering.displayPages(explicitPages))} with that direction.`
           : broadScope
             ? "I’ll rewrite the book with that direction while keeping the same structure."
             : "Should I rewrite a specific page or the whole book?",
@@ -440,7 +460,7 @@ export function classifyWithDegradedHeuristics(
         confidence: 0.84,
         reasoning: "The user expressed a preference change about existing content.",
         affectedPageIndexes,
-        assistantMessage: `I’ll revise page ${formatPageList(affectedPageIndexes)} with that direction.`,
+        assistantMessage: `I’ll revise page ${formatPageList(numbering.displayPages(affectedPageIndexes))} with that direction.`,
         scope: explicitPages.length > 0 ? "explicit_pages" : "matching_pages",
         impact: "style_rewrite",
         clarification: "none"
@@ -475,9 +495,9 @@ function formatPageList(indexes: number[]): string {
   return indexes.length === 1 ? String(indexes[0]) : indexes.join(", ");
 }
 
-function showContentAcknowledgement(target: ShowContentTarget): string {
+function showContentAcknowledgement(target: ShowContentTarget, numbering: ReaderPageNumbering): string {
   if (target.type === "page") {
-    return `Here’s page ${target.index}.`;
+    return `Here’s page ${numbering.displayPage(target.index)}.`;
   }
   if (target.type === "chapter") {
     return `Here’s chapter ${target.index}.`;
@@ -501,15 +521,19 @@ function answerPlanQuestion(message: string, planSummary?: string | undefined): 
   return "I can answer questions about this plan. If you want something changed, tell me what to adjust and I’ll revise the plan for review.";
 }
 
-function answerMessage(message: string, pages: BookEditPageContext[]): string {
+function answerMessage(message: string, pages: BookEditPageContext[], numbering: ReaderPageNumbering): string {
   const lower = message.toLowerCase();
   if (/\bhow many pages\b/.test(lower)) {
-    return `This book currently has ${pages.length} generated pages.`;
+    // The printed count when it is known — the number on the reader's screen —
+    // and the manuscript count otherwise.
+    return numbering.pdfPageMap
+      ? `This book is ${numbering.pdfPageMap.totalPdfPages} pages long as compiled, from ${pages.length} generated pages.`
+      : `This book currently has ${pages.length} generated pages.`;
   }
   if (/\bsummar/i.test(message)) {
     const pageLines = pages
       .slice(0, 6)
-      .map((page) => `Page ${page.index}: ${page.summary || page.title}`)
+      .map((page) => `Page ${numbering.displayPage(page.index)}: ${page.summary || page.title}`)
       .join("\n");
     return pageLines || "There are no generated pages to summarize yet.";
   }

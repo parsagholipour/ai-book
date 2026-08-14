@@ -162,6 +162,42 @@ export function includeSourcesPreference(mediaSettings: unknown): boolean | unde
 }
 
 export function compileBookMarkdown(input: CompileMarkdownInput): string {
+  return compileBookMarkdownWithPageAnchors(input).markdown;
+}
+
+/**
+ * Where each model page begins in the compiled markdown, for the PDF renderer's
+ * page map. A page that opens a printed chapter is located by the `chapter-N`
+ * anchor already in the markdown; every other page gets a `bp-N` name and the
+ * offset of its first content character, where the renderer inserts a marker
+ * into its *own copy* of the document — `markdown` itself is byte-identical to
+ * what {@link compileBookMarkdown} always produced, because it is `book.md`,
+ * the provenance sha and the EPUB's input.
+ */
+export type CompiledBookMarkdown = {
+  markdown: string;
+  pageAnchors: PageAnchorPlan[];
+  /** Offset of the Sources heading, when the back matter is printed. */
+  sourcesOffset?: number;
+  /** True when the PDF opens on a furniture page — a cover or the fallback title page. */
+  hasCoverPage: boolean;
+  hasContents: boolean;
+};
+
+export type PageAnchorPlan = {
+  pageIndex: number;
+  destName: string;
+  /** Absent for `chapter-*` anchors, which the markdown already carries. */
+  markdownOffset?: number;
+  /**
+   * Where a `chapter-*` anchor's `<a id>` was written. It is the one copy of
+   * that name the renderer must keep: the manuscript can hold copies of its own,
+   * and only this offset tells them apart.
+   */
+  existingIdOffset?: number;
+};
+
+export function compileBookMarkdownWithPageAnchors(input: CompileMarkdownInput): CompiledBookMarkdown {
   const pages = [...input.pages].sort((a, b) => a.index - b.index);
   const labels = markdownLabels(input.language);
   const readerChapterStarts = readerChapterStartsForPages(input.readerChapters, pages);
@@ -179,30 +215,73 @@ export function compileBookMarkdown(input: CompileMarkdownInput): string {
   // on the first two pages.
   const titlePage = coverImagePath ? "" : formatTitlePage(input, labels);
 
-  const markdown = [
-    coverImagePath ? `![${sanitizeCoverAlt(input.cover?.imageAlt, labels)}](${coverImagePath})` : "",
-    titlePage,
-    titlePage || coverImagePath ? "" : `# ${input.plan.title}`,
-    !titlePage && !coverImagePath && input.plan.subtitle ? `\n_${input.plan.subtitle}_\n` : "",
-    contents,
-    "",
-    ...pages.map((page) => {
+  type Element = { text: string; page?: { index: number; chapterDest?: string } | undefined; sources?: boolean };
+  const elements: Element[] = [
+    { text: coverImagePath ? `![${sanitizeCoverAlt(input.cover?.imageAlt, labels)}](${coverImagePath})` : "" },
+    { text: titlePage },
+    { text: titlePage || coverImagePath ? "" : `# ${input.plan.title}` },
+    { text: !titlePage && !coverImagePath && input.plan.subtitle ? `\n_${input.plan.subtitle}_\n` : "" },
+    { text: contents },
+    { text: "" },
+    ...pages.map((page): Element => {
       const chapter = chapterByStartPage.get(page.index);
-      return [
-        chapter ? `<a id="${chapterAnchorId(chapter)}"></a>\n\n## ${formatChapterHeading(chapter, heading)}` : "",
-        page.imagePath ? `\n![${sanitizeImageAlt(page.index, page.imageAlt, labels)}](${page.imagePath})\n` : "",
-        sanitizePageMarkdown(page, chapter, labels, heading),
-        ""
-      ]
-        .filter(Boolean)
-        .join("\n");
+      return {
+        text: [
+          chapter
+            ? `${chapterAnchorMarkup(chapterAnchorId(chapter))}\n\n## ${formatChapterHeading(chapter, heading)}`
+            : "",
+          page.imagePath ? `\n![${sanitizeImageAlt(page.index, page.imageAlt, labels)}](${page.imagePath})\n` : "",
+          sanitizePageMarkdown(page, chapter, labels, heading),
+          ""
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        page: { index: page.index, ...(chapter ? { chapterDest: chapterAnchorId(chapter) } : {}) }
+      };
     }),
-    research ? `## ${labels.sources}\n` + research : ""
-  ]
-    .filter(Boolean)
-    .join("\n");
+    { text: research ? `## ${labels.sources}\n` + research : "", sources: true }
+  ];
+
+  const kept = elements.filter((element) => element.text);
+  const markdown = kept.map((element) => element.text).join("\n");
+
+  const pageAnchors: PageAnchorPlan[] = [];
+  let sourcesOffset: number | undefined;
+  let offset = 0;
+  for (const element of kept) {
+    if (element.page) {
+      if (element.page.chapterDest) {
+        // The anchor is the first thing a chapter-opening page's block holds,
+        // so the element's own offset is where its `<a id>` starts.
+        pageAnchors.push({
+          pageIndex: element.page.index,
+          destName: element.page.chapterDest,
+          existingIdOffset: offset
+        });
+      } else {
+        // Skip the leading newline a hero-image block starts with: the anchor
+        // names the first content character of the page's block.
+        const lead = element.text.match(/^\n+/)?.[0]?.length ?? 0;
+        pageAnchors.push({
+          pageIndex: element.page.index,
+          destName: `bp-${element.page.index}`,
+          markdownOffset: offset + lead
+        });
+      }
+    } else if (element.sources) {
+      sourcesOffset = offset;
+    }
+    offset += element.text.length + 1;
+  }
+
   assertBookLikeMarkdown(markdown);
-  return markdown;
+  return {
+    markdown,
+    pageAnchors,
+    ...(sourcesOffset !== undefined ? { sourcesOffset } : {}),
+    hasCoverPage: Boolean(coverImagePath || titlePage),
+    hasContents: Boolean(contents)
+  };
 }
 
 export function assertBookLikeMarkdown(markdown: string): void {
@@ -495,6 +574,15 @@ function cleanChapterTitle(chapter: DisplayChapter, heading?: ChapterHeadingForm
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The anchor a chapter opener carries in the compiled markdown, and the exact
+ * bytes the renderer looks for at {@link PageAnchorPlan.existingIdOffset} before
+ * it trusts an offset — so the two can never drift apart silently.
+ */
+export function chapterAnchorMarkup(destName: string): string {
+  return `<a id="${destName}"></a>`;
 }
 
 function chapterAnchorId(chapter: DisplayChapter): string {

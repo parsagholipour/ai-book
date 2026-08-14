@@ -205,7 +205,9 @@ void main() {
 
       expect(placed.selection.bookPageIndex, 2);
       expect(placed.selection.placed, isTrue);
-      expect(placed.selection.placementLabel, 'Page 2');
+      // The label names the PDF page the selection was made on — the number
+      // the reader chrome shows — not the resolved book page index.
+      expect(placed.selection.placementLabel, 'Page 1');
     });
 
     test('resolves a recurring passage to the copy on screen', () async {

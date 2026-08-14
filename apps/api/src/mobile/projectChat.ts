@@ -16,7 +16,9 @@ import {
 } from "./dto.js";
 import { UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
 import { findOpenProposalId } from "./pendingEditState.js";
-import { currentActionForEditOperation, normalizeJobStatus, serializePlan } from "./projectSerializers.js";
+import { currentActionForEditOperation } from "./editOperationCopy.js";
+import { normalizeJobStatus, serializePlan } from "./projectSerializers.js";
+import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { clipText, jsonInputValue, jsonRecord, jsonValue } from "./support.js";
 import { prisma } from "@book-maker/db";
@@ -31,7 +33,7 @@ export async function loadProjectChatResponse(
   projectId: string,
   pagination: { beforeMessageId?: string | undefined; limit?: number | undefined } = {}
 ): Promise<MobileProjectChatResponseDto> {
-  const [messages, planVersions, operations] = await Promise.all([
+  const [messages, planVersions, operations, projectRow] = await Promise.all([
     prisma.projectChatMessage.findMany({
       where: { projectId },
       orderBy: { createdAt: "desc" },
@@ -65,8 +67,17 @@ export async function loadProjectChatResponse(
         },
         _count: { select: { snapshots: true } }
       }
+    }),
+    // The printed-page numbering for every operation card in the transcript —
+    // the POST route already serializes its own reply's operation through it,
+    // and a history load drawing the same card in model indexes would put two
+    // numbering systems in one thread.
+    prisma.project.findUnique({
+      where: { id: projectId },
+      select: { pdfPageMap: true, contentRevision: true }
     })
   ]);
+  const pageNumbering = projectRow ? numberingForProject(projectRow) : MODEL_PAGE_NUMBERING;
   const activeChat = linearizeProjectChatMessages(messages.reverse());
   const limit = Math.min(150, Math.max(1, pagination.limit ?? 150));
   const beforeIndex = pagination.beforeMessageId
@@ -93,7 +104,7 @@ export async function loadProjectChatResponse(
     messages: exposedMessages.map((message) => serializeProjectChatMessage(message, activeChat.branches.get(message.id) ?? null)),
     plans: planVersions.map((planVersion) => serializePlan(planVersion)),
     operations: exposedOperations.map((operation) =>
-      serializeBookEditOperation(operation, { canUndo: operation.id === latestUndoableId })
+      serializeBookEditOperation(operation, { canUndo: operation.id === latestUndoableId, pageNumbering })
     ),
     hasMore,
     nextCursor: hasMore ? exposedMessages[0]?.id ?? null : null,
@@ -251,7 +262,7 @@ export async function replayProjectChatRequest(
   if (!userMessage) {
     return null;
   }
-  const [assistantMessage, operation] = await Promise.all([
+  const [assistantMessage, operation, projectRow] = await Promise.all([
     prisma.projectChatMessage.findFirst({
       where: { projectId, parentId: userMessage.id, role: "ASSISTANT", isActiveChild: true },
       orderBy: { createdAt: "desc" }
@@ -260,15 +271,20 @@ export async function replayProjectChatRequest(
       where: { projectId, userMessageId: userMessage.id },
       orderBy: { createdAt: "desc" },
       include: { generationJob: { select: { id: true, status: true } } }
-    }) as Promise<MobileBookEditOperationRecord | null>
+    }) as Promise<MobileBookEditOperationRecord | null>,
+    prisma.project.findUnique({
+      where: { id: projectId },
+      select: { pdfPageMap: true, contentRevision: true }
+    })
   ]);
   if (!assistantMessage) {
     return null;
   }
+  const pageNumbering = projectRow ? numberingForProject(projectRow) : MODEL_PAGE_NUMBERING;
   return {
     ...(await loadProjectChatResponse(projectId)),
     reply: serializeProjectChatMessage(assistantMessage),
-    operation: operation ? serializeBookEditOperation(operation) : null
+    operation: operation ? serializeBookEditOperation(operation, { pageNumbering }) : null
   };
 }
 
@@ -472,8 +488,9 @@ export function sanitizePublicChatMetadata(value: MobileJsonValue): MobileJsonVa
 
 export function serializeBookEditOperation(
   operation: MobileBookEditOperationRecord,
-  options?: { canUndo?: boolean }
+  options?: { canUndo?: boolean; pageNumbering?: ReaderPageNumbering }
 ): MobileBookEditOperationDto {
+  const numbering = options?.pageNumbering ?? MODEL_PAGE_NUMBERING;
   const latestAttempt = operation.generationAttempts?.[0] ?? null;
   const failedPlanRevision =
     operation.kind === "PLAN_REVISION" && ["FAILED", "CANCELED"].includes(operation.status);
@@ -498,14 +515,15 @@ export function serializeBookEditOperation(
     kind: operation.kind.toLowerCase() as MobileBookEditOperationDto["kind"],
     status: operation.status.toLowerCase() as MobileBookEditOperationDto["status"],
     affectedPageIndexes: operation.affectedPageIndexes,
+    ...(numbering.pdfPageMap ? { readerPageNumbers: numbering.displayPages(operation.affectedPageIndexes) } : {}),
     creditsCharged: operation.creditsCharged,
-    currentAction: currentActionForEditOperation(operation),
+    currentAction: currentActionForEditOperation(operation, numbering),
     error: operation.error ?? null,
     job: operation.generationJob
       ? {
           id: operation.generationJob.id,
           status: normalizeJobStatus(operation.generationJob.status),
-          currentAction: currentActionForEditOperation(operation)
+          currentAction: currentActionForEditOperation(operation, numbering)
         }
       : null,
     retryAvailable,

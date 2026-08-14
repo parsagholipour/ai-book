@@ -66,7 +66,9 @@ export const DEFAULT_CREDIT_COSTS = {
   bookTextEditPerPageFast: 5,
   bookTextEditPerPagePremium: 28,
   fullBookBaseUltra: 650,
-  fullBookPerPageUltra: 40,
+  // Max break-even: $0.12 / $0.002125 × 1.25 ≈ 71. 40 no longer clears the
+  // ultra cost assumption after counting polish + judge/tools/extract.
+  fullBookPerPageUltra: 71,
   imageGenerationUltra: 85,
   pageRegenerationPerPageUltra: 280,
   bookTextEditPerPageUltra: 36,

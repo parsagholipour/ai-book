@@ -420,7 +420,15 @@ function findPromise(promises: StoryPromise[], key: string): StoryPromise | unde
 }
 
 function nextPromiseId(promises: StoryPromise[]): string {
-  return `p${promises.length + 1}`;
+  let max = 0;
+  for (const promise of promises) {
+    const match = /^p(\d+)$/.exec(promise.id);
+    if (!match?.[1]) {
+      continue;
+    }
+    max = Math.max(max, Number(match[1]));
+  }
+  return `p${max + 1}`;
 }
 
 function foldKey(value: string): string {

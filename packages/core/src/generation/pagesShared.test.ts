@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { CreateProjectInput } from "../schemas/book.js";
 import {
   missingStyleLockIndexes,
   pagesForStyleExcerpts,
   pinStyleExcerpts,
+  sampleExcerptsFromInput,
   type PriorPageContext
 } from "./pagesShared.js";
 
@@ -34,6 +36,46 @@ describe("pinStyleExcerpts", () => {
     expect(excerpts).toHaveLength(2);
     expect(excerpts[0]).toContain("seventeen-window");
     expect(excerpts[1]).toContain("eighteen-window");
+  });
+});
+
+describe("sampleExcerptsFromInput", () => {
+  const baseInput = {
+    prompt: "A story.",
+    category: "STORY",
+    targetPages: 8,
+    complexity: 5,
+    temperature: 0.8,
+    language: "en",
+    mediaSettings: {
+      fullIllustrations: false,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      toneProfile: "neutral"
+    }
+  } as CreateProjectInput;
+
+  it("returns mediaSettings.mobile.import.styleProfile.sampleExcerpts", () => {
+    const excerpts = sampleExcerptsFromInput({
+      ...baseInput,
+      mediaSettings: {
+        ...baseInput.mediaSettings,
+        mobile: {
+          import: {
+            styleProfile: {
+              sampleExcerpts: ["Opening cadence.", "Second voice.", ""]
+            }
+          }
+        }
+      }
+    } as CreateProjectInput);
+    expect(excerpts).toEqual(["Opening cadence.", "Second voice."]);
+  });
+
+  it("yields an empty list when mobile is missing", () => {
+    expect(sampleExcerptsFromInput(baseInput)).toEqual([]);
   });
 });
 

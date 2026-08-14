@@ -202,7 +202,9 @@ export function dbModuleMock() {
       DbNull: "DbNull",
       PrismaClientKnownRequestError: MockPrismaKnownRequestError
     },
-    prisma: mockPrisma
+    prisma: mockPrisma,
+    casRebuildProjectStoryState: vi.fn(),
+    rebuildStoryStateFromPages: vi.fn()
   };
 }
 

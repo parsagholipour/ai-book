@@ -1,4 +1,5 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
+import { numberingForProject } from "../bookPageNumbering.js";
 import { resolveImageLayoutDest, type ImageLayoutEdit, type ImageLayoutTarget } from "../bookEditImage.js";
 import { layoutTargetFromReplaceable } from "./addImageTargets.js";
 import {
@@ -9,7 +10,8 @@ import {
 } from "./imageLayoutTargets.js";
 import { enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
-import { queueAttemptChatOperation, requestWithCharacterContext } from "./editOperations.js";
+import { queueAttemptChatOperation } from "./editOperations.js";
+import { requestWithCharacterContext } from "./bookEditCopy.js";
 import {
   busyEditReply,
   editProposalMessage,
@@ -78,7 +80,7 @@ export async function proposeImageLayoutEdit(options: {
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: `That picture is already on page ${sourcePageIndex}, so nothing was changed or charged.`,
+        content: `That picture is already on page ${sourcePageIndex === undefined ? sourcePageIndex : numberingForProject(project).displayPage(sourcePageIndex)}, so nothing was changed or charged.`,
         metadata: { intent, charged: false, pendingEditCancelled: true }
       });
       return { reply, operation: null };
@@ -88,6 +90,7 @@ export async function proposeImageLayoutEdit(options: {
 
   const resolvedLayout = layoutWithResolution(layout, action, targets, dest);
   const affected = affectedPagesForLayout(targets, dest);
+  const numbering = numberingForProject(project);
   const cost = bookEditCreditCost(intent.kind, affected.length, project);
   const proposalIntent: BookEditIntent = {
     ...intent,
@@ -100,7 +103,7 @@ export async function proposeImageLayoutEdit(options: {
   const reply = await createAssistantChatMessage({
     projectId: project.id,
     parentId: userMessageId,
-    content: editProposalMessage(proposalIntent.kind, affected, proposalIntent),
+    content: editProposalMessage(proposalIntent.kind, affected, proposalIntent, numbering),
     metadata: {
       intent: proposalIntent,
       charged: false,
@@ -119,8 +122,9 @@ export async function proposeImageLayoutEdit(options: {
         kind: proposalIntent.kind,
         scope: "explicit_pages",
         affectedPageIndexes: affected,
+        ...(numbering.pdfPageMap ? { readerPageNumbers: numbering.displayPages(affected) } : {}),
         credits: cost,
-        summary: editProposalSummary(proposalIntent.kind, affected, proposalIntent)
+        summary: editProposalSummary(proposalIntent.kind, affected, proposalIntent, numbering)
       }
     }
   });
@@ -158,10 +162,11 @@ export async function queueChatImageLayout(options: {
       return proposeBookEdit(reproposal);
     }
     if (resolvedDest.destPageIndex === live[0]?.pageIndex && !layout.destPosition) {
+      const alreadyOn = live[0]?.pageIndex;
       const reply = await createAssistantChatMessage({
         projectId: project.id,
         parentId: userMessageId,
-        content: `That picture is already on page ${live[0]?.pageIndex}, so nothing was changed or charged.`,
+        content: `That picture is already on page ${alreadyOn === undefined ? alreadyOn : numberingForProject(project).displayPage(alreadyOn)}, so nothing was changed or charged.`,
         metadata: {
           intent,
           charged: false,
@@ -265,7 +270,7 @@ export async function queueChatImageLayout(options: {
         }
       });
     },
-    replyContent: operationQueuedMessage(resolvedIntent.kind, affected, resolvedIntent),
+    replyContent: operationQueuedMessage(resolvedIntent.kind, affected, resolvedIntent, numberingForProject(project)),
     replyMetadata: { intent: resolvedIntent, charged: true, creditsCharged: cost }
   });
 }

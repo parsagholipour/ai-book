@@ -12,6 +12,9 @@ const mockPrisma = vi.hoisted(() => ({
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mockPrisma }));
+vi.mock("../requestAuth.js", () => ({
+  markOperatorRequest: vi.fn(async () => ({ userId: "local-admin" }))
+}));
 
 const emptySettings = {
   storyExtractAudit: [],

@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   reportAcceptedWholeBookDraft: vi.fn(),
   chapterSetupsForPlan: vi.fn(),
   reviewWholeBookDraftPages: vi.fn(),
+  persistKeeperStoryDelta: vi.fn(),
   storeEmbedding: vi.fn(),
   updateEntityStateFromPage: vi.fn()
 }));
@@ -63,6 +64,9 @@ vi.mock("./generationContext.js", async () => {
   };
 });
 vi.mock("./pageReview.js", () => ({ reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage }));
+vi.mock("./qualityEnrichment.js", () => ({
+  persistKeeperStoryDelta: mocks.persistKeeperStoryDelta
+}));
 vi.mock("./qualitySettings.js", () => ({
   loadQualityContext: async () => ({
     settings: {},
@@ -194,7 +198,7 @@ describe("generateBookChapterWholePass", () => {
     await generateBookChapterWholePass(baseOptions(strategy));
 
     expect(mocks.prepareChapterSetups).toHaveBeenCalled();
-    expect(mocks.resetBookForDirectGeneration).toHaveBeenCalled();
+    expect(mocks.resetBookForDirectGeneration).toHaveBeenCalledWith("project-1", expect.anything(), []);
     expect(strategy.generateChapterDraft).toHaveBeenCalledTimes(2);
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(4);
     expect(mocks.maybeEnqueueCover).toHaveBeenCalled();
@@ -389,6 +393,7 @@ describe("generateBookWholePass", () => {
       imagePrompt: data.imagePrompt,
       revision: data.revision
     }));
+    const txProjectUpdate = vi.fn();
     mocks.prisma.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) =>
       run({
         imageAsset: { deleteMany: vi.fn() },
@@ -396,13 +401,19 @@ describe("generateBookWholePass", () => {
         chapter: { deleteMany: vi.fn(), create: vi.fn(async () => ({ id: "ch-1" })) },
         continuityNote: { deleteMany: vi.fn(), createMany: vi.fn() },
         embedding: { deleteMany: vi.fn() },
-        project: { update: vi.fn() }
+        project: { update: txProjectUpdate }
       })
     );
 
     await generateBookWholePass(baseOptions(strategy));
 
     expect(txPageCreate).toHaveBeenCalledTimes(2);
+    expect(txProjectUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: "GENERATING", storyState: expect.objectContaining({ promises: [] }) })
+      })
+    );
+    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledTimes(2);
     // The whole-book pass never runs page jobs, so its embeddings were pure
     // write-only cost; the pass now skips them.
     expect(mocks.storeEmbedding).not.toHaveBeenCalled();

@@ -1,22 +1,21 @@
 import {
-  assertBookLikeMarkdown,
-  AUTO_BOOK_GENERATION_STRATEGY_ID,
   exportContentDigest,
   generateBookEpub,
-  getBookGenerationStrategy,
-  chapterHeadingLabelPreference,
-  chapterHeadingStylePreference,
-  includeSourcesPreference,
-  mediaSettingsSchema,
   pendingExportTempPath,
   readPublishedExport,
   removeExportProvenance,
-  resolvePublicImageUrl,
   writeExportProvenance,
   type AppConfig,
+  type BookPdfPageMap,
   type ExportArtifact
 } from "@book-maker/core";
-import { Prisma, prisma, researchCitationsForExport, type ProjectStatus } from "@book-maker/db";
+import { Prisma, prisma, type ProjectStatus } from "@book-maker/db";
+import {
+  compileProjectManuscript,
+  compileProjectMarkdown,
+  sanitizeDownloadFilename,
+  strategyForMediaSettings
+} from "./projectManuscript.js";
 import { access, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -248,6 +247,12 @@ async function publishRebuiltExport(options: {
   format: ProjectExportFormat;
   contentRevision: number;
   rendered: Buffer;
+  /**
+   * Same contract as the worker's `publishCompiledExports`: omitted leaves the
+   * stored map standing, `null` clears it, a map replaces it — stamped here
+   * with the claimed revision and this render's digest.
+   */
+  pdfPageMap?: BookPdfPageMap | null | undefined;
   pendingPath: string;
   publishedPath: string;
 }): Promise<boolean> {
@@ -278,6 +283,23 @@ async function publishRebuiltExport(options: {
       // book.md-based artifact wins and this reconstructed render stands down.
       if (await probeReadableExportPath(options.publishedPath)) {
         return false;
+      }
+      if (options.format === "pdf" && options.pdfPageMap !== undefined) {
+        // Before the rename: a failure past this point rolls the map back with
+        // the claim, and the file stays unpublished.
+        await tx.project.update({
+          where: { id: options.projectId },
+          data: {
+            pdfPageMap:
+              options.pdfPageMap === null
+                ? Prisma.DbNull
+                : ({
+                    ...options.pdfPageMap,
+                    contentRevision: options.contentRevision,
+                    pdfDigest: digest
+                  } as unknown as Prisma.InputJsonValue)
+          }
+        });
       }
       // Retire the old file's record before replacing its bytes. If the new
       // sidecar write fails, the result is honestly `unknown` and the
@@ -326,7 +348,7 @@ async function renderAndPublishExport(options: {
   contentRevision: number;
   publishable: boolean;
   format: ProjectExportFormat;
-  render: (outputPath: string) => Promise<Buffer>;
+  render: (outputPath: string) => Promise<{ rendered: Buffer; pdfPageMap?: BookPdfPageMap | null | undefined }>;
 }): Promise<Buffer> {
   const { appConfig, projectId, format } = options;
   const projectDir = join(appConfig.BOOK_STORAGE_DIR, projectId);
@@ -340,7 +362,7 @@ async function renderAndPublishExport(options: {
   // ownership-based precisely so it can clean up after the other one.
   const pendingPath = pendingExportTempPath(projectDir, format);
   try {
-    const rendered = await options.render(pendingPath);
+    const { rendered, pdfPageMap } = await options.render(pendingPath);
     const published =
       options.publishable &&
       (await publishRebuiltExport({
@@ -349,6 +371,7 @@ async function renderAndPublishExport(options: {
         format,
         contentRevision: options.contentRevision,
         rendered,
+        ...(pdfPageMap !== undefined ? { pdfPageMap } : {}),
         pendingPath,
         publishedPath: join(projectDir, format === "pdf" ? BOOK_PDF_FILENAME : BOOK_EPUB_FILENAME)
       }));
@@ -384,8 +407,12 @@ export function rebuildProjectPdfExport(
     if (!project.currentPlanId) {
       return null;
     }
-    const markdown = await compileProjectMarkdown(projectId, appConfig.PUBLIC_API_URL, appConfig.BOOK_STORAGE_DIR);
-    if (!markdown) {
+    const manuscript = await compileProjectManuscript(
+      projectId,
+      appConfig.PUBLIC_API_URL,
+      appConfig.BOOK_STORAGE_DIR
+    );
+    if (!manuscript) {
       return null;
     }
     const strategy = strategyForMediaSettings(project.mediaSettings);
@@ -395,16 +422,24 @@ export function rebuildProjectPdfExport(
       contentRevision: project.contentRevision,
       publishable: isPublishableExportStatus(project.status),
       format: "pdf",
-      render: (outputPath) =>
-        strategy.generatePdf(markdown, {
+      render: async (outputPath) => {
+        const result = await strategy.generatePdfWithPageMap(manuscript.markdown, {
           imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
           publicApiUrl: appConfig.PUBLIC_API_URL,
           outputPath,
           language: project.language,
           // Scopes the renderer's file access to this book's own illustrations,
           // exactly as the worker's compile does.
-          projectId
-        })
+          projectId,
+          ...(manuscript.pageMapPlan ? { pageMapPlan: manuscript.pageMapPlan } : {})
+        });
+        return {
+          rendered: result.pdf,
+          // A rebuild from the saved `book.md` has no plan and measures
+          // nothing; the stored map for this same revision stands.
+          ...(manuscript.pageMapPlan ? { pdfPageMap: result.pageMap ?? null } : {})
+        };
+      }
     });
   });
 }
@@ -428,8 +463,8 @@ export function rebuildProjectEpubExport(
       contentRevision: project.contentRevision,
       publishable: isPublishableExportStatus(project.status),
       format: "epub",
-      render: (outputPath) =>
-        generateBookEpub(markdown, {
+      render: async (outputPath) => ({
+        rendered: await generateBookEpub(markdown, {
           title: project.title,
           ...(project.authorName ? { author: project.authorName } : {}),
           language: project.language,
@@ -440,6 +475,7 @@ export function rebuildProjectEpubExport(
           // the worker's compile does.
           projectId
         })
+      })
     });
   });
 }
@@ -622,88 +658,10 @@ export async function sendProjectEpubExport(options: {
   return epub;
 }
 
-export async function compileProjectMarkdown(
-  projectId: string,
-  publicApiUrl: string,
-  bookStorageDir: string
-): Promise<string | null> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      currentPlan: true,
-      pages: { orderBy: { index: "asc" }, include: { images: true } },
-      images: true,
-      research: true
-    }
-  });
-  if (!project?.currentPlan) {
-    return readSavedBookMarkdown(projectId, bookStorageDir);
-  }
-
-  const generatedPages = project.pages.filter((page) => page.markdown.trim().length > 0);
-  if (generatedPages.length === 0) {
-    return readSavedBookMarkdown(projectId, bookStorageDir);
-  }
-
-  const strategy = strategyForMediaSettings(project.mediaSettings);
-  const cover = project.images.find((image) => image.type === "COVER");
-  const markdown = strategy.compileMarkdown({
-    plan: project.currentPlan.planningPackage as never,
-    category: project.category,
-    language: project.language,
-    ...(project.authorName ? { authorName: project.authorName } : {}),
-    ...(cover
-      ? {
-          cover: {
-            imagePath: resolvePublicImageUrl(cover.path, publicApiUrl) ?? cover.path,
-            imageAlt: `Cover for ${project.title}`
-          }
-        }
-      : {}),
-    pages: generatedPages.map((page) => ({
-      index: page.index,
-      title: page.title,
-      markdown: page.markdown,
-      imagePath: resolvePublicImageUrl(page.images[0]?.path, publicApiUrl),
-      imageAlt: "Illustration"
-    })),
-    // Through the shared builder, not a local map: it unwraps a stored Google
-    // grounding redirect and writes the publisher's own address back, so this
-    // render cannot print a link the worker's render of the same book would not.
-    researchSources: await researchCitationsForExport(project.research),
-    includeSources: includeSourcesPreference(project.mediaSettings),
-    chapterHeadingStyle: chapterHeadingStylePreference(project.mediaSettings),
-    chapterHeadingLabel: chapterHeadingLabelPreference(project.mediaSettings)
-  });
-  assertBookLikeMarkdown(markdown);
-  return markdown;
-}
-
-async function readSavedBookMarkdown(projectId: string, bookStorageDir: string): Promise<string | null> {
-  for (const filename of [BOOK_MARKDOWN_FILENAME, LEGACY_BOOK_MARKDOWN_FILENAME]) {
-    try {
-      const markdown = await readFile(join(bookStorageDir, projectId, filename), "utf8");
-      return markdown.trim().length > 0 ? markdown : null;
-    } catch {
-      // Try the next legacy filename.
-    }
-  }
-  return null;
-}
-
-export function strategyForMediaSettings(mediaSettings: unknown) {
-  const selection = mediaSettingsSchema.parse(mediaSettings).generationStrategy;
-  return getBookGenerationStrategy(selection === AUTO_BOOK_GENERATION_STRATEGY_ID ? undefined : selection);
-}
-
-export function sanitizeDownloadFilename(title: string): string {
-  const clean = title
-    .trim()
-    .replace(/[^\w\s-]+/g, "")
-    .replace(/\s+/g, "-")
-    .slice(0, 80);
-  return clean || "book";
-}
+// The manuscript compile and its helpers live in ./projectManuscript.ts;
+// re-exported because the operator routes and their tests import them from
+// this module.
+export { compileProjectMarkdown, sanitizeDownloadFilename, strategyForMediaSettings } from "./projectManuscript.js";
 
 export function ownedProjectWhere(projectId: string, actor: ProjectActor): Prisma.ProjectWhereInput {
   return { id: projectId, userId: actor.userId };

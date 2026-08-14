@@ -215,6 +215,7 @@ code in that area, however obvious the rule looks.
 - **A cited source is stored as the publisher's own address, never Google's.** → packages/core/src/adapters/CLAUDE.md
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
+- **The chat speaks the printed page numbers, and the model indexes never reach the reader.** → apps/api/src/mobile/CLAUDE.md
 
 ### Characters, covers and illustrations
 
@@ -240,6 +241,7 @@ code in that area, however obvious the rule looks.
 - **A download says which compile answered it, because the URL cannot.** → packages/core/src/generation/CLAUDE.md + apps/mobile/lib/features/reader/CLAUDE.md
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A book only earns the word "Chapter" by being long enough to need it.** → packages/core/src/generation/CLAUDE.md
+- **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
 
 ### Audiobook and voice
 

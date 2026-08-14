@@ -129,6 +129,26 @@ void main() {
     },
   );
 
+  testWidgets('a handed-in reader message carries its reader context', (
+    tester,
+  ) async {
+    final repository = ScriptedProjectsRepository();
+    await tester.pumpWidget(
+      chatApp(
+        repository,
+        initialMessage: 'On page 12, rewrite this passage: "x".',
+        initialReaderContext: const {'pageIndex': 4, 'pdfPage': 12},
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The structured position is what the server targets by; losing it would
+    // leave the visible printed number as the only — re-parsed — signal.
+    expect(repository.sentReaderContexts, [
+      {'pageIndex': 4, 'pdfPage': 12},
+    ]);
+  });
+
   testWidgets('an empty handed-in message sends nothing', (tester) async {
     final repository = ScriptedProjectsRepository();
     await tester.pumpWidget(chatApp(repository, initialMessage: '   '));

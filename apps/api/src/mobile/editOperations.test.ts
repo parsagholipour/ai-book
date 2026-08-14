@@ -73,6 +73,10 @@ vi.mock("./support.js", () => ({
 }));
 vi.mock("@book-maker/core", () => ({
   creditCostForOperation: () => 25,
+  // bookEditMessage.ts builds a RegExp from this at module load; everything
+  // else this suite's graph imports from core is only called inside functions
+  // the tests never reach, so the bare-object mock stays bare.
+  languageNamePattern: () => "language",
   // The real predicate is a pure payload flag read (`jobScope.ts`, covered by
   // its own suite); mirrored here rather than imported so this factory keeps
   // pulling nothing into the mock registry.

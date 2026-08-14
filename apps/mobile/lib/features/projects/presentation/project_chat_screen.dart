@@ -29,13 +29,19 @@ part 'project_chat_edit_actions.dart';
 /// lands in the chat immediately: sending first and navigating afterwards left
 /// the user looking at the book for as long as the request took.
 class ProjectChatLaunch {
-  const ProjectChatLaunch({this.draft, this.send});
+  const ProjectChatLaunch({this.draft, this.send, this.readerContext});
 
   /// Text to prefill the composer with, left unsent.
   final String? draft;
 
   /// Text to send as soon as the chat is on screen.
   final String? send;
+
+  /// Where in the book the reader composed [send]: the book page the locator
+  /// resolved (`pageIndex`) and the printed PDF page they were looking at
+  /// (`pdfPage`). The server targets the edit by these rather than re-parsing
+  /// the message text.
+  final Map<String, int>? readerContext;
 }
 
 class ProjectChatScreen extends ConsumerStatefulWidget {
@@ -43,6 +49,7 @@ class ProjectChatScreen extends ConsumerStatefulWidget {
     required this.projectId,
     this.initialDraft,
     this.initialMessage,
+    this.initialReaderContext,
     super.key,
   });
 
@@ -56,6 +63,9 @@ class ProjectChatScreen extends ConsumerStatefulWidget {
   /// path as typing it, so the pending bubble, retry and errors all behave
   /// exactly as they normally do.
   final String? initialMessage;
+
+  /// The reader position [initialMessage] was composed from, sent alongside it.
+  final Map<String, int>? initialReaderContext;
 
   @override
   ConsumerState<ProjectChatScreen> createState() => _ProjectChatScreenState();
@@ -85,6 +95,13 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   /// quoted — kept separately so a retry resends the same reply.
   ChatReplyTarget? _replyTarget;
   ChatReplyTarget? _pendingSendReplyTo;
+  Map<String, int>? _pendingSendReaderContext;
+
+  /// A reader-composed message parked in the composer while the book was busy,
+  /// with the position it was composed from. The context re-attaches only when
+  /// the parked text is sent verbatim; an edited message drops it.
+  Map<String, int>? _parkedReaderContext;
+  String? _parkedMessage;
   String? _pendingEditRequestId;
   String? _pendingEditMessage;
   String? _historyNextCursor;
@@ -130,10 +147,17 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
           _controller.selection = TextSelection.collapsed(
             offset: message.length,
           );
+          // The selection's position must survive the parking, or the send
+          // that eventually happens is a typed message whose "page N" the
+          // server has to re-parse — a mistarget on any book without a map.
+          _parkedReaderContext = widget.initialReaderContext;
+          _parkedMessage = message;
         });
         return;
       }
-      unawaited(_sendMessage(message));
+      unawaited(
+        _sendMessage(message, readerContext: widget.initialReaderContext),
+      );
     });
   }
 
@@ -496,7 +520,10 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
         _messageAnchors.forget();
       });
     }
-    await _sendMessage(message, replyTo: replyTo);
+    final parkedContext = message == _parkedMessage ? _parkedReaderContext : null;
+    _parkedReaderContext = null;
+    _parkedMessage = null;
+    await _sendMessage(message, replyTo: replyTo, readerContext: parkedContext);
   }
 
   /// Quotes a message in the composer. Starting a reply cancels an in-progress
@@ -526,7 +553,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   Future<void> _retryPendingEcho() async {
     final echo = _pendingEcho;
     if (echo == null || _sending || _bookIsBusy) return;
-    await _sendMessage(echo.text, replyTo: _pendingSendReplyTo);
+    await _sendMessage(
+      echo.text,
+      replyTo: _pendingSendReplyTo,
+      readerContext: _pendingSendReaderContext,
+    );
   }
 
   void _dismissPendingEcho() {
@@ -548,7 +579,11 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   }
 
   @override
-  Future<void> _sendMessage(String message, {ChatReplyTarget? replyTo}) async {
+  Future<void> _sendMessage(
+    String message, {
+    ChatReplyTarget? replyTo,
+    Map<String, int>? readerContext,
+  }) async {
     // Retrying the same text reuses the request ID, so the server replays
     // the original turn instead of duplicating it. The quoted message is part
     // of the request: the same words replying to a different turn are a
@@ -558,6 +593,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
       _pendingSendRequestId = _newRequestId('chat');
       _pendingSendMessage = message;
       _pendingSendReplyTo = replyTo;
+      _pendingSendReaderContext = readerContext;
     }
     final requestId = _pendingSendRequestId!;
     setState(() {
@@ -576,10 +612,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
             message: message,
             requestId: requestId,
             replyToMessageId: replyTo?.messageId,
+            readerContext: _pendingSendReaderContext,
           );
       _pendingSendRequestId = null;
       _pendingSendMessage = null;
       _pendingSendReplyTo = null;
+      _pendingSendReaderContext = null;
       _armFallingEdge(result.operation);
       ref.invalidate(projectChatProvider(widget.projectId));
       ref.invalidate(projectDetailProvider(widget.projectId));

@@ -38,7 +38,10 @@ const MODEL_TIER_COST_ASSUMPTIONS_USD: Partial<Record<ModelTier, ProviderCostAss
   },
   ultra: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
-    textPerPage: 0.05,
+    // Draft ~$0.05 + polish ~$0.05 + judge/tools/extract ~$0.02. Premium's
+    // 0.05 only covers one prose call; ultra adds a second full draft, a
+    // judge, writer-tool rounds, and extract/audit per page.
+    textPerPage: 0.12,
     imageGeneration: 0.067,
     coverIncluded: 0.134,
     premiumReview: 0.05

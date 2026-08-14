@@ -135,8 +135,14 @@ export type DecideActionPayload = z.infer<ReturnType<typeof decideActionSchema>>
  * targets, and a picture request misrouted to a page rewrite is the expensive
  * mistake — it quotes per page for prose nobody asked to change.
  */
-const IMAGE_RULES = [
-  "Adding a new picture, photo, image, illustration or drawing is propose_edit with editTarget insert_image — never a page edit and never a clarify. Set imageSubject to what the picture should show, in the user's own words but WITHOUT any placement words; when a follow-up adjusts an earlier image request, restate the full imageSubject from the conversation. Set pageIndexes to the one page it belongs on whenever the user names a place in any language or form — \"on page 3\", \"on the 3rd page\", \"the third page\", \"صفحه ۳\" all mean pageIndexes [3] — or imagePlacement to end_of_book for the end/back of the book. Example: \"Add the photo of her signature on the 3rd page\" → imageSubject \"her signature\", pageIndexes [3]. Never ask where the picture should go: when no place is named, the default is the end of the book.",
+const imageRules = (readerPagesArePdf: boolean) => [
+  `Adding a new picture, photo, image, illustration or drawing is propose_edit with editTarget insert_image — never a page edit and never a clarify. Set imageSubject to what the picture should show, in the user's own words but WITHOUT any placement words; when a follow-up adjusts an earlier image request, restate the full imageSubject from the conversation. ${
+    readerPagesArePdf
+      ? 'Set pageIndexes to the one page it belongs on whenever the user names a place in any language or form — "on page 3", "on the 3rd page", "the third page", "صفحه ۳" all name the PRINTED page 3: resolve it through each page entry\'s readerPages and put that entry\'s index into pageIndexes'
+      : 'Set pageIndexes to the one page it belongs on whenever the user names a place in any language or form — "on page 3", "on the 3rd page", "the third page", "صفحه ۳" all mean pageIndexes [3]'
+  } — or imagePlacement to end_of_book for the end/back of the book. Example: "Add the photo of her signature on the 3rd page" → imageSubject "her signature"${
+    readerPagesArePdf ? ", pageIndexes set to the entry whose readerPages include 3" : ", pageIndexes [3]"
+  }. Never ask where the picture should go: when no place is named, the default is the end of the book.`,
   "When the user corrects or replaces any existing picture — a built-in illustration or one they added — \"change the first image to…\", \"no, I actually want…\", \"instead…\", \"replace the photo with a castle\" — that is still insert_image, with imageReplace true and imageSubject set to the NEW subject; set pageIndexes when they name a page or an ordinal (\"the first image\", \"on page 1\"). A replacement keeps the old picture's spot; the server picks which picture. Without imageReplace the book ends up with both.",
   "Removing an existing picture is propose_edit with editTarget remove_image — never a page rewrite. Set pageIndexes to the page that currently holds it when they name one. The server picks which picture; never ask. Set imageSelection to all when the user means every picture in the book (\"remove all the pictures\", \"take the images out\", \"I don't want any illustrations\"), or to chapter together with chapterIndex when they mean one chapter's pictures (\"remove the images from chapter 2\"); leave it unset for a single picture. Removing every picture is still free and still one request, so never ask which one when they said all.",
   "Moving an existing picture is propose_edit with editTarget move_image — never a page rewrite. Set pageIndexes to the SOURCE page (where it is now) when they name one; set imageDestPageIndexes to the destination page when they name where it should go, or imagePlacement to end_of_book for the end/back of the book. If they name no destination, ask once which page, stating you will put it at the end of the book if they don't say.",
@@ -144,10 +150,23 @@ const IMAGE_RULES = [
   "Requests to resize an existing picture — or to replace one WITHOUT saying what the new picture should show — and negated requests (\"don't add a photo of…\") are not insert_image, move_image or remove_image and must never be priced as a page rewrite: use action answer."
 ];
 
+/**
+ * In force only when the book's published PDF has a current page map: the
+ * numbers a reader can see — the pdfrx page indicator, the printed footer, the
+ * Contents column — are physical PDF pages, and the book's own page indexes are
+ * invisible to them. Every page entry then carries `readerPages`, and the
+ * model's job is the translation.
+ */
+const READER_PAGE_RULES = [
+  "Page numbers in the user's message are the PRINTED page numbers of the compiled book — the numbers the reader sees on the PDF pages, in its footer and in its table of contents. They are NOT the internal page index values. Each entry in pages carries readerPages: the printed pages that entry occupies. To act on \"page 12\", find the entries whose readerPages include 12 and put their index values into pageIndexes; never copy a printed number into pageIndexes directly.",
+  "readerPageContext names printed pages that hold no book text: the cover, the table of contents pages, and the sources list at the back. A request aimed at one of those is about the book's furniture rather than its prose — use editTarget back_matter or chapter_heading when it matches one, and otherwise action answer explaining what that printed page is. Never turn it into a page rewrite."
+];
+
 export function routerSystemPrompt(
   stage: Exclude<BookEditProjectStage, "other">,
   canReadPages: boolean,
-  clarifyExhausted: boolean
+  clarifyExhausted: boolean,
+  readerPagesArePdf = false
 ): string {
   const common = [
     "You decide what to do with each user chat message in an AI book-making app.",
@@ -175,7 +194,8 @@ export function routerSystemPrompt(
           "Use action undo_last_edit when the user wants to undo, revert, or roll back the most recent edit.",
           "For any charged book change, use action propose_edit. Set editTarget to pages (named pages), matching (find phrase matches), whole_book, chapter, structural (replacing the premise/main character/audience/ending/structure/visual identity), language_copy (new language version), or continuation (continue the book: write the next chapter(s), keep writing, finish the story; set newChapterCount when the user says how many).",
           "Adding something new to the finished book — a character, a scene, an object, a mention — is propose_edit, not clarify. Set editTarget to pages for the scenes where it belongs, or whole_book when it should run through the story. Reserve structural for replacing the book's premise or main character, because it regenerates the entire book.",
-          ...IMAGE_RULES,
+          ...(readerPagesArePdf ? READER_PAGE_RULES : []),
+          ...imageRules(readerPagesArePdf),
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",

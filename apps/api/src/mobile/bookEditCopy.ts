@@ -1,0 +1,197 @@
+import { type BookEditIntent, type BookEditIntentKind } from "../bookEditIntent.js";
+import { clippedImageSubject, imageLayoutProposalSummary, imageLayoutQueuedMessage } from "../bookEditImage.js";
+import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
+import { languageDisplayName } from "./support.js";
+
+/**
+ * The proposal-card and queued-reply prose, split out of `bookEditIntents.ts`
+ * along the seam it grew on: this module is what the user *reads*, that one is
+ * what the system *does*.
+ *
+ * Every page number printed here goes through a {@link ReaderPageNumbering}:
+ * with a current PDF page map the sentences speak the printed page numbers the
+ * reader can actually see — the same numbers the pdfrx indicator and the
+ * printed footer show — while the intent's own `affectedPageIndexes` stay model
+ * indexes, because they are what Apply re-resolves and what the deep links use.
+ * Without a map the copy is byte-for-byte what it always was.
+ */
+
+export function editProposalSummary(
+  kind: BookEditIntentKind,
+  affectedPageIndexes: number[],
+  intent: BookEditIntent,
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
+): string {
+  if (kind === "plan_revision") {
+    // Only ever carded by a credits-blocked revision's resume proposal; the
+    // ordinary plan revision path charges without a card.
+    return "Revise the book plan";
+  }
+  if (kind === "continue_book") {
+    const chapterCount = intent.continuation?.chapterCount ?? 1;
+    return chapterCount > 1
+      ? `Write ${chapterCount} new chapters continuing your book`
+      : "Write the next chapter of your book";
+  }
+  if (kind === "book_replan") {
+    return replanProposalSummary(intent);
+  }
+  if (kind === "add_image") {
+    const subject = clippedImageSubject(intent.imageEdit?.subject ?? "a scene from this book");
+    const replace = intent.imageEdit?.replace;
+    if (replace) {
+      // The card is the "shall I replace it?" ask — its summary names both
+      // pictures so Apply confirms exactly the swap.
+      return replace.oldSubject
+        ? `Replace the illustration of “${clippedImageSubject(replace.oldSubject)}” with “${subject}”`
+        : `Replace the latest illustration with one of “${subject}”`;
+    }
+    const onPage =
+      intent.imageEdit?.placement === "end_of_book"
+        ? undefined
+        : intent.imageEdit?.placement === "page"
+          ? intent.imageEdit.pageIndex ?? affectedPageIndexes[0]
+          : affectedPageIndexes[0];
+    return onPage !== undefined
+      ? `Add an illustration of “${subject}” on page ${numbering.displayPage(onPage)}`
+      : `Add an illustration of “${subject}” at the end of the book`;
+  }
+  if (kind === "remove_image" || kind === "move_image") {
+    return imageLayoutProposalSummary(kind, affectedPageIndexes, intent.imageLayout, numbering);
+  }
+  if (kind === "chapter_regenerate") {
+    return intent.affectedChapterIndex
+      ? `Rewrite chapter ${intent.affectedChapterIndex}`
+      : "Rewrite that chapter";
+  }
+  if (intent.scope === "all_pages") {
+    return kind === "page_rewrite" ? "Rewrite the whole book" : "Edit the whole book";
+  }
+  const shown = numbering.displayPages(affectedPageIndexes);
+  if (shown.length === 1) {
+    return kind === "page_rewrite" ? `Rewrite page ${shown[0]}` : `Edit page ${shown[0]}`;
+  }
+  if (shown.length > 1) {
+    return kind === "page_rewrite" ? `Rewrite pages ${shown.join(", ")}` : `Edit pages ${shown.join(", ")}`;
+  }
+  return kind === "page_rewrite" ? "Rewrite matching pages" : "Edit matching pages";
+}
+
+/**
+ * Names the settings the rebuild will use, because the card is the last thing
+ * shown before the charge. "Rebuild the plan and regenerate the book" reads the
+ * same whether the request was understood or dropped — and when it was dropped,
+ * the copy arrives at the old length with no sign anything was missed.
+ */
+function replanProposalSummary(intent: BookEditIntent): string {
+  const language = intent.targetLanguage ? ` ${languageDisplayName(intent.targetLanguage)}` : "";
+  const targetPages = intent.replanSettings?.targetPages;
+  const length = targetPages === undefined ? "" : ` ${targetPages}-page`;
+  const illustrations =
+    intent.replanSettings?.fullIllustrations === false
+      ? " without illustrations"
+      : intent.replanSettings?.fullIllustrations === true
+        ? " with illustrations"
+        : "";
+  // The cover moves the quote too (a designed cover replaces the AI one for
+  // free), so a request that dropped it must say so here for the same reason
+  // the other settings do.
+  const cover = intent.replanSettings?.includeCover === false ? " with a designed cover" : "";
+  if (!language && !length && !illustrations && !cover) {
+    return "Rebuild the plan and regenerate the book as a new copy";
+  }
+  return `Rebuild as a new${language}${length} copy${illustrations}${cover}`;
+}
+
+/**
+ * The confirmation prose. It deliberately never names a price: the credits live
+ * in `editProposal.credits`, which the app renders as a tappable badge on the
+ * proposal card, so the number is one glance away instead of buried in a
+ * sentence the reader has to parse on every edit.
+ */
+export function editProposalMessage(
+  kind: BookEditIntentKind,
+  affectedPageIndexes: number[],
+  intent: BookEditIntent,
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
+): string {
+  const summary = editProposalSummary(kind, affectedPageIndexes, intent, numbering);
+  return `${summary}. Tap Apply to confirm, or Cancel to drop it.`;
+}
+
+/**
+ * The "work is queued" reply. Like {@link editProposalMessage} it stays silent
+ * about the price — the charge is on the message as `metadata.creditsCharged`
+ * and renders as the badge in the bubble's corner.
+ */
+export function operationQueuedMessage(
+  kind: BookEditIntentKind,
+  affectedPageIndexes: number[],
+  intent: BookEditIntent,
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
+): string {
+  if (kind === "continue_book") {
+    const chapterCount = intent.continuation?.chapterCount ?? 1;
+    const chapterText = chapterCount > 1 ? `${chapterCount} new chapters` : "the next chapter";
+    return `I’ll write ${chapterText} in your book’s voice and refresh the exports.`;
+  }
+  if (kind === "book_replan") {
+    return "I’ll rebuild the plan and regenerate the book.";
+  }
+  if (kind === "add_image") {
+    const targetPage = affectedPageIndexes[0];
+    const shownPage = targetPage === undefined ? undefined : numbering.displayPage(targetPage);
+    if (intent.imageEdit?.replace) {
+      const where = shownPage === undefined ? "" : ` on page ${shownPage}`;
+      return `I’m creating that illustration now and replacing the one${where}, then I’ll refresh the exports.`;
+    }
+    // The card said "at the end of the book" for an end placement, so the
+    // queued reply says the same — the resolved target page is still a page
+    // number, which read as a place the user never named.
+    const destination =
+      intent.imageEdit?.placement === "end_of_book" || shownPage === undefined
+        ? "at the end of the book"
+        : `to page ${shownPage}`;
+    return `I’m creating that illustration now and adding it ${destination}, then I’ll refresh the exports.`;
+  }
+  if (kind === "remove_image" || kind === "move_image") {
+    return imageLayoutQueuedMessage(kind, affectedPageIndexes, intent.imageLayout, numbering);
+  }
+  if (kind === "chapter_regenerate") {
+    const chapterText = intent.affectedChapterIndex ? `chapter ${intent.affectedChapterIndex}` : "that chapter";
+    // With a map the honest parenthetical is the printed span; a page COUNT
+    // must stay the model-page count, because that is the priced unit.
+    const shown = numbering.displayPages(affectedPageIndexes);
+    const span =
+      numbering.pdfPageMap && shown.length > 0
+        ? shown.length === 1
+          ? `page ${shown[0]}`
+          : `pages ${shown[0]}–${shown[shown.length - 1]}`
+        : `${affectedPageIndexes.length} page${affectedPageIndexes.length === 1 ? "" : "s"}`;
+    return `I’ll rewrite ${chapterText} (${span}) with that direction and refresh the exports.`;
+  }
+  const shown = numbering.displayPages(affectedPageIndexes);
+  const pageText =
+    intent.scope === "all_pages"
+      ? "the whole book"
+      : intent.scope === "matching_pages"
+        ? shown.length === 1
+          ? `the matching text on page ${shown[0]}`
+          : `matching text on pages ${shown.join(", ")}`
+        : shown.length === 1
+          ? `page ${shown[0]}`
+          : `pages ${shown.join(", ")}`;
+  return kind === "page_rewrite"
+    ? `I’ll rewrite ${pageText} and refresh the exports.`
+    : `I’ll edit ${pageText} and refresh the exports.`;
+}
+
+/**
+ * The request as the worker's prompts should see it: the reader's own words
+ * plus the mentioned characters' sheets. Only ever applied where the string is
+ * handed to a model — job payloads and the plan-revision message — because the
+ * bare `message` is what page targeting and exact-replacement parsing read.
+ */
+export function requestWithCharacterContext(message: string, characterContext: string | undefined): string {
+  return characterContext ? `${message}\n\n${characterContext}` : message;
+}

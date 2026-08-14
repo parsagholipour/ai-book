@@ -260,6 +260,7 @@ class ReaderSelection {
     required this.text,
     required this.pdfPageNumber,
     this.bookPageIndex,
+    this.exportRevision,
     this.placed = false,
   });
 
@@ -273,6 +274,12 @@ class ReaderSelection {
   /// resolved. Null disables the actions that need to name a page.
   final int? bookPageIndex;
 
+  /// The exact content revision of the PDF this selection was made in, when
+  /// the displayed file is the currently offered one. Null means the reader
+  /// is on a stale or unverified cache, where a printed page number must not
+  /// be translated through the server's current map.
+  final int? exportRevision;
+
   /// Whether placing the passage has finished.
   ///
   /// The menu opens the instant text is selected and the book page arrives a
@@ -285,14 +292,28 @@ class ReaderSelection {
   ///
   /// The page an edit will be aimed at is shown before the message is sent, so
   /// a passage placed on the wrong page is something the reader can see rather
-  /// than something they discover in the proposal that comes back.
+  /// than something they discover in the proposal that comes back. The number
+  /// shown is the PDF page — the same one the reader chrome counts — never the
+  /// internal book page index, which no reader surface displays.
   String get placementLabel {
     if (!placed) {
       return 'Finding page…';
     }
-    final index = bookPageIndex;
-    return index == null ? 'Page not identified' : 'Page $index';
+    return bookPageIndex == null ? 'Page not identified' : 'Page $pdfPageNumber';
   }
+
+  /// The structured position sent with a selection-composed chat message.
+  ///
+  /// `pageIndex` is the book page the locator resolved — authoritative for
+  /// targeting — and `pdfPage` the printed page the reader saw, which the
+  /// server can translate through the book's page map when no index resolved.
+  Map<String, int> get chatReaderContext => {
+    'pageIndex': ?bookPageIndex,
+    // The printed page is only meaningful against the exact revision it was
+    // read from; the server checks contentRevision before translating it.
+    if (exportRevision != null) 'pdfPage': pdfPageNumber,
+    'contentRevision': ?exportRevision,
+  };
 
   /// The excerpt as it goes into a chat message.
   ///

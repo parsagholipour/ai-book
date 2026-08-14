@@ -1,4 +1,6 @@
 import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
+import { numberingForProject } from "../../bookPageNumbering.js";
+import { primaryModelPageForPdfPage } from "@book-maker/core";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import { libraryCharacterAppearanceRule, libraryCharacterPromptBlock } from "@book-maker/core";
 import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
@@ -253,8 +255,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
           content: pendingScopeRecoveryMessage(pendingScope),
           metadata: {
             pendingEdit: pendingEditMetadataFromState(pendingScope),
-            ...(editProposalCardFromState(pendingScope)
-              ? { editProposal: editProposalCardFromState(pendingScope) }
+            ...(editProposalCardFromState(pendingScope, numberingForProject(project))
+              ? { editProposal: editProposalCardFromState(pendingScope, numberingForProject(project)) }
               : {}),
             recoveredPendingScope: pendingScope.scope,
             charged: false
@@ -270,6 +272,36 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       const pages = chatPagesForProject(project);
       const stage = chatStageForProject(project.status, project.currentPlan);
       const routingTextModel = safeFastRoutingTextModel();
+      // With a current page map, the numbers the user types are the printed PDF
+      // pages they can see; without one everything stays in model indexes.
+      const pageNumbering = numberingForProject(project);
+      // The app's locator already resolved the selection to a model page; it is
+      // authoritative over re-parsing the composed text. A selection the
+      // locator could not place still names the printed page it came from,
+      // which the map can resolve.
+      const readerSelection = (() => {
+        const context = parsed.data.readerContext;
+        if (!context) {
+          return undefined;
+        }
+        if (context.pageIndex !== undefined) {
+          return { pageIndex: context.pageIndex };
+        }
+        // A printed page number is only meaningful against the revision it was
+        // read from: the reader deliberately keeps showing a stale cached PDF
+        // while exports rebuild, and translating its numbers through the
+        // current map would target whichever page prints there now.
+        if (
+          context.pdfPage !== undefined &&
+          context.contentRevision !== undefined &&
+          context.contentRevision === project.contentRevision &&
+          pageNumbering.pdfPageMap
+        ) {
+          const resolved = primaryModelPageForPdfPage(pageNumbering.pdfPageMap, context.pdfPage);
+          return resolved !== undefined ? { pageIndex: resolved } : undefined;
+        }
+        return undefined;
+      })();
 
       // A pure confirmation of a priced proposal skips re-routing so the
       // already-quoted credit cost and page targets stay authoritative.
@@ -292,6 +324,8 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
             textModel: routingTextModel,
             loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null,
             clarifyExhausted,
+            pageNumbering,
+            ...(readerSelection ? { readerSelection } : {}),
             // Given to the router, not merged into the message: without a
             // referent "make that shorter" falls to the heuristics' catch-all
             // clarify, and a second unresolved turn is forced into a whole-book
@@ -356,7 +390,9 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       return {
         ...(await loadProjectChatResponse(id)),
         reply: serializeProjectChatMessage(outcome.reply),
-        operation: outcome.operation ? serializeBookEditOperation(outcome.operation) : null
+        operation: outcome.operation
+          ? serializeBookEditOperation(outcome.operation, { pageNumbering })
+          : null
       } satisfies MobileProjectChatMessageResponseDto;
     }
   );

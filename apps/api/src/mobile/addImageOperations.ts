@@ -1,3 +1,5 @@
+import { numberingForProject } from "../bookPageNumbering.js";
+import { requestWithCharacterContext } from "./bookEditCopy.js";
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { resolveImageInsertionTarget, type ImageInsertionEdit } from "../bookEditImage.js";
 import { replaceEditFromTarget, resolveReplaceableImage } from "./addImageTargets.js";
@@ -5,9 +7,7 @@ import { enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
 import {
   creditsBlockedResume,
-  queueAttemptChatOperation,
-  requestWithCharacterContext
-} from "./editOperations.js";
+  queueAttemptChatOperation } from "./editOperations.js";
 import {
   busyEditReply,
   editProposalMessage,
@@ -183,6 +183,7 @@ export async function proposeAddImageEdit(options: {
     ...(replace ? { replace } : {})
   };
   const affected = [resolved.targetPageIndex];
+  const numbering = numberingForProject(project);
   const cost = bookEditCreditCost(intent.kind, 1, project);
   const proposalIntent: BookEditIntent = {
     ...intent,
@@ -194,7 +195,7 @@ export async function proposeAddImageEdit(options: {
   const reply = await createAssistantChatMessage({
     projectId: project.id,
     parentId: userMessageId,
-    content: editProposalMessage(intent.kind, affected, proposalIntent),
+    content: editProposalMessage(intent.kind, affected, proposalIntent, numbering),
     metadata: {
       intent: proposalIntent,
       charged: false,
@@ -213,8 +214,9 @@ export async function proposeAddImageEdit(options: {
         kind: intent.kind,
         scope: "explicit_pages",
         affectedPageIndexes: affected,
+        ...(numbering.pdfPageMap ? { readerPageNumbers: numbering.displayPages(affected) } : {}),
         credits: cost,
-        summary: editProposalSummary(intent.kind, affected, proposalIntent)
+        summary: editProposalSummary(intent.kind, affected, proposalIntent, numbering)
       }
     }
   });
@@ -381,7 +383,7 @@ export async function queueChatAddImage(options: {
           }
         });
       },
-      replyContent: operationQueuedMessage("add_image", [target], resolvedIntent),
+      replyContent: operationQueuedMessage("add_image", [target], resolvedIntent, numberingForProject(project)),
       replyMetadata: { intent: resolvedIntent, charged: true, creditsCharged: cost }
     });
   } catch (error) {
@@ -405,7 +407,7 @@ export async function queueChatAddImage(options: {
         affectedPageIndexes: [target],
         credits: cost,
         ...(options.characterContext ? { characterContext: options.characterContext } : {})
-      })
+      }, numberingForProject(project))
     );
     return { reply, operation: null };
   }

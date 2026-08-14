@@ -201,7 +201,7 @@ describe("billing credit assumptions", () => {
       500 + 18 * 30 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
     );
     expect(estimateFullBookCreditCost(inputForTier("ultra")).totalCredits).toBe(
-      650 + 18 * 40 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
+      650 + 18 * 71 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
     );
 
     // A book from before tiers existed pays the balanced rates, because that
@@ -213,7 +213,7 @@ describe("billing credit assumptions", () => {
   });
 
   it("keeps the tier price ladder in the same order as what the tiers cost to run", () => {
-    const inputForTier = (modelTier: "fast" | "balanced" | "premium") =>
+    const inputForTier = (modelTier: "fast" | "balanced" | "premium" | "ultra") =>
       createProjectSchema.parse({
         prompt: "Create a practical guide about onboarding new managers.",
         category: "EDUCATION",
@@ -230,11 +230,12 @@ describe("billing credit assumptions", () => {
         }
       });
 
-    const credits = (tier: "fast" | "balanced" | "premium") => estimateFullBookCreditCost(inputForTier(tier)).totalCredits;
-    const cost = (tier: "fast" | "balanced" | "premium") => estimateProviderCostForProject(inputForTier(tier)).estimatedUsd;
+    const credits = (tier: "fast" | "balanced" | "premium" | "ultra") => estimateFullBookCreditCost(inputForTier(tier)).totalCredits;
+    const cost = (tier: "fast" | "balanced" | "premium" | "ultra") => estimateProviderCostForProject(inputForTier(tier)).estimatedUsd;
 
     expect(credits("fast")).toBeLessThan(credits("balanced"));
     expect(credits("balanced")).toBeLessThan(credits("premium"));
+    expect(credits("premium")).toBeLessThan(credits("ultra"));
 
     // The property that matters is not the ordering but the margin: every tier
     // has to clear its own provider cost at the *Max* plan's credit value
@@ -242,7 +243,7 @@ describe("billing credit assumptions", () => {
     // cheapest a credit is ever sold for and the plan someone can burn 80,000
     // of on long premium books.
     const maxPlanUsdPerCredit = (199.99 * 0.85) / 80_000;
-    for (const tier of ["fast", "balanced", "premium"] as const) {
+    for (const tier of ["fast", "balanced", "premium", "ultra"] as const) {
       expect(credits(tier) * maxPlanUsdPerCredit).toBeGreaterThan(cost(tier));
     }
   });
@@ -256,7 +257,7 @@ describe("billing credit assumptions", () => {
       finalReview: true,
       toneProfile: "confident"
     };
-    const inputForTier = (modelTier?: "fast" | "balanced" | "premium") =>
+    const inputForTier = (modelTier?: "fast" | "balanced" | "premium" | "ultra") =>
       createProjectSchema.parse({
         prompt: "Create a premium guide about pricing consulting retainers.",
         category: "BUSINESS",
@@ -273,6 +274,14 @@ describe("billing credit assumptions", () => {
       imageGeneration: 0.067,
       coverIncluded: 0.134
     });
+    expect(providerCostAssumptionsForInput(inputForTier("ultra"))).toMatchObject({
+      textPerPage: 0.12,
+      imageGeneration: 0.067,
+      coverIncluded: 0.134
+    });
+    expect(providerCostAssumptionsForInput(inputForTier("ultra")).textPerPage).toBeGreaterThan(
+      providerCostAssumptionsForInput(inputForTier("premium")).textPerPage
+    );
 
     const fastEstimate = estimateProviderCostForProject(inputForTier("fast"));
     const balancedEstimate = estimateProviderCostForProject(inputForTier("balanced"));

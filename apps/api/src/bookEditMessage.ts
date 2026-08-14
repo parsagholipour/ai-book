@@ -3,9 +3,12 @@ import {
   LANGUAGE_CLAUSE_END_GUARD,
   LANGUAGE_NAME_CODES,
   languageNamePattern,
+  modelPageIndexesForPdfPage,
+  nearestModelPageForPdfPage,
   normalizeNumerals,
   normalizeProjectLanguage,
   replanSettingsFromMessage,
+  type BookPdfPageMap,
   type ReplanSettings
 } from "@book-maker/core";
 import type {
@@ -14,6 +17,19 @@ import type {
   BookEditScope,
   ShowContentTarget
 } from "./bookEditIntent.js";
+
+/**
+ * How a page number in the user's message is to be read.
+ *
+ * With a `pdfPageMap` — the published PDF's measured page map, current for the
+ * book's revision — a spoken number is the number the reader can actually see:
+ * the pdfrx page indicator, the printed footer and the Contents column all
+ * count physical PDF pages. Without one (older compiles, measurement failure)
+ * numbers fall back to model page indexes, which is exactly the old behaviour.
+ */
+export type ReaderPageNumberContext = {
+  pdfPageMap?: BookPdfPageMap | undefined;
+};
 
 /**
  * Reading a user's chat message: page and chapter references, quoted text,
@@ -219,7 +235,10 @@ export function languageDisplayName(language: string | null): string {
  * Detects requests to read (not change) the outline, a chapter, or a page.
  * Returns null when the message does not look like a read request.
  */
-export function showContentTargetFromMessage(message: string): ShowContentTarget | null {
+export function showContentTargetFromMessage(
+  message: string,
+  context: ReaderPageNumberContext = {}
+): ShowContentTarget | null {
   const text = message.trim();
   // "Why …" asks for an explanation, never a content read, even when it
   // contains a read-verb homograph like "display".
@@ -238,9 +257,15 @@ export function showContentTargetFromMessage(message: string): ShowContentTarget
   if (!wantsRead) {
     return null;
   }
-  const pageMatch = text.match(/\bpage\s+(\d{1,3})\b/i);
+  const pageMatch = normalizeNumerals(text).match(/\bpage\s+(\d{1,3})\b/i);
   if (pageMatch && !/\b(?:outline|plan|chapters?|table of contents|toc)\b/i.test(text)) {
-    return { type: "page", index: Number(pageMatch[1]) };
+    const spoken = Number(pageMatch[1]);
+    // A read target tolerates the nearest-page resolution an edit target must
+    // not: "show me page 2" pointing at the Contents reads the page after it.
+    const index = context.pdfPageMap ? nearestModelPageForPdfPage(context.pdfPageMap, spoken) : spoken;
+    if (index !== undefined) {
+      return { type: "page", index };
+    }
   }
   const chapterMatch = text.match(/\bchapter\s+(\d{1,2})\b/i);
   if (chapterMatch) {
@@ -445,20 +470,71 @@ export function bulkImageSelectionFromMessage(message: string): "all" | null {
  * validated against real pages by the proposal path. Numerals are normalized
  * so "page ۵" reads as page 5.
  */
-export function imagePlacementFromMessage(message: string): BookEditImagePlacement | null {
+export function imagePlacementFromMessage(
+  message: string,
+  context: ReaderPageNumberContext = {}
+): BookEditImagePlacement | null {
   const normalized = normalizeNumerals(message);
   const named = NAMED_PAGE.exec(normalized) ?? ORDINAL_PAGE.exec(normalized);
   if (named) {
-    const pageIndex = namedPageIndex(named[0]);
-    if (pageIndex !== null) {
-      return { placement: "page", pageIndex };
+    const spoken = namedPageIndex(named[0]);
+    if (spoken !== null) {
+      // A placement is a read-style target — putting a picture "on page 12"
+      // when 12 is furniture means the nearest page of prose, never a silent
+      // renumbering onto whichever model page happens to share the number.
+      const pageIndex = context.pdfPageMap ? nearestModelPageForPdfPage(context.pdfPageMap, spoken) : spoken;
+      if (pageIndex !== undefined) {
+        return { placement: "page", pageIndex };
+      }
     }
   }
   return endOfBookPlacementFromMessage(message) ? { placement: "end_of_book" } : null;
 }
 
-export function pageIndexesFromMessage(message: string, pages: BookEditPageContext[]): number[] {
+/**
+ * Every page number the message speaks, exactly as spoken — digits, ranges,
+ * word cardinals and ordinals — with no translation and no existence filter.
+ * The furniture recogniser reads these to tell "page 2" (the Contents) apart
+ * from a message naming no page at all.
+ */
+export function spokenPageNumbersFromMessage(message: string): number[] {
+  const normalized = normalizeNumerals(message);
+  const spoken = new Set<number>();
+  for (const match of normalized.matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
+    const start = Number(match[1]);
+    const end = match[2] ? Number(match[2]) : start;
+    for (let value = Math.min(start, end); value <= Math.max(start, end); value += 1) {
+      spoken.add(value);
+    }
+  }
+  for (const source of [NAMED_PAGE_SOURCE, ORDINAL_PAGE_SOURCE]) {
+    for (const match of normalized.matchAll(new RegExp(`\\b${source}\\b`, "gi"))) {
+      const value = namedPageIndex(match[0]);
+      if (value !== null) {
+        spoken.add(value);
+      }
+    }
+  }
+  return [...spoken].sort((a, b) => a - b);
+}
+
+export function pageIndexesFromMessage(
+  message: string,
+  pages: BookEditPageContext[],
+  context: ReaderPageNumberContext = {}
+): number[] {
+  const map = context.pdfPageMap;
   const indexes = new Set<number>();
+  // A spoken number resolves through the page map when one exists — a "page"
+  // the reader can point at is a PDF page. A number landing on furniture (the
+  // cover, the Contents) resolves to nothing here on purpose: an edit target
+  // must never be silently moved to a neighbouring page, and the router's own
+  // context knows what those pages are.
+  const add = (spoken: number) => {
+    for (const index of map ? modelPageIndexesForPdfPage(map, spoken) : [spoken]) {
+      indexes.add(index);
+    }
+  };
   // Numerals are normalized but the word "page" is not translated: the reader
   // writes its own references in English ("On page 4") whatever the book's
   // language, so this only has to survive a reader typing their own digits.
@@ -466,21 +542,27 @@ export function pageIndexesFromMessage(message: string, pages: BookEditPageConte
   for (const match of normalized.matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
     const start = Number(match[1]);
     const end = match[2] ? Number(match[2]) : start;
-    for (let index = Math.min(start, end); index <= Math.max(start, end); index += 1) {
-      indexes.add(index);
+    for (let spoken = Math.min(start, end); spoken <= Math.max(start, end); spoken += 1) {
+      add(spoken);
     }
   }
   // "page three" and "the 3rd page" name single pages; ranges stay digits-only.
   for (const source of [NAMED_PAGE_SOURCE, ORDINAL_PAGE_SOURCE]) {
     for (const match of normalized.matchAll(new RegExp(`\\b${source}\\b`, "gi"))) {
-      const index = namedPageIndex(match[0]);
-      if (index !== null) {
-        indexes.add(index);
+      const spoken = namedPageIndex(match[0]);
+      if (spoken !== null) {
+        add(spoken);
       }
     }
   }
   for (const page of pages) {
     const title = page.title.trim().toLowerCase();
+    // An untitled page's fallback title is literally "Page N". With a map in
+    // force that reads as a printed-number reference, not a title, and letting
+    // it match here would smuggle the model index back in.
+    if (map && /^page\s+\d+$/.test(title)) {
+      continue;
+    }
     if (title.length >= 4 && message.toLowerCase().includes(title)) {
       indexes.add(page.index);
     }

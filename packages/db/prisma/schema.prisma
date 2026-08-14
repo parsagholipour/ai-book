@@ -622,6 +622,12 @@ model Project {
   mediaSettings Json
   status        ProjectStatus    @default(DRAFT)
   contentRevision Int            @default(0)
+  /// Where each model page landed in the published book.pdf, measured at
+  /// publish time from the rendered bytes (see packages/core pdfPageMap.ts).
+  /// Stamped with the contentRevision and pdf digest it was measured against;
+  /// null for books compiled before the map existed or whose measurement
+  /// failed — every consumer must treat its absence as "no translation".
+  pdfPageMap    Json?
   /// Rebuilt from Page.storyDelta in index order. Live story-state object for
   /// the context pack and last-page unpaid-promise check.
   storyState    Json?

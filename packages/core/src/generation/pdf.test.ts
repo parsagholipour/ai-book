@@ -8,10 +8,12 @@ import { describe, expect, it, afterAll, afterEach } from "vitest";
 import { closeSharedBrowser, withRenderPage } from "./browserPool.js";
 import {
   generateBookPdf,
+  generateBookPdfWithPageMap,
   insertCoverPageBreak,
   localizeImagesInMarkdown,
   prepareMarkdownForPdfDocument
 } from "./pdf.js";
+import { compileBookMarkdownWithPageAnchors } from "./markdown.js";
 
 afterAll(async () => {
   // Renders share one long-lived Chromium, and a live browser holds the event
@@ -517,3 +519,107 @@ function readRgb(page: { width: number; height: number; pixels: Buffer }, x: num
   const offset = (y * page.width + x) * 3;
   return [page.pixels[offset] ?? 0, page.pixels[offset + 1] ?? 0, page.pixels[offset + 2] ?? 0];
 }
+
+describe("generateBookPdfWithPageMap", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+    tempDirs.length = 0;
+  });
+
+  const itIfPdfText = hasCommand("pdftotext") ? it : it.skip;
+
+  itIfPdfText("measures where every model page landed and reprints the Contents in PDF pages", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-map-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    const prose = (index: number) =>
+      `OpeningToken${index} starts this page. ` +
+      "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ".repeat(
+        14
+      );
+    const compiled = compileBookMarkdownWithPageAnchors({
+      plan: {
+        title: "The Measured Book",
+        premise: "p",
+        audience: "a",
+        chapters: [
+          { index: 1, title: "Beginnings", summary: "s", targetPages: 4 },
+          { index: 2, title: "Endings", summary: "s", targetPages: 4 }
+        ],
+        characters: [],
+        questions: []
+      } as never,
+      pages: Array.from({ length: 8 }, (_, i) => ({
+        index: i + 1,
+        title: `Page ${i + 1}`,
+        markdown: prose(i + 1)
+      })),
+      readerChapters: [
+        { index: 1, title: "Beginnings", summary: "s", startPageIndex: 1, endPageIndex: 4 },
+        { index: 2, title: "Endings", summary: "s", startPageIndex: 5, endPageIndex: 8 }
+      ]
+    });
+    expect(compiled.hasContents).toBe(true);
+
+    const result = await generateBookPdfWithPageMap(compiled.markdown, {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001",
+      outputPath,
+      language: "en",
+      pageMapPlan: compiled
+    });
+
+    const map = result.pageMap;
+    expect(map).toBeDefined();
+    if (!map) {
+      return;
+    }
+    expect(map.pages).toHaveLength(8);
+    for (let i = 1; i < map.pages.length; i += 1) {
+      expect(map.pages[i]!.startPdfPage).toBeGreaterThanOrEqual(map.pages[i - 1]!.startPdfPage);
+    }
+    expect(map.contentsStartPdfPage).toBeDefined();
+    expect(map.totalPdfPages).toBeGreaterThanOrEqual(map.pages[7]!.endPdfPage);
+
+    // Every measured start really holds that page's opening words.
+    for (const page of [map.pages[0]!, map.pages[3]!, map.pages[7]!]) {
+      const text = execFileSync(
+        "pdftotext",
+        ["-f", String(page.startPdfPage), "-l", String(page.startPdfPage), outputPath, "-"],
+        { encoding: "utf8" }
+      );
+      expect(text).toContain(`OpeningToken${page.index}`);
+    }
+
+    // The Contents rows print the measured PDF pages — the same numbers the
+    // footer counts — rather than model page indexes. Chapter 2 opens at model
+    // page 5, which cannot be its PDF page: the front matter alone displaces it.
+    const chapterTwoStart = map.pages[4]!.startPdfPage;
+    expect(chapterTwoStart).not.toBe(5);
+    const contentsText = execFileSync(
+      "pdftotext",
+      ["-f", String(map.contentsStartPdfPage), "-l", String(map.contentsStartPdfPage), outputPath, "-"],
+      { encoding: "utf8" }
+    );
+    expect(contentsText).toContain("Endings");
+    expect(contentsText).toContain(String(chapterTwoStart));
+    expect(contentsText).not.toMatch(/\b5\b/);
+  }, 90_000);
+
+  it("returns no map — and a whole book — when no plan is given", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-no-plan-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+
+    const result = await generateBookPdfWithPageMap("# A Book\n\nSome prose.", {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001"
+    });
+    expect(result.pageMap).toBeUndefined();
+    expect(result.pdf.length).toBeGreaterThan(1000);
+  }, 30_000);
+});

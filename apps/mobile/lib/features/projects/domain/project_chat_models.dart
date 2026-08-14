@@ -239,12 +239,18 @@ class MobileEditProposal {
     this.affectedChapterIndex,
     this.targetLanguage,
     this.preview,
+    this.readerPageNumbers = const [],
   });
 
   final String id;
   final String kind;
   final String scope;
   final List<int> affectedPageIndexes;
+
+  /// The printed PDF pages the edit covers — the numbers the reader sees in
+  /// the compiled book. Empty when the server has no current page map, in
+  /// which case [affectedPageIndexes] are the only numbers there are.
+  final List<int> readerPageNumbers;
   final int credits;
   final String summary;
   final int? affectedChapterIndex;
@@ -253,11 +259,13 @@ class MobileEditProposal {
 
   factory MobileEditProposal.fromJson(Map<String, dynamic> json) {
     final pages = json['affectedPageIndexes'] as List<dynamic>? ?? const [];
+    final readerPages = json['readerPageNumbers'] as List<dynamic>? ?? const [];
     return MobileEditProposal(
       id: json['id'] as String? ?? '',
       kind: json['kind'] as String? ?? 'local_patch',
       scope: json['scope'] as String? ?? 'none',
       affectedPageIndexes: pages.whereType<int>().toList(growable: false),
+      readerPageNumbers: readerPages.whereType<int>().toList(growable: false),
       credits: json['credits'] as int? ?? 0,
       summary: (json['summary'] as String?)?.trim().isNotEmpty == true
           ? json['summary'] as String
@@ -275,11 +283,16 @@ class MobileEditProposal {
     if (affectedChapterIndex != null) {
       return 'Chapter $affectedChapterIndex';
     }
-    if (affectedPageIndexes.length == 1) {
-      return 'Page ${affectedPageIndexes.first}';
+    // The chip shows the numbers the reader can see in the compiled book when
+    // the server measured them; the model indexes only stand in without a map.
+    final shown = readerPageNumbers.isNotEmpty
+        ? readerPageNumbers
+        : affectedPageIndexes;
+    if (shown.length == 1) {
+      return 'Page ${shown.first}';
     }
-    if (affectedPageIndexes.isNotEmpty) {
-      return 'Pages ${affectedPageIndexes.join(', ')}';
+    if (shown.isNotEmpty) {
+      return 'Pages ${shown.join(', ')}';
     }
     return 'Matching pages';
   }

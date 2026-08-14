@@ -18,6 +18,7 @@ import { range } from "../runtime/serialization.js";
 import { chapterSetupsForPlan, reviewWholeBookDraftPages } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { reviewAndSaveGeneratedPage } from "./pageReview.js";
+import { persistKeeperStoryDelta } from "./qualityEnrichment.js";
 import { polishPageWithQualityGates } from "./qualityDrafting.js";
 import { storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
 import {
@@ -26,7 +27,8 @@ import {
   type CreateProjectInput,
   type PriorPageContext,
   type ProviderSet,
-  type WholeBookPageDraft
+  type WholeBookPageDraft,
+  seedStoryStateFromPromises
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 
@@ -89,7 +91,7 @@ export async function generateBookChapterWholePass(options: {
   } else {
     chapterSetups = await prepareChapterSetups(options);
     await advanceJobStep(options.generationJobId, "setup", 35, "Preparing chapter records");
-    chapterIds = await resetBookForDirectGeneration(options.projectId, chapterSetups);
+    chapterIds = await resetBookForDirectGeneration(options.projectId, chapterSetups, options.plan.promises ?? []);
   }
   await ensureCharacterReferenceAssets({
     projectId: options.projectId,
@@ -203,7 +205,7 @@ export async function generateBookBatchWindow(options: {
   } else {
     chapterSetups = await prepareChapterSetups(options);
     await advanceJobStep(options.generationJobId, "setup", 35, "Preparing batch records");
-    chapterIds = await resetBookForDirectGeneration(options.projectId, chapterSetups);
+    chapterIds = await resetBookForDirectGeneration(options.projectId, chapterSetups, options.plan.promises ?? []);
   }
   await ensureCharacterReferenceAssets({
     projectId: options.projectId,
@@ -435,7 +437,7 @@ export async function generateBookDraftThenPolish(options: {
     effectiveInput = effective.input;
     effectivePlan = effective.plan;
     chapterSetups = effective.chapterSetups;
-    chapterIds = await resetBookForDirectGeneration(options.projectId, effective.chapterSetups);
+    chapterIds = await resetBookForDirectGeneration(options.projectId, effective.chapterSetups, effective.plan.promises ?? []);
     await checkpointWholeBookDraftPages({
       projectId: options.projectId,
       chapterSetups: effective.chapterSetups,
@@ -578,7 +580,13 @@ export async function generateBookWholePass(options: {
     await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
     await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
     await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: "page:" } } });
-    await tx.project.update({ where: { id: options.projectId }, data: { status: "GENERATING" } });
+    await tx.project.update({
+      where: { id: options.projectId },
+      data: {
+        status: "GENERATING",
+        storyState: seedStoryStateFromPromises(effective.plan.promises ?? []) as Prisma.InputJsonValue
+      }
+    });
 
     const chapterIds = new Map<number, string>();
     for (const setup of chapterRanges) {
@@ -639,6 +647,24 @@ export async function generateBookWholePass(options: {
 
     return pages;
   });
+
+  let currentState = seedStoryStateFromPromises(effective.plan.promises ?? []);
+  for (const reviewedPage of reviewedPages) {
+    const nextState = await persistKeeperStoryDelta({
+      projectId: options.projectId,
+      pageIndex: reviewedPage.draft.index,
+      draft: reviewedPage.draft,
+      textModel: options.providers.text,
+      plan: effective.plan,
+      input: effective.input,
+      previousExtract: null,
+      keeperWasRevised: true,
+      currentState
+    });
+    if (nextState) {
+      currentState = nextState;
+    }
+  }
 
   // Semantic memory is only ever read by sequential-pages jobs; the direct
   // passes writing it paid one embedding per page for rows nothing queries.

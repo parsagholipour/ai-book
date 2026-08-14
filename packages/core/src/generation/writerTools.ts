@@ -82,7 +82,7 @@ export async function generatePageDraftWithWriterTools(
     const result = await runToolLoop({
       textModel: options.textModel,
       purpose: "write-page-with-tools",
-      temperature: 0.6,
+      temperature: options.input.temperature,
       maxTokens: 3000,
       maxModelCalls: 3,
       messages: buildPageDraftMessages(options, [

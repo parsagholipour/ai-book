@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { pageIndexesFromMessage, targetLanguageFromLanguageVersionRequest } from "./bookEditMessage.js";
+import {
+  imagePlacementFromMessage,
+  pageIndexesFromMessage,
+  showContentTargetFromMessage,
+  targetLanguageFromLanguageVersionRequest
+} from "./bookEditMessage.js";
 
 describe("pageIndexesFromMessage", () => {
   // Titles that share no words with the messages below, so only the numeral
@@ -59,5 +64,73 @@ describe("targetLanguageFromLanguageVersionRequest", () => {
       targetLanguageFromLanguageVersionRequest("create a chapter on jazz in French colonial Africa")
     ).toBeNull();
     expect(targetLanguageFromLanguageVersionRequest("make the ending more hopeful")).toBeNull();
+  });
+});
+
+describe("reader page numbers through the PDF page map", () => {
+  const map = {
+    version: 1 as const,
+    totalPdfPages: 12,
+    hasCoverPage: true,
+    contentsStartPdfPage: 2,
+    backMatterStartPdfPage: 12,
+    pages: [
+      { index: 1, startPdfPage: 3, endPdfPage: 4 },
+      { index: 2, startPdfPage: 4, endPdfPage: 6 },
+      { index: 3, startPdfPage: 7, endPdfPage: 11 }
+    ]
+  };
+  const pages = [1, 2, 3].map((index) => ({
+    id: `page-${index}`,
+    index,
+    title: `Page ${index}`,
+    summary: "",
+    previewText: ""
+  }));
+
+  it("reads a spoken page number as the printed page", () => {
+    expect(pageIndexesFromMessage("rewrite page 5", pages, { pdfPageMap: map })).toEqual([2]);
+    // The shared boundary page belongs to both model pages.
+    expect(pageIndexesFromMessage("rewrite page 4", pages, { pdfPageMap: map })).toEqual([1, 2]);
+    expect(pageIndexesFromMessage("polish pages 4-7", pages, { pdfPageMap: map })).toEqual([1, 2, 3]);
+    expect(pageIndexesFromMessage("the 5th page needs work", pages, { pdfPageMap: map })).toEqual([2]);
+  });
+
+  it("drops numbers that land on furniture rather than renumbering them", () => {
+    // Printed page 2 is the table of contents; nothing editable lives there.
+    expect(pageIndexesFromMessage("fix page 2", pages, { pdfPageMap: map })).toEqual([]);
+    expect(pageIndexesFromMessage("fix page 1", pages, { pdfPageMap: map })).toEqual([]);
+  });
+
+  it("keeps the old model-index reading without a map", () => {
+    expect(pageIndexesFromMessage("fix page 2", pages)).toEqual([2]);
+  });
+
+  it("resolves a read request through the map, nearest page for furniture", () => {
+    expect(showContentTargetFromMessage("show me page 5", { pdfPageMap: map })).toEqual({ type: "page", index: 2 });
+    // The Contents page reads as the page right after it.
+    expect(showContentTargetFromMessage("show me page 2", { pdfPageMap: map })).toEqual({ type: "page", index: 1 });
+  });
+
+  it("resolves an image placement to the page of prose the reader pointed at", () => {
+    expect(imagePlacementFromMessage("add a dragon on page 7", { pdfPageMap: map })).toEqual({
+      placement: "page",
+      pageIndex: 3
+    });
+    // A furniture page takes the nearest prose page rather than a same-number guess.
+    expect(imagePlacementFromMessage("add a dragon on page 2", { pdfPageMap: map })).toEqual({
+      placement: "page",
+      pageIndex: 1
+    });
+  });
+
+  it("names no page for a number the book does not print", () => {
+    // Snapping is for furniture, not for a page that does not exist: reading or
+    // illustrating the last page is a wrong answer, where none lets the router
+    // (or furniturePageIntentFromMessage) say the book has no printed page 40.
+    expect(showContentTargetFromMessage("show me page 40", { pdfPageMap: map })).toBeNull();
+    expect(imagePlacementFromMessage("add a dragon on page 40", { pdfPageMap: map })).toBeNull();
+    // Without a map the number is a model index and keeps its old reading.
+    expect(imagePlacementFromMessage("add a dragon on page 40")).toEqual({ placement: "page", pageIndex: 40 });
   });
 });

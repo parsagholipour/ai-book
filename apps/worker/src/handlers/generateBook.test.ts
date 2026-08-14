@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    researchSource: { findMany: vi.fn(), createMany: vi.fn() }
+    researchSource: { findMany: vi.fn(), createMany: vi.fn() },
+    chapter: { findMany: vi.fn() },
+    page: { findMany: vi.fn() },
+    $transaction: vi.fn()
   },
   expandChapterResearch: vi.fn(),
   embedResearchSourcesForProject: vi.fn(),
@@ -49,7 +52,9 @@ vi.mock("@book-maker/core", async () => {
   };
 });
 
-import { maybeExpandStrategyResearch } from "./generateBook.js";
+import { generateBookSequential, maybeExpandStrategyResearch } from "./generateBook.js";
+import { prepareChapterSetups } from "../generation/bookState.js";
+import { seedStoryStateFromPromises } from "@book-maker/core";
 
 const plan = {
   chapters: [],
@@ -127,5 +132,83 @@ describe("maybeExpandStrategyResearch redelivery guard", () => {
 
     expect(mocks.prisma.researchSource.findMany).not.toHaveBeenCalled();
     expect(mocks.expandChapterResearch).not.toHaveBeenCalled();
+  });
+});
+
+describe("generateBookSequential storyState wipe", () => {
+  const sequentialPlan = {
+    chapters: [{ index: 1, title: "One", summary: "Opening.", targetPages: 2 }],
+    promises: ["The lantern will be lit."]
+  };
+  const sequentialInput = { targetPages: 2 };
+  const sequentialOptions = () =>
+    ({
+      projectId: "project-1",
+      planId: "plan-1",
+      input: sequentialInput,
+      plan: sequentialPlan,
+      providers: {},
+      strategy: {},
+      generationJobId: "gj-1"
+    }) as never;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("seeds storyState when wiping pages for a fresh sequential run", async () => {
+    mocks.prisma.chapter.findMany.mockResolvedValue([]);
+    mocks.prisma.page.findMany.mockResolvedValue([]);
+    vi.mocked(prepareChapterSetups).mockResolvedValue([
+      {
+        chapter: { index: 1, title: "One", summary: "Opening.", targetPages: 2 },
+        startPage: 1,
+        endPage: 2,
+        brief: {}
+      }
+    ] as never);
+    const tx = {
+      imageAsset: { deleteMany: vi.fn() },
+      page: { deleteMany: vi.fn(), create: vi.fn() },
+      chapter: { deleteMany: vi.fn(), create: vi.fn(async () => ({ id: "ch-1" })) },
+      continuityNote: { deleteMany: vi.fn() },
+      embedding: { deleteMany: vi.fn() },
+      project: { update: vi.fn() }
+    };
+    mocks.prisma.$transaction.mockImplementation(async (run: (client: typeof tx) => Promise<unknown>) => run(tx));
+
+    await generateBookSequential(sequentialOptions());
+
+    expect(tx.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: {
+        status: "GENERATING",
+        storyState: seedStoryStateFromPromises(["The lantern will be lit."])
+      }
+    });
+  });
+
+  it("does not re-seed storyState on the resume path", async () => {
+    mocks.prisma.chapter.findMany.mockResolvedValue([
+      { index: 1, title: "One", targetPages: 2 }
+    ]);
+    mocks.prisma.page.findMany.mockResolvedValue([
+      { index: 1, status: "COMPLETED" },
+      { index: 2, status: "PENDING" }
+    ]);
+    const tx = {
+      page: { updateMany: vi.fn() },
+      project: { update: vi.fn() }
+    };
+    mocks.prisma.$transaction.mockImplementation(async (run: (client: typeof tx) => Promise<unknown>) => run(tx));
+
+    await generateBookSequential(sequentialOptions());
+
+    expect(prepareChapterSetups).not.toHaveBeenCalled();
+    expect(tx.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { status: "GENERATING" }
+    });
+    expect(tx.project.update.mock.calls[0]?.[0].data).not.toHaveProperty("storyState");
   });
 });

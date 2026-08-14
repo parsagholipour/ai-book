@@ -222,7 +222,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     previousPages: options.previousPages,
     researchNotes,
     textModel: options.providers.text,
-    projectId: options.projectId
+    projectId: options.projectId,
+    quality
   });
 
   const outcome = await runPageQualityLoop({
@@ -309,7 +310,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     input: options.input,
     previousExtract: enriched.extract,
     keeperWasRevised: revision > 1,
-    currentState: enriched.storyState
+    currentState: enriched.storyState,
+    quality
   });
 
   if (!qualityReport.approved) {

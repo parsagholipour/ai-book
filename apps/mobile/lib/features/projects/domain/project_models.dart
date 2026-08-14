@@ -713,7 +713,7 @@ int estimateProjectCredits({
     creditCosts,
     'fullBookPerPage',
     qualityPreset,
-    {'fast': 5, 'balanced': 8, 'premium': 30, 'ultra': 40},
+    {'fast': 5, 'balanced': 8, 'premium': 30, 'ultra': 71},
   );
   final imageGeneration = _tierCost(
     creditCosts,

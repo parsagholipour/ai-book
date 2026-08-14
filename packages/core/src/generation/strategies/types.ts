@@ -1,5 +1,5 @@
-import type { CompileMarkdownInput } from "../markdown.js";
-import type { GenerateBookPdfOptions } from "../pdf.js";
+import type { CompiledBookMarkdown, CompileMarkdownInput } from "../markdown.js";
+import type { BookPageMapPlan, GenerateBookPdfOptions, GenerateBookPdfResult } from "../pdf.js";
 import type { CreatePlanOptions, RevisePlanOptions } from "../planner.js";
 import type {
   FinalBookQaOptions,
@@ -62,5 +62,12 @@ export type BookGenerationStrategy = {
   readonly shouldIllustratePage: (input: CreateProjectInput, plan: BookPlan, pageIndex: number) => boolean;
   readonly generateImageBytes: (options: GenerateImageBytesOptions) => Promise<GeneratedImageBytes>;
   readonly compileMarkdown: (input: CompileMarkdownInput) => string;
+  /** Same compile, plus the per-page anchor plan the PDF page map is measured from. */
+  readonly compileMarkdownWithPageAnchors: (input: CompileMarkdownInput) => CompiledBookMarkdown;
   readonly generatePdf: (markdown: string, options: GenerateBookPdfOptions) => Promise<Buffer>;
+  /** Same render; with a `pageMapPlan` it also measures where each model page landed. */
+  readonly generatePdfWithPageMap: (
+    markdown: string,
+    options: GenerateBookPdfOptions & { pageMapPlan?: BookPageMapPlan | undefined }
+  ) => Promise<GenerateBookPdfResult>;
 };

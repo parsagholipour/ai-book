@@ -5,6 +5,11 @@ import type { PDFOptions } from "puppeteer";
 import { defaultConfig } from "md-to-pdf/dist/lib/config.js";
 import { getHtml } from "md-to-pdf/dist/lib/get-html.js";
 import type { ScriptProfile } from "../prompting/script.js";
+import {
+  appendBookPageAnchorLinkNav,
+  neutralizeRenderedReservedIds,
+  placeBookPageAnchorIds
+} from "./pdfPageAnchors.js";
 
 /**
  * The HTML document a book is printed from.
@@ -103,6 +108,12 @@ export type BookPdfDocumentOptions = {
   /** The book's own stylesheet: embedded fonts plus `bookPdfCss`. */
   css: string;
   profile: ScriptProfile;
+  /**
+   * The hidden link nav from `bookPageAnchorLinkNav`, when this render carries
+   * page-map markers. Its presence also runs `placeBookPageAnchorIds`, which
+   * resolves each marker onto a real box.
+   */
+  pageAnchorNav?: string | undefined;
 };
 
 /**
@@ -113,15 +124,23 @@ export type BookPdfDocumentOptions = {
  */
 export async function buildBookPdfDocument(options: BookPdfDocumentOptions): Promise<string> {
   const { markdownCss, highlightCss } = await loadBaseStylesheets();
-  const html = liftChapterAnchorsOntoHeadings(
-    stripEmbeddedDocuments(
-      getHtml(options.markdown, {
-        ...defaultConfig,
-        document_title: "",
-        body_class: []
-      })
+  let html = liftChapterAnchorsOntoHeadings(
+    // Unconditional, and before the lift: a page whose text merely *reads* like
+    // `## Chapter 2` is handed that heading's slug by marked, and the lift would
+    // then plant the real chapter's id behind a copy Chrome resolves first.
+    neutralizeRenderedReservedIds(
+      stripEmbeddedDocuments(
+        getHtml(options.markdown, {
+          ...defaultConfig,
+          document_title: "",
+          body_class: []
+        })
+      )
     )
   );
+  if (options.pageAnchorNav !== undefined) {
+    html = appendBookPageAnchorLinkNav(placeBookPageAnchorIds(html), options.pageAnchorNav);
+  }
   const styles = [markdownCss, highlightCss, options.css]
     .map((css) => `<style>\n${css}\n</style>`)
     .join("");

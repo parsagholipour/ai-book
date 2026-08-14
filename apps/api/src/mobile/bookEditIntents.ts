@@ -1,5 +1,6 @@
 import { type BookEditIntent, type BookEditIntentKind } from "../bookEditIntent.js";
-import { clippedImageSubject, imageLayoutProposalSummary, imageLayoutQueuedMessage } from "../bookEditImage.js";
+import { editProposalMessage, editProposalSummary } from "./bookEditCopy.js";
+import { numberingForProject, MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { proposeAddImageEdit } from "./addImageOperations.js";
 import { proposeImageLayoutEdit } from "./imageLayoutOperations.js";
 import { type ChatReplyQuote } from "../chatReplyQuote.js";
@@ -44,6 +45,10 @@ import { randomUUID } from "node:crypto";
 // module; re-exported here because every consumer historically imported it
 // from this file.
 export * from "./pendingEditState.js";
+
+// The proposal-card and queued-reply prose lives in bookEditCopy.ts; re-exported
+// because every consumer historically imported it from this file.
+export { editProposalMessage, editProposalSummary, operationQueuedMessage } from "./bookEditCopy.js";
 
 
 export async function applyOrCancelEditProposal(options: {
@@ -178,7 +183,9 @@ export async function applyOrCancelEditProposal(options: {
   return {
     ...(await loadProjectChatResponse(projectId)),
     reply: serializeProjectChatMessage(outcome.reply),
-    operation: outcome.operation ? serializeBookEditOperation(outcome.operation) : null
+    operation: outcome.operation
+      ? serializeBookEditOperation(outcome.operation, { pageNumbering: numberingForProject(project) })
+      : null
   } satisfies MobileProjectChatMessageResponseDto;
 }
 
@@ -352,6 +359,7 @@ export async function proposeBookEdit(options: {
 }): Promise<{ reply: MobileProjectChatMessageRecord; operation: null }> {
   const { project, userMessageId, message } = options;
   let intent = options.intent;
+  const numbering = numberingForProject(project);
   const pendingRequest = options.pendingRequest?.trim() || message;
   const characterContext = options.characterContext?.trim() || undefined;
   const proposalId = randomUUID();
@@ -382,7 +390,7 @@ export async function proposeBookEdit(options: {
           scope: "none",
           affectedPageIndexes: [],
           credits: cost,
-          summary: editProposalSummary(intent.kind, [], intent)
+          summary: editProposalSummary(intent.kind, [], intent, numbering)
         }
       }
     });
@@ -416,7 +424,7 @@ export async function proposeBookEdit(options: {
           ...(intent.affectedChapterIndex ? { affectedChapterIndex: intent.affectedChapterIndex } : {}),
           ...(intent.targetLanguage ? { targetLanguage: intent.targetLanguage } : {}),
           credits: cost,
-          summary: editProposalSummary(intent.kind, [], intent)
+          summary: editProposalSummary(intent.kind, [], intent, numbering)
         }
       }
     });
@@ -525,7 +533,7 @@ export async function proposeBookEdit(options: {
   const reply = await createAssistantChatMessage({
     projectId: project.id,
     parentId: userMessageId,
-    content: editProposalMessage(intent.kind, affectedPageIndexes, proposalIntent),
+    content: editProposalMessage(intent.kind, affectedPageIndexes, proposalIntent, numbering),
     metadata: {
       intent: proposalIntent,
       charged: false,
@@ -544,10 +552,11 @@ export async function proposeBookEdit(options: {
         kind: intent.kind,
         scope: proposalIntent.scope,
         affectedPageIndexes,
+        ...(numbering.pdfPageMap ? { readerPageNumbers: numbering.displayPages(affectedPageIndexes) } : {}),
         ...(proposalIntent.affectedChapterIndex ? { affectedChapterIndex: proposalIntent.affectedChapterIndex } : {}),
         ...(proposalIntent.targetLanguage ? { targetLanguage: proposalIntent.targetLanguage } : {}),
         credits: cost,
-        summary: editProposalSummary(intent.kind, affectedPageIndexes, proposalIntent),
+        summary: editProposalSummary(intent.kind, affectedPageIndexes, proposalIntent, numbering),
         ...(patch ? { preview: exactReplacementPreviewCard(patch) } : {})
       }
     }
@@ -567,124 +576,25 @@ export function pendingEditMetadataFromState(state: PendingEditState): Record<st
   };
 }
 
-export function editProposalCardFromState(state: PendingEditState): Record<string, unknown> | null {
+export function editProposalCardFromState(
+  state: PendingEditState,
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
+): Record<string, unknown> | null {
   if (!state.intent) {
     return null;
   }
+  const affectedPageIndexes = state.affectedPageIndexes ?? state.intent.affectedPageIndexes;
   return {
     ...(state.proposalId ? { id: state.proposalId } : {}),
     kind: state.intent.kind,
     scope: state.intent.scope,
-    affectedPageIndexes: state.affectedPageIndexes ?? state.intent.affectedPageIndexes,
+    affectedPageIndexes,
+    ...(numbering.pdfPageMap ? { readerPageNumbers: numbering.displayPages(affectedPageIndexes) } : {}),
     ...(state.intent.affectedChapterIndex ? { affectedChapterIndex: state.intent.affectedChapterIndex } : {}),
     ...(state.intent.targetLanguage ? { targetLanguage: state.intent.targetLanguage } : {}),
     ...(state.credits !== undefined ? { credits: state.credits } : {}),
-    summary: editProposalSummary(
-      state.intent.kind,
-      state.affectedPageIndexes ?? state.intent.affectedPageIndexes,
-      state.intent
-    )
+    summary: editProposalSummary(state.intent.kind, affectedPageIndexes, state.intent, numbering)
   };
-}
-
-export function editProposalSummary(kind: BookEditIntentKind, affectedPageIndexes: number[], intent: BookEditIntent): string {
-  if (kind === "plan_revision") {
-    // Only ever carded by a credits-blocked revision's resume proposal; the
-    // ordinary plan revision path charges without a card.
-    return "Revise the book plan";
-  }
-  if (kind === "continue_book") {
-    const chapterCount = intent.continuation?.chapterCount ?? 1;
-    return chapterCount > 1
-      ? `Write ${chapterCount} new chapters continuing your book`
-      : "Write the next chapter of your book";
-  }
-  if (kind === "book_replan") {
-    return replanProposalSummary(intent);
-  }
-  if (kind === "add_image") {
-    const subject = clippedImageSubject(intent.imageEdit?.subject ?? "a scene from this book");
-    const replace = intent.imageEdit?.replace;
-    if (replace) {
-      // The card is the "shall I replace it?" ask — its summary names both
-      // pictures so Apply confirms exactly the swap.
-      return replace.oldSubject
-        ? `Replace the illustration of “${clippedImageSubject(replace.oldSubject)}” with “${subject}”`
-        : `Replace the latest illustration with one of “${subject}”`;
-    }
-    const onPage =
-      intent.imageEdit?.placement === "end_of_book"
-        ? undefined
-        : intent.imageEdit?.placement === "page"
-          ? intent.imageEdit.pageIndex ?? affectedPageIndexes[0]
-          : affectedPageIndexes[0];
-    return onPage !== undefined
-      ? `Add an illustration of “${subject}” on page ${onPage}`
-      : `Add an illustration of “${subject}” at the end of the book`;
-  }
-  if (kind === "remove_image" || kind === "move_image") {
-    return imageLayoutProposalSummary(kind, affectedPageIndexes, intent.imageLayout);
-  }
-  if (kind === "chapter_regenerate") {
-    return intent.affectedChapterIndex
-      ? `Rewrite chapter ${intent.affectedChapterIndex}`
-      : "Rewrite that chapter";
-  }
-  if (intent.scope === "all_pages") {
-    return kind === "page_rewrite" ? "Rewrite the whole book" : "Edit the whole book";
-  }
-  if (affectedPageIndexes.length === 1) {
-    return kind === "page_rewrite"
-      ? `Rewrite page ${affectedPageIndexes[0]}`
-      : `Edit page ${affectedPageIndexes[0]}`;
-  }
-  if (affectedPageIndexes.length > 1) {
-    return kind === "page_rewrite"
-      ? `Rewrite pages ${affectedPageIndexes.join(", ")}`
-      : `Edit pages ${affectedPageIndexes.join(", ")}`;
-  }
-  return kind === "page_rewrite" ? "Rewrite matching pages" : "Edit matching pages";
-}
-
-/**
- * Names the settings the rebuild will use, because the card is the last thing
- * shown before the charge. "Rebuild the plan and regenerate the book" reads the
- * same whether the request was understood or dropped — and when it was dropped,
- * the copy arrives at the old length with no sign anything was missed.
- */
-function replanProposalSummary(intent: BookEditIntent): string {
-  const language = intent.targetLanguage ? ` ${languageDisplayName(intent.targetLanguage)}` : "";
-  const targetPages = intent.replanSettings?.targetPages;
-  const length = targetPages === undefined ? "" : ` ${targetPages}-page`;
-  const illustrations =
-    intent.replanSettings?.fullIllustrations === false
-      ? " without illustrations"
-      : intent.replanSettings?.fullIllustrations === true
-        ? " with illustrations"
-        : "";
-  // The cover moves the quote too (a designed cover replaces the AI one for
-  // free), so a request that dropped it must say so here for the same reason
-  // the other settings do.
-  const cover = intent.replanSettings?.includeCover === false ? " with a designed cover" : "";
-  if (!language && !length && !illustrations && !cover) {
-    return "Rebuild the plan and regenerate the book as a new copy";
-  }
-  return `Rebuild as a new${language}${length} copy${illustrations}${cover}`;
-}
-
-/**
- * The confirmation prose. It deliberately never names a price: the credits live
- * in `editProposal.credits`, which the app renders as a tappable badge on the
- * proposal card, so the number is one glance away instead of buried in a
- * sentence the reader has to parse on every edit.
- */
-export function editProposalMessage(
-  kind: BookEditIntentKind,
-  affectedPageIndexes: number[],
-  intent: BookEditIntent
-): string {
-  const summary = editProposalSummary(kind, affectedPageIndexes, intent);
-  return `${summary}. Tap Apply to confirm, or Cancel to drop it.`;
 }
 
 /**
@@ -770,6 +680,7 @@ export async function contentCardForTarget(
   project: ProjectForChat,
   target: NonNullable<BookEditIntent["contentTarget"]>
 ): Promise<MobileContentCard | null> {
+  const numbering = numberingForProject(project);
   if (target.type === "outline") {
     const plan = project.currentPlan ? bookPlanSchema.safeParse(project.currentPlan.planningPackage) : null;
     if (plan?.success) {
@@ -811,7 +722,7 @@ export async function contentCardForTarget(
       sections:
         chapterPages.length > 0
           ? chapterPages.map((page) => ({
-              label: `Page ${page.index}${page.title ? ` — ${page.title}` : ""}`,
+              label: `Page ${numbering.displayPage(page.index)}${page.title ? ` — ${page.title}` : ""}`,
               body: page.summary || (bodies.get(page.index) ?? "").slice(0, 280)
             }))
           : [{ label: chapter!.title, body: chapter!.summary }]
@@ -824,8 +735,13 @@ export async function contentCardForTarget(
   const bodies = await loadChatPageBodies(project.id, [page.index]);
   return {
     type: "page",
-    title: `Page ${page.index}${page.title ? `: ${page.title}` : ""}`,
-    sections: [{ label: page.title || `Page ${page.index}`, body: (bodies.get(page.index) ?? page.summary).slice(0, 6000) }]
+    title: `Page ${numbering.displayPage(page.index)}${page.title ? `: ${page.title}` : ""}`,
+    sections: [
+      {
+        label: page.title || `Page ${numbering.displayPage(page.index)}`,
+        body: (bodies.get(page.index) ?? page.summary).slice(0, 6000)
+      }
+    ]
   };
 }
 
@@ -842,53 +758,4 @@ export {
   planSummaryForClassifier
 } from "./bookEditScope.js";
 
-/**
- * The "work is queued" reply. Like {@link editProposalMessage} it stays silent
- * about the price — the charge is on the message as `metadata.creditsCharged`
- * and renders as the badge in the bubble's corner.
- */
-export function operationQueuedMessage(kind: BookEditIntentKind, affectedPageIndexes: number[], intent: BookEditIntent): string {
-  if (kind === "continue_book") {
-    const chapterCount = intent.continuation?.chapterCount ?? 1;
-    const chapterText = chapterCount > 1 ? `${chapterCount} new chapters` : "the next chapter";
-    return `I’ll write ${chapterText} in your book’s voice and refresh the exports.`;
-  }
-  if (kind === "book_replan") {
-    return "I’ll rebuild the plan and regenerate the book.";
-  }
-  if (kind === "add_image") {
-    const targetPage = affectedPageIndexes[0];
-    if (intent.imageEdit?.replace) {
-      const where = targetPage === undefined ? "" : ` on page ${targetPage}`;
-      return `I’m creating that illustration now and replacing the one${where}, then I’ll refresh the exports.`;
-    }
-    // The card said "at the end of the book" for an end placement, so the
-    // queued reply says the same — the resolved target page is still a page
-    // number, which read as a place the user never named.
-    const destination =
-      intent.imageEdit?.placement === "end_of_book" || targetPage === undefined
-        ? "at the end of the book"
-        : `to page ${targetPage}`;
-    return `I’m creating that illustration now and adding it ${destination}, then I’ll refresh the exports.`;
-  }
-  if (kind === "remove_image" || kind === "move_image") {
-    return imageLayoutQueuedMessage(kind, affectedPageIndexes, intent.imageLayout);
-  }
-  if (kind === "chapter_regenerate") {
-    const chapterText = intent.affectedChapterIndex ? `chapter ${intent.affectedChapterIndex}` : "that chapter";
-    return `I’ll rewrite ${chapterText} (${affectedPageIndexes.length} page${affectedPageIndexes.length === 1 ? "" : "s"}) with that direction and refresh the exports.`;
-  }
-  const pageText =
-    intent.scope === "all_pages"
-      ? "the whole book"
-      : intent.scope === "matching_pages"
-        ? affectedPageIndexes.length === 1
-          ? `the matching text on page ${affectedPageIndexes[0]}`
-          : `matching text on pages ${affectedPageIndexes.join(", ")}`
-        : affectedPageIndexes.length === 1
-      ? `page ${affectedPageIndexes[0]}`
-      : `pages ${affectedPageIndexes.join(", ")}`;
-  return kind === "page_rewrite"
-    ? `I’ll rewrite ${pageText} and refresh the exports.`
-    : `I’ll edit ${pageText} and refresh the exports.`;
-}
+

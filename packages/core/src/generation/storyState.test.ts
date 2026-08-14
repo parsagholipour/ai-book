@@ -80,6 +80,20 @@ function capturingExtractModel(): {
 }
 
 describe("story state apply / rebuild / undo", () => {
+  it("assigns the next numeric promise id from the max suffix, not the array length", () => {
+    const sparse: StoryState = {
+      promises: [
+        { id: "p1", text: "Keep the lantern.", status: "open", openedAtPage: 1 },
+        { id: "p3", text: "Find the key.", status: "paid", openedAtPage: 1, paidAtPage: 2 }
+      ],
+      facts: [],
+      entities: {},
+      unanswered: []
+    };
+    const next = applyStoryDelta(sparse, blankDelta({ promisesOpened: [{ text: "Ada will reach the river." }] }), 3);
+    expect(next.promises.map((promise) => promise.id)).toEqual(["p1", "p3", "p4"]);
+  });
+
   it("applies an extract delta onto seeded plan promises", () => {
     const seeded = seedStoryStateFromPromises(["The lantern will be lit."]);
     const next = applyStoryDelta(

@@ -3,6 +3,7 @@ import {
   buildBookPdfPageMap,
   extractPdfNamedDestinations,
   modelPageIndexesForPdfPage,
+  nearestModelPageForPdfPage,
   parseStoredBookPdfPageMap,
   pdfPageZone,
   pdfSpanForModelPages,
@@ -228,6 +229,24 @@ describe("lookups", () => {
     expect(primaryModelPageForPdfPage(sampleMap, 1)).toBeUndefined();
   });
 
+  it("snaps a furniture page to the nearest prose page", () => {
+    // The cover and the Contents read as the first page of prose after them.
+    expect(nearestModelPageForPdfPage(sampleMap, 1)).toBe(1);
+    expect(nearestModelPageForPdfPage(sampleMap, 2)).toBe(1);
+    // A content page still resolves to itself.
+    expect(nearestModelPageForPdfPage(sampleMap, 4)).toBe(2);
+    // The back matter has no following prose, so it reads as the last page.
+    expect(nearestModelPageForPdfPage(sampleMap, 10)).toBe(3);
+  });
+
+  it("resolves a page the book does not print to nothing", () => {
+    // Not furniture — no page at all. The last-page fallback used to answer
+    // these, so "page 40" of a ten-page PDF read and illustrated the last page.
+    expect(nearestModelPageForPdfPage(sampleMap, 11)).toBeUndefined();
+    expect(nearestModelPageForPdfPage(sampleMap, 40)).toBeUndefined();
+    expect(nearestModelPageForPdfPage(sampleMap, 0)).toBeUndefined();
+  });
+
   it("spans model pages back to a PDF range", () => {
     expect(pdfSpanForModelPages(sampleMap, [1, 2])).toEqual({ startPdfPage: 3, endPdfPage: 5 });
     expect(pdfSpanForModelPages(sampleMap, [3])).toEqual({ startPdfPage: 6, endPdfPage: 9 });
@@ -250,6 +269,11 @@ describe("parseStoredBookPdfPageMap", () => {
   it("round-trips a stored map with its publication stamp", () => {
     const stored = { ...sampleMap, contentRevision: 7, pdfDigest: "abc" };
     expect(parseStoredBookPdfPageMap(JSON.parse(JSON.stringify(stored)))).toEqual(stored);
+  });
+
+  it("keeps a revision-0 stamp — every never-edited book publishes under it", () => {
+    const stored = { ...sampleMap, contentRevision: 0 };
+    expect(parseStoredBookPdfPageMap(JSON.parse(JSON.stringify(stored)))?.contentRevision).toBe(0);
   });
 
   it("rejects malformed shapes rather than half-parsing them", () => {

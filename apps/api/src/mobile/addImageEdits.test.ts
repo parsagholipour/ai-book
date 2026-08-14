@@ -14,7 +14,7 @@ import { operationQueuedMessage } from "./bookEditIntents.js";
 import { UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
 import { pendingEditProposalFromMetadata } from "./pendingEditState.js";
 import { serializeBookEditOperation } from "./projectChat.js";
-import { currentActionForEditOperation } from "./projectSerializers.js";
+import { currentActionForEditOperation } from "./editOperationCopy.js";
 import {
   applyProposal,
   completeProject,

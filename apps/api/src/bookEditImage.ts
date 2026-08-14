@@ -6,6 +6,7 @@ import {
   imagePositionFromMessage,
   pageIndexesMatchingSubject
 } from "./bookEditMessage.js";
+import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "./bookPageNumbering.js";
 
 /**
  * The model side of "add a photo of X": what the router's insert_image
@@ -139,7 +140,7 @@ export function imageInsertionIntentFromDecision(
     pageIndexes?: number[] | undefined;
   },
   message: string,
-  context: { clarifyExhausted?: boolean | undefined } = {}
+  context: { clarifyExhausted?: boolean | undefined; pageNumbering?: ReaderPageNumbering | undefined } = {}
 ): BookEditIntent {
   const subject = decision.imageSubject?.trim() ?? "";
   if (!subject && !context.clarifyExhausted) {
@@ -184,7 +185,9 @@ export function imageInsertionIntentFromDecision(
             {}
           : // Field backstop, not a classifier: fills a placement the model
             // omitted after it already chose insert_image.
-            (imagePlacementFromMessage(withoutSubjectText(message, subject)) ?? {}))
+            (imagePlacementFromMessage(withoutSubjectText(message, subject), {
+              pdfPageMap: context.pageNumbering?.pdfPageMap
+            }) ?? {}))
   };
   return imageInsertionIntent(edit, decision);
 }
@@ -265,7 +268,7 @@ export function imageLayoutIntentFromDecision(
     chapterIndex?: number | null | undefined;
   },
   message: string,
-  context: { clarifyExhausted?: boolean | undefined } = {}
+  context: { clarifyExhausted?: boolean | undefined; pageNumbering?: ReaderPageNumbering | undefined } = {}
 ): BookEditIntent {
   const named = positivePageIndexes(decision.pageIndexes);
   const destNamed = positivePageIndexes(decision.imageDestPageIndexes);
@@ -302,7 +305,7 @@ export function imageLayoutIntentFromDecision(
   } else if (decision.imagePlacement === "end_of_book") {
     destPlacement = "end_of_book";
   } else if (sourcePage === undefined) {
-    const fromMessage = imagePlacementFromMessage(message);
+    const fromMessage = imagePlacementFromMessage(message, { pdfPageMap: context.pageNumbering?.pdfPageMap });
     if (fromMessage?.placement === "page") {
       destPlacement = "page";
       destPageIndex = fromMessage.pageIndex;
@@ -417,22 +420,28 @@ function firstLayoutTarget(layout: ImageLayoutEdit | null | undefined): ImageLay
  * within-page case ("the bottom of page 4"); a position alone still reads as a
  * place rather than a page, because the reader named one.
  */
-function layoutDestPhrase(layout: ImageLayoutEdit | null | undefined, fallbackPage: number | undefined): string {
+function layoutDestPhrase(
+  layout: ImageLayoutEdit | null | undefined,
+  fallbackPage: number | undefined,
+  numbering: ReaderPageNumbering
+): string {
   if (layout?.destPlacement === "end_of_book") {
     return "the end of the book";
   }
   const page = layout?.destPageIndex ?? fallbackPage;
+  const shown = page === undefined ? undefined : numbering.displayPage(page);
   const position = layout?.destPosition;
   if (position) {
-    return page === undefined ? `the ${position} of the page` : `the ${position} of page ${page}`;
+    return shown === undefined ? `the ${position} of the page` : `the ${position} of page ${shown}`;
   }
-  return page === undefined ? "the end of the book" : `page ${page}`;
+  return shown === undefined ? "the end of the book" : `page ${shown}`;
 }
 
 export function imageLayoutProposalSummary(
   kind: "move_image" | "remove_image",
   affectedPageIndexes: number[],
-  layout: ImageLayoutEdit | null | undefined
+  layout: ImageLayoutEdit | null | undefined,
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
 ): string {
   const target = firstLayoutTarget(layout);
   if (kind === "remove_image") {
@@ -453,14 +462,15 @@ export function imageLayoutProposalSummary(
     }
     const named = target?.oldSubject;
     const page = target?.pageIndex ?? affectedPageIndexes[0];
-    if (named && page !== undefined) {
-      return `Remove the illustration of “${clippedImageSubject(named)}” from page ${page}`;
+    const shown = page === undefined ? undefined : numbering.displayPage(page);
+    if (named && shown !== undefined) {
+      return `Remove the illustration of “${clippedImageSubject(named)}” from page ${shown}`;
     }
-    return page !== undefined ? `Remove the illustration on page ${page}` : "Remove the latest illustration";
+    return shown !== undefined ? `Remove the illustration on page ${shown}` : "Remove the latest illustration";
   }
   const named = target?.oldSubject;
   const fromPage = target?.pageIndex;
-  const dest = layoutDestPhrase(layout, affectedPageIndexes.at(-1));
+  const dest = layoutDestPhrase(layout, affectedPageIndexes.at(-1), numbering);
   // A within-page move has one page on both sides, so naming it twice ("from
   // page 4 to the bottom of page 4") reads as a mistake rather than a move.
   const samePage = layout?.destPosition !== undefined && layout?.destPageIndex === fromPage;
@@ -468,10 +478,10 @@ export function imageLayoutProposalSummary(
     return named ? `Move the illustration of “${clippedImageSubject(named)}” to ${dest}` : `Move the illustration to ${dest}`;
   }
   if (named && fromPage !== undefined) {
-    return `Move the illustration of “${clippedImageSubject(named)}” from page ${fromPage} to ${dest}`;
+    return `Move the illustration of “${clippedImageSubject(named)}” from page ${numbering.displayPage(fromPage)} to ${dest}`;
   }
   if (fromPage !== undefined) {
-    return `Move the illustration on page ${fromPage} to ${dest}`;
+    return `Move the illustration on page ${numbering.displayPage(fromPage)} to ${dest}`;
   }
   return `Move the illustration to ${dest}`;
 }
@@ -479,7 +489,8 @@ export function imageLayoutProposalSummary(
 export function imageLayoutQueuedMessage(
   kind: "move_image" | "remove_image",
   affectedPageIndexes: number[],
-  layout: ImageLayoutEdit | null | undefined
+  layout: ImageLayoutEdit | null | undefined,
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
 ): string {
   if (kind === "remove_image") {
     const count = layout?.targets?.length ?? 0;
@@ -493,7 +504,7 @@ export function imageLayoutQueuedMessage(
     const page = affectedPageIndexes[0];
     return page === undefined
       ? "I’ll remove that illustration and refresh the exports."
-      : `I’ll remove the illustration on page ${page} and refresh the exports.`;
+      : `I’ll remove the illustration on page ${numbering.displayPage(page)} and refresh the exports.`;
   }
-  return `I’ll move that illustration to ${layoutDestPhrase(layout, affectedPageIndexes.at(-1))} and refresh the exports.`;
+  return `I’ll move that illustration to ${layoutDestPhrase(layout, affectedPageIndexes.at(-1), numbering)} and refresh the exports.`;
 }

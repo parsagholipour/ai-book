@@ -1,5 +1,5 @@
-import { compileBookMarkdown } from "../markdown.js";
-import { generateBookPdf } from "../pdf.js";
+import { compileBookMarkdown, compileBookMarkdownWithPageAnchors } from "../markdown.js";
+import { generateBookPdf, generateBookPdfWithPageMap } from "../pdf.js";
 import { createPlanningPackage, revisePlanningPackage } from "../planner.js";
 import {
   generateChapterBrief,
@@ -33,5 +33,7 @@ export const wholeBookSinglePassStrategy = Object.freeze({
   shouldIllustratePage,
   generateImageBytes,
   compileMarkdown: compileBookMarkdown,
-  generatePdf: generateBookPdf
+  compileMarkdownWithPageAnchors: compileBookMarkdownWithPageAnchors,
+  generatePdf: generateBookPdf,
+  generatePdfWithPageMap: generateBookPdfWithPageMap
 } satisfies BookGenerationStrategy);

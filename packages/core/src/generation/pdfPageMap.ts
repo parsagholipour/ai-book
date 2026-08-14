@@ -218,7 +218,15 @@ export function buildBookPdfPageMap(input: BuildBookPdfPageMapInput): BookPdfPag
   const topOfPageY = topOfPageBand(extracted.mediaBoxHeight, input.topMarginPt);
   const backMatter = extracted.destinations.get(SOURCES_DEST_NAME);
   const contents = extracted.destinations.get(CONTENTS_DEST_NAME);
-  const lastContentPage = backMatter?.pdfPage ?? extracted.pageCount;
+  // Sources usually share the last prose page; when they open at the top of a
+  // fresh one, that page belongs to the back matter and not to the last model
+  // page — the same boundary rule the pages use between themselves.
+  const lastContentPage =
+    backMatter === undefined
+      ? extracted.pageCount
+      : startsAtTopOfPage(backMatter.y, topOfPageY)
+        ? backMatter.pdfPage - 1
+        : backMatter.pdfPage;
 
   const pages: BookPdfPageRange[] = starts.map((start, position) => {
     const next = starts[position + 1];
@@ -277,6 +285,32 @@ export function pdfSpanForModelPages(
     startPdfPage: Math.min(...ranges.map((range) => range.startPdfPage)),
     endPdfPage: Math.max(...ranges.map((range) => range.endPdfPage))
   };
+}
+
+/**
+ * Like {@link primaryModelPageForPdfPage}, but a furniture page resolves to the
+ * nearest content instead of nothing: the first model page starting at or after
+ * it (a Contents reference lands on page one), or the last model page for the
+ * back matter. Only for read-style targets — an edit target must never be
+ * silently moved to a neighbouring page.
+ *
+ * "Nearest" is a rule for a page the book *has*. A number the book does not
+ * print is not a furniture page and has no nearest prose: without this guard the
+ * back-matter fallback answered every one of them, so "show me page 40" of a
+ * ten-page PDF read the last page and "add a dragon on page 40" illustrated it —
+ * a wrong page rather than the "there is no printed page 40" the reader asked
+ * for. Anything outside resolves to nothing, matching {@link pdfPageZone}.
+ */
+export function nearestModelPageForPdfPage(map: BookPdfPageMap, pdfPage: number): number | undefined {
+  if (pdfPageZone(map, pdfPage) === "outside") {
+    return undefined;
+  }
+  const primary = primaryModelPageForPdfPage(map, pdfPage);
+  if (primary !== undefined) {
+    return primary;
+  }
+  const following = map.pages.find((page) => page.startPdfPage >= pdfPage);
+  return (following ?? map.pages[map.pages.length - 1])?.index;
 }
 
 export type PdfPageZone = "cover" | "front_matter" | "contents" | "content" | "back_matter" | "outside";
@@ -342,7 +376,11 @@ export function parseStoredBookPdfPageMap(raw: unknown): StoredBookPdfPageMap | 
   }
   const contentsStartPdfPage = positiveInteger(record.contentsStartPdfPage);
   const backMatterStartPdfPage = positiveInteger(record.backMatterStartPdfPage);
-  const contentRevision = positiveInteger(record.contentRevision);
+  // Zero is a real stamp: Project.contentRevision starts at 0, so every
+  // never-edited book publishes its map under it. Dropping it here would
+  // revive the map unstamped and slip it past the staleness gate during the
+  // book's first edit.
+  const contentRevision = nonNegativeInteger(record.contentRevision);
   return {
     version: 1,
     totalPdfPages,
@@ -357,6 +395,10 @@ export function parseStoredBookPdfPageMap(raw: unknown): StoredBookPdfPageMap | 
 
 function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function nonNegativeInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
 }
 
 /**

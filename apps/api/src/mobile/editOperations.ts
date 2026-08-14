@@ -1,3 +1,5 @@
+import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
+import { requestWithCharacterContext } from "./bookEditCopy.js";
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { cancelUndispatchedGenerationJob, dispatchGenerationJob, enqueueGenerationJob } from "../queue.js";
 import { createOpenBookEditOperation, replayClaimedChatOperation } from "./editOperationClaims.js";
@@ -124,16 +126,6 @@ export async function withChargedEnqueue<T>(options: {
 }
 
 /**
- * The request as the worker's prompts should see it: the reader's own words
- * plus the mentioned characters' sheets. Only ever applied where the string is
- * handed to a model — job payloads and the plan-revision message — because the
- * bare `message` is what page targeting and exact-replacement parsing read.
- */
-export function requestWithCharacterContext(message: string, characterContext: string | undefined): string {
-  return characterContext ? `${message}\n\n${characterContext}` : message;
-}
-
-/**
  * The resume payload for a credits-blocked edit: the same pendingEdit +
  * editProposal pair `proposeBookEdit` writes, under a **fresh** proposalId.
  * The failed Apply's own id is spent — its USER row settled it and its FAILED
@@ -142,10 +134,11 @@ export function requestWithCharacterContext(message: string, characterContext: s
  * The quoted credits ride along and stay the ceiling on the eventual charge.
  */
 export function creditsBlockedResume(
-  state: Omit<PendingEditState, "clarification" | "proposalId">
+  state: Omit<PendingEditState, "clarification" | "proposalId">,
+  numbering: ReaderPageNumbering = MODEL_PAGE_NUMBERING
 ): { pendingEdit: Record<string, unknown>; editProposal?: Record<string, unknown> } {
   const resumable: PendingEditState = { ...state, clarification: "confirm", proposalId: randomUUID() };
-  const card = editProposalCardFromState(resumable);
+  const card = editProposalCardFromState(resumable, numbering);
   return {
     pendingEdit: pendingEditMetadataFromState(resumable),
     ...(card ? { editProposal: card } : {})
@@ -236,7 +229,7 @@ export async function queueAttemptChatOperation(options: {
           affectedPageIndexes: options.operation.affectedPageIndexes,
           credits: options.cost,
           ...(options.characterContext ? { characterContext: options.characterContext } : {})
-        })
+        }, numberingForProject(options.project))
       );
       return { reply, operation: null };
     }
@@ -374,7 +367,7 @@ export async function queueChatPlanRevision(options: {
           affectedPageIndexes: [],
           credits,
           ...(options.characterContext ? { characterContext: options.characterContext } : {})
-        })
+        }, numberingForProject(project))
       );
       return { reply, operation: null };
     }
@@ -727,7 +720,7 @@ export async function queueChatBookEdit(options: {
         }
       });
     },
-    replyContent: operationQueuedMessage(intent.kind, affectedPageIndexes, intent),
+    replyContent: operationQueuedMessage(intent.kind, affectedPageIndexes, intent, numberingForProject(project)),
     replyMetadata: { intent, charged: true, creditsCharged: cost }
   });
 }

@@ -117,9 +117,10 @@ export async function generatePage(job: Job) {
       )
     : [];
 
-  // Sequential drafting still honors operator `draftCandidates`. Ultra-only
-  // best-of lives on the polish path (`polishPageWithQualityGates`).
-  const candidateCount = bestOfCandidateCount(input);
+  // Sequential drafting uses the same `bestOfPolish` gate as polish
+  // (`polishPageWithQualityGates`). Operator `draftCandidates` only applies
+  // when that gate is on.
+  const candidateCount = quality.enabled("bestOfPolish") ? bestOfCandidateCount(input) : 1;
   await advanceJobStep(
     generationJobId,
     "draft",
@@ -185,6 +186,8 @@ export async function generatePage(job: Job) {
     researchNotes,
     textModel: providers.text,
     projectId,
+    quality,
+    storyState,
     ...(quality.enabled("styleExcerpts") ? { styleExcerpts } : {})
   });
 
@@ -249,7 +252,8 @@ export async function generatePage(job: Job) {
       input,
       previousExtract: enriched.extract,
       keeperWasRevised: revision > 1,
-      currentState: enriched.storyState
+      currentState: enriched.storyState,
+      quality
     });
     await updateJobProgress(generationJobId, {
       message: `Page ${page.index} kept its best draft but failed quality review; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
@@ -301,7 +305,8 @@ export async function generatePage(job: Job) {
     input,
     previousExtract: enriched.extract,
     keeperWasRevised: revision > 1,
-    currentState: enriched.storyState
+    currentState: enriched.storyState,
+    quality
   });
 
   if (draft.continuityNotes.length > 0) {

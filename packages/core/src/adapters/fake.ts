@@ -496,8 +496,8 @@ function extractPageIndexFromMessages(messages: Array<{ role: string; content: s
   }
   try {
     const parsed = JSON.parse(userMessage.content) as unknown;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as { pageIndex?: unknown }).pageIndex === "number") {
-      return (parsed as { pageIndex: number }).pageIndex;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return extractPageIndexFromPayload(parsed as Record<string, unknown>);
     }
   } catch {
     // Fall through.
@@ -506,13 +506,23 @@ function extractPageIndexFromMessages(messages: Array<{ role: string; content: s
 }
 
 function extractPageIndex(options: GenerateJsonOptions<unknown>): number {
-  const payload = extractUserPayload(options);
+  return extractPageIndexFromPayload(extractUserPayload(options));
+}
+
+function extractPageIndexFromPayload(payload: Record<string, unknown>): number {
   if (typeof payload.pageIndex === "number") {
     return payload.pageIndex;
   }
   const pageBrief = payload.pageBrief;
   if (pageBrief && typeof pageBrief === "object" && !Array.isArray(pageBrief)) {
     const value = (pageBrief as Record<string, unknown>).pageIndex;
+    if (typeof value === "number") {
+      return value;
+    }
+  }
+  const pageScope = payload.pageScope;
+  if (pageScope && typeof pageScope === "object" && !Array.isArray(pageScope)) {
+    const value = (pageScope as Record<string, unknown>).globalPageIndex;
     if (typeof value === "number") {
       return value;
     }

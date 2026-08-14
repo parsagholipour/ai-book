@@ -1,6 +1,13 @@
 import type { ScriptProfile } from "../prompting/script.js";
 
 /**
+ * The `@page` top margin below, in points. The PDF page map's top-of-page band
+ * reads it to decide whether an anchor starts its page; it lives here so the
+ * number and the rule cannot drift apart.
+ */
+export const BOOK_PAGE_TOP_MARGIN_PT = (20 / 25.4) * 72;
+
+/**
  * The manuscript stylesheet. Calibrated for Latin at 11pt; every deviation a
  * script needs is appended by {@link bookPdfCss} rather than written in here,
  * so an English book keeps rendering byte-for-byte what it always did.

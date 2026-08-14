@@ -20,13 +20,18 @@ ScrollPosition scrollPosition(WidgetTester tester) {
       .position;
 }
 
-Widget chatApp(ScriptedProjectsRepository repository, {String? initialMessage}) {
+Widget chatApp(
+  ScriptedProjectsRepository repository, {
+  String? initialMessage,
+  Map<String, int>? initialReaderContext,
+}) {
   return ProviderScope(
     overrides: [projectsRepositoryProvider.overrideWithValue(repository)],
     child: MaterialApp(
       home: ProjectChatScreen(
         projectId: 'project-1',
         initialMessage: initialMessage,
+        initialReaderContext: initialReaderContext,
       ),
     ),
   );
@@ -42,6 +47,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
   final sendGates = <Completer<void>>[];
   final editGates = <Completer<void>>[];
   final sendRequestIds = <String?>[];
+  final sentReaderContexts = <Map<String, int>?>[];
   final sentMessages = <String>[];
   final chatFetches = <String>[];
   final statusController = StreamController<MobileProjectStatus>.broadcast();
@@ -241,10 +247,12 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
+    Map<String, int>? readerContext,
   }) async {
     sendRequestIds.add(requestId);
     sentMessages.add(message);
+    sentReaderContexts.add(readerContext);
     if (sendGates.isNotEmpty) {
       await sendGates.removeAt(0).future;
     }

@@ -27,6 +27,15 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+export function jsonRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+/** Nested `mediaSettings.mobile` object, or `{}` when absent or non-object. */
+export function mediaSettingsMobileRecord(mediaSettings: unknown): Record<string, unknown> {
+  return jsonRecord(jsonRecord(mediaSettings).mobile);
+}
+
 export function numberField(record: Record<string, unknown>, keys: string[]): number | undefined {
   for (const key of keys) {
     const value = record[key];

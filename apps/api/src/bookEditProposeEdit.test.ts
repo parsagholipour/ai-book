@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { intentFromDecideAction, intentFromProposeEdit } from "./bookEditIntent.js";
 import { classifyWithDegradedHeuristics } from "./bookEditHeuristics.js";
+import { bookPageMapForProject, readerPageNumbering } from "./bookPageNumbering.js";
+import { type DecideActionPayload } from "./bookEditRouterPrompt.js";
 
 /**
  * The router's `propose_edit` decision mapped onto a priced intent kind, and the
@@ -217,5 +219,143 @@ describe("propose_edit pricing mapping", () => {
     // how many pages a book has.
     expect(intent.kind).toBe("book_replan");
     expect(intent.replanSettings).toEqual({ fullIllustrations: false, targetPages: 3 });
+  });
+});
+
+describe("printed page numbers a router copied", () => {
+  // Cover on printed 1, Contents on 2, so every model page prints two ahead of
+  // its index — the divergence a copied number silently ignores.
+  const numbering = readerPageNumbering(
+    bookPageMapForProject({
+      pdfPageMap: {
+        version: 1,
+        totalPdfPages: 8,
+        hasCoverPage: true,
+        contentsStartPdfPage: 2,
+        pages: [
+          { index: 1, startPdfPage: 3, endPdfPage: 3 },
+          { index: 2, startPdfPage: 4, endPdfPage: 5 },
+          { index: 3, startPdfPage: 5, endPdfPage: 6 }
+        ],
+        contentRevision: 7
+      },
+      contentRevision: 7
+    })
+  );
+
+  const proposeEdit = (decision: Partial<DecideActionPayload>) => ({
+    action: "propose_edit" as const,
+    confidence: 0.9,
+    reasoning: "Page edit.",
+    assistantMessage: "I’ll do that.",
+    clarification: "none" as const,
+    editStyle: "rewrite" as const,
+    pageIndexes: [],
+    chapterIndex: null,
+    targetLanguage: null,
+    ...decision
+  });
+
+  it("re-reads a copied page number as the model pages that printed page holds", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
+      "Rewrite page 5 to be funnier.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    // Printed page 5 carries the tail of model page 2 and the head of model 3.
+    expect(intent.affectedPageIndexes).toEqual([2, 3]);
+    expect(intent.scope).toBe("explicit_pages");
+  });
+
+  it("keeps indexes the router actually translated", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [2] }),
+      "Rewrite page 5 to be funnier.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    // 2 is not a number the message speaks, so the router read readerPages as
+    // instructed and its answer stands.
+    expect(intent.affectedPageIndexes).toEqual([2]);
+  });
+
+  it("leaves the router alone without a map, and when the message names no page", () => {
+    const withoutMap = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
+      "Rewrite page 5 to be funnier.",
+      chapters
+    );
+    expect(withoutMap.affectedPageIndexes).toEqual([5]);
+
+    // Persian names the page, but not with an English "page N" this module can
+    // read, so the model's own index is all there is.
+    const persian = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
+      "صفحه ۵ را بامزه‌تر بنویس",
+      chapters,
+      { pageNumbering: numbering }
+    );
+    expect(persian.affectedPageIndexes).toEqual([5]);
+  });
+
+  it("leaves a printed number that holds no prose as the router wrote it", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [2] }),
+      "Rewrite page 2.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    // Printed page 2 is the Contents: mapping it would move the edit onto a
+    // neighbouring page nobody named, so the router's own answer stands.
+    expect(intent.affectedPageIndexes).toEqual([2]);
+  });
+
+  it("re-reads the placement of an inserted picture", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "insert_image", imageSubject: "a dragon", pageIndexes: [3] }),
+      "Add a picture of a dragon on page 3.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    expect(intent.kind).toBe("add_image");
+    expect(intent.imageEdit).toMatchObject({ placement: "page", pageIndex: 1 });
+  });
+
+  it("re-reads both ends of a move", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "move_image", pageIndexes: [3], imageDestPageIndexes: [5] }),
+      "Move the picture from page 3 to page 5.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    expect(intent.kind).toBe("move_image");
+    // Neither channel matches the spoken set alone; together they are exactly it.
+    expect(intent.imageLayout).toMatchObject({ pageIndex: 1, destPlacement: "page", destPageIndex: 2 });
+  });
+
+  it("re-reads the pages a clarify carries, because forcedDecision rewrites them", () => {
+    const intent = intentFromDecideAction(
+      {
+        action: "clarify",
+        confidence: 0.4,
+        reasoning: "Ambiguous.",
+        assistantMessage: "What should change on that page?",
+        clarification: "scope",
+        pageIndexes: [5],
+        chapterIndex: null,
+        targetLanguage: null
+      },
+      "Fix page 5.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    expect(intent.affectedPageIndexes).toEqual([2, 3]);
   });
 });

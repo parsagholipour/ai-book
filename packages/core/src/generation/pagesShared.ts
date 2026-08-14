@@ -5,6 +5,7 @@ import {
 } from "../prompting/readingLevel.js";
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
 import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
+import { jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 
 /**
@@ -218,15 +219,11 @@ export function pinStyleExcerpts(
 }
 
 export function sampleExcerptsFromInput(input: CreateProjectInput): string[] {
-  const mobile = jsonRecord(jsonRecord(input.mediaSettings).mobile);
+  const mobile = mediaSettingsMobileRecord(input.mediaSettings);
   const profile = jsonRecord(jsonRecord(mobile.import).styleProfile);
   return Array.isArray(profile.sampleExcerpts)
     ? profile.sampleExcerpts.filter((excerpt): excerpt is string => typeof excerpt === "string" && excerpt.trim().length > 0)
     : [];
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 export function range(start: number, end: number): number[] {

@@ -88,7 +88,7 @@ describe("plan approval prices by quality tier", () => {
     fast: 220 + 12 * 5 + 3 * 45 + 150,
     balanced: 350 + 12 * 8 + 3 * 45 + 150,
     premium: 500 + 12 * 30 + 3 * 85 + 200 + 150,
-    ultra: 650 + 12 * 40 + 3 * 85 + 200 + 150
+    ultra: 650 + 12 * 71 + 3 * 85 + 200 + 150
   } as const;
 
   for (const tier of TIERS) {

@@ -136,7 +136,7 @@ void main() {
     expect(estimate('fast'), 220 + 12 * 5 + 3 * 45 + 150);
     expect(estimate('balanced'), 350 + 12 * 8 + 3 * 45 + 150);
     expect(estimate('premium'), 500 + 12 * 30 + 3 * 85 + 200 + 150);
-    expect(estimate('ultra'), 650 + 12 * 40 + 3 * 85 + 200 + 150);
+    expect(estimate('ultra'), 650 + 12 * 71 + 3 * 85 + 200 + 150);
 
     // "custom" is what the server sends for a book it has no preset for, and
     // it charges such a book the balanced rates.
@@ -169,7 +169,7 @@ void main() {
     );
     expect(
       estimate('ultra', costs),
-      estimate('ultra', const {}) + 10 * (50 - 40),
+      estimate('ultra', const {}) + 10 * (50 - 71),
     );
   });
 

@@ -20,7 +20,7 @@ import {
   state,
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
-import { currentActionForEditOperation } from "./projectSerializers.js";
+import { currentActionForEditOperation } from "./editOperationCopy.js";
 import { UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
 import { operationCanUndo, serializeBookEditOperation } from "./projectChat.js";
 import { bookEditCreditCost } from "./bookEditPricing.js";

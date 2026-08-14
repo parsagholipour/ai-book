@@ -8,8 +8,19 @@ import { withRenderPage } from "./browserPool.js";
 import { renderDocumentTempPath } from "./exportTempSweep.js";
 import { bookFontSetForLanguage, type BookFontSet } from "./bookFonts.js";
 import { codePointsOf, embedFontFaceCss } from "./fontEmbedding.js";
-import { bookPdfCss } from "./pdfCss.js";
+import type { CompiledBookMarkdown } from "./markdown.js";
+import { BOOK_PAGE_TOP_MARGIN_PT, bookPdfCss } from "./pdfCss.js";
 import { BOOK_PDF_MEDIA_TYPE, BOOK_PDF_OPTIONS, buildBookPdfDocument } from "./pdfDocument.js";
+import {
+  bookPageAnchorLinkNav,
+  injectBookPageAnchorMarkers,
+  rewriteContentsPdfPageNumbers
+} from "./pdfPageAnchors.js";
+import {
+  buildBookPdfPageMap,
+  extractPdfNamedDestinations,
+  type BookPdfPageMap
+} from "./pdfPageMap.js";
 import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
 
 export type GenerateBookPdfOptions = {
@@ -129,29 +140,139 @@ export async function generateBookPdf(
   markdown: string,
   options: GenerateBookPdfOptions
 ): Promise<Buffer> {
-  const prepared = await prepareMarkdownForPdfDocument(markdown, {
+  return (await generateBookPdfWithPageMap(markdown, options)).pdf;
+}
+
+/**
+ * The anchor plan `compileBookMarkdownWithPageAnchors` produced beside the
+ * markdown being rendered. Passing it turns the render into a measured one.
+ */
+export type BookPageMapPlan = Pick<
+  CompiledBookMarkdown,
+  "pageAnchors" | "sourcesOffset" | "hasCoverPage" | "hasContents"
+>;
+
+export type GenerateBookPdfResult = {
+  pdf: Buffer;
+  /**
+   * Where each model page landed in `pdf` — absent when no plan was given, or
+   * when measurement failed. A book without a map is a whole book; nothing may
+   * fail a compile over the map.
+   */
+  pageMap?: BookPdfPageMap | undefined;
+};
+
+export async function generateBookPdfWithPageMap(
+  markdown: string,
+  options: GenerateBookPdfOptions & { pageMapPlan?: BookPageMapPlan | undefined }
+): Promise<GenerateBookPdfResult> {
+  const plan = options.pageMapPlan;
+  // Markers first: the anchor offsets name positions in the *compiled*
+  // markdown, which the image rewrite below would shift.
+  const marked = plan ? injectBookPageAnchorMarkers(markdown, plan) : markdown;
+  const prepared = await prepareMarkdownForPdfDocument(marked, {
     imageStorageDir: options.imageStorageDir,
     publicApiUrl: options.publicApiUrl,
     projectId: options.projectId
   });
   const profile = scriptProfileForLanguage(options.language);
   const fontCss = await loadBookPdfFontCss(bookFontSetForLanguage(options.language), prepared, profile);
+  const nav = plan
+    ? bookPageAnchorLinkNav(plan.pageAnchors, {
+        hasContents: plan.hasContents,
+        hasSources: plan.sourcesOffset !== undefined
+      })
+    : undefined;
   const html = await buildBookPdfDocument({
     markdown: prepared,
     css: `${fontCss}\n${bookPdfCss(profile)}`,
-    profile
+    profile,
+    ...(nav !== undefined ? { pageAnchorNav: nav } : {})
   });
 
-  const pdf = await renderPdfDocument(html, {
+  const renderOptions = {
     imageStorageDir: options.imageStorageDir,
     assetRoot: options.projectId
       ? join(options.imageStorageDir, options.projectId)
       : options.imageStorageDir
-  });
+  };
+  let pdf = await renderPdfDocument(html, renderOptions);
+  let pageMap: BookPdfPageMap | undefined;
+
+  if (plan && plan.pageAnchors.length > 0) {
+    let measured = measureBookPageMap(pdf, plan);
+    pageMap = measured?.map;
+    // The Contents rows were compiled with model page indexes — the only
+    // numbers that exist before a render does. Now that the chapters'
+    // real PDF pages are measured, print those and render once more. The
+    // reprint can itself shift a break (a wider number wraps a long row), so
+    // the printed numbers are re-checked once; a second disagreement keeps
+    // the latest render — off by the shift on one row, never by a numbering
+    // system.
+    if (measured && plan.hasContents) {
+      let printed = html;
+      for (let pass = 0; measured && pass < 2; pass += 1) {
+        const rewritten = rewriteContentsPdfPageNumbers(printed, measured.chapterPdfPages);
+        if (rewritten === undefined || rewritten === printed) {
+          break;
+        }
+        const reprinted = await renderPdfDocument(rewritten, renderOptions);
+        const remeasured = measureBookPageMap(reprinted, plan);
+        if (!remeasured) {
+          // Distrust the reprint entirely: publish the whole book from the
+          // pass that measured, with the numbers it was compiled with.
+          break;
+        }
+        pdf = reprinted;
+        pageMap = remeasured.map;
+        printed = rewritten;
+        if (chapterPagesEqual(measured.chapterPdfPages, remeasured.chapterPdfPages)) {
+          break;
+        }
+        measured = remeasured;
+      }
+    }
+  }
+
   if (options.outputPath) {
     await writeFile(options.outputPath, pdf);
   }
-  return pdf;
+  return { pdf, ...(pageMap ? { pageMap } : {}) };
+}
+
+function measureBookPageMap(
+  pdf: Buffer,
+  plan: BookPageMapPlan
+): { map: BookPdfPageMap; chapterPdfPages: number[] } | undefined {
+  const extracted = extractPdfNamedDestinations(pdf);
+  if (!extracted) {
+    return undefined;
+  }
+  const map = buildBookPdfPageMap({
+    anchors: plan.pageAnchors,
+    hasCoverPage: plan.hasCoverPage,
+    extracted,
+    topMarginPt: BOOK_PAGE_TOP_MARGIN_PT
+  });
+  if (!map) {
+    return undefined;
+  }
+  const chapterPdfPages: number[] = [];
+  for (const anchor of plan.pageAnchors) {
+    if (!anchor.destName.startsWith("chapter-")) {
+      continue;
+    }
+    const destination = extracted.destinations.get(anchor.destName);
+    if (!destination) {
+      return undefined;
+    }
+    chapterPdfPages.push(destination.pdfPage);
+  }
+  return { map, chapterPdfPages };
+}
+
+function chapterPagesEqual(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((page, index) => page === b[index]);
 }
 
 /**

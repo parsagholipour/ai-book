@@ -33,11 +33,15 @@ vi.mock("../generation/bookHelpers.js", () => ({
   strategyForInput: () => ({ revisePlan: mocks.revisePlan }),
   toPriorPageContext: (page: unknown) => page
 }));
+vi.mock("../generation/storyStateStore.js", () => ({
+  seedProjectStoryState: vi.fn()
+}));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return { ...actual, bookPlanSchema: { parse: () => ({ chapters: [] }) }, createProviders: () => ({}) };
 });
 
+import { seedProjectStoryState } from "../generation/storyStateStore.js";
 import { replanBook } from "./replanBook.js";
 
 const sourceSnapshot = {
@@ -108,6 +112,7 @@ describe("replanBook page budget", () => {
     // normalizePlanPageTargets pads the revised chapters back up to it — which
     // is how a three-chapter plan came out as an eight-page book.
     expect(mocks.revisePlan).toHaveBeenCalledWith(expect.objectContaining({ targetPages: 3 }));
+    expect(seedProjectStoryState).toHaveBeenCalledWith("project-copy", []);
     // The row and the snapshot the next edit reads have to agree.
     expect(mocks.prisma.project.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ targetPages: 3 }) })

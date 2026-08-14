@@ -53,7 +53,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
-import { rebuildProjectStoryState } from "../generation/storyStateStore.js";
+import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
 import { applyBookEdit } from "./applyBookEdit.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 
@@ -106,6 +106,7 @@ describe("applyBookEdit in exact mode", () => {
     // A mechanical edit must not drag the compile's whole-book QA repair pass
     // behind it - that would rewrite prose nobody asked to change.
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
+    expect(loadProjectStoryState).toHaveBeenCalledTimes(1);
   });
 
   it("skips a page that no longer matches instead of regenerating it", async () => {

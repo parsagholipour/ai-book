@@ -3,6 +3,7 @@ import {
   exportProvenancePath,
   pendingExportTempPath,
   supersededExportToken,
+  type BookPdfPageMap,
   type ExportRepairFormat,
   type ExportPublicationProjectStatus,
   type ExportProvenanceFormat
@@ -558,6 +559,16 @@ export async function publishCompiledExports(options: {
    */
   publishReconstructedMarkdown?: boolean;
   contentRevision: number | null;
+  /**
+   * Where each model page landed in the PDF this publication installs.
+   * Omitted: this publication rendered no measurable PDF (an EPUB-only repair,
+   * or a repair reprinting the exact published `book.md`) — the stored map,
+   * measured for this same revision, stands. `null`: a PDF was rendered but
+   * could not be measured — the stored map describes pagination this
+   * publication replaces, so it is cleared. The map is stamped with the
+   * claimed revision and the installed PDF's digest inside the transaction.
+   */
+  pdfPageMap?: BookPdfPageMap | null | undefined;
   expectedProjectStatus: ExportPublicationProjectStatus;
   status: "COMPLETE" | "REVIEW_REQUIRED";
   /**
@@ -651,6 +662,25 @@ export async function publishCompiledExports(options: {
           }))?.contentRevision;
         if (revision === undefined) {
           throw new Error("Export publication lost its claimed project revision");
+        }
+        if (options.pdfPageMap !== undefined) {
+          // Before the renames: a rename failure rolls this back with the rest
+          // of the claim, leaving the previous map describing the file
+          // `restoreSupersededArtifacts` puts back.
+          const pdfDigest = digests.get("pdf")?.digest;
+          await tx.project.update({
+            where: { id: options.projectId },
+            data: {
+              pdfPageMap:
+                options.pdfPageMap === null
+                  ? Prisma.DbNull
+                  : ({
+                      ...options.pdfPageMap,
+                      contentRevision: revision,
+                      ...(pdfDigest ? { pdfDigest } : {})
+                    } as unknown as Prisma.InputJsonValue)
+            }
+          });
         }
         const exportPublications = artifactPublications({
           ...options,

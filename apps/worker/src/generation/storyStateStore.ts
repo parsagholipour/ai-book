@@ -1,17 +1,22 @@
 import {
   applyStoryDelta,
-  parseStoryDelta,
   parseStoryState,
-  rebuildStoryState,
   seedStoryStateFromPromises,
   type StoryDelta,
   type StoryState
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import {
+  Prisma,
+  casRebuildProjectStoryState,
+  prisma,
+  rebuildStoryStateFromPages
+} from "@book-maker/db";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 
 /** Parallel page waves are hotter than a single entity-state write; 8 covers a default wave of 4. */
 const STORY_STATE_CAS_ATTEMPTS = 8;
+
+export { rebuildStoryStateFromPages };
 
 export async function loadProjectStoryState(projectId: string, seedPromises: readonly string[] = []): Promise<StoryState> {
   try {
@@ -109,24 +114,7 @@ export async function rebuildProjectStoryState(
   seedPromises: readonly string[] = []
 ): Promise<StoryState | null> {
   try {
-    let expected: unknown = undefined;
-    for (let attempt = 0; attempt < STORY_STATE_CAS_ATTEMPTS; attempt += 1) {
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        select: { storyState: true }
-      });
-      if (!project) {
-        return null;
-      }
-      expected = project.storyState;
-      const next = await rebuildStoryStateFromPages(projectId, seedPromises);
-      const claimed = await casWriteProjectStoryState(projectId, expected, next);
-      if (claimed === 1) {
-        return next;
-      }
-    }
-    console.warn(`Story state rebuild for ${projectId} lost the CAS race ${STORY_STATE_CAS_ATTEMPTS} times in a row`);
-    return parseStoryState(expected);
+    return await casRebuildProjectStoryState(projectId, seedPromises);
   } catch (error) {
     if (isStopRequestedError(error)) {
       throw error;
@@ -134,22 +122,6 @@ export async function rebuildProjectStoryState(
     console.warn(`Story state rebuild failed for project ${projectId}`, error);
     return null;
   }
-}
-
-async function rebuildStoryStateFromPages(
-  projectId: string,
-  seedPromises: readonly string[]
-): Promise<StoryState> {
-  const pages = await prisma.page.findMany({
-    where: { projectId },
-    orderBy: { index: "asc" },
-    select: { index: true, storyDelta: true }
-  });
-  const deltas = pages.flatMap((page) => {
-    const delta = parseStoryDelta(page.storyDelta);
-    return delta ? [{ pageIndex: page.index, delta }] : [];
-  });
-  return rebuildStoryState(deltas, seedStoryStateFromPromises(seedPromises));
 }
 
 function storyStateCasEquals(expected: unknown) {

@@ -11,7 +11,7 @@ import { exportContentDigest, loadConfig, type AppConfig } from "@book-maker/cor
  */
 
 const mockPrisma = vi.hoisted(() => ({
-  project: { findUnique: vi.fn(), updateMany: vi.fn() },
+  project: { findUnique: vi.fn(), updateMany: vi.fn(), update: vi.fn() },
   generationJob: { findFirst: vi.fn() },
   $transaction: vi.fn()
 }));
@@ -21,7 +21,7 @@ const mockGenerateEpub = vi.hoisted(() => vi.fn());
 const mockProvenanceWrite = vi.hoisted(() => ({ failure: null as Error | null }));
 
 vi.mock("@book-maker/db", () => ({
-  Prisma: {},
+  Prisma: { DbNull: Symbol("DbNull") },
   prisma: mockPrisma,
   researchCitationsForExport: async (
     sources: Array<{ title: string; url: string | null; summary: string }>
@@ -42,7 +42,17 @@ vi.mock("@book-maker/core", async (importOriginal) => {
     getBookGenerationStrategy: () => ({
       ...actual.getBookGenerationStrategy(),
       compileMarkdown: () => "# A Book\n\nOnce upon a time.\n",
-      generatePdf: mockGeneratePdf
+      compileMarkdownWithPageAnchors: () => ({
+        markdown: "# A Book\n\nOnce upon a time.\n",
+        pageAnchors: [],
+        hasCoverPage: false,
+        hasContents: false
+      }),
+      generatePdf: mockGeneratePdf,
+      generatePdfWithPageMap: async (markdown: string, options: Record<string, unknown>) => {
+        const { pageMapPlan: _pageMapPlan, ...rest } = options;
+        return { pdf: await mockGeneratePdf(markdown, rest as never) };
+      }
     })
   };
 });

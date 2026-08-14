@@ -83,7 +83,7 @@ export const QUALITY_FEATURES: Array<{
   {
     id: "bestOfPolish",
     label: "Best-of-2 polish",
-    summary: "Samples two polish drafts and keeps the stronger one. Sequential page draft can use the same gate."
+    summary: "Samples two polish drafts and keeps the stronger one. Sequential page draft uses the same gate."
   },
   {
     id: "planThinkingBoost",

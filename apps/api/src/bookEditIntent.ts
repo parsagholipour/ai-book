@@ -33,8 +33,16 @@ import {
   pageIndexesFromMessage,
   replanSettingsFromEditMessage,
   showContentTargetFromMessage,
-  targetLanguageFromLanguageVersionRequest
+  targetLanguageFromLanguageVersionRequest,
+  type ReaderPageNumberContext
 } from "./bookEditMessage.js";
+import {
+  furniturePageIntentFromMessage,
+  MODEL_PAGE_NUMBERING,
+  modelPagesForCopiedPrintedPages,
+  type ReaderPageNumbering
+} from "./bookPageNumbering.js";
+import { pdfSpanForModelPages } from "@book-maker/core";
 import { withTimeout } from "./withTimeout.js";
 
 // The message readers and the model-free classifier live next door; both are
@@ -184,7 +192,8 @@ export type ClassifierPageSample = {
 export function classifierPageSample(
   pages: BookEditPageContext[],
   message: string,
-  cap = CLASSIFIER_PAGE_SAMPLE_CAP
+  cap = CLASSIFIER_PAGE_SAMPLE_CAP,
+  numberContext: ReaderPageNumberContext = {}
 ): ClassifierPageSample {
   if (pages.length <= cap) {
     return { pages, truncated: false };
@@ -196,7 +205,7 @@ export function classifierPageSample(
   // explicit range is clamped so the structural picks below always fit within
   // the cap (60 + 40 + 20 = cap).
   const mentioned = new Set<number>();
-  for (const index of pageIndexesFromMessage(message, pages)) {
+  for (const index of pageIndexesFromMessage(message, pages, numberContext)) {
     for (const neighbor of [index - 1, index, index + 1]) {
       if (byIndex.has(neighbor)) {
         mentioned.add(neighbor);
@@ -246,10 +255,28 @@ export async function classifyProjectChatMessage(options: {
    * so a quote can never change which pages an edit touches or what it costs.
    */
   replyTo?: ChatReplyQuote | undefined;
+  /**
+   * How the user's page numbers are to be read, and how replies should speak
+   * them back. With a current PDF page map, a spoken "page 10" is the printed
+   * page 10; without one everything stays in model indexes, the old behaviour.
+   */
+  pageNumbering?: ReaderPageNumbering | undefined;
+  /**
+   * The reader position a selection-composed message was sent from, resolved
+   * to a model page index by the app's own locator. Authoritative over parsing
+   * the message text — the exact page the user acted on is known here.
+   */
+  readerSelection?: { pageIndex?: number | undefined } | undefined;
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
   const chapters = options.chapters ?? [];
   const clarifyExhausted = options.clarifyExhausted ?? false;
+  const numbering = options.pageNumbering ?? MODEL_PAGE_NUMBERING;
+  const readerSelection =
+    options.readerSelection?.pageIndex !== undefined &&
+    options.pages.some((page) => page.index === options.readerSelection?.pageIndex)
+      ? { pageIndex: options.readerSelection.pageIndex }
+      : undefined;
   // The sources list is compiled back matter, so no page edit can touch it.
   // Catching that here keeps it from being priced as a page rewrite that would
   // then leave the section in place.
@@ -271,20 +298,29 @@ export async function classifyProjectChatMessage(options: {
   // model work). Without a model they degrade to the heuristics' clarify, and a
   // spent clarification then takes forcedDecision's whole-book widening; that
   // outage-only cost was accepted when the recognizer was removed.
-  const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters);
+  const reader = { numbering, ...(readerSelection ? { selectionPageIndex: readerSelection.pageIndex } : {}) };
+  const heuristic = classifyWithHeuristics(message, options.stage, options.pages, options.planSummary, chapters, reader);
   // Only ultra-high-precision read/undo shortcuts skip the model; everything
   // else (including chapter regen and language copies) goes through the tool agent.
   if (heuristic.kind === "show_content" || heuristic.kind === "undo_last_edit") {
     return normalizeIntentForStage(heuristic, options.stage, clarifyExhausted);
   }
+  // Only the router model knows the furniture pages from readerPageContext;
+  // the model-less paths get the same knowledge deterministically, or a
+  // furniture reference falls to the catch-all clarify and, once the budget is
+  // spent, is widened into a whole-book rewrite card.
+  const degraded = () => {
+    const furniture =
+      options.stage === "complete" ? furniturePageIntentFromMessage(message, options.pages, numbering) : null;
+    return (
+      furniture ??
+      classifyWithDegradedHeuristics(message, options.stage, options.pages, options.planSummary, chapters, reader)
+    );
+  };
   const textModel = options.textModel;
   if (!textModel || options.stage === "other") {
     // Without a router model, fall back to the richer English heuristic tree.
-    return normalizeIntentForStage(
-      classifyWithDegradedHeuristics(message, options.stage, options.pages, options.planSummary, chapters),
-      options.stage,
-      clarifyExhausted
-    );
+    return normalizeIntentForStage(degraded(), options.stage, clarifyExhausted);
   }
   const stage = options.stage;
 
@@ -300,15 +336,17 @@ export async function classifyProjectChatMessage(options: {
       textModel,
       loadPageBody: options.loadPageBody,
       clarifyExhausted,
+      numbering,
+      ...(readerSelection ? { readerSelection } : {}),
       ...(options.replyTo ? { replyTo: options.replyTo } : {})
     });
-    return normalizeIntentForStage(withDeterministicContentTarget(routed, message), stage, clarifyExhausted);
-  } catch {
     return normalizeIntentForStage(
-      classifyWithDegradedHeuristics(message, options.stage, options.pages, options.planSummary, chapters),
-      options.stage,
+      withDeterministicContentTarget(routed, message, numbering),
+      stage,
       clarifyExhausted
     );
+  } catch {
+    return normalizeIntentForStage(degraded(), options.stage, clarifyExhausted);
   }
 }
 
@@ -328,6 +366,8 @@ type RouteAgentOptions = {
   textModel: TextModelAdapter;
   loadPageBody?: ((index: number) => Promise<string | null>) | undefined;
   clarifyExhausted: boolean;
+  numbering: ReaderPageNumbering;
+  readerSelection?: { pageIndex?: number | undefined } | undefined;
   replyTo?: ChatReplyQuote | undefined;
 };
 
@@ -340,7 +380,22 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
   const actions = decideActionsFor(options.stage, options.clarifyExhausted);
   const canReadPages = options.pages.length > 0;
   const tools = canReadPages ? [readPageTool(options)] : [];
-  const pageSample = classifierPageSample(options.pages, options.message);
+  const map = options.numbering.pdfPageMap;
+  const pageSample = classifierPageSample(options.pages, options.message, CLASSIFIER_PAGE_SAMPLE_CAP, {
+    pdfPageMap: map
+  });
+  const readerPagesFor = (indexes: number[]): string | undefined => {
+    if (!map) {
+      return undefined;
+    }
+    const span = pdfSpanForModelPages(map, indexes);
+    if (!span) {
+      return undefined;
+    }
+    return span.startPdfPage === span.endPdfPage
+      ? String(span.startPdfPage)
+      : `${span.startPdfPage}-${span.endPdfPage}`;
+  };
   const result = await runToolLoop({
     textModel: options.textModel,
     purpose: "project_chat.edit_router",
@@ -361,12 +416,24 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
         { attempts: 2, delayMs: 500 }
       ),
     messages: [
-      { role: "system", content: routerSystemPrompt(options.stage, canReadPages, options.clarifyExhausted) },
+      {
+        role: "system",
+        content: routerSystemPrompt(options.stage, canReadPages, options.clarifyExhausted, map !== undefined)
+      },
       {
         role: "user",
         content: JSON.stringify({
           projectStage: options.stage,
           userMessage: options.message,
+          ...(options.readerSelection?.pageIndex !== undefined
+            ? {
+                readerSelection: {
+                  pageIndex: options.readerSelection.pageIndex,
+                  instruction:
+                    "The user sent this from the reader, acting on the page whose index is pageIndex. When the message targets a page — 'this page', a page number, a quoted passage — that index is the page they mean."
+                }
+              }
+            : {}),
           ...(options.replyTo
             ? {
                 replyingTo: chatReplyQuoteForPrompt(options.replyTo),
@@ -381,21 +448,41 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
           planSummary: options.planSummary ?? null,
           heuristicIntent: options.heuristic,
           heuristicInstruction: "Use heuristicIntent only as a hint. Prefer the user's actual meaning and projectStage.",
-          chapters: options.chapters.map((chapter) => ({
-            index: chapter.index,
-            title: chapter.title,
-            pageIndexes: chapter.pageIndexes
-          })),
-          pages: pageSample.pages.map((page) => ({
-            index: page.index,
-            title: page.title,
-            summary: page.summary.slice(0, 240)
-          })),
+          chapters: options.chapters.map((chapter) => {
+            const readerPages = readerPagesFor(chapter.pageIndexes);
+            return {
+              index: chapter.index,
+              title: chapter.title,
+              pageIndexes: chapter.pageIndexes,
+              ...(readerPages !== undefined ? { readerPages } : {})
+            };
+          }),
+          pages: pageSample.pages.map((page) => {
+            const readerPages = readerPagesFor([page.index]);
+            return {
+              index: page.index,
+              title: page.title,
+              summary: page.summary.slice(0, 240),
+              ...(readerPages !== undefined ? { readerPages } : {})
+            };
+          }),
           pageContext: {
             totalPages: options.pages.length,
             includedPageCount: pageSample.pages.length,
             truncated: pageSample.truncated
-          }
+          },
+          ...(map
+            ? {
+                readerPageContext: {
+                  totalPrintedPages: map.totalPdfPages,
+                  ...(map.hasCoverPage ? { coverPage: 1 } : {}),
+                  ...(map.contentsStartPdfPage !== undefined ? { contentsStartPage: map.contentsStartPdfPage } : {}),
+                  ...(map.backMatterStartPdfPage !== undefined
+                    ? { sourcesStartPage: map.backMatterStartPdfPage }
+                    : {})
+                }
+              }
+            : {})
         })
       }
     ]
@@ -404,7 +491,11 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
     throw new Error("Edit-intent router did not produce a routing decision.");
   }
   return intentFromDecideAction(result.finish, options.message, options.chapters, {
-    clarifyExhausted: options.clarifyExhausted
+    clarifyExhausted: options.clarifyExhausted,
+    pageNumbering: options.numbering,
+    ...(options.readerSelection?.pageIndex !== undefined
+      ? { readerSelectionPageIndex: options.readerSelection.pageIndex }
+      : {})
   });
 }
 
@@ -413,11 +504,29 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
  * Pricing tiers (local_patch vs page_rewrite vs book_replan) are derived here
  * from editTarget + editStyle, never guessed as free-form kind labels.
  */
+/** Extra routing context; every field optional so tests and old callers stand. */
+export type IntentDecisionContext = {
+  clarifyExhausted?: boolean | undefined;
+  pageNumbering?: ReaderPageNumbering | undefined;
+  /** The model page a reader-selection message was sent from; see classifyProjectChatMessage. */
+  readerSelectionPageIndex?: number | undefined;
+};
+
+/** One router page channel, re-read as model pages when it holds printed numbers. */
+function routedModelPages(
+  channel: number[] | null | undefined,
+  message: string,
+  context: IntentDecisionContext
+): number[] {
+  const numbering = context.pageNumbering ?? MODEL_PAGE_NUMBERING;
+  return modelPagesForCopiedPrintedPages(message, numbering, [channel])?.[0] ?? channel ?? [];
+}
+
 export function intentFromDecideAction(
   decision: DecideActionPayload,
   message: string,
   chapters: BookEditChapterContext[] = [],
-  context: { clarifyExhausted?: boolean | undefined } = {}
+  context: IntentDecisionContext = {}
 ): BookEditIntent {
   if (decision.action === "propose_edit") {
     return intentFromProposeEdit(decision, message, chapters, context);
@@ -432,7 +541,10 @@ export function intentFromDecideAction(
       scope: "none",
       impact: "small_text",
       clarification: "none",
-      contentTarget: showContentTargetFromMessage(message) ?? { type: "outline" }
+      contentTarget:
+        showContentTargetFromMessage(message, { pdfPageMap: context.pageNumbering?.pdfPageMap }) ?? {
+          type: "outline"
+        }
     };
   }
   if (decision.action === "undo_last_edit") {
@@ -465,7 +577,10 @@ export function intentFromDecideAction(
       kind: "clarify",
       confidence: decision.confidence,
       reasoning: decision.reasoning,
-      affectedPageIndexes: decision.pageIndexes ?? [],
+      // The same printed-number guard the propose path applies: forcedDecision
+      // turns a clarify that carries pages into an explicit-pages rewrite, so a
+      // copied number picks the wrong page here too.
+      affectedPageIndexes: routedModelPages(decision.pageIndexes, message, context),
       assistantMessage: decision.assistantMessage,
       scope: "none",
       impact: "small_text",
@@ -492,11 +607,29 @@ export function intentFromProposeEdit(
   decision: DecideActionPayload,
   message: string,
   chapters: BookEditChapterContext[] = [],
-  context: { clarifyExhausted?: boolean | undefined } = {}
+  context: IntentDecisionContext = {}
 ): BookEditIntent {
   const target = decision.editTarget ?? "pages";
   const style = decision.editStyle ?? (decision.replacementFrom ? "exact_replace" : "rewrite");
-  const pageIndexes = [...new Set(decision.pageIndexes ?? [])].sort((a, b) => a - b);
+  // Both page channels re-read as model pages when the model copied the printed
+  // numbers the message speaks. Everything below — including the image targets,
+  // whose pageIndexes win over the map-aware message fallbacks — reads them
+  // from here rather than off the decision.
+  const copied = modelPagesForCopiedPrintedPages(message, context.pageNumbering ?? MODEL_PAGE_NUMBERING, [
+    decision.pageIndexes,
+    decision.imageDestPageIndexes
+  ]);
+  const routed = copied?.[0] ?? decision.pageIndexes ?? [];
+  const imageDecision = copied
+    ? { ...decision, pageIndexes: routed, imageDestPageIndexes: copied[1] ?? decision.imageDestPageIndexes }
+    : decision;
+  const routedPageIndexes = [...new Set(routed)].sort((a, b) => a - b);
+  // A selection-composed message acted on one known page; a pageless page edit
+  // from it targets that page rather than falling to the "which page?" flows.
+  const pageIndexes =
+    routedPageIndexes.length === 0 && context.readerSelectionPageIndex !== undefined && target === "pages"
+      ? [context.readerSelectionPageIndex]
+      : routedPageIndexes;
   const chapterIndex = decision.chapterIndex ?? chapterRegenerateFromMessage(message);
   const targetLanguage =
     decision.targetLanguage ?? (target === "language_copy" ? targetLanguageFromLanguageVersionRequest(message) : null);
@@ -533,11 +666,11 @@ export function intentFromProposeEdit(
   }
 
   if (target === "insert_image") {
-    return imageInsertionIntentFromDecision(decision, message, context);
+    return imageInsertionIntentFromDecision(imageDecision, message, context);
   }
 
   if (target === "move_image" || target === "remove_image") {
-    return imageLayoutIntentFromDecision(target === "move_image" ? "move" : "remove", decision, message, context);
+    return imageLayoutIntentFromDecision(target === "move_image" ? "move" : "remove", imageDecision, message, context);
   }
 
   if (target === "language_copy" || target === "structural") {
@@ -637,11 +770,19 @@ function readPageTool(options: RouteAgentOptions): ToolLoopTool<{ index: number 
 }
 
 /** The model cannot emit structured content targets; recover them from the message. */
-function withDeterministicContentTarget(intent: BookEditIntent, message: string): BookEditIntent {
+function withDeterministicContentTarget(
+  intent: BookEditIntent,
+  message: string,
+  numbering: ReaderPageNumbering
+): BookEditIntent {
   if (intent.kind !== "show_content") {
     return intent;
   }
-  return { ...intent, contentTarget: showContentTargetFromMessage(message) ?? { type: "outline" } };
+  return {
+    ...intent,
+    contentTarget:
+      showContentTargetFromMessage(message, { pdfPageMap: numbering.pdfPageMap }) ?? { type: "outline" }
+  };
 }
 
 function normalizeIntentForStage(

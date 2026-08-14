@@ -17,6 +17,7 @@ import {
   bookPlanSchema,
   createProviders,
   expandChapterResearch,
+  seedStoryStateFromPromises,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
@@ -145,7 +146,13 @@ export async function generateBookSequential(options: {
       await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
       await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
       await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: "page:" } } });
-      await tx.project.update({ where: { id: options.projectId }, data: { status: "GENERATING" } });
+      await tx.project.update({
+        where: { id: options.projectId },
+        data: {
+          status: "GENERATING",
+          storyState: seedStoryStateFromPromises(options.plan.promises ?? []) as Prisma.InputJsonValue
+        }
+      });
 
       for (const setup of chapterSetups) {
         const chapter = await tx.chapter.create({

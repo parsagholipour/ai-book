@@ -23,7 +23,8 @@ import {
 } from "../generation/readerChapterCache.js";
 import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
 import { loadQualityContext } from "../generation/qualitySettings.js";
-import { loadProjectStoryState } from "../generation/storyStateStore.js";
+import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
+import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -58,7 +59,9 @@ import {
   runDeterministicManuscriptChecks,
   unpaidPromiseIssues,
   type BookGenerationStrategy,
+  type BookPdfPageMap,
   type BookPlan,
+  type CompiledBookMarkdown,
   type CreateProjectInput,
   type FinalBookQa,
   type ManuscriptQualityIssue,
@@ -257,8 +260,10 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
 
   // Always rerun integrity checks after repair attempts. Manual edits may
   // skip model rewriting, but they can never bypass publication integrity.
-  const storyState = await loadProjectStoryState(projectId, plan.promises ?? []);
   const quality = await loadQualityContext(input);
+  const storyState =
+    (await rebuildProjectStoryState(projectId, plan.promises ?? [])) ??
+    (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
   const unpaidPromiseQualityIssues: ManuscriptQualityIssue[] = quality.enabled("storyExtractAudit")
     ? unpaidPromiseIssues(storyState, input.targetPages, input.targetPages).map((message) => ({
         code: "UNPAID_PROMISE",
@@ -326,7 +331,7 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   const publishedMarkdown = detachedRepair || presentationOnly
     ? await readOptionalPublishedMarkdown(publishedMarkdownPath)
     : undefined;
-  let preservedReaderChapters = presentationOnly && publishedMarkdown !== undefined
+  let preservedReaderChapters = (presentationOnly || detachedRepair) && publishedMarkdown !== undefined
     ? readerChaptersFromPublishedMarkdown(publishedMarkdown, markdownPages)
     : undefined;
   if (preservedReaderChapters === undefined && detachedRepair && publishedMarkdown === undefined) {
@@ -335,7 +340,7 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
     // the prior model-authored grouping without making an uncharged model call.
     preservedReaderChapters = await readCompatibleCachedReaderChapters(projectDir, markdownPages);
   }
-  const compileCurrentMarkdown = async (): Promise<string> => {
+  const compileCurrentMarkdown = async (): Promise<CompiledBookMarkdown> => {
     const readerChapters = await readerChaptersWithCache({
       projectDir,
       fingerprint: readerChapterFingerprint({ input, plan, pages: markdownPages }),
@@ -352,7 +357,7 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
       deterministic: () => preservedReaderChapters ?? createDeterministicReaderChapters(markdownPages)
     });
     const researchSources = await researchCitationsForExport(project.research);
-    return strategy.compileMarkdown({
+    return strategy.compileMarkdownWithPageAnchors({
       plan,
       category: input.category,
       language: input.language,
@@ -385,9 +390,23 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   // project rows, without QA/model calls, and is installed with the derivative
   // below so subsequent repairs are exact again.
   const repairReconstructedMarkdown = detachedRepair && publishedMarkdown === undefined;
-  const markdown = detachedRepair && publishedMarkdown !== undefined
-    ? publishedMarkdown
-    : await compileCurrentMarkdown();
+  // A repair publishes the exact published `book.md`, whose bytes carry no
+  // anchor offsets — but a free deterministic recompile (no model call: the
+  // published Contents pins the chapter partition, and `allowModelCall` is off)
+  // routinely reproduces those bytes exactly. When it does, its anchor plan is
+  // honest for the published manuscript and the repair renders measured — the
+  // printed Contents keeps its measured numbers instead of regressing to model
+  // indexes. When it does not, the exact published bytes win, unmeasured, and
+  // the stored map — measured for this same revision — stands.
+  const recompiled = await compileCurrentMarkdown();
+  const compiled =
+    detachedRepair && publishedMarkdown !== undefined && recompiled.markdown !== publishedMarkdown
+      ? undefined
+      : recompiled;
+  const markdown = compiled ? compiled.markdown : publishedMarkdown;
+  if (markdown === undefined) {
+    throw new Error("Export compile produced no manuscript");
+  }
   assertBookLikeMarkdown(markdown);
   await advanceJobStep(generationJobId, "write", 80);
   // Rendered beside the real filenames, never onto them: until the claim below
@@ -396,20 +415,32 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   const pending = pendingExportPaths(projectDir);
   let epubProduced = true;
   let characterPreparationJobId: string | null = null;
+  let pdfPageMapUpdate: BookPdfPageMap | null | undefined;
   try {
     if (repairFormat === null || repairReconstructedMarkdown) {
       await writeFile(pending.markdown, markdown, "utf8");
     }
     if (repairFormat === null || repairFormat === "pdf") {
       await advanceJobStep(generationJobId, "pdf", 88);
-      await strategy.generatePdf(markdown, {
+      const pdfResult = await strategy.generatePdfWithPageMap(markdown, {
         imageStorageDir: config.IMAGE_STORAGE_DIR,
         publicApiUrl: config.PUBLIC_API_URL,
         outputPath: pending.pdf,
         language: input.language,
         // Scopes the renderer's file access to this book's own illustrations.
-        projectId
+        projectId,
+        ...(compiled ? { pageMapPlan: compiled } : {})
       });
+      // A measured render replaces the stored map; a measurable render that
+      // could not be measured clears it — the old map describes pagination
+      // this publication is about to replace. Repairs are the exception both
+      // ways: an unmeasured one (no plan) leaves the column alone via
+      // `pdfPageMapUpdate` staying undefined, and one whose measurement failed
+      // also leaves it, because a repair re-renders the same manuscript the
+      // stored map was measured from.
+      if (compiled) {
+        pdfPageMapUpdate = pdfResult.pageMap ?? (detachedRepair ? undefined : null);
+      }
     }
     const generateEpub = () =>
       generateBookEpub(markdown, {
@@ -465,6 +496,7 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
       pending,
       epubProduced,
       repairFormat,
+      ...(pdfPageMapUpdate !== undefined ? { pdfPageMap: pdfPageMapUpdate } : {}),
       publishReconstructedMarkdown: repairReconstructedMarkdown,
       contentRevision: queuedContentRevision,
       expectedProjectStatus,
@@ -675,6 +707,7 @@ export async function repairPagesFromFinalQa(options: {
     take: 28
   });
   let pages = [...options.pages];
+  let currentState = await rebuildStoryStateFromPages(options.projectId, options.plan.promises ?? []);
 
   for (const pageIndex of repairPageIndexes) {
     const page = pages.find((candidate) => candidate.index === pageIndex);
@@ -766,6 +799,20 @@ export async function repairPagesFromFinalQa(options: {
           qualityReport: qualityReport as Prisma.InputJsonValue
         }
       });
+      const failedKeeperState = await persistKeeperStoryDelta({
+        projectId: options.projectId,
+        pageIndex,
+        draft,
+        textModel: options.providers.text,
+        plan: options.plan,
+        input: options.input,
+        previousExtract: null,
+        keeperWasRevised: true,
+        currentState
+      });
+      if (failedKeeperState) {
+        currentState = failedKeeperState;
+      }
       await updateJobProgress(options.generationJobId, {
         message: `Final QA repair could not fully fix page ${pageIndex}; exporting its best draft. ${formatQualityFailure(pageIndex, qualityReport)}`
       });
@@ -785,6 +832,20 @@ export async function repairPagesFromFinalQa(options: {
       },
       include: { images: true, chapter: true }
     });
+    const keptKeeperState = await persistKeeperStoryDelta({
+      projectId: options.projectId,
+      pageIndex,
+      draft,
+      textModel: options.providers.text,
+      plan: options.plan,
+      input: options.input,
+      previousExtract: null,
+      keeperWasRevised: true,
+      currentState
+    });
+    if (keptKeeperState) {
+      currentState = keptKeeperState;
+    }
 
     if (draft.continuityNotes.length > 0) {
       await prisma.continuityNote.createMany({

@@ -76,6 +76,7 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { planBook, revisePlan } from "./planning.js";
+import { seedProjectStoryState } from "../generation/storyStateStore.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 
 const inputSnapshot = {
@@ -352,6 +353,7 @@ describe("planBook", () => {
     expect(mocks.prisma.character.createMany).toHaveBeenCalled();
     expect(mocks.prisma.location.deleteMany).toHaveBeenCalledWith({ where: { projectId: "project-1" } });
     expect(mocks.prisma.researchSource.createMany).toHaveBeenCalled();
+    expect(seedProjectStoryState).toHaveBeenCalledWith("project-1", []);
 
     // PLAN_READY lands only after the job is marked complete, so a crash in
     // between leaves the row recoverable rather than announcing a ready plan.

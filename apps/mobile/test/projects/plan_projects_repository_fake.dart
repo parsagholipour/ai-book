@@ -225,7 +225,8 @@ class PlanProjectsRepository implements ProjectsRepository {
     required String message,
     String? requestId,
     String? replyToMessageId,
-      List<String>? mentionedCharacterIds,
+    List<String>? mentionedCharacterIds,
+    Map<String, int>? readerContext,
   }) async {
     revisionMessages.add(message);
     sendRequests.add((

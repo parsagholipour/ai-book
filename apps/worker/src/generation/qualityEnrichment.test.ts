@@ -13,6 +13,8 @@ import type {
 const mocks = vi.hoisted(() => ({
   loadQualityContext: vi.fn(),
   loadProjectStoryState: vi.fn(),
+  rebuildStoryStateFromPages: vi.fn(),
+  persistPageStoryDelta: vi.fn(),
   extractStoryState: vi.fn()
 }));
 
@@ -22,7 +24,8 @@ vi.mock("./qualitySettings.js", () => ({
 }));
 vi.mock("./storyStateStore.js", () => ({
   loadProjectStoryState: mocks.loadProjectStoryState,
-  persistPageStoryDelta: vi.fn()
+  rebuildStoryStateFromPages: mocks.rebuildStoryStateFromPages,
+  persistPageStoryDelta: mocks.persistPageStoryDelta
 }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
@@ -32,7 +35,7 @@ vi.mock("@book-maker/core", async () => {
   };
 });
 
-import { enrichPageQualityReport, mergeEntityAndStoryStateLines } from "./qualityEnrichment.js";
+import { enrichPageQualityReport, mergeEntityAndStoryStateLines, persistKeeperStoryDelta } from "./qualityEnrichment.js";
 
 const TARGET_PAGES = 8;
 
@@ -151,6 +154,7 @@ describe("enrichPageQualityReport unpaid promises", () => {
     vi.clearAllMocks();
     mocks.loadQualityContext.mockResolvedValue(storyExtractEnabled());
     mocks.loadProjectStoryState.mockResolvedValue(openPromiseState);
+    mocks.rebuildStoryStateFromPages.mockResolvedValue(openPromiseState);
   });
 
   it("does not block the last page when this page's extract pays the open promise", async () => {
@@ -193,5 +197,76 @@ describe("enrichPageQualityReport unpaid promises", () => {
 
     expect(result.report.approved).toBe(false);
     expect(result.report.issues).toContain("Unpaid promise on the final page: Find the seal");
+  });
+
+  it("does not flag unpaid after rebuild-from-pages when a sibling page already paid it", async () => {
+    mocks.extractStoryState.mockResolvedValue({
+      storyDelta: emptyDelta(),
+      contradictions: []
+    });
+    mocks.rebuildStoryStateFromPages.mockResolvedValue({
+      promises: [
+        {
+          id: "p1",
+          text: "Find the seal",
+          status: "paid",
+          openedAtPage: 1,
+          paidAtPage: 7
+        }
+      ],
+      facts: [],
+      entities: {},
+      unanswered: []
+    });
+
+    const result = await enrichPageQualityReport({
+      input,
+      plan,
+      pageIndex: TARGET_PAGES,
+      draft,
+      report: approvedReport,
+      previousPages: [],
+      researchNotes: [],
+      textModel: {} as TextModelAdapter,
+      projectId: "project-1",
+      quality: storyExtractEnabled(),
+      storyState: openPromiseState
+    });
+
+    expect(mocks.loadQualityContext).not.toHaveBeenCalled();
+    expect(mocks.loadProjectStoryState).not.toHaveBeenCalled();
+    expect(mocks.rebuildStoryStateFromPages).toHaveBeenCalledWith("project-1", ["Find the seal"]);
+    expect(result.report.approved).toBe(true);
+    expect(result.report.issues.join(" ")).not.toMatch(/Unpaid promise/);
+  });
+});
+
+describe("persistKeeperStoryDelta", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loadQualityContext.mockResolvedValue(storyExtractEnabled());
+    mocks.persistPageStoryDelta.mockResolvedValue(openPromiseState);
+  });
+
+  it("does not reload quality when the caller already passed it", async () => {
+    mocks.extractStoryState.mockResolvedValue(extractPayingP1);
+
+    await persistKeeperStoryDelta({
+      projectId: "project-1",
+      pageIndex: 1,
+      draft,
+      textModel: {} as TextModelAdapter,
+      plan,
+      input,
+      previousExtract: extractPayingP1,
+      keeperWasRevised: false,
+      currentState: openPromiseState,
+      quality: storyExtractEnabled()
+    });
+
+    expect(mocks.loadQualityContext).not.toHaveBeenCalled();
+    expect(mocks.persistPageStoryDelta).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "project-1", pageIndex: 1 })
+    );
   });
 });

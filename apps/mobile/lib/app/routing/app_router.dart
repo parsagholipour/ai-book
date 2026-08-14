@@ -248,6 +248,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             projectId: state.pathParameters['id']!,
             initialDraft: _chatLaunch(state.extra)?.draft,
             initialMessage: _chatLaunch(state.extra)?.send,
+            initialReaderContext: _chatLaunch(state.extra)?.readerContext,
           ),
         ),
       ),

@@ -138,6 +138,8 @@ export async function applyBookEdit(job: Job) {
     );
 
   const skippedPageIndexes: number[] = [];
+  const seedPromises = plan.promises ?? [];
+  let currentState = await loadProjectStoryState(projectId, seedPromises);
   try {
     for (const [offset, page] of pages.entries()) {
       await reportPage(page, offset, "draft");
@@ -211,7 +213,7 @@ export async function applyBookEdit(job: Job) {
       if (strategyUsesSemanticMemory(strategy)) {
         await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
       }
-      await persistKeeperStoryDelta({
+      const nextState = await persistKeeperStoryDelta({
         projectId,
         pageIndex: page.index,
         draft: {
@@ -226,8 +228,11 @@ export async function applyBookEdit(job: Job) {
         input,
         previousExtract: null,
         keeperWasRevised: true,
-        currentState: await loadProjectStoryState(projectId, plan.promises ?? [])
+        currentState
       });
+      if (nextState) {
+        currentState = nextState;
+      }
       updatedPageIndexes.push(page.index);
     }
   } catch (error) {

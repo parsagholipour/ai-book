@@ -31,7 +31,19 @@ const mocks = vi.hoisted(() => ({
   strategy: {
     executionMode: "whole-book",
     compileMarkdown: vi.fn(),
+    // Delegates to the plain mocks so every existing assertion on
+    // `compileMarkdown` / `generatePdf` keeps observing the handler unchanged.
+    compileMarkdownWithPageAnchors: vi.fn((input: unknown) => ({
+      markdown: mocks.strategy.compileMarkdown(input),
+      pageAnchors: [],
+      hasCoverPage: false,
+      hasContents: false
+    })),
     generatePdf: vi.fn(),
+    generatePdfWithPageMap: vi.fn(async (markdown: unknown, options: Record<string, unknown>) => {
+      const { pageMapPlan: _pageMapPlan, ...rest } = options;
+      return { pdf: await mocks.strategy.generatePdf(markdown, rest) };
+    }),
     runFinalBookQa: vi.fn()
   },
   inputForPlanVersion: vi.fn(),
@@ -45,6 +57,13 @@ const mocks = vi.hoisted(() => ({
   loadProjectStoryState: vi.fn(
     async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
   ),
+  rebuildProjectStoryState: vi.fn(
+    async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
+  ),
+  rebuildStoryStateFromPages: vi.fn(
+    async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
+  ),
+  persistKeeperStoryDelta: vi.fn(),
   loadQualityContext: vi.fn(async () => ({
     settings: {},
     tier: "balanced" as const,
@@ -93,7 +112,12 @@ vi.mock("../generation/bookHelpers.js", () => ({
   formatQualityFailure: () => "quality failure detail"
 }));
 vi.mock("../generation/storyStateStore.js", () => ({
-  loadProjectStoryState: mocks.loadProjectStoryState
+  loadProjectStoryState: mocks.loadProjectStoryState,
+  rebuildProjectStoryState: mocks.rebuildProjectStoryState,
+  rebuildStoryStateFromPages: mocks.rebuildStoryStateFromPages
+}));
+vi.mock("../generation/qualityEnrichment.js", () => ({
+  persistKeeperStoryDelta: mocks.persistKeeperStoryDelta
 }));
 vi.mock("../generation/qualitySettings.js", () => ({
   loadQualityContext: mocks.loadQualityContext,
@@ -232,6 +256,9 @@ describe("repairPagesFromFinalQa", () => {
     );
     expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");
     expect(result).toHaveLength(2);
+    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledWith(
+      expect.objectContaining({ pageIndex: 2, keeperWasRevised: true, previousExtract: null })
+    );
   });
 
   it("also repairs pages flagged by page-level QA, deduped and in order", async () => {
@@ -278,6 +305,9 @@ describe("repairPagesFromFinalQa", () => {
     );
     // A flagged page skips embedding until a repair actually lands.
     expect(mocks.storeEmbedding).not.toHaveBeenCalled();
+    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledWith(
+      expect.objectContaining({ pageIndex: 2, keeperWasRevised: true })
+    );
   });
 
   it("enters recovery one attempt earlier than the page loops, because it counts from the first rewrite", async () => {
@@ -585,7 +615,10 @@ describe("compileExport reader chapters", () => {
     await compileExport(repairJob());
 
     expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
-    expect(mocks.strategy.compileMarkdown).not.toHaveBeenCalled();
+    // The free deterministic recompile runs only to be byte-compared; its
+    // output differs from the published manuscript here, so the exact
+    // published bytes are what renders — unmeasured.
+    expect(mocks.strategy.compileMarkdown).toHaveBeenCalledTimes(1);
     expect(mocks.strategy.generatePdf).toHaveBeenCalledWith(
       publishedMarkdown,
       expect.objectContaining({ outputPath: expect.stringContaining(".book-test.pdf") })
@@ -594,6 +627,67 @@ describe("compileExport reader chapters", () => {
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
       expect.objectContaining({ repairFormat: "pdf", generationJobId: "gj-1" })
     );
+  });
+
+  it("measures a repair whose deterministic recompile reproduces the published bytes", async () => {
+    mocks.strategy.compileMarkdown.mockReturnValue(publishedMarkdown);
+
+    await compileExport(repairJob());
+
+    expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
+    // Byte-equal: the recompile's anchor plan is honest for the published
+    // manuscript, so the repair renders measured with the plan attached…
+    expect(mocks.strategy.generatePdfWithPageMap).toHaveBeenCalledWith(
+      publishedMarkdown,
+      expect.objectContaining({ pageMapPlan: expect.objectContaining({ pageAnchors: expect.any(Array) }) })
+    );
+    // …but a repair whose measurement fails must not clear a stored map that
+    // was measured from this very manuscript.
+    const options = mocks.publishCompiledExports.mock.calls[0]![0] as Record<string, unknown>;
+    expect("pdfPageMap" in options).toBe(false);
+  });
+
+  it("publishes the measured page map with the compile, stamped inside the publisher", async () => {
+    const pageMap = {
+      version: 1 as const,
+      totalPdfPages: 15,
+      hasCoverPage: true,
+      pages: [{ index: 1, startPdfPage: 3, endPdfPage: 15 }]
+    };
+    mocks.strategy.generatePdfWithPageMap.mockResolvedValueOnce({ pdf: Buffer.from("pdf"), pageMap } as never);
+
+    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
+
+    // The compiled anchor plan rode into the render…
+    expect(mocks.strategy.generatePdfWithPageMap).toHaveBeenCalledWith(
+      "# The Long Walk\n\nProse.\n",
+      expect.objectContaining({ pageMapPlan: expect.objectContaining({ pageAnchors: expect.any(Array) }) })
+    );
+    // …and the measured map rode into the publication for the transaction to stamp.
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPageMap: pageMap })
+    );
+  });
+
+  it("clears the stored map when a measurable render could not be measured", async () => {
+    // The default generatePdfWithPageMap mock returns no pageMap: the render
+    // happened, the measurement failed. The stored map describes pagination
+    // this publication replaces, so the publisher must be told to clear it.
+    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
+
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPageMap: null })
+    );
+  });
+
+  it("leaves the stored map alone when a repair reprints the exact published markdown", async () => {
+    // No anchor plan exists for a markdown this process did not compile, so the
+    // render is unmeasured — and the stored map, measured for this same
+    // revision, must stand rather than be cleared.
+    await compileExport(repairJob());
+
+    const options = mocks.publishCompiledExports.mock.calls[0]![0] as Record<string, unknown>;
+    expect("pdfPageMap" in options).toBe(false);
   });
 
   it("uses published markdown even when a reader-chapter cache exists", async () => {
@@ -607,7 +701,8 @@ describe("compileExport reader chapters", () => {
     await compileExport(repairJob());
 
     expect(mocks.createReaderChaptersForExport).not.toHaveBeenCalled();
-    expect(mocks.strategy.compileMarkdown).not.toHaveBeenCalled();
+    // Called once for the byte comparison; the published bytes still win.
+    expect(mocks.strategy.compileMarkdown).toHaveBeenCalledTimes(1);
     expect(mocks.strategy.generatePdf).toHaveBeenCalledWith(
       publishedMarkdown,
       expect.objectContaining({ outputPath: expect.stringContaining(".book-test.pdf") })
@@ -739,7 +834,7 @@ describe("compileExport reader chapters", () => {
       tier: "balanced",
       enabled: (feature: QualityFeatureId) => feature === "storyExtractAudit"
     });
-    mocks.loadProjectStoryState.mockResolvedValue({
+    mocks.rebuildProjectStoryState.mockResolvedValue({
       promises: [{ id: "p1", text: "The lantern will be lit.", status: "open", openedAtPage: 0 }],
       facts: [],
       entities: {},

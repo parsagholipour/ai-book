@@ -74,6 +74,8 @@ export * from "./generation/exportTempSweep.js";
 export * from "./generation/pdf.js";
 export * from "./generation/pdfCss.js";
 export * from "./generation/pdfDocument.js";
+export * from "./generation/pdfPageAnchors.js";
+export * from "./generation/pdfPageMap.js";
 export * from "./generation/browserPool.js";
 export * from "./generation/browserPoolSignals.js";
 export * from "./generation/bookFonts.js";

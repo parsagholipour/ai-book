@@ -13,6 +13,7 @@ import {
   type ResearchSource,
   type ToneProfile
 } from "../schemas/book.js";
+import { mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import { libraryCharactersFromMediaSettings } from "./libraryCharacters.js";
 import { planLibraryCharacterGuidance, reconcilePlanLibraryCharacters } from "./planLibraryCharacters.js";
@@ -479,7 +480,7 @@ function formatErrorMessage(error: unknown): string {
 }
 
 function mobileAutoPlanningGuidance(input: CreateProjectInput): string[] {
-  const mobile = jsonRecord(jsonRecord(input.mediaSettings).mobile);
+  const mobile = mediaSettingsMobileRecord(input.mediaSettings);
   if (mobile.bookTypeChoice !== "auto") {
     return [];
   }
@@ -489,8 +490,4 @@ function mobileAutoPlanningGuidance(input: CreateProjectInput): string[] {
     "The CUSTOM category and general-book template are only a neutral routing shell; do not treat them as the user's requested genre.",
     "If the chat implies a specific form, such as a children's fable or a workbook, plan that form directly."
   ];
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

@@ -331,6 +331,13 @@ export type MobileBookEditOperationDto = {
     | "manual_edit";
   status: "queued" | "active" | "applied" | "failed" | "canceled";
   affectedPageIndexes: number[];
+  /**
+   * The printed PDF pages the edit covers — the numbers the reader sees in the
+   * compiled book. Present only when the book's current page map is known;
+   * `affectedPageIndexes` stay model indexes because the Edit-Mode deep links
+   * navigate by them.
+   */
+  readerPageNumbers?: number[];
   creditsCharged: number;
   currentAction: string;
   error: string | null;

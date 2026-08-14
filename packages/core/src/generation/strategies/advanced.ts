@@ -1,5 +1,5 @@
-import { compileBookMarkdown } from "../markdown.js";
-import { generateBookPdf } from "../pdf.js";
+import { compileBookMarkdown, compileBookMarkdownWithPageAnchors } from "../markdown.js";
+import { generateBookPdf, generateBookPdfWithPageMap } from "../pdf.js";
 import { createPlanningPackage, revisePlanningPackage } from "../planner.js";
 import {
   generateBatchDraft,
@@ -38,7 +38,9 @@ const sharedGeneration = {
   shouldIllustratePage,
   generateImageBytes,
   compileMarkdown: compileBookMarkdown,
-  generatePdf: generateBookPdf
+  compileMarkdownWithPageAnchors: compileBookMarkdownWithPageAnchors,
+  generatePdf: generateBookPdf,
+  generatePdfWithPageMap: generateBookPdfWithPageMap
 };
 
 export const pageMapSequentialStrategy = Object.freeze({

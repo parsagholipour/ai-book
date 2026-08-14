@@ -15,6 +15,7 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
+import { seedProjectStoryState } from "../generation/storyStateStore.js";
 import { cleanTargetLanguage } from "../runtime/serialization.js";
 import {
   applyExactReplacement,
@@ -157,6 +158,7 @@ export async function replanBook(job: Job) {
     await replaceProjectPlanReferenceRecords(tx, projectId, revised);
   });
 
+  await seedProjectStoryState(projectId, revised.promises ?? []);
   await invalidateProjectExports(projectId);
   await advanceJobStep(generationJobId, "generate", 85, "Queueing regenerated book");
   const generateJob = await enqueueWorkerJob({

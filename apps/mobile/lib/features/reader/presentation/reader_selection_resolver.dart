@@ -73,6 +73,7 @@ Future<ReaderResolvedSelection> placeReaderSelection({
         text: selection.text,
         pdfPageNumber: selection.pdfPageNumber,
         bookPageIndex: bookPageIndex,
+        exportRevision: revision,
         placed: true,
       ),
       spans: preview.spans,
