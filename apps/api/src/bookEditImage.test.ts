@@ -124,20 +124,22 @@ describe("imageInsertionIntentFromDecision", () => {
     expect(intent.affectedPageIndexes).toEqual([3]);
   });
 
-  it("routes a Persian request through pageIndexes, which no English helper can read", () => {
+  it("routes a Persian request through pageIndexes, and through the message when that channel is empty", () => {
     const viaModel = imageInsertionIntentFromDecision(
       { ...base, imageSubject: "یک عکس از اژدها", pageIndexes: [5] },
       "در صفحه ۵ یک عکس از اژدها اضافه کن"
     );
     expect(viaModel.imageEdit).toEqual({ subject: "یک عکس از اژدها", placement: "page", pageIndex: 5 });
 
-    // Without the router channel the English helpers find nothing in Persian
-    // text, so the placement stays unresolved for the subject-anchored default.
     const withoutChannel = imageInsertionIntentFromDecision(
       { ...base, imageSubject: "یک عکس از اژدها", pageIndexes: [] },
       "در صفحه ۵ یک عکس از اژدها اضافه کن"
     );
-    expect(withoutChannel.imageEdit).toEqual({ subject: "یک عکس از اژدها" });
+    expect(withoutChannel.imageEdit).toEqual({
+      subject: "یک عکس از اژدها",
+      placement: "page",
+      pageIndex: 5
+    });
   });
 
   it("falls back to imagePlacement, then the English message helpers", () => {

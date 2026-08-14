@@ -257,7 +257,7 @@ holds the event loop open and vitest will never exit.
   (recognised by the heading that must follow it) and the injected empty `<span>`. Names match
   *whole*, so a heading slugging to `chapter-2-the-return` keeps its id and the links to it.
   `placeBookPageAnchorIds` then moves
-  every marker onto a box with extent (the following block, the first word, the `<img>`), because a
+  every marker onto a box with extent (the following block, the following inline element, the first word), because a
   zero-height marker at a fragmentation boundary lands its destination a page early — the same
   incident `liftChapterAnchorsOntoHeadings` exists for. A `display:none` nav of internal links
   makes Skia emit `/Dests` at all (ids alone emit nothing; hidden links add no annotations, no
@@ -268,7 +268,13 @@ holds the event loop open and vitest will never exit.
   over the map** — a book without one simply keeps the old model-index chat behaviour. When the
   book prints a Contents, its rows' numbers — which the markdown could only write as model indexes
   — are rewritten to the measured chapter pages and the document rendered once more, re-measured,
-  and re-checked once: the printed column and the footer now count the same pages. Keep anchor ids
+  and re-checked once: the printed column and the footer now count the same pages. **Replacing
+  `book.pdf` without that measured pass must clear the column.** A detached repair whose
+  recompile does not byte-match the published `book.md` renders those published bytes with no
+  plan — no markers, no Contents reprint — and the reprint exists because digit width moves
+  breaks, so "same manuscript" is not the same pagination. A stale map mistranslates chat
+  targets onto the unreprinted file; no map is the graceful path the failure rule already
+  names. Keep anchor ids
   ASCII `[a-z0-9-]` (PDF name escaping never applies) and keep the injection out of `book.md`,
   whose bytes are the provenance sha, the EPUB input and the reader-chapter fingerprint.
 

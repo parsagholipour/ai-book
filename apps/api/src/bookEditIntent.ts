@@ -624,10 +624,14 @@ export function intentFromProposeEdit(
     ? { ...decision, pageIndexes: routed, imageDestPageIndexes: copied[1] ?? decision.imageDestPageIndexes }
     : decision;
   const routedPageIndexes = [...new Set(routed)].sort((a, b) => a - b);
-  // A selection-composed message acted on one known page; a pageless page edit
-  // from it targets that page rather than falling to the "which page?" flows.
+  // The locator's model page is authoritative over parsing the bubble: a
+  // copied "page 12" maps to every model page that printed page holds, and
+  // adjacent pages routinely share one. Preferring the selection keeps a
+  // one-passage rewrite on the page the reader acted on (the quote still
+  // narrows via affectedPagesForIntent). A pageless page edit from a
+  // selection still targets that page rather than the "which page?" flows.
   const pageIndexes =
-    routedPageIndexes.length === 0 && context.readerSelectionPageIndex !== undefined && target === "pages"
+    context.readerSelectionPageIndex !== undefined && target === "pages"
       ? [context.readerSelectionPageIndex]
       : routedPageIndexes;
   const chapterIndex = decision.chapterIndex ?? chapterRegenerateFromMessage(message);

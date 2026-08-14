@@ -125,11 +125,17 @@ export function normalizeNumerals(text: string): string {
 }
 
 /**
- * How the languages we ship fonts for write "page(s)". Matched as a prefix
- * rather than a whole word on purpose: it absorbs Persian agglutination
- * ("صفحه‌ای", joined by a ZWNJ) and plural forms without listing every one.
+ * How the languages we ship fonts for write "page(s)".
+ *
+ * Number-then-word ("۳ صفحه", "3 pages") is a book length —
+ * {@link explicitTargetPagesFromText}. Word-then-number ("صفحه ۵", "page 5")
+ * is a page reference — the edit-chat parsers. Both interpolate this pattern
+ * so a language we already size a book in is one we can also target a page in.
+ *
+ * Matched as a prefix on the length side so Persian agglutination
+ * ("صفحه‌ای", joined by a ZWNJ) is absorbed without listing every form.
  */
-const PAGE_WORDS = [
+export const BOOK_PAGE_WORD_PATTERN = [
   "pages?",
   "pgs?",
   "صفحه",
@@ -161,7 +167,7 @@ const TARGET_PAGE_PATTERNS = [
   // The multilingual number-then-word form. It must not use `\b`: JavaScript
   // word boundaries are ASCII, so `\b` never matches beside "ص" or "页". The
   // digit lookarounds do that job and also stop "1200 pages" reading as 120.
-  new RegExp(`(?<!\\d)(\\d{1,3})(?!\\d)\\s*[-–]?\\s*(?:${PAGE_WORDS})`, "giu")
+  new RegExp(`(?<!\\d)(\\d{1,3})(?!\\d)\\s*[-–]?\\s*(?:${BOOK_PAGE_WORD_PATTERN})`, "giu")
 ];
 
 /**

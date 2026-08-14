@@ -250,7 +250,8 @@ async function publishRebuiltExport(options: {
   /**
    * Same contract as the worker's `publishCompiledExports`: omitted leaves the
    * stored map standing, `null` clears it, a map replaces it — stamped here
-   * with the claimed revision and this render's digest.
+   * with the claimed revision and this render's digest. An unmeasured PDF
+   * (no plan) must pass `null`: that render skipped the Contents reprint.
    */
   pdfPageMap?: BookPdfPageMap | null | undefined;
   pendingPath: string;
@@ -435,9 +436,11 @@ export function rebuildProjectPdfExport(
         });
         return {
           rendered: result.pdf,
-          // A rebuild from the saved `book.md` has no plan and measures
-          // nothing; the stored map for this same revision stands.
-          ...(manuscript.pageMapPlan ? { pdfPageMap: result.pageMap ?? null } : {})
+          // A measured rebuild replaces or clears. An unmeasured one (saved
+          // `book.md`, no plan, no Contents reprint) also clears: that PDF is
+          // not the pass the stored map was taken from, and a stale map is
+          // worse than none.
+          pdfPageMap: manuscript.pageMapPlan ? (result.pageMap ?? null) : null
         };
       }
     });

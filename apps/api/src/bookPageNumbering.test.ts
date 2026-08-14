@@ -67,6 +67,9 @@ describe("furniturePageIntentFromMessage", () => {
     expect(furniturePageIntentFromMessage("rewrite page 40", pages, numbering)?.assistantMessage).toContain(
       "doesn’t have a printed page 40"
     );
+    expect(furniturePageIntentFromMessage("صفحه ۲ را درست کن", pages, numbering)?.assistantMessage).toContain(
+      "table of contents"
+    );
   });
 
   it("stands aside whenever the message can be routed as content", () => {

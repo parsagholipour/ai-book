@@ -115,9 +115,8 @@ export function numberingForProject(project: {
  * fires only on the signature of a copy: every page the router named is a
  * printed number the message itself speaks, and every number spoken was named.
  * A model that translated emits indexes the message never mentions and keeps
- * them; so does a message that speaks no page number this module can read —
- * "در صفحه ۵" carries no English "page N", so a Persian-only request still
- * rides on the model's own answer.
+ * them. Spoken numbers include the same page-words the length parser already
+ * knows — "صفحه ۵" and "página 3" are copies just as much as "page 5".
  *
  * Channel order is the caller's: a move reads its source and destination out of
  * one channel by position, so the mapping must not re-sort them. A channel

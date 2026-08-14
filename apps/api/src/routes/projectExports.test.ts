@@ -167,6 +167,21 @@ describe("lazy export rebuilds", () => {
     expect(projectDirEntries()).toEqual(["book.pdf", "book.pdf.provenance.json"]);
   });
 
+  it("clears the stored page map when a rebuild renders saved book.md unmeasured", async () => {
+    const { Prisma } = await import("@book-maker/db");
+    mockPrisma.project.findUnique.mockResolvedValue({ ...projectRow(7), pages: [] });
+    writeFileSync(join(bookStorageDir, "project-1", "book.md"), "# Saved\n\nProse.\n");
+    mockGeneratePdf.mockImplementation(renderWriting("unmeasured-pdf"));
+    const { rebuildProjectPdfExport } = await import("./projectExports.js");
+
+    await rebuildProjectPdfExport(appConfig, "project-1", exportSource(7));
+
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: expect.objectContaining({ pdfPageMap: Prisma.DbNull })
+    });
+  });
+
   it("records what it published, so a download can name the compile it got", async () => {
     // Every compile of this book is served from `book.pdf`, and two of them can
     // differ by no bytes at all, so the reader cannot tell one from another by

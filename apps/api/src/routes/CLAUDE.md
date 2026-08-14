@@ -41,4 +41,6 @@ recompile published and leave the book sitting finished with its pre-edit PDF un
 revision bump rebuilt it. A render that loses the claim publishes nothing and answers with
 whatever is on disk now, falling back to its own bytes — a stale download beats a broken link,
 but it may not become the book. It also passes `projectId` to `generatePdf`, so the renderer's
-file access is scoped to that book's own illustrations as it is in the worker.
+file access is scoped to that book's own illustrations as it is in the worker. An unmeasured
+rebuild (saved `book.md`, no anchor plan) clears `pdfPageMap` rather than leaving a map from
+the Contents-reprinted pass — same manuscript is not the same pagination.

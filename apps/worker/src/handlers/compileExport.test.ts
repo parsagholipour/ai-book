@@ -625,7 +625,13 @@ describe("compileExport reader chapters", () => {
     );
     expect(mocks.generateBookEpub).not.toHaveBeenCalled();
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ repairFormat: "pdf", generationJobId: "gj-1" })
+      expect.objectContaining({
+        repairFormat: "pdf",
+        generationJobId: "gj-1",
+        // Unmeasured: the published bytes won, so this PDF skipped the
+        // Contents reprint the stored map includes.
+        pdfPageMap: null
+      })
     );
   });
 
@@ -680,14 +686,16 @@ describe("compileExport reader chapters", () => {
     );
   });
 
-  it("leaves the stored map alone when a repair reprints the exact published markdown", async () => {
+  it("clears the stored map when a repair renders the published markdown unmeasured", async () => {
     // No anchor plan exists for a markdown this process did not compile, so the
-    // render is unmeasured — and the stored map, measured for this same
-    // revision, must stand rather than be cleared.
+    // render skips markers and the Contents reprint. Same `book.md` is not the
+    // same pagination — the reprint exists because digit width moves breaks —
+    // and a map from the other Chromium pass would mistranslate chat targets.
     await compileExport(repairJob());
 
-    const options = mocks.publishCompiledExports.mock.calls[0]![0] as Record<string, unknown>;
-    expect("pdfPageMap" in options).toBe(false);
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPageMap: null })
+    );
   });
 
   it("uses published markdown even when a reader-chapter cache exists", async () => {

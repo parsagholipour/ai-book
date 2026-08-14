@@ -396,8 +396,12 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   // routinely reproduces those bytes exactly. When it does, its anchor plan is
   // honest for the published manuscript and the repair renders measured — the
   // printed Contents keeps its measured numbers instead of regressing to model
-  // indexes. When it does not, the exact published bytes win, unmeasured, and
-  // the stored map — measured for this same revision — stands.
+  // indexes. When it does not, the exact published bytes win, unmeasured: no
+  // markers, no Contents reprint. That is a different Chromium pass than the
+  // one the stored map was measured from (the reprint exists because digit
+  // width moves breaks), so the column is cleared. A book without a map is the
+  // graceful path; a map from a different pagination is the wrong-page edit
+  // the map exists to stop.
   const recompiled = await compileCurrentMarkdown();
   const compiled =
     detachedRepair && publishedMarkdown !== undefined && recompiled.markdown !== publishedMarkdown
@@ -433,13 +437,15 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
       });
       // A measured render replaces the stored map; a measurable render that
       // could not be measured clears it — the old map describes pagination
-      // this publication is about to replace. Repairs are the exception both
-      // ways: an unmeasured one (no plan) leaves the column alone via
-      // `pdfPageMapUpdate` staying undefined, and one whose measurement failed
-      // also leaves it, because a repair re-renders the same manuscript the
-      // stored map was measured from.
+      // this publication is about to replace. A measured *repair* whose
+      // measurement failed is the exception: it reprinted the same manuscript
+      // the stored map was taken from, with the same plan, so the column
+      // stands via `undefined`. An unmeasured repair (no plan) is not that
+      // case — it skipped the Contents reprint — and clears.
       if (compiled) {
         pdfPageMapUpdate = pdfResult.pageMap ?? (detachedRepair ? undefined : null);
+      } else {
+        pdfPageMapUpdate = null;
       }
     }
     const generateEpub = () =>

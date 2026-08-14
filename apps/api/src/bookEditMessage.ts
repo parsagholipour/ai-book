@@ -1,4 +1,5 @@
 import {
+  BOOK_PAGE_WORD_PATTERN,
   explicitTargetPagesFromText,
   LANGUAGE_CLAUSE_END_GUARD,
   LANGUAGE_NAME_CODES,
@@ -391,8 +392,70 @@ function numberWordValue(word: string): number | null {
 export const NAMED_PAGE_SOURCE = `pages?\\s+(?:\\d{1,3}|${CARDINAL_WORDS.join("|")})(?!\\d)`;
 export const ORDINAL_PAGE_SOURCE = `(?:the\\s+)?(?:\\d{1,3}(?:st|nd|rd|th)|${ORDINAL_WORDS.join("|")})\\s+page`;
 
-const NAMED_PAGE = new RegExp(`\\b${NAMED_PAGE_SOURCE}\\b`, "i");
-const ORDINAL_PAGE = new RegExp(`\\b${ORDINAL_PAGE_SOURCE}\\b`, "i");
+const DIGIT_PAGE_RANGE = /\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi;
+/**
+ * Word-then-number in any script we ship fonts for ("صفحه ۵", "página 3",
+ * "الصفحة 5"). Number-then-word is a length, not a target — see
+ * `explicitTargetPagesFromText`. No `\b`: JS word boundaries are ASCII, so
+ * they never fire beside "ص". Optional `ال` is the Arabic article; ZWNJ + yeh
+ * is the Persian ezafe some keyboards insert between the word and the number.
+ */
+const SCRIPT_NAMED_PAGE = new RegExp(
+  `(?<!\\p{L})(?:ال)?(?:${BOOK_PAGE_WORD_PATTERN})\\p{M}*(?:\\u200c(?:[\\u06cc\\u064a]\\p{M}*)?)?\\s*(\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?`,
+  "giu"
+);
+
+function rangeValues(startToken: string, endToken: string | undefined): number[] {
+  const start = Number(startToken);
+  const end = endToken ? Number(endToken) : start;
+  if (!Number.isInteger(start) || start <= 0) {
+    return [];
+  }
+  const last = Number.isInteger(end) && end > 0 ? end : start;
+  const values: number[] = [];
+  for (let value = Math.min(start, last); value <= Math.max(start, last); value += 1) {
+    values.push(value);
+  }
+  return values;
+}
+
+/**
+ * Every "page N" the message speaks, in the order they appear. English
+ * cardinals/ordinals and the shared multilingual page-word list both land here
+ * so the copied-number guard, the heuristic parser and the image backstop
+ * cannot disagree about what the reader named.
+ */
+function spokenPageHits(message: string): { index: number; values: number[] }[] {
+  const normalized = normalizeNumerals(message);
+  const hits: { index: number; values: number[] }[] = [];
+  DIGIT_PAGE_RANGE.lastIndex = 0;
+  SCRIPT_NAMED_PAGE.lastIndex = 0;
+  for (const match of normalized.matchAll(DIGIT_PAGE_RANGE)) {
+    hits.push({ index: match.index ?? 0, values: rangeValues(match[1] ?? "", match[2]) });
+  }
+  for (const source of [NAMED_PAGE_SOURCE, ORDINAL_PAGE_SOURCE]) {
+    for (const match of normalized.matchAll(new RegExp(`\\b${source}\\b`, "gi"))) {
+      const value = namedPageIndex(match[0]);
+      if (value !== null) {
+        hits.push({ index: match.index ?? 0, values: [value] });
+      }
+    }
+  }
+  for (const match of normalized.matchAll(SCRIPT_NAMED_PAGE)) {
+    hits.push({ index: match.index ?? 0, values: rangeValues(match[1] ?? "", match[2]) });
+  }
+  return hits.filter((hit) => hit.values.length > 0).sort((a, b) => a.index - b.index);
+}
+
+function collectSpokenPageNumbers(message: string): Set<number> {
+  const spoken = new Set<number>();
+  for (const hit of spokenPageHits(message)) {
+    for (const value of hit.values) {
+      spoken.add(value);
+    }
+  }
+  return spoken;
+}
 
 function namedPageIndex(match: string): number | null {
   // The suffix strip must not touch word ordinals: "third" is not "thi" + "rd".
@@ -405,8 +468,8 @@ function namedPageIndex(match: string): number | null {
 
 /**
  * "At the end of the book", "on the last page", "as the final page". English
- * only, like every message reader here — non-English placement travels through
- * the router's `pageIndexes`, which is why that channel wins over this one.
+ * only — "صفحه ۵" is a numbered target, not an end-of-book cue, and travels
+ * through {@link imagePlacementFromMessage} like any other named page.
  *
  * "The end" has to be the book's: either named ("of the book/story", "the
  * last page", "the back of the book") or a bare "at the end" closing the
@@ -466,26 +529,22 @@ export function bulkImageSelectionFromMessage(message: string): "all" | null {
 
 /**
  * The placement an image request names, read without the book's page list: a
- * named page ("page 3", "page three", "the 3rd page") is returned as-is and
+ * named page ("page 3", "page three", "صفحه ۵") is returned as-is and
  * validated against real pages by the proposal path. Numerals are normalized
- * so "page ۵" reads as page 5.
+ * so "page ۵" and "صفحه ۵" both read as page 5.
  */
 export function imagePlacementFromMessage(
   message: string,
   context: ReaderPageNumberContext = {}
 ): BookEditImagePlacement | null {
-  const normalized = normalizeNumerals(message);
-  const named = NAMED_PAGE.exec(normalized) ?? ORDINAL_PAGE.exec(normalized);
-  if (named) {
-    const spoken = namedPageIndex(named[0]);
-    if (spoken !== null) {
-      // A placement is a read-style target — putting a picture "on page 12"
-      // when 12 is furniture means the nearest page of prose, never a silent
-      // renumbering onto whichever model page happens to share the number.
-      const pageIndex = context.pdfPageMap ? nearestModelPageForPdfPage(context.pdfPageMap, spoken) : spoken;
-      if (pageIndex !== undefined) {
-        return { placement: "page", pageIndex };
-      }
+  const spoken = spokenPageHits(message)[0]?.values[0];
+  if (spoken !== undefined) {
+    // A placement is a read-style target — putting a picture "on page 12"
+    // when 12 is furniture means the nearest page of prose, never a silent
+    // renumbering onto whichever model page happens to share the number.
+    const pageIndex = context.pdfPageMap ? nearestModelPageForPdfPage(context.pdfPageMap, spoken) : spoken;
+    if (pageIndex !== undefined) {
+      return { placement: "page", pageIndex };
     }
   }
   return endOfBookPlacementFromMessage(message) ? { placement: "end_of_book" } : null;
@@ -493,29 +552,13 @@ export function imagePlacementFromMessage(
 
 /**
  * Every page number the message speaks, exactly as spoken — digits, ranges,
- * word cardinals and ordinals — with no translation and no existence filter.
+ * word cardinals and ordinals, and the same page-words the length parser
+ * already knows ("صفحه ۵") — with no translation and no existence filter.
  * The furniture recogniser reads these to tell "page 2" (the Contents) apart
  * from a message naming no page at all.
  */
 export function spokenPageNumbersFromMessage(message: string): number[] {
-  const normalized = normalizeNumerals(message);
-  const spoken = new Set<number>();
-  for (const match of normalized.matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
-    const start = Number(match[1]);
-    const end = match[2] ? Number(match[2]) : start;
-    for (let value = Math.min(start, end); value <= Math.max(start, end); value += 1) {
-      spoken.add(value);
-    }
-  }
-  for (const source of [NAMED_PAGE_SOURCE, ORDINAL_PAGE_SOURCE]) {
-    for (const match of normalized.matchAll(new RegExp(`\\b${source}\\b`, "gi"))) {
-      const value = namedPageIndex(match[0]);
-      if (value !== null) {
-        spoken.add(value);
-      }
-    }
-  }
-  return [...spoken].sort((a, b) => a - b);
+  return [...collectSpokenPageNumbers(message)].sort((a, b) => a - b);
 }
 
 export function pageIndexesFromMessage(
@@ -535,25 +578,8 @@ export function pageIndexesFromMessage(
       indexes.add(index);
     }
   };
-  // Numerals are normalized but the word "page" is not translated: the reader
-  // writes its own references in English ("On page 4") whatever the book's
-  // language, so this only has to survive a reader typing their own digits.
-  const normalized = normalizeNumerals(message);
-  for (const match of normalized.matchAll(/\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi)) {
-    const start = Number(match[1]);
-    const end = match[2] ? Number(match[2]) : start;
-    for (let spoken = Math.min(start, end); spoken <= Math.max(start, end); spoken += 1) {
-      add(spoken);
-    }
-  }
-  // "page three" and "the 3rd page" name single pages; ranges stay digits-only.
-  for (const source of [NAMED_PAGE_SOURCE, ORDINAL_PAGE_SOURCE]) {
-    for (const match of normalized.matchAll(new RegExp(`\\b${source}\\b`, "gi"))) {
-      const spoken = namedPageIndex(match[0]);
-      if (spoken !== null) {
-        add(spoken);
-      }
-    }
+  for (const spoken of collectSpokenPageNumbers(message)) {
+    add(spoken);
   }
   for (const page of pages) {
     const title = page.title.trim().toLowerCase();

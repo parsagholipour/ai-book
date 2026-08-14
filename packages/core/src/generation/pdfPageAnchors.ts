@@ -323,9 +323,10 @@ const BLOCK_TARGET_TAGS = "h1|h2|h3|h4|h5|h6|p|ul|ol|blockquote|pre|table|div|se
  * at a fragmentation boundary lands on the *previous* page (measured — it is
  * the same failure `liftChapterAnchorsOntoHeadings` exists for). So each
  * marker is resolved to something with extent: a comment becomes the id of the
- * following block element; a span glued to prose wraps the word after it; a
- * span before an image moves onto the `<img>`. A marker nothing matches is
- * left in place — a slightly ambiguous destination still beats a missing one.
+ * following block element; a span before a tag (an image, emphasis, a link,
+ * inline code) moves onto that element; a span glued to prose wraps the word
+ * after it. A marker nothing matches is left in place — a slightly ambiguous
+ * destination still beats a missing one.
  */
 export function placeBookPageAnchorIds(html: string): string {
   let result = html;
@@ -341,11 +342,19 @@ export function placeBookPageAnchorIds(html: string): string {
   // nothing, so this is belt and braces.
   result = result.replace(new RegExp(`<!--(?:bp-\\d+|${SOURCES_DEST_NAME})-->`, "gi"), "");
 
-  // Span markers glued to content: onto a following image, or around the first
-  // word so the destination has the word's own rect.
+  // Span markers glued to content: onto a following element, or around the
+  // first word so the destination has a real rect. `*italic*`, `**bold**`,
+  // `[link](...)` and `` `code` `` are not `startsBlockSyntax` (the list rule
+  // needs whitespace after `*`), so they get a glued empty span; marked then
+  // emits `<span id></span><em>` / `<strong>` / `<a>` / `<code>`, which a
+  // word-wrap of `[^<\s]+` cannot see.
   result = result.replace(
-    new RegExp(`<span id="((?:bp-\\d+|${SOURCES_DEST_NAME}))"></span><img((?:\\s[^>]*)?)>`, "gi"),
-    (_full, destName: string, attributes: string) => `<img${withIdAttribute(attributes, destName)}>`
+    new RegExp(
+      `<span id="((?:bp-\\d+|${SOURCES_DEST_NAME}))"></span><([a-z][a-z0-9]*)((?:\\s[^>]*)?)>`,
+      "gi"
+    ),
+    (_full, destName: string, tag: string, attributes: string) =>
+      `<${tag}${withIdAttribute(attributes, destName)}>`
   );
   result = result.replace(
     new RegExp(`<span id="((?:bp-\\d+|${SOURCES_DEST_NAME}))"></span>([^<\\s]+)`, "gi"),

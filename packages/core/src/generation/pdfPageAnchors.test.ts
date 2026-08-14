@@ -78,6 +78,27 @@ describe("injectBookPageAnchorMarkers + placeBookPageAnchorIds", () => {
     expect(normalized(html)).toBe(normalized(render(markdown)));
   });
 
+  it("lifts a page that opens with emphasis, strong, or a link onto the element", () => {
+    // None of these are `startsBlockSyntax`, so the marker is a glued empty
+    // span; marked then emits a tag, not a text node, and an empty span at a
+    // fragmentation boundary would land the destination a page early.
+    const cases: Array<{ markdown: string; placed: RegExp }> = [
+      { markdown: "Prose ending page one.\n*italic* opens page two.", placed: /<em id="bp-2">/ },
+      { markdown: "Prose ending page one.\n**bold** opens page two.", placed: /<strong id="bp-2">/ },
+      {
+        markdown: "Prose ending page one.\n[linked](https://example.com) opens page two.",
+        placed: /<a href="https:\/\/example.com" id="bp-2">/
+      }
+    ];
+    for (const { markdown, placed } of cases) {
+      const offset = markdown.indexOf("\n") + 1;
+      const html = injectedHtml(markdown, { pageAnchors: [{ pageIndex: 2, destName: "bp-2", markdownOffset: offset }] });
+      expect(html).toMatch(placed);
+      expect(html).not.toContain('<span id="bp-2"></span>');
+      expect(normalized(html)).toBe(normalized(render(markdown)));
+    }
+  });
+
   it("uses a comment before block syntax that follows a blank line", () => {
     const markdown = "Prose of page one.\n\n> A quotation opening page two.\n\nMore prose.";
     const offset = markdown.indexOf("> A");

@@ -561,11 +561,12 @@ export async function publishCompiledExports(options: {
   contentRevision: number | null;
   /**
    * Where each model page landed in the PDF this publication installs.
-   * Omitted: this publication rendered no measurable PDF (an EPUB-only repair,
-   * or a repair reprinting the exact published `book.md`) — the stored map,
-   * measured for this same revision, stands. `null`: a PDF was rendered but
-   * could not be measured — the stored map describes pagination this
-   * publication replaces, so it is cleared. The map is stamped with the
+   * Omitted: this publication rendered no measurable PDF (an EPUB-only repair)
+   * or a measured repair whose measurement failed after reprinting the same
+   * manuscript the stored map was taken from — the stored map stands. `null`:
+   * a PDF was rendered that the stored map does not describe — a charged
+   * compile that could not be measured, or an unmeasured repair that skipped
+   * the Contents reprint — so it is cleared. The map is stamped with the
    * claimed revision and the installed PDF's digest inside the transaction.
    */
   pdfPageMap?: BookPdfPageMap | null | undefined;

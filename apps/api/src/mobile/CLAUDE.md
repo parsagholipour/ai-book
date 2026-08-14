@@ -139,8 +139,9 @@ hangs rather than failing, which is slow to diagnose.
   re-reads them through the map before `intentFromProposeEdit` builds the intent — the same
   refusal to trust the model that `withDeterministicContentTarget` already makes for
   `show_content`. It stays deliberately narrow: a translated index (one the message never
-  mentions), a printed number that holds no prose, and a request that names its page only in
-  another script ("در صفحه ۵") all keep the router's own answer. On the way out, every proposal card,
+  mentions) and a printed number that holds no prose keep the router's own answer. Spoken
+  numbers include the same page-words the length parser already knows, so "صفحه ۵" is a
+  copy just as much as "page 5". On the way out, every proposal card,
   queued reply and operation card renders through a `ReaderPageNumbering`
   (`mobile/bookEditCopy.ts`, `mobile/editOperationCopy.ts`), and the DTOs carry a separate
   `readerPageNumbers` array — `affectedPageIndexes` stay model indexes on purpose, because the

@@ -161,9 +161,8 @@ export function imageInsertionIntentFromDecision(
   }
   const explicitPage = decision.pageIndexes?.find((index) => Number.isInteger(index) && index > 0);
   // `pageIndexes` wins over everything: it is the router's one
-  // language-independent placement channel, which is what makes
-  // "در صفحه ۵ یک عکس اضافه کن" work — the English helper below sees nothing
-  // in Persian text.
+  // language-independent placement channel. The message helper now reads the
+  // same page-words ("در صفحه ۵") as a backstop when that channel is empty.
   const edit: ImageInsertionEdit = {
     // The budget is spent and the subject is still missing: a deterministic
     // generic stands in — never the raw message, which reads as prose in an

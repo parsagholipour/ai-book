@@ -19,9 +19,13 @@ describe("pageIndexesFromMessage", () => {
 
   it("reads a page reference typed in the user's own numerals", () => {
     // The reader writes "On page 4" itself, but a reader typing by hand uses the
-    // digits their keyboard produces.
+    // digits their keyboard produces — and, in Persian, the word for page too.
     expect(pageIndexesFromMessage("page ۴ needs a rewrite", pages)).toEqual([4]);
     expect(pageIndexesFromMessage("pages ۲-۴", pages)).toEqual([2, 3, 4]);
+    expect(pageIndexesFromMessage("صفحه ۵ را بامزه‌تر بنویس", pages)).toEqual([5]);
+    expect(pageIndexesFromMessage("در صفحه ۵ یک عکس از اژدها اضافه کن", pages)).toEqual([5]);
+    expect(pageIndexesFromMessage("صفحهٔ ۵", pages)).toEqual([5]);
+    expect(pageIndexesFromMessage("الصفحة 4", pages)).toEqual([4]);
   });
 
   it("still reads the reader's own English references", () => {
@@ -94,6 +98,15 @@ describe("reader page numbers through the PDF page map", () => {
     expect(pageIndexesFromMessage("rewrite page 4", pages, { pdfPageMap: map })).toEqual([1, 2]);
     expect(pageIndexesFromMessage("polish pages 4-7", pages, { pdfPageMap: map })).toEqual([1, 2, 3]);
     expect(pageIndexesFromMessage("the 5th page needs work", pages, { pdfPageMap: map })).toEqual([2]);
+    expect(pageIndexesFromMessage("صفحه ۵ را بامزه‌تر بنویس", pages, { pdfPageMap: map })).toEqual([2]);
+    expect(pageIndexesFromMessage("در صفحهٔ ۵ یک عکس اضافه کن", pages, { pdfPageMap: map })).toEqual([2]);
+  });
+
+  it("does not treat a book length as a page target", () => {
+    // Number-then-word is "how long", word-then-number is "which page".
+    expect(pageIndexesFromMessage("یک کتاب ۳ صفحه ای بساز", pages)).toEqual([]);
+    expect(pageIndexesFromMessage("24 صفحه", pages)).toEqual([]);
+    expect(pageIndexesFromMessage("make it 5 pages", pages)).toEqual([]);
   });
 
   it("drops numbers that land on furniture rather than renumbering them", () => {
@@ -114,6 +127,10 @@ describe("reader page numbers through the PDF page map", () => {
 
   it("resolves an image placement to the page of prose the reader pointed at", () => {
     expect(imagePlacementFromMessage("add a dragon on page 7", { pdfPageMap: map })).toEqual({
+      placement: "page",
+      pageIndex: 3
+    });
+    expect(imagePlacementFromMessage("در صفحه ۷ یک عکس از اژدها اضافه کن", { pdfPageMap: map })).toEqual({
       placement: "page",
       pageIndex: 3
     });

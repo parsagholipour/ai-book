@@ -269,6 +269,61 @@ describe("printed page numbers a router copied", () => {
     expect(intent.scope).toBe("explicit_pages");
   });
 
+  it("prefers the reader selection over a copied printed number", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
+      'On page 5, rewrite this passage: "the old phrase".',
+      chapters,
+      { pageNumbering: numbering, readerSelectionPageIndex: 2 }
+    );
+
+    // Printed page 5 covers model pages 2 and 3; the locator already picked 2.
+    expect(intent.affectedPageIndexes).toEqual([2]);
+    expect(intent.scope).toBe("explicit_pages");
+  });
+
+  it("fills a pageless page edit from the reader selection", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [] }),
+      'Rewrite this passage: "the old phrase".',
+      chapters,
+      { readerSelectionPageIndex: 2 }
+    );
+
+    expect(intent.affectedPageIndexes).toEqual([2]);
+    expect(intent.scope).toBe("explicit_pages");
+  });
+
+  it("prefers the reader selection over parsing the bubble without a router", () => {
+    const mappedPages = [1, 2, 3].map((index) => ({
+      id: `page-${index}`,
+      index,
+      title: `Page ${index}`,
+      summary: "",
+      previewText: "the old phrase"
+    }));
+    const withoutSelection = classifyWithDegradedHeuristics(
+      'On page 5, rewrite this passage: "the old phrase".',
+      "complete",
+      mappedPages,
+      undefined,
+      chapters,
+      { numbering }
+    );
+    expect(withoutSelection.affectedPageIndexes).toEqual([2, 3]);
+
+    const withSelection = classifyWithDegradedHeuristics(
+      'On page 5, rewrite this passage: "the old phrase".',
+      "complete",
+      mappedPages,
+      undefined,
+      chapters,
+      { numbering, selectionPageIndex: 2 }
+    );
+    expect(withSelection.affectedPageIndexes).toEqual([2]);
+    expect(withSelection.scope).toBe("explicit_pages");
+  });
+
   it("keeps indexes the router actually translated", () => {
     const intent = intentFromProposeEdit(
       proposeEdit({ editTarget: "pages", pageIndexes: [2] }),
@@ -290,15 +345,25 @@ describe("printed page numbers a router copied", () => {
     );
     expect(withoutMap.affectedPageIndexes).toEqual([5]);
 
-    // Persian names the page, but not with an English "page N" this module can
-    // read, so the model's own index is all there is.
-    const persian = intentFromProposeEdit(
+    const nameless = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
+      "Make the ending funnier.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+    expect(nameless.affectedPageIndexes).toEqual([5]);
+  });
+
+  it("re-reads a copied page number named only in Persian", () => {
+    const intent = intentFromProposeEdit(
       proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
       "صفحه ۵ را بامزه‌تر بنویس",
       chapters,
       { pageNumbering: numbering }
     );
-    expect(persian.affectedPageIndexes).toEqual([5]);
+
+    expect(intent.affectedPageIndexes).toEqual([2, 3]);
+    expect(intent.scope).toBe("explicit_pages");
   });
 
   it("leaves a printed number that holds no prose as the router wrote it", () => {
@@ -318,6 +383,18 @@ describe("printed page numbers a router copied", () => {
     const intent = intentFromProposeEdit(
       proposeEdit({ editTarget: "insert_image", imageSubject: "a dragon", pageIndexes: [3] }),
       "Add a picture of a dragon on page 3.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    expect(intent.kind).toBe("add_image");
+    expect(intent.imageEdit).toMatchObject({ placement: "page", pageIndex: 1 });
+  });
+
+  it("re-reads a Persian placement the router copied", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "insert_image", imageSubject: "اژدها", pageIndexes: [3] }),
+      "در صفحه ۳ یک عکس از اژدها اضافه کن",
       chapters,
       { pageNumbering: numbering }
     );
