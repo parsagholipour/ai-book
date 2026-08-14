@@ -177,6 +177,7 @@ class MobileProjectSummary {
       'fast' => 'Quick draft',
       'balanced' => 'Balanced',
       'premium' => 'Extra polish',
+      'ultra' => 'Ultra effort',
       _ => 'Custom',
     };
   }
@@ -706,18 +707,19 @@ int estimateProjectCredits({
     'fast': 220,
     'balanced': 350,
     'premium': 500,
+    'ultra': 650,
   });
   final fullBookPerPage = _tierCost(
     creditCosts,
     'fullBookPerPage',
     qualityPreset,
-    {'fast': 5, 'balanced': 8, 'premium': 30},
+    {'fast': 5, 'balanced': 8, 'premium': 30, 'ultra': 40},
   );
   final imageGeneration = _tierCost(
     creditCosts,
     'imageGeneration',
     qualityPreset,
-    {'fast': 45, 'balanced': 45, 'premium': 85},
+    {'fast': 45, 'balanced': 45, 'premium': 85, 'ultra': 85},
   );
   final premiumReview = _intCost(creditCosts, 'premiumReview', 200);
   final exportUnlock = _intCost(creditCosts, 'exportUnlock', 150);
@@ -727,7 +729,9 @@ int estimateProjectCredits({
     illustrationsEnabled: includeIllustrations,
     targetPages: targetPages,
   );
-  final premiumCredits = qualityPreset == 'premium' ? premiumReview : 0;
+  final premiumCredits = qualityPreset == 'premium' || qualityPreset == 'ultra'
+      ? premiumReview
+      : 0;
   return fullBookBase +
       targetPages * fullBookPerPage +
       (includeCover ? imageGeneration : 0) +
@@ -739,10 +743,10 @@ int estimateProjectCredits({
 /// One rate at the tier this book is priced at.
 ///
 /// Mirrors `tierPrice` in `packages/core/src/billing.ts`, including its key
-/// convention: the unsuffixed key is the balanced rate and the other two add
-/// `Fast` / `Premium`. Anything that is not one of the three tier names — the
-/// server sends `'custom'` for a book it has no preset for — is balanced,
-/// which is exactly what the server charges such a book.
+/// convention: the unsuffixed key is the balanced rate and the others add
+/// `Fast` / `Premium` / `Ultra`. Anything that is not one of the four tier
+/// names — the server sends `'custom'` for a book it has no preset for — is
+/// balanced, which is exactly what the server charges such a book.
 ///
 /// The fallbacks are only reached before `/api/mobile/billing` has loaded; they
 /// duplicate `DEFAULT_CREDIT_COSTS`, so the two must move together.
@@ -753,12 +757,13 @@ int _tierCost(
   Map<String, int> fallbacks,
 ) {
   final tier = switch (qualityPreset) {
-    'fast' || 'premium' => qualityPreset,
+    'fast' || 'premium' || 'ultra' => qualityPreset,
     _ => 'balanced',
   };
   final key = switch (tier) {
     'fast' => '${baseKey}Fast',
     'premium' => '${baseKey}Premium',
+    'ultra' => '${baseKey}Ultra',
     _ => baseKey,
   };
   return _intCost(

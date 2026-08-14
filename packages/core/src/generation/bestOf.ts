@@ -2,17 +2,23 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import type { CreateProjectInput, PageDraft } from "../schemas/book.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
-import type { GeneratePageOptions } from "./pages.js";
 
 const draftJudgementSchema = z.object({
   chosenIndex: z.coerce.number().int().min(0),
   rationale: z.string().default("")
 });
 
-export type GenerateBestOfPageDraftsOptions = {
-  /** Draft sampler, normally the strategy's generatePageDraft. */
-  draftPage: (options: GeneratePageOptions) => Promise<PageDraft>;
-  baseOptions: GeneratePageOptions;
+/** The fields best-of needs from a draft or polish options object. */
+export type BestOfDraftBase = {
+  input: CreateProjectInput;
+  pageIndex: number;
+  pageBrief?: { purpose: string; beat: string } | undefined;
+};
+
+export type GenerateBestOfPageDraftsOptions<T extends BestOfDraftBase = BestOfDraftBase> = {
+  /** Draft sampler: generatePageDraft, polishPageDraft, or a writer-tools wrap. */
+  draftPage: (options: T) => Promise<PageDraft>;
+  baseOptions: T;
   candidateCount: number;
   judgeModel: TextModelAdapter;
 };
@@ -30,7 +36,9 @@ export function bestOfCandidateCount(input: CreateProjectInput): number {
  * asks a judge model to pick the strongest per a craft rubric. Falls back to
  * the first successful draft when judging fails.
  */
-export async function generateBestOfPageDrafts(options: GenerateBestOfPageDraftsOptions): Promise<PageDraft> {
+export async function generateBestOfPageDrafts<T extends BestOfDraftBase>(
+  options: GenerateBestOfPageDraftsOptions<T>
+): Promise<PageDraft> {
   const candidateCount = Math.max(1, Math.min(3, Math.floor(options.candidateCount)));
   if (candidateCount === 1) {
     return options.draftPage(options.baseOptions);

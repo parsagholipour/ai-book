@@ -281,7 +281,7 @@ function previewFor(values: CreditPricing) {
     totalCredits: balanced.totalCredits,
     estimatedUsd: balanced.estimatedUsd,
     lineItems: balanced.lineItems,
-    tiers: [quoteAt("fast"), balanced, quoteAt("premium")]
+    tiers: [quoteAt("fast"), balanced, quoteAt("premium"), quoteAt("ultra")]
   };
 }
 

@@ -246,6 +246,8 @@ export function locallyPatchedPage(
       issues: [],
       requiredRevisions: [],
       notes: "Applied exact user-requested text replacement.",
+      groundedOk: true,
+      unsupportedClaims: [],
       checks: {
         placeholderFree: true,
         promptLeakFree: true,
@@ -303,6 +305,8 @@ export async function rewritePageForUserRequest(options: {
       "Return a complete replacement page draft, not a diff."
     ],
     notes: "User-requested book edit.",
+    groundedOk: true,
+    unsupportedClaims: [],
     checks: {
       placeholderFree: true,
       promptLeakFree: true,

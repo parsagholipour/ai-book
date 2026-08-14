@@ -8,6 +8,8 @@ import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { applyImageInsertion, type ImageInsertionPayload } from "./applyImageInsertion.js";
 import { applyImageLayout, type ImageLayoutPayload } from "./applyImageLayout.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
+import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
+import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
 import { bookPlanSchema, createProviders, hasExactMatch, jsonPayloadToRecord, type ExactReplacement } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
@@ -114,7 +116,8 @@ export async function applyBookEdit(job: Job) {
         titleBefore: page.title,
         markdownBefore: page.markdown,
         summaryBefore: page.summary,
-        revisionBefore: page.revision
+        revisionBefore: page.revision,
+        ...(page.storyDelta != null ? { storyDeltaBefore: page.storyDelta as Prisma.InputJsonValue } : {})
       }
     });
     snapshots.set(page.index, snapshot.id);
@@ -208,6 +211,23 @@ export async function applyBookEdit(job: Job) {
       if (strategyUsesSemanticMemory(strategy)) {
         await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
       }
+      await persistKeeperStoryDelta({
+        projectId,
+        pageIndex: page.index,
+        draft: {
+          title: updated.title,
+          markdown: updated.markdown,
+          summary: updated.summary,
+          continuityNotes: updated.continuityNotes,
+          ...(updated.imagePrompt ? { imagePrompt: updated.imagePrompt } : {})
+        },
+        textModel: providers.text,
+        plan,
+        input,
+        previousExtract: null,
+        keeperWasRevised: true,
+        currentState: await loadProjectStoryState(projectId, plan.promises ?? [])
+      });
       updatedPageIndexes.push(page.index);
     }
   } catch (error) {
@@ -226,6 +246,7 @@ export async function applyBookEdit(job: Job) {
     // repair lane rebuilds.
     if (updatedPageIndexes.length > 0) {
       try {
+        await rebuildProjectStoryState(projectId, plan.promises ?? []);
         await invalidateProjectExports(projectId);
         await prisma.project.update({
           where: { id: projectId },
@@ -253,6 +274,7 @@ export async function applyBookEdit(job: Job) {
   }
 
   await advanceJobStep(generationJobId, "export", 85, "Refreshing exports");
+  await rebuildProjectStoryState(projectId, plan.promises ?? []);
   await invalidateProjectExports(projectId);
   await prisma.bookEditOperation.update({
     where: { id: operationId },

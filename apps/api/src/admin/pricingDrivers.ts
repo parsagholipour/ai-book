@@ -231,7 +231,7 @@ export async function loadPricingDrivers(
     drivers,
     providerUsd: round2(providerTotal._sum.costHint ?? 0),
     // One book is one base charge, whichever tier's base it drove.
-    books: drivers.fullBookBaseFast + drivers.fullBookBase + drivers.fullBookBasePremium,
+    books: drivers.fullBookBaseFast + drivers.fullBookBase + drivers.fullBookBasePremium + drivers.fullBookBaseUltra,
     voiceMinutes: drivers.voiceCallPerMinute,
     edits: edits.length,
     coverage: {

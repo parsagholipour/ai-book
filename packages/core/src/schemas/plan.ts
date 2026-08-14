@@ -290,6 +290,7 @@ const bookPlanObjectSchema = z.object({
   continuityRules: z.array(z.string()).default([]),
   researchQueries: z.array(z.string()).default([]),
   researchNotes: z.array(researchSourceSchema).default([]),
+  promises: z.array(z.string()).default([]),
   illustrationPlan: illustrationPlanSchema
 });
 

@@ -149,12 +149,14 @@ describe("GET /api/admin/pricing", () => {
     expect(body.preview.tiers.map((quote: { tier: string }) => quote.tier)).toEqual([
       "fast",
       "balanced",
-      "premium"
+      "premium",
+      "ultra"
     ]);
-    const [fast, balanced, premium] = body.preview.tiers;
+    const [fast, balanced, premium, ultra] = body.preview.tiers;
     expect(balanced.totalCredits).toBe(body.preview.totalCredits);
     expect(fast.totalCredits).toBeLessThan(balanced.totalCredits);
     expect(premium.totalCredits).toBeGreaterThan(balanced.totalCredits);
+    expect(ultra.totalCredits).toBeGreaterThan(premium.totalCredits);
     expect(body.preview.lineItems).toContainEqual(
       expect.objectContaining({
         code: "IMAGE_GENERATION",

@@ -98,6 +98,12 @@ const qualityPresetOptions = <CreationPresetOption>[
     subtitle: 'Our most advanced AI models, plus extra review and polish.',
     icon: Icons.workspace_premium_outlined,
   ),
+  CreationPresetOption(
+    value: 'ultra',
+    title: 'Ultra effort',
+    subtitle: 'Premium models plus extra writer passes and best-of polish.',
+    icon: Icons.auto_awesome_outlined,
+  ),
 ];
 
 /// Mirrors `LANGUAGE_NAME_CODES` on the server. The list used to hold six
@@ -256,6 +262,7 @@ String qualityLabel(String value) {
   return switch (value) {
     'fast' => 'Quick draft',
     'premium' => 'Extra polish',
+    'ultra' => 'Ultra effort',
     _ => 'Balanced',
   };
 }

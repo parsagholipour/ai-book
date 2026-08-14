@@ -21,13 +21,15 @@ import {
   type ProjectForChat
 } from "./projectChat.js";
 import { jsonInputValue, jsonRecord } from "./support.js";
+import { rebuildStoryStateAfterUndo } from "./rebuildStoryState.js";
 import {
   exportProvenancePaths,
   EXPORT_PUBLICATION_PROJECT_STATUS,
   PRESENTATION_ONLY_RECOMPILE,
-  PRESENTATION_RECOMPILE_FALLBACK_STATUS
+  PRESENTATION_RECOMPILE_FALLBACK_STATUS,
+  bookPlanSchema
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -44,6 +46,7 @@ export type ManualBookPageRecord = {
   markdown: string;
   summary: string;
   revision: number;
+  storyDelta?: unknown;
 };
 
 /** Reads the saved-export marker this feature stores on assistant messages. */
@@ -143,6 +146,7 @@ export async function applyManualBookEdit(options: {
           markdownBefore: before.markdown,
           summaryBefore: before.summary,
           revisionBefore: before.revision,
+          ...(before.storyDelta != null ? { storyDeltaBefore: before.storyDelta as Prisma.InputJsonValue } : {}),
           titleAfter: saved.title,
           markdownAfter: saved.markdown,
           summaryAfter: saved.summary,
@@ -355,6 +359,7 @@ export async function undoLastBookEdit(
           summary: snapshot.summaryBefore,
           status: "COMPLETED",
           revision: { increment: 1 },
+          storyDelta: storyDeltaToRestore(snapshot.storyDeltaBefore),
           ...(imagePrompt !== undefined ? { imagePrompt } : {})
         }
       });
@@ -380,6 +385,12 @@ export async function undoLastBookEdit(
     return editRevision?.contentRevision ?? null;
   });
   restoredPageIndexes.sort((a, b) => a - b);
+  try {
+    const parsed = bookPlanSchema.safeParse(project.currentPlan?.planningPackage);
+    await rebuildStoryStateAfterUndo(project.id, parsed.success ? parsed.data.promises ?? [] : []);
+  } catch (error) {
+    console.warn(`Story state rebuild after undo skipped for project ${project.id}`, error);
+  }
 
   if (project.currentPlanId && contentRevision !== null) {
     await queueUserEditExportRecompile(
@@ -438,6 +449,11 @@ function imagePromptToRestore(
       (typeof asset.destImagePrompt === "string" || asset.destImagePrompt === null)
   );
   return dest ? dest.destImagePrompt : undefined;
+}
+
+/** SQL NULL when the page had no extract; otherwise the snapshotted JSON. */
+function storyDeltaToRestore(storyDeltaBefore: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  return storyDeltaBefore == null ? Prisma.DbNull : (storyDeltaBefore as Prisma.InputJsonValue);
 }
 
 export const UNDOABLE_EDIT_KINDS = [

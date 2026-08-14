@@ -224,6 +224,7 @@ export function fallbackPlan(value: unknown): BookPlan {
     characters: [],
     locations: [],
     continuityRules: [],
+    promises: [],
     researchQueries: [],
     researchNotes: [],
     illustrationPlan: {

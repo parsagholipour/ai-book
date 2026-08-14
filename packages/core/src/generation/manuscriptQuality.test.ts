@@ -18,6 +18,23 @@ describe("persistent manuscript quality gate", () => {
     expect(report.affectedPageIndexes).toContain(1);
   });
 
+  it("does not block on an unpaid-promise warning", () => {
+    const report = buildManuscriptQualityReport([
+      {
+        code: "UNPAID_PROMISE",
+        severity: "warning",
+        source: "deterministic",
+        message: "Unpaid promise on the final page: The lantern will be lit.",
+        guidance: "Pay off or explicitly retire the promise on the last page.",
+        affectedPageIndexes: [12]
+      }
+    ]);
+
+    expect(report.state).toBe("passed");
+    expect(report.issues).toHaveLength(1);
+    expect(report.issues[0]?.code).toBe("UNPAID_PROMISE");
+  });
+
   it("keeps model-only concerns non-blocking", () => {
     const report = buildManuscriptQualityReport([], [
       {

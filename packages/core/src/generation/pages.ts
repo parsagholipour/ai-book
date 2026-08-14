@@ -1,15 +1,11 @@
 import { z } from "zod";
 import type { ImageAdapter, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
-import { buildContextPack } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload
 } from "../prompting/language.js";
-import {
-  kidsReadingGuidanceForInput,
-  kidsReadingGuidanceLines
-} from "../prompting/readingLevel.js";
+import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type {
   BookPlan,
@@ -20,6 +16,7 @@ import type {
   PageProductionBeat
 } from "../schemas/book.js";
 import { pageDraftSchema } from "../schemas/book.js";
+import { buildPageDraftMessages, pageDraftImagePromptGuidance } from "./pageDraftMessages.js";
 import {
   GROUNDED_FACTUALITY_RULE,
   IMAGE_PROMPT_CHARACTER_RULE,
@@ -27,17 +24,16 @@ import {
   READER_FACING_PAGE_BRIEF_RULES,
   arrayLikeField,
   buildPageInstruction,
-  chapterBriefPayloadForPageScope,
   compactPriorPages,
   isRecord,
   numberField,
-  pageScopePayload,
   range,
   stringArrayField,
   stringField,
   styleGuidancePayload,
   unwrapModelObject,
   writerToneRules,
+  type GeneratePageOptions,
   type PriorPageContext
 } from "./pagesShared.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
@@ -67,27 +63,16 @@ export {
   type ReviewPageOptions,
   type RevisePageOptions
 } from "./pagesReview.js";
-export { type PriorPageContext } from "./pagesShared.js";
-
-export type GeneratePageOptions = {
-  input: CreateProjectInput;
-  plan: BookPlan;
-  chapter?: ChapterPlan | undefined;
-  chapterBrief?: ChapterBrief | undefined;
-  pageBrief?: PageProductionBeat | undefined;
-  chapterPageStart?: number | undefined;
-  chapterPageEnd?: number | undefined;
-  pageIndex: number;
-  previousSummaries: string[];
-  previousPages?: PriorPageContext[] | undefined;
-  continuityNotes: string[];
-  researchNotes: string[];
-  /** Semantically retrieved long-range context outside the recency window. */
-  semanticMemory?: string[] | undefined;
-  /** Structured character/location state lines. */
-  entityState?: string[] | undefined;
-  textModel: TextModelAdapter;
-};
+export {
+  pinStyleExcerpts,
+  sampleExcerptsFromInput,
+  buildPageInstruction,
+  pagesForStyleExcerpts,
+  missingStyleLockIndexes,
+  STYLE_LOCK_PAGE_INDEXES,
+  type GeneratePageOptions,
+  type PriorPageContext
+} from "./pagesShared.js";
 
 export type GenerateImageBytesOptions = {
   image: ImageAdapter;
@@ -193,79 +178,12 @@ const wholeBookDraftSchema = z.preprocess(
 );
 
 export async function generatePageDraft(options: GeneratePageOptions): Promise<PageDraft> {
-  const context = buildContextPack({
-    plan: options.plan,
-    chapter: options.chapter,
-    pageIndex: options.pageIndex,
-    targetPages: options.input.targetPages,
-    previousSummaries: options.previousSummaries,
-    continuityNotes: options.continuityNotes,
-    researchNotes: options.researchNotes,
-    semanticMemory: options.semanticMemory,
-    entityState: options.entityState,
-    tokenBudget: 7000,
-    readingGuidance: kidsReadingGuidanceLines(options.input)
-  });
-  const recentPages = compactPriorPages(options.previousPages ?? [], 5, 1000);
-
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-page",
     temperature: options.input.temperature,
     maxTokens: 3000,
     schema: pageDraftSchema,
-    messages: [
-      {
-        role: "system",
-        content: [
-          "Write one finished Markdown page of the book as a human author would.",
-          "Do not mention AI, prompts, plans, JSON, schemas, generation, or production instructions.",
-          INTERNAL_PAGE_TITLE_RULE,
-          GROUNDED_FACTUALITY_RULE,
-          "Do not use scaffold phrases, meta commentary, or a summary of what the page should do.",
-          ...READER_FACING_PAGE_BRIEF_RULES,
-          "Make the page itself advance the story or explanation through concrete action, claims, dialogue, or scene work.",
-          "Every page must add a distinct irreversible change, new information, completed decision, or resolved consequence.",
-          "Do not replay an encounter, decision, exposition point, or emotional beat that already appeared in recent pages.",
-          "If the pageBrief requires a recurring action type from earlier pages, such as running, waiting, arguing, or explaining, use fresh concrete details and make the outcome different.",
-          "Treat previousPages as a phrase blacklist for distinctive action wording; do not reuse memorable clauses from earlier pages.",
-          "Use pageScope to distinguish global page position from chapter-local position.",
-          "The current pageBrief is authoritative; chapter keyBeats and futureChapterPageBriefs are context only unless assigned to this page.",
-          ...pageDraftImagePromptGuidance(options.input, options.pageIndex),
-          ...targetLanguageGenerationGuidance(options.input.language),
-          ...writerToneRules(options.input)
-        ].join(" ")
-      },
-      {
-        role: "user",
-        content: JSON.stringify(
-          {
-            context,
-            language: targetLanguagePayload(options.input.language),
-            userContext: {
-              prompt: options.input.prompt,
-              category: options.input.category,
-              subcategory: options.input.subcategory,
-              styleGuidance: styleGuidancePayload(options.input)
-            },
-            chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
-            pageBrief: options.pageBrief,
-            pageScope: pageScopePayload(options),
-            characters: options.plan.characters,
-            illustrationPlan: options.plan.illustrationPlan,
-            recentPages,
-            alreadyCovered: recentPages.map((page) => ({
-              page: page.index,
-              title: page.title,
-              coveredBeat: page.summary
-            })),
-            pageInstruction:
-              buildPageInstruction(options.pageIndex, options.input.targetPages)
-          },
-          null,
-          2
-        )
-      }
-    ]
+    messages: buildPageDraftMessages(options)
   });
 
   return pageDraftSchema.parse(result.data);
@@ -539,20 +457,6 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
   });
 
   return result.data;
-}
-
-function pageDraftImagePromptGuidance(input: CreateProjectInput, pageIndex: number): string[] {
-  if (pageGetsInteriorIllustration(input, pageIndex)) {
-    return [
-      "Return JSON with title, markdown, summary, continuityNotes, and an imagePrompt for this page's illustration.",
-      "Images are generated later, so imagePrompt must be a separate visual prompt field and must not appear in markdown.",
-      IMAGE_PROMPT_CHARACTER_RULE
-    ];
-  }
-  return [
-    "Return JSON with title, markdown, summary, and continuityNotes.",
-    "Do not include imagePrompt; this page will not be illustrated."
-  ];
 }
 
 function multiPageImagePromptGuidance(input: CreateProjectInput, from: number, to: number): string[] {

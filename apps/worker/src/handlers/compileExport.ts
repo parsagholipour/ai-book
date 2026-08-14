@@ -22,6 +22,8 @@ import {
   readerChaptersWithCache
 } from "../generation/readerChapterCache.js";
 import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
+import { loadQualityContext } from "../generation/qualitySettings.js";
+import { loadProjectStoryState } from "../generation/storyStateStore.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -54,6 +56,7 @@ import {
   readerChapterFingerprint,
   resolvePublicImageUrl,
   runDeterministicManuscriptChecks,
+  unpaidPromiseIssues,
   type BookGenerationStrategy,
   type BookPlan,
   type CreateProjectInput,
@@ -254,10 +257,25 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
 
   // Always rerun integrity checks after repair attempts. Manual edits may
   // skip model rewriting, but they can never bypass publication integrity.
-  const deterministicIssues = runDeterministicManuscriptChecks({
-    pages: pages.map((page) => ({ index: page.index, title: page.title, markdown: page.markdown })),
-    expectedPageCount: input.targetPages
-  });
+  const storyState = await loadProjectStoryState(projectId, plan.promises ?? []);
+  const quality = await loadQualityContext(input);
+  const unpaidPromiseQualityIssues: ManuscriptQualityIssue[] = quality.enabled("storyExtractAudit")
+    ? unpaidPromiseIssues(storyState, input.targetPages, input.targetPages).map((message) => ({
+        code: "UNPAID_PROMISE",
+        severity: "warning",
+        source: "deterministic",
+        message,
+        guidance: "Pay off or explicitly retire the promise on the last page.",
+        affectedPageIndexes: [input.targetPages]
+      }))
+    : [];
+  const deterministicIssues = [
+    ...runDeterministicManuscriptChecks({
+      pages: pages.map((page) => ({ index: page.index, title: page.title, markdown: page.markdown })),
+      expectedPageCount: input.targetPages
+    }),
+    ...unpaidPromiseQualityIssues
+  ];
   const qualityReport = buildManuscriptQualityReport(deterministicIssues, dedupeQualityIssues(modelQualityIssues));
   if (generationJobId) {
     await prisma.generationJob.update({

@@ -14,7 +14,20 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   enqueueWorkerJob: vi.fn(),
   storeEmbedding: vi.fn(),
-  strategyOverrides: { shouldIllustratePage: (): boolean => false }
+  loadEntityStateLines: vi.fn(async () => [] as string[]),
+  loadProjectStoryState: vi.fn(async () => ({
+    promises: [] as Array<Record<string, unknown>>,
+    facts: [] as Array<Record<string, unknown>>,
+    entities: {},
+    unanswered: [] as string[]
+  })),
+  strategyOverrides: { shouldIllustratePage: (): boolean => false },
+  inputForPlanVersion: vi.fn(() => ({ mediaSettings: {} })),
+  generateBestOfPageDrafts: vi.fn(
+    async (options: { draftPage: (opts: unknown) => Promise<unknown>; baseOptions: unknown }) =>
+      options.draftPage(options.baseOptions)
+  ),
+  qualityEnabled: vi.fn((_feature?: string) => false)
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -29,8 +42,9 @@ vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => 
 vi.mock("../generation/semanticMemory.js", () => ({
   RECENT_PAGE_WINDOW: 6,
   embedSemanticQuery: async () => undefined,
-  loadEntityStateLines: async () => [],
+  loadEntityStateLines: mocks.loadEntityStateLines,
   retrieveSemanticPageMemory: async () => [],
+  retrieveSemanticResearchNotes: async () => [],
   storeEmbedding: mocks.storeEmbedding,
   updateEntityStateFromPage: vi.fn()
 }));
@@ -38,7 +52,7 @@ vi.mock("../generation/generationContext.js", () => ({
   loadContinuityNotes: async () => [],
   loadResearchNotesForGeneration: async () => []
 }));
-vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ mediaSettings: {} }) }));
+vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: mocks.inputForPlanVersion }));
 vi.mock("../generation/bookHelpers.js", () => ({
   formatQualityFailure: () => "",
   getProjectOrThrow: async () => ({ id: "project-1" }),
@@ -61,11 +75,40 @@ vi.mock("../generation/tuning.js", () => ({
   MAX_PAGE_REVISE_RESTARTS: 1,
   PAGE_QA_RECOVERY_CANDIDATE: 4
 }));
+vi.mock("../generation/qualitySettings.js", () => ({
+  loadQualityContext: async () => ({
+    settings: {},
+    tier: "balanced",
+    enabled: (feature: string) => mocks.qualityEnabled(feature)
+  }),
+  applyPlanThinkingBoost: vi.fn()
+}));
+vi.mock("../generation/storyStateStore.js", () => ({
+  loadProjectStoryState: mocks.loadProjectStoryState,
+  persistPageStoryDelta: vi.fn(),
+  rebuildProjectStoryState: vi.fn(),
+  seedProjectStoryState: vi.fn()
+}));
+vi.mock("../generation/qualityEnrichment.js", async () => {
+  const actual = await vi.importActual<typeof import("../generation/qualityEnrichment.js")>(
+    "../generation/qualityEnrichment.js"
+  );
+  return {
+    ...actual,
+    enrichPageQualityReport: async ({ report }: { report: unknown }) => ({
+      report,
+      extract: null,
+      storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+      styleExcerpts: []
+    }),
+    persistKeeperStoryDelta: vi.fn()
+  };
+});
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
     ...actual,
-    bestOfCandidateCount: () => 1,
+    generateBestOfPageDrafts: mocks.generateBestOfPageDrafts,
     bookPlanSchema: { parse: () => ({ premise: "A tale.", chapters: [] }) },
     createProviders: () => ({})
   };
@@ -88,6 +131,13 @@ const job = { id: "job-1", data: { projectId: "project-1", pageId: "page-1", pla
 describe("generatePage quality loop", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.loadEntityStateLines.mockResolvedValue([]);
+    mocks.loadProjectStoryState.mockResolvedValue({
+      promises: [],
+      facts: [],
+      entities: {},
+      unanswered: []
+    });
     mocks.prisma.page.findUnique.mockResolvedValue({
       id: "page-1",
       index: 1,
@@ -99,6 +149,12 @@ describe("generatePage quality loop", () => {
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.prisma.page.update.mockResolvedValue({});
     mocks.strategyOverrides.shouldIllustratePage = () => false;
+    mocks.inputForPlanVersion.mockReturnValue({ mediaSettings: {} });
+    mocks.generateBestOfPageDrafts.mockImplementation(
+      async (options: { draftPage: (opts: unknown) => Promise<unknown>; baseOptions: unknown }) =>
+        options.draftPage(options.baseOptions)
+    );
+    mocks.qualityEnabled.mockReturnValue(false);
   });
   afterEach(() => vi.clearAllMocks());
 
@@ -176,4 +232,124 @@ describe("generatePage quality loop", () => {
 
     expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
   });
+
+  it("passes both entity-state and story-state lines into the page draft", async () => {
+    mocks.loadEntityStateLines.mockResolvedValue(["Jack (protagonist) — as of page 3: at Oakhaven"]);
+    mocks.loadProjectStoryState.mockResolvedValue({
+      promises: [{ id: "p1", text: "Find the seal", status: "open", openedAtPage: 1 }],
+      facts: [],
+      entities: {},
+      unanswered: []
+    });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityState: [
+          "Jack (protagonist) — as of page 3: at Oakhaven",
+          "Promise p1 [open]: Find the seal"
+        ]
+      })
+    );
+  });
+
+  it("still best-ofs sequential drafts when draftCandidates is 2 even if quality bestOfPolish is off", async () => {
+    mocks.inputForPlanVersion.mockReturnValue({ mediaSettings: { draftCandidates: 2 } });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.generateBestOfPageDrafts).toHaveBeenCalledWith(
+      expect.objectContaining({ candidateCount: 2 })
+    );
+    expect(mocks.generatePageDraft).toHaveBeenCalled();
+  });
+
+  it("loads pages 1 and 2 for style excerpts when the recency window has dropped them", async () => {
+    mocks.qualityEnabled.mockImplementation((feature?: string) => feature === "styleExcerpts");
+    mocks.prisma.page.findUnique.mockResolvedValue({
+      id: "page-21",
+      index: 21,
+      chapterId: null,
+      chapter: null
+    });
+    const recencyPages = Array.from({ length: 18 }, (_, offset) =>
+      completedPage(offset + 3, `late-${offset + 3}`)
+    );
+    const styleLockPages = [completedPage(1, "opening-voice"), completedPage(2, "second-voice")];
+    mocks.prisma.page.findMany.mockImplementation(
+      async (args: { where?: { index?: { lt?: number; in?: number[] } }; take?: number }) => {
+        if (args.take === 18) {
+          return recencyPages;
+        }
+        const wanted = args.where?.index?.in ?? [];
+        return styleLockPages.filter((page) => wanted.includes(page.index));
+      }
+    );
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.prisma.page.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ index: { in: [1, 2] } }) })
+    );
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previousPages: recencyPages,
+        styleExcerpts: [
+          expect.stringContaining("opening-voice"),
+          expect.stringContaining("second-voice")
+        ]
+      })
+    );
+    const draftArgs = mocks.generatePageDraft.mock.calls[0]?.[0] as {
+      previousPages: Array<{ index: number }>;
+      styleExcerpts: string[];
+    };
+    expect(draftArgs.previousPages.map((page) => page.index)).toEqual(
+      recencyPages.map((page) => page.index)
+    );
+    expect(draftArgs.styleExcerpts.join(" ")).not.toMatch(/late-17|late-18/);
+  });
+
+  it("does not reload pages 1 and 2 when they are already in the recency window", async () => {
+    mocks.qualityEnabled.mockImplementation((feature?: string) => feature === "styleExcerpts");
+    mocks.prisma.page.findUnique.mockResolvedValue({
+      id: "page-5",
+      index: 5,
+      chapterId: null,
+      chapter: null
+    });
+    const recencyPages = [completedPage(1, "opening-voice"), completedPage(2, "second-voice"), completedPage(3, "third"), completedPage(4, "fourth")];
+    mocks.prisma.page.findMany.mockResolvedValue(recencyPages);
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.prisma.page.findMany).toHaveBeenCalledTimes(1);
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        previousPages: recencyPages,
+        styleExcerpts: [
+          expect.stringContaining("opening-voice"),
+          expect.stringContaining("second-voice")
+        ]
+      })
+    );
+  });
 });
+
+function completedPage(index: number, voice: string) {
+  return {
+    index,
+    title: `Page ${index}`,
+    markdown: `${voice} ${"prose ".repeat(20)}`,
+    summary: `Summary ${index}`
+  };
+}

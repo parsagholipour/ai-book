@@ -35,6 +35,13 @@ const MODEL_TIER_COST_ASSUMPTIONS_USD: Partial<Record<ModelTier, ProviderCostAss
     imageGeneration: 0.067,
     coverIncluded: 0.134,
     premiumReview: 0.05
+  },
+  ultra: {
+    ...PROVIDER_COST_ASSUMPTIONS_USD,
+    textPerPage: 0.05,
+    imageGeneration: 0.067,
+    coverIncluded: 0.134,
+    premiumReview: 0.05
   }
 };
 
@@ -101,12 +108,15 @@ export type TierPricedKey = (typeof TIER_PRICED_KEYS)[number];
 export function tierPriceKey<K extends TierPricedKey>(
   key: K,
   tier: ModelTier
-): K | `${K}Fast` | `${K}Premium` {
+): K | `${K}Fast` | `${K}Premium` | `${K}Ultra` {
   if (tier === "fast") {
     return `${key}Fast`;
   }
   if (tier === "premium") {
     return `${key}Premium`;
+  }
+  if (tier === "ultra") {
+    return `${key}Ultra`;
   }
   return key;
 }
@@ -521,7 +531,8 @@ export function estimateInteriorImageCount(input: CreateProjectInput): number {
  * is only ever written by the app — see {@link modelTierForInput}.
  */
 export function isPremiumProject(input: CreateProjectInput): boolean {
-  return modelTierForInput(input) === "premium";
+  const tier = modelTierForInput(input);
+  return tier === "premium" || tier === "ultra";
 }
 
 /**

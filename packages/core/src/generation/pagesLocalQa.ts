@@ -143,6 +143,8 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
     issues,
     requiredRevisions: issues.map((issue) => `Fix: ${issue}`),
     notes: issues.length === 0 ? "Local quality checks passed." : "Local quality checks rejected the page.",
+    groundedOk: true,
+    unsupportedClaims: [],
     checks
   };
 }
@@ -170,6 +172,7 @@ export function runLocalFinalQa(input: CreateProjectInput, pages: FinalQaPage[])
         continuityRules: [],
         researchQueries: [],
         researchNotes: [],
+        promises: [],
         illustrationPlan: {
           cadence: input.mediaSettings.illustrationCadence,
           globalStyle: "",

@@ -63,6 +63,14 @@ vi.mock("./generationContext.js", async () => {
   };
 });
 vi.mock("./pageReview.js", () => ({ reviewAndSaveGeneratedPage: mocks.reviewAndSaveGeneratedPage }));
+vi.mock("./qualitySettings.js", () => ({
+  loadQualityContext: async () => ({
+    settings: {},
+    tier: "balanced",
+    enabled: () => false
+  }),
+  applyPlanThinkingBoost: vi.fn()
+}));
 vi.mock("./semanticMemory.js", () => ({
   storeEmbedding: mocks.storeEmbedding,
   updateEntityStateFromPage: mocks.updateEntityStateFromPage,

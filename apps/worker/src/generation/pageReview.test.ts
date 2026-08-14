@@ -21,10 +21,31 @@ vi.mock("./semanticMemory.js", () => ({
   storeEmbedding: mocks.storeEmbedding,
   updateEntityStateFromPage: mocks.updateEntityStateFromPage,
   // Mirrors the real predicate so fixtures choose their mode explicitly.
+  retrieveSemanticResearchNotes: async () => [],
   strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
     strategy?.executionMode === "sequential-pages"
 }));
-vi.mock("./generationContext.js", () => ({ loadContinuityNotes: mocks.loadContinuityNotes }));
+vi.mock("./generationContext.js", () => ({
+  loadContinuityNotes: mocks.loadContinuityNotes,
+  loadResearchNotesForGeneration: async () => []
+}));
+vi.mock("./qualitySettings.js", () => ({
+  loadQualityContext: async () => ({
+    settings: {},
+    tier: "balanced",
+    enabled: () => false
+  }),
+  applyPlanThinkingBoost: vi.fn()
+}));
+vi.mock("./qualityEnrichment.js", () => ({
+  enrichPageQualityReport: async ({ report }: { report: unknown }) => ({
+    report,
+    extract: null,
+    storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
+    styleExcerpts: []
+  }),
+  persistKeeperStoryDelta: vi.fn()
+}));
 vi.mock("./bookHelpers.js", () => ({
   formatQualityFailure: () => "quality failure detail",
   parseChapterBrief: (value: unknown) => (value ? value : undefined)

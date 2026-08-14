@@ -94,6 +94,7 @@ describe("creditPricingInputSchema", () => {
     for (const key of TIER_PRICED_KEYS) {
       expect(CREDIT_PRICING_LIMITS[`${key}Fast`]).toBe(CREDIT_PRICING_LIMITS[key]);
       expect(CREDIT_PRICING_LIMITS[`${key}Premium`]).toBe(CREDIT_PRICING_LIMITS[key]);
+      expect(CREDIT_PRICING_LIMITS[`${key}Ultra`]).toBe(CREDIT_PRICING_LIMITS[key]);
     }
   });
 });
@@ -104,6 +105,7 @@ describe("tier rates", () => {
       expect(tierPrice(DEFAULT_CREDIT_COSTS, key, "balanced")).toBe(DEFAULT_CREDIT_COSTS[key]);
       expect(tierPrice(DEFAULT_CREDIT_COSTS, key, "fast")).toBe(DEFAULT_CREDIT_COSTS[`${key}Fast`]);
       expect(tierPrice(DEFAULT_CREDIT_COSTS, key, "premium")).toBe(DEFAULT_CREDIT_COSTS[`${key}Premium`]);
+      expect(tierPrice(DEFAULT_CREDIT_COSTS, key, "ultra")).toBe(DEFAULT_CREDIT_COSTS[`${key}Ultra`]);
     }
   });
 
@@ -115,12 +117,22 @@ describe("tier rates", () => {
     for (const key of TIER_PRICED_KEYS) {
       delete stored[`${key}Fast`];
       delete stored[`${key}Premium`];
+      delete stored[`${key}Ultra`];
     }
 
     const values = normalizeCreditPricing(stored);
     expect(tierPrice(values, "fullBookPerPage", "balanced")).toBe(11);
     expect(tierPrice(values, "fullBookPerPage", "fast")).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPageFast);
     expect(tierPrice(values, "fullBookPerPage", "premium")).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPagePremium);
+    expect(tierPrice(values, "fullBookPerPage", "ultra")).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPageUltra);
+  });
+
+  it("backfills a missing Ultra key from that snapshot's Premium twin", () => {
+    const stored = { ...DEFAULT_CREDIT_COSTS, fullBookBasePremium: 540 } as Record<string, number>;
+    delete stored.fullBookBaseUltra;
+    const values = normalizeCreditPricing(stored);
+    expect(values.fullBookBaseUltra).toBe(540);
+    expect(values.fullBookPerPageUltra).toBe(DEFAULT_CREDIT_COSTS.fullBookPerPageUltra);
   });
 });
 

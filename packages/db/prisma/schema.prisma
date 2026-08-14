@@ -325,6 +325,20 @@ model SafetySettingsRevision {
   @@index([createdAt])
 }
 
+/// Append-only operator history for per-feature generation quality gates.
+/// Newest version wins. No rows means compiled defaults (the opposite of
+/// SafetySettingsRevision, where empty means off).
+model GenerationQualityRevision {
+  id        String   @id @default(cuid())
+  version   Int      @unique
+  settings  Json
+  note      String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model UserPasswordCredential {
   id           String   @id @default(cuid())
   userId       String   @unique
@@ -608,6 +622,9 @@ model Project {
   mediaSettings Json
   status        ProjectStatus    @default(DRAFT)
   contentRevision Int            @default(0)
+  /// Rebuilt from Page.storyDelta in index order. Live story-state object for
+  /// the context pack and last-page unpaid-promise check.
+  storyState    Json?
   templateId    String?
   currentPlanId String?          @unique
   createdAt     DateTime         @default(now())
@@ -758,6 +775,8 @@ model Page {
   // image or was never meant to have one.
   imageFailureReason String?
   qualityReport Json?
+  /// Mechanical extract for this page; Project.storyState is rebuilt from these.
+  storyDelta    Json?
   status        String   @default("PENDING")
   revision      Int      @default(1)
   createdAt     DateTime @default(now())
@@ -849,6 +868,9 @@ model PageEditSnapshot {
   markdownBefore  String
   summaryBefore   String
   revisionBefore  Int
+  /// Page.storyDelta as it stood before this edit. Undo restores it; SQL NULL
+  /// means the page had no delta, not that the extract should be wiped.
+  storyDeltaBefore Json?
   titleAfter      String?
   markdownAfter   String?
   summaryAfter    String?

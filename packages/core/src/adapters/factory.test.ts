@@ -187,6 +187,11 @@ describe("text model provider selection", () => {
       mechanical: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 },
       tier: "premium"
     });
+    expect(resolveTextModelSelections(config, tierProjectInput("ultra"))).toEqual({
+      prose: { provider: "gemini", model: "gemini-2.5-pro", thinkingBudget: 2048 },
+      mechanical: { provider: "gemini", model: "gemini-2.5-flash", thinkingBudget: 0 },
+      tier: "ultra"
+    });
     expect(resolveTextModelSelections(config, tierProjectInput("balanced"))).toEqual({
       prose: { provider: "deepseek", model: "deepseek-v4-pro" },
       mechanical: { provider: "deepseek", model: "deepseek-v4-flash", thinkingEnabled: false },
@@ -201,6 +206,10 @@ describe("text model provider selection", () => {
       provider: "gemini",
       model: "gemini-3.1-flash-image"
     });
+    expect(resolveImageModelSelection(config, tierProjectInput("ultra"))).toEqual({
+      provider: "gemini",
+      model: "gemini-3.1-flash-image"
+    });
     expect(resolveImageModelSelection(config, tierProjectInput("balanced"))).toEqual({
       provider: "gemini",
       model: config.GEMINI_IMAGE_MODEL
@@ -211,6 +220,14 @@ describe("text model provider selection", () => {
     const config = testConfig({});
 
     expect(createProviders(config, tierProjectInput("premium")).text).toBeInstanceOf(RoutingTextModelAdapter);
+    expect(createProviders(config, tierProjectInput("ultra")).text).toBeInstanceOf(RoutingTextModelAdapter);
+    const ultra = createProviders(config, tierProjectInput("ultra")).text as RoutingTextModelAdapter;
+    expect(ultra.selectionForPurpose("plan-book").thinkingBudget).toBe(8192);
+    expect(ultra.selectionForPurpose("generate-page").thinkingBudget).toBe(2048);
+    expect(ultra.selectionForPurpose("generate-page-map").thinkingBudget).toBe(1024);
+    const premium = createProviders(config, tierProjectInput("premium")).text as RoutingTextModelAdapter;
+    expect(premium.selectionForPurpose("plan-book").thinkingBudget).toBe(4096);
+    expect(premium.selectionForPurpose("generate-page").thinkingBudget).toBe(2048);
     expect(createProviders(config, tierProjectInput("balanced")).text).toBeInstanceOf(RoutingTextModelAdapter);
     expect(createProviders(config, tierProjectInput("fast")).text).toBeInstanceOf(DeepSeekAdapter);
     expect(createProviders(config).text).toBeInstanceOf(DeepSeekAdapter);
@@ -316,7 +333,7 @@ function projectInput(
 }
 
 function tierProjectInput(
-  modelTier: "fast" | "balanced" | "premium",
+  modelTier: "fast" | "balanced" | "premium" | "ultra",
   textModel?: { provider: "deepseek" | "deepinfra" | "gemini" | "alibaba"; model: string }
 ) {
   return createProjectSchema.parse({

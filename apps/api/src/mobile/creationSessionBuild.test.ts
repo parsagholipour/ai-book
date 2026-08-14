@@ -378,7 +378,7 @@ describe("mobile creation session project build", () => {
     await app.close();
   });
 
-  it("keeps fast, balanced, and premium preset mappings server-side", async () => {
+  it("keeps fast, balanced, premium, and ultra preset mappings server-side", async () => {
     const { buildMobileCreateProjectInput } = await import("../mobileProjects.js");
 
     const fast = buildMobileCreateProjectInput({
@@ -399,6 +399,13 @@ describe("mobile creation session project build", () => {
       bookType: "lead_magnet",
       prompt: "Create a polished lead magnet about packaging consulting offers.",
       qualityPreset: "premium",
+      lengthPreset: "expanded",
+      imagesEnabled: true
+    });
+    const ultra = buildMobileCreateProjectInput({
+      bookType: "lead_magnet",
+      prompt: "Create a polished lead magnet about packaging consulting offers with extra effort.",
+      qualityPreset: "ultra",
       lengthPreset: "expanded",
       imagesEnabled: true
     });
@@ -426,7 +433,8 @@ describe("mobile creation session project build", () => {
       mediaSettings: expect.objectContaining({ finalReview: true, draftCandidates: 1, modelTier: "balanced" })
     });
     // Premium's value is the model tier; best-of drafting stays off because no
-    // mobile length routes to the strategy that reads it.
+    // mobile length routes to the strategy that reads it — Ultra is the tier
+    // that turns draftCandidates on for polish.
     expect(premium).toMatchObject({
       category: "BUSINESS",
       targetPages: 24,
@@ -438,9 +446,21 @@ describe("mobile creation session project build", () => {
         modelTier: "premium"
       })
     });
+    expect(ultra).toMatchObject({
+      category: "BUSINESS",
+      targetPages: 24,
+      complexity: 7,
+      temperature: 0.55,
+      mediaSettings: expect.objectContaining({
+        finalReview: true,
+        draftCandidates: 2,
+        modelTier: "ultra"
+      })
+    });
     expect((premium.mediaSettings as Record<string, unknown>).parallelPageGeneration).toBeUndefined();
+    expect((ultra.mediaSettings as Record<string, unknown>).parallelPageGeneration).toBeUndefined();
     // Mobile inputs carry a tier name, never a concrete provider/model selection.
-    expect(JSON.stringify({ fast, balanced, premium })).not.toMatch(/provider|textModel|imageModel/);
+    expect(JSON.stringify({ fast, balanced, premium, ultra })).not.toMatch(/provider|textModel|imageModel/);
   });
 
   it("maps all four cover and in-book illustration combinations independently", async () => {

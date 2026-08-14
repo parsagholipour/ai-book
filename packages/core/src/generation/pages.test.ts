@@ -239,6 +239,37 @@ describe("page quality review", () => {
     expect(payload.pageInstruction).toMatch(/never invent studies/i);
   });
 
+  it("keeps a 5-page recency window of 1000-character excerpts in page drafts", async () => {
+    const capture = capturingJsonModel({
+      title: "The Door Opens",
+      markdown: goodMarkdown(),
+      summary: "Jack crosses the threshold and commits to a dangerous choice.",
+      continuityNotes: []
+    });
+    const previousPages = Array.from({ length: 6 }, (_, index) => ({
+      index: index + 1,
+      title: `Prior ${index + 1}`,
+      markdown: `page-${index + 1} ${"x".repeat(1200)}`,
+      summary: `Summary ${index + 1}`
+    }));
+
+    await generatePageDraft({
+      input,
+      plan,
+      chapter: plan.chapters[0],
+      pageIndex: 7,
+      previousSummaries: previousPages.map((page) => page.summary),
+      previousPages,
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: capture.model
+    });
+
+    const recentPages = capture.payload?.recentPages as Array<{ index: number; excerpt: string }>;
+    expect(recentPages.map((page) => page.index)).toEqual([2, 3, 4, 5, 6]);
+    expect(recentPages.every((page) => page.excerpt.length === 1000)).toBe(true);
+  });
+
   it("includes Kids age-range guidance in page draft prompts and payloads", async () => {
     let request: GenerateJsonOptions<unknown> | undefined;
     const promptInput = kidsInput("4-6");
@@ -428,6 +459,8 @@ describe("page quality review", () => {
         issues: ["The page repeats the checkpoint beat already covered on page 4."],
         requiredRevisions: ["Introduce a fresh consequence instead of repeating the checkpoint."],
         notes: "The original assignment is stale.",
+        groundedOk: true,
+        unsupportedClaims: [],
         checks: {
           placeholderFree: true,
           promptLeakFree: true,
@@ -499,6 +532,8 @@ describe("page quality review", () => {
         ],
         requiredRevisions: ["Link archival bias directly to implications for female authority."],
         notes: "Repair the assignment so it does not ask the writer to announce the conclusion.",
+        groundedOk: true,
+        unsupportedClaims: [],
         checks: {
           placeholderFree: true,
           promptLeakFree: false,
@@ -1790,6 +1825,8 @@ describe("page quality review", () => {
         issues: ["Do not require the later passing beat here."],
         requiredRevisions: ["Keep the page on Rabbit resting."],
         notes: "Needs current-page focus.",
+        groundedOk: true,
+        unsupportedClaims: [],
         checks: {
           placeholderFree: true,
           promptLeakFree: true,

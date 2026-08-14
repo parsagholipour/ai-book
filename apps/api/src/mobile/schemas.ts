@@ -23,7 +23,7 @@ export const mobileBookTypeSchema = z.enum(["lead_magnet", "workbook", "short_st
 
 export const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
 
-export const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium"]);
+export const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium", "ultra"]);
 
 export const idParamsSchema = z.object({ id: z.string().min(1) });
 
@@ -434,6 +434,14 @@ export const MOBILE_PRODUCT_PRESETS: Record<
     // tier's value is the premium model routing, which applies everywhere.
     draftCandidates: 1,
     modelTier: "premium"
+  },
+  ultra: {
+    label: "Ultra effort",
+    complexity: 7,
+    temperature: 0.55,
+    finalReview: true,
+    draftCandidates: 2,
+    modelTier: "ultra"
   }
 };
 

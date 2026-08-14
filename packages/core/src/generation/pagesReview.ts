@@ -51,6 +51,8 @@ export type ReviewPageOptions = {
   previousPages: PriorPageContext[];
   continuityNotes: string[];
   textModel: TextModelAdapter;
+  styleExcerpts?: string[] | undefined;
+  retrievedResearch?: string[] | undefined;
 };
 
 export type RevisePageOptions = ReviewPageOptions & {
@@ -127,6 +129,9 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
               pageIndex: options.pageIndex,
               draft: options.draft,
               previousPages: compactPriorPages(options.previousPages, 5, 800),
+              ...(options.styleExcerpts && options.styleExcerpts.length > 0
+                ? { styleExcerpts: options.styleExcerpts }
+                : {}),
               continuityNotes: options.continuityNotes.slice(-20),
               instruction:
                 "Approve only if this is a finished, specific page that can appear in the final book without visible generation artifacts, repeated beats, or stalled progression."
@@ -227,7 +232,13 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             illustrationPlan: options.plan.illustrationPlan,
             rejectedDraft: options.draft,
             qualityReport: options.report,
-            previousPages: compactPriorPages(options.previousPages, 5, 800),
+            previousPages: compactPriorPages(options.previousPages, 4, 700),
+            ...(options.styleExcerpts && options.styleExcerpts.length > 0
+              ? { styleExcerpts: options.styleExcerpts }
+              : {}),
+            ...(options.retrievedResearch && options.retrievedResearch.length > 0
+              ? { retrievedResearch: options.retrievedResearch }
+              : {}),
             instruction: buildPageInstruction(options.pageIndex, options.input.targetPages)
           },
           null,

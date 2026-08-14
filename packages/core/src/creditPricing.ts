@@ -65,6 +65,11 @@ export const DEFAULT_CREDIT_COSTS = {
   pageRegenerationPerPagePremium: 220,
   bookTextEditPerPageFast: 5,
   bookTextEditPerPagePremium: 28,
+  fullBookBaseUltra: 650,
+  fullBookPerPageUltra: 40,
+  imageGenerationUltra: 85,
+  pageRegenerationPerPageUltra: 280,
+  bookTextEditPerPageUltra: 36,
   voiceCallPerMinute: 60,
   audiobookBase: 80,
   audiobookPerPage: 12,
@@ -139,6 +144,11 @@ export const CREDIT_PRICING_LIMITS: Record<CreditPricingKey, number> = {
   pageRegenerationPerPagePremium: 5_000,
   bookTextEditPerPageFast: 2_000,
   bookTextEditPerPagePremium: 2_000,
+  fullBookBaseUltra: 100_000,
+  fullBookPerPageUltra: 2_000,
+  imageGenerationUltra: 5_000,
+  pageRegenerationPerPageUltra: 5_000,
+  bookTextEditPerPageUltra: 2_000,
   voiceCallPerMinute: 2_000,
   audiobookBase: 20_000,
   audiobookPerPage: 2_000,
@@ -211,12 +221,35 @@ export function normalizeCreditPricing(raw: unknown): CreditPricing {
   const values = {} as CreditPricing;
   for (const key of CREDIT_PRICING_KEYS) {
     const candidate = record[key];
-    values[key] =
-      typeof candidate === "number" && Number.isInteger(candidate) && candidate >= 0 && candidate <= CREDIT_PRICING_LIMITS[key]
-        ? candidate
-        : DEFAULT_CREDIT_COSTS[key];
+    if (isChargeableInteger(candidate, key)) {
+      values[key] = candidate;
+      continue;
+    }
+    const premiumTwin = ultraKeyPremiumTwin(key);
+    const premiumCandidate = premiumTwin ? record[premiumTwin] : undefined;
+    if (premiumTwin && isChargeableInteger(premiumCandidate, premiumTwin)) {
+      values[key] = premiumCandidate;
+      continue;
+    }
+    values[key] = DEFAULT_CREDIT_COSTS[key];
   }
   return values;
+}
+
+function isChargeableInteger(candidate: unknown, key: CreditPricingKey): candidate is number {
+  return (
+    typeof candidate === "number" &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= CREDIT_PRICING_LIMITS[key]
+  );
+}
+
+function ultraKeyPremiumTwin(key: CreditPricingKey): CreditPricingKey | undefined {
+  if (!key.endsWith("Ultra")) {
+    return undefined;
+  }
+  return `${key.slice(0, -"Ultra".length)}Premium` as CreditPricingKey;
 }
 
 export type CreditPricingChange = { from: number; to: number };

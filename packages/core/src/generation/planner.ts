@@ -97,6 +97,7 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
             "For the single necessary question, include 2-4 concise premade answers only when a few complete answers really cover it, and make every option a full answer usable as-is. When the answer is a value only the reader can supply - a name, a title, a place, a number, a date - set options to [] and let them type it. Never write an option that only describes how the reader will answer. Allow a custom answer unless the question is informational only.",
             'Declare how many answers you accept in answerKind: "choice" when exactly one option can be true, "multi" (up to 6 options) when the reader can honestly combine several and you can honour every pick, "open" with no options otherwise. The app draws the picker from answerKind, so never say "choose one or more" in the prompt and never list the options inside the prompt text.',
             "For every recurring character, include concrete visualRules with stable silhouette, face, outfit, color palette, and distinctive details suitable for a reusable character reference sheet.",
+            "Seed promises with the book's open dramatic or explanatory commitments the later pages must pay off. Use [] when the book has none.",
             "Illustration prompts must use exact recurring character names whenever those characters appear.",
             ...targetLanguageGenerationGuidance(options.input.language),
             ...kidsReadingGuidanceLines(options.input),

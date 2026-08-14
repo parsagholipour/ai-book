@@ -147,7 +147,8 @@ export function PricingScreen() {
 const TIER_LABELS = {
   fast: "Quick draft",
   balanced: "Balanced",
-  premium: "Extra polish"
+  premium: "Extra polish",
+  ultra: "Ultra effort"
 } as const;
 
 function PreviewPanel(props: { preview: PricingPreview | null; creditUsdValue: number }) {

@@ -72,6 +72,27 @@ describe("RoutingTextModelAdapter", () => {
     expect(prose.purposes).toHaveLength(5);
   });
 
+  it("routes plan-book to a purpose override when one is registered", async () => {
+    const prose = new RecordingTextAdapter("prose-model");
+    const mechanical = new RecordingTextAdapter("mechanical-model");
+    const plan = new RecordingTextAdapter("plan-thinking-model");
+    const routing = new RoutingTextModelAdapter(
+      { selection: { provider: "gemini", model: "prose-model", thinkingBudget: 2048 }, adapter: prose },
+      { selection: { provider: "gemini", model: "mechanical-model", thinkingBudget: 0 }, adapter: mechanical },
+      new Map([
+        ["plan-book", { selection: { provider: "gemini", model: "plan-thinking-model", thinkingBudget: 4096 }, adapter: plan }]
+      ])
+    );
+
+    expect((await routing.generateJson({ messages: [], purpose: "plan-book", schema: undefined as never })).model).toBe(
+      "plan-thinking-model"
+    );
+    expect(routing.selectionForPurpose("plan-book").thinkingBudget).toBe(4096);
+    expect(routing.selectionForPurpose("generate-page").thinkingBudget).toBe(2048);
+    routing.setPurposeOverridesEnabled(false);
+    expect(routing.selectionForPurpose("plan-book").model).toBe("prose-model");
+  });
+
   it("routes streamText by purpose", async () => {
     const { routing } = routedAdapters();
 
@@ -91,6 +112,11 @@ describe("RoutingTextModelAdapter", () => {
         "../generation/bestOf.ts",
         "../generation/readerChapters.ts",
         "../generation/coverDesigns.ts",
+        "../generation/storyState.ts",
+        "../generation/planCritic.ts",
+        "../generation/claimVerifier.ts",
+        "../generation/styleAuditor.ts",
+        "../generation/pageMapCritic.ts",
         "../ingestion/manuscriptImport.ts"
       ].map((path) =>
         readFile(new URL(path, import.meta.url), "utf8")

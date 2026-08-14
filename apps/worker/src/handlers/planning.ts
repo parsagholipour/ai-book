@@ -19,7 +19,9 @@ import { config } from "../runtime/config.js";
 import { advanceJobStep, editOperationIdFromJob } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError, type JobCompletion } from "../runtime/jobTypes.js";
 import { jsonPayloadToRecord } from "../runtime/serialization.js";
-import { bookPlanSchema, createProviders, mediaSettingsRowWriteback } from "@book-maker/core";
+import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualitySettings.js";
+import { seedProjectStoryState } from "../generation/storyStateStore.js";
+import { bookPlanSchema, createProviders, critiquePlan, mergePlanCriticPatch, mediaSettingsRowWriteback } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
@@ -39,7 +41,9 @@ export async function planBook(job: Job): Promise<JobCompletion> {
   const input = inputFromSnapshot(inputSnapshot) ?? inputFromProject(project);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
-  const plan = await strategy.createPlan({
+  const quality = await loadQualityContext(input);
+  applyPlanThinkingBoost(providers.text, quality.enabled("planThinkingBoost"));
+  let plan = await strategy.createPlan({
     // Planning sees pasted notes and uploaded-file digests; the stored
     // snapshot below stays clean so page generation input is unchanged.
     input: inputWithMobileSourceMaterial(input),
@@ -60,6 +64,17 @@ export async function planBook(job: Job): Promise<JobCompletion> {
       }
     }
   });
+  if (quality.enabled("planCritic")) {
+    try {
+      const patch = await critiquePlan({ textModel: providers.text, plan });
+      plan = mergePlanCriticPatch(plan, patch);
+    } catch (error) {
+      if (isStopRequestedError(error)) {
+        throw error;
+      }
+      console.warn(`Plan critic skipped for project ${projectId}`, error);
+    }
+  }
   const version = await nextPlanVersion(projectId);
 
   await prisma.$transaction(async (tx) => {
@@ -132,6 +147,7 @@ export async function planBook(job: Job): Promise<JobCompletion> {
       }
     }
   });
+  await seedProjectStoryState(projectId, plan.promises ?? []);
   // Best-effort: the plan is already committed, and a failure past this point
   // marks the project FAILED in a state `canRecoverGenerationJob` refuses to
   // resume — the plan is newer than the job. Missing embeddings only degrade

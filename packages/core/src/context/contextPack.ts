@@ -16,6 +16,8 @@ export type ContextPackInput = {
   semanticMemory?: string[] | undefined;
   /** Current structured character/location state lines. */
   entityState?: string[] | undefined;
+  /** Pinned accepted-page excerpts, separate from the recency window. */
+  styleExcerpts?: string[] | undefined;
   tokenBudget?: number;
   readingGuidance?: string[] | undefined;
 };
@@ -36,6 +38,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
   const researchNotes = input.researchNotes.map(sanitizeResearchNote).filter(Boolean);
   const semanticMemory = (input.semanticMemory ?? []).map((entry) => entry.trim()).filter(Boolean);
   const entityState = (input.entityState ?? []).map((entry) => entry.trim()).filter(Boolean);
+  const styleExcerpts = (input.styleExcerpts ?? []).map((entry) => entry.trim()).filter(Boolean);
   const hasSemanticMemory = semanticMemory.length > 0;
   // The memory budget (38% of the pack) is split so retrieved long-range
   // context survives trimming alongside the recency window.
@@ -63,7 +66,10 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
       `Writing complexity: ${input.plan.writingComplexity}/10`,
       ...(input.readingGuidance?.length ? [`Reading guidance: ${input.readingGuidance.join(" ")}`] : []),
       `Voice: ${input.plan.voiceGuide.join(" ")}`,
-      `Avoid: ${input.plan.antiAiRules.join(" ")}`
+      `Avoid: ${input.plan.antiAiRules.join(" ")}`,
+      ...(styleExcerpts.length > 0
+        ? [`Style lock excerpts:\n${styleExcerpts.map((excerpt, index) => `${index + 1}. ${excerpt}`).join("\n")}`]
+        : [])
     ].join("\n"),
     outline: [
       input.chapter
@@ -72,7 +78,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
       `Target page ${input.pageIndex} of ${input.targetPages}.`,
       `Continuity rules: ${input.plan.continuityRules.join(" ")}`,
       ...(entityState.length > 0
-        ? [trimToBudget(["Current character and location state:", ...entityState].join("\n"), Math.floor(requestedTokens * 0.1))]
+        ? [trimToBudget(["Current story state:", ...entityState].join("\n"), Math.floor(requestedTokens * 0.1))]
         : [])
     ].join("\n\n"),
     memory: memorySections.join("\n\n"),

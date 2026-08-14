@@ -191,12 +191,17 @@ function normalizePageQualityReport(value: unknown): unknown {
       }
     : undefined;
 
+  const groundedOk = booleanField(unwrapped, ["groundedOk", "grounded_ok"]) ?? true;
+  const unsupportedClaims = stringArrayField(unwrapped, ["unsupportedClaims", "unsupported_claims"]) ?? [];
+
   return {
     approved,
     score,
     issues,
     requiredRevisions,
     notes,
+    groundedOk,
+    unsupportedClaims,
     ...(checks ? { checks } : {})
   };
 }
@@ -295,6 +300,8 @@ export const pageQualityReportSchema = z.preprocess(
     issues: z.array(z.string()).default([]),
     requiredRevisions: z.array(z.string()).default([]),
     notes: z.string().default(""),
+    groundedOk: z.boolean().default(true),
+    unsupportedClaims: z.array(z.string()).default([]),
     checks: z
       .object({
         placeholderFree: z.boolean(),

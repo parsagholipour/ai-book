@@ -36,6 +36,13 @@ vi.mock("../generation/bookHelpers.js", () => ({
 }));
 vi.mock("./applyImageInsertion.js", () => ({ applyImageInsertion: mocks.applyImageInsertion }));
 vi.mock("./applyImageLayout.js", () => ({ applyImageLayout: mocks.applyImageLayout }));
+vi.mock("../generation/storyStateStore.js", () => ({
+  rebuildProjectStoryState: vi.fn(),
+  loadProjectStoryState: vi.fn(async () => ({ promises: [], facts: [], entities: {}, unanswered: [] }))
+}));
+vi.mock("../generation/qualityEnrichment.js", () => ({
+  persistKeeperStoryDelta: vi.fn()
+}));
 vi.mock("./replanBook.js", async () => {
   const actual = await import("./replanBook.js");
   return { locallyPatchedPage: actual.locallyPatchedPage, rewritePageForUserRequest: mocks.rewritePageForUserRequest };
@@ -45,6 +52,8 @@ vi.mock("@book-maker/core", async () => {
   return { ...actual, bookPlanSchema: { parse: () => ({}) }, createProviders: () => ({}) };
 });
 
+import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
+import { rebuildProjectStoryState } from "../generation/storyStateStore.js";
 import { applyBookEdit } from "./applyBookEdit.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 
@@ -125,6 +134,8 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.prisma.pageEditSnapshot.deleteMany).toHaveBeenCalledWith({
       where: { operationId: "op-1", pageIndex: { in: [2] } }
     });
+    expect(persistKeeperStoryDelta).toHaveBeenCalledTimes(1);
+    expect(persistKeeperStoryDelta).toHaveBeenCalledWith(expect.objectContaining({ pageIndex: 1 }));
     // The queued reply promised page 2, so the operation records the skip for
     // the serializer to surface — silence here left the transcript claiming an
     // edit that never happened.
@@ -275,6 +286,58 @@ describe("applyBookEdit in exact mode", () => {
     // The rewrite was reviewed per page with the user's request in context;
     // the recompile never re-runs the whole-book QA pass for an edit.
     expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", { skipFinalReview: true });
+    expect(persistKeeperStoryDelta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pageIndex: 1,
+        previousExtract: null,
+        keeperWasRevised: true,
+        draft: expect.objectContaining({ markdown: "Rewritten." })
+      })
+    );
+    expect(rebuildProjectStoryState).toHaveBeenCalledWith("project-1", []);
+  });
+
+  it("snapshots storyDelta before the rewrite and re-extracts saved pages", async () => {
+    const storyDeltaBefore = {
+      promisesOpened: [],
+      promisesPaid: ["The lantern will be lit."],
+      promisesBroken: [],
+      factsAdded: ["It is raining."],
+      entities: {},
+      unansweredAdded: [],
+      unansweredResolved: []
+    };
+    mocks.prisma.page.findMany.mockResolvedValue([{ ...page(1, "Rabbit runs."), storyDelta: storyDeltaBefore }]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Replace rabbit with fly",
+        affectedPageIndexes: [1],
+        planId: "plan-1",
+        exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+        mode: "exact"
+      })
+    );
+
+    expect(mocks.prisma.pageEditSnapshot.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        pageId: "page-1",
+        markdownBefore: "Rabbit runs.",
+        storyDeltaBefore
+      })
+    });
+    expect(persistKeeperStoryDelta).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-1",
+        pageIndex: 1,
+        previousExtract: null,
+        keeperWasRevised: true,
+        draft: expect.objectContaining({ markdown: "Fly runs." })
+      })
+    );
+    expect(rebuildProjectStoryState).toHaveBeenCalledWith("project-1", []);
   });
 
   it("rebuilds the exports from half-applied pages when a mid-edit rewrite fails", async () => {

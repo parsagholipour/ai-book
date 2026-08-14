@@ -499,6 +499,7 @@ export function makeFallbackPlan(input: CreateProjectInput): BookPlan {
     ],
     researchQueries: isSourceForwardBookCategory(input.category) ? [input.prompt] : [],
     researchNotes: [],
+    promises: [],
     illustrationPlan: {
       cadence: input.mediaSettings.illustrationCadence,
       globalStyle: input.mediaSettings.imageStyle ?? template.styleRules.imageStyle,

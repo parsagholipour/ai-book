@@ -11,7 +11,7 @@ import { GeminiEmbeddingAdapter, GeminiImageAdapter, GeminiResearchAdapter, Gemi
 import { GeminiSpeechAdapter } from "./geminiSpeech.js";
 import { OpenAISpeechAdapter } from "./openaiSpeech.js";
 import type { EmbeddingAdapter, ImageAdapter, ResearchAdapter, SpeechAdapter, TextModelAdapter } from "./types.js";
-import { modelTierImageSelection, modelTierTextFallbackSelection, modelTierTextSelections } from "./modelTiers.js";
+import { modelTierImageSelection, modelTierTextFallbackSelection, modelTierTextSelections, planThinkingBudgetForTier, ULTRA_PAGE_MAP_THINKING_BUDGET } from "./modelTiers.js";
 import { RoutingTextModelAdapter } from "./textRouting.js";
 import { FallbackTextModelAdapter } from "./textFallback.js";
 import type {
@@ -309,14 +309,51 @@ export function createLanguageDetectionTextModel(config: AppConfig): TextModelAd
 
 function createRoutedTextModel(config: AppConfig, selections: ResolvedTextModelSelections): TextModelAdapter {
   const prose = createTierTextAdapter(config, selections.prose, selections.tier);
-  if (sameTextSelection(selections.prose, selections.mechanical)) {
+  const mechanical = sameTextSelection(selections.prose, selections.mechanical)
+    ? prose
+    : createTierTextAdapter(config, selections.mechanical, selections.tier);
+  const purposeOverrides = purposeOverrideAdapters(config, selections);
+  if (purposeOverrides.size === 0 && mechanical === prose) {
     return prose;
   }
-  const mechanical = createTierTextAdapter(config, selections.mechanical, selections.tier);
   return new RoutingTextModelAdapter(
     { selection: selections.prose, adapter: prose },
-    { selection: selections.mechanical, adapter: mechanical }
+    {
+      selection: selections.mechanical,
+      adapter: mechanical === prose ? prose : mechanical
+    },
+    purposeOverrides
   );
+}
+
+function purposeOverrideAdapters(
+  config: AppConfig,
+  selections: ResolvedTextModelSelections
+): Map<string, { selection: TextModelSelection; adapter: TextModelAdapter }> {
+  const overrides = new Map<string, { selection: TextModelSelection; adapter: TextModelAdapter }>();
+  const tier = selections.tier;
+  if (!tier) {
+    return overrides;
+  }
+  const planBudget = planThinkingBudgetForTier(tier);
+  if (planBudget !== undefined && selections.prose.thinkingBudget !== planBudget) {
+    const planSelection: TextModelSelection = { ...selections.prose, thinkingBudget: planBudget };
+    overrides.set("plan-book", {
+      selection: planSelection,
+      adapter: createTierTextAdapter(config, planSelection, tier)
+    });
+  }
+  if (tier === "ultra" && selections.mechanical.provider === "gemini") {
+    const mapSelection: TextModelSelection = {
+      ...selections.mechanical,
+      thinkingBudget: ULTRA_PAGE_MAP_THINKING_BUDGET
+    };
+    overrides.set("generate-page-map", {
+      selection: mapSelection,
+      adapter: createTierTextAdapter(config, mapSelection, tier)
+    });
+  }
+  return overrides;
 }
 
 function createTierTextAdapter(

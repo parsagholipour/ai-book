@@ -94,11 +94,24 @@ export class FakeTextModelAdapter implements TextModelAdapter {
     // text, so they fall through to their deterministic fallbacks.
     const finishTool = options.tools.find((tool) => tool.name === "finish_turn");
     if (finishTool) {
+      const pageIndex = extractPageIndexFromMessages(options.messages);
+      const detail = dryRunDetail(pageIndex);
       return {
         text: "",
         model: "fake-model",
         provider: "fake",
-        toolCalls: [{ id: "fake_finish", name: finishTool.name, arguments: {} }],
+        toolCalls: [
+          {
+            id: "fake_finish",
+            name: finishTool.name,
+            arguments: {
+              title: `Dry Run Turn ${pageIndex}`,
+              markdown: dryRunMarkdown(pageIndex, detail),
+              summary: `Page ${pageIndex} advances the dry-run book through ${detail}.`,
+              continuityNotes: [`Page ${pageIndex} establishes ${detail} as a distinct dry-run detail.`]
+            }
+          }
+        ],
         usage: { promptTokens: 1, outputTokens: 1 }
       };
     }
@@ -112,6 +125,47 @@ export class FakeTextModelAdapter implements TextModelAdapter {
   }
 
   private fakeForSchema(schema: z.ZodTypeAny, options: GenerateJsonOptions<unknown>): unknown {
+    if (options.purpose === "extract-story-state") {
+      return {
+        storyDelta: {
+          promisesOpened: [],
+          promisesPaid: [],
+          promisesBroken: [],
+          factsAdded: [],
+          entities: {},
+          unansweredAdded: [],
+          unansweredResolved: []
+        },
+        contradictions: []
+      };
+    }
+
+    if (options.purpose === "critique-plan") {
+      return {
+        promisesToAdd: [],
+        chapterMergeNotes: [],
+        reorderNotes: [],
+        repeatedBeatWarnings: []
+      };
+    }
+
+    if (options.purpose === "verify-page-claims") {
+      return { groundedOk: true, unsupportedClaims: [] };
+    }
+
+    if (options.purpose === "audit-page-style") {
+      return { styleOk: true, styleIssues: [] };
+    }
+
+    if (options.purpose === "critique-page-map") {
+      return {
+        beatPatches: [],
+        duplicatePurposeWarnings: [],
+        missingEndingPressure: [],
+        unscheduledPromises: []
+      };
+    }
+
     if (options.purpose === "detect-language") {
       return fakeLanguageDetection(options);
     }
@@ -216,12 +270,15 @@ export class FakeTextModelAdapter implements TextModelAdapter {
         issues: [],
         requiredRevisions: [],
         notes: "Fake reviewer approved the deterministic dry-run page.",
+        groundedOk: true,
+        unsupportedClaims: [],
         checks: {
           placeholderFree: true,
           promptLeakFree: true,
           titleClean: true,
           repetitionOk: true,
-          progressionOk: true
+          progressionOk: true,
+          styleNatural: true
         }
       };
     }
@@ -430,6 +487,22 @@ function fakeLanguageDetection(options: GenerateJsonOptions<unknown>): { languag
     return { language: "Korean", code: "ko", confidence: 0.8 };
   }
   return { language: "en", code: "en", confidence: 0.8 };
+}
+
+function extractPageIndexFromMessages(messages: Array<{ role: string; content: string }>): number {
+  const userMessage = [...messages].reverse().find((message) => message.role === "user");
+  if (!userMessage) {
+    return 1;
+  }
+  try {
+    const parsed = JSON.parse(userMessage.content) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && typeof (parsed as { pageIndex?: unknown }).pageIndex === "number") {
+      return (parsed as { pageIndex: number }).pageIndex;
+    }
+  } catch {
+    // Fall through.
+  }
+  return 1;
 }
 
 function extractPageIndex(options: GenerateJsonOptions<unknown>): number {

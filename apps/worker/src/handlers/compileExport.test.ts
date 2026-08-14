@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
-import type { FinalBookQa, ManuscriptQualityIssue, PageQualityReport, ReaderChapter } from "@book-maker/core";
+import type {
+  FinalBookQa,
+  ManuscriptQualityIssue,
+  PageQualityReport,
+  QualityFeatureId,
+  ReaderChapter,
+  StoryState
+} from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 
 const mocks = vi.hoisted(() => ({
@@ -34,7 +41,15 @@ const mocks = vi.hoisted(() => ({
   pendingExportPaths: vi.fn(),
   publishCompiledExports: vi.fn(),
   discardPendingExports: vi.fn(),
-  maybeEnqueueCharacterCandidatePreparation: vi.fn()
+  maybeEnqueueCharacterCandidatePreparation: vi.fn(),
+  loadProjectStoryState: vi.fn(
+    async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
+  ),
+  loadQualityContext: vi.fn(async () => ({
+    settings: {},
+    tier: "balanced" as const,
+    enabled: (_feature: QualityFeatureId): boolean => false
+  }))
 }));
 
 vi.mock("@book-maker/db", () => ({
@@ -76,6 +91,13 @@ vi.mock("../generation/bookHelpers.js", () => ({
   toFinalQaPage: (page: unknown) => page,
   toPriorPageContext: (page: unknown) => page,
   formatQualityFailure: () => "quality failure detail"
+}));
+vi.mock("../generation/storyStateStore.js", () => ({
+  loadProjectStoryState: mocks.loadProjectStoryState
+}));
+vi.mock("../generation/qualitySettings.js", () => ({
+  loadQualityContext: mocks.loadQualityContext,
+  applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("../generation/pageReview.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/pageReview.js")>("../generation/pageReview.js");
@@ -499,6 +521,12 @@ describe("compileExport reader chapters", () => {
       published: true,
       characterPreparationJobId: options.characterPreparation ? "character-job-1" : null
     }));
+    mocks.loadProjectStoryState.mockResolvedValue({ promises: [], facts: [], entities: {}, unanswered: [] });
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "balanced",
+      enabled: (_feature: QualityFeatureId): boolean => false
+    });
   });
 
   afterEach(async () => {
@@ -703,6 +731,48 @@ describe("compileExport reader chapters", () => {
       expect.objectContaining({ epubProduced: false, repairFormat: null, status: "REVIEW_REQUIRED" })
     );
     logged.mockRestore();
+  });
+
+  it("records unpaid plan promises as warnings so compile is not blocked", async () => {
+    mocks.loadQualityContext.mockResolvedValue({
+      settings: {},
+      tier: "balanced",
+      enabled: (feature: QualityFeatureId) => feature === "storyExtractAudit"
+    });
+    mocks.loadProjectStoryState.mockResolvedValue({
+      promises: [{ id: "p1", text: "The lantern will be lit.", status: "open", openedAtPage: 0 }],
+      facts: [],
+      entities: {},
+      unanswered: []
+    });
+
+    await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
+
+    const qualityUpdate = mocks.prisma.generationJob.update.mock.calls.find(
+      (call) => (call[0] as { data?: { qualityReport?: { state?: string } } }).data?.qualityReport
+    );
+    if (!qualityUpdate) {
+      throw new Error("expected compile to persist a qualityReport");
+    }
+    const report = (
+      qualityUpdate[0] as {
+        data: {
+          qualityReport: {
+            state: string;
+            issues: Array<{ code: string; severity: string; source: string }>;
+          };
+        };
+      }
+    ).data.qualityReport;
+    expect(report.state).toBe("passed");
+    expect(report.issues).toEqual([
+      expect.objectContaining({
+        code: "UNPAID_PROMISE",
+        severity: "warning",
+        source: "deterministic"
+      })
+    ]);
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
   });
 
   it("retires stale EPUB on an undo/manual recompile whose conversion fails", async () => {

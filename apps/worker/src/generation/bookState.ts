@@ -1,12 +1,15 @@
 import { directGenerationResumeState, type DirectResumeState } from "./directGenerationResume.js";
 import { chapterSetupsForPlan, normalizedChapters, planInputSnapshot } from "./bookHelpers.js";
 import { chapterSetupForPage } from "./generationContext.js";
+import { applyPlanThinkingBoost, loadQualityContext } from "./qualitySettings.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup } from "../runtime/jobTypes.js";
 import { jsonInputValue, range } from "../runtime/serialization.js";
 import {
   chapterBriefSchema,
+  critiquePageMap,
   mapWithConcurrency,
+  mergePageMapCriticPatch,
   normalizePlanPageTargets,
   type BookGenerationStrategy,
   type BookPlan,
@@ -40,14 +43,29 @@ export async function prepareChapterSetups(options: {
       progress: 25,
       message: "Creating global page map"
     });
+    const quality = await loadQualityContext(options.input);
+    applyPlanThinkingBoost(options.providers.text, quality.enabled("planThinkingBoost"));
     const briefs = await createChapterBriefs({
       input: options.input,
       plan: options.plan,
       textModel: options.providers.text
     });
+    let mapped = briefs;
+    if (quality.enabled("pageMapCritic")) {
+      try {
+        const patch = await critiquePageMap({
+          textModel: options.providers.text,
+          briefs,
+          promises: options.plan.promises ?? []
+        });
+        mapped = mergePageMapCriticPatch(briefs, patch);
+      } catch (error) {
+        console.warn(`Page-map critic skipped for plan`, error);
+      }
+    }
     return chapterRanges.map((setup) => ({
       ...setup,
-      brief: requireBriefForChapter(briefs, setup)
+      brief: requireBriefForChapter(mapped, setup)
     }));
   }
 

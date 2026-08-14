@@ -78,7 +78,7 @@ export const subcategorySchema = z.preprocess(
 export const bookGenerationStrategyIdSchema = z.enum(BOOK_GENERATION_STRATEGY_IDS);
 export const bookGenerationStrategySelectionSchema = z.enum(["auto", ...BOOK_GENERATION_STRATEGY_IDS]);
 export const textModelThinkingEffortSchema = z.enum(["none", "minimal", "low", "medium", "high", "max"]);
-export const modelTierSchema = z.enum(["fast", "balanced", "premium"]);
+export const modelTierSchema = z.enum(["fast", "balanced", "premium", "ultra"]);
 export const textModelSelectionSchema = z.object({
   provider: z.enum(["deepseek", "deepinfra", "gemini", "alibaba", "openai-compatible"]),
   model: z.string().min(1).max(120),

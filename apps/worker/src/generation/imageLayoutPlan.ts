@@ -45,6 +45,7 @@ export type PageRow = {
   summary: string;
   revision: number;
   imagePrompt: string | null;
+  storyDelta?: unknown;
 };
 
 export type ResolvedLayoutSource =
@@ -199,6 +200,9 @@ export async function applyLayoutBatchInTx(
         markdownBefore: edit.before.markdown,
         summaryBefore: edit.before.summary,
         revisionBefore: edit.before.revision,
+        ...(edit.before.storyDelta != null
+          ? { storyDeltaBefore: edit.before.storyDelta as Prisma.InputJsonValue }
+          : {}),
         titleAfter: saved.title,
         markdownAfter: saved.markdown,
         summaryAfter: saved.summary,

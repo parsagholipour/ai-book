@@ -26,6 +26,7 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
       { key: "fullBookBaseFast", label: "Full book base — Quick draft", help: "Flat charge for generating any book on the Quick draft tier." },
       { key: "fullBookBase", label: "Full book base — Balanced", help: "Flat charge for generating any book. Also the rate for a book with no tier recorded." },
       { key: "fullBookBasePremium", label: "Full book base — Extra polish", help: "Flat charge for generating any book on the Extra polish tier." },
+      { key: "fullBookBaseUltra", label: "Full book base — Ultra effort", help: "Flat charge for generating any book on the Ultra effort tier. Extra passes, not a different image model." },
       { key: "fullBookPerPageFast", label: "Per page — Quick draft", help: "Multiplied by the target page count." },
       { key: "fullBookPerPage", label: "Per page — Balanced", help: "Multiplied by the target page count." },
       {
@@ -33,6 +34,7 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
         label: "Per page — Extra polish",
         help: "Multiplied by the target page count. The tier's real cost is ~$0.05 a page, so this must stay above ~24 or a long premium book loses money on a Max subscription."
       },
+      { key: "fullBookPerPageUltra", label: "Per page — Ultra effort", help: "Multiplied by the target page count on Ultra effort." },
       {
         key: "imageGenerationFast",
         label: "Generated image — Quick draft",
@@ -48,7 +50,12 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
         label: "Generated image — Extra polish",
         help: "Per image on the premium image model, which also draws a more expensive cover."
       },
-      { key: "premiumReview", label: "Premium review", help: "Added once for a book on the Extra polish tier, which runs an extra review pass." },
+      {
+        key: "imageGenerationUltra",
+        label: "Generated image — Ultra effort",
+        help: "Same image model as Extra polish; Ultra charges the same per image."
+      },
+      { key: "premiumReview", label: "Premium review", help: "Added once for Extra polish or Ultra effort, which run an extra review pass." },
       { key: "coverRegeneration", label: "Cover regeneration", help: "Redrawing a cover on its own. No route charges this today." },
       { key: "planGeneration", label: "Plan generation", help: "Drafting the plan. Free today." },
       { key: "previewGeneration", label: "Preview generation", help: "Sample pages before committing. Free today." }
@@ -63,12 +70,18 @@ export const PRICING_FIELD_GROUPS: PricingFieldGroup[] = [
       { key: "bookTextEditPerPageFast", label: "Text edit per page — Quick draft", help: "Added for each page the edit touches." },
       { key: "bookTextEditPerPage", label: "Text edit per page — Balanced", help: "Added for each page the edit touches." },
       { key: "bookTextEditPerPagePremium", label: "Text edit per page — Extra polish", help: "Added for each page the edit touches, at premium prose rates." },
+      { key: "bookTextEditPerPageUltra", label: "Text edit per page — Ultra effort", help: "Added for each page the edit touches, at Ultra effort rates." },
       { key: "pageRegenerationPerPageFast", label: "Page rewrite per page — Quick draft", help: "Rewrites, chapter regenerations, continuations." },
       { key: "pageRegenerationPerPage", label: "Page rewrite per page — Balanced", help: "Rewrites, chapter regenerations, continuations." },
       {
         key: "pageRegenerationPerPagePremium",
         label: "Page rewrite per page — Extra polish",
         help: "Rewrites, chapter regenerations, continuations, on the premium prose model."
+      },
+      {
+        key: "pageRegenerationPerPageUltra",
+        label: "Page rewrite per page — Ultra effort",
+        help: "Rewrites, chapter regenerations, continuations, on Ultra effort."
       },
       { key: "bookReplanBase", label: "Replan base", help: "Added on top of a full regeneration of the book." }
     ]

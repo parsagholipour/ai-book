@@ -30,7 +30,7 @@ import {
   type BookPlan,
   type ImageAdapter
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
@@ -298,6 +298,7 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
           markdownBefore: current.markdown,
           summaryBefore: current.summary,
           revisionBefore: current.revision,
+          ...(current.storyDelta != null ? { storyDeltaBefore: current.storyDelta as Prisma.InputJsonValue } : {}),
           titleAfter: saved.title,
           markdownAfter: saved.markdown,
           summaryAfter: saved.summary,
@@ -426,6 +427,7 @@ async function applyAssetReplacementInTx(
       summary: string;
       revision: number;
       imagePrompt?: string | null;
+      storyDelta?: unknown;
     };
     replaceAsset: { id: string; path: string; prompt: string };
     subject: string;
@@ -481,6 +483,9 @@ async function applyAssetReplacementInTx(
       markdownBefore: options.current.markdown,
       summaryBefore: options.current.summary,
       revisionBefore: options.current.revision,
+      ...(options.current.storyDelta != null
+        ? { storyDeltaBefore: options.current.storyDelta as Prisma.InputJsonValue }
+        : {}),
       titleAfter: saved.title,
       markdownAfter: saved.markdown,
       summaryAfter: saved.summary,

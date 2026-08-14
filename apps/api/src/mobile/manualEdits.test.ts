@@ -6,6 +6,7 @@ vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js"))
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
 import { PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
+import { Prisma } from "@book-maker/db";
 import { enqueueGenerationJob } from "../queue.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -86,6 +87,16 @@ describe("mobile editable book and manual edits", () => {
       projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
     );
     state.pages = editablePages();
+    const storyDeltaBefore = {
+      promisesOpened: [],
+      promisesPaid: [],
+      promisesBroken: [],
+      factsAdded: ["Rabbit started fast."],
+      entities: {},
+      unansweredAdded: [],
+      unansweredResolved: []
+    };
+    state.pages[0]!.storyDelta = storyDeltaBefore;
     writeProjectFile(state.bookStorageDir, "project-1", "book.pdf", "%PDF-stale");
     vi.mocked(enqueueGenerationJob).mockResolvedValueOnce(jobRecord({ id: "job-compile", type: "COMPILE_EXPORT" }));
     const app = await buildMobileApp();
@@ -129,7 +140,8 @@ describe("mobile editable book and manual edits", () => {
         markdownBefore: "Rabbit runs ahead at the start of the race.",
         markdownAfter: "Rabbit sprints ahead while Turtle takes one steady step.",
         revisionBefore: 1,
-        revisionAfter: 2
+        revisionAfter: 2,
+        storyDeltaBefore
       })
     ]);
     expect(existsSync(join(state.bookStorageDir!, "project-1", "book.pdf"))).toBe(false);
@@ -806,6 +818,73 @@ describe("mobile editable book and manual edits", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("NO_CHANGES");
+    await app.close();
+  });
+
+  it("restores snapshotted storyDelta on undo instead of wiping it", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue(
+      projectRecord({ id: "project-1", status: "COMPLETE", currentPlanId: "plan-1" })
+    );
+    const storyDeltaBefore = {
+      promisesOpened: [],
+      promisesPaid: [],
+      promisesBroken: [],
+      factsAdded: ["The lantern is green."],
+      entities: {},
+      unansweredAdded: [],
+      unansweredResolved: []
+    };
+    const operation = appliedEditOperationRecord({
+      snapshots: [
+        {
+          pageId: "page-1",
+          pageIndex: 1,
+          titleBefore: "Rabbit Starts Fast",
+          markdownBefore: "Rabbit runs ahead at the start of the race.",
+          summaryBefore: "Rabbit starts the race quickly.",
+          revisionBefore: 1,
+          storyDeltaBefore
+        },
+        {
+          pageId: "page-2",
+          pageIndex: 2,
+          titleBefore: "Rabbit Learns",
+          markdownBefore: "Rabbit sees Turtle finish and learns to be kind.",
+          summaryBefore: "Rabbit learns from Turtle.",
+          revisionBefore: 1,
+          storyDeltaBefore: null
+        }
+      ]
+    });
+    state.bookEditOperations.push(operation);
+    mockPrisma.bookEditOperation.findMany.mockResolvedValue([operation]);
+    state.pages = editablePages().map((page) => ({ ...page, revision: 2, storyDelta: { factsAdded: ["Stale."] } }));
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/projects/project-1/chat/edits/undo",
+      headers: bearer("token-a"),
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(mockPrisma.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: expect.objectContaining({
+        markdown: "Rabbit runs ahead at the start of the race.",
+        storyDelta: storyDeltaBefore
+      })
+    });
+    expect(mockPrisma.page.update).toHaveBeenCalledWith({
+      where: { id: "page-2" },
+      data: expect.objectContaining({ storyDelta: Prisma.DbNull })
+    });
+    expect(mockPrisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: { storyState: expect.objectContaining({ facts: [{ text: "The lantern is green.", pageIndex: 1 }] }) }
+    });
     await app.close();
   });
 });

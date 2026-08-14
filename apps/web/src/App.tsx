@@ -10,6 +10,7 @@ import { OperationsScreen } from "./features/admin/OperationsScreen.js";
 import { OverviewScreen } from "./features/admin/OverviewScreen.js";
 import { UsersScreen } from "./features/admin/UsersScreen.js";
 import { SafetySettingsScreen } from "./features/admin/SafetySettingsScreen.js";
+import { GenerationQualityScreen } from "./features/admin/GenerationQualityScreen.js";
 import { ConsoleScreen } from "./features/console/ConsoleScreen.js";
 import { PricingScreen } from "./features/pricing/PricingScreen.js";
 import { ADMIN_PATH, PRICING_PATH } from "./features/projects/routing.js";
@@ -70,6 +71,7 @@ function AuthenticatedApp() {
         <Route path="moderation" element={<ModerationScreen />} />
         <Route path="settings" element={<SafetySettingsScreen />} />
         <Route path="pricing" element={<PricingScreen />} />
+        <Route path="quality" element={<GenerationQualityScreen />} />
       </Route>
       {/* Pricing shipped at its own path before the dashboard grew around it. */}
       <Route path={PRICING_PATH} element={<Navigate to={`${ADMIN_PATH}/pricing`} replace />} />

@@ -153,6 +153,8 @@ describe("billing credit assumptions", () => {
 
     const premium = estimateFullBookCreditCost(inputWith({ modelTier: "premium" }));
     expect(premium.assumptions.includesPremiumReview).toBe(true);
+    const ultra = estimateFullBookCreditCost(inputWith({ modelTier: "ultra" }));
+    expect(ultra.assumptions.includesPremiumReview).toBe(true);
     expect(premium.lineItems).toContainEqual(
       expect.objectContaining({ code: "PREMIUM_REVIEW", credits: DEFAULT_CREDIT_COSTS.premiumReview })
     );
@@ -172,7 +174,7 @@ describe("billing credit assumptions", () => {
   });
 
   it("prices a book at its own tier's rates", () => {
-    const inputForTier = (modelTier?: "fast" | "balanced" | "premium") =>
+    const inputForTier = (modelTier?: "fast" | "balanced" | "premium" | "ultra") =>
       createProjectSchema.parse({
         prompt: "Create a practical guide about onboarding new managers.",
         category: "BUSINESS",
@@ -197,6 +199,9 @@ describe("billing credit assumptions", () => {
     expect(estimateFullBookCreditCost(inputForTier("balanced")).totalCredits).toBe(350 + 18 * 8 + 4 * 45 + 150);
     expect(estimateFullBookCreditCost(inputForTier("premium")).totalCredits).toBe(
       500 + 18 * 30 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
+    );
+    expect(estimateFullBookCreditCost(inputForTier("ultra")).totalCredits).toBe(
+      650 + 18 * 40 + 4 * 85 + DEFAULT_CREDIT_COSTS.premiumReview + 150
     );
 
     // A book from before tiers existed pays the balanced rates, because that

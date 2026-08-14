@@ -618,6 +618,7 @@ export function synthesizeImportedBookPlan(input: {
     characters: [],
     locations: [],
     continuityRules,
+    promises: [],
     researchQueries: [],
     researchNotes: [],
     illustrationPlan: {

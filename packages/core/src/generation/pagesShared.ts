@@ -1,10 +1,11 @@
+import type { TextModelAdapter } from "../adapters/types.js";
 import {
   kidsReadingGuidanceLines,
   kidsReadingGuidancePayload
 } from "../prompting/readingLevel.js";
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
+import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
-import type { ChapterBrief, ChapterPlan, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
 
 /**
  * Prompt rules and payload helpers shared by the page-map production layer
@@ -58,6 +59,28 @@ export type PriorPageContext = {
   title: string;
   markdown: string;
   summary: string;
+};
+
+export type GeneratePageOptions = {
+  input: CreateProjectInput;
+  plan: BookPlan;
+  chapter?: ChapterPlan | undefined;
+  chapterBrief?: ChapterBrief | undefined;
+  pageBrief?: PageProductionBeat | undefined;
+  chapterPageStart?: number | undefined;
+  chapterPageEnd?: number | undefined;
+  pageIndex: number;
+  previousSummaries: string[];
+  previousPages?: PriorPageContext[] | undefined;
+  continuityNotes: string[];
+  researchNotes: string[];
+  /** Semantically retrieved long-range context outside the recency window. */
+  semanticMemory?: string[] | undefined;
+  /** Structured character/location state lines. */
+  entityState?: string[] | undefined;
+  /** Pinned accepted-page excerpts, separate from recency. */
+  styleExcerpts?: string[] | undefined;
+  textModel: TextModelAdapter;
 };
 
 export type PageScopeSource = {
@@ -142,6 +165,68 @@ export function compactPriorPages(pages: PriorPageContext[], count: number, exce
     summary: page.summary,
     excerpt: page.markdown.slice(0, excerptLength)
   }));
+}
+
+/** Accepted pages 1 and 2 are the style lock, independent of recency-window order. */
+export const STYLE_LOCK_PAGE_INDEXES = [1, 2] as const;
+
+export function missingStyleLockIndexes(
+  recencyPages: readonly { index: number }[],
+  currentPageIndex: number
+): number[] {
+  const present = new Set(recencyPages.map((page) => page.index));
+  return STYLE_LOCK_PAGE_INDEXES.filter((index) => index < currentPageIndex && !present.has(index));
+}
+
+/** Recency window plus any loaded style-lock pages, for `pinStyleExcerpts` only. */
+export function pagesForStyleExcerpts(
+  recencyPages: PriorPageContext[],
+  styleLockPages: PriorPageContext[]
+): PriorPageContext[] {
+  if (styleLockPages.length === 0) {
+    return recencyPages;
+  }
+  const present = new Set(recencyPages.map((page) => page.index));
+  const lockIndexes = new Set<number>(STYLE_LOCK_PAGE_INDEXES);
+  const extra = styleLockPages.filter((page) => lockIndexes.has(page.index) && !present.has(page.index));
+  return extra.length > 0 ? [...extra, ...recencyPages] : recencyPages;
+}
+
+export function pinStyleExcerpts(
+  pages: PriorPageContext[],
+  sampleExcerpts: string[] = [],
+  excerptLength = 400
+): string[] {
+  const seen = new Set<number>();
+  const fromPages = [...pages]
+    .sort((left, right) => left.index - right.index)
+    .filter((page) => {
+      if (seen.has(page.index) || page.markdown.trim().length <= 40) {
+        return false;
+      }
+      seen.add(page.index);
+      return true;
+    })
+    .slice(0, 2)
+    .map((page) => page.markdown.slice(0, excerptLength).trim())
+    .filter(Boolean);
+  if (fromPages.length >= 2) {
+    return fromPages;
+  }
+  const fromImport = sampleExcerpts.map((excerpt) => excerpt.trim()).filter(Boolean).slice(0, 2 - fromPages.length);
+  return [...fromPages, ...fromImport].slice(0, 2);
+}
+
+export function sampleExcerptsFromInput(input: CreateProjectInput): string[] {
+  const mobile = jsonRecord(jsonRecord(input.mediaSettings).mobile);
+  const profile = jsonRecord(jsonRecord(mobile.import).styleProfile);
+  return Array.isArray(profile.sampleExcerpts)
+    ? profile.sampleExcerpts.filter((excerpt): excerpt is string => typeof excerpt === "string" && excerpt.trim().length > 0)
+    : [];
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 export function range(start: number, end: number): number[] {

@@ -20,8 +20,8 @@ import {
   teardownMobileHarness
 } from "./testing/mobileApiHarness.js";
 
-type Tier = "fast" | "balanced" | "premium";
-const TIERS: Tier[] = ["fast", "balanced", "premium"];
+type Tier = "fast" | "balanced" | "premium" | "ultra";
+const TIERS: Tier[] = ["fast", "balanced", "premium", "ultra"];
 
 /** The harness book at one tier: 12 pages, lead magnet, illustrated, AI cover. */
 function projectAtTier(tier: Tier, overrides: Record<string, unknown> = {}) {
@@ -87,7 +87,8 @@ describe("plan approval prices by quality tier", () => {
   const totals = {
     fast: 220 + 12 * 5 + 3 * 45 + 150,
     balanced: 350 + 12 * 8 + 3 * 45 + 150,
-    premium: 500 + 12 * 30 + 3 * 85 + 200 + 150
+    premium: 500 + 12 * 30 + 3 * 85 + 200 + 150,
+    ultra: 650 + 12 * 40 + 3 * 85 + 200 + 150
   } as const;
 
   for (const tier of TIERS) {
@@ -160,7 +161,7 @@ describe("book edits price by the book's own quality tier", () => {
   afterEach(teardownMobileHarness);
 
   // 2 chapters × 5 estimated pages, at each tier's page-rewrite rate.
-  const continuationCredits = { fast: 10 * 40, balanced: 10 * 80, premium: 10 * 220 } as const;
+  const continuationCredits = { fast: 10 * 40, balanced: 10 * 80, premium: 10 * 220, ultra: 10 * 280 } as const;
 
   for (const tier of TIERS) {
     it(`quotes and charges a continuation at the ${tier} rate`, async () => {

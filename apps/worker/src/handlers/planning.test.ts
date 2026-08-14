@@ -55,6 +55,17 @@ vi.mock("../generation/bookHelpers.js", () => ({
   planMediaSettingsSnapshot: (input: { mediaSettings: unknown }) => JSON.parse(JSON.stringify(input.mediaSettings)),
   strategyForInput: () => ({ createPlan: mocks.createPlan, revisePlan: mocks.revisePlan })
 }));
+vi.mock("../generation/qualitySettings.js", () => ({
+  loadQualityContext: async () => ({
+    settings: {},
+    tier: "balanced",
+    enabled: () => false
+  }),
+  applyPlanThinkingBoost: vi.fn()
+}));
+vi.mock("../generation/storyStateStore.js", () => ({
+  seedProjectStoryState: vi.fn()
+}));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {

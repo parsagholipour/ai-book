@@ -22,7 +22,12 @@ export const MECHANICAL_TEXT_PURPOSES: ReadonlySet<string> = new Set([
   "import-chapterize",
   "import-style-profile",
   // A 300-token pick from a fixed catalog (coverDesigns.ts).
-  "select-cover-design"
+  "select-cover-design",
+  "extract-story-state",
+  "critique-plan",
+  "verify-page-claims",
+  "audit-page-style",
+  "critique-page-map"
 ]);
 
 export type ModelTierTextSelections = {
@@ -34,6 +39,9 @@ const PREMIUM_PROSE_MODEL = "gemini-2.5-pro";
 // gemini-2.5-pro cannot fully disable thinking; bound the budget so thinking
 // tokens (billed as output) stay a small fraction of prose cost.
 const PREMIUM_PROSE_THINKING_BUDGET = 2048;
+export const PREMIUM_PLAN_THINKING_BUDGET = 4096;
+export const ULTRA_PLAN_THINKING_BUDGET = 8192;
+export const ULTRA_PAGE_MAP_THINKING_BUDGET = 1024;
 const PREMIUM_MECHANICAL_MODEL = "gemini-2.5-flash";
 const PREMIUM_IMAGE_MODEL = "gemini-3.1-flash-image";
 export const PREMIUM_COVER_IMAGE_MODEL = "gemini-3-pro-image";
@@ -48,7 +56,7 @@ export function modelTierTextSelections(tier: ModelTier, config: AppConfig): Mod
     };
     return { prose: selection, mechanical: selection };
   }
-  if (tier === "premium") {
+  if (tier === "premium" || tier === "ultra") {
     return {
       prose: {
         provider: "gemini",
@@ -73,8 +81,18 @@ export function modelTierTextSelections(tier: ModelTier, config: AppConfig): Mod
 }
 
 export function modelTierImageSelection(tier: ModelTier): ImageModelSelection | undefined {
-  if (tier === "premium") {
+  if (tier === "premium" || tier === "ultra") {
     return { provider: "gemini", model: PREMIUM_IMAGE_MODEL };
+  }
+  return undefined;
+}
+
+export function planThinkingBudgetForTier(tier: ModelTier): number | undefined {
+  if (tier === "ultra") {
+    return ULTRA_PLAN_THINKING_BUDGET;
+  }
+  if (tier === "premium") {
+    return PREMIUM_PLAN_THINKING_BUDGET;
   }
   return undefined;
 }

@@ -26,7 +26,7 @@ export const mobileBookTypeChoiceSchema = z.enum([
   "children_story"
 ]);
 const mobileLengthPresetSchema = z.enum(["short", "standard", "expanded"]);
-const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium"]);
+const mobileQualityPresetSchema = z.enum(["fast", "balanced", "premium", "ultra"]);
 export const mobilePageCountModeSchema = z.enum(["auto", "custom"]);
 export const mobilePageCountSourceSchema = z.enum(["chat", "settings", "recommended", "legacy"]);
 export const mobileTargetPagesSchema = z.coerce.number().int().min(1).max(600);

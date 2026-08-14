@@ -2385,6 +2385,70 @@ figcaption {
   line-height: 1.45;
 }
 
+.quality-gate-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.quality-gate-row {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #bfd0c6;
+  border-radius: 10px;
+  background: #f8fbf7;
+}
+
+.quality-gate-row.is-off {
+  background: #fbf6f0;
+  border-color: #e2d3c0;
+}
+
+.quality-gate-row strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quality-gate-row small {
+  display: block;
+  margin-top: 4px;
+  color: #65706b;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.quality-gate-off {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8a4b2d;
+  border: 1px solid #e2d3c0;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.quality-gate-tiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  min-inline-size: 0;
+}
+
+.quality-gate-tiers label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
 /* Stat tiles and the one hero figure */
 
 .hero-card {

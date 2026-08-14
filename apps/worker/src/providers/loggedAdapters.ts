@@ -6,6 +6,7 @@ import {
   estimateSpeechCostUsd,
   FallbackImageAdapter,
   GeminiImageAdapter,
+  isPremiumProject,
   PREMIUM_COVER_IMAGE_MODEL,
   PREMIUM_FALLBACK_IMAGE_MODEL,
   RoutingTextModelAdapter,
@@ -104,7 +105,7 @@ export function createLoggedSpeechAdapter(job: Job, speech: SpeechAdapter): Spee
  * model. Explicit operator image selections are respected as-is.
  */
 export function coverImageSelectionForInput(input: CreateProjectInput): ImageModelSelection | undefined {
-  if (config.MOCK_AI || input.mediaSettings.imageModel || input.mediaSettings.modelTier !== "premium") {
+  if (config.MOCK_AI || input.mediaSettings.imageModel || !isPremiumProject(input)) {
     return undefined;
   }
   return { provider: "gemini", model: PREMIUM_COVER_IMAGE_MODEL };
@@ -159,14 +160,14 @@ function createLoggedImageAdapter(
   });
 }
 
-function imageFallbackSelection(primary: ImageModelSelection, input?: CreateProjectInput | undefined): ImageModelSelection {
+export function imageFallbackSelection(primary: ImageModelSelection, input?: CreateProjectInput | undefined): ImageModelSelection {
   if (primary.provider === "alibaba") {
     return { provider: "gemini", model: config.GEMINI_IMAGE_MODEL };
   }
   // Premium-tier books fall back to Alibaba's higher-quality image model so
   // a Gemini outage doesn't silently downgrade a premium book.
   const alibabaModel =
-    input?.mediaSettings.modelTier === "premium" ? PREMIUM_FALLBACK_IMAGE_MODEL : config.ALIBABA_IMAGE_MODEL;
+    input && isPremiumProject(input) ? PREMIUM_FALLBACK_IMAGE_MODEL : config.ALIBABA_IMAGE_MODEL;
   return { provider: "alibaba", model: alibabaModel };
 }
 
@@ -187,7 +188,7 @@ export function createImageAdapterForSelection(selection: ImageModelSelection): 
 /** How often an in-flight provider call re-checks the job's stop flag. */
 const STOP_ABORT_POLL_MS = 2_500;
 
-class LoggingTextModelAdapter implements TextModelAdapter {
+export class LoggingTextModelAdapter implements TextModelAdapter {
   constructor(
     private readonly delegate: TextModelAdapter,
     private readonly logger: RunLogger,
@@ -195,6 +196,13 @@ class LoggingTextModelAdapter implements TextModelAdapter {
     private readonly projectId: string | undefined,
     private readonly textModel: LoggedTextModel
   ) {}
+
+  setPurposeOverridesEnabled(enabled: boolean): void {
+    const inner = this.delegate as { setPurposeOverridesEnabled?: (value: boolean) => void };
+    if (typeof inner.setPurposeOverridesEnabled === "function") {
+      inner.setPurposeOverridesEnabled(enabled);
+    }
+  }
 
   private textModelForPurpose(purpose: string | undefined): LoggedTextModel {
     if (this.delegate instanceof RoutingTextModelAdapter) {

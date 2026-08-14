@@ -18,6 +18,7 @@ import { range } from "../runtime/serialization.js";
 import { chapterSetupsForPlan, reviewWholeBookDraftPages } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { reviewAndSaveGeneratedPage } from "./pageReview.js";
+import { polishPageWithQualityGates } from "./qualityDrafting.js";
 import { storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
 import {
   type BookGenerationStrategy,
@@ -480,19 +481,24 @@ export async function generateBookDraftThenPolish(options: {
     const chapterBrief = setup?.brief;
     const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === pageDraft.index);
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup?.chapter);
-    const polished = await polishPageDraft({
-      input: effectiveInput,
-      plan: effectivePlan,
-      chapter: setup?.chapter,
-      chapterBrief,
-      pageBrief,
-      pageIndex: pageDraft.index,
-      draft: pageDraft,
-      previousPages,
-      nextPages: rawPages.filter((page) => page.index > pageDraft.index).slice(0, 3),
-      continuityNotes,
-      researchNotes,
-      textModel: options.providers.text
+    const polished = await polishPageWithQualityGates({
+      polishPageDraft,
+      polishOptions: {
+        input: effectiveInput,
+        plan: effectivePlan,
+        chapter: setup?.chapter,
+        chapterBrief,
+        pageBrief,
+        pageIndex: pageDraft.index,
+        draft: pageDraft,
+        previousPages,
+        nextPages: rawPages.filter((page) => page.index > pageDraft.index).slice(0, 3),
+        continuityNotes,
+        researchNotes,
+        textModel: options.providers.text
+      },
+      providers: options.providers,
+      input: effectiveInput
     });
     const saved = await reviewAndSaveGeneratedPage({
       projectId: options.projectId,

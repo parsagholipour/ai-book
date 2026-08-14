@@ -19,14 +19,19 @@ export type CreditPricingKey =
   // The quality tiers' own rates. The unsuffixed key above is the balanced one.
   | "fullBookBaseFast"
   | "fullBookBasePremium"
+  | "fullBookBaseUltra"
   | "fullBookPerPageFast"
   | "fullBookPerPagePremium"
+  | "fullBookPerPageUltra"
   | "imageGenerationFast"
   | "imageGenerationPremium"
+  | "imageGenerationUltra"
   | "pageRegenerationPerPageFast"
   | "pageRegenerationPerPagePremium"
+  | "pageRegenerationPerPageUltra"
   | "bookTextEditPerPageFast"
   | "bookTextEditPerPagePremium"
+  | "bookTextEditPerPageUltra"
   // Not prices — the free tier's monthly limits. Same table, same audit trail.
   | "freeMonthlyCredits"
   | "freeIllustratedBooksPerMonth"
@@ -35,7 +40,7 @@ export type CreditPricingKey =
 export type CreditPricingValues = Record<CreditPricingKey, number>;
 
 export type PricingTierQuote = {
-  tier: "fast" | "balanced" | "premium";
+  tier: "fast" | "balanced" | "premium" | "ultra";
   totalCredits: number;
   estimatedUsd: number;
   lineItems: Array<{ code: string; label: string; quantity: number; unitCredits: number; credits: number }>;

@@ -3,8 +3,10 @@ import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { uniqueStrings } from "../runtime/serialization.js";
-import { loadContinuityNotes } from "./generationContext.js";
-import { storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
+import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
+import { enrichPageQualityReport, persistKeeperStoryDelta } from "./qualityEnrichment.js";
+import { retrieveSemanticResearchNotes, storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
+import { loadQualityContext } from "./qualitySettings.js";
 import {
   MAX_PAGE_QA_CANDIDATES,
   MAX_PAGE_QA_REWRITE_ATTEMPTS,
@@ -89,6 +91,8 @@ export async function runPageQualityLoop(options: {
   repairBrief?: boolean | undefined;
   reviseContext: string;
   reviseProgress?: number | undefined;
+  styleExcerpts?: string[] | undefined;
+  retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
   /** Per-rewrite progress reporting, in the caller's own style. */
   onRewrite?: ((revision: number) => Promise<void>) | undefined;
 }): Promise<PageQualityLoopOutcome> {
@@ -140,7 +144,9 @@ export async function runPageQualityLoop(options: {
         report: pageRewriteReport(report, nextRevision, options.recoveryRevision ?? PAGE_QA_RECOVERY_CANDIDATE),
         previousPages: options.previousPages,
         continuityNotes: options.continuityNotes,
-        textModel: options.textModel
+        textModel: options.textModel,
+        ...(options.styleExcerpts && options.styleExcerpts.length > 0 ? { styleExcerpts: options.styleExcerpts } : {}),
+        ...(await retrievedResearchForRevise(options, draft, report))
       }
     });
     revision = nextRevision;
@@ -156,7 +162,8 @@ export async function runPageQualityLoop(options: {
       draft,
       previousPages: options.previousPages,
       continuityNotes: options.continuityNotes,
-      textModel: options.textModel
+      textModel: options.textModel,
+      ...(options.styleExcerpts && options.styleExcerpts.length > 0 ? { styleExcerpts: options.styleExcerpts } : {})
     });
     best = bestDraftCandidate(best, { draft, revision, report });
   }
@@ -190,6 +197,8 @@ export async function reviewAndSaveGeneratedPage(options: {
 }): Promise<PriorPageContext> {
   const pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
   const continuityNotes = await loadContinuityNotes(options.projectId);
+  const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, options.chapter);
+  const quality = await loadQualityContext(options.input);
   const initialReport = await options.strategy.reviewPageDraft({
     input: options.input,
     plan: options.plan,
@@ -204,6 +213,17 @@ export async function reviewAndSaveGeneratedPage(options: {
     continuityNotes,
     textModel: options.providers.text
   });
+  const enriched = await enrichPageQualityReport({
+    input: options.input,
+    plan: options.plan,
+    pageIndex: options.draft.index,
+    draft: options.draft,
+    report: initialReport,
+    previousPages: options.previousPages,
+    researchNotes,
+    textModel: options.providers.text,
+    projectId: options.projectId
+  });
 
   const outcome = await runPageQualityLoop({
     strategy: options.strategy,
@@ -217,7 +237,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     chapterId: options.chapterId,
     pageIndex: options.draft.index,
     draft: options.draft,
-    report: initialReport,
+    report: enriched.report,
     previousPages: options.previousPages,
     continuityNotes,
     textModel: options.providers.text,
@@ -225,6 +245,18 @@ export async function reviewAndSaveGeneratedPage(options: {
     maxCandidates: MAX_PAGE_QA_CANDIDATES,
     repairBrief: true,
     reviseContext: `Page ${options.draft.index}`,
+    ...(enriched.styleExcerpts.length > 0 ? { styleExcerpts: enriched.styleExcerpts } : {}),
+    ...(quality.enabled("claimRetrieve")
+      ? {
+          retrieveResearch: (draft: PageDraft) =>
+            retrieveSemanticResearchNotes({
+              projectId: options.projectId,
+              queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
+              embedding: options.providers.embedding,
+              topK: 6
+            })
+        }
+      : {}),
     onRewrite: (nextRevision) =>
       updateJobProgress(options.generationJobId, {
         message: pageRevisionMessage(options.draft.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
@@ -266,6 +298,18 @@ export async function reviewAndSaveGeneratedPage(options: {
       revision,
       qualityReport: qualityReport as Prisma.InputJsonValue
     }
+  });
+
+  await persistKeeperStoryDelta({
+    projectId: options.projectId,
+    pageIndex: options.draft.index,
+    draft,
+    textModel: options.providers.text,
+    plan: options.plan,
+    input: options.input,
+    previousExtract: enriched.extract,
+    keeperWasRevised: revision > 1,
+    currentState: enriched.storyState
   });
 
   if (!qualityReport.approved) {
@@ -346,6 +390,25 @@ export async function revisePageDraftWithRestart(options: {
   }
 
   throw lastError instanceof Error ? lastError : new Error(`${options.context} revise failed.`);
+}
+
+async function retrievedResearchForRevise(
+  options: {
+    retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
+  },
+  draft: PageDraft,
+  report: PageQualityReport
+): Promise<{ retrievedResearch: string[] } | Record<string, never>> {
+  if (!options.retrieveResearch || report.groundedOk !== false) {
+    return {};
+  }
+  try {
+    const notes = await options.retrieveResearch(draft, report);
+    return notes.length > 0 ? { retrievedResearch: notes } : {};
+  } catch (error) {
+    console.warn("Failed-claim research retrieve skipped", error);
+    return {};
+  }
 }
 
 export function pageRevisionMessage(pageIndex: number, revision: number, maxRewriteAttempts: number): string {

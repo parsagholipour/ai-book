@@ -2,10 +2,18 @@ import { formatQualityFailure, getProjectOrThrow, parseChapterBrief, strategyFor
 import { loadResearchNotesForGeneration } from "../generation/generationContext.js";
 import { pageRevisionMessage, runPageQualityLoop } from "../generation/pageReview.js";
 import {
+  enrichPageQualityReport,
+  mergeEntityAndStoryStateLines,
+  persistKeeperStoryDelta
+} from "../generation/qualityEnrichment.js";
+import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualitySettings.js";
+import { loadProjectStoryState } from "../generation/storyStateStore.js";
+import {
   RECENT_PAGE_WINDOW,
   embedSemanticQuery,
   loadEntityStateLines,
   retrieveSemanticPageMemory,
+  retrieveSemanticResearchNotes,
   storeEmbedding,
   updateEntityStateFromPage
 } from "../generation/semanticMemory.js";
@@ -15,7 +23,19 @@ import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { enqueueNextPageIfReady, enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
-import { bestOfCandidateCount, bookPlanSchema, createProviders, generateBestOfPageDrafts } from "@book-maker/core";
+import {
+  bestOfCandidateCount,
+  bookPlanSchema,
+  createProviders,
+  formatStoryStateLines,
+  generateBestOfPageDrafts,
+  generatePageDraftWithWriterTools,
+  missingStyleLockIndexes,
+  pagesForStyleExcerpts,
+  pinStyleExcerpts,
+  sampleExcerptsFromInput,
+  type PriorPageContext
+} from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
@@ -81,8 +101,24 @@ export async function generatePage(job: Job) {
           ...(semanticQueryVector ? { vector: semanticQueryVector } : {})
         })
       : [];
-  const entityState = await loadEntityStateLines(projectId, plan);
+  const entityStateLines = await loadEntityStateLines(projectId, plan);
+  const quality = await loadQualityContext(input);
+  applyPlanThinkingBoost(providers.text, quality.enabled("planThinkingBoost"));
+  const storyState = await loadProjectStoryState(projectId, plan.promises ?? []);
+  const storyLines = formatStoryStateLines(storyState);
+  const entityState = mergeEntityAndStoryStateLines(entityStateLines, storyLines);
+  const styleLockPages = quality.enabled("styleExcerpts")
+    ? await loadStyleLockPages(projectId, page.index, priorPageContext)
+    : [];
+  const styleExcerpts = quality.enabled("styleExcerpts")
+    ? pinStyleExcerpts(
+        pagesForStyleExcerpts(priorPageContext, styleLockPages),
+        sampleExcerptsFromInput(input)
+      )
+    : [];
 
+  // Sequential drafting still honors operator `draftCandidates`. Ultra-only
+  // best-of lives on the polish path (`polishPageWithQualityGates`).
   const candidateCount = bestOfCandidateCount(input);
   await advanceJobStep(
     generationJobId,
@@ -103,17 +139,28 @@ export async function generatePage(job: Job) {
     researchNotes,
     semanticMemory,
     entityState,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     textModel: providers.text
+  };
+  const draftPage = async (options: typeof draftOptions) => {
+    if (!quality.enabled("writerTools")) {
+      return strategy.generatePageDraft(options);
+    }
+    return generatePageDraftWithWriterTools({
+      ...options,
+      storyState,
+      fallback: () => strategy.generatePageDraft(options)
+    });
   };
   const initialDraft =
     candidateCount > 1
       ? await generateBestOfPageDrafts({
-          draftPage: strategy.generatePageDraft,
+          draftPage,
           baseOptions: draftOptions,
           candidateCount,
           judgeModel: providers.text
         })
-      : await strategy.generatePageDraft(draftOptions);
+      : await draftPage(draftOptions);
   await advanceJobStep(generationJobId, "qa", 55, `Reviewing page ${page.index}`);
   const initialReport = await strategy.reviewPageDraft({
     input,
@@ -125,7 +172,20 @@ export async function generatePage(job: Job) {
     draft: initialDraft,
     previousPages: priorPageContext,
     continuityNotes: continuity.map((note) => note.body),
-    textModel: providers.text
+    textModel: providers.text,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
+  });
+  const enriched = await enrichPageQualityReport({
+    input,
+    plan,
+    pageIndex: page.index,
+    draft: initialDraft,
+    report: initialReport,
+    previousPages: priorPageContext,
+    researchNotes,
+    textModel: providers.text,
+    projectId,
+    ...(quality.enabled("styleExcerpts") ? { styleExcerpts } : {})
   });
 
   const outcome = await runPageQualityLoop({
@@ -138,7 +198,7 @@ export async function generatePage(job: Job) {
     chapterId: page.chapterId,
     pageIndex: page.index,
     draft: initialDraft,
-    report: initialReport,
+    report: enriched.report,
     previousPages: priorPageContext,
     continuityNotes: continuity.map((note) => note.body),
     textModel: providers.text,
@@ -147,6 +207,18 @@ export async function generatePage(job: Job) {
     repairBrief: true,
     reviseContext: `Page ${page.index}`,
     reviseProgress: 70,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
+    ...(quality.enabled("claimRetrieve")
+      ? {
+          retrieveResearch: (draft) =>
+            retrieveSemanticResearchNotes({
+              projectId,
+              queryText: `${draft.title}\n${draft.summary}\n${draft.markdown}`.slice(0, 1200),
+              embedding: providers.embedding,
+              topK: 6
+            })
+        }
+      : {}),
     onRewrite: (nextRevision) =>
       advanceJobStep(generationJobId, "revise", 70, pageRevisionMessage(page.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS))
   });
@@ -167,6 +239,17 @@ export async function generatePage(job: Job) {
         revision,
         qualityReport: qualityReport as Prisma.InputJsonValue
       }
+    });
+    await persistKeeperStoryDelta({
+      projectId,
+      pageIndex: page.index,
+      draft,
+      textModel: providers.text,
+      plan,
+      input,
+      previousExtract: enriched.extract,
+      keeperWasRevised: revision > 1,
+      currentState: enriched.storyState
     });
     await updateJobProgress(generationJobId, {
       message: `Page ${page.index} kept its best draft but failed quality review; continuing with the next page. ${formatQualityFailure(page.index, qualityReport)}`
@@ -209,6 +292,17 @@ export async function generatePage(job: Job) {
       qualityReport: qualityReport as Prisma.InputJsonValue
     }
   });
+  await persistKeeperStoryDelta({
+    projectId,
+    pageIndex: page.index,
+    draft,
+    textModel: providers.text,
+    plan,
+    input,
+    previousExtract: enriched.extract,
+    keeperWasRevised: revision > 1,
+    currentState: enriched.storyState
+  });
 
   if (draft.continuityNotes.length > 0) {
     await prisma.continuityNote.createMany({
@@ -225,4 +319,19 @@ export async function generatePage(job: Job) {
   await storeEmbedding(projectId, `page:${page.index}`, pageId, draft.summary, providers.embedding);
 
   await enqueueNextPageIfReady(projectId, planId, input);
+}
+
+async function loadStyleLockPages(
+  projectId: string,
+  pageIndex: number,
+  recencyPages: PriorPageContext[]
+): Promise<PriorPageContext[]> {
+  const missing = missingStyleLockIndexes(recencyPages, pageIndex);
+  if (missing.length === 0) {
+    return [];
+  }
+  const loaded = await prisma.page.findMany({
+    where: { projectId, index: { in: missing }, status: "COMPLETED" }
+  });
+  return loaded.map(toPriorPageContext);
 }
