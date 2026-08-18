@@ -13,6 +13,7 @@ class ReaderBookmarksSheet extends StatelessWidget {
     required this.currentRevision,
     required this.onSelect,
     required this.onRemove,
+    this.hasCoverPage = false,
     super.key,
   });
 
@@ -20,6 +21,10 @@ class ReaderBookmarksSheet extends StatelessWidget {
   final int? currentRevision;
   final void Function(ReaderBookmark bookmark) onSelect;
   final void Function(ReaderBookmark bookmark) onRemove;
+
+  /// Whether PDF sheet 1 is an unnumbered cover. Labels skip it; taps still
+  /// go to the physical sheet the bookmark recorded.
+  final bool hasCoverPage;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +59,7 @@ class ReaderBookmarksSheet extends StatelessWidget {
                   return ListTile(
                     leading: const Icon(Icons.bookmark_outline),
                     title: Text(
-                      bookmark.label,
+                      bookmark.displayedLabel(hasCoverPage: hasCoverPage),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

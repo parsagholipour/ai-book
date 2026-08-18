@@ -89,7 +89,7 @@ Future<void> runReaderSelectionAction({
           draft: readerAskDraft(
             pageNumber: selection.bookPageIndex == null
                 ? null
-                : selection.pdfPageNumber,
+                : selection.displayPageNumber,
             excerpt: selection.excerpt,
           ),
         ),
@@ -114,7 +114,7 @@ Future<void> runReaderSelectionAction({
         message: readerRewriteMessage(
           pageNumber: selection.bookPageIndex == null
               ? null
-              : selection.pdfPageNumber,
+              : selection.displayPageNumber,
           excerpt: selection.excerpt,
           instruction: instruction,
         ),
@@ -130,7 +130,7 @@ Future<void> runReaderSelectionAction({
         message: readerReplaceMessage(
           pageNumber: selection.bookPageIndex == null
               ? null
-              : selection.pdfPageNumber,
+              : selection.displayPageNumber,
           from: replacement.from,
           to: replacement.to,
         ),
@@ -149,7 +149,7 @@ void _sendEdit({
   required GoRouter router,
   required String projectId,
   required String message,
-  Map<String, int>? readerContext,
+  Map<String, Object>? readerContext,
 }) {
   AppHaptics.tap();
   router.push(

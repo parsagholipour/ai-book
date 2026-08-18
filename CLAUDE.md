@@ -193,6 +193,15 @@ code in that area, however obvious the rule looks.
 - **Generation state lives in the database, not in Redis.** → apps/worker/CLAUDE.md
 - **Run logs are the debugging artifact.** → apps/worker/CLAUDE.md
 - **The portrait job is the one `GenerationJob` with no project.** → apps/worker/src/handlers/CLAUDE.md
+- **Every fork out of `applyBookEdit` — structural and both image ones — is decided by the operation's `kind`, never by the payload.** → apps/worker/src/handlers/CLAUDE.md
+- **A structural edit's redelivery stamp comes down in the same transaction that puts the book back.** → apps/worker/src/handlers/CLAUDE.md
+- **A structural shift and every write after it belong to one durable, expiring delivery lease.** → apps/worker/src/generation/CLAUDE.md + apps/worker/src/handlers/CLAUDE.md
+- **Every read the shift is derived from is taken under the claim, and reconciled against what the claim actually finds.** → apps/worker/src/generation/CLAUDE.md
+- **An edit the reader has already undone is terminal for every delivery of it.** → apps/worker/src/handlers/CLAUDE.md
+- **A settlement merges onto the classifier it re-reads under its own row lock, never the copy the delivery carried in.** → apps/worker/src/handlers/CLAUDE.md
+- **A delivered edit outlives a recompile it could not queue.** → apps/worker/src/handlers/CLAUDE.md
+- **An edit that settles itself as a delivered no-op has to refund itself too.** → apps/worker/src/handlers/CLAUDE.md
+- **Every apply fork stays EDITING until its recompile publishes, and the page map is why.** → apps/worker/src/handlers/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 
 ### Credits and billing
 
@@ -215,7 +224,10 @@ code in that area, however obvious the rule looks.
 - **A cited source is stored as the publisher's own address, never Google's.** → packages/core/src/adapters/CLAUDE.md
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
+- **The model-free recogniser fires only when the verb's object *is* the page.** → apps/api/src/mobile/CLAUDE.md
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.** → apps/api/src/mobile/CLAUDE.md
+- **Undoing a structural edit moves the book to a different plan version, and the recompile has to follow it there.** → packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **Undo is offered only for an edit the undo would actually revert, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md
 
 ### Characters, covers and illustrations
 
@@ -239,9 +251,15 @@ code in that area, however obvious the rule looks.
 - **A recompile makes no model call, and that is a cache with one rule.** → apps/worker/src/generation/CLAUDE.md
 - **The mobile export routes never render.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md + apps/api/src/routes/CLAUDE.md
 - **A download says which compile answered it, because the URL cannot.** → packages/core/src/generation/CLAUDE.md + apps/mobile/lib/features/reader/CLAUDE.md
+- **A physical PDF sheet may only be read against the file it is a sheet of, and only a digest says which that is.** → apps/mobile/lib/features/reader/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A book only earns the word "Chapter" by being long enough to need it.** → packages/core/src/generation/CLAUDE.md
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
+- **The coverless title sheet is capped at exactly one page, and it clips from the tail.** → packages/core/src/generation/CLAUDE.md
+- **A page renumber carries the page map with it; only a sheet that would lose its page clears it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
+- **A page that goes away takes its semantic memory with it, because nothing else will.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
+- **A structural delete parks the page's older Undo history outside the Page cascade.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **A deleted page comes back as it was, not as an approved one.** → packages/db/CLAUDE.md
 
 ### Audiobook and voice
 

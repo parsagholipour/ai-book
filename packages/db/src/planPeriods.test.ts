@@ -18,6 +18,7 @@ const {
   getPlanSummary,
   grantCredits,
   refundCreditLedgerEntry,
+  refundCreditLedgerEntryPortion,
   releaseIllustratedBookUse,
   reserveCredits,
   resolvePlanTier
@@ -141,6 +142,45 @@ describe("monthly plan allowance", () => {
     });
   });
 
+  it("puts a straddling settled charge back into both pools it was drawn from", async () => {
+    // The allowance share is only *part* of this charge, so only that part may
+    // return to the allowance; the rest was purchased and goes back to the pool
+    // that cannot expire. The settled reversal derives that split itself — it is
+    // cumulative, so it has to — and this pins the answer it gives when nothing
+    // has been given back yet.
+    await grantCredits({ userId: "user-a", amountCredits: 500, idempotencyKey: "grant:straddle-refund" });
+    const reservation = await reserveCredits({
+      userId: "user-a",
+      operation: "FULL_BOOK_GENERATION",
+      amountCredits: ALLOWANCE + 200,
+      idempotencyKey: "reserve:straddle-refund",
+      now: JUNE
+    });
+    const spend = await commitReservedCredits(reservation!.id);
+    expect(await getCreditBalance("user-a", JUNE)).toMatchObject({
+      planCredits: 0,
+      purchasedCredits: 300,
+      lifetimeCreditsSpent: ALLOWANCE + 200
+    });
+
+    const reversal = await refundCreditLedgerEntry(spend.id, "Generation failed", JUNE);
+
+    expect(reversal).toMatchObject({
+      entryType: "REFUND",
+      amountCredits: ALLOWANCE + 200,
+      planCreditsDelta: ALLOWANCE,
+      // The spendable balance the moment this row was written: 300 purchased,
+      // plus everything coming back.
+      balanceAfterCredits: ALLOWANCE + 500
+    });
+    expect(await getCreditBalance("user-a", JUNE)).toMatchObject({
+      planCredits: ALLOWANCE,
+      purchasedCredits: 500,
+      availableCredits: ALLOWANCE + 500,
+      lifetimeCreditsSpent: 0
+    });
+  });
+
   it("releases a held reservation back to the allowance within the period", async () => {
     const reservation = await reserveCredits({
       userId: "user-a",
@@ -176,6 +216,39 @@ describe("monthly plan allowance", () => {
       planCredits: ALLOWANCE,
       purchasedCredits: 600,
       availableCredits: ALLOWANCE + 600
+    });
+  });
+
+  it("keeps cumulative partial top-ups in the correct period pools", async () => {
+    await grantCredits({ userId: "user-a", amountCredits: 200, idempotencyKey: "grant:partial-periods" });
+    const reservation = await reserveCredits({
+      userId: "user-a",
+      operation: "PAGE_REGENERATION",
+      amountCredits: ALLOWANCE + 200,
+      idempotencyKey: "reserve:partial-periods",
+      now: JUNE
+    });
+    const spend = await commitReservedCredits(reservation!.id);
+
+    await refundCreditLedgerEntryPortion({
+      entryId: spend.id,
+      amountCredits: 400,
+      reason: "June shortfall",
+      idempotencyKey: "shortfall:june",
+      now: JUNE
+    });
+    expect(await getCreditBalance("user-a", JUNE)).toMatchObject({
+      planCredits: 400,
+      purchasedCredits: 0,
+      lifetimeCreditsSpent: ALLOWANCE - 200
+    });
+
+    await ensureCurrentPlanPeriod("user-a", JULY);
+    await refundCreditLedgerEntry(spend.id, "Later full failure", JULY);
+    expect(await getCreditBalance("user-a", JULY)).toMatchObject({
+      planCredits: ALLOWANCE,
+      purchasedCredits: ALLOWANCE - 200,
+      lifetimeCreditsSpent: 0
     });
   });
 
@@ -375,6 +448,32 @@ describe("illustrated book quota", () => {
     });
 
     await refundCreditLedgerEntry(reservation!.id, "Could not be queued", JUNE);
+    expect(await getImageQuota("user-a", JUNE)).toMatchObject({ used: 0 });
+  });
+
+  it("keeps an indivisible quota slot until a partial refund is topped up", async () => {
+    const claim = await consumeIllustratedBookUse({ userId: "user-a", limit: LIMIT, now: JUNE });
+    const reservation = await reserveCredits({
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "FULL_BOOK_GENERATION",
+      amountCredits: 500,
+      idempotencyKey: "reserve:illustrated-partial",
+      metadata: { imageQuota: { periodKey: claim.periodKey } },
+      now: JUNE
+    });
+    const spend = await commitReservedCredits(reservation!.id);
+
+    await refundCreditLedgerEntryPortion({
+      entryId: spend.id,
+      amountCredits: 200,
+      reason: "Partial delivery",
+      idempotencyKey: "partial:illustrated",
+      now: JUNE
+    });
+    expect(await getImageQuota("user-a", JUNE)).toMatchObject({ used: 1 });
+
+    await refundCreditLedgerEntry(spend.id, "Full failure", JUNE);
     expect(await getImageQuota("user-a", JUNE)).toMatchObject({ used: 0 });
   });
 

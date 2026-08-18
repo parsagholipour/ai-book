@@ -38,7 +38,8 @@ export async function compileProjectMarkdown(
  * The manuscript plus — when it was compiled from the durable pages rather than
  * read back off disk — the anchor plan the PDF page map is measured from. A
  * saved `book.md` carries no offsets, so a rebuild from one renders unmeasured
- * and must clear the stored map rather than leave one from a different pass.
+ * and must replace translatable ranges with a cover-numbering stub rather than
+ * leave a map from a different pass.
  */
 export async function compileProjectManuscript(
   projectId: string,

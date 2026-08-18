@@ -341,17 +341,18 @@ export function resetMobileHarness(): void {
         : b.createdAt.getTime() - a.createdAt.getTime()
     );
     const page = typeof take === "number" ? sorted.slice(0, take) : sorted;
-    if (!include?._count?.select?.snapshots) {
+    if (!include?.snapshots && !include?._count?.select?.snapshots && !include?._count?.select?.archivedSnapshots) {
       return page;
     }
-    return page.map((operation) => ({
-      ...operation,
-      _count: {
-        snapshots:
-          operation._count?.snapshots ??
-          state.pageEditSnapshots.filter((snapshot) => snapshot.operationId === operation.id).length
-      }
-    }));
+    return page.map((operation) => {
+      const snapshots = operation.snapshots ?? state.pageEditSnapshots.filter(
+        (snapshot) => snapshot.operationId === operation.id
+      );
+      return { ...operation, snapshots, _count: {
+        snapshots: operation._count?.snapshots ?? snapshots.length,
+        archivedSnapshots: operation._count?.archivedSnapshots ?? 0
+      } };
+    });
   });
   mockPrisma.bookEditOperation.findUnique.mockImplementation(async ({ where }: { where: { id?: string } }) =>
     state.bookEditOperations.find((operation) => operation.id === where.id) ?? null

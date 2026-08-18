@@ -17,7 +17,7 @@ found only by listing this directory.
 
 ## Render harnesses
 
-- `render-book-fixtures.ts` (`pnpm render:fixtures`) — renders the seven-book fixture corpus.
+- `render-book-fixtures.ts` (`pnpm render:fixtures`) — renders the eight-book fixture corpus.
   This is how a typesetting change is proved; see the `verify-pdf-typography` skill. Not a test.
 - `preview-cover-designs.ts` (`pnpm covers:preview`) — contact sheet of the cover catalog.
 - `generate-audiobook-samples.ts` (`pnpm audiobook:samples`) — narrator sample MP3s.

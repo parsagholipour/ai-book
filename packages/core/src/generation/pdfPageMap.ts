@@ -1,8 +1,14 @@
 /**
  * The map from model pages — the `Page` rows a book is written and edited as —
- * to the pages of the compiled PDF, which are the only page numbers a reader
- * ever sees: the pdfrx page indicator, the printed footer and the Contents
- * column all count physical PDF pages, cover included.
+ * to the physical sheets of the compiled PDF.
+ *
+ * Stored ranges are physical (pdfrx, named destinations, bookmarks): PDF page 1
+ * is the cover or fallback title page when `hasCoverPage` is set. Printed
+ * numbers — the footer, the Contents column, chat copy — skip that sheet only
+ * on version-2 maps, measured after `@page pdf-cover { counter-reset: page 0 }`.
+ * Version-1 maps were measured against PDFs that counted the cover, and stay
+ * on physical numbering. {@link printedPageForPdfPage} and
+ * {@link pdfPageForPrintedPage} convert; do not subtract 1 at a call site.
  *
  * The two numberings genuinely diverge: the PDF adds a cover, sometimes a title
  * page and a Contents, and each model page's prose flows across however many
@@ -10,17 +16,19 @@
  * So the map is *measured*, never estimated: the renderer plants an anchor at
  * the first content of every model page, a hidden `<nav>` of internal links
  * makes Chrome emit a named destination for each (Skia writes `/Dests` only for
- * ids some link points at), and this module reads those destinations back out
- * of the exact bytes that were published.
+ * ids some link points at), and `pdfNamedDestinations.ts` reads those
+ * destinations back out of the exact bytes that were published — that module is
+ * the dependency-free byte parser, this one is the model built on top of it.
+ * Anchor ids stay ASCII `[a-z0-9-]` so PDF name escaping never applies to ours.
  *
- * The parser is deliberately dependency-free. Skia (Chrome's PDF backend, m148
- * and m151 verified) writes a classic cross-reference table, a flat `/Dests`
- * dictionary of `name → [pageRef /XYZ x y z]` entries and a nested page tree
- * capped at 8 kids per node; only content streams are compressed. Anchor ids
- * stay ASCII `[a-z0-9-]` so PDF name escaping never applies to ours. Every
- * structural surprise returns `undefined` rather than throwing: a book without
- * a map falls back to the old behaviour, and no compile may fail over it.
+ * Every structural surprise returns `undefined` rather than throwing: a book
+ * without a translatable map falls back to the old model-index chat behaviour,
+ * and no compile may fail over it. New PDFs still skip the cover in CSS, so a
+ * failed measurement still records {@link bookPdfCoverNumbering} — chrome can
+ * match the footer even when chat cannot translate.
  */
+
+import type { PdfNamedDestination, PdfNamedDestinations } from "./pdfNamedDestinations.js";
 
 export type BookPageAnchor = {
   /** The model page this anchor marks. */
@@ -48,8 +56,14 @@ export type BookPdfPageRange = {
   endPdfPage: number;
 };
 
+/**
+ * Maps measured after `@page pdf-cover { counter-reset: page 0 }`. Printed
+ * numbers skip the cover; version 1 does not.
+ */
+export const BOOK_PDF_PAGE_MAP_VERSION = 2 as const;
+
 export type BookPdfPageMap = {
-  version: 1;
+  version: 1 | typeof BOOK_PDF_PAGE_MAP_VERSION;
   totalPdfPages: number;
   /** True when PDF page 1 is the cover (or the fallback title page). */
   hasCoverPage: boolean;
@@ -58,6 +72,131 @@ export type BookPdfPageMap = {
   backMatterStartPdfPage?: number;
   pages: BookPdfPageRange[];
 };
+
+/**
+ * The discriminant a cover-numbering stub wears in the stored column.
+ *
+ * A stub says what it is rather than being inferred from what it lacks:
+ * "carries no ranges" and "is not a map at all" are different rows, and only
+ * the second one may never reach chat. Reading the refusal off empty `pages`
+ * conflated them, so a measured map that happened to hold no ranges — a row
+ * that still states its file's totals, cover sheet and furniture starts — was
+ * retired along with the stubs. {@link repointBookPdfPageMap} read it off
+ * `pages` too, and degraded such a row into a stub on the next renumber.
+ */
+export const BOOK_PDF_COVER_NUMBERING_KIND = "cover-numbering" as const;
+
+/**
+ * Cover-skip recorded when the translatable map cannot be measured.
+ *
+ * New PDFs always `counter-reset: page 0` on the cover / title sheet, so
+ * chrome still needs `hasCoverPage` after a failed measurement. {@link
+ * BOOK_PDF_COVER_NUMBERING_KIND} is what keeps chat on model indexes:
+ * {@link parseStoredBookPdfPageMap} refuses the row by that marker, while
+ * {@link parseStoredBookPdfNumbering} reads the cover-skip out of it. A row
+ * that predates the marker is refused anyway, because a stub describes no file
+ * and so carries no `totalPdfPages`, which a map must have.
+ *
+ * A render writes version 2, the numbering it just produced. A stub standing in
+ * for a *stored* map keeps that map's version instead: a version-1 PDF numbered
+ * its own cover, and restamping it 2 makes chrome skip a number it prints.
+ */
+export type BookPdfCoverNumbering = {
+  kind: typeof BOOK_PDF_COVER_NUMBERING_KIND;
+  version: 1 | typeof BOOK_PDF_PAGE_MAP_VERSION;
+  hasCoverPage: boolean;
+  pages: [];
+};
+
+/** What a PDF publication may persist: a measured map, or a cover-skip stub. */
+export type PersistableBookPdfPageMap = BookPdfPageMap | BookPdfCoverNumbering;
+
+/** Version + cover-skip, enough for chrome. Full maps and stubs both qualify. */
+export type BookPdfPageNumbering = Pick<BookPdfPageMap, "version" | "hasCoverPage"> & {
+  totalPdfPages?: number;
+  contentRevision?: number;
+  pdfDigest?: string;
+};
+
+export function bookPdfCoverNumbering(
+  hasCoverPage: boolean,
+  version: BookPdfCoverNumbering["version"] = BOOK_PDF_PAGE_MAP_VERSION
+): BookPdfCoverNumbering {
+  return { kind: BOOK_PDF_COVER_NUMBERING_KIND, version, hasCoverPage, pages: [] };
+}
+
+/**
+ * What to persist after a PDF render.
+ *
+ * A version-2 map measured against this file wins even when it carries no
+ * ranges — "holds no ranges" and "was never a measurement" are different rows
+ * ({@link BOOK_PDF_COVER_NUMBERING_KIND}), and only the second may become a
+ * stub. Every other result — `null`/`undefined` (failed measurement) or a
+ * version-1 map about different pagination — becomes a version-2
+ * cover-numbering stub: replacing the PDF bytes without a successful current
+ * measurement also replaces any stored translatable ranges, because neither
+ * matching manuscript text nor a prior map proves the new render has the same
+ * pagination.
+ */
+export function persistablePdfPageMapAfterRender(input: {
+  pageMap: BookPdfPageMap | null | undefined;
+  hasCoverPage: boolean;
+}): PersistableBookPdfPageMap {
+  if (input.pageMap?.version === BOOK_PDF_PAGE_MAP_VERSION) {
+    return input.pageMap;
+  }
+  return bookPdfCoverNumbering(input.hasCoverPage);
+}
+
+/**
+ * The same map with its model indexes moved to where those pages now live, or
+ * `undefined` when it can no longer describe the file whole.
+ *
+ * A structural edit renumbers `Page.index` under a PDF that has not been
+ * recompiled yet, and the reader keeps looking at that PDF for as long as the
+ * exports rebuild — so the *ranges* are still true and only the indexes have
+ * gone stale. Re-pointing them is exactly what `repointPageEmbeddings` does to
+ * the semantic-memory scopes in the same transaction, and for the same reason:
+ * an index another page now holds does not degrade, it lies.
+ *
+ * `moves` must name **every** page the map mentions, keyed by the index it
+ * holds now. A page that is missing has been removed from the book, and the
+ * whole map is refused rather than losing that one range: the ranges of a
+ * measured map are contiguous from the first anchor to the last content page,
+ * and {@link pdfPageZone} rests on that — a sheet covered by no range would be
+ * classified as front or back matter, so a hole answers "printed page 5 is the
+ * Sources list" about a page the reader can still read. A partial map that
+ * translates some pages and mistranslates others is worse than no map, which is
+ * the same call {@link buildBookPdfPageMap} makes about a partial measurement.
+ *
+ * A map that carries **no** ranges is not that refusal. It names no model page,
+ * so this renumber moved nothing it says and took no sheet out from under it:
+ * it comes back unchanged, totals and cover flag and furniture starts intact.
+ * Reading the refusal off `map.pages` instead conflated "lost a range" with
+ * "never had one" — the same conflation {@link BOOK_PDF_COVER_NUMBERING_KIND}
+ * describes on the parse side — and degraded a row
+ * {@link parseStoredBookPdfPageMap} deliberately keeps as live data into a stub
+ * it refuses outright, taking `totalPdfPages` and the furniture with it.
+ *
+ * Array order is left alone — it is `startPdfPage` order, which
+ * {@link nearestModelPageForPdfPage} walks — and everything describing the
+ * *file* (the totals, the cover flag, the furniture starts, the publication
+ * stamp) is carried through unchanged, because none of it moved.
+ */
+export function repointBookPdfPageMap<T extends BookPdfPageMap>(
+  map: T,
+  moves: ReadonlyMap<number, number>
+): T | undefined {
+  const pages: BookPdfPageRange[] = [];
+  for (const page of map.pages) {
+    const index = moves.get(page.index);
+    if (index === undefined) {
+      return undefined;
+    }
+    pages.push({ ...page, index });
+  }
+  return { ...map, pages };
+}
 
 /** What the publishers persist: the map stamped with the publication it measured. */
 export type StoredBookPdfPageMap = BookPdfPageMap & {
@@ -72,101 +211,6 @@ export const SOURCES_DEST_NAME = "bp-sources";
 
 export function bookPageDestName(pageIndex: number): string {
   return `bp-${pageIndex}`;
-}
-
-export type PdfNamedDestination = { pdfPage: number; y: number | undefined };
-
-export type PdfNamedDestinations = {
-  pageCount: number;
-  destinations: Map<string, PdfNamedDestination>;
-  /** Height of the first page's /MediaBox in points — the y axis destinations are measured on. */
-  mediaBoxHeight?: number;
-};
-
-/**
- * Reads the named destinations and the page count out of a Skia PDF.
- *
- * Object offsets come from the cross-reference table rather than a whole-file
- * scan, so the byte pattern `N 0 obj` inside a compressed stream can never
- * fabricate an object. Anything off the expected shape — an xref stream, an
- * object-stream catalog, a missing trailer — returns `undefined`.
- */
-export function extractPdfNamedDestinations(pdf: Buffer): PdfNamedDestinations | undefined {
-  try {
-    const text = pdf.toString("latin1");
-    const objects = indexObjectsFromXref(text);
-    if (!objects) {
-      return undefined;
-    }
-    const trailer = trailerDictionary(text);
-    if (!trailer) {
-      return undefined;
-    }
-    const rootRef = referenceIn(trailer, "Root");
-    const catalog = rootRef === undefined ? undefined : objects.get(rootRef);
-    if (!catalog) {
-      return undefined;
-    }
-
-    const pagesRootRef = referenceIn(catalog, "Pages");
-    if (pagesRootRef === undefined) {
-      return undefined;
-    }
-    const pageOrder: number[] = [];
-    walkPageTree(objects, pagesRootRef, pageOrder, new Set(), 0);
-    if (pageOrder.length === 0) {
-      return undefined;
-    }
-    const rootBody = objects.get(pagesRootRef) ?? "";
-    const countMatch = rootBody.match(/\/Count\s+(\d+)/);
-    const declaredCount = countMatch ? Number.parseInt(countMatch[1] ?? "", 10) : undefined;
-    if (declaredCount !== undefined && declaredCount !== pageOrder.length) {
-      return undefined;
-    }
-    const pageNumberOf = new Map<number, number>();
-    pageOrder.forEach((objectNumber, index) => pageNumberOf.set(objectNumber, index + 1));
-
-    const destinations = new Map<string, PdfNamedDestination>();
-    const destsBody = dictionaryIn(objects, catalog, "Dests");
-    if (destsBody) {
-      harvestDestinations(destsBody, pageNumberOf, destinations);
-    } else {
-      // Defensive branch: a future Skia could move to the /Names name tree.
-      const names = dictionaryIn(objects, catalog, "Names");
-      const namesDests = names ? dictionaryIn(objects, names, "Dests") : undefined;
-      if (namesDests) {
-        harvestNameTree(objects, namesDests, pageNumberOf, destinations, new Set(), 0);
-      }
-    }
-
-    const mediaBoxHeight = mediaBoxHeightIn(objects, pageOrder, pagesRootRef);
-    return {
-      pageCount: pageOrder.length,
-      destinations,
-      ...(mediaBoxHeight !== undefined ? { mediaBoxHeight } : {})
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-/** The /MediaBox height, read from the first leaf that carries one, else the tree root. */
-function mediaBoxHeightIn(
-  objects: Map<number, string>,
-  pageOrder: number[],
-  pagesRootRef: number
-): number | undefined {
-  for (const objectNumber of [...pageOrder, pagesRootRef]) {
-    const body = objects.get(objectNumber) ?? "";
-    const box = body.match(/\/MediaBox\s*\[\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*\]/);
-    if (box) {
-      const height = Number.parseFloat(box[4] ?? "") - Number.parseFloat(box[2] ?? "");
-      if (Number.isFinite(height) && height > 0) {
-        return height;
-      }
-    }
-  }
-  return undefined;
 }
 
 export type BuildBookPdfPageMapInput = {
@@ -244,7 +288,7 @@ export function buildBookPdfPageMap(input: BuildBookPdfPageMapInput): BookPdfPag
   });
 
   return {
-    version: 1,
+    version: BOOK_PDF_PAGE_MAP_VERSION,
     totalPdfPages: extracted.pageCount,
     hasCoverPage: input.hasCoverPage,
     ...(contents ? { contentsStartPdfPage: contents.pdfPage } : {}),
@@ -344,16 +388,139 @@ function firstContentPdfPage(map: BookPdfPageMap): number {
 }
 
 /**
+ * How many physical sheets sit before printed page 1. Version-2 maps skip the
+ * cover (or title-page fallback); version-1 maps were measured against PDFs
+ * that counted that sheet, so the offset is 0.
+ *
+ * The one is a guarantee held in two places, not an assumption: a manuscript
+ * carries a cover *or* the fallback title page, never both (`compileBookMarkdown`),
+ * and both sheets are height-capped and clipped in `pdfCss.ts` so neither can
+ * fragment into a second sheet that resets the page counter again.
+ */
+export function printedPageOffset(map: Pick<BookPdfPageMap, "version" | "hasCoverPage">): number {
+  return map.version >= BOOK_PDF_PAGE_MAP_VERSION && map.hasCoverPage ? 1 : 0;
+}
+
+/** How many numbers the footer / Contents / chat will actually print. */
+export function totalPrintedPages(
+  map: Pick<BookPdfPageMap, "version" | "hasCoverPage" | "totalPdfPages">
+): number {
+  return Math.max(0, map.totalPdfPages - printedPageOffset(map));
+}
+
+/**
+ * The number printed on a physical PDF sheet. Undefined for an unnumbered cover
+ * (version 2+) and for a sheet the book does not have.
+ */
+export function printedPageForPdfPage(
+  map: Pick<BookPdfPageMap, "version" | "hasCoverPage" | "totalPdfPages">,
+  pdfPage: number
+): number | undefined {
+  if (!Number.isInteger(pdfPage) || pdfPage < 1 || pdfPage > map.totalPdfPages) {
+    return undefined;
+  }
+  if (printedPageOffset(map) > 0 && pdfPage === 1) {
+    return undefined;
+  }
+  return pdfPage - printedPageOffset(map);
+}
+
+/**
+ * The numbers to reprint into the Contents column — one per chapter anchor, in
+ * plan order.
+ *
+ * `undefined` when a chapter has no printed number, which means its anchor was
+ * measured onto the unnumbered cover sheet. There is no honest number for that
+ * row: the physical sheet is a number from the *other* system, and writing it
+ * beside rows that skip the cover puts a one-off row in a column the reader
+ * compares against the footer. The Contents is rewritten whole or not at all
+ * (`rewriteContentsPdfPageNumbers`), so refusing here keeps every row on the
+ * compiled model indexes instead of mixing two numberings in one column.
+ *
+ * A missing destination is the same refusal, and unreachable besides:
+ * {@link buildBookPdfPageMap} already returns `undefined` unless every anchor
+ * resolved inside the document.
+ */
+export function contentsChapterPrintedPages(
+  map: BookPdfPageMap,
+  anchors: readonly BookPageAnchor[],
+  destinations: ReadonlyMap<string, PdfNamedDestination>
+): number[] | undefined {
+  const printedPages: number[] = [];
+  for (const anchor of anchors) {
+    if (!anchor.destName.startsWith("chapter-")) {
+      continue;
+    }
+    const destination = destinations.get(anchor.destName);
+    if (!destination) {
+      return undefined;
+    }
+    const printed = printedPageForPdfPage(map, destination.pdfPage);
+    if (printed === undefined) {
+      return undefined;
+    }
+    printedPages.push(printed);
+  }
+  return printedPages;
+}
+
+/**
+ * The physical PDF sheet a spoken / footer / Contents number names. Undefined
+ * when that number is not printed: below 1, not a whole number, or past the
+ * end of the file.
+ *
+ * **No printed number can name a version-2 cover, and the arithmetic is what
+ * says so — not a guard.** There used to be a third refusal here, rejecting
+ * `pdfPage === 1` when the offset was positive, and it could never fire: by the
+ * time it ran, `printed` was a whole number ≥ 1 (`Number.isInteger` refuses
+ * `NaN` and `Infinity`, `< 1` refuses `0` and `-0`) and
+ * {@link printedPageOffset} is a `1 : 0` ternary, so `printed + offset` is at
+ * least 1 and *equals* 1 only when the offset is 0 — a map with no cover sheet
+ * to protect. Dead code that reads like the enforcement of an invariant is
+ * worse than none: the next reader has to redo this proof before they may
+ * touch either line. On a covered version-2 map printed 1 is sheet 2 and every
+ * later number follows; that is why `furniturePageDescription`
+ * (`apps/api/src/bookPageNumbering.ts`) can say its `cover` arm is reachable
+ * only through a version-1 map, whose PDF numbered its own cover sheet.
+ */
+export function pdfPageForPrintedPage(
+  map: Pick<BookPdfPageMap, "version" | "hasCoverPage" | "totalPdfPages">,
+  printed: number
+): number | undefined {
+  if (!Number.isInteger(printed) || printed < 1) {
+    return undefined;
+  }
+  const pdfPage = printed + printedPageOffset(map);
+  if (pdfPage < 1 || pdfPage > map.totalPdfPages) {
+    return undefined;
+  }
+  return pdfPage;
+}
+
+/**
  * Revives a stored map (`Project.pdfPageMap`) into a typed one, or `undefined`
  * for anything malformed — rows written by a future or past shape must degrade
  * to "no map", never to a wrong translation.
+ *
+ * A {@link BookPdfCoverNumbering} stub is refused **by its marker**, which is
+ * the one thing that says the row was never a measurement. What it holds is
+ * not: a version-1 map is live data, and one whose `pages` came back empty
+ * still describes its file — `totalPdfPages`, the cover flag and the furniture
+ * starts are all true of it, so {@link pdfPageZone} and the printed-number
+ * conversions keep working while every page target simply resolves to nothing.
+ * Refusing that row too would retire a usable map to enforce a rule about a
+ * different shape.
  */
 export function parseStoredBookPdfPageMap(raw: unknown): StoredBookPdfPageMap | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return undefined;
   }
   const record = raw as Record<string, unknown>;
-  if (record.version !== 1) {
+  if (record.kind === BOOK_PDF_COVER_NUMBERING_KIND) {
+    return undefined;
+  }
+  const version = record.version === 1 || record.version === BOOK_PDF_PAGE_MAP_VERSION ? record.version : undefined;
+  if (version === undefined) {
     return undefined;
   }
   const totalPdfPages = positiveInteger(record.totalPdfPages);
@@ -382,12 +549,38 @@ export function parseStoredBookPdfPageMap(raw: unknown): StoredBookPdfPageMap | 
   // book's first edit.
   const contentRevision = nonNegativeInteger(record.contentRevision);
   return {
-    version: 1,
+    version,
     totalPdfPages,
     hasCoverPage: record.hasCoverPage,
     pages,
     ...(contentsStartPdfPage !== undefined ? { contentsStartPdfPage } : {}),
     ...(backMatterStartPdfPage !== undefined ? { backMatterStartPdfPage } : {}),
+    ...(contentRevision !== undefined ? { contentRevision } : {}),
+    ...(typeof record.pdfDigest === "string" ? { pdfDigest: record.pdfDigest } : {})
+  };
+}
+
+/**
+ * Cover-skip for chrome, from a measured map or a numbering stub — the marker
+ * a stub wears is ignored here, because the cover-skip fact under it is exactly
+ * what a stub is for. Chat still goes through
+ * {@link parseStoredBookPdfPageMap}, which refuses one.
+ */
+export function parseStoredBookPdfNumbering(raw: unknown): BookPdfPageNumbering | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  const record = raw as Record<string, unknown>;
+  const version = record.version === 1 || record.version === BOOK_PDF_PAGE_MAP_VERSION ? record.version : undefined;
+  if (version === undefined || typeof record.hasCoverPage !== "boolean") {
+    return undefined;
+  }
+  const totalPdfPages = positiveInteger(record.totalPdfPages);
+  const contentRevision = nonNegativeInteger(record.contentRevision);
+  return {
+    version,
+    hasCoverPage: record.hasCoverPage,
+    ...(totalPdfPages !== undefined ? { totalPdfPages } : {}),
     ...(contentRevision !== undefined ? { contentRevision } : {}),
     ...(typeof record.pdfDigest === "string" ? { pdfDigest: record.pdfDigest } : {})
   };
@@ -422,231 +615,4 @@ function startsAtTopOfPage(y: number | undefined, bandFloorY: number | undefined
     return true;
   }
   return y !== undefined && y >= bandFloorY;
-}
-
-/** Object bodies by number, located through the classic cross-reference table. */
-function indexObjectsFromXref(text: string): Map<number, string> | undefined {
-  const tail = text.slice(-256);
-  const startxref = tail.match(/startxref\s+(\d+)\s+%%EOF\s*$/);
-  if (!startxref) {
-    return undefined;
-  }
-  let xrefOffset = Number.parseInt(startxref[1] ?? "", 10);
-  const offsets = new Map<number, number>();
-  const seen = new Set<number>();
-
-  // A Skia file has a single table, but an incrementally-updated PDF chains
-  // /Prev sections; walk them, newest first, first offset wins.
-  while (Number.isInteger(xrefOffset) && xrefOffset >= 0 && xrefOffset < text.length && !seen.has(xrefOffset)) {
-    seen.add(xrefOffset);
-    const section = text.slice(xrefOffset, xrefOffset + 8);
-    if (!section.startsWith("xref")) {
-      return undefined;
-    }
-    let cursor = xrefOffset + 4;
-    for (;;) {
-      const header = /^\s*(\d+)\s+(\d+)\s*/.exec(text.slice(cursor, cursor + 64));
-      if (!header) {
-        break;
-      }
-      const firstObject = Number.parseInt(header[1] ?? "", 10);
-      const entryCount = Number.parseInt(header[2] ?? "", 10);
-      cursor += header[0].length;
-      for (let i = 0; i < entryCount; i += 1) {
-        // Entries are fixed-width: 10-digit offset, 5-digit generation, f/n.
-        const entry = text.slice(cursor, cursor + 20);
-        const parsed = /^(\d{10})\s(\d{5})\s([nf])/.exec(entry);
-        if (!parsed) {
-          return undefined;
-        }
-        const objectNumber = firstObject + i;
-        if (parsed[3] === "n" && !offsets.has(objectNumber)) {
-          offsets.set(objectNumber, Number.parseInt(parsed[1] ?? "", 10));
-        }
-        cursor += 20;
-      }
-    }
-    const trailerStart = text.indexOf("trailer", cursor);
-    if (trailerStart < 0) {
-      break;
-    }
-    const prev = /\/Prev\s+(\d+)/.exec(text.slice(trailerStart, trailerStart + 512));
-    if (!prev) {
-      break;
-    }
-    xrefOffset = Number.parseInt(prev[1] ?? "", 10);
-  }
-
-  if (offsets.size === 0) {
-    return undefined;
-  }
-  const objects = new Map<number, string>();
-  for (const [objectNumber, offset] of offsets) {
-    const head = /^\s*(\d+)\s+\d+\s+obj\b/.exec(text.slice(offset, offset + 64));
-    if (!head || Number.parseInt(head[1] ?? "", 10) !== objectNumber) {
-      return undefined;
-    }
-    const bodyStart = offset + head[0].length;
-    const bodyEnd = text.indexOf("endobj", bodyStart);
-    if (bodyEnd < 0) {
-      return undefined;
-    }
-    objects.set(objectNumber, text.slice(bodyStart, bodyEnd));
-  }
-  return objects;
-}
-
-function trailerDictionary(text: string): string | undefined {
-  const trailerStart = text.lastIndexOf("trailer");
-  if (trailerStart < 0) {
-    return undefined;
-  }
-  return text.slice(trailerStart, trailerStart + 1024);
-}
-
-function referenceIn(body: string, key: string): number | undefined {
-  const match = body.match(new RegExp(`\\/${key}\\s+(\\d+)\\s+\\d+\\s+R`));
-  return match ? Number.parseInt(match[1] ?? "", 10) : undefined;
-}
-
-/** The dictionary a key holds, whether written inline or as an indirect reference. */
-function dictionaryIn(objects: Map<number, string>, body: string, key: string): string | undefined {
-  const reference = referenceIn(body, key);
-  if (reference !== undefined) {
-    return objects.get(reference);
-  }
-  const inline = body.match(new RegExp(`\\/${key}\\s*<<`));
-  if (inline?.index === undefined) {
-    return undefined;
-  }
-  let depth = 0;
-  const start = body.indexOf("<<", inline.index);
-  for (let i = start; i < body.length; ) {
-    if (body.startsWith("<<", i)) {
-      depth += 1;
-      i += 2;
-    } else if (body.startsWith(">>", i)) {
-      depth -= 1;
-      i += 2;
-      if (depth === 0) {
-        return body.slice(start, i);
-      }
-    } else {
-      i += 1;
-    }
-  }
-  return undefined;
-}
-
-function walkPageTree(
-  objects: Map<number, string>,
-  objectNumber: number,
-  pageOrder: number[],
-  visited: Set<number>,
-  depth: number
-): void {
-  if (depth > 64 || visited.has(objectNumber)) {
-    return;
-  }
-  visited.add(objectNumber);
-  const body = objects.get(objectNumber);
-  if (!body) {
-    return;
-  }
-  if (/\/Type\s*\/Page\b/.test(body) && !/\/Type\s*\/Pages\b/.test(body)) {
-    pageOrder.push(objectNumber);
-    return;
-  }
-  const kids = body.match(/\/Kids\s*\[([^\]]*)\]/);
-  if (!kids) {
-    return;
-  }
-  const kidRe = /(\d+)\s+\d+\s+R/g;
-  let kid: RegExpExecArray | null;
-  while ((kid = kidRe.exec(kids[1] ?? "")) !== null) {
-    walkPageTree(objects, Number.parseInt(kid[1] ?? "", 10), pageOrder, visited, depth + 1);
-  }
-}
-
-/** `name → [P G R /XYZ x y z]` entries out of a flat destination dictionary. */
-function harvestDestinations(
-  dictionary: string,
-  pageNumberOf: Map<number, number>,
-  destinations: Map<string, PdfNamedDestination>
-): void {
-  const entryRe =
-    /\/((?:[^\s/[\]<>()]|#[0-9a-fA-F]{2})+)\s*\[\s*(\d+)\s+\d+\s+R\s*\/(?:XYZ|Fit\w*)\s*([^\]]*)\]/g;
-  let entry: RegExpExecArray | null;
-  while ((entry = entryRe.exec(dictionary)) !== null) {
-    const name = decodePdfName(entry[1] ?? "");
-    const pdfPage = pageNumberOf.get(Number.parseInt(entry[2] ?? "", 10));
-    if (pdfPage === undefined) {
-      continue;
-    }
-    const coordinates = (entry[3] ?? "").trim().split(/\s+/);
-    const y = Number.parseFloat(coordinates[1] ?? "");
-    destinations.set(name, { pdfPage, y: Number.isFinite(y) ? y : undefined });
-  }
-}
-
-/** The /Names-tree shape of the same data, flattened. Skia does not write it today. */
-function harvestNameTree(
-  objects: Map<number, string>,
-  node: string,
-  pageNumberOf: Map<number, number>,
-  destinations: Map<string, PdfNamedDestination>,
-  visited: Set<string>,
-  depth: number
-): void {
-  if (depth > 64 || visited.has(node)) {
-    return;
-  }
-  visited.add(node);
-  const names = node.match(/\/Names\s*\[([\s\S]*?)\]/);
-  if (names) {
-    const pairRe = /\(((?:[^()\\]|\\.)*)\)\s*\[\s*(\d+)\s+\d+\s+R\s*\/(?:XYZ|Fit\w*)\s*([^\]]*)\]/g;
-    let pair: RegExpExecArray | null;
-    while ((pair = pairRe.exec(names[1] ?? "")) !== null) {
-      const pdfPage = pageNumberOf.get(Number.parseInt(pair[2] ?? "", 10));
-      if (pdfPage === undefined) {
-        continue;
-      }
-      const coordinates = (pair[3] ?? "").trim().split(/\s+/);
-      const y = Number.parseFloat(coordinates[1] ?? "");
-      destinations.set(decodePdfString(pair[1] ?? ""), { pdfPage, y: Number.isFinite(y) ? y : undefined });
-    }
-  }
-  const kids = node.match(/\/Kids\s*\[([^\]]*)\]/);
-  if (kids) {
-    const kidRe = /(\d+)\s+\d+\s+R/g;
-    let kid: RegExpExecArray | null;
-    while ((kid = kidRe.exec(kids[1] ?? "")) !== null) {
-      const child = objects.get(Number.parseInt(kid[1] ?? "", 10));
-      if (child) {
-        harvestNameTree(objects, child, pageNumberOf, destinations, visited, depth + 1);
-      }
-    }
-  }
-}
-
-/** `#xx` escapes in a PDF name. Our own anchor ids are ASCII and pass through. */
-function decodePdfName(name: string): string {
-  return name.replace(/#([0-9a-fA-F]{2})/g, (_full, hex: string) =>
-    String.fromCharCode(Number.parseInt(hex, 16))
-  );
-}
-
-function decodePdfString(value: string): string {
-  return value.replace(/\\([nrtbf()\\])/g, (_full, escaped: string) => {
-    switch (escaped) {
-      case "n":
-        return "\n";
-      case "r":
-        return "\r";
-      case "t":
-        return "\t";
-      default:
-        return escaped;
-    }
-  });
 }

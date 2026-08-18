@@ -393,29 +393,34 @@ export function bookPageAnchorLinkNav(anchors: readonly BookPageAnchor[], option
 }
 
 /**
- * Prints the measured PDF page numbers into the Contents rows.
+ * Prints the measured printed page numbers into the Contents rows.
  *
  * The compiled markdown writes each row's number as the chapter's *model* page
  * index — the only number available before a render exists — while the page
- * footer prints `counter(page)`, so the two systems disagreed inside one
- * printed book. After the first render measures where each chapter landed,
- * the rows are rewritten in order and the document rendered once more.
+ * footer prints `counter(page)` (skipping the cover). After the first render
+ * measures where each chapter landed, the rows are rewritten in printed
+ * numbers and the document rendered once more.
  *
  * Returns `undefined` when the rows do not line up one-to-one with the
  * measured chapters — a partially rewritten Contents would be worse than the
- * old numbers.
+ * old numbers. For the same reason the caller passes printed numbers or
+ * nothing: a physical sheet number standing in for a chapter whose sheet the
+ * book does not number is one row of a second numbering system.
  */
-export function rewriteContentsPdfPageNumbers(html: string, chapterPdfPages: readonly number[]): string | undefined {
+export function rewriteContentsPdfPageNumbers(
+  html: string,
+  chapterPrintedPages: readonly number[]
+): string | undefined {
   let row = 0;
   const result = html.replace(
     /(<span class="book-contents__page">)(\d+)(<\/span>)/g,
     (full: string, open: string, _num: string, close: string) => {
-      const pdfPage = chapterPdfPages[row];
+      const printedPage = chapterPrintedPages[row];
       row += 1;
-      return pdfPage === undefined ? full : `${open}${pdfPage}${close}`;
+      return printedPage === undefined ? full : `${open}${printedPage}${close}`;
     }
   );
-  return row === chapterPdfPages.length ? result : undefined;
+  return row === chapterPrintedPages.length ? result : undefined;
 }
 
 export function appendBookPageAnchorLinkNav(html: string, nav: string): string {

@@ -1,9 +1,13 @@
 import {
+  BOOK_PDF_PAGE_MAP_VERSION,
+  bookPdfCoverNumbering,
   exportContentDigest,
   exportProvenancePath,
+  parseStoredBookPdfNumbering,
   pendingExportTempPath,
   supersededExportToken,
-  type BookPdfPageMap,
+  type BookPdfCoverNumbering,
+  type PersistableBookPdfPageMap,
   type ExportRepairFormat,
   type ExportPublicationProjectStatus,
   type ExportProvenanceFormat
@@ -407,6 +411,40 @@ async function provenancePublications(options: {
   return publications;
 }
 
+/**
+ * What replaces the stored ranges when a PDF is published without a current
+ * measurement of it.
+ *
+ * Only the cover-skip survives, because only the cover-skip is still true: the
+ * bytes being installed came out of a renderer that resets the page counter on
+ * the cover sheet whatever else went wrong, while their pagination is unknown
+ * and the stored ranges were measured from a different render. That is the
+ * same trade `persistablePdfPageMapAfterRender` makes for a failed measurement
+ * — chrome keeps matching the footer, chat drops back to model indexes — and
+ * the ranges are gone either way, which is the part the invariant is about.
+ *
+ * The cover-skip comes from the map the caller offered when it offered one at
+ * all, and otherwise from the row itself, read here under the lock this
+ * transaction already holds — the one place that read cannot race the file it
+ * describes. A row no parser can read a cover-skip out of is a row every
+ * reader already refuses, so it is left alone rather than replaced by a guess.
+ */
+async function degradedPdfNumbering(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  offered: PersistableBookPdfPageMap | undefined
+): Promise<BookPdfCoverNumbering | undefined> {
+  if (offered) {
+    return bookPdfCoverNumbering(offered.hasCoverPage);
+  }
+  const project = await tx.project.findUnique({
+    where: { id: projectId },
+    select: { pdfPageMap: true }
+  });
+  const stored = parseStoredBookPdfNumbering(project?.pdfPageMap);
+  return stored ? bookPdfCoverNumbering(stored.hasCoverPage) : undefined;
+}
+
 /** Drops the parked predecessors once the whole set is published. */
 async function discardSupersededArtifacts(publications: ArtifactPublication[]): Promise<void> {
   await Promise.all(
@@ -561,15 +599,15 @@ export async function publishCompiledExports(options: {
   contentRevision: number | null;
   /**
    * Where each model page landed in the PDF this publication installs.
-   * Omitted: this publication rendered no measurable PDF (an EPUB-only repair)
-   * or a measured repair whose measurement failed after reprinting the same
-   * manuscript the stored map was taken from — the stored map stands. `null`:
-   * a PDF was rendered that the stored map does not describe — a charged
-   * compile that could not be measured, or an unmeasured repair that skipped
-   * the Contents reprint — so it is cleared. The map is stamped with the
-   * claimed revision and the installed PDF's digest inside the transaction.
+   * Omitted only for an EPUB-only repair. A version-2 persistable map —
+   * measured, including one whose `pages` is empty, or a cover-numbering stub —
+   * is stamped as-is. Empty `pages` is not "was never a measurement": that row
+   * still has totals, cover-skip and furniture starts. A missing or version-1
+   * map is *degraded* to the stub rather than refused, because preserving a
+   * legacy or stale map across newly rendered bytes is forbidden, and a book
+   * on disk may not be failed over the metadata beside it.
    */
-  pdfPageMap?: BookPdfPageMap | null | undefined;
+  pdfPageMap?: PersistableBookPdfPageMap | undefined;
   expectedProjectStatus: ExportPublicationProjectStatus;
   status: "COMPLETE" | "REVIEW_REQUIRED";
   /**
@@ -589,6 +627,29 @@ export async function publishCompiledExports(options: {
   const generationAttemptId = options.generationAttemptId ?? null;
   const editOperationId = options.editOperationId ?? null;
   const characterPreparation = options.characterPreparation ?? null;
+  const pdfPageMapIsCurrent = options.pdfPageMap?.version === BOOK_PDF_PAGE_MAP_VERSION;
+  // Version 2 is current whether it has ranges, empty `pages`, or is a
+  // cover-numbering stub. What it may never do is leave version-1 ranges
+  // standing over bytes they were not measured from. Refusing to publish was
+  // the wrong way to say that. `compile-export` owns the project's outcome
+  // and carries no retry budget, so a throw here reaches `markFailed`: a book
+  // whose pages are already written goes FAILED and refunded — or its edit is
+  // settled as a failure — over a few hundred bytes of metadata beside it.
+  // "No compile may fail, publish differently, or retry over the map" is the
+  // documented rule (`packages/core/src/generation/CLAUDE.md`), and it is the
+  // same call the provenance record in this file already makes. So a missing
+  // or version-1 map degrades to the stub — which is what clears the ranges
+  // the rule is actually about — and says so.
+  const degradesPdfPageMap = repairFormat !== "epub" && !pdfPageMapIsCurrent;
+  if (degradesPdfPageMap) {
+    console.warn("Publishing a PDF without a current page map; storing cover numbering instead.", {
+      projectId: options.projectId,
+      generationJobId: options.generationJobId,
+      repairFormat,
+      mapVersion: options.pdfPageMap?.version ?? null,
+      mapRanges: options.pdfPageMap?.pages.length ?? null
+    });
+  }
   // A null attempt is the legacy project/plan key — an edit's recompile uses it
   // deliberately, so only a *named* attempt has to be the one being published.
   if (characterPreparation?.attemptId && characterPreparation.attemptId !== generationAttemptId) {
@@ -664,24 +725,26 @@ export async function publishCompiledExports(options: {
         if (revision === undefined) {
           throw new Error("Export publication lost its claimed project revision");
         }
-        if (options.pdfPageMap !== undefined) {
+        if (repairFormat !== "epub") {
           // Before the renames: a rename failure rolls this back with the rest
           // of the claim, leaving the previous map describing the file
           // `restoreSupersededArtifacts` puts back.
           const pdfDigest = digests.get("pdf")?.digest;
-          await tx.project.update({
-            where: { id: options.projectId },
-            data: {
-              pdfPageMap:
-                options.pdfPageMap === null
-                  ? Prisma.DbNull
-                  : ({
-                      ...options.pdfPageMap,
-                      contentRevision: revision,
-                      ...(pdfDigest ? { pdfDigest } : {})
-                    } as unknown as Prisma.InputJsonValue)
-            }
-          });
+          const publishedPageMap = pdfPageMapIsCurrent
+            ? options.pdfPageMap
+            : await degradedPdfNumbering(tx, options.projectId, options.pdfPageMap);
+          if (publishedPageMap) {
+            await tx.project.update({
+              where: { id: options.projectId },
+              data: {
+                pdfPageMap: {
+                  ...publishedPageMap,
+                  contentRevision: revision,
+                  ...(pdfDigest ? { pdfDigest } : {})
+                } as unknown as Prisma.InputJsonValue
+              }
+            });
+          }
         }
         const exportPublications = artifactPublications({
           ...options,

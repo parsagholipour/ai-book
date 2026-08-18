@@ -23,7 +23,7 @@ ScrollPosition scrollPosition(WidgetTester tester) {
 Widget chatApp(
   ScriptedProjectsRepository repository, {
   String? initialMessage,
-  Map<String, int>? initialReaderContext,
+  Map<String, Object>? initialReaderContext,
 }) {
   return ProviderScope(
     overrides: [projectsRepositoryProvider.overrideWithValue(repository)],
@@ -47,7 +47,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
   final sendGates = <Completer<void>>[];
   final editGates = <Completer<void>>[];
   final sendRequestIds = <String?>[];
-  final sentReaderContexts = <Map<String, int>?>[];
+  final sentReaderContexts = <Map<String, Object>?>[];
   final sentMessages = <String>[];
   final chatFetches = <String>[];
   final statusController = StreamController<MobileProjectStatus>.broadcast();
@@ -248,7 +248,7 @@ class ScriptedProjectsRepository implements ProjectsRepository {
     String? requestId,
     String? replyToMessageId,
     List<String>? mentionedCharacterIds,
-    Map<String, int>? readerContext,
+    Map<String, Object>? readerContext,
   }) async {
     sendRequestIds.add(requestId);
     sentMessages.add(message);

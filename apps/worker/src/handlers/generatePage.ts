@@ -1,5 +1,5 @@
 import { formatQualityFailure, getProjectOrThrow, parseChapterBrief, strategyForInput, toPriorPageContext } from "../generation/bookHelpers.js";
-import { loadResearchNotesForGeneration } from "../generation/generationContext.js";
+import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generation/generationContext.js";
 import { pageRevisionMessage, runPageQualityLoop } from "../generation/pageReview.js";
 import {
   enrichPageQualityReport,
@@ -65,11 +65,7 @@ export async function generatePage(job: Job) {
     orderBy: { index: "desc" },
     take: 18
   });
-  const continuity = await prisma.continuityNote.findMany({
-    where: { projectId },
-    orderBy: { createdAt: "desc" },
-    take: 28
-  });
+  const continuityNotes = await loadContinuityNotes(projectId);
   const chapterPlan = plan.chapters.find((chapter) => chapter.index === page.chapter?.index);
   const orderedPreviousPages = previousPages.reverse();
   const priorPageContext = orderedPreviousPages.map(toPriorPageContext);
@@ -136,7 +132,7 @@ export async function generatePage(job: Job) {
     pageIndex: page.index,
     previousSummaries: orderedPreviousPages.map((previousPage) => previousPage.summary).filter(Boolean),
     previousPages: priorPageContext,
-    continuityNotes: continuity.map((note) => note.body),
+    continuityNotes,
     researchNotes,
     semanticMemory,
     entityState,
@@ -172,7 +168,7 @@ export async function generatePage(job: Job) {
     pageIndex: page.index,
     draft: initialDraft,
     previousPages: priorPageContext,
-    continuityNotes: continuity.map((note) => note.body),
+    continuityNotes,
     textModel: providers.text,
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
   });
@@ -203,7 +199,7 @@ export async function generatePage(job: Job) {
     draft: initialDraft,
     report: enriched.report,
     previousPages: priorPageContext,
-    continuityNotes: continuity.map((note) => note.body),
+    continuityNotes,
     textModel: providers.text,
     generationJobId,
     maxCandidates: MAX_PAGE_QA_CANDIDATES,
@@ -313,6 +309,7 @@ export async function generatePage(job: Job) {
     await prisma.continuityNote.createMany({
       data: draft.continuityNotes.map((body) => ({
         projectId,
+        pageId: page.id,
         scope: `page:${page.index}`,
         body,
         tags: ["page", String(page.index)]

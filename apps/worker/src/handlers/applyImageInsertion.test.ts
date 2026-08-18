@@ -80,13 +80,7 @@ vi.mock("@book-maker/core", async () => {
   };
 });
 
-import {
-  applyImageInsertion,
-  imageAltFromSubject,
-  markdownWithAppendedImage,
-  markdownWithRemovedImage,
-  markdownWithReplacedImage
-} from "./applyImageInsertion.js";
+import { applyImageInsertion, insertionFromClassifier } from "./applyImageInsertion.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 
 const plan = {
@@ -185,7 +179,8 @@ beforeEach(() => {
   mocks.stat.mockRejectedValue(new Error("ENOENT"));
 });
 
-const operation = (status = "QUEUED") => ({ id: "op-1", status });
+/** The row as `applyBookEdit` reads it: the classifier is the second copy of the request. */
+const operation = (status = "QUEUED", classifier: unknown = {}) => ({ id: "op-1", status, classifier });
 
 describe("applyImageInsertion", () => {
   it("renders, stores, and appends the image line under the APPLIED claim", async () => {
@@ -769,82 +764,70 @@ describe("applyImageInsertion", () => {
   });
 });
 
-describe("markdownWithReplacedImage", () => {
-  const newLine = "![new](/assets/images/p/chat-image-op-new-bbbb.jpg)";
-
-  it("swaps only the line carrying the marker and keeps everything around it", () => {
-    const markdown = "Intro.\n\n![old](/assets/images/p/chat-image-op-old-aaaa.jpg)\n\nOutro.";
-    expect(markdownWithReplacedImage(markdown, "chat-image-op-old", newLine)).toBe(
-      `Intro.\n\n${newLine}\n\nOutro.`
+/**
+ * `applyBookEdit` forks here on the operation's `kind`, so a job whose payload
+ * was rebuilt without `imageInsertion` still arrives — and the Apply wrote the
+ * resolved intent onto the classifier for exactly that delivery.
+ */
+describe("applyImageInsertion with no imageInsertion on the payload", () => {
+  it("draws the subject the classifier's imageEdit names", async () => {
+    await applyImageInsertion(
+      job({ imageInsertion: undefined }),
+      operation("QUEUED", { kind: "add_image", imageEdit: { subject: "a dragon", placement: "end_of_book" } })
     );
+
+    const render = mocks.generateImageBytes.mock.calls[0]?.[0] as { prompt: string } | undefined;
+    expect(render?.prompt).toContain("a dragon");
+    // `end_of_book` re-resolves the book's last page, which is what that
+    // placement means — no stored index is read for it.
+    expect(mocks.prisma.page.findFirst).toHaveBeenCalledWith({
+      where: { projectId: "project-1" },
+      orderBy: { index: "desc" }
+    });
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-5" },
+      data: { markdown: `The dragon sleeps.\n\n${appendedLine()}`, revision: { increment: 1 } }
+    });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
   });
 
-  it("returns null when no line carries the marker — the caller's cue to append", () => {
-    expect(markdownWithReplacedImage("Just prose.", "chat-image-op-old", newLine)).toBeNull();
-  });
-});
-
-describe("markdownWithRemovedImage", () => {
-  it("deletes the line carrying the marker and collapses the gap", () => {
-    const markdown = "Intro.\n\n![old](/assets/images/p/chat-image-op-old-aaaa.jpg)\n\nOutro.";
-    expect(markdownWithRemovedImage(markdown, "chat-image-op-old")).toBe("Intro.\n\nOutro.");
-  });
-
-  it("returns null when no line carries the marker", () => {
-    expect(markdownWithRemovedImage("Just prose.", "chat-image-op-old")).toBeNull();
-  });
-});
-
-describe("markdownWithAppendedImage", () => {
-  it("separates prose and image with a blank line", () => {
-    expect(markdownWithAppendedImage("Prose.", "![x](/a/b/c.jpg)")).toBe("Prose.\n\n![x](/a/b/c.jpg)");
+  it("keeps a replacement a replacement", () => {
+    // `chat-image-<operationId>` is the marker the earlier insertion wrote and
+    // the one the API's own re-resolution rebuilds; reading the stored `replace`
+    // any other way would append and leave the reader with two pictures.
+    expect(
+      insertionFromClassifier({
+        imageEdit: { subject: "a dragon", placement: "page", pageIndex: 2, replace: { operationId: "op-old" } }
+      })
+    ).toEqual({ subject: "a dragon", placement: "page", targetPageIndex: 2, replaceMarker: "chat-image-op-old" });
+    expect(
+      insertionFromClassifier({ imageEdit: { subject: "a fox", replace: { operationId: "", assetId: "asset-1" } } })
+    ).toMatchObject({ replaceAssetId: "asset-1" });
   });
 
-  it("unwraps a whole-page fence before appending", () => {
-    expect(markdownWithAppendedImage("```md\nProse.\n```", "![x](/a.jpg)")).toBe("Prose.\n\n![x](/a.jpg)");
-    expect(markdownWithAppendedImage("```\nProse.\n```", "![x](/a.jpg)")).toBe("Prose.\n\n![x](/a.jpg)");
+  it("fails the edit when neither copy names a subject", async () => {
+    await expect(
+      applyImageInsertion(job({ imageInsertion: undefined }), operation("QUEUED", { kind: "add_image" }))
+    ).rejects.toThrow("no subject to draw");
+
+    // Nothing rendered or written, and the message says what actually went
+    // wrong. The reader bought this picture, so only the failure path hands the
+    // credits and the free-tier image slot back — settling it APPLIED would keep
+    // the charge for a picture the book never gets. Asked before the EDITING
+    // write, so a job that cannot run leaves the book where it found it.
+    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
+    expect(mocks.writeFile).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
   });
 
-  it("leaves an interior fence alone", () => {
-    const markdown = "Before.\n\n```js\ncode();\n```\n\nAfter.";
-    expect(markdownWithAppendedImage(markdown, "![x](/a.jpg)")).toBe(`${markdown}\n\n![x](/a.jpg)`);
-  });
+  it("still replays an APPLIED redelivery whose payload lost the field", async () => {
+    await applyImageInsertion(job({ imageInsertion: undefined }), operation("APPLIED"));
 
-  it("never unwraps a page that merely starts and ends with fences", () => {
-    // The whole-page pattern spans the first opener to the LAST closer, so
-    // unwrapping here would strip the outer markers and swap the prose between
-    // the fences into code context — saved to Page.markdown permanently.
-    const markdown = "```md\nformatted start\n```\n\nProse between the fences.\n\n```\ncode();\n```";
-    expect(markdownWithAppendedImage(markdown, "![x](/a.jpg)")).toBe(`${markdown}\n\n![x](/a.jpg)`);
-  });
-
-  it("never unwraps a whole-page fence whose body holds an inner fence", () => {
-    const markdown = "```md\nProse.\n\n```js\ncode();\n```\n\nMore prose.\n```";
-    expect(markdownWithAppendedImage(markdown, "![x](/a.jpg)")).toBe(`${markdown}\n\n![x](/a.jpg)`);
-  });
-
-  it("yields just the image line for an empty page", () => {
-    expect(markdownWithAppendedImage("", "![x](/a.jpg)")).toBe("![x](/a.jpg)");
-  });
-});
-
-describe("imageAltFromSubject", () => {
-  it("strips the characters that break the exporters' image regex", () => {
-    expect(imageAltFromSubject("a [green] dragon (flying)\nover hills", "Illustration")).toBe(
-      "a green dragon flying over hills"
-    );
-  });
-
-  it("caps the alt at 120 characters", () => {
-    const long = "d".repeat(200);
-    expect(imageAltFromSubject(long, "Illustration")).toHaveLength(120);
-  });
-
-  it("falls back to the generic label when stripping empties the subject", () => {
-    expect(imageAltFromSubject("()[]", "Illustration")).toBe("Illustration");
-  });
-
-  it("never emits the generation-artifact alt shape", () => {
-    expect(imageAltFromSubject("Illustration for page 5", "Illustration")).toBe("Illustration");
+    // The picture is already on the page, so the missing-subject throw may not
+    // come before the redelivery fence.
+    expect(mocks.generateImageBytes).not.toHaveBeenCalled();
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", COMPILE_OPTIONS);
   });
 });

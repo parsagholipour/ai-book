@@ -86,7 +86,8 @@ holds the event loop open and vitest will never exit.
   render can see it. The dependency is pinned to an **exact** version and `pdfDocument.test.ts`
   asserts both stylesheets' sha256, because a bump is otherwise a silent re-typeset. When a digest
   fires, render the fixture corpus with `pnpm render:fixtures` (`scripts/render-book-fixtures.ts`,
-  seven books covering both directions, CJK, illustrations, a cover and the dense Contents) on each
+  eight books covering both directions, CJK, illustrations, a cover, the coverless title sheet and
+  the dense Contents) on each
   side and diff them with `--compare`, which checks `Pages` first;
   byte-comparing PDFs proves nothing, since `/CreationDate`, `/ID` and font-subset ordering differ
   run to run. The old side is rendered by `--baseline <ref>`, never by stashing: it plants a
@@ -97,6 +98,26 @@ holds the event loop open and vitest will never exit.
   digest that fired *because* the `md-to-pdf` pin moved needs `--install` for the baseline to be
   rendered by the version it is being compared against. A page-count guard only works on **continuous prose**: a fixture with forced
   `page-break` divs pins its own count and reports the same number whatever the stylesheet says.
+  **Those two digests pin md-to-pdf's sheets, not ours**, so `bookPdfCss` had no alarm at all: the
+  `@page` margins, the counter resets and the title sheet's height could all move every book ever
+  compiled with nothing firing. `PAGE_GEOMETRY_SHA256` in `pdfCss.test.ts` is that alarm — a sha256
+  over `BOOK_PDF_CSS` with its comments, indentation and colour *values* stripped, so a recolour is
+  silent and anything that sizes a box, names a page or decides a line break is not. Subtractive on
+  purpose: a property nobody thought of is in scope by default, which is the only way round a
+  tripwire fails safe. It is the alarm, not the check — the corpus render is the check.
+- **The coverless title sheet is capped at exactly one page, and it clips from the tail.**
+  `@page pdf-title` carries `counter-reset: page 0` like the cover, and it resets on *every* sheet it
+  names — so a title page that fragmented left two unnumbered sheets where `printedPageOffset`
+  (`pdfPageMap.ts`) counts one, and every number the map, the printed Contents column and the chat
+  speak came out one ahead of the footer. Nothing caps a plan's title (a bare `z.string()`), and a
+  409-character one fragments measurably, so `.book-title-page` is `height: 245mm; overflow: hidden`
+  rather than `min-height`. **The clip is only survivable because the stack is centred by auto
+  margins on its first and last child, not by `justify-content: center`**: a centred flex column
+  overflows *both* ends, so the first version of this printed a title sheet that began mid-title at
+  clause 10 of 30 and lost the book's own name off the top. Auto margins collapse to zero once free
+  space is negative, which pins the stack to the top and clips only what runs off the bottom —
+  verified pixel-identical to the centred layout for every title that fits. The corpus renders one
+  (`title-page-en`), and `pdf.test.ts` renders the absurd one and reads the opening clause back out.
 - **Chrome reads the book off disk; nothing crosses CDP.** The assembled HTML is written to
   `.book-render-<uuid>.html` inside `IMAGE_STORAGE_DIR` and opened with `page.goto('file://…')`, so
   the book's relative asset paths (`projectId/filename`) resolve to the real illustrations exactly as
@@ -123,7 +144,7 @@ holds the event loop open and vitest will never exit.
   `iframe`/`object`/`embed`/`frame`/`script`/`link`/`base`/`meta http-equiv` from the assembled
   HTML) is only the second lock. That strip runs on the *rendered* HTML, never the markdown, so a
   book about HTML keeps its `<iframe>` examples — marked has already escaped everything in a code
-  fence by then. It is verified by rendering the seven-book fixture corpus with the policy off and
+  fence by then. It is verified by rendering the fixture corpus with the policy off and
   on and diffing: pixel-identical, so the allowlist refuses nothing a real book asks for.
   **The same disclosure had a second door in the EPUB.** Both exports turn
   `/assets/images/<projectId>/<filename>` into a path on disk, and they did it with a copy of the
@@ -225,9 +246,14 @@ holds the event loop open and vitest will never exit.
   the browser.
 
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.**
-  The numbers a reader can see — the pdfrx indicator, the printed footer, the Contents column — are
-  physical PDF pages, and nothing about a model page says where it lands: pages join on a single
-  newline, so adjacent pages routinely share one paragraph. `compileBookMarkdownWithPageAnchors`
+  The numbers a reader can see — the printed footer, the Contents column, the pdfrx chrome — skip
+  the cover sheet (`counter-reset: page 0` on `@page pdf-cover` / `@page pdf-title`). Stored map
+  ranges stay physical: PDF page 1 is the cover when `hasCoverPage` is set. `printedPageForPdfPage`
+  and `pdfPageForPrintedPage` convert — but only version-2 maps (what `buildBookPdfPageMap` writes)
+  apply that offset. Version-1 maps were measured against PDFs that counted the cover and stay
+  on physical numbering, matching the files they describe. Nothing about a model page says where
+  it lands: pages join
+  on a single newline, so adjacent pages routinely share one paragraph. `compileBookMarkdownWithPageAnchors`
   therefore returns, beside the byte-identical `book.md`, one destination name per model page — the
   existing `chapter-N` for a chapter opener, `bp-N` plus a markdown offset otherwise — and the PDF
   render injects markers into **its own copy only** (`pdfPageAnchors.ts`): an empty inline
@@ -261,20 +287,36 @@ holds the event loop open and vitest will never exit.
   zero-height marker at a fragmentation boundary lands its destination a page early — the same
   incident `liftChapterAnchorsOntoHeadings` exists for. A `display:none` nav of internal links
   makes Skia emit `/Dests` at all (ids alone emit nothing; hidden links add no annotations, no
-  layout — measured). `extractPdfNamedDestinations` (`pdfPageMap.ts`) reads the names back out of
+  layout — measured). `extractPdfNamedDestinations` (`pdfNamedDestinations.ts`, the dependency-free
+  byte parser `pdfPageMap.ts` is the model on top of) reads the names back out of
   the rendered bytes through the classic xref, and `buildBookPdfPageMap` turns starts into
   inclusive ranges, deciding shared boundary pages by the anchor's y against the top-margin band.
   **Failure anywhere returns `undefined`, and no compile may fail, publish differently, or retry
-  over the map** — a book without one simply keeps the old model-index chat behaviour. When the
+  over the map** — chat without a translatable map keeps the old model-index behaviour. New PDFs
+  still skip the cover in CSS, so a failed measurement still records cover-skip numbering
+  (`bookPdfCoverNumbering`) for chrome. **That stub says what it is** — `kind: "cover-numbering"` —
+  and the marker, not its empty `pages`, is what `parseStoredBookPdfPageMap` refuses it by, because
+  "carries no ranges" and "was never a measurement" are different rows and only the second may
+  never reach chat. Reading the refusal off `pages` retired a measured map that came back
+  rangeless along with the stubs, losing the cover flag and the furniture starts that were still
+  true of its file; a row predating the marker is refused anyway, since a stub describes no file
+  and so carries no `totalPdfPages`. `parseStoredBookPdfNumbering` ignores the marker — the
+  cover-skip fact under it is the whole point of the stub.
+  When the
   book prints a Contents, its rows' numbers — which the markdown could only write as model indexes
-  — are rewritten to the measured chapter pages and the document rendered once more, re-measured,
-  and re-checked once: the printed column and the footer now count the same pages. **Replacing
-  `book.pdf` without that measured pass must clear the column.** A detached repair whose
+  — are rewritten to the printed chapter numbers (the cover sheet is not numbered) and the document
+  rendered once more, re-measured, and re-checked once: the printed column and the footer now count
+  the same pages. That column is rewritten **whole or not at all** — a chapter whose anchor measured
+  onto the unnumbered cover has no printed number, and `contentsChapterPrintedPages` refuses the
+  whole set rather than letting that one row fall back to its physical sheet, which would print one
+  number from the other system in the one column a reader checks against the footer. The rows keep
+  their model indexes instead, and the map — physical throughout — is kept either way.   **Replacing
+  `book.pdf` without that measured pass must replace the translatable ranges.** A detached repair whose
   recompile does not byte-match the published `book.md` renders those published bytes with no
   plan — no markers, no Contents reprint — and the reprint exists because digit width moves
   breaks, so "same manuscript" is not the same pagination. A stale map mistranslates chat
-  targets onto the unreprinted file; no map is the graceful path the failure rule already
-  names. Keep anchor ids
+  targets onto the unreprinted file; a cover-numbering stub is the graceful path — chrome
+  still matches the footer, chat stays on model indexes. Keep anchor ids
   ASCII `[a-z0-9-]` (PDF name escaping never applies) and keep the injection out of `book.md`,
   whose bytes are the provenance sha, the EPUB input and the reader-chapter fingerprint.
 

@@ -25,7 +25,9 @@ const mockDb = vi.hoisted(() => {
   return { prisma, zeroAgg };
 });
 
-vi.mock("@book-maker/db", () => ({ prisma: mockDb.prisma, Prisma: {} }));
+// `Prisma.raw` is real because the attributed-cost query splices a generated
+// SQL fragment (the APPLY_BOOK_EDIT arm) into its template.
+vi.mock("@book-maker/db", () => ({ prisma: mockDb.prisma, Prisma: { raw: (sql: string) => sql } }));
 
 const originalEnv = { ...process.env };
 let app: FastifyInstance;
@@ -65,30 +67,47 @@ function stubEmpty() {
 }
 
 /**
- * A refunded charge keeps its `SPEND`/`SETTLED` row, so every credit query is
- * split in two by `reversedByEntry` — one for charges that stuck, one for the
- * ones a refund reversed. Both land on the same mock, so the stubs below
- * discriminate on the filter rather than on call order.
+ * A refunded charge keeps its gross `SPEND` row and adds a positive `REFUND`.
+ * The stubs accept net kept + returned amounts, then synthesize those two
+ * ledger aggregates.
  */
-function isReversedQuery(args: { where?: { reversedByEntry?: unknown } }): boolean {
-  return args.where?.reversedByEntry != null;
+function isRefundQuery(args: { where?: { entryType?: unknown } }): boolean {
+  return args.where?.entryType === "REFUND";
 }
 
 /** `kept` and `reversed` are credit magnitudes; SPEND rows are stored negative. */
 function stubCreditAggregate(totals: { kept: number; reversed?: number }) {
+  const refunded = totals.reversed ?? 0;
   mockDb.prisma.creditLedgerEntry.aggregate.mockImplementation((args: never) =>
-    Promise.resolve({ _sum: { amountCredits: -(isReversedQuery(args) ? (totals.reversed ?? 0) : totals.kept) } })
+    Promise.resolve({ _sum: { amountCredits: isRefundQuery(args) ? refunded : -(totals.kept + refunded) } })
   );
 }
 
 type ChargeGroup = { operation: string; credits: number; runs: number };
 
-function stubChargeGroups(groups: { kept?: ChargeGroup[]; reversed?: ChargeGroup[] }) {
-  const toRows = (rows: ChargeGroup[]) =>
-    rows.map((row) => ({ operation: row.operation, _sum: { amountCredits: -row.credits }, _count: { _all: row.runs } }));
-  mockDb.prisma.creditLedgerEntry.groupBy.mockImplementation((args: never) =>
-    Promise.resolve(toRows(isReversedQuery(args) ? (groups.reversed ?? []) : (groups.kept ?? [])))
-  );
+function stubChargeGroups(groups: { gross?: ChargeGroup[]; kept?: ChargeGroup[]; reversed?: ChargeGroup[] }) {
+  const kept = groups.kept ?? [];
+  const reversed = groups.reversed ?? [];
+  const operations = new Set([...kept, ...reversed].map((row) => row.operation));
+  const gross = groups.gross ?? [...operations].map((operation) => {
+    const keptRow = kept.find((row) => row.operation === operation);
+    const reversedRow = reversed.find((row) => row.operation === operation);
+    return {
+      operation,
+      credits: (keptRow?.credits ?? 0) + (reversedRow?.credits ?? 0),
+      runs: (keptRow?.runs ?? 0) + (reversedRow?.runs ?? 0)
+    };
+  });
+  const toRows = (rows: ChargeGroup[], refund: boolean) =>
+    rows.map((row) => ({
+      operation: row.operation,
+      _sum: { amountCredits: refund ? row.credits : -row.credits },
+      _count: { _all: row.runs }
+    }));
+  mockDb.prisma.creditLedgerEntry.groupBy.mockImplementation((args: never) => {
+    const refund = isRefundQuery(args);
+    return Promise.resolve(toRows(refund ? reversed : gross, refund));
+  });
 }
 
 beforeEach(() => {
@@ -171,6 +190,29 @@ describe("GET /api/admin/overview", () => {
     expect(money.creditsRefundedUsd).toBe(10);
     // The refunded work still cost us to serve, so it is not netted out of spend.
     expect(money.unitMarginUsd).toBe(25);
+  });
+
+  it("reports the net and returned portions of one partial charge", async () => {
+    stubCreditAggregate({ kept: 80, reversed: 120 });
+    stubChargeGroups({
+      gross: [{ operation: "PAGE_REGENERATION", credits: 200, runs: 1 }],
+      reversed: [{ operation: "PAGE_REGENERATION", credits: 120, runs: 1 }]
+    });
+    app = await buildApp();
+
+    const body = (await app.inject({ method: "GET", url: "/api/admin/overview" })).json();
+
+    expect(body.money).toMatchObject({
+      creditsDelivered: 80,
+      creditsDeliveredUsd: 0.8,
+      creditsRefunded: 120,
+      creditsRefundedUsd: 1.2
+    });
+    expect(body.creditsByOperation).toEqual([
+      expect.objectContaining({ key: "PAGE_REGENERATION", value: 80, secondary: 1 })
+    ]);
+    const [seriesSql] = mockDb.prisma.$queryRaw.mock.calls[0]!;
+    expect(Array.from(seriesSql as readonly string[]).join(" ")).toContain("GREATEST");
   });
 
   it("counts calls the rate card could not price instead of hiding them", async () => {
@@ -345,17 +387,17 @@ describe("GET /api/admin/operations", () => {
 
     expect(body.operations[0]).toMatchObject({
       key: "AUDIOBOOK_GENERATION",
-      runs: 1,
+      runs: 3,
       credits: 368,
       refundedRuns: 2,
       refundedCredits: 448,
       revenueUsd: 3.68,
       providerUsd: 1.75,
-      creditsPerRun: 368
+      creditsPerRun: 123
     });
     // Cost per run divides by every attempt we paid for, refunds included.
     expect(body.operations[0].costPerRunUsd).toBeCloseTo(1.75 / 3, 6);
-    expect(body.totals).toMatchObject({ runs: 1, credits: 368, refundedRuns: 2, refundedCredits: 448, revenueUsd: 3.68 });
+    expect(body.totals).toMatchObject({ runs: 3, credits: 368, refundedRuns: 2, refundedCredits: 448, revenueUsd: 3.68 });
   });
 
   it("shows an operation that refunded everything as the loss it is", async () => {
@@ -367,9 +409,33 @@ describe("GET /api/admin/operations", () => {
 
     // No revenue, real spend: the row still appears rather than vanishing with
     // its cost, and the margin is below zero because that is what happened.
-    expect(operation).toMatchObject({ runs: 0, credits: 0, refundedRuns: 2, refundedCredits: 448, revenueUsd: 0 });
+    expect(operation).toMatchObject({ runs: 2, credits: 0, refundedRuns: 2, refundedCredits: 448, revenueUsd: 0 });
     expect(operation.marginUsd).toBe(-2);
-    expect(operation.creditsPerRun).toBeNull();
+    expect(operation.creditsPerRun).toBe(0);
+  });
+
+  it("nets a partial refund without counting its one attempt twice", async () => {
+    mockDb.prisma.$queryRaw.mockResolvedValue([
+      attributedRow("PAGE_REGENERATION", { usd: 0.4 })
+    ]);
+    stubChargeGroups({
+      gross: [{ operation: "PAGE_REGENERATION", credits: 200, runs: 1 }],
+      reversed: [{ operation: "PAGE_REGENERATION", credits: 120, runs: 1 }]
+    });
+    app = await buildApp();
+
+    const operation = (await app.inject({ method: "GET", url: "/api/admin/operations" })).json().operations[0];
+
+    expect(operation).toMatchObject({
+      runs: 1,
+      credits: 80,
+      refundedRuns: 1,
+      refundedCredits: 120,
+      revenueUsd: 0.8,
+      providerUsd: 0.4,
+      costPerRunUsd: 0.4,
+      creditsPerRun: 80
+    });
   });
 
   it("survives a window with no charges and no calls", async () => {
@@ -437,6 +503,41 @@ describe("inspection routes", () => {
 
     expect((await app.inject({ method: "GET", url: "/api/admin/users/nope" })).statusCode).toBe(404);
     expect((await app.inject({ method: "GET", url: "/api/admin/projects/nope" })).statusCode).toBe(404);
+  });
+
+  it("reports project economics net of a partial refund", async () => {
+    mockDb.prisma.project.findUnique.mockResolvedValue({
+      id: "project-1",
+      title: "Partly delivered",
+      status: "COMPLETE",
+      category: "fiction",
+      language: "English",
+      targetPages: 5,
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-01T01:00:00.000Z"),
+      user: { id: "user-1", email: "reader@example.com" },
+      _count: { pages: 2, images: 0 }
+    });
+    mockDb.prisma.providerCallLog.aggregate.mockResolvedValue({ _sum: { costHint: 0.4 } });
+    mockDb.prisma.providerCallLog.count.mockResolvedValue(0);
+    mockDb.prisma.providerCallLog.groupBy.mockResolvedValue([]);
+    mockDb.prisma.generationJob.findMany.mockResolvedValue([]);
+    mockDb.prisma.creditLedgerEntry.findMany.mockResolvedValue([]);
+    mockDb.prisma.creditLedgerEntry.aggregate.mockImplementation(({ where }: { where: { entryType: string } }) =>
+      Promise.resolve({ _sum: { amountCredits: where.entryType === "REFUND" ? 120 : -200 } })
+    );
+    app = await buildApp();
+
+    const response = await app.inject({ method: "GET", url: "/api/admin/projects/project-1" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().economics).toMatchObject({
+      creditsCharged: 80,
+      revenueUsd: 0.8,
+      providerUsd: 0.4,
+      marginUsd: 0.4,
+      marginPercent: 50
+    });
   });
 });
 

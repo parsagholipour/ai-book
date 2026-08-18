@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Job } from "bullmq";
+import { UnrecoverableError, type Job } from "bullmq";
 
 const mocks = vi.hoisted(() => ({
   order: [] as string[],
@@ -17,7 +17,8 @@ const mocks = vi.hoisted(() => ({
   runLoggerAppend: vi.fn(),
   planBook: vi.fn(),
   compileExport: vi.fn(),
-  generatePage: vi.fn()
+  generatePage: vi.fn(),
+  applyBookEdit: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: {}, Prisma: {} }));
@@ -41,7 +42,7 @@ vi.mock("./providers/runLogging.js", () => ({
   createRunLogger: () => ({ append: mocks.runLoggerAppend }),
   providerConfigSnapshot: () => ({})
 }));
-vi.mock("./handlers/applyBookEdit.js", () => ({ applyBookEdit: vi.fn() }));
+vi.mock("./handlers/applyBookEdit.js", () => ({ applyBookEdit: mocks.applyBookEdit }));
 vi.mock("./handlers/characters.js", () => ({ buildCharacterPersona: vi.fn(), prepareCharacterCandidates: vi.fn() }));
 vi.mock("./handlers/compileExport.js", () => ({ compileExport: mocks.compileExport }));
 vi.mock("./handlers/continueBook.js", () => ({ continueBook: vi.fn() }));
@@ -54,7 +55,11 @@ vi.mock("./handlers/planning.js", () => ({ planBook: mocks.planBook, revisePlan:
 vi.mock("./handlers/replanBook.js", () => ({ replanBook: vi.fn() }));
 
 import { processWorkerJob } from "./processJob.js";
-import { StopRequestedError } from "./runtime/jobTypes.js";
+import {
+  StopRequestedError,
+  StructuralRollbackRedeliveryError,
+  UnownedStructuralDeliveryError
+} from "./runtime/jobTypes.js";
 
 function job(name: string, data: Record<string, unknown> = {}): Job {
   return {
@@ -218,5 +223,38 @@ describe("processWorkerJob failure routing", () => {
 
     expect(mocks.markStopped).toHaveBeenCalled();
     expect(mocks.markFailed).not.toHaveBeenCalled();
+  });
+
+  it("does not complete or fail a structural waiter that never owned the delivery", async () => {
+    // Returning from the handler would markCompleted the shared job under a
+    // live insert still drafting; markFailed would refund that same insert.
+    mocks.applyBookEdit.mockRejectedValue(new UnownedStructuralDeliveryError());
+
+    await expect(processWorkerJob(job("apply-book-edit"))).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mocks.markCompleted).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.unowned_structural_delivery",
+      expect.objectContaining({ error: expect.anything() })
+    );
+  });
+
+  it("does not fail or refund a structural edit whose rollback did not land", async () => {
+    // A stop landing on the durable row would otherwise run first and do the
+    // same three writes markFailed does. The revert did not put the book back.
+    mocks.hasStoppedGenerationJob.mockResolvedValue(true);
+    mocks.applyBookEdit.mockRejectedValue(new StructuralRollbackRedeliveryError());
+
+    await expect(processWorkerJob(job("apply-book-edit"))).rejects.toBeInstanceOf(UnrecoverableError);
+
+    expect(mocks.markCompleted).not.toHaveBeenCalled();
+    expect(mocks.markFailed).not.toHaveBeenCalled();
+    expect(mocks.markStopped).not.toHaveBeenCalled();
+    expect(mocks.runLoggerAppend).toHaveBeenCalledWith(
+      "job.structural_rollback_redelivery",
+      expect.objectContaining({ error: expect.anything() })
+    );
   });
 });

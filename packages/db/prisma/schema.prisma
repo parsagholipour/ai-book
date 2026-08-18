@@ -199,6 +199,9 @@ enum BookEditOperationKind {
   ADD_IMAGE
   MOVE_IMAGE
   REMOVE_IMAGE
+  /// Insert, delete or reorder pages. One kind for all three; which one it was
+  /// lives in BookEditOperation.classifier, along with the record undo reverses.
+  RESTRUCTURE_PAGES
 }
 
 enum BookEditOperationStatus {
@@ -660,6 +663,7 @@ model Project {
   chatMessages       ProjectChatMessage[]
   editOperations     BookEditOperation[]
   pageEditSnapshots  PageEditSnapshot[]
+  archivedPageEditSnapshots ArchivedPageEditSnapshot[]
   mobileCreationOutputs MobileCreationOutput[]
   bookImport         BookImport?
   audiobook          Audiobook?
@@ -792,6 +796,7 @@ model Page {
   chapter Chapter?     @relation(fields: [chapterId], references: [id], onDelete: SetNull)
   images  ImageAsset[]
   editSnapshots PageEditSnapshot[]
+  continuityNotes ContinuityNote[]
 
   @@unique([projectId, index])
 }
@@ -844,6 +849,12 @@ model BookEditOperation {
   lastRetryAt         DateTime?
   lastRetryReason     String?
   retryRequestId      String?
+  /// Per-delivery ownership for the long drafting phase of a structural edit.
+  /// Database-time expiry lets a crash redelivery take over without admitting
+  /// a second live delivery while the current owner is heartbeating.
+  structuralLeaseToken       String?
+  structuralLeaseExpiresAt   DateTime?
+  structuralLeaseCompletedAt DateTime?
   error               String?
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
@@ -853,6 +864,7 @@ model BookEditOperation {
   generationJob     GenerationJob?       @relation(fields: [generationJobId], references: [id], onDelete: SetNull)
   ledgerEntry       CreditLedgerEntry?   @relation(fields: [ledgerEntryId], references: [id], onDelete: SetNull)
   snapshots         PageEditSnapshot[]
+  archivedSnapshots ArchivedPageEditSnapshot[]
   operationMessages ProjectChatMessage[] @relation("ProjectChatOperationMessages")
   generationAttempts GenerationAttempt[]
 
@@ -888,6 +900,39 @@ model PageEditSnapshot {
   operation BookEditOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
 
   @@index([projectId, pageIndex])
+  @@index([operationId])
+  @@index([pageId])
+}
+
+/// A PageEditSnapshot parked while a structural delete keeps its Page absent.
+/// There is deliberately no Page foreign key: that cascade is exactly what this
+/// archive survives. `archiveKey` is the structural stamp's bounded restore
+/// pointer, not a foreign key, so retiring that structural operation leaves the
+/// older, now-incomplete operation blocked from partial Undo.
+model ArchivedPageEditSnapshot {
+  /// The original snapshot id. Restoring with this id makes replay idempotent.
+  id               String   @id
+  projectId        String
+  pageId           String
+  operationId      String
+  archiveKey       String
+  pageIndex        Int
+  titleBefore      String
+  markdownBefore   String
+  summaryBefore    String
+  revisionBefore   Int
+  storyDeltaBefore Json?
+  titleAfter       String?
+  markdownAfter    String?
+  summaryAfter     String?
+  revisionAfter    Int?
+  createdAt        DateTime
+  archivedAt       DateTime @default(now())
+
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  operation BookEditOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, archiveKey])
   @@index([operationId])
   @@index([pageId])
 }
@@ -1080,12 +1125,19 @@ model Location {
 model ContinuityNote {
   id        String   @id @default(cuid())
   projectId String
+  /// Stable ownership for page-scoped notes. The scope and tags retain the
+  /// current display index for prompts, but neither is an identity: structural
+  /// edits may reuse that index for another Page.
+  pageId    String?
   scope     String
   body      String
   tags      String[]
   createdAt DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  page    Page?   @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
 }
 
 model ResearchSource {

@@ -88,10 +88,12 @@ class ExportProvenance {
               : ExportDownloadResolution.identified,
           revision: exactRevision,
           revisionIsExact: true,
+          digest: digest,
         );
       case ExportProvenanceState.mismatch:
-        return const ResolvedExportDownload._(
+        return ResolvedExportDownload._(
           ExportDownloadResolution.replacedUnderRead,
+          digest: digest,
         );
       case ExportProvenanceState.unknown:
       case ExportProvenanceState.unreported:
@@ -103,6 +105,7 @@ class ExportProvenance {
         return ResolvedExportDownload._(
           ExportDownloadResolution.identified,
           revision: descriptorRevision,
+          digest: digest,
         );
     }
   }
@@ -166,6 +169,7 @@ class ResolvedExportDownload {
     this.resolution, {
     this.revision,
     this.revisionIsExact = false,
+    this.digest,
   });
 
   final ExportDownloadResolution resolution;
@@ -178,4 +182,7 @@ class ResolvedExportDownload {
   /// Whether [revision] is the server's own account of the bytes rather than
   /// the descriptor standing in. Only an exact revision may re-anchor markup.
   final bool revisionIsExact;
+
+  /// sha256 of the bytes that arrived, when the server reported it.
+  final String? digest;
 }

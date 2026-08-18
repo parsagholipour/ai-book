@@ -35,9 +35,16 @@ import { generateGroundedProjectAnswer } from "./groundedAnswer.js";
 import { replayClaimedProposal } from "./proposalExecutionClaims.js";
 import { isPrismaUniqueConflict, jsonInputValue, languageDisplayName } from "./support.js";
 import { findPendingProposalById, type PendingEditState } from "./pendingEditState.js";
-import { bookPlanSchema, type TextModelAdapter } from "@book-maker/core";
+import { bookPlanSchema, resolveStructuralPageEdit, type TextModelAdapter } from "@book-maker/core";
 import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
+import {
+  structuralCardBlock,
+  structuralCardPlanOf,
+  structuralEditForProposal,
+  structuralPagesOf,
+  structuralRefusalMessage
+} from "./structuralPageEdits.js";
 
 /** Classifies chat into a book-edit intent, price, and confirmation reply. */
 
@@ -363,6 +370,67 @@ export async function proposeBookEdit(options: {
   const pendingRequest = options.pendingRequest?.trim() || message;
   const characterContext = options.characterContext?.trim() || undefined;
   const proposalId = randomUUID();
+  if (intent.kind === "restructure_pages") {
+    // Forked ahead of everything else because `affectedPagesForIntent` filters
+    // against pages that *currently exist*: a page about to be created is not
+    // one of them, so an insert reaching it is answered "which page or exact
+    // phrase should I edit?" and never gets a card at all.
+    const resolved = resolveStructuralPageEdit(structuralEditForProposal(intent), structuralPagesOf(project));
+    if (!resolved.ok) {
+      const reply = await createAssistantChatMessage({
+        projectId: project.id,
+        parentId: userMessageId,
+        content: structuralRefusalMessage(resolved.reason, intent, numbering),
+        metadata: { intent, charged: false, pendingEditCancelled: true }
+      });
+      return { reply, operation: null };
+    }
+    const cost = bookEditCreditCost(intent.kind, resolved.plan.pagesBilled, project);
+    const proposalIntent = { ...intent, clarification: "none" as const };
+    // Stored beside the quote for the same reason the quote is stored: the
+    // resolver worked both out against the book, and a card rebuilt from this
+    // state — a recovery reply, a credits-blocked resume — has no pages to
+    // resolve against. Without it that card loses its chip entirely.
+    const structuralPlan = structuralCardPlanOf(intent, resolved.plan);
+    const reply = await createAssistantChatMessage({
+      projectId: project.id,
+      parentId: userMessageId,
+      // Same numbering *and the same resolved plan* as the card's summary
+      // below: this bubble is the only other place a structural edit prints
+      // page numbers, and a model index here beside a printed one there — or
+      // the request's unclamped anchor here beside the resolver's there — names
+      // two different pages.
+      content: editProposalMessage(intent.kind, [], intent, numbering, structuralPlan),
+      metadata: {
+        intent: proposalIntent,
+        charged: false,
+        pendingEdit: pendingEditMetadataFromState({
+          request: message,
+          scope: "none",
+          clarification: "confirm",
+          intent: proposalIntent,
+          affectedPageIndexes: [],
+          credits: cost,
+          proposalId,
+          structuralPlan,
+          ...(characterContext ? { characterContext } : {})
+        }),
+        editProposal: {
+          id: proposalId,
+          kind: intent.kind,
+          scope: "none",
+          affectedPageIndexes: [],
+          credits: cost,
+          summary: editProposalSummary(intent.kind, [], intent, numbering, structuralPlan),
+          // The card says how many pages and where, in printed numbering — the
+          // wart the `continue_book` card still has, where "8 new chapters"
+          // carries a four-figure quote with no page count anywhere on it.
+          structural: structuralCardBlock(intent, structuralPlan, numbering)
+        }
+      }
+    });
+    return { reply, operation: null };
+  }
   if (intent.kind === "continue_book") {
     const newPageCount = continuationNewPageCount(intent, project);
     const cost = bookEditCreditCost(intent.kind, newPageCount, project);
@@ -572,6 +640,7 @@ export function pendingEditMetadataFromState(state: PendingEditState): Record<st
     ...(state.affectedPageIndexes ? { affectedPageIndexes: state.affectedPageIndexes } : {}),
     ...(state.credits !== undefined ? { credits: state.credits } : {}),
     ...(state.proposalId ? { proposalId: state.proposalId } : {}),
+    ...(state.structuralPlan ? { structuralPlan: state.structuralPlan } : {}),
     ...(state.characterContext ? { characterContext: state.characterContext } : {})
   };
 }
@@ -593,7 +662,23 @@ export function editProposalCardFromState(
     ...(state.intent.affectedChapterIndex ? { affectedChapterIndex: state.intent.affectedChapterIndex } : {}),
     ...(state.intent.targetLanguage ? { targetLanguage: state.intent.targetLanguage } : {}),
     ...(state.credits !== undefined ? { credits: state.credits } : {}),
-    summary: editProposalSummary(state.intent.kind, affectedPageIndexes, state.intent, numbering)
+    // The chip a restructure card draws is this block and nothing else: its
+    // `affectedPageIndexes` are deliberately empty, so a rebuilt card without
+    // it falls through to "Matching pages" for an edit that named pages 3 and
+    // 5 — or created pages that do not exist yet.
+    ...(state.structuralPlan
+      ? { structural: structuralCardBlock(state.intent, state.structuralPlan, numbering) }
+      : {}),
+    // The stored plan reaches the summary too: it is the resolver's clamped
+    // anchor, and a sentence built from the request's own would contradict the
+    // chip immediately above it.
+    summary: editProposalSummary(
+      state.intent.kind,
+      affectedPageIndexes,
+      state.intent,
+      numbering,
+      state.structuralPlan
+    )
   };
 }
 

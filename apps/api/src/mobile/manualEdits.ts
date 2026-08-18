@@ -27,9 +27,16 @@ import {
   EXPORT_PUBLICATION_PROJECT_STATUS,
   PRESENTATION_ONLY_RECOMPILE,
   PRESENTATION_RECOMPILE_FALLBACK_STATUS,
-  bookPlanSchema
+  bookPlanSchema,
+  parseStructuralApplication,
+  type StructuralApplication
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import {
+  PAGE_RESTRUCTURE_TRANSACTION_OPTIONS,
+  Prisma,
+  prisma,
+  revertStructuralPageChange
+} from "@book-maker/db";
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -324,24 +331,85 @@ export async function undoLastBookEdit(
     },
     orderBy: [{ appliedAt: "desc" }, { createdAt: "desc" }],
     take: 10,
-    include: { snapshots: true }
+    include: {
+      snapshots: true,
+      _count: { select: { archivedSnapshots: true } }
+    }
   });
-  const operation = recentOperations.find(
-    (candidate) => candidate.snapshots.length > 0 && jsonRecord(candidate.classifier).undoneAt === undefined
+  // A pure insert or reorder writes no snapshots — nothing existed before to
+  // snapshot — so a snapshots-only filter skipped it and silently undid the
+  // *previous, older* edit instead. The button the reader tapped is drawn from
+  // `canUndoBookEdit` too, so the two cannot disagree about which row this is.
+  // The status and kind are already filtered above; asking again is free and
+  // keeps the whole rule in one place.
+  const operation = recentOperations.find((candidate) =>
+    canUndoBookEdit({
+      status: candidate.status,
+      kind: candidate.kind,
+      classifier: candidate.classifier,
+      snapshotCount: candidate.snapshots.length,
+      archivedSnapshotCount: candidate._count?.archivedSnapshots ?? 0
+    })
   );
   if (!operation) {
-    return createAssistantChatMessage({
-      projectId: project.id,
-      parentId,
-      content: "There’s no recent text edit I can undo on this book.",
-      metadata: { intent, charged: false }
-    });
+    return nothingToUndoReply(project.id, parentId, intent);
   }
 
-  const restoredPageIndexes: number[] = [];
-  const previousAssets = previousImageAssetsFromClassifier(operation.classifier);
-  const demotedAssets = demotedImageAssetsFromClassifier(operation.classifier);
-  const contentRevision = await prisma.$transaction(async (tx) => {
+  const fallbackStatus = project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE";
+  // The same 30 s ceiling the apply side runs under, for the same reason: an
+  // undo of a structural edit replays that edit's work backwards — raw index
+  // shifts across every page after the anchor, two `PlanVersion` writes
+  // carrying the whole plan JSON, the project and chapter rows — and then
+  // restores every snapshot on top. Prisma's 5 s default aborts that midway on
+  // a long book, which is a *worse* outcome than the apply timing out: the
+  // reader tapped Undo on a book that is already theirs, and the recompile
+  // queued after this block names the plan the revert reported restoring.
+  // Nothing here is charged, so the ceiling costs a plain text undo nothing —
+  // it is a limit, not a duration.
+  const undone = await prisma.$transaction(async (tx) => {
+    // First statement, the way `settleSkippedRestructure` opens with its APPLIED
+    // claim: this conditional UPDATE takes the operation row's write lock, so
+    // everything read after it — and the classifier merged at the end — is what
+    // this transaction actually found rather than the copy the picker carried
+    // in. The window is real and the row moves inside it: the worker's
+    // `rollbackStructuralChange` reverts a half-applied shift, deletes
+    // `structuralApplication` and adds `structuralRolledBackAt`, and the
+    // `updateMany` that flips the row APPLIED -> FAILED afterwards is
+    // `.catch()`ed, so both shapes have to be caught. A `count` of 0 is the
+    // status half; the re-read below is the rest, asked with the same predicate
+    // the button and the picker use rather than a second copy of it.
+    const claimed = await tx.bookEditOperation.updateMany({
+      where: { id: operation.id, status: "APPLIED" },
+      data: { status: "APPLIED" }
+    });
+    const held =
+      claimed.count === 0
+        ? null
+        : await tx.bookEditOperation.findUnique({
+            where: { id: operation.id },
+            select: { classifier: true }
+          });
+    if (
+      !held ||
+      !canUndoBookEdit({
+        status: "APPLIED",
+        kind: operation.kind,
+        classifier: held.classifier,
+        snapshotCount: operation.snapshots.length,
+        archivedSnapshotCount: operation._count?.archivedSnapshots ?? 0
+      })
+    ) {
+      // Nothing this Undo would revert, and refusing is the whole answer: the
+      // picker takes the newest row *with* a record, so falling through to the
+      // next one reverts the edit before this one under this one's
+      // confirmation. Written before any other statement, so the project row is
+      // never bumped into EDITING for a revert that does not happen.
+      return null;
+    }
+    const previousAssets = previousImageAssetsFromClassifier(held.classifier);
+    const demotedAssets = demotedImageAssetsFromClassifier(held.classifier);
+    const structural = parseStructuralApplication(held.classifier);
+    const restoredPageIndexes: number[] = [];
     const editRevision = project.currentPlanId
       ? await tx.project.update({
           where: { id: project.id },
@@ -349,6 +417,19 @@ export async function undoLastBookEdit(
           select: { contentRevision: true }
         })
       : null;
+    // The plan the recompile below names, which is *not* the one this function
+    // was handed once a structural edit is involved: that edit approved a plan
+    // version of its own, and the revert deletes it. See `planIdAfterRevert`.
+    let planId = project.currentPlanId;
+    if (structural) {
+      // Before the snapshot replay, not after: the replay keys on `pageId` and
+      // is index-independent, but a combined insert-and-rewrite reports which
+      // pages it restored, and those numbers only mean anything once the pages
+      // are back where they were. Without this arm the replay would restore the
+      // rewritten pages and leave the inserted ones in place — a half-undo,
+      // and a book whose length no longer matches its plan version.
+      ({ currentPlanId: planId } = await revertStructuralPageChange(tx, project.id, structural));
+    }
     for (const snapshot of operation.snapshots) {
       const imagePrompt = imagePromptToRestore(snapshot.pageId, previousAssets, demotedAssets);
       await tx.page.update({
@@ -377,13 +458,21 @@ export async function undoLastBookEdit(
       where: { id: operation.id },
       data: {
         classifier: jsonInputValue({
-          ...jsonRecord(operation.classifier),
+          // The copy read under the claim above, never the picker's: a whole
+          // document merge writes back everything it was read with, and a
+          // concurrent rollback's `structuralRolledBackAt` — or the stamp it
+          // deleted — is exactly what that would reinstate.
+          ...jsonRecord(held.classifier),
           undoneAt: new Date().toISOString()
         })
       }
     });
-    return editRevision?.contentRevision ?? null;
-  });
+    return { contentRevision: editRevision?.contentRevision ?? null, planId, structural, restoredPageIndexes };
+  }, PAGE_RESTRUCTURE_TRANSACTION_OPTIONS);
+  if (!undone) {
+    return nothingToUndoReply(project.id, parentId, intent);
+  }
+  const { contentRevision, planId, structural, restoredPageIndexes } = undone;
   restoredPageIndexes.sort((a, b) => a - b);
   try {
     const parsed = bookPlanSchema.safeParse(project.currentPlan?.planningPackage);
@@ -392,29 +481,94 @@ export async function undoLastBookEdit(
     console.warn(`Story state rebuild after undo skipped for project ${project.id}`, error);
   }
 
-  if (project.currentPlanId && contentRevision !== null) {
-    await queueUserEditExportRecompile(
-      project.id,
-      project.currentPlanId,
-      project.status === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE",
-      { contentRevision }
-    );
+  if (contentRevision !== null) {
+    if (planId) {
+      await queueUserEditExportRecompile(project.id, planId, fallbackStatus, { contentRevision });
+    } else {
+      // A stamp that named the version it created but not the one it superseded
+      // leaves the book with no plan to compile. Nothing can be queued, so put
+      // the project back rather than stranding it in EDITING behind a compile
+      // that is never coming — the same repair the enqueue failure path makes.
+      await prisma.project
+        .updateMany({
+          where: { id: project.id, status: "EDITING", contentRevision },
+          data: { status: fallbackStatus }
+        })
+        .catch(() => undefined);
+    }
   }
 
-  const pageText =
-    restoredPageIndexes.length === 1
-      ? `page ${restoredPageIndexes[0]}`
-      : `pages ${restoredPageIndexes.join(", ")}`;
   return createAssistantChatMessage({
     projectId: project.id,
     parentId,
-    content: `Done - I restored ${pageText} to how they were before “${operation.request.slice(0, 120)}” and I’m refreshing the exports. Undo is free.`,
+    content: undoConfirmation(operation.request, structural, restoredPageIndexes),
     metadata: {
       intent,
       charged: false,
       undo: { operationId: operation.id, restoredPageIndexes }
     }
   });
+}
+
+/**
+ * The one answer for "this Undo has nothing to revert", said in both places
+ * that can reach it: no candidate at all, and a candidate the row lock found
+ * had already been reverted — by the worker's rollback, or by an undo that
+ * landed first.
+ */
+function nothingToUndoReply(
+  projectId: string,
+  parentId: string,
+  intent: BookEditIntent
+): Promise<MobileProjectChatMessageRecord> {
+  return createAssistantChatMessage({
+    projectId,
+    parentId,
+    content: "There’s no recent text edit I can undo on this book.",
+    metadata: { intent, charged: false }
+  });
+}
+
+/**
+ * What the undo reply says it put back.
+ *
+ * A pure insert, delete or move restores no page *text* — an inserted page had
+ * nothing before it existed, and a delete or a move only changed which pages the
+ * book has and in what order — so `PageEditSnapshot` rows are the wrong record
+ * for it and it writes none. The sentence used to be built from those rows
+ * alone, so undoing one of the three produced "I restored pages  to how they
+ * were", an empty list rendered as an empty phrase. The structural stamp is the
+ * undo record for those, so the *shape* it put back is what the sentence names
+ * instead — and it names it without page numbers, because the numbers a
+ * structural undo just moved are exactly the ones the reader would misread.
+ *
+ * A combined insert-and-rewrite reports both halves, since it undid both. The
+ * final fallback cannot be reached — `undoLastBookEdit` only picks an operation
+ * that has snapshots or a stamp — but the sentence has to say something rather
+ * than trail off if that predicate and this one ever drift apart.
+ */
+function undoConfirmation(
+  request: string,
+  structural: StructuralApplication | null,
+  restoredPageIndexes: number[]
+): string {
+  const restored =
+    restoredPageIndexes.length === 0
+      ? null
+      : restoredPageIndexes.length === 1
+        ? `restored page ${restoredPageIndexes[0]} to how it was`
+        : `restored pages ${restoredPageIndexes.join(", ")} to how they were`;
+  const shape =
+    structural === null
+      ? null
+      : structural.action === "insert"
+        ? "took the new pages back out"
+        : structural.action === "delete"
+          ? "put the deleted pages back"
+          : "put the pages back in their original order";
+  const undone =
+    shape && restored ? `${shape} and ${restored}` : (shape ?? restored ?? "put the book back to how it was");
+  return `Done - I ${undone} to undo “${request.slice(0, 120)}”, and I’m refreshing the exports. Undo is free.`;
 }
 
 /**
@@ -463,5 +617,76 @@ export const UNDOABLE_EDIT_KINDS = [
   "MANUAL_EDIT",
   "ADD_IMAGE",
   "MOVE_IMAGE",
-  "REMOVE_IMAGE"
+  "REMOVE_IMAGE",
+  "RESTRUCTURE_PAGES"
 ] as const;
+
+/**
+ * What an undo has to put back — the record an applied edit leaves behind.
+ *
+ * Two shapes, because an edit either rewrote pages or moved them. Everything
+ * that rewrites text or touches an illustration is restored from its
+ * `PageEditSnapshot` rows, so it needs at least one; a structural edit
+ * snapshots nothing — it changes *which* pages the book has, and a removed
+ * page's snapshot would cascade away with the page it describes — and is
+ * restored from the `structuralApplication` stamp instead, written in the
+ * transaction that shifted the indexes and erased by the rollback.
+ *
+ * This is also what "See changes" opens, which is why it is one function:
+ * an operation with no record has nothing to review and nothing to undo.
+ */
+export function hasBookEditUndoRecord(operation: {
+  classifier?: unknown;
+  snapshotCount: number;
+  archivedSnapshotCount?: number;
+}): boolean {
+  if (parseStructuralApplication(operation.classifier) !== null) {
+    return true;
+  }
+  // One archived row means a multi-page snapshot set may be incomplete. The
+  // live rows cannot safely advertise a partial diff or Undo while any page it
+  // originally covered is absent.
+  return operation.snapshotCount > 0 && (operation.archivedSnapshotCount ?? 0) === 0;
+}
+
+/**
+ * The one rule the Undo button and the undo itself both have to express: an
+ * edit is undoable only when undoing would revert *that* edit.
+ *
+ * `undoLastBookEdit` takes the newest operation with a record (above) that has
+ * not already been undone, so an APPLIED row without one is not "an undo that
+ * does nothing" — it is an undo of whatever edit came *before* it, on a button
+ * the reader tapped expecting this one. `operationCanUndo` used to name the
+ * ways a record can be missing instead of asking for the record: a layout edit
+ * that found nothing (`classifier.layoutMissing`) and a structural one the
+ * worker declined (`classifier.structuralSkipped`). Enumerating them is how
+ * the other two shapes were missed — a rolled-back structural apply, where
+ * `rollbackStructuralChange` erases the stamp inside the revert's transaction
+ * and the `updateMany` that flips the row FAILED afterwards is `.catch()`ed,
+ * and an exact-mode edit whose pages all stopped matching, where
+ * `applyBookEdit` deletes the snapshots of the pages it skipped. Both leave an
+ * APPLIED row with neither marker.
+ *
+ * The count has to come from the caller because the two sides read it
+ * differently — a `_count` on the chat query, the included rows in the picker —
+ * and a caller that cannot supply one must pass 0: a missing Undo button is a
+ * degraded state, an Undo that reverts someone else's edit is a lost edit.
+ */
+export function canUndoBookEdit(operation: {
+  status: string;
+  kind: string;
+  classifier?: unknown;
+  snapshotCount: number;
+  archivedSnapshotCount?: number;
+}): boolean {
+  if (operation.status !== "APPLIED") {
+    return false;
+  }
+  if (!(UNDOABLE_EDIT_KINDS as readonly string[]).includes(operation.kind)) {
+    return false;
+  }
+  if (!hasBookEditUndoRecord(operation)) {
+    return false;
+  }
+  return jsonRecord(operation.classifier).undoneAt === undefined;
+}

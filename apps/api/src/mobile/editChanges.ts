@@ -1,4 +1,10 @@
-import { assetsImagePathFrom, diffProse, proseChanged } from "@book-maker/core";
+import {
+  assetsImagePathFrom,
+  diffProse,
+  parseStructuralApplication,
+  proseChanged,
+  type StructuralApplication
+} from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
 import { type MobileEditChangesDto, type MobileEditPageChangeDto } from "./dto.js";
@@ -8,10 +14,13 @@ import { jsonRecord } from "./support.js";
 /**
  * The before/after record of one applied edit, read back for review.
  *
- * Every page an edit touches is snapshotted with its text on both sides — the
- * rows undo restores from. Illustration replacements that leave markdown
+ * Every page an edit *rewrites* is snapshotted with its text on both sides —
+ * the rows undo restores from. Illustration replacements that leave markdown
  * unchanged still write a snapshot (so undo can restore the ImageAsset); they
  * are kept in this view via `classifier.previousAsset` rather than a word diff.
+ *
+ * A structural edit is the one kind that snapshots nothing, because it rewrites
+ * nothing — see `structuralWordTotals`.
  */
 export type EditSnapshotRecord = {
   pageId?: string;
@@ -56,6 +65,13 @@ export async function loadEditChanges(
   if (!operation) {
     return null;
   }
+  const structural = parseStructuralApplication(operation.classifier);
+  if (structural) {
+    // A structural edit has no illustration swap to resolve either — the layout
+    // forks are what write `previousAssets` — so it settles here with the two
+    // totals its own record can answer for.
+    return serializeEditChanges(operation, undefined, await structuralWordTotals(projectId, structural));
+  }
   const swap = illustrationChangesFromClassifier(operation);
   let afterPath = swap.find((change) => change.afterPath)?.afterPath;
   if (operation.kind !== "REMOVE_IMAGE" && operation.kind !== "MOVE_IMAGE" && swap[0] && !afterPath) {
@@ -72,7 +88,8 @@ export async function loadEditChanges(
 
 export function serializeEditChanges(
   operation: EditChangesOperationRecord,
-  illustrationAfterPath?: string
+  illustrationAfterPath?: string,
+  structuralWords?: { addedWords: number; removedWords: number }
 ): MobileEditChangesDto {
   const changes = illustrationChangesFromClassifier(operation, illustrationAfterPath);
   const written = operation.snapshots.filter((snapshot) => snapshot.markdownAfter !== null);
@@ -92,8 +109,45 @@ export function serializeEditChanges(
     appliedAt: operation.appliedAt?.toISOString() ?? null,
     undone: jsonRecord(operation.classifier).undoneAt !== undefined,
     pages,
-    addedWords: pages.reduce((total, page) => total + page.addedWords, 0),
-    removedWords: pages.reduce((total, page) => total + page.removedWords, 0)
+    addedWords: structuralWords?.addedWords ?? pages.reduce((total, page) => total + page.addedWords, 0),
+    removedWords: structuralWords?.removedWords ?? pages.reduce((total, page) => total + page.removedWords, 0)
+  };
+}
+
+/**
+ * How much prose a structural edit added or took away.
+ *
+ * It lists **no pages**, and that is the honest answer rather than a gap: this
+ * view is a before/after of page text, and a structural edit rewrote none — an
+ * inserted page has no before to compare against and a removed one has no row
+ * left to list, which is exactly what the app's summary card says when the list
+ * is empty. The two totals are still real and already recorded, so the card is
+ * not left saying nothing at all: the removed pages ride the stamp whole (it is
+ * the undo record), and the inserted ones are `Page` rows the drafting pass
+ * wrote.
+ *
+ * An *undone* insert has neither — the revert deletes the pages it made — so it
+ * reports zero and the card says the edit was undone, which is the same bargain
+ * the stamp already makes with a deleted page's semantic memory.
+ */
+async function structuralWordTotals(
+  projectId: string,
+  application: StructuralApplication
+): Promise<{ addedWords: number; removedWords: number }> {
+  const removedWords = application.removedPages.reduce(
+    (total, page) => total + diffProse(page.markdown, "").removedWords,
+    0
+  );
+  if (application.insertedPageIds.length === 0) {
+    return { addedWords: 0, removedWords };
+  }
+  const inserted = await prisma.page.findMany({
+    where: { projectId, id: { in: application.insertedPageIds } },
+    select: { markdown: true }
+  });
+  return {
+    addedWords: inserted.reduce((total, page) => total + diffProse("", page.markdown).addedWords, 0),
+    removedWords
   };
 }
 

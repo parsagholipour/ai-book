@@ -109,9 +109,13 @@ export function stringField(record: Record<string, unknown>, key: string): strin
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
+/**
+ * Re-exported rather than re-written: `@book-maker/core` owns the one record
+ * coercion, so hardening it (rejecting class instances, say) reaches every
+ * workspace at once. Kept on this module because ~20 mobile files already read
+ * their Prisma `Json` columns through `support.js`.
+ */
+export { jsonRecord } from "@book-maker/core";
 
 export function isPrismaUniqueConflict(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";

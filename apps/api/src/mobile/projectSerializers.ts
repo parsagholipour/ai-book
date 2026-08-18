@@ -10,6 +10,7 @@ import { serializeGenerationProgress } from "./generationProgress.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
 import { imageSettingsFromMediaSettings } from "./imageSettings.js";
 import { loadProjectQualityReport, qualityWithExportsOnDisk } from "./qualityVerdict.js";
+import { bookPdfNumberingForProject } from "../bookPageNumbering.js";
 import { type GenerationJobType } from "../queue.js";
 import { projectExportAvailability, type ProjectExportFormat } from "../routes/projects.js";
 import {
@@ -48,6 +49,7 @@ import {
   mediaSettingsSchema,
   modelTierSchema,
   payloadOwnsProjectOutcome,
+  printedPageOffset,
   type BookPlan
 } from "@book-maker/core";
 import { hasActiveProjectEntitlement } from "@book-maker/db/billing";
@@ -103,6 +105,42 @@ export async function serializeProjectSummary(
     exports: await serializeExportSet(project.id, project.title, appConfig, userId, project.contentRevision),
     createdAt: project.createdAt.toISOString(),
     updatedAt: project.updatedAt.toISOString()
+  };
+}
+
+/**
+ * The reader's cover-skip flag, and only on the status DTO — that is the one
+ * the app reads it from, and a second copy on the summary would be a second
+ * answer to the same question for surfaces that never ask it.
+ *
+ * True when printed numbers skip the cover (version-2 maps and cover-numbering
+ * stubs, after the CSS page-counter reset). False for a version-1 map whose PDF
+ * still numbered the cover. The exact revision + digest travel with it: a
+ * revision alone cannot distinguish a same-revision repair, and an EDITING
+ * project deliberately keeps an older map while its replacement is built.
+ * Legacy maps missing either identity field answer nothing, leaving the app on
+ * physical numbering rather than asking it to guess which PDF they describe.
+ */
+function serializedHasCoverPage(project: {
+  pdfPageMap?: unknown;
+  contentRevision: number;
+  status?: string;
+}):
+  | {
+      hasCoverPage: boolean;
+      pdfPageNumbering: { hasCoverPage: boolean; contentRevision: number; pdfDigest: string };
+    }
+  | Record<string, never> {
+  const numbering = bookPdfNumberingForProject(project);
+  const contentRevision = numbering?.contentRevision;
+  const pdfDigest = numbering?.pdfDigest;
+  if (contentRevision === undefined || !pdfDigest) {
+    return {};
+  }
+  const hasCoverPage = printedPageOffset(numbering) > 0;
+  return {
+    hasCoverPage,
+    pdfPageNumbering: { hasCoverPage, contentRevision, pdfDigest }
   };
 }
 
@@ -367,6 +405,7 @@ export function serializeProjectStatus(status: ProjectStatusResult, exports: Mob
     imageCount: status.progress.images,
     quality: qualityWithExportsOnDisk(status.quality, exports),
     exports,
+    ...serializedHasCoverPage(project),
     updatedAt: project.updatedAt.toISOString()
   };
 }

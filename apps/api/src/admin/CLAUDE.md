@@ -40,7 +40,13 @@ rather than inventing a cost.
   (`billingLedgerEntryId`) — not `CreditLedgerEntry.generationJobId`, which is set on a minority of
   entries and loses most of the spend — then walks `planId` to reach the fan-out children a run
   charged for, then falls back to a `JobType → CreditOperation` map **gated on operations the
-  project was actually charged for**. That gating is the whole safety property: an operator-console
+  project was actually charged for**. That map is one-to-one for every job type but
+  `APPLY_BOOK_EDIT`, which is four operations wearing one name: `billingOperationForIntent`
+  (`apps/api/src/mobile/bookEditPricing.ts`) charges a structural insert as `PAGE_REGENERATION` and
+  a chat-added picture as `IMAGE_GENERATION`, so that arm reads `payload.intentKind` and is
+  *generated* from that function rather than restated — a hand-written copy is a thirteenth list to
+  keep in step, and the failure it produces is paid model spend reported as unbilled. The gating is
+  the whole safety property of the third path: an operator-console
   book has no charge, so its jobs stay unbilled instead of inventing revenue. Whatever is left is
   reported as unbilled spend split by reason, never netted into a margin and never dropped — the
   two must add up to the Costs tab's total. `VOICE_CALL_MINUTE` shows 100% margin honestly and
@@ -49,3 +55,7 @@ rather than inventing a cost.
   (`PurchaseRecord.amountMicros`) is money banked in the window; credits delivered × the credit
   rate is the value of work actually done. They diverge because a reader buys on one day and spends
   over the next month, so pairing either alone against provider spend misstates the margin.
+- **A reversal is an amount, not a boolean.** A page-priced operation can return only the part it
+  did not deliver. Revenue, project/user inspection, pricing coverage and operation economics read
+  the cumulative REFUND amount and subtract it from the original SPEND; `reversedByEntry` merely
+  says that some refund exists. Provider spend remains attributed to the attempt that incurred it.

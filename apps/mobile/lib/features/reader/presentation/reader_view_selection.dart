@@ -22,7 +22,11 @@ extension _ReaderViewSelection on _ReaderViewState {
     List<PdfPageTextRange> ranges,
     Offset anchor,
   ) async {
-    final preview = previewReaderSelection(ranges, _document);
+    final preview = previewReaderSelection(
+      ranges,
+      _document,
+      hasCoverPage: _hasCoverPage,
+    );
     if (preview == null) {
       _clearSelection();
       return;
@@ -35,6 +39,7 @@ extension _ReaderViewSelection on _ReaderViewState {
       repository: _repository,
       projectId: widget.projectId,
       revision: _mappingRevision,
+      pdfDigest: _mappedPdfDigest,
     );
     if (!mounted || _selection?.text != preview.selection.text) return;
     _showSelection(placed.selection, anchor, placed.spans);

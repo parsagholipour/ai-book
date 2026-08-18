@@ -263,4 +263,244 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ReaderMarkupToolbar), findsNothing);
   });
+
+  testWidgets(
+    'cover-skip chrome follows the open PDF, not a newly published map',
+    (tester) async {
+      // Stay on the old file, show the update banner, do not jump. Cover-skip
+      // is stamped on the open file when it is downloaded, so a newly
+      // published map cannot change the numbers on screen — version-2 footers
+      // already skip the cover, and falling back to physical would label
+      // sheet 2 "Page 2" while the footer still says "Page 1".
+      final repository = FakeReaderRepository();
+      final loader = ReaderDocumentLoader(
+        repository: repository,
+        projectId: 'project-1',
+      );
+      addTearDown(loader.dispose);
+
+      Future<void> pump({
+        required int offeredRevision,
+        required String status,
+      }) async {
+        final export = pdfExport(revision: offeredRevision);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              readerRepositoryProvider.overrideWithValue(repository),
+              readerViewerBuilderProvider.overrideWithValue(stubViewer),
+            ],
+            child: MaterialApp(
+              home: ReaderView(
+                projectId: 'project-1',
+                export: export,
+                loader: loader,
+                status: statusWith(export, status: status, hasCoverPage: true),
+                onOpenPaywall: () {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      bool chromeSkipsCover() {
+        return tester
+                .widget<ReaderBottomChrome>(find.byType(ReaderBottomChrome))
+                .hasCoverPage &&
+            tester
+                .widget<ReaderScrollHandle>(find.byType(ReaderScrollHandle))
+                .hasCoverPage;
+      }
+
+      await pump(offeredRevision: 1, status: 'complete');
+      expect(chromeSkipsCover(), isTrue);
+
+      await pump(offeredRevision: 2, status: 'editing');
+      expect(
+        chromeSkipsCover(),
+        isTrue,
+        reason:
+            'EDITING keeps the previous map, which still describes this file',
+      );
+
+      await pump(offeredRevision: 2, status: 'complete');
+      expect(
+        chromeSkipsCover(),
+        isTrue,
+        reason:
+            'the open file already skips the cover; publish must not reset it',
+      );
+    },
+  );
+
+  testWidgets(
+    'a still-open version-1 PDF keeps physical numbers after a version-2 publish',
+    (tester) async {
+      final repository = FakeReaderRepository();
+      final loader = ReaderDocumentLoader(
+        repository: repository,
+        projectId: 'project-1',
+      );
+      addTearDown(loader.dispose);
+
+      Future<void> pump({
+        required int offeredRevision,
+        required String status,
+        required bool hasCoverPage,
+      }) async {
+        final export = pdfExport(revision: offeredRevision);
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              readerRepositoryProvider.overrideWithValue(repository),
+              readerViewerBuilderProvider.overrideWithValue(stubViewer),
+            ],
+            child: MaterialApp(
+              home: ReaderView(
+                projectId: 'project-1',
+                export: export,
+                loader: loader,
+                status: statusWith(
+                  export,
+                  status: status,
+                  hasCoverPage: hasCoverPage,
+                ),
+                onOpenPaywall: () {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await pump(offeredRevision: 1, status: 'complete', hasCoverPage: false);
+      expect(
+        tester
+            .widget<ReaderBottomChrome>(find.byType(ReaderBottomChrome))
+            .hasCoverPage,
+        isFalse,
+      );
+
+      await pump(offeredRevision: 2, status: 'complete', hasCoverPage: true);
+      expect(
+        tester
+            .widget<ReaderBottomChrome>(find.byType(ReaderBottomChrome))
+            .hasCoverPage,
+        isFalse,
+        reason: 'version-1 footers still number the cover',
+      );
+    },
+  );
+
+  testWidgets('same-revision map digest cannot renumber different open bytes', (
+    tester,
+  ) async {
+    final repository = FakeReaderRepository();
+    final loader = ReaderDocumentLoader(
+      repository: repository,
+      projectId: 'project-1',
+    );
+    addTearDown(loader.dispose);
+    final export = pdfExport(revision: 1);
+    await loader.load(export);
+
+    Future<void> pump(String mapDigest) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            readerRepositoryProvider.overrideWithValue(repository),
+            readerViewerBuilderProvider.overrideWithValue(stubViewer),
+          ],
+          child: MaterialApp(
+            home: ReaderView(
+              projectId: 'project-1',
+              export: export,
+              loader: loader,
+              status: statusWith(
+                export,
+                hasCoverPage: true,
+                pageMapDigest: mapDigest,
+              ),
+              onOpenPaywall: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pump('same-revision-repair');
+    expect(loader.document?.hasCoverPage, isNull);
+    expect(
+      tester
+          .widget<ReaderBottomChrome>(find.byType(ReaderBottomChrome))
+          .hasCoverPage,
+      isFalse,
+      reason: 'revision equality cannot stand in for byte identity',
+    );
+
+    await pump('pdf-digest-1');
+    expect(loader.document?.hasCoverPage, isTrue);
+  });
+
+  testWidgets('an absent map flag stamps nothing, so a later one still lands', (
+    tester,
+  ) async {
+    // Status carries no flag while no map describes the compile being offered.
+    // That is not "the cover is numbered": a stamp can never be overwritten, so
+    // writing false from an absent flag would hold physical numbers on the book
+    // for as long as it stays open, however the map lands afterwards.
+    final repository = FakeReaderRepository();
+    final loader = ReaderDocumentLoader(
+      repository: repository,
+      projectId: 'project-1',
+    );
+    addTearDown(loader.dispose);
+
+    Future<void> pump({bool? hasCoverPage}) async {
+      final export = pdfExport(revision: 1);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            readerRepositoryProvider.overrideWithValue(repository),
+            readerViewerBuilderProvider.overrideWithValue(stubViewer),
+          ],
+          child: MaterialApp(
+            home: ReaderView(
+              projectId: 'project-1',
+              export: export,
+              loader: loader,
+              status: statusWith(export, hasCoverPage: hasCoverPage),
+              onOpenPaywall: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pump();
+    expect(
+      loader.document?.hasCoverPage,
+      isNull,
+      reason: 'nothing described this file yet',
+    );
+    expect(
+      tester
+          .widget<ReaderBottomChrome>(find.byType(ReaderBottomChrome))
+          .hasCoverPage,
+      isFalse,
+      reason: 'unstamped shows physical numbers, matching chat not translating',
+    );
+
+    await pump(hasCoverPage: true);
+    expect(
+      tester
+          .widget<ReaderBottomChrome>(find.byType(ReaderBottomChrome))
+          .hasCoverPage,
+      isTrue,
+      reason: 'the map for this very compile arrived; the footer skips sheet 1',
+    );
+  });
 }

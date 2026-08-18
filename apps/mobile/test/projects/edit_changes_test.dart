@@ -215,6 +215,54 @@ void main() {
     expect(find.text('Nothing was changed'), findsOneWidget);
   });
 
+  // A restructure changed which pages the book has, not what any page says, so
+  // it snapshots nothing and there is no diff to list — for an insert, a delete
+  // and a move alike. "Nothing was changed" is the one thing that must not be
+  // said about it, and neither is a page count: the summary names what happened
+  // and the words gained or lost are read off the stamp instead.
+  for (final (action, request, added, removed) in const [
+    ('insert', 'Add 3 pages after page 10.', 240, 0),
+    ('delete', 'Delete page 2.', 0, 6),
+    ('move', 'Move page 4 after page 7.', 0, 0),
+  ]) {
+    testWidgets('names what a structural $action did, which lists no pages', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          MobileEditChanges(
+            operationId: 'operation-1',
+            kind: 'restructure_pages',
+            status: 'applied',
+            request: request,
+            creditsCharged: 0,
+            pages: const [],
+            addedWords: added,
+            removedWords: removed,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nothing was changed'), findsNothing);
+      expect(find.text('The book’s pages changed'), findsOneWidget);
+      expect(find.text(request), findsOneWidget);
+      // Neither the count the non-structural path would give nor the page
+      // count this arm used to report for a list it can never be handed.
+      expect(find.text('0 pages changed'), findsNothing);
+      expect(find.textContaining('rewritten'), findsNothing);
+      if (added == 0 && removed == 0) {
+        // A move gains and loses nothing, so the counts stay off the card
+        // rather than reading "+0 −0" beside an edit that did move pages.
+        expect(find.text('+0'), findsNothing);
+        expect(find.text('−0'), findsNothing);
+      } else {
+        expect(find.text('+$added'), findsOneWidget);
+        expect(find.text('−$removed'), findsOneWidget);
+      }
+    });
+  }
+
   test('reads an illustration replacement from the server payload', () {
     final page = MobileEditPageChange.fromJson({
       'pageIndex': 1,

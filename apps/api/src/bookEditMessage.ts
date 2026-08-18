@@ -8,6 +8,7 @@ import {
   nearestModelPageForPdfPage,
   normalizeNumerals,
   normalizeProjectLanguage,
+  pdfPageForPrintedPage,
   replanSettingsFromMessage,
   type BookPdfPageMap,
   type ReplanSettings
@@ -23,14 +24,20 @@ import type {
  * How a page number in the user's message is to be read.
  *
  * With a `pdfPageMap` — the published PDF's measured page map, current for the
- * book's revision — a spoken number is the number the reader can actually see:
- * the pdfrx page indicator, the printed footer and the Contents column all
- * count physical PDF pages. Without one (older compiles, measurement failure)
- * numbers fall back to model page indexes, which is exactly the old behaviour.
+ * book's revision — a spoken number is the printed page the reader can see:
+ * the footer, the Contents column and the pdfrx chrome, which skip the cover.
+ * Without one (older compiles, measurement failure) numbers fall back to model
+ * page indexes, which is exactly the old behaviour. A failed measurement still
+ * records cover-skip numbering for chrome; that stub is not a map.
  */
 export type ReaderPageNumberContext = {
   pdfPageMap?: BookPdfPageMap | undefined;
 };
+
+/** Spoken printed page → physical PDF sheet, or the spoken number with no map. */
+function physicalPageForSpoken(map: BookPdfPageMap | undefined, spoken: number): number | undefined {
+  return map ? pdfPageForPrintedPage(map, spoken) : spoken;
+}
 
 /**
  * Reading a user's chat message: page and chapter references, quoted text,
@@ -262,8 +269,12 @@ export function showContentTargetFromMessage(
   if (pageMatch && !/\b(?:outline|plan|chapters?|table of contents|toc)\b/i.test(text)) {
     const spoken = Number(pageMatch[1]);
     // A read target tolerates the nearest-page resolution an edit target must
-    // not: "show me page 2" pointing at the Contents reads the page after it.
-    const index = context.pdfPageMap ? nearestModelPageForPdfPage(context.pdfPageMap, spoken) : spoken;
+    // not: "show me page 1" pointing at the Contents reads the page after it.
+    const pdfPage = physicalPageForSpoken(context.pdfPageMap, spoken);
+    const index =
+      context.pdfPageMap && pdfPage !== undefined
+        ? nearestModelPageForPdfPage(context.pdfPageMap, pdfPage)
+        : pdfPage;
     if (index !== undefined) {
       return { type: "page", index };
     }
@@ -392,7 +403,38 @@ function numberWordValue(word: string): number | null {
 export const NAMED_PAGE_SOURCE = `pages?\\s+(?:\\d{1,3}|${CARDINAL_WORDS.join("|")})(?!\\d)`;
 export const ORDINAL_PAGE_SOURCE = `(?:the\\s+)?(?:\\d{1,3}(?:st|nd|rd|th)|${ORDINAL_WORDS.join("|")})\\s+page`;
 
-const DIGIT_PAGE_RANGE = /\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi;
+/**
+ * One page number or range, and the separators that can join several of them.
+ *
+ * A reader names a set as naturally as a single page — "edit pages 3, 5 and 7"
+ * — and reading only the first number is not a smaller answer, it is a wrong
+ * one: the router may still return all three, and then
+ * `modelPagesForCopiedPrintedPages` sees a spoken set that does not match the
+ * router's, declines to translate, and the *printed* numbers are used as model
+ * indexes. So the parser has to see the whole list or the copy guard cannot do
+ * its job.
+ *
+ * A separator must be followed immediately by a number, which is what keeps
+ * "page 5 and the ending" at `[5]`. The conjunctions cover the scripts the
+ * export fonts ship for; word-number lists ("pages three and five") stay
+ * single-valued, because past a couple of pages people write digits.
+ */
+export const PAGE_LIST_SEPARATOR_SOURCE = String.raw`\s*(?:[,،؛;&+]|、|and|und|y|et|و|と|和)\s*`;
+export const DIGIT_PAGE_ELEMENT_SOURCE = String.raw`\d{1,3}(?:\s*[-–]\s*\d{1,3})?`;
+const DIGIT_PAGE_LIST_SOURCE = `${DIGIT_PAGE_ELEMENT_SOURCE}(?:${PAGE_LIST_SEPARATOR_SOURCE}${DIGIT_PAGE_ELEMENT_SOURCE})*`;
+
+/**
+ * `NAMED_PAGE_SOURCE` with the whole list, not just its first number.
+ *
+ * The structural recogniser reads the *object* of a delete or a move, and
+ * "remove pages 2, 5 and 7" names one object with three pages in it. Sharing
+ * the list grammar rather than restating it is what keeps the clause the
+ * recogniser matches and the numbers `pageIndexesFromMessage` then reads out of
+ * it from ever disagreeing about where the request stops.
+ */
+export const NAMED_PAGE_LIST_SOURCE = `pages?\\s+(?:${DIGIT_PAGE_LIST_SOURCE}|${CARDINAL_WORDS.join("|")})(?!\\d)`;
+
+const DIGIT_PAGE_RANGE = new RegExp(String.raw`\bpages?\s+(${DIGIT_PAGE_LIST_SOURCE})`, "gi");
 /**
  * Word-then-number in any script we ship fonts for ("صفحه ۵", "página 3",
  * "الصفحة 5"). Number-then-word is a length, not a target — see
@@ -401,9 +443,18 @@ const DIGIT_PAGE_RANGE = /\bpages?\s+(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/gi;
  * is the Persian ezafe some keyboards insert between the word and the number.
  */
 const SCRIPT_NAMED_PAGE = new RegExp(
-  `(?<!\\p{L})(?:ال)?(?:${BOOK_PAGE_WORD_PATTERN})\\p{M}*(?:\\u200c(?:[\\u06cc\\u064a]\\p{M}*)?)?\\s*(\\d{1,3})(?:\\s*[-–]\\s*(\\d{1,3}))?`,
+  `(?<!\\p{L})(?:ال)?(?:${BOOK_PAGE_WORD_PATTERN})\\p{M}*(?:\\u200c(?:[\\u06cc\\u064a]\\p{M}*)?)?\\s*(${DIGIT_PAGE_LIST_SOURCE})`,
   "giu"
 );
+
+/** Every page a matched list names, ranges expanded, in the order written. */
+function pageListValues(body: string): number[] {
+  const values: number[] = [];
+  for (const element of body.matchAll(/(\d{1,3})(?:\s*[-–]\s*(\d{1,3}))?/g)) {
+    values.push(...rangeValues(element[1] ?? "", element[2]));
+  }
+  return values;
+}
 
 function rangeValues(startToken: string, endToken: string | undefined): number[] {
   const start = Number(startToken);
@@ -431,7 +482,7 @@ function spokenPageHits(message: string): { index: number; values: number[] }[] 
   DIGIT_PAGE_RANGE.lastIndex = 0;
   SCRIPT_NAMED_PAGE.lastIndex = 0;
   for (const match of normalized.matchAll(DIGIT_PAGE_RANGE)) {
-    hits.push({ index: match.index ?? 0, values: rangeValues(match[1] ?? "", match[2]) });
+    hits.push({ index: match.index ?? 0, values: pageListValues(match[1] ?? "") });
   }
   for (const source of [NAMED_PAGE_SOURCE, ORDINAL_PAGE_SOURCE]) {
     for (const match of normalized.matchAll(new RegExp(`\\b${source}\\b`, "gi"))) {
@@ -442,7 +493,7 @@ function spokenPageHits(message: string): { index: number; values: number[] }[] 
     }
   }
   for (const match of normalized.matchAll(SCRIPT_NAMED_PAGE)) {
-    hits.push({ index: match.index ?? 0, values: rangeValues(match[1] ?? "", match[2]) });
+    hits.push({ index: match.index ?? 0, values: pageListValues(match[1] ?? "") });
   }
   return hits.filter((hit) => hit.values.length > 0).sort((a, b) => a.index - b.index);
 }
@@ -542,7 +593,13 @@ export function imagePlacementFromMessage(
     // A placement is a read-style target — putting a picture "on page 12"
     // when 12 is furniture means the nearest page of prose, never a silent
     // renumbering onto whichever model page happens to share the number.
-    const pageIndex = context.pdfPageMap ? nearestModelPageForPdfPage(context.pdfPageMap, spoken) : spoken;
+    const pageIndex = (() => {
+      const pdfPage = physicalPageForSpoken(context.pdfPageMap, spoken);
+      if (pdfPage === undefined) {
+        return undefined;
+      }
+      return context.pdfPageMap ? nearestModelPageForPdfPage(context.pdfPageMap, pdfPage) : pdfPage;
+    })();
     if (pageIndex !== undefined) {
       return { placement: "page", pageIndex };
     }
@@ -554,11 +611,117 @@ export function imagePlacementFromMessage(
  * Every page number the message speaks, exactly as spoken — digits, ranges,
  * word cardinals and ordinals, and the same page-words the length parser
  * already knows ("صفحه ۵") — with no translation and no existence filter.
- * The furniture recogniser reads these to tell "page 2" (the Contents) apart
- * from a message naming no page at all.
+ * The furniture recogniser reads these to tell "page 1" (the Contents, when
+ * the cover is unnumbered) apart from a message naming no page at all.
  */
 export function spokenPageNumbersFromMessage(message: string): number[] {
   return [...collectSpokenPageNumbers(message)].sort((a, b) => a - b);
+}
+
+/** Where a structural edit was told to land, relative to a page it names. */
+export type BookEditPageAnchor = {
+  position: "after" | "before" | "end";
+  /**
+   * Every model page the named printed sheet holds, ascending — a sheet
+   * routinely carries several. Which end of the set the position names is
+   * {@link anchorModelPageIndex}'s rule. Empty for `end`.
+   */
+  pageIndexes: number[];
+};
+
+/**
+ * The "after page 10" / "before the last page" / "at the end" clause of a
+ * structural request.
+ *
+ * Read here rather than beside the intent because it is page-number reading,
+ * and every page number a reader speaks has to go through the same map. The
+ * position matters as much as the number: "add two pages before page 5" and
+ * "after page 5" put the same pages in different places, and a parser that
+ * returned only the number would have to guess.
+ */
+export function pageAnchorFromMessage(
+  message: string,
+  context: ReaderPageNumberContext = {}
+): BookEditPageAnchor | null {
+  const normalized = normalizeNumerals(message);
+  for (const position of ["after", "before"] as const) {
+    const words =
+      position === "after" ? String.raw`after|following|behind` : String.raw`before|ahead\s+of|preceding|in\s+front\s+of`;
+    const match = new RegExp(`\\b(?:${words})\\s+(?:the\\s+)?(?:${NAMED_PAGE_SOURCE}|${ORDINAL_PAGE_SOURCE})`, "i").exec(
+      normalized
+    );
+    if (!match) {
+      continue;
+    }
+    const spoken = spokenPageHits(match[0])[0]?.values[0];
+    if (spoken === undefined) {
+      continue;
+    }
+    const map = context.pdfPageMap;
+    const pdfPage = physicalPageForSpoken(map, spoken);
+    if (pdfPage === undefined) {
+      continue;
+    }
+    // Every model page that sheet holds, never one of them: reading the anchor
+    // as a single page is what let the two structural paths disagree, and
+    // `anchorModelPageIndex` is the rule they now share.
+    const pageIndexes = anchorModelPagesForPdfPage(map, pdfPage);
+    if (pageIndexes.length === 0) {
+      continue;
+    }
+    return { position, pageIndexes };
+  }
+  return endOfBookPlacementFromMessage(message) ? { position: "end", pageIndexes: [] } : null;
+}
+
+/**
+ * The model pages an anchor's printed sheet holds, ascending — or the *nearest*
+ * page of prose when it holds none.
+ *
+ * The snap is what separates an anchor from an edit target: an anchor is a
+ * place, so landing beside the Contents means "at the front of the book" rather
+ * than a request that cannot be answered, while `pageIndexesFromMessage`
+ * refuses the same move because a target slid onto a neighbouring page rewrites
+ * a page nobody named. Nothing snaps for a number the book does not print —
+ * `nearestModelPageForPdfPage` answers "outside" with nothing, and the caller
+ * declines.
+ */
+function anchorModelPagesForPdfPage(map: BookPdfPageMap | undefined, pdfPage: number): number[] {
+  if (!map) {
+    return [pdfPage];
+  }
+  const covering = modelPageIndexesForPdfPage(map, pdfPage);
+  if (covering.length > 0) {
+    return [...covering].sort((a, b) => a - b);
+  }
+  const nearest = nearestModelPageForPdfPage(map, pdfPage);
+  return nearest === undefined ? [] : [nearest];
+}
+
+/**
+ * Which model page an "after page N" / "before page N" anchor really names,
+ * once the printed sheet the reader pointed at can hold more than one.
+ *
+ * A sheet routinely carries several short model pages — one ending on it, one
+ * lying wholly within it, one starting there — so a translated anchor is a
+ * *set*, and only its ends are places: "after page N" is past the last of them,
+ * "before page N" is ahead of the first. Both readings of a structural request
+ * come through here, because they used to disagree. `intentFromProposeEdit`
+ * borrows the model-free recogniser's anchor whenever the router named none,
+ * and that recogniser resolved the sheet with `nearestModelPageForPdfPage`,
+ * which prefers the first model page to *start* on it: on the sheet above,
+ * "add a page after page 10" opened the gap in the middle of the sheet — one
+ * page short of where the reader pointed — depending only on whether the
+ * router had filled the channel.
+ *
+ * "Before page 1" is the head of the book, which is index 0 rather than a
+ * refusal: a reader asking for a new opening page is asking for something real.
+ */
+export function anchorModelPageIndex(position: "after" | "before", pageIndexes: readonly number[]): number | null {
+  if (pageIndexes.length === 0) {
+    return null;
+  }
+  return position === "before" ? Math.max(0, Math.min(...pageIndexes) - 1) : Math.max(...pageIndexes);
 }
 
 export function pageIndexesFromMessage(
@@ -574,7 +737,11 @@ export function pageIndexesFromMessage(
   // must never be silently moved to a neighbouring page, and the router's own
   // context knows what those pages are.
   const add = (spoken: number) => {
-    for (const index of map ? modelPageIndexesForPdfPage(map, spoken) : [spoken]) {
+    const pdfPage = physicalPageForSpoken(map, spoken);
+    if (pdfPage === undefined) {
+      return;
+    }
+    for (const index of map ? modelPageIndexesForPdfPage(map, pdfPage) : [pdfPage]) {
       indexes.add(index);
     }
   };

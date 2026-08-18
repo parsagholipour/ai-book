@@ -106,6 +106,121 @@ void main() {
     );
   });
 
+  test('a same-revision repair withdraws the physical sheet, not the '
+      'mapping', () async {
+    // The repair republished revision 3 over different bytes and stamped its
+    // new map with the same revision, so `mappingRevisionFor` keeps agreeing —
+    // and should: the manuscript at revision 3 is what the locator resolves
+    // model pages against, and that has not moved. What has stopped being true
+    // is that sheet N of the open file is sheet N of the file the server's map
+    // describes, which is the only thing `readerContext.pdfPage` ever says.
+    final repository = FakeReaderRepository();
+    final loader = ReaderDocumentLoader(
+      repository: repository,
+      projectId: 'project-1',
+    );
+    addTearDown(loader.dispose);
+
+    await loader.load(pdfExport(revision: 3));
+
+    expect(
+      loader.mappingRevisionFor(
+        expectedProjectId: 'project-1',
+        offeredRevision: 3,
+      ),
+      3,
+    );
+    expect(
+      loader.mappedPdfDigestFor(
+        expectedProjectId: 'project-1',
+        pageNumbering: const MobilePdfPageNumbering(
+          hasCoverPage: true,
+          contentRevision: 3,
+          pdfDigest: 'pdf-digest-3',
+        ),
+      ),
+      'pdf-digest-3',
+    );
+    expect(
+      loader.mappedPdfDigestFor(
+        expectedProjectId: 'project-1',
+        pageNumbering: const MobilePdfPageNumbering(
+          hasCoverPage: true,
+          contentRevision: 3,
+          pdfDigest: 'repaired-pdf',
+        ),
+      ),
+      isNull,
+      reason: 'the map in force was measured from a file that is not this one',
+    );
+    expect(
+      loader.mappedPdfDigestFor(
+        expectedProjectId: 'project-1',
+        pageNumbering: null,
+      ),
+      isNull,
+      reason: 'a map that identifies no PDF describes no PDF',
+    );
+    expect(
+      loader.mappedPdfDigestFor(
+        expectedProjectId: 'project-2',
+        pageNumbering: const MobilePdfPageNumbering(
+          hasCoverPage: true,
+          contentRevision: 3,
+          pdfDigest: 'pdf-digest-3',
+        ),
+      ),
+      isNull,
+      reason: 'another book\'s open file authorizes nothing here',
+    );
+  });
+
+  test(
+    'same-revision digest changes are stale but older descriptors are not',
+    () async {
+      final repository = FakeReaderRepository();
+      final loader = ReaderDocumentLoader(
+        repository: repository,
+        projectId: 'project-1',
+      );
+      addTearDown(loader.dispose);
+      final current = pdfExport(revision: 3);
+      await loader.load(
+        current,
+        pageNumbering: const MobilePdfPageNumbering(
+          hasCoverPage: true,
+          contentRevision: 3,
+          pdfDigest: 'pdf-digest-3',
+        ),
+      );
+
+      expect(
+        loader.isStale(
+          current,
+          pageNumbering: const MobilePdfPageNumbering(
+            hasCoverPage: true,
+            contentRevision: 3,
+            pdfDigest: 'repaired-pdf',
+          ),
+        ),
+        isTrue,
+        reason: 'a repair may replace bytes without changing revision or size',
+      );
+      expect(
+        loader.isStale(
+          pdfExport(revision: 2),
+          pageNumbering: const MobilePdfPageNumbering(
+            hasCoverPage: true,
+            contentRevision: 2,
+            pdfDigest: 'older-pdf',
+          ),
+        ),
+        isFalse,
+        reason: 'a cached compile newer than a stale descriptor remains a hit',
+      );
+    },
+  );
+
   testWidgets('a missing reader export keeps a manual status retry', (
     tester,
   ) async {

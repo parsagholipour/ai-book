@@ -3,6 +3,7 @@ import {
   isBookEditScopeOnlyMessage,
   PROPOSAL_GATED_EDIT_KINDS,
   type BookEditIntent,
+  type BookEditPageInstruction,
   type BookEditScope
 } from "../bookEditIntent.js";
 import {
@@ -13,7 +14,12 @@ import {
 } from "../bookEditImage.js";
 import { type MobileProjectChatMessageRecord } from "./dto.js";
 import { jsonRecord } from "./support.js";
-import { type ReplanSettings } from "@book-maker/core";
+import {
+  structuralPageEditSchema,
+  type ReplanSettings,
+  type StructuralPageAction,
+  type StructuralPageEdit
+} from "@book-maker/core";
 
 /**
  * Reading the project's one pending edit back out of the chat transcript: the
@@ -35,6 +41,25 @@ const RESUMABLE_PROPOSAL_KINDS: ReadonlySet<string> = new Set<string>([
   "plan_revision"
 ]);
 
+/**
+ * What a restructure proposal's card says about the book, in model pages.
+ *
+ * The intent alone cannot produce it: how long the book ends up, how many pages
+ * a plan really covers, and where an insert lands once an anchor past the end
+ * is clamped are all answers the resolver gives against the pages that exist,
+ * and nothing rebuilding a card from stored state has those in hand. Kept in
+ * model space so the printed numbers are rendered at the moment the card is
+ * built, by whichever numbering is in force then — the same rule the rest of
+ * the card follows.
+ */
+export type StructuralCardPlan = {
+  action: StructuralPageAction;
+  pageCount: number;
+  totalPages: number;
+  /** Insert only: the model page the new pages follow; `0` is the front of the book. */
+  insertAfterIndex: number;
+};
+
 /** A saved edit waiting on scope, busy clearance, or an explicit Apply confirmation. */
 export type PendingEditState = {
   request: string;
@@ -45,6 +70,15 @@ export type PendingEditState = {
   affectedPageIndexes?: number[] | undefined;
   credits?: number | undefined;
   proposalId?: string | undefined;
+  /**
+   * A restructure proposal's card numbers. The chip the app draws for an
+   * insert, a delete or a move is that block and nothing else — a card without
+   * it names no pages at all, because a structural edit's
+   * `affectedPageIndexes` are deliberately empty — so it rides the pending
+   * state through every clarify → busy → confirm hop, exactly as
+   * `characterContext` does.
+   */
+  structuralPlan?: StructuralCardPlan | undefined;
   /**
    * True when the assistant has said something else since presenting this
    * edit. A bare "ok" typed after an unrelated answer is agreement with that
@@ -149,6 +183,7 @@ function findOpenPendingProposal(
       ...(proposal.intent ? { intent: proposal.intent } : {}),
       ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
       ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
+      ...(proposal.structuralPlan ? { structuralPlan: proposal.structuralPlan } : {}),
       ...characterContextFromPending(pending),
       proposalId: resolvedId
     };
@@ -215,6 +250,7 @@ export function findPendingScopeClarification(
         ...(proposal.affectedPageIndexes ? { affectedPageIndexes: proposal.affectedPageIndexes } : {}),
         ...(proposal.credits !== undefined ? { credits: proposal.credits } : {}),
         ...(proposal.proposalId ? { proposalId: proposal.proposalId } : {}),
+        ...(proposal.structuralPlan ? { structuralPlan: proposal.structuralPlan } : {}),
         ...characterContextFromPending(pending),
         ...(sawNewerAssistantMessage && confirmationCharges ? { requiresExplicitConfirmation: true } : {})
       };
@@ -247,7 +283,7 @@ export function pendingEditProposalFromMetadata(
   metadata: Record<string, unknown>,
   pending: Record<string, unknown>,
   request: string
-): Pick<PendingEditState, "intent" | "affectedPageIndexes" | "credits" | "proposalId"> {
+): Pick<PendingEditState, "intent" | "affectedPageIndexes" | "credits" | "proposalId" | "structuralPlan"> {
   if (pending.clarification !== "confirm" && pending.clarification !== "busy") {
     return {};
   }
@@ -319,17 +355,98 @@ export function pendingEditProposalFromMetadata(
           }
         }
       : {}),
+    // Without this the Apply executes an insert with no anchor and no count —
+    // the card said "Remove page 2" and the job would add one page at the end.
+    ...(kind === "restructure_pages" ? structuralEditFromMetadata(intentSource.structuralEdit) : {}),
     ...(kind === "add_image" ? imageEditFromMetadata(intentSource.imageEdit) : {}),
     ...(kind === "move_image" || kind === "remove_image"
       ? imageLayoutFromMetadata(intentSource.imageLayout)
-      : {})
+      : {}),
+    // Same reason as replanSettings above: this is part of what the reader was
+    // shown and priced. Dropping it charges the quoted price and then applies
+    // the whole request to every page, undoing exactly what they asked for.
+    ...perPageInstructionsFromMetadata(intentSource.perPageInstructions, affectedPageIndexes)
   };
   return {
     intent,
     ...(affectedPageIndexes.length > 0 ? { affectedPageIndexes } : {}),
     ...(credits !== undefined ? { credits } : {}),
-    ...(proposalId ? { proposalId } : {})
+    ...(proposalId ? { proposalId } : {}),
+    ...(kind === "restructure_pages" ? structuralCardPlanFromMetadata(pending.structuralPlan) : {})
   };
+}
+
+/**
+ * Reads the stored structural card numbers back.
+ *
+ * A row written before these were stored has none, and then the rebuilt card
+ * comes back without its structural block — which is exactly what every such
+ * row has always produced. Dropping a malformed one lands in the same place
+ * rather than printing a page count the resolver never agreed to.
+ */
+function structuralCardPlanFromMetadata(value: unknown): { structuralPlan?: StructuralCardPlan } {
+  const stored = jsonRecord(value);
+  const action = stored.action;
+  if (action !== "insert" && action !== "delete" && action !== "move") {
+    return {};
+  }
+  const pageCount = storedPageNumber(stored.pageCount);
+  const totalPages = storedPageNumber(stored.totalPages);
+  const insertAfterIndex = storedPageNumber(stored.insertAfterIndex);
+  if (pageCount === undefined || totalPages === undefined || insertAfterIndex === undefined) {
+    return {};
+  }
+  return { structuralPlan: { action, pageCount, totalPages, insertAfterIndex } };
+}
+
+/** A stored count or index: a whole number, and `0` is meaningful for both. */
+function storedPageNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined;
+}
+
+/**
+ * Reads a stored structural edit back.
+ *
+ * Parsed rather than trusted, and dropped whole when it is malformed: a
+ * half-read edit would apply a *different* structural change from the one the
+ * card described, and the reader approved the card. Dropping it instead makes
+ * the Apply propose again.
+ */
+function structuralEditFromMetadata(value: unknown): { structuralEdit?: StructuralPageEdit } {
+  const parsed = structuralPageEditSchema.safeParse(value);
+  return parsed.success ? { structuralEdit: parsed.data } : {};
+}
+
+/**
+ * Reads stored per-page instructions back, keeping only entries for pages the
+ * resumed edit still covers.
+ *
+ * Dropping the rest is the safe direction: a page with no entry gets the whole
+ * request, which is what an edit without this field has always done, whereas an
+ * entry for a page outside the set would be applied by nothing and paid for by
+ * nobody.
+ */
+function perPageInstructionsFromMetadata(
+  value: unknown,
+  affectedPageIndexes: number[]
+): { perPageInstructions?: BookEditPageInstruction[] } {
+  if (!Array.isArray(value)) {
+    return {};
+  }
+  const covered = new Set(affectedPageIndexes);
+  const entries = value.flatMap((raw) => {
+    const record = jsonRecord(raw);
+    const pageIndex = record.pageIndex;
+    const instruction = record.instruction;
+    if (typeof pageIndex !== "number" || !Number.isInteger(pageIndex) || !covered.has(pageIndex)) {
+      return [];
+    }
+    if (typeof instruction !== "string" || instruction.trim().length === 0) {
+      return [];
+    }
+    return [{ pageIndex, instruction: instruction.trim() }];
+  });
+  return entries.length > 0 ? { perPageInstructions: entries } : {};
 }
 
 /**

@@ -4,6 +4,8 @@ import { prisma } from "./client.ts";
 export { prisma, PrismaClient, Prisma } from "./client.ts";
 export * from "./planRevisionRetry.ts";
 export * from "./creditPricing.ts";
+export * from "./pageOrdering.ts";
+export * from "./pageRestructureRevert.ts";
 export * from "./researchLinks.ts";
 export * from "./storyState.ts";
 export * from "./generated/prisma/enums.ts";

@@ -1,6 +1,5 @@
 import { bookEditScopeFromMessage, classifyProjectChatMessage, type BookEditIntent } from "../../bookEditIntent.js";
-import { numberingForProject } from "../../bookPageNumbering.js";
-import { primaryModelPageForPdfPage } from "@book-maker/core";
+import { modelPageForReaderContext, numberingForProject } from "../../bookPageNumbering.js";
 import { chatReplyQuoteFor } from "../../chatReplyQuote.js";
 import { libraryCharacterAppearanceRule, libraryCharacterPromptBlock } from "@book-maker/core";
 import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
@@ -287,20 +286,16 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
         if (context.pageIndex !== undefined) {
           return { pageIndex: context.pageIndex };
         }
-        // A printed page number is only meaningful against the revision it was
-        // read from: the reader deliberately keeps showing a stale cached PDF
-        // while exports rebuild, and translating its numbers through the
-        // current map would target whichever page prints there now.
-        if (
-          context.pdfPage !== undefined &&
-          context.contentRevision !== undefined &&
-          context.contentRevision === project.contentRevision &&
-          pageNumbering.pdfPageMap
-        ) {
-          const resolved = primaryModelPageForPdfPage(pageNumbering.pdfPageMap, context.pdfPage);
-          return resolved !== undefined ? { pageIndex: resolved } : undefined;
-        }
-        return undefined;
+        // A physical PDF page is only meaningful against the exact file it was
+        // read from, which is why the request carries that file's digest and
+        // not just its revision: during EDITING the map in force is the
+        // previous compile's, still on screen, and a repair can republish the
+        // same revision over different bytes. A sheet that cannot be tied to
+        // the map in force names no page — the message's own printed numbers
+        // are re-read as they always were, rather than a sheet being resolved
+        // through the wrong book.
+        const resolved = modelPageForReaderContext(pageNumbering, context, project.contentRevision);
+        return resolved !== undefined ? { pageIndex: resolved } : undefined;
       })();
 
       // A pure confirmation of a priced proposal skips re-routing so the

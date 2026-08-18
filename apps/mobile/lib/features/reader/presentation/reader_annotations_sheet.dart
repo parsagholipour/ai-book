@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/reader_annotation.dart';
+import '../domain/reader_models.dart';
 import 'reader_annotation_painter.dart';
 
 /// Everything the reader has marked in a book, in page order.
@@ -18,6 +19,7 @@ class ReaderAnnotationsSheet extends StatelessWidget {
     required this.onShareAll,
     required this.canUndo,
     required this.onUndo,
+    this.hasCoverPage = false,
     super.key,
   });
 
@@ -32,6 +34,10 @@ class ReaderAnnotationsSheet extends StatelessWidget {
   /// the wrong note from a long list is exactly when undo matters.
   final bool canUndo;
   final VoidCallback onUndo;
+
+  /// Whether PDF sheet 1 is an unnumbered cover. Subtitles skip it; taps still
+  /// go to the physical sheet the mark was recorded on.
+  final bool hasCoverPage;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +95,7 @@ class ReaderAnnotationsSheet extends StatelessWidget {
                     _AnnotationTile(
                       annotation: annotation,
                       palette: palette,
+                      hasCoverPage: hasCoverPage,
                       onSelect: onSelect,
                       onRemove: onRemove,
                     ),
@@ -116,6 +123,7 @@ class ReaderAnnotationsSheet extends StatelessWidget {
                       _AnnotationTile(
                         annotation: annotation,
                         palette: palette,
+                        hasCoverPage: hasCoverPage,
                         onSelect: onSelect,
                         onRemove: onRemove,
                       ),
@@ -139,12 +147,14 @@ class _AnnotationTile extends StatelessWidget {
   const _AnnotationTile({
     required this.annotation,
     required this.palette,
+    required this.hasCoverPage,
     required this.onSelect,
     required this.onRemove,
   });
 
   final ReaderAnnotation annotation;
   final List<ReaderMarkupColor> palette;
+  final bool hasCoverPage;
   final void Function(ReaderAnnotation annotation) onSelect;
   final void Function(ReaderAnnotation annotation) onRemove;
 
@@ -156,6 +166,10 @@ class _AnnotationTile extends StatelessWidget {
     final quote = annotation.quote?.trim() ?? '';
     // The note is what the reader wrote, so it leads; the passage it was
     // written about is the supporting line.
+    final location = printedPageLabel(
+      annotation.page,
+      hasCoverPage: hasCoverPage,
+    );
     final subtitle = body.isNotEmpty && quote.isNotEmpty ? quote : null;
 
     return ListTile(
@@ -173,9 +187,7 @@ class _AnnotationTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        subtitle == null
-            ? 'Page ${annotation.page}'
-            : 'Page ${annotation.page} · $subtitle',
+        subtitle == null ? location : '$location · $subtitle',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.bodySmall?.copyWith(
@@ -200,6 +212,7 @@ class _AnnotationTile extends StatelessWidget {
 String readerMarkupShareText({
   required String bookTitle,
   required List<ReaderAnnotation> annotations,
+  bool hasCoverPage = false,
 }) {
   final sorted = [...annotations]..sort((a, b) {
     final byPage = a.page.compareTo(b.page);
@@ -215,7 +228,7 @@ String readerMarkupShareText({
       currentPage = annotation.page;
       buffer
         ..writeln()
-        ..writeln('Page $currentPage');
+        ..writeln(printedPageLabel(currentPage, hasCoverPage: hasCoverPage));
     }
     final quote = annotation.quote?.trim() ?? '';
     final body = annotation.body?.trim() ?? '';

@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   prisma: {
     project: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
-    page: { findMany: vi.fn(), updateMany: vi.fn() }
+    page: { findMany: vi.fn(), updateMany: vi.fn() },
+    planVersion: { findUnique: vi.fn() }
   },
   casRebuildProjectStoryState: vi.fn(),
   rebuildStoryStateFromPages: vi.fn()
@@ -16,7 +17,11 @@ vi.mock("@book-maker/db", () => ({
   rebuildStoryStateFromPages: mocks.rebuildStoryStateFromPages
 }));
 
-import { persistPageStoryDelta, rebuildProjectStoryState } from "./storyStateStore.js";
+import {
+  persistPageStoryDelta,
+  rebuildProjectStoryState,
+  rebuildRolledBackProjectStoryState
+} from "./storyStateStore.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 import type { StoryDelta } from "@book-maker/core";
 
@@ -29,6 +34,18 @@ const emptyDelta = (overrides: Partial<StoryDelta> = {}): StoryDelta => ({
   unansweredAdded: [],
   unansweredResolved: [],
   ...overrides
+});
+
+const plan = (promises: string[]) => ({
+  title: "Book",
+  premise: "Premise",
+  audience: "Readers",
+  writingComplexity: 5,
+  voiceGuide: ["Clear"],
+  antiAiRules: ["Specific"],
+  chapters: [{ index: 1, title: "One", summary: "Summary", targetPages: 1 }],
+  promises,
+  illustrationPlan: { cadence: "none", globalStyle: "None" }
 });
 
 describe("storyStateStore", () => {
@@ -53,6 +70,29 @@ describe("storyStateStore", () => {
   it("rethrows a stop request from the shared rebuild", async () => {
     mocks.casRebuildProjectStoryState.mockRejectedValue(new StopRequestedError());
     await expect(rebuildProjectStoryState("project-1")).rejects.toBeInstanceOf(StopRequestedError);
+  });
+
+  it("rebuilds a rollback from the promises on the plan the revert left current", async () => {
+    const rebuilt = { promises: [], facts: [], entities: {}, unanswered: [] };
+    mocks.prisma.planVersion.findUnique.mockResolvedValue({ planningPackage: plan(["The later journey continues."]) });
+    mocks.casRebuildProjectStoryState.mockResolvedValue(rebuilt);
+
+    await expect(rebuildRolledBackProjectStoryState("project-1", "plan-3")).resolves.toBe(rebuilt);
+
+    expect(mocks.casRebuildProjectStoryState).toHaveBeenCalledWith(
+      "project-1",
+      ["The later journey continues."],
+      { currentPlanId: "plan-3" }
+    );
+  });
+
+  it("guards a rollback rebuild on a project with no current plan", async () => {
+    mocks.casRebuildProjectStoryState.mockResolvedValue({ promises: [], facts: [], entities: {}, unanswered: [] });
+
+    await rebuildRolledBackProjectStoryState("project-1", null);
+
+    expect(mocks.prisma.planVersion.findUnique).not.toHaveBeenCalled();
+    expect(mocks.casRebuildProjectStoryState).toHaveBeenCalledWith("project-1", [], { currentPlanId: null });
   });
 
   it("applies the page delta onto current project state without scanning every page", async () => {

@@ -42,5 +42,6 @@ revision bump rebuilt it. A render that loses the claim publishes nothing and an
 whatever is on disk now, falling back to its own bytes — a stale download beats a broken link,
 but it may not become the book. It also passes `projectId` to `generatePdf`, so the renderer's
 file access is scoped to that book's own illustrations as it is in the worker. An unmeasured
-rebuild (saved `book.md`, no anchor plan) clears `pdfPageMap` rather than leaving a map from
-the Contents-reprinted pass — same manuscript is not the same pagination.
+rebuild (saved `book.md`, no anchor plan) replaces translatable ranges with a cover-numbering
+stub rather than leaving a map from the Contents-reprinted pass — same manuscript is not the
+same pagination, but chrome still needs to know whether the CSS skipped the cover.

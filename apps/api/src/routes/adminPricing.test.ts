@@ -43,14 +43,17 @@ const mockDb = vi.hoisted(() => {
       providerCallLog: { aggregate: vi.fn() },
       voiceCall: { findMany: vi.fn() },
       bookEditOperation: { findMany: vi.fn() },
-      project: { findMany: vi.fn() }
+      project: { findMany: vi.fn() },
+      $queryRaw: vi.fn()
     }
   };
 });
 
+// `Prisma.raw` is real because the drivers query splices a refund-filter
+// fragment into its tagged template.
 vi.mock("@book-maker/db", () => ({
   prisma: mockDb.prisma,
-  Prisma: {},
+  Prisma: { raw: (sql: string) => sql },
   CreditPricingConflictError: mockDb.FakeConflictError,
   getCreditPricingState: vi.fn(async () => ({
     values: { ...DEFAULT_CREDIT_COSTS, ...mockDb.state.values },
@@ -105,6 +108,30 @@ async function buildApp(webPassword = ""): Promise<FastifyInstance> {
   return instance;
 }
 
+function sqlFromQueryRawCall(args: unknown[]): string {
+  return args
+    .map((arg) => {
+      if (typeof arg === "string") {
+        return arg;
+      }
+      if (Array.isArray(arg)) {
+        return Array.from(arg as string[]).join(" ");
+      }
+      return "";
+    })
+    .join(" ");
+}
+
+function mockSpendRows(rows: Array<{ project_id: string | null; operation: string; count: number }>): void {
+  mockDb.prisma.$queryRaw.mockImplementation((...args: unknown[]) => {
+    const sql = sqlFromQueryRawCall(args);
+    if (sql.includes("AUDIOBOOK_GENERATION") && sql.includes("metadata")) {
+      return Promise.resolve([]);
+    }
+    return Promise.resolve(rows);
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockDb.state.version = 0;
@@ -116,6 +143,7 @@ beforeEach(() => {
   mockDb.prisma.creditLedgerEntry.groupBy.mockResolvedValue([]);
   mockDb.prisma.creditLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountCredits: null } });
   mockDb.prisma.creditLedgerEntry.findMany.mockResolvedValue([]);
+  mockDb.prisma.$queryRaw.mockResolvedValue([]);
   mockDb.prisma.providerCallLog.aggregate.mockResolvedValue({ _sum: { costHint: null } });
   mockDb.prisma.voiceCall.findMany.mockResolvedValue([]);
   mockDb.prisma.bookEditOperation.findMany.mockResolvedValue([]);
@@ -307,11 +335,10 @@ describe("POST /api/admin/pricing/preview", () => {
 describe("GET /api/admin/pricing/drivers", () => {
   it("turns charged work into quantities the browser can re-price", async () => {
     // Two generations of one 20-page book, plus a voice call and a text edit.
-    mockDb.prisma.creditLedgerEntry.groupBy.mockImplementation(async ({ where }: { where: { operation?: string } }) => {
-      if (where.operation === "FULL_BOOK_GENERATION") return [{ projectId: "project-1", _count: { _all: 2 } }];
-      if (where.operation === "BOOK_REPLAN") return [];
-      return [{ operation: "PLAN_REVISION", _count: { _all: 3 } }];
-    });
+    mockSpendRows([
+      { project_id: "project-1", operation: "FULL_BOOK_GENERATION", count: 2 },
+      { project_id: null, operation: "PLAN_REVISION", count: 3 }
+    ]);
     mockDb.prisma.project.findMany.mockResolvedValue([
       {
         id: "project-1",
@@ -355,18 +382,11 @@ describe("GET /api/admin/pricing/drivers", () => {
   });
 
   it("counts initial covers for full generations and replans under image generation", async () => {
-    mockDb.prisma.creditLedgerEntry.groupBy.mockImplementation(async ({ where }: { where: { operation?: string } }) => {
-      if (where.operation === "FULL_BOOK_GENERATION") {
-        return [
-          { projectId: "project-cover", _count: { _all: 1 } },
-          { projectId: "project-no-cover", _count: { _all: 1 } }
-        ];
-      }
-      if (where.operation === "BOOK_REPLAN") {
-        return [{ projectId: "project-replan", _count: { _all: 1 } }];
-      }
-      return [];
-    });
+    mockSpendRows([
+      { project_id: "project-cover", operation: "FULL_BOOK_GENERATION", count: 1 },
+      { project_id: "project-no-cover", operation: "FULL_BOOK_GENERATION", count: 1 },
+      { project_id: "project-replan", operation: "BOOK_REPLAN", count: 1 }
+    ]);
     const projectShape = {
       title: "Text-first guide",
       subtitle: null,
@@ -408,7 +428,6 @@ describe("GET /api/admin/pricing/drivers", () => {
   });
 
   it("reports how faithfully the model reproduces the ledger", async () => {
-    mockDb.prisma.creditLedgerEntry.groupBy.mockResolvedValue([]);
     mockDb.prisma.creditLedgerEntry.aggregate.mockResolvedValue({ _sum: { amountCredits: -1000 } });
     mockDb.prisma.voiceCall.findMany.mockResolvedValue([{ elapsedSeconds: 600 }]);
     app = await buildApp();

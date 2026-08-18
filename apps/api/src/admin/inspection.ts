@@ -10,7 +10,7 @@
 import { CREDIT_USD_VALUE } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { getImageQuota, resolvePlanTier } from "@book-maker/db/billing";
-import { CHARGE_KEPT, round2, titleCase } from "./metrics.js";
+import { SETTLED_CHARGE, SETTLED_REFUND, netSettledCredits, round2, titleCase } from "./metrics.js";
 
 export type AdminUserRow = {
   id: string;
@@ -215,14 +215,19 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
   }
 
   const now = new Date();
-  const [account, tier, imageQuota, spendGroups, purchases, subscriptions, ledger, projects, deletionRequests] = await Promise.all([
+  const [account, tier, imageQuota, spendGroups, refundGroups, purchases, subscriptions, ledger, projects, deletionRequests] = await Promise.all([
     prisma.userCreditAccount.findUnique({ where: { userId } }),
     resolvePlanTier(userId, now),
     getImageQuota(userId, now),
     prisma.creditLedgerEntry.groupBy({
       by: ["operation"],
       _sum: { amountCredits: true },
-      where: { ...CHARGE_KEPT, userId }
+      where: { ...SETTLED_CHARGE, userId }
+    }),
+    prisma.creditLedgerEntry.groupBy({
+      by: ["operation"],
+      _sum: { amountCredits: true },
+      where: { ...SETTLED_REFUND, userId }
     }),
     prisma.purchaseRecord.findMany({
       where: { userId },
@@ -274,7 +279,7 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
   ]);
 
   const projectIds = projects.map((project) => project.id);
-  const [providerCosts, creditCosts] = await Promise.all([
+  const [providerCosts, creditCosts, creditRefunds] = await Promise.all([
     projectIds.length
       ? prisma.providerCallLog.groupBy({
           by: ["projectId"],
@@ -286,12 +291,25 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
       ? prisma.creditLedgerEntry.groupBy({
           by: ["projectId"],
           _sum: { amountCredits: true },
-          where: { ...CHARGE_KEPT, projectId: { in: projectIds } }
+          where: { ...SETTLED_CHARGE, projectId: { in: projectIds } }
+        })
+      : Promise.resolve([]),
+    projectIds.length
+      ? prisma.creditLedgerEntry.groupBy({
+          by: ["projectId"],
+          _sum: { amountCredits: true },
+          where: { ...SETTLED_REFUND, projectId: { in: projectIds } }
         })
       : Promise.resolve([])
   ]);
   const providerByProject = new Map(providerCosts.map((row) => [row.projectId, row._sum.costHint ?? 0]));
-  const creditsByProject = new Map(creditCosts.map((row) => [row.projectId, Math.abs(row._sum.amountCredits ?? 0)]));
+  const refundsByProject = new Map(creditRefunds.map((row) => [row.projectId, row._sum.amountCredits ?? 0]));
+  const creditsByProject = new Map(
+    creditCosts.map((row) => [
+      row.projectId,
+      netSettledCredits(row._sum.amountCredits ?? 0, refundsByProject.get(row.projectId) ?? 0)
+    ])
+  );
 
   return {
     user: {
@@ -313,11 +331,14 @@ export async function loadAdminUserDetail(userId: string): Promise<AdminUserDeta
     },
     plan: { tier, illustratedBooksUsed: imageQuota?.used ?? null },
     spendByOperation: spendGroups
-      .map((group) => ({
-        key: group.operation,
-        label: titleCase(group.operation),
-        value: Math.abs(group._sum.amountCredits ?? 0)
-      }))
+      .map((group) => {
+        const refunded = refundGroups.find((entry) => entry.operation === group.operation)?._sum.amountCredits ?? 0;
+        return {
+          key: group.operation,
+          label: titleCase(group.operation),
+          value: netSettledCredits(group._sum.amountCredits ?? 0, refunded)
+        };
+      })
       .filter((entry) => entry.value > 0)
       .sort((left, right) => right.value - left.value),
     purchases: purchases.map((purchase) => ({
@@ -427,7 +448,7 @@ export async function loadAdminProjectDetail(projectId: string): Promise<AdminPr
     return null;
   }
 
-  const [providerTotal, unpricedCalls, byPurpose, jobs, ledger, creditTotal] = await Promise.all([
+  const [providerTotal, unpricedCalls, byPurpose, jobs, ledger, creditTotal, refundTotal] = await Promise.all([
     prisma.providerCallLog.aggregate({ _sum: { costHint: true }, where: { projectId, costHint: { not: null } } }),
     prisma.providerCallLog.count({ where: { projectId, costHint: null } }),
     prisma.providerCallLog.groupBy({
@@ -467,13 +488,20 @@ export async function loadAdminProjectDetail(projectId: string): Promise<AdminPr
     }),
     prisma.creditLedgerEntry.aggregate({
       _sum: { amountCredits: true },
-      where: { ...CHARGE_KEPT, projectId }
+      where: { ...SETTLED_CHARGE, projectId }
+    }),
+    prisma.creditLedgerEntry.aggregate({
+      _sum: { amountCredits: true },
+      where: { ...SETTLED_REFUND, projectId }
     })
   ]);
 
-  // Charges that stuck. The full ledger above still lists the refunded ones, so
-  // a reader can see the difference rather than wonder where the money went.
-  const creditsCharged = Math.abs(creditTotal._sum.amountCredits ?? 0);
+  // Net delivered value. The full ledger above still exposes both rows, so an
+  // operator can reconcile gross and returned portions.
+  const creditsCharged = netSettledCredits(
+    creditTotal._sum.amountCredits ?? 0,
+    refundTotal._sum.amountCredits ?? 0
+  );
   const revenueUsd = round2(creditsCharged * CREDIT_USD_VALUE);
   const providerUsd = round2(providerTotal._sum.costHint ?? 0);
 

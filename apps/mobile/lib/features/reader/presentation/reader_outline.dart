@@ -112,7 +112,12 @@ Future<List<ReaderOutlineEntry>> readerOutlineFromLinks(
         continue;
       }
       entries.add(
-        ReaderOutlineEntry(title: 'Page $page', depth: 0, pageNumber: page),
+        ReaderOutlineEntry(
+          // Physical `Page $page` — displayedTitle converts at display time.
+          title: 'Page $page',
+          depth: 0,
+          pageNumber: page,
+        ),
       );
     }
     entries.sort((a, b) => (a.pageNumber ?? 0).compareTo(b.pageNumber ?? 0));
@@ -127,12 +132,17 @@ class ReaderOutlineSheet extends StatelessWidget {
     required this.entries,
     required this.currentPage,
     required this.onSelect,
+    this.hasCoverPage = false,
     super.key,
   });
 
   final List<ReaderOutlineEntry> entries;
   final int currentPage;
   final void Function(int pageNumber) onSelect;
+
+  /// Whether PDF sheet 1 is an unnumbered cover. Trailing numbers skip it;
+  /// [onSelect] still receives the physical destination.
+  final bool hasCoverPage;
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +173,7 @@ class ReaderOutlineSheet extends StatelessWidget {
           final entry = entries[index];
           final page = entry.pageNumber;
           final isCurrent = page != null && page == currentPage;
+          final trailing = entry.displayedPageText(hasCoverPage: hasCoverPage);
           return ListTile(
             dense: entry.depth > 0,
             contentPadding: EdgeInsets.only(
@@ -170,7 +181,7 @@ class ReaderOutlineSheet extends StatelessWidget {
               right: 16,
             ),
             title: Text(
-              entry.title,
+              entry.displayedTitle(hasCoverPage: hasCoverPage),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: entry.depth == 0
@@ -179,10 +190,10 @@ class ReaderOutlineSheet extends StatelessWidget {
                     )
                   : theme.textTheme.bodyMedium,
             ),
-            trailing: page == null
+            trailing: trailing == null
                 ? null
                 : Text(
-                    '$page',
+                    trailing,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),

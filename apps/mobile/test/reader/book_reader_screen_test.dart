@@ -293,7 +293,6 @@ void main() {
         bookmarks: [
           ReaderBookmark(
             page: 4,
-            label: 'Page 4',
             createdAt: DateTime.utc(2026),
             revision: 1,
           ),
@@ -360,7 +359,6 @@ void main() {
             bookmarks: [
               ReaderBookmark(
                 page: 9,
-                label: 'Page 9',
                 createdAt: DateTime.utc(2026),
               ),
             ],

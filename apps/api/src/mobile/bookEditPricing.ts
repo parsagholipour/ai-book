@@ -70,6 +70,14 @@ export function bookEditCreditCost(
   if (kind === "move_image" || kind === "remove_image") {
     return 0;
   }
+  if (kind === "restructure_pages") {
+    // Only the pages a model has to *write*. Deleting and reordering pages
+    // calls no provider at all — the same reasoning that prices move_image and
+    // remove_image at zero — so `affectedPageCount` here is the resolved plan's
+    // `pagesBilled`, which is 0 for those two. A page costs the same whether it
+    // lands in the middle of the book or, as a continuation, at the end.
+    return affectedPageCount * tierPrice(pricing, "pageRegenerationPerPage", tier);
+  }
   if (kind === "book_replan") {
     const current = createProjectSchema.parse(inputSnapshotFromProject(project));
     const requested = inputWithReplanSettings(current, options.replanSettings);
@@ -80,7 +88,23 @@ export function bookEditCreditCost(
 
 export function operationKindForIntent(
   kind: BookEditIntentKind
-): "LOCAL_PATCH" | "PAGE_REWRITE" | "CHAPTER_REGENERATE" | "BOOK_REPLAN" | "CONTINUE_BOOK" | "PLAN_REVISION" | "ADD_IMAGE" | "MOVE_IMAGE" | "REMOVE_IMAGE" {
+):
+  | "LOCAL_PATCH"
+  | "PAGE_REWRITE"
+  | "CHAPTER_REGENERATE"
+  | "BOOK_REPLAN"
+  | "CONTINUE_BOOK"
+  | "PLAN_REVISION"
+  | "ADD_IMAGE"
+  | "MOVE_IMAGE"
+  | "REMOVE_IMAGE"
+  | "RESTRUCTURE_PAGES" {
+  if (kind === "restructure_pages") {
+    // One kind for insert, delete and move: which one it was rides the
+    // operation's classifier, so every list that switches on the kind gains a
+    // single arm rather than three.
+    return "RESTRUCTURE_PAGES";
+  }
   if (kind === "page_rewrite") {
     return "PAGE_REWRITE";
   }
@@ -115,6 +139,12 @@ export function billingOperationForIntent(
   kind: BookEditIntentKind
 ): "BOOK_TEXT_EDIT" | "PAGE_REGENERATION" | "BOOK_REPLAN" | "IMAGE_GENERATION" {
   if (kind === "page_rewrite" || kind === "chapter_regenerate" || kind === "continue_book") {
+    return "PAGE_REGENERATION";
+  }
+  // A structural edit that writes pages is priced and recorded as page
+  // regeneration; a free delete or move writes no ledger entry at all, so the
+  // operation it names never reaches the ledger either way.
+  if (kind === "restructure_pages") {
     return "PAGE_REGENERATION";
   }
   if (kind === "book_replan") {

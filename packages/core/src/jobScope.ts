@@ -131,13 +131,36 @@ export const PRESENTATION_RECOMPILE_FALLBACK_STATUS = "presentationRecompileFall
 
 export type SettledProjectStatus = "COMPLETE" | "REVIEW_REQUIRED";
 
-export function presentationRecompileFallbackStatus(payload: unknown): SettledProjectStatus {
+function settledStatusFromPayload(payload: unknown, key: string): SettledProjectStatus {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return "COMPLETE";
   }
-  return (payload as Record<string, unknown>)[PRESENTATION_RECOMPILE_FALLBACK_STATUS] === "REVIEW_REQUIRED"
-    ? "REVIEW_REQUIRED"
-    : "COMPLETE";
+  return (payload as Record<string, unknown>)[key] === "REVIEW_REQUIRED" ? "REVIEW_REQUIRED" : "COMPLETE";
+}
+
+export function presentationRecompileFallbackStatus(payload: unknown): SettledProjectStatus {
+  return settledStatusFromPayload(payload, PRESENTATION_RECOMPILE_FALLBACK_STATUS);
+}
+
+/**
+ * The settled status the book was in before the edit this job applies.
+ *
+ * Carried rather than read, because the enqueue is what takes it away: a chat
+ * Apply writes `status: "EDITING"` in the same committed transaction as the
+ * `GenerationJob` row, so by the time the handler runs the project can only
+ * answer EDITING — before its own EDITING write as much as after it, and on a
+ * redelivery the first delivery deliberately left it there too. A handler that
+ * settles the book itself (a delivered no-op, a recompile it could not queue)
+ * therefore had no way to tell a finished book from one the reader still has
+ * open quality findings on, and put both down as COMPLETE.
+ *
+ * COMPLETE when the key is absent, which is what a job enqueued before this
+ * existed means and what almost every book is.
+ */
+export const PRE_EDIT_PROJECT_STATUS = "preEditProjectStatus";
+
+export function preEditProjectStatus(payload: unknown): SettledProjectStatus {
+  return settledStatusFromPayload(payload, PRE_EDIT_PROJECT_STATUS);
 }
 
 /** The one artifact a detached export repair was asked to replace. */

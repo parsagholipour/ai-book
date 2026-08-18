@@ -25,7 +25,7 @@ vi.mock("node:fs/promises", () => ({
   writeFile: mocks.writeFile
 }));
 
-import { exportContentDigest } from "@book-maker/core";
+import { bookPdfCoverNumbering, exportContentDigest } from "@book-maker/core";
 
 import {
   discardPendingExports,
@@ -56,6 +56,15 @@ const rmPaths = () => (mocks.rm.mock.calls as [path: string][]).map(([path]) => 
 /** Only the moves that put this compile's own render onto a downloadable name. */
 const publishedMoves = () => renameCalls().filter(([from]) => Object.values(pending).includes(from));
 
+/** The digest of the bytes a publication installs over `book.pdf`. */
+const publishedPdfDigest = () => exportContentDigest(RENDERED[pending.pdf] as Buffer);
+
+/** Every `pdfPageMap` this publication wrote, in order; the status write carries none. */
+const pageMapWrites = () =>
+  (mocks.prisma.project.update.mock.calls as [{ data?: { pdfPageMap?: unknown } }][])
+    .map(([call]) => call.data?.pdfPageMap)
+    .filter((map) => map !== undefined);
+
 const publishResult = (overrides: Record<string, unknown> = {}) =>
   publishCompiledExports({
     projectId: "project-1",
@@ -63,6 +72,7 @@ const publishResult = (overrides: Record<string, unknown> = {}) =>
     projectDir: "/books/project-1",
     pending,
     epubProduced: true,
+    pdfPageMap: bookPdfCoverNumbering(false),
     contentRevision: 7,
     expectedProjectStatus: "GENERATING",
     status: "COMPLETE",
@@ -156,6 +166,121 @@ describe("exportPublicationSuperseded", () => {
 });
 
 describe("publishCompiledExports", () => {
+  it("degrades a legacy or rangeless map to cover numbering rather than failing the book", async () => {
+    // `compile-export` owns the project's outcome and has no retry budget, so
+    // refusing to publish here sends a book whose pages are already written to
+    // `markFailed` — FAILED and refunded over metadata. The ranges still have
+    // to go: they describe a different render than the bytes being installed.
+    // Version 1 is the legacy shape; a version-2 measured map with empty
+    // `pages` is current and is not rewritten (see below).
+    await expect(
+      publish({ pdfPageMap: { version: 1, totalPdfPages: 8, hasCoverPage: true, pages: [] } })
+    ).resolves.toBe(true);
+
+    expect(pageMapWrites()).toEqual([
+      { ...bookPdfCoverNumbering(true), contentRevision: 7, pdfDigest: publishedPdfDigest() }
+    ]);
+    expect(publishedMoves().map(([, to]) => to)).toContain("/books/project-1/book.pdf");
+  });
+
+  it("stamps a version-2 measured map even when it holds no ranges", async () => {
+    const pageMap = {
+      version: 2 as const,
+      totalPdfPages: 8,
+      hasCoverPage: true,
+      contentsStartPdfPage: 2,
+      backMatterStartPdfPage: 8,
+      pages: []
+    };
+
+    await expect(publish({ pdfPageMap: pageMap })).resolves.toBe(true);
+    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: {
+        pdfPageMap: {
+          ...pageMap,
+          contentRevision: 7,
+          pdfDigest: exportContentDigest(RENDERED[pending.pdf] as Buffer)
+        }
+      }
+    });
+  });
+
+  it("clears the stored ranges of a publication that offers no map, keeping its cover skip", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({
+      pdfPageMap: {
+        version: 2,
+        totalPdfPages: 9,
+        hasCoverPage: true,
+        pages: [{ index: 1, startPdfPage: 2, endPdfPage: 9 }],
+        contentRevision: 7
+      }
+    });
+
+    await expect(publish({ pdfPageMap: undefined })).resolves.toBe(true);
+
+    // Read under the publication's own lock, and replaced whole: a stale map
+    // stamped with this revision is exactly what chat would mistranslate.
+    expect(pageMapWrites()).toEqual([
+      { ...bookPdfCoverNumbering(true), contentRevision: 7, pdfDigest: publishedPdfDigest() }
+    ]);
+  });
+
+  it("leaves a column no reader can parse alone rather than guessing a cover skip", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({ pdfPageMap: null });
+
+    await expect(publish({ pdfPageMap: undefined })).resolves.toBe(true);
+    expect(pageMapWrites()).toEqual([]);
+  });
+
+  it("allows an EPUB-only repair to leave the PDF map untouched", async () => {
+    await expect(
+      publish({ ownsProjectStatus: false, repairFormat: "epub", pdfPageMap: undefined })
+    ).resolves.toBe(true);
+
+    const mapWrites = mocks.prisma.project.update.mock.calls.filter(
+      ([call]) => (call as { data?: { pdfPageMap?: unknown } }).data?.pdfPageMap !== undefined
+    );
+    expect(mapWrites).toEqual([]);
+  });
+
+  it("stamps a cover-numbering stub with the bytes installed by the transaction", async () => {
+    const stub = bookPdfCoverNumbering(true);
+
+    await expect(publish({ pdfPageMap: stub })).resolves.toBe(true);
+    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: {
+        pdfPageMap: {
+          ...stub,
+          contentRevision: 7,
+          pdfDigest: exportContentDigest(RENDERED[pending.pdf] as Buffer)
+        }
+      }
+    });
+  });
+
+  it("stamps a successful measured map instead of degrading it", async () => {
+    const pageMap = {
+      version: 2 as const,
+      totalPdfPages: 8,
+      hasCoverPage: true,
+      pages: [{ index: 1, startPdfPage: 2, endPdfPage: 8 }]
+    };
+
+    await expect(publish({ pdfPageMap: pageMap })).resolves.toBe(true);
+    expect(mocks.prisma.project.update).toHaveBeenCalledWith({
+      where: { id: "project-1" },
+      data: {
+        pdfPageMap: {
+          ...pageMap,
+          contentRevision: 7,
+          pdfDigest: exportContentDigest(RENDERED[pending.pdf] as Buffer)
+        }
+      }
+    });
+  });
+
   it("claims the project at its revision, then moves the artifacts into place", async () => {
     await expect(publish()).resolves.toBe(true);
 

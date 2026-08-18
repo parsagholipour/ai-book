@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../domain/reader_annotation.dart';
+import '../domain/reader_models.dart';
 import 'reader_annotation_painter.dart';
 
 /// What the reader asked to do with a piece of markup.
@@ -108,6 +109,7 @@ Future<ReaderAnnotationCommand?> showReaderAnnotationSheet({
   required void Function(int colorIndex) onColorChanged,
   bool placementEnabled = true,
   bool bookActionsEnabled = true,
+  bool hasCoverPage = false,
 }) {
   return showModalBottomSheet<ReaderAnnotationCommand>(
     context: context,
@@ -119,6 +121,7 @@ Future<ReaderAnnotationCommand?> showReaderAnnotationSheet({
       editingEnabled: editingEnabled,
       placementEnabled: placementEnabled,
       bookActionsEnabled: bookActionsEnabled,
+      hasCoverPage: hasCoverPage,
       onColorChanged: onColorChanged,
     ),
   );
@@ -133,6 +136,7 @@ class ReaderAnnotationSheet extends StatefulWidget {
     required this.onColorChanged,
     this.placementEnabled = true,
     this.bookActionsEnabled = true,
+    this.hasCoverPage = false,
     super.key,
   });
 
@@ -141,6 +145,7 @@ class ReaderAnnotationSheet extends StatefulWidget {
   final bool editingEnabled;
   final bool placementEnabled;
   final bool bookActionsEnabled;
+  final bool hasCoverPage;
   final void Function(int colorIndex) onColorChanged;
 
   @override
@@ -183,7 +188,7 @@ class _ReaderAnnotationSheetState extends State<ReaderAnnotationSheet> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      '$_kindLabel · page ${_annotation.page}',
+                      '$_kindLabel · $_pageHeading',
                       style: theme.textTheme.titleMedium,
                     ),
                   ),
@@ -359,6 +364,18 @@ class _ReaderAnnotationSheetState extends State<ReaderAnnotationSheet> {
     ReaderAnnotationKind.ink => 'Drawing',
     ReaderAnnotationKind.text => 'Text',
   };
+
+  String get _pageHeading {
+    final page = _annotation.page;
+    if (widget.hasCoverPage && page == 1) {
+      return 'Cover';
+    }
+    final printed = printedPageForPdfPage(
+      page,
+      hasCoverPage: widget.hasCoverPage,
+    );
+    return 'page ${printed ?? page}';
+  }
 }
 
 class _ExcerptBlock extends StatelessWidget {

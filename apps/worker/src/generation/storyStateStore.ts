@@ -1,5 +1,6 @@
 import {
   applyStoryDelta,
+  bookPlanSchema,
   parseStoryState,
   seedStoryStateFromPromises,
   type StoryDelta,
@@ -111,10 +112,13 @@ async function applyPersistedPageStoryDelta(options: {
 
 export async function rebuildProjectStoryState(
   projectId: string,
-  seedPromises: readonly string[] = []
+  seedPromises: readonly string[] = [],
+  guard?: { currentPlanId: string | null }
 ): Promise<StoryState | null> {
   try {
-    return await casRebuildProjectStoryState(projectId, seedPromises);
+    return guard
+      ? await casRebuildProjectStoryState(projectId, seedPromises, guard)
+      : await casRebuildProjectStoryState(projectId, seedPromises);
   } catch (error) {
     if (isStopRequestedError(error)) {
       throw error;
@@ -122,6 +126,21 @@ export async function rebuildProjectStoryState(
     console.warn(`Story state rebuild failed for project ${projectId}`, error);
     return null;
   }
+}
+
+/** Rebuilds against the plan a structural rollback actually left current. */
+export async function rebuildRolledBackProjectStoryState(
+  projectId: string,
+  currentPlanId: string | null
+): Promise<StoryState | null> {
+  const planVersion = currentPlanId
+    ? await prisma.planVersion.findUnique({ where: { id: currentPlanId }, select: { planningPackage: true } })
+    : null;
+  if (currentPlanId && !planVersion) {
+    return null;
+  }
+  const promises = planVersion ? bookPlanSchema.parse(planVersion.planningPackage).promises ?? [] : [];
+  return rebuildProjectStoryState(projectId, promises, { currentPlanId });
 }
 
 function storyStateCasEquals(expected: unknown) {

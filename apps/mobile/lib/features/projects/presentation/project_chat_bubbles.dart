@@ -215,14 +215,31 @@ class OperationBubble extends StatelessWidget {
                 ),
                 if (operation.creditsCharged > 0) ...[
                   const SizedBox(width: 8),
-                  CreditCostBadge(
-                    credits: operation.creditsCharged,
-                    // A failure costs nothing, and a bare price reads as a
-                    // charge that stood — the refunded badge says otherwise.
-                    kind: operation.creditsRefunded
-                        ? CreditCostKind.refunded
-                        : CreditCostKind.charged,
-                    foreground: failed ? colors.onErrorContainer : null,
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (!operation.creditsRefunded ||
+                          operation.effectiveCreditsRefundedAmount == 0)
+                        CreditCostBadge(
+                          credits:
+                              operation.creditsCharged -
+                              operation.effectiveCreditsRefundedAmount,
+                          kind: CreditCostKind.charged,
+                          foreground: failed
+                              ? colors.onErrorContainer
+                              : null,
+                        ),
+                      if (operation.effectiveCreditsRefundedAmount > 0) ...[
+                        if (!operation.creditsRefunded) const SizedBox(height: 4),
+                        CreditCostBadge(
+                          credits: operation.effectiveCreditsRefundedAmount,
+                          kind: CreditCostKind.refunded,
+                          foreground: failed
+                              ? colors.onErrorContainer
+                              : null,
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ],

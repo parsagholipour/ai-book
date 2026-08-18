@@ -2,6 +2,7 @@ import {
   PROJECT_PROMPT_MAX_LENGTH,
   createProjectSchema,
   inputWithReplanSettings,
+  jsonRecord,
   mediaSettingsSchema,
   replanSettingsFromMessage,
   type CreateProjectInput
@@ -57,10 +58,6 @@ export function inputFromSnapshot(snapshot: unknown): CreateProjectInput | null 
  */
 export function inputWithMessageMediaPreferences(input: CreateProjectInput, message: string): CreateProjectInput {
   return inputWithReplanSettings(input, replanSettingsFromMessage(message));
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 /** Planner prompt ceiling; the same one createProjectSchema validates. */

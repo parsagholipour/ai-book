@@ -35,6 +35,7 @@ class LocatorOnlyRepository implements ReaderRepository {
     required MobileExportAvailability export,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    MobilePdfPageNumbering? pageNumbering,
   }) => throw UnimplementedError();
 
   @override
@@ -96,6 +97,7 @@ Future<ReaderResolvedSelection> place(
   LocatorOnlyRepository repository,
   List<PdfPageTextRange> ranges, {
   int? revision = 1,
+  String? pdfDigest = 'pdf-a',
 }) async {
   final preview = previewReaderSelection(ranges, null)!;
   return placeReaderSelection(
@@ -104,6 +106,7 @@ Future<ReaderResolvedSelection> place(
     repository: repository,
     projectId: 'project-1',
     revision: revision,
+    pdfDigest: pdfDigest,
   );
 }
 
@@ -285,6 +288,68 @@ void main() {
       // the server can often find the quote anyway.
       expect(placed.selection.bookPageIndex, isNull);
       expect(placed.selection.placed, isTrue);
+    });
+
+    test(
+      'a replaced open file keeps its resolved page and drops the sheet',
+      () async {
+        // A repair published a new PDF under the same revision while this one
+        // stayed open. The page the locator resolved is a page of the *book*,
+        // so it is still true and still travels; the physical sheet is a sheet
+        // of the file on screen, and the server would translate it through the
+        // map of the file that replaced it.
+        final repository = LocatorOnlyRepository(
+          const MobileEditableBook(
+            projectId: 'project-1',
+            title: 'The Race',
+            pages: [],
+          ).copyWithPages([
+            page(1, 'The hare set off at a sprint and was soon out of sight.'),
+            page(2, 'The tortoise kept walking through the afternoon heat.'),
+          ]),
+        );
+
+        final placed = await place(
+          repository,
+          selectionOf(
+            'The tortoise kept walking through the afternoon heat.',
+            'kept walking through the afternoon',
+          ),
+          pdfDigest: null,
+        );
+
+        final context = placed.selection.chatReaderContext;
+        expect(placed.selection.bookPageIndex, 2);
+        expect(context['pageIndex'], 2);
+        expect(context.containsKey('pdfPage'), isFalse);
+        expect(context.containsKey('pdfDigest'), isFalse);
+      },
+    );
+
+    test('an identified open file sends the sheet with the file', () async {
+      final repository = LocatorOnlyRepository(
+        const MobileEditableBook(
+          projectId: 'project-1',
+          title: 'The Race',
+          pages: [],
+        ),
+        fail: true,
+      );
+
+      // Nothing the locator can place, which is exactly when the server needs
+      // the physical sheet — and it only means something with the file it came
+      // from named alongside it.
+      final placed = await place(
+        repository,
+        selectionOf('The tortoise kept walking.', 'tortoise kept walking'),
+        revision: 4,
+      );
+
+      final context = placed.selection.chatReaderContext;
+      expect(placed.selection.bookPageIndex, isNull);
+      expect(context['pdfPage'], 1);
+      expect(context['contentRevision'], 4);
+      expect(context['pdfDigest'], 'pdf-a');
     });
 
     test('places a single word using the text around it', () async {

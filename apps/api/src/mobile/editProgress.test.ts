@@ -166,6 +166,83 @@ describe("mobile edit progress", () => {
     expect(JSON.stringify(status)).not.toContain("Reindex embeddings");
   });
 
+  it("says what a structural edit is doing rather than promising a snapshot it never takes", async () => {
+    // The restructure fork shares apply-book-edit's step keys but writes no
+    // PageEditSnapshot rows at all — its undo record is the classifier stamp —
+    // so "Saving a version to undo" named a mechanism that was not running.
+    const structuralJob = (action: string) =>
+      editJob({
+        progress: 30,
+        steps: steps("snapshot"),
+        payload: { affectedPageIndexes: [], intentKind: "restructure_pages", structuralEdit: { action } }
+      });
+
+    const labels: string[] = [];
+    const details: string[] = [];
+    for (const action of ["insert", "delete", "move"]) {
+      const status = await readStatus(editingStatus({ project: { jobs: [structuralJob(action)] } }));
+      labels.push(status.editProgress.steps[1].label);
+      details.push(status.editProgress.detail);
+    }
+
+    expect(labels).toEqual(["Making room for the new pages", "Taking the pages out", "Moving the pages"]);
+    // The step and the line under the bar are the same claim, so both move.
+    expect(details).toEqual(labels);
+    expect(JSON.stringify(labels)).not.toContain("undo");
+  });
+
+  it("degrades to a true structural label when the payload no longer names the action", async () => {
+    const status = await readStatus(
+      editingStatus({
+        project: {
+          jobs: [
+            editJob({
+              progress: 30,
+              steps: steps("snapshot"),
+              payload: { affectedPageIndexes: [], intentKind: "restructure_pages" }
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.editProgress.steps[1].label).toBe("Changing your book's pages");
+  });
+
+  it("still promises the undo the text fork really saves", async () => {
+    const status = await readStatus(
+      editingStatus({ project: { jobs: [editJob({ progress: 30, steps: steps("snapshot") })] } })
+    );
+
+    expect(status.editProgress.steps[1].label).toBe("Saving a version to undo");
+    expect(status.editProgress.detail).toBe("Saving a version you can undo to");
+  });
+
+  it("keeps the structural words on the milestones left behind by the rebuild", async () => {
+    const status = await readStatus(
+      editingStatus({
+        project: {
+          jobs: [
+            compileJob({ progress: 30, steps: steps("compile", ["qa", "compile", "write", "pdf", "epub"]) }),
+            editJob({
+              status: "COMPLETED",
+              progress: 85,
+              steps: steps("export"),
+              payload: { affectedPageIndexes: [], intentKind: "restructure_pages", structuralEdit: { action: "delete" } }
+            })
+          ]
+        }
+      })
+    );
+
+    expect(status.editProgress.steps.map((step: any) => step.label)).toEqual([
+      "Reading your book",
+      "Taking the pages out",
+      "Making your changes",
+      "Rebuilding your book"
+    ]);
+  });
+
   it("describes a continuation with its own steps", async () => {
     const status = await readStatus(
       editingStatus({

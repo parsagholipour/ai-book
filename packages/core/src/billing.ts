@@ -3,6 +3,7 @@ import { coverArtSourceFor } from "./generation/coverSource.js";
 import { interiorIllustrationSlotCount } from "./generation/illustrationSlots.js";
 import { modelTierSchema } from "./schemas/book.js";
 import type { CreateProjectInput, ModelTier } from "./schemas/book.js";
+import { jsonRecord } from "./schemas/jsonCoercion.js";
 
 export const CREDIT_USD_VALUE = 0.01;
 export const STANDARD_EXPORT_CREDIT_AMOUNT = 1_000;
@@ -567,10 +568,6 @@ function inferMobileBookType(category: string, subcategory?: string | null): "le
     return "short_story";
   }
   return "custom";
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function stringValue(value: unknown): string | undefined {

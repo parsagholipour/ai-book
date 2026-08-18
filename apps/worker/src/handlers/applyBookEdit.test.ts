@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   storeEmbedding: vi.fn(),
   invalidateProjectExports: vi.fn(),
   applyImageInsertion: vi.fn(),
-  applyImageLayout: vi.fn()
+  applyImageLayout: vi.fn(),
+  restructurePages: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
@@ -36,6 +37,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
 }));
 vi.mock("./applyImageInsertion.js", () => ({ applyImageInsertion: mocks.applyImageInsertion }));
 vi.mock("./applyImageLayout.js", () => ({ applyImageLayout: mocks.applyImageLayout }));
+vi.mock("./restructurePages.js", () => ({ restructurePages: mocks.restructurePages }));
 vi.mock("../generation/storyStateStore.js", () => ({
   rebuildProjectStoryState: vi.fn(),
   loadProjectStoryState: vi.fn(async () => ({ promises: [], facts: [], entities: {}, unanswered: [] }))
@@ -298,6 +300,77 @@ describe("applyBookEdit in exact mode", () => {
     expect(rebuildProjectStoryState).toHaveBeenCalledWith("project-1", []);
   });
 
+  it("gives each named page its own instruction and the rest the whole request", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "One."), page(2, "Two."), page(3, "Three.")]);
+    mocks.rewritePageForUserRequest.mockResolvedValue({
+      title: "Page",
+      markdown: "Rewritten.",
+      summary: "Summary.",
+      continuityNotes: [],
+      qualityReport: { approved: true }
+    });
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Make page 1 funnier and page 3 shorter",
+        affectedPageIndexes: [1, 2, 3],
+        planId: "plan-1",
+        perPageInstructions: [
+          { pageIndex: 1, instruction: "Make it funnier." },
+          { pageIndex: 3, instruction: "Make it shorter." }
+        ]
+      })
+    );
+
+    const requests = mocks.rewritePageForUserRequest.mock.calls.map((call) => call[0].request);
+    // Page 2 has no entry, so it still gets the whole request — the field can
+    // only narrow what a named page is told, never drop a page that was paid for.
+    expect(requests).toEqual([
+      "Make it funnier.",
+      "Make page 1 funnier and page 3 shorter",
+      "Make it shorter."
+    ]);
+  });
+
+  it("keeps the mentioned character's sheet on a page rewritten from its own instruction", async () => {
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "One."), page(2, "Two.")]);
+    mocks.rewritePageForUserRequest.mockResolvedValue({
+      title: "Page",
+      markdown: "Rewritten.",
+      summary: "Summary.",
+      continuityNotes: [],
+      qualityReport: { approved: true }
+    });
+    const sheet = "Mentioned character profiles (the user's own library characters; treat as authoritative canon):\nLuna — a brave night-flying rabbit.";
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: `Make page 1 funnier and page 2 shorter, and put @Luna in both.\n\n${sheet}`,
+        affectedPageIndexes: [1, 2],
+        planId: "plan-1",
+        perPageInstructions: [
+          { pageIndex: 1, instruction: `Make it funnier.\n\n${sheet}` },
+          { pageIndex: 2, instruction: `Make it shorter.\n\n${sheet}` }
+        ]
+      })
+    );
+
+    // An instruction *replaces* the request for its page, so the sheet has to
+    // ride the instruction too — the API composes both, and this loop hands
+    // each string on untouched.
+    const requests = mocks.rewritePageForUserRequest.mock.calls.map((call) => call[0].request as string);
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(request).toContain("night-flying");
+    }
+    expect(requests[0]!.startsWith("Make it funnier.")).toBe(true);
+    expect(requests[1]!.startsWith("Make it shorter.")).toBe(true);
+  });
+
   it("snapshots storyDelta before the rewrite and re-extracts saved pages", async () => {
     const storyDeltaBefore = {
       promisesOpened: [],
@@ -441,8 +514,8 @@ describe("applyBookEdit in exact mode", () => {
     });
   });
 
-  it("forks an imageInsertion payload before the ACTIVE and EDITING writes", async () => {
-    const operation = { id: "op-1", status: "QUEUED" };
+  it("forks an ADD_IMAGE operation before the ACTIVE and EDITING writes", async () => {
+    const operation = { id: "op-1", kind: "ADD_IMAGE", status: "QUEUED", classifier: {} };
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(operation);
     const payload = {
       projectId: "project-1",
@@ -471,8 +544,8 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
   });
 
-  it("forks an imageLayout payload before the ACTIVE and EDITING writes", async () => {
-    const operation = { id: "op-1", status: "QUEUED", classifier: {} };
+  it("forks a REMOVE_IMAGE operation before the ACTIVE and EDITING writes", async () => {
+    const operation = { id: "op-1", kind: "REMOVE_IMAGE", status: "QUEUED", classifier: {} };
     mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(operation);
     const payload = {
       projectId: "project-1",
@@ -494,7 +567,113 @@ describe("applyBookEdit in exact mode", () => {
     expect(mocks.prisma.page.findMany).not.toHaveBeenCalled();
   });
 
-  it("keeps a payload without imageInsertion on the text-rewrite path", async () => {
+  it("forks a RESTRUCTURE_PAGES operation whose payload lost its structuralEdit", async () => {
+    // The fork is decided by the operation's own column, so a payload rebuilt
+    // without `structuralEdit` still reaches the structural handler — which
+    // reads the request back off the classifier the Apply wrote it to. Gated on
+    // the payload instead, this job took the rewrite loop with an empty
+    // `affectedPageIndexes` (the only value this kind ever has), claimed the
+    // operation ACTIVE outside the structural fence, and died on "No matching
+    // pages found for this edit".
+    const operation = {
+      id: "op-1",
+      kind: "RESTRUCTURE_PAGES",
+      status: "QUEUED",
+      classifier: { structuralEdit: { action: "insert", anchorPageIndex: 3, pageIndexes: [], pageCount: 2 } }
+    };
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(operation);
+    mocks.prisma.page.findMany.mockResolvedValue([]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Add 2 pages after page 3",
+        affectedPageIndexes: [],
+        planId: "plan-1",
+        intentKind: "restructure_pages"
+      })
+    );
+
+    expect(mocks.restructurePages).toHaveBeenCalledTimes(1);
+    expect(mocks.restructurePages.mock.calls[0]?.[1]).toBe(operation);
+    // Handed over before the unconditional ACTIVE and EDITING writes, so the
+    // handler's own redelivery fence still runs against the pre-write status.
+    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+  });
+
+  it("forks an ADD_IMAGE operation whose payload lost its imageInsertion", async () => {
+    // The same column rule as the structural fork, and the same failure behind
+    // it — except that an image payload's `affectedPageIndexes` is *not* empty,
+    // so the rewrite loop did not die: it found page 5 and spent two model calls
+    // rewriting the prose the reader wanted a picture beside, then marked the
+    // operation APPLIED — all of it outside the insertion's own redelivery
+    // fence, because the ACTIVE and EDITING writes come first.
+    const operation = {
+      id: "op-1",
+      kind: "ADD_IMAGE",
+      status: "QUEUED",
+      classifier: { kind: "add_image", imageEdit: { subject: "a dragon", placement: "end_of_book" } }
+    };
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(operation);
+    mocks.prisma.page.findMany.mockResolvedValue([page(5, "The dragon sleeps.")]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Add a photo of a dragon at the end of the book",
+        affectedPageIndexes: [5],
+        planId: "plan-1",
+        intentKind: "add_image"
+      })
+    );
+
+    expect(mocks.applyImageInsertion).toHaveBeenCalledTimes(1);
+    expect(mocks.applyImageInsertion.mock.calls[0]?.[1]).toBe(operation);
+    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+  });
+
+  it("forks a MOVE_IMAGE operation whose payload lost its imageLayout", async () => {
+    const operation = {
+      id: "op-1",
+      kind: "MOVE_IMAGE",
+      status: "QUEUED",
+      classifier: {
+        kind: "move_image",
+        imageLayout: { action: "move", targets: [{ operationId: "op-old", pageIndex: 1 }], destPlacement: "end_of_book" }
+      }
+    };
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue(operation);
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Prose.")]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Move the picture to the end of the book",
+        affectedPageIndexes: [1, 9],
+        planId: "plan-1",
+        intentKind: "move_image"
+      })
+    );
+
+    // A move is free, so the rewrite loop would have charged nothing and spent
+    // a page of prose anyway.
+    expect(mocks.applyImageLayout).toHaveBeenCalledTimes(1);
+    expect(mocks.applyImageLayout.mock.calls[0]?.[1]).toBe(operation);
+    expect(mocks.prisma.bookEditOperation.update).not.toHaveBeenCalled();
+    expect(mocks.prisma.project.update).not.toHaveBeenCalled();
+    expect(mocks.rewritePageForUserRequest).not.toHaveBeenCalled();
+  });
+
+  it("keeps an operation of any other kind on the text-rewrite path", async () => {
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", kind: "PAGE_REWRITE" });
     mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
 
     await applyBookEdit(
@@ -509,7 +688,34 @@ describe("applyBookEdit in exact mode", () => {
       })
     );
 
+    expect(mocks.restructurePages).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("never forks on the payload alone", async () => {
+    // The column is the whole rule. `BookEditOperation.kind` is written once at
+    // creation and touched by nothing afterwards; the payload is JSON any
+    // requeue can rebuild, so it decides nothing here in either direction.
+    mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", kind: "PAGE_REWRITE", classifier: {} });
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "Rabbit runs.")]);
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Replace rabbit with fly",
+        affectedPageIndexes: [1],
+        planId: "plan-1",
+        exactReplacement: { from: "rabbit", to: "fly", preserveCase: true },
+        mode: "exact",
+        imageInsertion: { subject: "a dragon", placement: "end_of_book", targetPageIndex: 5 },
+        imageLayout: { action: "remove", sources: [{ pageIndex: 1, replaceAssetId: "asset-1" }] }
+      })
+    );
+
     expect(mocks.applyImageInsertion).not.toHaveBeenCalled();
+    expect(mocks.applyImageLayout).not.toHaveBeenCalled();
+    expect(mocks.prisma.page.update).toHaveBeenCalledTimes(1);
   });
 
   it("saves a rewrite whose best candidate still failed review as FAILED_QA", async () => {

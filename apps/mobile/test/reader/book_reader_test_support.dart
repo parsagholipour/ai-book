@@ -55,6 +55,7 @@ class FakeReaderRepository implements ReaderRepository {
     required MobileExportAvailability export,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    MobilePdfPageNumbering? pageNumbering,
   }) async {
     onProgress?.call(50, 100);
     await gate?.future;
@@ -63,6 +64,7 @@ class FakeReaderRepository implements ReaderRepository {
     }
     downloadedRevisions.add(export.revision);
     final delivered = answerWithRevision ?? export.revision;
+    final deliveredDigest = 'pdf-digest-$delivered';
     return CachedExport(
       // One path for every compile, as `ExportCache` really does it: each one
       // is published over `book.pdf`. A per-revision path here would hide the
@@ -71,8 +73,12 @@ class FakeReaderRepository implements ReaderRepository {
       path: '/tmp/book.pdf',
       revision: delivered,
       revisionIsExact: exactProvenance,
+      digest: deliveredDigest,
       byteSize: export.byteSize ?? 0,
       downloadedAt: DateTime.utc(2026, 7, 25),
+      hasCoverPage: pageNumbering?.pdfDigest == deliveredDigest
+          ? pageNumbering?.hasCoverPage
+          : null,
     );
   }
 
@@ -155,11 +161,17 @@ MobileExportAvailability pdfExport({
   );
 }
 
-MobileProjectStatus statusWith(MobileExportAvailability export) {
+MobileProjectStatus statusWith(
+  MobileExportAvailability export, {
+  String status = 'complete',
+  bool? hasCoverPage,
+  int? pageMapRevision,
+  String? pageMapDigest,
+}) {
   return MobileProjectStatus(
     projectId: 'project-1',
-    status: 'complete',
-    statusLabel: 'Complete',
+    status: status,
+    statusLabel: status == 'complete' ? 'Complete' : 'Editing',
     progressPercent: 100,
     currentAction: 'Your book is ready.',
     retryAvailable: false,
@@ -171,6 +183,16 @@ MobileProjectStatus statusWith(MobileExportAvailability export) {
       epub: pdfExport(available: false, byteSize: 0),
     ),
     updatedAt: DateTime.utc(2026, 7, 25),
+    hasCoverPage: hasCoverPage,
+    pdfPageNumbering: hasCoverPage == null
+        ? null
+        : MobilePdfPageNumbering(
+            hasCoverPage: hasCoverPage,
+            contentRevision: pageMapRevision ?? export.revision,
+            pdfDigest:
+                pageMapDigest ??
+                'pdf-digest-${pageMapRevision ?? export.revision}',
+          ),
   );
 }
 
@@ -201,7 +223,7 @@ String viewerIdentity(PdfDocumentRef documentRef) {
 /// What [stubViewer] renders for a book downloaded at [revision], open at
 /// [page]. Two compiles of one book differ here and nowhere in the path.
 String pdfAt(int page, {int revision = 1, int byteSize = 100}) {
-  return 'pdf:/tmp/book.pdf|$revision|$byteSize|'
+  return 'pdf:/tmp/book.pdf|$revision|pdf-digest-$revision|$byteSize|'
       '${DateTime.utc(2026, 7, 25)}@$page';
 }
 

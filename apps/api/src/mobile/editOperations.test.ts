@@ -46,9 +46,9 @@ vi.mock("./bookEditPricing.js", () => ({
   operationKindForIntent: vi.fn()
 }));
 vi.mock("./exactReplacementPreview.js", () => ({ planExactReplacement: vi.fn() }));
-// Cuts the add_image / layout queue branches' import subtree (bookEditImage →
-// bookEditMessage calls core's languageNamePattern at module load, which the
-// core mock below does not provide).
+// Cuts the add_image / layout queue branches' import subtree, which nothing
+// here reaches; the core mock below carries only what the modules that survive
+// that cut read at module load.
 vi.mock("./addImageOperations.js", () => ({
   addImageQuotaLimit: vi.fn(),
   proposeAddImageEdit: vi.fn(),
@@ -73,9 +73,14 @@ vi.mock("./support.js", () => ({
 }));
 vi.mock("@book-maker/core", () => ({
   creditCostForOperation: () => 25,
-  // bookEditMessage.ts builds a RegExp from this at module load; everything
-  // else this suite's graph imports from core is only called inside functions
-  // the tests never reach, so the bare-object mock stays bare.
+  // bookEditMessage.ts builds a RegExp from each of these at module load —
+  // it is reached through editOperations.ts's own bookPageNumbering.js import,
+  // which the addImageOperations.js mock below does not cut. Only their regex
+  // syntax matters here: nothing in this suite parses a page reference or a
+  // language name. Everything else this suite's graph imports from core is
+  // only called inside functions the tests never reach, so the bare-object
+  // mock stays bare.
+  BOOK_PAGE_WORD_PATTERN: "pages?",
   languageNamePattern: () => "language",
   // The real predicate is a pure payload flag read (`jobScope.ts`, covered by
   // its own suite); mirrored here rather than imported so this factory keeps

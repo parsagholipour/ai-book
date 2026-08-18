@@ -328,6 +328,7 @@ export type MobileBookEditOperationDto = {
     | "add_image"
     | "move_image"
     | "remove_image"
+    | "restructure_pages"
     | "manual_edit";
   status: "queued" | "active" | "applied" | "failed" | "canceled";
   affectedPageIndexes: number[];
@@ -367,6 +368,8 @@ export type MobileBookEditOperationDto = {
    * this reads as a charge the user never actually paid.
    */
   creditsRefunded: boolean;
+  /** Exact portion returned; smaller than `creditsCharged` for partial delivery. */
+  creditsRefundedAmount: number;
 };
 
 export type MobileEditDiffRunDto = {
@@ -529,6 +532,19 @@ export type MobileProjectStatusDto = {
   imageCount: number;
   quality: ProjectQualityStatus;
   exports: MobileExportSetDto;
+  /**
+   * True when printed numbers skip the cover. Emitted only with
+   * `pdfPageNumbering`, whose revision and digest bind the flag to the exact
+   * PDF publication it describes. Version-1 maps report false so chrome keeps
+   * physical numbering; a cover-numbering stub can still report the flag.
+   */
+  hasCoverPage?: boolean;
+  /** Exact publication identity of the stored PDF numbering/map. */
+  pdfPageNumbering?: {
+    hasCoverPage: boolean;
+    contentRevision: number;
+    pdfDigest: string;
+  };
   updatedAt: string;
 };
 

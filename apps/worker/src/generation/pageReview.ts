@@ -4,8 +4,14 @@ import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { uniqueStrings } from "../runtime/serialization.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
-import { enrichPageQualityReport, persistKeeperStoryDelta } from "./qualityEnrichment.js";
-import { retrieveSemanticResearchNotes, storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
+import { enrichPageQualityReport, keeperStoryExtractForSave, persistStoryExtract } from "./qualityEnrichment.js";
+import {
+  prepareEmbedding,
+  retrieveSemanticResearchNotes,
+  strategyUsesSemanticMemory,
+  updateEntityStateFromPage,
+  writePreparedEmbedding
+} from "./semanticMemory.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
   MAX_PAGE_QA_CANDIDATES,
@@ -82,6 +88,8 @@ export async function runPageQualityLoop(options: {
   /** The initial draft's review, produced by the caller. */
   report: PageQualityReport;
   previousPages: PriorPageContext[];
+  /** Prose that already exists after this page; set only when one is inserted. */
+  nextPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
   textModel: TextModelAdapter;
   generationJobId?: string | undefined;
@@ -95,6 +103,11 @@ export async function runPageQualityLoop(options: {
   retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
   /** Per-rewrite progress reporting, in the caller's own style. */
   onRewrite?: ((revision: number) => Promise<void>) | undefined;
+  /**
+   * Optional ownership fence. The loop itself writes nothing, but a brief
+   * repair does — see `repairPageBriefForRecovery`.
+   */
+  assertOwnership?: (() => Promise<void>) | undefined;
 }): Promise<PageQualityLoopOutcome> {
   let draft = options.draft;
   let report = options.report;
@@ -123,7 +136,8 @@ export async function runPageQualityLoop(options: {
         continuityNotes: options.continuityNotes,
         textModel: options.textModel,
         generationJobId: options.generationJobId,
-        context: options.reviseContext
+        context: options.reviseContext,
+        ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
       });
     }
     draft = await revisePageDraftWithRestart({
@@ -143,6 +157,7 @@ export async function runPageQualityLoop(options: {
         draft,
         report: pageRewriteReport(report, nextRevision, options.recoveryRevision ?? PAGE_QA_RECOVERY_CANDIDATE),
         previousPages: options.previousPages,
+        ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
         textModel: options.textModel,
         ...(options.styleExcerpts && options.styleExcerpts.length > 0 ? { styleExcerpts: options.styleExcerpts } : {}),
@@ -161,6 +176,7 @@ export async function runPageQualityLoop(options: {
       pageIndex: options.pageIndex,
       draft,
       previousPages: options.previousPages,
+      ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
       continuityNotes: options.continuityNotes,
       textModel: options.textModel,
       ...(options.styleExcerpts && options.styleExcerpts.length > 0 ? { styleExcerpts: options.styleExcerpts } : {})
@@ -174,6 +190,28 @@ export async function runPageQualityLoop(options: {
   return { approved: false, draft: best.draft, report: best.report, revision: best.revision, attempts: revision };
 }
 
+/**
+ * Reviews a drafted page, saves the keeper, and publishes everything the *next*
+ * pages read back from it: the keeper's story delta, its continuity notes, its
+ * entity state and its page embedding.
+ *
+ * That tail is why `assertOwnership` exists and why the function is shaped in
+ * two halves. A structural insert drafts under a durable delivery lease
+ * (`generation/structuralPageLease.ts`) which a stalled delivery can lose to a
+ * replacement mid-page, and the tail used to run entirely between the caller's
+ * fences: the fence sat before the page upsert and the caller's next one after
+ * the whole function, with a story-extract model call, an embedding call and
+ * four writes in between. A loser therefore published semantic state into a book
+ * another delivery owned, and later pages consumed it — the winner's manuscript
+ * carrying the loser's facts, notes and vectors, none of which the reader will
+ * ever see on a page. The page row itself is the one thing that does not matter
+ * there: it is keyed on project+index and the winner drafts the same ids.
+ *
+ * So every provider call the tail owes happens first, holding its result in
+ * memory and writing nothing; then one assertion; then only writes, with
+ * nothing slow between them. A delivery that has lost the lease stands down at
+ * an assertion having published none of it.
+ */
 export async function reviewAndSaveGeneratedPage(options: {
   projectId: string;
   planId: string;
@@ -188,12 +226,28 @@ export async function reviewAndSaveGeneratedPage(options: {
   chapterPageStart?: number | undefined;
   chapterPageEnd?: number | undefined;
   previousPages: PriorPageContext[];
+  /**
+   * Prose that already exists after this page and is not being rewritten. Empty
+   * for a book written front to back; set when a page is inserted into a
+   * finished one, so the draft lands into what the reader already has.
+   */
+  nextPages?: PriorPageContext[] | undefined;
   generationJobId?: string | undefined;
   /**
    * Callers whose charge never priced images (book continuation) opt out; the
    * page is still reviewed and saved identically.
    */
   illustrate?: boolean | undefined;
+  /**
+   * Optional ownership fence for callers whose writes follow a durable lease.
+   *
+   * Called before the page upsert, and again before the semantic tail — see the
+   * prepare/publish split below. It may throw, and a caller that fences with a
+   * lease it has lost is expected to: the throw stands this delivery down before
+   * it publishes anything, and the handler that owns the lease decides what that
+   * means for the book. Callers with no lease pass nothing and are unchanged.
+   */
+  assertOwnership?: (() => Promise<void>) | undefined;
 }): Promise<PriorPageContext> {
   const pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
   const continuityNotes = await loadContinuityNotes(options.projectId);
@@ -210,6 +264,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     pageIndex: options.draft.index,
     draft: options.draft,
     previousPages: options.previousPages,
+    ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
     continuityNotes,
     textModel: options.providers.text
   });
@@ -240,6 +295,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     draft: options.draft,
     report: enriched.report,
     previousPages: options.previousPages,
+    ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
     continuityNotes,
     textModel: options.providers.text,
     generationJobId: options.generationJobId,
@@ -261,7 +317,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     onRewrite: (nextRevision) =>
       updateJobProgress(options.generationJobId, {
         message: pageRevisionMessage(options.draft.index, nextRevision, MAX_PAGE_QA_REWRITE_ATTEMPTS)
-      })
+      }),
+    ...(options.assertOwnership ? { assertOwnership: options.assertOwnership } : {})
   });
   const { draft, revision, report: qualityReport } = outcome;
 
@@ -275,6 +332,8 @@ export async function reviewAndSaveGeneratedPage(options: {
   }
 
   const pageStatus = qualityReport.approved ? "COMPLETED" : "FAILED_QA";
+  const assertOwnership = options.assertOwnership;
+  await assertOwnership?.();
   const page = await prisma.page.upsert({
     where: { projectId_index: { projectId: options.projectId, index: options.draft.index } },
     create: {
@@ -301,7 +360,29 @@ export async function reviewAndSaveGeneratedPage(options: {
     }
   });
 
-  await persistKeeperStoryDelta({
+  const savedContext: PriorPageContext = {
+    index: options.draft.index,
+    title: draft.title,
+    markdown: draft.markdown,
+    summary: draft.summary
+  };
+
+  // Nothing semantic is even *computed* for a delivery that has already lost the
+  // row: the two provider calls below would be pure waste for it, and a barrier
+  // is one statement. The publish barrier further down is the load-bearing one.
+  await assertOwnership?.();
+
+  // ---- Prepare: every provider call the tail owes, and not one write. ----
+  //
+  // Story state, continuity notes, entity state and the page embedding are read
+  // back by *later* pages, so a delivery that has lost its lease publishing any
+  // of them poisons the winner's book with prose the reader will never see. The
+  // upsert above is the winner's to redo (it is keyed on project+index, and the
+  // winner drafts the same page ids); these are not — the notes and the
+  // embedding are appended, and the story state is merged. So the calls that
+  // take time happen here, holding their results in memory, and the writes all
+  // happen after one fresh assertion with nothing slow between them.
+  const keeperExtract = await keeperStoryExtractForSave({
     projectId: options.projectId,
     pageIndex: options.draft.index,
     draft,
@@ -313,22 +394,36 @@ export async function reviewAndSaveGeneratedPage(options: {
     currentState: enriched.storyState,
     quality
   });
+  // Embeddings and entity state are only read by sequential-pages jobs; the
+  // direct modes writing them paid one embedding per page for nothing.
+  const usesSemanticMemory = qualityReport.approved && strategyUsesSemanticMemory(options.strategy);
+  const preparedEmbedding = usesSemanticMemory
+    ? await prepareEmbedding(draft.summary, options.providers.embedding)
+    : null;
+
+  // ---- Publish: one verified claim, and then only writes. ----
+  await assertOwnership?.();
+
+  if (keeperExtract) {
+    await persistStoryExtract({
+      projectId: options.projectId,
+      pageIndex: options.draft.index,
+      plan: options.plan,
+      extract: keeperExtract
+    });
+  }
 
   if (!qualityReport.approved) {
     // Skip continuity notes, embeddings, and illustration for a flagged page;
     // the final review rewrites it and the repaired version feeds those steps.
-    return {
-      index: options.draft.index,
-      title: draft.title,
-      markdown: draft.markdown,
-      summary: draft.summary
-    };
+    return savedContext;
   }
 
   if (draft.continuityNotes.length > 0) {
     await prisma.continuityNote.createMany({
       data: draft.continuityNotes.map((body) => ({
         projectId: options.projectId,
+        pageId: page.id,
         scope: `page:${options.draft.index}`,
         body,
         tags: ["page", String(options.draft.index), options.strategy.id]
@@ -336,13 +431,13 @@ export async function reviewAndSaveGeneratedPage(options: {
     });
   }
 
-  // Embeddings and entity state are only read by sequential-pages jobs; the
-  // direct modes writing them paid one embedding per page for nothing.
-  if (strategyUsesSemanticMemory(options.strategy)) {
+  if (usesSemanticMemory) {
     if (draft.continuityNotes.length > 0) {
       await updateEntityStateFromPage(options.projectId, options.draft.index, draft.continuityNotes);
     }
-    await storeEmbedding(options.projectId, `page:${options.draft.index}`, page.id, draft.summary, options.providers.embedding);
+    if (preparedEmbedding) {
+      await writePreparedEmbedding(options.projectId, `page:${options.draft.index}`, page.id, draft.summary, preparedEmbedding);
+    }
   }
 
   if (options.illustrate !== false && draft.imagePrompt && options.strategy.shouldIllustratePage(options.input, options.plan, options.draft.index)) {
@@ -354,12 +449,7 @@ export async function reviewAndSaveGeneratedPage(options: {
     });
   }
 
-  return {
-    index: options.draft.index,
-    title: draft.title,
-    markdown: draft.markdown,
-    summary: draft.summary
-  };
+  return savedContext;
 }
 
 export async function revisePageDraftWithRestart(options: {
@@ -481,6 +571,8 @@ export async function repairPageBriefForRecovery(options: {
   textModel: TextModelAdapter;
   generationJobId?: string | undefined;
   context: string;
+  /** Ownership fence for the persisted repair; see the call site below. */
+  assertOwnership?: (() => Promise<void>) | undefined;
 }): Promise<PageProductionBeat> {
   await updateJobProgress(options.generationJobId, {
     message: `${options.context} brief conflict detected; repairing page brief before recovery rewrite.`
@@ -509,6 +601,13 @@ export async function repairPageBriefForRecovery(options: {
   replacePageBriefInChapterBrief(options.chapterBrief, repaired);
 
   if (options.chapterId) {
+    // The one write on the *drafting* side of the page save, and it is read back
+    // by every other page in the chapter, so it is fenced for the same reason
+    // the semantic tail is: the repair above is a model call, and a delivery
+    // that lost the book across it must not leave its opinion of the chapter's
+    // beats behind. The in-memory replacement above stays either way — it only
+    // steers this page's own remaining rewrites, which nobody else can see.
+    await options.assertOwnership?.();
     await casUpdateChapterProductionBrief(options.chapterId, repaired);
   }
 

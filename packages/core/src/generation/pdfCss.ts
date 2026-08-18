@@ -26,13 +26,16 @@ export const BOOK_PDF_CSS = `
   @page pdf-cover {
     size: A4;
     margin: 0;
+    /* The cover is not a numbered page: the next sheet prints as Page 1. */
+    counter-reset: page 0;
     @bottom-center {
       content: none;
     }
   }
-  /* Keeps the normal margins, drops only the footer: no book numbers its title page. */
+  /* Same skip as the cover: no book numbers its title page, and the next sheet is Page 1. */
   @page pdf-title {
     size: A4;
+    counter-reset: page 0;
     @bottom-center {
       content: none;
     }
@@ -55,18 +58,43 @@ export const BOOK_PDF_CSS = `
   h1 { font-size: 22pt; margin-top: 0; page-break-after: avoid; font-weight: 700; }
   h2 { font-size: 14pt; margin-top: 1.4em; page-break-after: avoid; font-weight: 700; }
   h3 { font-size: 12pt; page-break-after: avoid; font-weight: 700; }
+  /*
+   * Height, not min-height, and clipped like the cover sheet: the pdf-title
+   * page above resets the page counter on *every* sheet it names, so a title
+   * long enough to fragment would reset it twice and leave the book's first
+   * two sheets unnumbered — while printedPageOffset (pdfPageMap.ts) hardcodes
+   * one. Nothing caps a plan's title -- it is a bare z.string() in
+   * schemas/plan.ts -- and a 409-character one measurably fragmented: sheets 1
+   * and 2 both unnumbered, "Page 1" printed on sheet 3, every number the map,
+   * the Contents column and the chat speak one ahead of the footer. Capping the
+   * sheet costs an absurd title its tail; renumbering after it costs all three.
+   *
+   * The stack is centred by auto margins rather than justify-content: center,
+   * and that is the half that makes clipping survivable. A centred flex column
+   * overflows *both* ends, so overflow: hidden cut the opening off the top: a
+   * 30-clause title printed a sheet that began mid-title at clause 10. Auto
+   * margins collapse to zero once the free space is negative, which pins the
+   * stack to the top and clips only its tail — verified identical to the
+   * centred layout, to the point, for every title that fits.
+   */
   .book-title-page {
     page: pdf-title;
     box-sizing: border-box;
-    min-height: 245mm;
+    height: 245mm;
+    overflow: hidden;
     padding: 22mm 8mm 14mm;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     text-align: center;
     color: #211a14;
     break-after: page;
     page-break-after: always;
+  }
+  .book-title-page > :first-child {
+    margin-top: auto;
+  }
+  .book-title-page > :last-child {
+    margin-bottom: auto;
   }
   .book-title-page__title {
     margin: 0;

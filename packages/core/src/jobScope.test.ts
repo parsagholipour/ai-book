@@ -4,11 +4,13 @@ import {
   DETACHED_FROM_PROJECT_LIFECYCLE,
   MARKDOWN_RECOMPILE_WITHOUT_VERDICT,
   PRESENTATION_ONLY_RECOMPILE,
+  PRE_EDIT_PROJECT_STATUS,
   generationJobControlsProjectStatus,
   isDerivativeGenerationJobType,
   isDerivativeWorkerJobName,
   jobOwnsQualityVerdict,
   payloadOwnsProjectOutcome,
+  preEditProjectStatus,
   workerJobControlsProjectStatus,
   workerJobOwnsFailureLifecycle
 } from "./jobScope.js";
@@ -108,5 +110,21 @@ describe("jobOwnsQualityVerdict", () => {
     expect(jobOwnsQualityVerdict("COMPILE_EXPORT", null)).toBe(true);
     expect(jobOwnsQualityVerdict("COMPILE_EXPORT", [])).toBe(true);
     expect(jobOwnsQualityVerdict("COMPILE_EXPORT", "not-an-object")).toBe(true);
+  });
+});
+
+describe("preEditProjectStatus", () => {
+  it("reads back the status the book was in before the edit was queued", () => {
+    expect(preEditProjectStatus({ [PRE_EDIT_PROJECT_STATUS]: "REVIEW_REQUIRED" })).toBe("REVIEW_REQUIRED");
+    expect(preEditProjectStatus({ [PRE_EDIT_PROJECT_STATUS]: "COMPLETE" })).toBe("COMPLETE");
+  });
+
+  it("settles a job that never carried the key as COMPLETE", () => {
+    // What a job enqueued before the key existed means, and what almost every
+    // book is. Never EDITING: the point of the key is that the project already
+    // says that by the time anything reads it.
+    expect(preEditProjectStatus({ operationId: "op-1" })).toBe("COMPLETE");
+    expect(preEditProjectStatus({ [PRE_EDIT_PROJECT_STATUS]: "EDITING" })).toBe("COMPLETE");
+    expect(preEditProjectStatus(null)).toBe("COMPLETE");
   });
 });

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tomeza/features/projects/domain/project_models.dart';
 import 'package:tomeza/features/projects/presentation/credit_cost_badge.dart';
 import 'package:tomeza/shared/api/api_error.dart';
 
@@ -298,6 +299,40 @@ void main() {
     expect(find.text('80 credits'), findsOneWidget);
     expect(find.text('Credits pay for the writing'), findsOneWidget);
     expect(find.text('Failed updates are refunded'), findsOneWidget);
+  });
+
+  testWidgets('a partial delivery shows the kept and returned amounts', (
+    tester,
+  ) async {
+    final repository = ScriptedProjectsRepository()
+      ..withAppliedEditThenPendingProposal();
+    final operation = repository.operations.first;
+    repository.operations[0] = MobileBookEditOperation(
+      id: operation.id,
+      projectId: operation.projectId,
+      kind: operation.kind,
+      status: operation.status,
+      affectedPageIndexes: operation.affectedPageIndexes,
+      creditsCharged: 200,
+      creditsRefundedAmount: 120,
+      currentAction: operation.currentAction,
+      createdAt: operation.createdAt,
+    );
+    await tester.pumpWidget(chatApp(repository));
+    await tester.pumpAndSettle();
+
+    final kept = tester.widget<CreditCostBadge>(
+      find.byWidgetPredicate(
+        (widget) => widget is CreditCostBadge && widget.credits == 80,
+      ),
+    );
+    final refunded = tester.widget<CreditCostBadge>(
+      find.byWidgetPredicate(
+        (widget) => widget is CreditCostBadge && widget.credits == 120,
+      ),
+    );
+    expect(kept.kind, CreditCostKind.charged);
+    expect(refunded.kind, CreditCostKind.refunded);
   });
 
   testWidgets('an operation with no anchor still renders at the end', (

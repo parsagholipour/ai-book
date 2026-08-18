@@ -9,7 +9,14 @@ import { prisma } from "@book-maker/db";
 
 export async function loadContinuityNotes(projectId: string): Promise<string[]> {
   const continuity = await prisma.continuityNote.findMany({
-    where: { projectId },
+    where: {
+      projectId,
+      // Page-scoped rows that remain unowned cannot safely be matched back
+      // from `page:<index>`: an older structural edit may already have
+      // reused that index. Keep genuinely project-scoped legacy notes, but do
+      // not let ambiguous deleted-page prose enter a generation prompt.
+      NOT: { pageId: null, scope: { startsWith: "page:" } }
+    },
     orderBy: { createdAt: "desc" },
     take: 28
   });

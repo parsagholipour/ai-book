@@ -603,7 +603,7 @@ export async function generateBookWholePass(options: {
     }
 
     const pages: Array<{ id: string; index: number; summary: string; imagePrompt: string | null; revision: number }> = [];
-    const continuityNotes: Array<{ scope: string; body: string; tags: string[] }> = [];
+    const continuityNotes: Array<{ pageId: string; scope: string; body: string; tags: string[] }> = [];
     for (const reviewedPage of reviewedPages) {
       const pageDraft = reviewedPage.draft;
       const chapterIndex = chapterRanges.find(
@@ -632,6 +632,7 @@ export async function generateBookWholePass(options: {
       });
       for (const body of pageDraft.continuityNotes) {
         continuityNotes.push({
+          pageId: page.id,
           scope: `page:${pageDraft.index}`,
           body,
           tags: ["page", String(pageDraft.index), "whole-book"]

@@ -89,8 +89,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   /// One set of viewer parameters per gesture mode and per look — see
   /// [_viewerParams]. The look is part of the key because the params carry
   /// colours, and a map keyed on the mode alone hands back yesterday's theme.
-  final Map<(ReaderViewerMode, Brightness, bool, _ReaderPageMetrics),
-  PdfViewerParams>
+  final Map<
+    (ReaderViewerMode, Brightness, bool, _ReaderPageMetrics),
+    PdfViewerParams
+  >
   _paramsByMode = {};
 
   /// Paint order: the tint colours the paper, markup goes on top of it, and
@@ -204,6 +206,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       oldWidget.loader.removeListener(_onLoaderChanged);
       widget.loader.addListener(_onLoaderChanged);
     }
+    _rememberOpenFileCoverPage();
     _syncDocument();
   }
 
@@ -235,6 +238,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       // known; existing marks are re-anchored separately below.
       _annotations.setDisplayedRevision(exactRevision);
     }
+    _rememberOpenFileCoverPage();
     if (mounted) setState(() {});
   }
 
@@ -266,8 +270,38 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   void _syncDocument() {
     final loader = widget.loader;
     if (loader.document == null && loader.stage == ReaderLoadStage.idle) {
-      unawaited(loader.load(widget.export));
+      unawaited(
+        loader.load(
+          widget.export,
+          pageNumbering: widget.status.pdfPageNumbering,
+        ),
+      );
     }
+  }
+
+  /// Stamps cover-skip onto the open file while the map in force still
+  /// describes it — [coverPageMapDescribes], the same predicate chrome falls
+  /// back to when nothing has been stamped.
+  ///
+  /// After publish the status flag follows the new map, so this must not run
+  /// against a stale file: the stamp already on the cache is what chrome
+  /// keeps using.
+  void _rememberOpenFileCoverPage() {
+    final document = widget.loader.document;
+    if (document == null || document.hasCoverPage != null) {
+      return;
+    }
+    // No flag is "no map answered for this compile", not "the cover is
+    // numbered". A stamp is permanent — neither the loader nor the cache
+    // overwrites one — so writing false here would freeze physical numbers
+    // onto a book whose map simply had not arrived yet. Unstamped already
+    // renders as physical numbers via [displayedHasCoverPage], and stays
+    // correctable when the flag does turn up.
+    final numbering = widget.status.pdfPageNumbering;
+    if (numbering == null) {
+      return;
+    }
+    widget.loader.stampHasCoverPage(numbering);
   }
 
   /// Writes the reading position, once there is one worth writing.
@@ -428,9 +462,38 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   int? get _renderedExactRevision =>
       widget.loader.exactRevisionForProject(widget.projectId);
 
+  String? get _renderedDigest =>
+      widget.loader.digestForProject(widget.projectId);
+
   int? get _mappingRevision => widget.loader.mappingRevisionFor(
     expectedProjectId: widget.projectId,
     offeredRevision: widget.export.revision,
+  );
+
+  /// The open file's identity, and only while the map in force describes it.
+  ///
+  /// This is what lets a selection send the physical sheet it was read from.
+  /// [_mappingRevision] cannot: a repair republishes the same revision over
+  /// different bytes, so it keeps answering while sheet numbers have stopped
+  /// meaning the same pages. Null leaves the selection on the model page its
+  /// own locator resolved, which no republication moves.
+  String? get _mappedPdfDigest => widget.loader.mappedPdfDigestFor(
+    expectedProjectId: widget.projectId,
+    pageNumbering: widget.status.pdfPageNumbering,
+  );
+
+  /// Cover-skip for the file on screen, not for the compile status is offering.
+  ///
+  /// Mapping already refuses the offered compile when [_renderedExactRevision]
+  /// disagrees with it. Numbering keys off the stamp on the open file so a
+  /// newly published version-2 map cannot skip sheet 1 of a still-open PDF
+  /// that already does — or force physical numbers onto one whose footer
+  /// already skips the cover.
+  bool get _hasCoverPage => displayedHasCoverPage(
+    cachedHasCoverPage: widget.loader.document?.hasCoverPage,
+    renderedDigest: _renderedDigest,
+    statusHasCoverPage: widget.status.pdfPageNumbering?.hasCoverPage,
+    pageNumbering: widget.status.pdfPageNumbering,
   );
 
   bool get _canUseCurrentBook => _mappingRevision != null;
@@ -495,7 +558,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     if (!widget.export.available) {
       return ReaderUpdateStatus.rebuilding;
     }
-    return widget.loader.isStale(widget.export)
+    return widget.loader.isStale(
+          widget.export,
+          pageNumbering: widget.status.pdfPageNumbering,
+        )
         ? ReaderUpdateStatus.updated
         : ReaderUpdateStatus.none;
   }
@@ -513,7 +579,10 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     if (!mounted) return;
     _resumeBookPage = bookPage;
     setState(() => _updateDismissed = false);
-    await widget.loader.reload(widget.export);
+    await widget.loader.reload(
+      widget.export,
+      pageNumbering: widget.status.pdfPageNumbering,
+    );
     if (!mounted) return;
     if (page != null) {
       setState(() => _state = _state.copyWith(lastPage: page));
@@ -611,6 +680,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     state: _state,
     outline: _outline,
     currentRevision: _renderedExactRevision,
+    hasCoverPage: _hasCoverPage,
     onStateChanged: (state) {
       setState(() => _state = state);
       _persistState();
@@ -629,6 +699,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     canModifyPlacement: () => _canCreateMarkup,
     isMounted: () => mounted,
     onGoToPage: (page) => unawaited(_goToPage(page)),
+    hasCoverPage: _hasCoverPage,
   );
 
   // ------------------------------------------------------------------ wakelock

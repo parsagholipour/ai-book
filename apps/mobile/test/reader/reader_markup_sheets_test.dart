@@ -81,6 +81,48 @@ void main() {
       expect((tiles.last.title! as Text).data, 'the later passage');
     });
 
+    testWidgets('subtitles skip the cover sheet', (tester) async {
+      await pumpSheet(
+        tester,
+        ReaderAnnotationsSheet(
+          annotations: [highlight(page: 3, quote: 'chapter one')],
+          palette: palette,
+          hasCoverPage: true,
+          onSelect: (_) {},
+          onRemove: (_) {},
+          onShareAll: () {},
+          canUndo: false,
+          onUndo: () {},
+        ),
+      );
+
+      expect(find.text('chapter one'), findsOneWidget);
+      expect(find.text('Page 2'), findsOneWidget);
+      expect(find.textContaining('Page 3'), findsNothing);
+    });
+
+    testWidgets('empty markup titles the kind, not the physical sheet', (
+      tester,
+    ) async {
+      await pumpSheet(
+        tester,
+        ReaderAnnotationsSheet(
+          annotations: [highlight(page: 3, quote: '')],
+          palette: palette,
+          hasCoverPage: true,
+          onSelect: (_) {},
+          onRemove: (_) {},
+          onShareAll: () {},
+          canUndo: false,
+          onUndo: () {},
+        ),
+      );
+
+      expect(find.text('Highlight'), findsOneWidget);
+      expect(find.text('Page 2'), findsOneWidget);
+      expect(find.textContaining('Page 3'), findsNothing);
+    });
+
     testWidgets('separates markup that came loose, and will not jump to it', (
       tester,
     ) async {
@@ -181,6 +223,29 @@ Page 9
       expect(text, contains('(Drawing)'));
     });
 
+    test('headings skip the cover sheet', () {
+      final text = readerMarkupShareText(
+        bookTitle: 'The Race',
+        hasCoverPage: true,
+        annotations: [highlight(page: 3, quote: 'chapter one')],
+      );
+
+      expect(text, contains('Page 2'));
+      expect(text, isNot(contains('Page 3')));
+    });
+
+    test('empty markup is listed as the kind, not the physical sheet', () {
+      final text = readerMarkupShareText(
+        bookTitle: 'The Race',
+        hasCoverPage: true,
+        annotations: [highlight(page: 3, quote: '')],
+      );
+
+      expect(text, contains('Page 2'));
+      expect(text, contains('(Highlight)'));
+      expect(text, isNot(contains('Page 3')));
+    });
+
     test('an untitled book still gets a heading', () {
       expect(
         readerMarkupShareText(bookTitle: '', annotations: [highlight()]),
@@ -208,6 +273,22 @@ Page 9
       // A highlight has no text of its own to edit and nothing to move.
       expect(find.text('Edit note'), findsNothing);
       expect(find.text('Move it'), findsNothing);
+    });
+
+    testWidgets('the heading skips the cover sheet', (tester) async {
+      await pumpSheet(
+        tester,
+        ReaderAnnotationSheet(
+          annotation: highlight(),
+          palette: palette,
+          editingEnabled: true,
+          hasCoverPage: true,
+          onColorChanged: (_) {},
+        ),
+      );
+
+      expect(find.text('Highlight · page 2'), findsOneWidget);
+      expect(find.text('Highlight · page 3'), findsNothing);
     });
 
     testWidgets('a note can be rewritten and moved', (tester) async {

@@ -1,8 +1,80 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { scriptProfileForLanguage } from "../prompting/script.js";
 import { BOOK_PDF_CSS, bookPdfCss } from "./pdfCss.js";
 
+/**
+ * `BOOK_PDF_CSS` with its comments, its indentation and its colour values gone.
+ *
+ * Everything that survives either sizes a box, names a page, sets a metric that
+ * decides where a line wraps, or controls fragmentation — so the digest below
+ * fires on anything that can move a page break and stays quiet for a recolour.
+ * Subtractive rather than an allowlist of interesting properties, because a
+ * property nobody thought of is then in scope by default: that is the only way
+ * round a tripwire can fail safe.
+ *
+ * Only the colour *value* is dropped, not the declaration, so moving a colour
+ * from `color` to `background` still fires.
+ */
+function pageGeometryProjection(css: string): string {
+  return css
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/#[0-9a-f]{3,8}\b/gi, "")
+    .split("\n")
+    .map((line) => line.trim().replace(/\s+/g, " "))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
+ * Recorded, never derived. Recompute it only after rendering the fixture corpus
+ * on both sides — `pnpm render:fixtures --baseline HEAD …` then `--compare`, per
+ * the `verify-pdf-typography` skill. A digest bumped without that render is the
+ * silent re-typeset this assertion exists to catch.
+ */
+const PAGE_GEOMETRY_SHA256 = "d00492477ab6888a4090f47418bb2e9c6d1327365f2bdf168d7d5fdc4b31a68d";
+
 describe("bookPdfCss", () => {
+  it("still lays every book out on the same page boxes", () => {
+    // The sibling alarm to pdfDocument.test.ts's stylesheet digests, which pin
+    // md-to-pdf's *bundled* sheets and say nothing about this one. A page-box
+    // rule here — the @page margins and counter resets, the title sheet's
+    // clipped height, the Contents furniture, the cover geometry — re-typesets
+    // every book ever compiled, and nothing else in the repo notices: pdf.test.ts
+    // records one page count, for one twelve-chapter book, and skips itself
+    // without poppler-utils.
+    //
+    // This firing is not a failure. It means: render the corpus, look at the
+    // comparison, then record the new digest with what the comparison said.
+    expect(createHash("sha256").update(pageGeometryProjection(BOOK_PDF_CSS), "utf8").digest("hex")).toBe(
+      PAGE_GEOMETRY_SHA256
+    );
+  });
+
+  it("keeps the alarm above pointed at geometry rather than at colour", () => {
+    // A recolour must not fire it, or the digest becomes something people bump
+    // without rendering anything.
+    const recoloured = BOOK_PDF_CSS.replace(/#[0-9a-f]{6}\b/gi, "#000000");
+    expect(recoloured).not.toBe(BOOK_PDF_CSS);
+    expect(pageGeometryProjection(recoloured)).toBe(pageGeometryProjection(BOOK_PDF_CSS));
+
+    // Everything that sizes a sheet must.
+    for (const [from, to] of [
+      ["margin: 20mm 18mm 22mm", "margin: 20mm 18mm 21mm"],
+      ["height: 245mm", "height: 246mm"],
+      ["counter-reset: page 0", "counter-reset: page 1"],
+      ["overflow: hidden", "overflow: visible"],
+      ["margin-top: auto", "margin-top: 0"],
+      ["font-size: 34pt", "font-size: 35pt"]
+    ] as const) {
+      // replaceAll: several of these appear in a comment above the rule they
+      // explain, and a comment is exactly what the projection drops.
+      const moved = BOOK_PDF_CSS.replaceAll(from, to);
+      expect(moved, from).not.toBe(BOOK_PDF_CSS);
+      expect(pageGeometryProjection(moved), from).not.toBe(pageGeometryProjection(BOOK_PDF_CSS));
+    }
+  });
+
   it("returns the base stylesheet unchanged for a Latin book", () => {
     // The strongest no-regression guarantee available: overrides are appended,
     // never interleaved, so a new script cannot reach an English book.
@@ -34,9 +106,29 @@ describe("bookPdfCss", () => {
     // drops its footer, and a named selector outranks the bare one.
     expect(BOOK_PDF_CSS).toMatch(/\.book-title-page \{[^}]*page: pdf-title/);
     expect(BOOK_PDF_CSS).toMatch(/@page pdf-title \{[\s\S]*?content: none/);
+    expect(BOOK_PDF_CSS).toMatch(/@page pdf-cover \{[\s\S]*?counter-reset:\s*page 0/);
+    expect(BOOK_PDF_CSS).toMatch(/@page pdf-title \{[\s\S]*?counter-reset:\s*page 0/);
+    // The special `page` counter is a page-box property. The named @page
+    // rules above are the mechanism the cover and title-page renders lock.
+    expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page \{[^}]*counter-reset/);
+    expect(BOOK_PDF_CSS).not.toMatch(/\.pdf-cover-page \{[^}]*counter-reset/);
     // No break-before: the cover ahead of it already breaks after itself, and
     // a title page with no cover is the first thing on page one.
     expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page \{[^}]*break-before/);
+    // And exactly one sheet, clipped like the cover: @page pdf-title resets the
+    // counter on every sheet it names, so a title page that fragmented would
+    // leave two unnumbered sheets where printedPageOffset counts one.
+    expect(BOOK_PDF_CSS).toMatch(/\.book-title-page \{[^}]*height: 245mm/);
+    expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page \{[^}]*min-height/);
+    expect(BOOK_PDF_CSS).toMatch(/\.book-title-page \{[^}]*overflow: hidden/);
+    // Centred by auto margins, and *not* by justify-content: a centred flex
+    // column overflows both ends, so the clip above cut the opening off the top
+    // — a 30-clause title printed a sheet beginning mid-title at clause 10.
+    // Auto margins collapse to zero on negative free space, so the stack pins to
+    // the top and only its tail is lost.
+    expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page \{[^}]*justify-content/);
+    expect(BOOK_PDF_CSS).toMatch(/\.book-title-page > :first-child \{[^}]*margin-top: auto/);
+    expect(BOOK_PDF_CSS).toMatch(/\.book-title-page > :last-child \{[^}]*margin-bottom: auto/);
     // A name is not chrome — nothing here to undo per script.
     expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page__byline \{[^}]*letter-spacing/);
     expect(BOOK_PDF_CSS).not.toMatch(/\.book-title-page__byline \{[^}]*text-transform/);

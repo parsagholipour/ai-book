@@ -8,6 +8,7 @@ export function staleGenerationTargetReason(input: {
   pageProjectId: string | null;
   contentRevision: number | null;
   projectContentRevision: number;
+  jobCreatedCurrentPlan?: boolean;
 }): string | null {
   if (input.durableProjectId !== input.payloadProjectId) {
     return "The job targets a different project than its durable record.";
@@ -20,7 +21,12 @@ export function staleGenerationTargetReason(input: {
     "COMPILE_EXPORT",
     "APPLY_BOOK_EDIT"
   ]);
-  if (input.planId && planBoundTypes.has(input.type) && input.currentPlanId !== input.planId) {
+  if (
+    input.planId &&
+    planBoundTypes.has(input.type) &&
+    input.currentPlanId !== input.planId &&
+    !(input.type === "APPLY_BOOK_EDIT" && input.jobCreatedCurrentPlan)
+  ) {
     return "The job targets a superseded book plan.";
   }
   if (input.pageId && input.pageProjectId !== input.payloadProjectId) {

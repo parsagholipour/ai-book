@@ -52,7 +52,7 @@ abstract interface class ProjectsRepository {
     String? requestId,
     String? replyToMessageId,
     List<String>? mentionedCharacterIds,
-    Map<String, int>? readerContext,
+    Map<String, Object>? readerContext,
   });
 
   Future<MobileProjectChatSendResult> editProjectChatMessage({
@@ -284,7 +284,7 @@ class MobileProjectsRepository implements ProjectsRepository {
     String? requestId,
     String? replyToMessageId,
     List<String>? mentionedCharacterIds,
-    Map<String, int>? readerContext,
+    Map<String, Object>? readerContext,
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/projects/$projectId/chat/messages',

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   markGenerationAttemptActive: vi.fn(),
   markGenerationAttemptSucceeded: vi.fn(),
   refundCreditLedgerEntry: vi.fn(),
+  refundCreditLedgerEntryPortion: vi.fn(),
   refundLatestProjectOperationCredits: vi.fn()
 }));
 
@@ -54,10 +55,20 @@ vi.mock("@book-maker/db/billing", () => ({
   markGenerationAttemptActive: mocks.markGenerationAttemptActive,
   markGenerationAttemptSucceeded: mocks.markGenerationAttemptSucceeded,
   refundCreditLedgerEntry: mocks.refundCreditLedgerEntry,
+  refundCreditLedgerEntryPortion: mocks.refundCreditLedgerEntryPortion,
   refundLatestProjectOperationCredits: mocks.refundLatestProjectOperationCredits
 }));
 
-import { markActive, markCompleted, markFailed, markRecovering, markStopped, staleGenerationJobReason } from "./jobLifecycle.js";
+import {
+  markActive,
+  markCompleted,
+  markFailed,
+  markRecovering,
+  markStopped,
+  refundSkippedEditOperation,
+  refundUnwrittenEditPages,
+  staleGenerationJobReason
+} from "./jobLifecycle.js";
 
 describe("job lifecycle ownership", () => {
   beforeEach(() => {
@@ -461,6 +472,51 @@ describe("job lifecycle ownership", () => {
     await expect(staleGenerationJobReason(job("generate-page", { planId: "plan-1" }))).resolves.toBeNull();
   });
 
+  it.each(["ACTIVE", "APPLIED"])(
+    "lets an %s stamped structural edit resume after creating the project's current plan",
+    async (operationStatus) => {
+      mocks.projectFindUnique.mockResolvedValue({ currentPlanId: "plan-2", contentRevision: 0 });
+      mocks.generationJobFindUnique.mockResolvedValue({
+        projectId: "project-1",
+        type: "APPLY_BOOK_EDIT",
+        contentRevision: null,
+        status: "ACTIVE"
+      });
+      mocks.bookEditOperationFindUnique.mockResolvedValue({
+        projectId: "project-1",
+        generationJobId: "job-apply-book-edit",
+        kind: "RESTRUCTURE_PAGES",
+        status: operationStatus,
+        classifier: { structuralApplication: structuralApplication() }
+      });
+
+      await expect(
+        staleGenerationJobReason(job("apply-book-edit", { operationId: "op-1", planId: "plan-1" }))
+      ).resolves.toBeNull();
+    }
+  );
+
+  it("keeps unrelated apply-book-edit jobs stale after the current plan changes", async () => {
+    mocks.projectFindUnique.mockResolvedValue({ currentPlanId: "plan-2", contentRevision: 0 });
+    mocks.generationJobFindUnique.mockResolvedValue({
+      projectId: "project-1",
+      type: "APPLY_BOOK_EDIT",
+      contentRevision: null,
+      status: "ACTIVE"
+    });
+    mocks.bookEditOperationFindUnique.mockResolvedValue({
+      projectId: "project-1",
+      generationJobId: "job-apply-book-edit",
+      kind: "PAGE_REWRITE",
+      status: "ACTIVE",
+      classifier: { structuralApplication: structuralApplication() }
+    });
+
+    await expect(
+      staleGenerationJobReason(job("apply-book-edit", { operationId: "op-1", planId: "plan-1" }))
+    ).resolves.toBe("The job targets a superseded book plan.");
+  });
+
   it("preserves project recovery, failure and stop transitions for book jobs", async () => {
     await markRecovering(job("generate-book"), new Error("network interruption"));
     expect(mocks.projectUpdate).toHaveBeenCalledWith({
@@ -558,6 +614,110 @@ describe("job lifecycle ownership", () => {
 
     expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
   });
+
+  it("closes the attempt behind an edit that applied nothing, so success cannot commit its charge", async () => {
+    await refundSkippedEditOperation(
+      job("apply-book-edit", { operationId: "op-1", attemptId: "attempt-1" }),
+      "Structural edit skipped: unknown_pages"
+    );
+
+    // CANCELED, not FAILED — nothing broke — and terminal, which is what stops
+    // the markCompleted that follows from marking it SUCCEEDED over a spend
+    // this just reversed.
+    expect(mocks.failGenerationAttempt).toHaveBeenCalledWith(
+      "attempt-1",
+      "Structural edit skipped: unknown_pages",
+      "CANCELED"
+    );
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+  });
+
+  it("refunds an attempt-less skipped edit through the operation's own entry", async () => {
+    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: "ledger-op" });
+
+    await refundSkippedEditOperation(job("apply-book-edit", { operationId: "op-1" }), "skipped");
+
+    expect(mocks.refundCreditLedgerEntry).toHaveBeenCalledWith("ledger-op", "skipped");
+    expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
+  });
+
+  it("refunds only the pages an insert billed and did not write", async () => {
+    // 5 pages at 40 credits each; two of them were written. The share the three
+    // missing pages carried is exactly their share of the pages, because
+    // `restructure_pages` is priced per page with no flat half.
+    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: "ledger-op", creditsCharged: 200 });
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await refundUnwrittenEditPages(job("apply-book-edit", { operationId: "op-1", attemptId: "attempt-1" }), {
+      billedPages: 5,
+      writtenPages: 2,
+      reason: "wrote 2 of 5"
+    });
+
+    expect(mocks.refundCreditLedgerEntryPortion).toHaveBeenCalledWith({
+      entryId: "ledger-op",
+      amountCredits: 120,
+      reason: "wrote 2 of 5",
+      idempotencyKey: "edit-page-shortfall:op-1"
+    });
+    // The attempt is left open: this edit delivered, so `markCompleted` still
+    // owns it. Cancelling it here would make the whole spend reversible.
+    expect(mocks.failGenerationAttempt).not.toHaveBeenCalled();
+    expect(mocks.refundCreditLedgerEntry).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("touches nothing when an edit wrote every page it billed, or billed none", async () => {
+    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: "ledger-op", creditsCharged: 200 });
+
+    const delivered = job("apply-book-edit", { operationId: "op-1" });
+    await refundUnwrittenEditPages(delivered, { billedPages: 5, writtenPages: 5, reason: "all written" });
+    // A free delete or move: no pages billed, so there is no share to give back.
+    await refundUnwrittenEditPages(delivered, { billedPages: 0, writtenPages: 0, reason: "nothing billed" });
+
+    expect(mocks.bookEditOperationFindUnique).not.toHaveBeenCalled();
+    expect(mocks.refundCreditLedgerEntryPortion).not.toHaveBeenCalled();
+  });
+
+  it("keeps a shortfall refund out of an unbilled edit's way", async () => {
+    // A structural edit that cost nothing has no entry to draw a share from,
+    // and asking for one would refund against whatever the row last held.
+    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: null, creditsCharged: 0 });
+
+    await refundUnwrittenEditPages(job("apply-book-edit", { operationId: "op-1" }), {
+      billedPages: 3,
+      writtenPages: 1,
+      reason: "wrote 1 of 3"
+    });
+
+    expect(mocks.refundCreditLedgerEntryPortion).not.toHaveBeenCalled();
+  });
+
+  it("lets a failed shortfall refund throw, for the reason a skipped edit's does", async () => {
+    mocks.bookEditOperationFindUnique.mockResolvedValue({ ledgerEntryId: "ledger-op", creditsCharged: 200 });
+    mocks.refundCreditLedgerEntryPortion.mockRejectedValue(new Error("ledger unavailable"));
+    const logged = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(
+      refundUnwrittenEditPages(job("apply-book-edit", { operationId: "op-1" }), {
+        billedPages: 5,
+        writtenPages: 2,
+        reason: "wrote 2 of 5"
+      })
+    ).rejects.toThrow("ledger unavailable");
+    logged.mockRestore();
+  });
+
+  it("lets a failed settlement of a skipped edit throw, rather than keeping the charge quietly", async () => {
+    // The caller has not settled its operation yet, so the throw reaches
+    // markFailed, which asks for the same refund against a row still ACTIVE.
+    mocks.failGenerationAttempt.mockRejectedValue(new Error("ledger unavailable"));
+
+    await expect(
+      refundSkippedEditOperation(job("apply-book-edit", { operationId: "op-1", attemptId: "attempt-1" }), "skipped")
+    ).rejects.toThrow("ledger unavailable");
+  });
 });
 
 function job(name: string, data: Record<string, unknown> = {}) {
@@ -567,4 +727,18 @@ function job(name: string, data: Record<string, unknown> = {}) {
     attemptsMade: 0,
     opts: { attempts: 3 }
   } as never;
+}
+
+function structuralApplication() {
+  return {
+    action: "insert",
+    pageOrderBefore: [{ pageId: "page-1", index: 1 }],
+    insertedPageIds: ["page-2"],
+    removedPages: [],
+    basePlanVersionId: "plan-1",
+    newPlanVersionId: "plan-2",
+    previousTargetPages: 1,
+    previousChapterTargetPages: {},
+    appliedAt: "2026-08-18T00:00:00.000Z"
+  };
 }

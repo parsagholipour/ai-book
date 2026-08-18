@@ -28,6 +28,7 @@ Future<Size> pumpBar(
   int pageCount = 13,
   String? chapterTitle,
   bool bookmarked = false,
+  bool hasCoverPage = false,
   VoidCallback? onContents,
   VoidCallback? onToggleBookmark,
   VoidCallback? onListen,
@@ -49,6 +50,7 @@ Future<Size> pumpBar(
           pageCount: pageCount,
           chapterTitle: chapterTitle,
           bookmarked: bookmarked,
+          hasCoverPage: hasCoverPage,
           onContents: onContents ?? () {},
           onToggleBookmark: onToggleBookmark ?? () {},
           onListen: onListen ?? () {},
@@ -119,6 +121,29 @@ void main() {
     expect(find.text('Page 2 of 13 · 15%'), findsOneWidget);
     // Buttons still there — the chapter is what is missing, not the bar.
     expect(find.byIcon(Icons.list_alt_outlined), findsOneWidget);
+  });
+
+  testWidgets('skips the cover in displayed numbers', (tester) async {
+    final annotations = await _annotations();
+    addTearDown(annotations.dispose);
+
+    await pumpBar(
+      tester,
+      annotations: annotations,
+      currentPage: 1,
+      pageCount: 10,
+      hasCoverPage: true,
+    );
+    expect(find.text('Cover · 10%'), findsOneWidget);
+
+    await pumpBar(
+      tester,
+      annotations: annotations,
+      currentPage: 2,
+      pageCount: 10,
+      hasCoverPage: true,
+    );
+    expect(find.text('Page 1 of 9 · 20%'), findsOneWidget);
   });
 
   testWidgets('says nothing about a position it does not have yet', (

@@ -73,7 +73,12 @@ class _EditChangesBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (changes.isEmpty) {
+    // A structural edit lists no pages and never will: it changed which pages
+    // the book has rather than what any page says, so there is no before and
+    // after to diff. "Nothing was changed" is the one thing that must not be
+    // said about a page that was added, removed or moved — the summary card
+    // names what happened instead, and carries the words gained or lost.
+    if (changes.isEmpty && changes.kind != 'restructure_pages') {
       return RefreshIndicator(
         onRefresh: () async => onRefresh(),
         child: ListView(
@@ -288,6 +293,18 @@ class _PageChangeSection extends StatelessWidget {
 }
 
 String _summaryTitle(MobileEditChanges changes) {
+  // A structural edit lists no diffs at all, whichever action it was: it
+  // changed which pages the book has rather than what any page says, so it
+  // snapshots nothing — an inserted page has no "before" to compare against, a
+  // deleted one has no row left to list, and a moved one reads exactly as it
+  // did. The count is therefore always zero, and saying "no pages changed"
+  // about an edit that added three is the one thing this card must not do, so
+  // it names what happened instead. The words gained or lost sit beside this
+  // line; the payload carries no action to tell insert from delete from move,
+  // and the request above already says which one the reader asked for.
+  if (changes.kind == 'restructure_pages') {
+    return 'The book’s pages changed';
+  }
   final pageCount = changes.pages.length;
   final illustrationOnly =
       changes.pages.isNotEmpty &&

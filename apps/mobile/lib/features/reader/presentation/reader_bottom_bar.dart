@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../domain/reader_models.dart';
 import 'reader_annotation_controller.dart';
 import 'reader_annotation_painter.dart';
 import 'reader_markup_toolbar.dart';
@@ -26,6 +27,7 @@ class ReaderBottomChrome extends StatelessWidget {
     required this.onContents,
     required this.onToggleBookmark,
     required this.onListen,
+    this.hasCoverPage = false,
     super.key,
   });
 
@@ -33,6 +35,9 @@ class ReaderBottomChrome extends StatelessWidget {
   final List<ReaderMarkupColor> palette;
   final int currentPage;
   final int pageCount;
+
+  /// Whether PDF sheet 1 is an unnumbered cover. Displayed numbers skip it.
+  final bool hasCoverPage;
 
   /// The chapter the reader is in, or null when the book has no usable
   /// outline — books compiled before bookmarks were emitted have none.
@@ -151,6 +156,11 @@ class ReaderBottomChrome extends StatelessWidget {
     final theme = Theme.of(context);
     final page = currentPage.clamp(1, pageCount);
     final percent = ((page / pageCount) * 100).round();
+    final position = printedPagePositionLabel(
+      page,
+      pageCount,
+      hasCoverPage: hasCoverPage,
+    );
     return Column(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -164,7 +174,7 @@ class ReaderBottomChrome extends StatelessWidget {
             style: theme.textTheme.labelMedium,
           ),
         Text(
-          'Page $page of $pageCount · $percent%',
+          '$position · $percent%',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,

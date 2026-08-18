@@ -1,6 +1,7 @@
 import type { MobileProjectStatusDto, ProjectStatusResult } from "./dto.js";
 import { compilePhrase } from "./generationProgress.js";
 import { jsonRecord } from "./support.js";
+import type { StructuralPageAction } from "@book-maker/core";
 
 /**
  * Live progress for an edit to a finished book, the way `generationProgress`
@@ -50,6 +51,40 @@ const STEP_LABELS: Record<EditJobType, Partial<Record<EditStepKey, string>>> = {
     generate: "Starting the rewrite"
   }
 };
+
+/**
+ * What the `snapshot` step means to the structural fork, which snapshots
+ * nothing.
+ *
+ * `restructurePages.ts` is a *fork* of `apply-book-edit` rather than a job type
+ * of its own, so it walks that job's step keys — but it spends this one shifting
+ * page indexes, and a structural edit writes **no** `PageEditSnapshot` rows at
+ * all (which is why `editChangesAvailable` reads its classifier stamp instead of
+ * counting them). The shared label therefore promised a version to undo that
+ * nothing was saving, and contradicted the worker's own step title.
+ *
+ * Those titles cannot be the source: `advanceJobStep` puts them in
+ * `GenerationJob.message`, which these serializers never forward. So the words
+ * live here like every other reader-facing phrase, keyed off what the Apply
+ * itself stamped on the payload when it enqueued the job — the same
+ * `intentKind`/`structuralEdit` pair the admin operations map already reads,
+ * rather than a second guess at which fork this is.
+ */
+const STRUCTURAL_STEP_LABELS: Record<StructuralPageAction, string> = {
+  insert: "Making room for the new pages",
+  delete: "Taking the pages out",
+  move: "Moving the pages"
+};
+
+/**
+ * A structural job whose payload no longer names the action.
+ *
+ * The payload copy of `structuralEdit` is the one the worker treats as
+ * optional — a hand-requeue or a trimmed payload still arrives, and the handler
+ * reads the request back off the classifier, which no status read holds. True
+ * of all three actions, so it degrades rather than guesses.
+ */
+const STRUCTURAL_STEP_FALLBACK = "Changing your book's pages";
 
 /**
  * The milestones each edit job walks, in order.
@@ -128,7 +163,7 @@ function fromEditJob(job: StatusJob): EditProgressDto {
 
 function fromRebuild(compile: StatusJob, finished: StatusJob | undefined): EditProgressDto {
   const rebuildStep: EditStep = { key: "export", label: "Rebuilding your book", status: "active", detail: null };
-  const labels = finished ? STEP_LABELS[finished.type as EditJobType] : null;
+  const labels = finished ? stepLabels(finished, finished.type as EditJobType) : null;
   const total = finished ? affectedPageCount(finished) : 0;
   return {
     percent: rebuildPercent(compile),
@@ -186,7 +221,7 @@ function openCompileJob(status: ProjectStatusResult): StatusJob | undefined {
  * card that opens as a bare bar tells the reader nothing about what is coming.
  */
 function readSteps(job: StatusJob, type: EditJobType): EditStep[] {
-  const labels = STEP_LABELS[type];
+  const labels = stepLabels(job, type);
   if (job.steps.length === 0) {
     return STEP_ORDER[type].flatMap((key, index) => {
       const label = labels[key];
@@ -205,6 +240,30 @@ function readSteps(job: StatusJob, type: EditJobType): EditStep[] {
     steps.push({ key: step.key, label, status: step.status, detail: stepDetail(step.key, step, job) });
   }
   return steps;
+}
+
+/**
+ * This job's copy table: the type's own, with the structural fork's words over
+ * the step it shares but does not spend the same way.
+ */
+function stepLabels(job: StatusJob, type: EditJobType): Partial<Record<EditStepKey, string>> {
+  const labels = STEP_LABELS[type];
+  const structural = structuralStepLabel(job);
+  return structural ? { ...labels, snapshot: structural } : labels;
+}
+
+/** What this job does with the `snapshot` step, when it is a structural edit. */
+function structuralStepLabel(job: StatusJob): string | null {
+  const payload = jsonRecord(job.payload);
+  const action = structuralAction(jsonRecord(payload.structuralEdit).action);
+  if (action) {
+    return STRUCTURAL_STEP_LABELS[action];
+  }
+  return payload.intentKind === "restructure_pages" ? STRUCTURAL_STEP_FALLBACK : null;
+}
+
+function structuralAction(value: unknown): StructuralPageAction | null {
+  return value === "insert" || value === "delete" || value === "move" ? value : null;
 }
 
 /**
@@ -283,7 +342,7 @@ export function liveDetail(job: StatusJob): string | null {
     case "prepare":
       return "Reading your book";
     case "snapshot":
-      return "Saving a version you can undo to";
+      return structuralStepLabel(job) ?? "Saving a version you can undo to";
     case "apply":
       return page === null
         ? pages > 0

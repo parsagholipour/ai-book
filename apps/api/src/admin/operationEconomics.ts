@@ -24,11 +24,14 @@
  *    `GENERATE_IMAGE`, `COMPILE_EXPORT`) carry the `planId` of the run that
  *    charged for them. A plan whose charged jobs disagree on the operation is
  *    skipped rather than guessed at.
- * 3. **The job type, gated on the project's own charges.** `JOB_OPERATION_SQL`
- *    maps each `JobType` to the one `CreditOperation` it exists to serve, but
- *    the map is only allowed to pick an operation the project was *actually*
- *    charged for. That gating is what keeps it from inventing revenue: a
- *    console-generated book has no charge, so its jobs stay unbilled.
+ * 3. **The job type, gated on the project's own charges.** The `job_operation`
+ *    `CASE` maps each `JobType` to the `CreditOperation` it exists to serve,
+ *    but the map is only allowed to pick an operation the project was
+ *    *actually* charged for. That gating is what keeps it from inventing
+ *    revenue: a console-generated book has no charge, so its jobs stay
+ *    unbilled. `APPLY_BOOK_EDIT` is the one type that serves more than one
+ *    operation, so its arm reads the intent kind off the payload — see
+ *    `APPLY_BOOK_EDIT_OPERATION_SQL`.
  *
  * Everything left over is reported, never dropped, split by why it could not be
  * attributed — see `UNBILLED_REASONS`. On real data most of it is the operator
@@ -38,10 +41,9 @@
  * ## Refunds count as cost, never as revenue
  *
  * A refunded charge keeps its `SPEND`/`SETTLED` row — the reversal is a second,
- * positive entry — so `credits` and `runs` count only what `CHARGE_KEPT` leaves,
- * and what was handed back rides alongside as `refundedCredits`/`refundedRuns`
- * rather than disappearing. The two add up to the gross figure an operator gets
- * from the ledger by hand, which is the point of showing both.
+ * positive cumulative entry. `credits` is therefore gross minus the reversal,
+ * while `runs` remains the number of charged attempts. `refundedRuns` is the
+ * subset touched by a refund, including partial ones.
  *
  * The provider calls of a refunded run stay attributed to the operation that
  * spent them. They are real money that left, and dropping them would shunt the
@@ -62,22 +64,24 @@
  */
 
 import { CREDIT_USD_VALUE } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
+import { type BookEditIntentKind } from "../bookEditIntent.js";
+import { billingOperationForIntent } from "../mobile/bookEditPricing.js";
 import {
   costBreakdownFromRows,
   type CostUsage,
   type ModelCost,
   type ProviderCostRow
 } from "./costBreakdown.js";
-import { CHARGE_KEPT, CHARGE_REVERSED, round2, type AdminWindow } from "./metrics.js";
+import { SETTLED_CHARGE, SETTLED_REFUND, netSettledCredits, round2, type AdminWindow } from "./metrics.js";
 
 export type OperationEconomics = CostUsage & {
   key: string;
   label: string;
-  /** Settled charges for this operation in the window that were not reversed. */
+  /** Settled charge attempts for this operation in the window. */
   runs: number;
   credits: number;
-  /** Charges a refund reversed. Their provider spend is still in `providerUsd`. */
+  /** Charge attempts touched by a refund. Their provider spend remains real. */
   refundedRuns: number;
   refundedCredits: number;
   revenueUsd: number;
@@ -175,13 +179,16 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
       by: ["operation"],
       _sum: { amountCredits: true },
       _count: { _all: true },
-      where: { ...CHARGE_KEPT, createdAt: inWindow }
+      where: { ...SETTLED_CHARGE, createdAt: inWindow }
     }),
     prisma.creditLedgerEntry.groupBy({
       by: ["operation"],
       _sum: { amountCredits: true },
       _count: { _all: true },
-      where: { ...CHARGE_REVERSED, createdAt: inWindow }
+      where: {
+        ...SETTLED_REFUND,
+        reversesEntry: { is: { ...SETTLED_CHARGE, createdAt: inWindow } }
+      }
     })
   ]);
 
@@ -199,17 +206,12 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
       const charge = charges.find((entry) => (entry.operation as string) === key);
       const refund = refunds.find((entry) => (entry.operation as string) === key);
       const spend = spendByOperation.get(key);
-      // SPEND entries are stored negative; the magnitude is what was charged.
-      const credits = Math.abs(charge?._sum.amountCredits ?? 0);
       const runs = charge?._count._all ?? 0;
-      const refundedCredits = Math.abs(refund?._sum.amountCredits ?? 0);
+      const refundedCredits = Math.max(refund?._sum.amountCredits ?? 0, 0);
+      const credits = netSettledCredits(charge?._sum.amountCredits ?? 0, refund?._sum.amountCredits ?? 0);
       const refundedRuns = refund?._count._all ?? 0;
       const revenueUsd = round2(credits * CREDIT_USD_VALUE);
       const providerUsd = spend?.usd ?? 0;
-      // Every attempt we paid a provider for, refunded ones included — they are
-      // in the numerator, so leaving them out of the denominator would report a
-      // cost per run nothing ever cost.
-      const attempts = runs + refundedRuns;
       return {
         ...(spend ?? emptyUsage()),
         key,
@@ -222,7 +224,7 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
         providerUsd,
         marginUsd: round2(revenueUsd - providerUsd),
         marginPercent: revenueUsd > 0 ? Math.round(((revenueUsd - providerUsd) / revenueUsd) * 1000) / 10 : null,
-        costPerRunUsd: attempts > 0 ? Math.round((providerUsd / attempts) * 1_000_000) / 1_000_000 : null,
+        costPerRunUsd: runs > 0 ? Math.round((providerUsd / runs) * 1_000_000) / 1_000_000 : null,
         creditsPerRun: runs > 0 ? Math.round(credits / runs) : null,
         note: OPERATION_NOTES[key] ?? null,
         models: spend?.models ?? []
@@ -274,6 +276,56 @@ export async function loadOperationEconomics(window: AdminWindow): Promise<Admin
 }
 
 /**
+ * The intent kinds an `APPLY_BOOK_EDIT` payload can name.
+ *
+ * `queueChatBookEdit` and the three forks beside it — `queueChatAddImage`,
+ * `queueChatImageLayout`, `queueChatRestructurePages` — all stamp `intentKind`
+ * onto the job they enqueue, and that is the whole list: `continue_book` and
+ * `book_replan` get job types of their own. A kind missing here is not a wrong
+ * answer, only the old one, because the generated `ELSE` keeps
+ * `BOOK_TEXT_EDIT`.
+ */
+const APPLY_BOOK_EDIT_INTENT_KINDS: readonly BookEditIntentKind[] = [
+  "local_patch",
+  "page_rewrite",
+  "chapter_regenerate",
+  "add_image",
+  "move_image",
+  "remove_image",
+  "restructure_pages"
+];
+
+/**
+ * The `APPLY_BOOK_EDIT` arm of the job-type map, as SQL.
+ *
+ * Every other `JobType` serves exactly one billed operation. This one serves
+ * four, because which operation an edit is charged under is a property of the
+ * *request* rather than of the job: `billingOperationForIntent`
+ * (`../mobile/bookEditPricing.ts`) prices a structural insert as
+ * `PAGE_REGENERATION` and a chat-added picture as `IMAGE_GENERATION`, both
+ * under this one job name. A single answer here would hand the gated
+ * `project_operation` join an operation the project may never have been
+ * charged for, and the calls it was written to attribute would fall into the
+ * `UNBILLED_*` buckets — real, paid model spend reported as unbilled, which is
+ * the one error mode this directory exists to avoid.
+ *
+ * The discriminator is `payload.intentKind`, written by every Apply that
+ * enqueues one of these, and the arms are **generated** from
+ * `billingOperationForIntent` rather than restated, so the dashboard cannot
+ * drift from the price list the charge itself was taken at. `ELSE` is the
+ * answer for a row enqueued before that key existed, which is the answer those
+ * rows have always had.
+ */
+export const APPLY_BOOK_EDIT_OPERATION_SQL = [
+  "CASE j.payload ->> 'intentKind'",
+  ...APPLY_BOOK_EDIT_INTENT_KINDS.map(
+    (kind) => `            WHEN '${kind}' THEN '${billingOperationForIntent(kind)}'`
+  ),
+  "            ELSE 'BOOK_TEXT_EDIT'",
+  "          END"
+].join("\n");
+
+/**
  * The same per-model counters `costBreakdown.ts` collects, but keyed by the
  * charge that paid for the call instead of by the call site — which is why it
  * borrows that module's row shape and its tested roll-up rather than growing a
@@ -315,9 +367,10 @@ async function loadAttributedCostRows(window: AdminWindow): Promise<ProviderCost
         l."generationJobId",
         COALESCE(j."projectId", l."projectId") AS project_id,
         j.payload ->> 'planId' AS plan_id,
-        -- Each JobType serves exactly one billed operation. Kept in step with
-        -- enum JobType in schema.prisma; an unmapped type simply falls through
-        -- to the unbilled buckets rather than being attributed by guess.
+        -- Each JobType serves one billed operation, APPLY_BOOK_EDIT excepted.
+        -- Kept in step with enum JobType in schema.prisma; an unmapped type
+        -- simply falls through to the unbilled buckets rather than being
+        -- attributed by guess.
         CASE j.type::text
           WHEN 'PLAN_BOOK' THEN 'PLAN_GENERATION'
           WHEN 'REVISE_PLAN' THEN 'PLAN_REVISION'
@@ -327,7 +380,8 @@ async function loadAttributedCostRows(window: AdminWindow): Promise<ProviderCost
           WHEN 'COMPILE_EXPORT' THEN 'FULL_BOOK_GENERATION'
           WHEN 'RESEARCH' THEN 'FULL_BOOK_GENERATION'
           WHEN 'IMPORT_BOOK' THEN 'FULL_BOOK_GENERATION'
-          WHEN 'APPLY_BOOK_EDIT' THEN 'BOOK_TEXT_EDIT'
+          -- One job name, four billed operations; the payload says which.
+          WHEN 'APPLY_BOOK_EDIT' THEN ${Prisma.raw(APPLY_BOOK_EDIT_OPERATION_SQL)}
           WHEN 'REPLAN_BOOK' THEN 'BOOK_REPLAN'
           WHEN 'CONTINUE_BOOK' THEN 'PAGE_REGENERATION'
           WHEN 'GENERATE_AUDIOBOOK' THEN 'AUDIOBOOK_GENERATION'

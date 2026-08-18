@@ -25,8 +25,9 @@ class ReaderResolvedSelection {
 /// be found".
 ReaderResolvedSelection? previewReaderSelection(
   List<PdfPageTextRange> ranges,
-  PdfDocument? document,
-) {
+  PdfDocument? document, {
+  bool hasCoverPage = false,
+}) {
   if (ranges.isEmpty) {
     return null;
   }
@@ -42,6 +43,7 @@ ReaderResolvedSelection? previewReaderSelection(
     selection: ReaderSelection(
       text: collapsed,
       pdfPageNumber: ranges.first.pageNumber,
+      hasCoverPage: hasCoverPage,
     ),
     // The rectangles are captured now, while the selection exists, so tapping
     // a colour is a paint and not another round trip into the PDF.
@@ -59,12 +61,18 @@ ReaderResolvedSelection? previewReaderSelection(
 /// Failure is never fatal: without the book's text the passage simply carries
 /// no page, every action still works, and the ones that name a page fall back
 /// to letting the server find the quote.
+///
+/// [pdfDigest] identifies the open file to the server, and is null unless the
+/// page map in force was measured from it. Only the physical-sheet fallback
+/// depends on it: a passage this function *does* place carries a model page,
+/// which is true of the manuscript rather than of one compile of it.
 Future<ReaderResolvedSelection> placeReaderSelection({
   required ReaderResolvedSelection preview,
   required List<PdfPageTextRange> ranges,
   required ReaderRepository repository,
   required String projectId,
   required int? revision,
+  required String? pdfDigest,
 }) async {
   final selection = preview.selection;
   ReaderResolvedSelection settled({int? bookPageIndex}) {
@@ -74,7 +82,9 @@ Future<ReaderResolvedSelection> placeReaderSelection({
         pdfPageNumber: selection.pdfPageNumber,
         bookPageIndex: bookPageIndex,
         exportRevision: revision,
+        pdfDigest: pdfDigest,
         placed: true,
+        hasCoverPage: selection.hasCoverPage,
       ),
       spans: preview.spans,
     );

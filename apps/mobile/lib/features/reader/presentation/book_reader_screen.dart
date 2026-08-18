@@ -110,7 +110,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
   /// Sends the reader to the paywall on the same terms as every other export
   /// action: an unlock the balance covers is spent silently by the download,
   /// and only a balance that cannot cover it interrupts the reader.
-  Future<void> _offerUnlock(MobileExportAvailability export) async {
+  Future<void> _offerUnlock(
+    MobileExportAvailability export, {
+    MobilePdfPageNumbering? pageNumbering,
+  }) async {
     if (_paywallOpen) return;
     _paywallOpen = true;
     _unlockOffered = true;
@@ -130,7 +133,13 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
     // unlock, the balance and the compile behind that URL to have all moved.
     final loader = _loader;
     if (loader != null && loader.stage == ReaderLoadStage.failed) {
-      unawaited(loader.load(export, refresh: _refreshExport));
+      unawaited(
+        loader.load(
+          export,
+          refresh: _refreshExport,
+          pageNumbering: pageNumbering,
+        ),
+      );
     }
   }
 
@@ -210,7 +219,14 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       if (!_unlockOffered) {
         // Scheduled rather than called inline: this runs during build.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && !_unlockOffered) unawaited(_offerUnlock(export));
+          if (mounted && !_unlockOffered) {
+            unawaited(
+              _offerUnlock(
+                export,
+                pageNumbering: status.pdfPageNumbering,
+              ),
+            );
+          }
         });
       }
       return ReaderScaffold(
@@ -221,7 +237,9 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
           title: 'Unlock to read',
           message: projectExportStateText(export, credits),
           actionLabel: 'Get credits',
-          onAction: () => unawaited(_offerUnlock(export)),
+          onAction: () => unawaited(
+            _offerUnlock(export, pageNumbering: status.pdfPageNumbering),
+          ),
         ),
       );
     }
@@ -232,7 +250,10 @@ class _BookReaderScreenState extends ConsumerState<BookReaderScreen> {
       loader: loader,
       status: status,
       openAtBookPage: widget.openAtBookPage,
-      onOpenPaywall: () => _offerUnlock(export),
+      onOpenPaywall: () => _offerUnlock(
+        export,
+        pageNumbering: status.pdfPageNumbering,
+      ),
       onRefreshExport: _refreshExport,
     );
   }
@@ -313,6 +334,7 @@ PdfDocumentRef readerDocumentRef(CachedExport export) {
     export.path,
     key: PdfDocumentRefKey(export.path, [
       export.revision,
+      export.digest,
       export.byteSize,
       export.downloadedAt,
     ]),

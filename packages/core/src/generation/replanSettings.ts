@@ -14,6 +14,7 @@
  */
 
 import { mediaSettingsSchema, type CreateProjectInput, type MediaSettings } from "../schemas/book.js";
+import { jsonRecord } from "../schemas/jsonCoercion.js";
 
 /**
  * Generation settings a replan request asked to change. Every field is optional
@@ -185,6 +186,39 @@ const CLAUSE_BREAK = /[.,;:!?\n،؛؟、。，]/;
 const NEGATION_WINDOW = 40;
 
 /**
+ * Wording that makes a page count a *delta* rather than the book's length.
+ *
+ * "Add 3 pages after page 10" asks for three more pages. Read as a length it
+ * routes as a whole-book replan and quotes, plans and regenerates a **three
+ * page** book: the reader asked for N+3 and got 3. Kept apart from
+ * {@link NEGATION_CUES} because it is a different claim about the same number,
+ * and matched structurally rather than through a flat window because a delta
+ * can be stated on either side of the count — English puts the verb first
+ * ("add 3 pages"), Persian and Arabic put it last ("۳ صفحه اضافه کن") — and a
+ * loose window would read the "add" in "make it 3 pages and add a dragon" as
+ * one, suppressing a length the reader really did name.
+ */
+const ADDITIVE_LEAD =
+  /(?:\badds?|\badding|\binserts?|\binserting|\bappends?|\bappending|\banother|\bextra)\s+(?:\w+\s+){0,2}$/i;
+const ADDITIVE_TRAIL_VERB = /^[\s\p{P}]{0,3}(?:اضافه|بیفزا|أضف|أضيف)/u;
+const ADDITIVE_TRAIL_QUANTIFIER = /^\s*(?:more|extra|additional)\b/i;
+/**
+ * What may follow a postposed "more"/"extra" and leave it a quantifier.
+ *
+ * Stranded, it counts pages: "3 pages more", "3 pages more please", "I want 3
+ * pages more at the end". Give it a word to modify and English reads it as a
+ * degree adverb instead — "20 pages more detailed" is a twenty-page book
+ * written in more detail, and "20 pages more or less" is that book's length
+ * approximated — so the delta is claimed only at a clause boundary or before a
+ * continuation that cannot be what the adverb modifies. Read the other way it
+ * dropped a length the reader plainly named, which is the failure this whole
+ * guard exists to prevent, only inverted.
+ */
+const ADDITIVE_TRAIL_STRANDED =
+  /^(?:[\s\p{P}]*$|[.,;:!?،؛؟\n]|\s+(?:please|pls|plz|thanks|than|and|then|at|in|on|to|for|after|before)\b)/iu;
+const ADDITIVE_LEAD_WINDOW = 30;
+
+/**
  * The book length a piece of prose asks for, or undefined.
  *
  * Shared between the creation chat, which sizes a book before it exists, and the
@@ -220,11 +254,27 @@ function capturePageCounts(text: string, pattern: RegExp): { index: number; valu
     const digits = match[1] ?? "";
     const value = Number.parseInt(digits, 10);
     const index = (match.index ?? 0) + match[0].indexOf(digits);
-    if (Number.isFinite(value) && !isNegatedPageCount(text, index)) {
+    const end = (match.index ?? 0) + match[0].length;
+    if (Number.isFinite(value) && !isNegatedPageCount(text, index) && !isAdditivePageCount(text, index, end)) {
       matches.push({ index, value });
     }
   }
   return matches;
+}
+
+/** Whether this count is pages being *added* rather than the book's length. */
+function isAdditivePageCount(text: string, numberAt: number, matchEnd: number): boolean {
+  const lead = text.slice(Math.max(0, numberAt - ADDITIVE_LEAD_WINDOW), numberAt);
+  return ADDITIVE_LEAD.test(lead) || hasAdditiveTrail(text.slice(matchEnd));
+}
+
+/** The delta stated after the count: "۳ صفحه اضافه کن", "3 pages more". */
+function hasAdditiveTrail(trail: string): boolean {
+  if (ADDITIVE_TRAIL_VERB.test(trail)) {
+    return true;
+  }
+  const quantifier = trail.match(ADDITIVE_TRAIL_QUANTIFIER);
+  return quantifier !== null && ADDITIVE_TRAIL_STRANDED.test(trail.slice(quantifier[0].length));
 }
 
 /**
@@ -361,8 +411,4 @@ export function inputWithReplanSettings(
     ...(settings.targetPages === undefined ? {} : { targetPages: settings.targetPages }),
     mediaSettings: mediaSettingsWithReplanSettings(input.mediaSettings, settings)
   };
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

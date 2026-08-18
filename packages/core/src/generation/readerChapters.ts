@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import { isRecord } from "../schemas/jsonCoercion.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
 import type { MarkdownPage, ReaderChapter } from "./markdown.js";
 
@@ -428,10 +429,6 @@ function plainText(markdown: string): string {
 
 function wordCount(text: string): number {
   return plainText(text).match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu)?.length ?? 0;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function numberField(record: Record<string, unknown>, keys: string[]): number | undefined {

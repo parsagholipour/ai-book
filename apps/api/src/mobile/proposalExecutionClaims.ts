@@ -45,7 +45,7 @@ export async function replayClaimedProposal(
     }));
   const projectRow = await prisma.project.findUnique({
     where: { id: projectId },
-    select: { pdfPageMap: true, contentRevision: true }
+    select: { pdfPageMap: true, contentRevision: true, status: true }
   });
   return {
     ...(await loadProjectChatResponse(projectId)),

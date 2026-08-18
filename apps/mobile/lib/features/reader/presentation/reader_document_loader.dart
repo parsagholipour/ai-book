@@ -43,6 +43,12 @@ class ReaderDocumentLoader extends ChangeNotifier {
     return _document?.exactRevision;
   }
 
+  /// The exact byte digest displayed for [expectedProjectId].
+  String? digestForProject(String expectedProjectId) {
+    if (projectId != expectedProjectId) return null;
+    return _document?.digest;
+  }
+
   /// The displayed revision that may be mapped to the current editable book.
   ///
   /// An exact PDF from another revision is safe to keep reading and to bookmark
@@ -59,6 +65,34 @@ class ReaderDocumentLoader extends ChangeNotifier {
     return exact;
   }
 
+  /// The open file's digest, when the map in force was measured from these
+  /// exact bytes — and null otherwise.
+  ///
+  /// A revision cannot answer this. A same-revision repair publishes different
+  /// PDF bytes and stamps the new map with the revision the open file already
+  /// has, so [mappingRevisionFor] keeps agreeing while the two files have
+  /// stopped being the same book on the page. Anything that names a *physical
+  /// sheet* — the `readerContext.pdfPage` a selection sends when its local
+  /// locator could not resolve one — has to be gated on this instead: sheet 7
+  /// of the file on screen is not sheet 7 of the file that replaced it, and the
+  /// server would translate it through the replacement's map.
+  ///
+  /// Model-space answers the locator already resolved are unaffected. A
+  /// `pageIndex` is a page of the manuscript, not a sheet of one PDF.
+  String? mappedPdfDigestFor({
+    required String expectedProjectId,
+    required MobilePdfPageNumbering? pageNumbering,
+  }) {
+    final digest = digestForProject(expectedProjectId);
+    if (!coverPageMapDescribes(
+      fileDigest: digest,
+      pageNumbering: pageNumbering,
+    )) {
+      return null;
+    }
+    return digest;
+  }
+
   /// Download progress in 0..1, or null when the size is not yet known.
   double? get progress {
     if (_stage != ReaderLoadStage.downloading || _total <= 0) {
@@ -68,12 +102,15 @@ class ReaderDocumentLoader extends ChangeNotifier {
   }
 
   /// Whether a newer compile of the book is available than the one on screen.
-  bool isStale(MobileExportAvailability export) {
+  bool isStale(
+    MobileExportAvailability export, {
+    MobilePdfPageNumbering? pageNumbering,
+  }) {
     final current = _document;
     if (current == null || !export.available) {
       return false;
     }
-    return !current.matches(export);
+    return !current.matches(export, pageNumbering: pageNumbering);
   }
 
   /// Loads [export], reusing the cached file when it is still current.
@@ -91,6 +128,7 @@ class ReaderDocumentLoader extends ChangeNotifier {
   Future<void> load(
     MobileExportAvailability export, {
     Future<MobileExportAvailability?> Function()? refresh,
+    MobilePdfPageNumbering? pageNumbering,
   }) async {
     if (_stage == ReaderLoadStage.downloading ||
         _stage == ReaderLoadStage.preparing) {
@@ -108,10 +146,16 @@ class ReaderDocumentLoader extends ChangeNotifier {
           ? export
           : await _currentExport(refresh, export, cancelToken);
       if (_disposed || cancelToken.isCancelled) return;
+      // [hasCoverPage] describes the compile [export] named. A refresh that
+      // landed on a different revision must not inherit it.
+      final numbering = target.revision == export.revision
+          ? pageNumbering
+          : null;
       final document = await repository.ensureExport(
         projectId: projectId,
         export: target,
         cancelToken: cancelToken,
+        pageNumbering: numbering,
         onProgress: (received, total) {
           if (_disposed) return;
           _received = received;
@@ -142,11 +186,35 @@ class ReaderDocumentLoader extends ChangeNotifier {
     }
   }
 
+  /// Cover-skip for the file already on screen, when the map in force still
+  /// describes it and the download never stamped one.
+  ///
+  /// Never overwrites a stamp: that value is about these bytes, and a newly
+  /// published map's flag is about a different compile.
+  void stampHasCoverPage(MobilePdfPageNumbering pageNumbering) {
+    final current = _document;
+    if (current == null ||
+        current.hasCoverPage != null ||
+        !coverPageMapDescribes(
+          fileDigest: current.digest,
+          pageNumbering: pageNumbering,
+        )) {
+      return;
+    }
+    _document = current.copyWith(hasCoverPage: pageNumbering.hasCoverPage);
+    if (!_disposed) {
+      notifyListeners();
+    }
+  }
+
   /// Fetches the current compile of [export].
   ///
   /// The document already on screen is kept until the new one arrives, so a
   /// reload after an edit never blanks the page the reader was on.
-  Future<void> reload(MobileExportAvailability export) => load(export);
+  Future<void> reload(
+    MobileExportAvailability export, {
+    MobilePdfPageNumbering? pageNumbering,
+  }) => load(export, pageNumbering: pageNumbering);
 
   /// The descriptor to fetch: the re-read one, or [fallback] when the re-read
   /// cannot be made.

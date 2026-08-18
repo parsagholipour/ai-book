@@ -1,18 +1,135 @@
 import '../../projects/domain/project_models.dart';
 
+/// Whether the page map the server currently reports describes these exact
+/// downloaded bytes.
+///
+/// The single rule behind every use of a status `hasCoverPage`: the flag comes
+/// off *a* map, and may only be read for — or stamped onto — a file that map
+/// was measured from. A same-revision repair can publish different PDF bytes,
+/// so the digest — the exact artifact identity — is decisive. This naturally
+/// preserves an EDITING project's behind map when the open file is that exact
+/// older publication, without using status or a descriptor revision as a
+/// proxy. Missing identity on either side describes nothing.
+bool coverPageMapDescribes({
+  required String? fileDigest,
+  required MobilePdfPageNumbering? pageNumbering,
+}) {
+  if (fileDigest == null || pageNumbering == null) {
+    return false;
+  }
+  return fileDigest == pageNumbering.pdfDigest;
+}
+
+/// Whether chrome may skip the cover sheet for the PDF currently on screen.
+///
+/// Cover-skip is a property of the open file, not of whichever compile status
+/// is offering. [cachedHasCoverPage] is that property when the download (or a
+/// later matching open) stamped it onto [CachedExport]. After publish the
+/// status flag follows the new map, which would otherwise force physical
+/// numbers onto a still-open version-2 PDF whose footer already skips the
+/// cover — sheet 2 labeled "Page 2" while the reader is looking at "Page 1".
+///
+/// An unstamped cache falls back to the map in force — [coverPageMapDescribes],
+/// the same predicate that decides whether the flag may be stamped at all.
+/// Unknown provenance answers false; displayed numbers then stay physical.
+bool displayedHasCoverPage({
+  bool? cachedHasCoverPage,
+  required String? renderedDigest,
+  required bool? statusHasCoverPage,
+  required MobilePdfPageNumbering? pageNumbering,
+}) {
+  if (cachedHasCoverPage != null) {
+    return cachedHasCoverPage;
+  }
+  if (statusHasCoverPage != true) {
+    return false;
+  }
+  return coverPageMapDescribes(
+    fileDigest: renderedDigest,
+    pageNumbering: pageNumbering,
+  );
+}
+
+/// The number printed on a physical PDF sheet.
+///
+/// When [hasCoverPage] is true, sheet 1 is the cover and has no printed number;
+/// sheet 2 is printed page 1. Returns null for the cover (and for invalid
+/// pages). Navigation, bookmarks and `readerContext.pdfPage` stay physical.
+int? printedPageForPdfPage(int pdfPage, {required bool hasCoverPage}) {
+  if (pdfPage < 1) {
+    return null;
+  }
+  if (!hasCoverPage) {
+    return pdfPage;
+  }
+  if (pdfPage == 1) {
+    return null;
+  }
+  return pdfPage - 1;
+}
+
+/// How many numbers the footer / Contents / chrome actually print.
+int printedPageCount(int pdfPageCount, {required bool hasCoverPage}) {
+  if (!hasCoverPage) {
+    return pdfPageCount;
+  }
+  return pdfPageCount > 0 ? pdfPageCount - 1 : 0;
+}
+
+/// Label for a physical PDF sheet in reader chrome: "Cover" or "Page N".
+String printedPageLabel(int pdfPage, {required bool hasCoverPage}) {
+  if (hasCoverPage && pdfPage == 1) {
+    return 'Cover';
+  }
+  final printed = printedPageForPdfPage(pdfPage, hasCoverPage: hasCoverPage);
+  return 'Page ${printed ?? pdfPage}';
+}
+
+/// Scroll bubble and bottom bar: "Cover" or "Page N of M".
+String printedPagePositionLabel(
+  int pdfPage,
+  int pdfPageCount, {
+  required bool hasCoverPage,
+}) {
+  if (hasCoverPage && pdfPage == 1) {
+    return 'Cover';
+  }
+  final printed =
+      printedPageForPdfPage(pdfPage, hasCoverPage: hasCoverPage) ?? pdfPage;
+  final total = printedPageCount(pdfPageCount, hasCoverPage: hasCoverPage);
+  return 'Page $printed of $total';
+}
+
+/// The number shown in the in-app Contents column — the same figures the PDF
+/// Contents reprints. Cover has no printed number.
+String printedPageContentsLabel(int pdfPage, {required bool hasCoverPage}) {
+  if (hasCoverPage && pdfPage == 1) {
+    return 'Cover';
+  }
+  return '${printedPageForPdfPage(pdfPage, hasCoverPage: hasCoverPage) ?? pdfPage}';
+}
+
 /// A compiled export that has been downloaded to the device.
 ///
-/// [revision] and [byteSize] come from the server's export availability and
-/// together identify the exact file that was fetched, so a later open can tell
-/// a usable cache hit from a book that has since been recompiled.
+/// [digest] identifies the exact file that was fetched; [revision] separately
+/// controls manuscript mapping and markup provenance.
 class CachedExport {
+  /// A cover-skip stamp implies exact byte identity, enforced here.
+  ///
+  /// [hasCoverPage] is dropped unless [digest] is present, so a pre-digest
+  /// manifest can never leave a permanent numbering decision on unidentified
+  /// bytes. Revision exactness is deliberately separate: unknown provenance
+  /// can still report the digest of the bytes in hand, while remaining unsafe
+  /// for markup re-anchoring.
   const CachedExport({
     required this.path,
     required this.revision,
     required this.byteSize,
     required this.downloadedAt,
     this.revisionIsExact = false,
-  });
+    this.digest,
+    bool? hasCoverPage,
+  }) : hasCoverPage = digest != null ? hasCoverPage : null;
 
   final String path;
 
@@ -40,8 +157,46 @@ class CachedExport {
   /// [revision] when it is a fact rather than a stand-in.
   int? get exactRevision => revisionIsExact ? revision : null;
 
+  /// sha256 of these exact downloaded bytes, as the response reported it.
+  ///
+  /// This is persisted even when the server cannot tie the bytes to a compile;
+  /// equality with the stored map digest is the cover-numbering gate.
+  final String? digest;
+
+  /// Whether this file's footer skips the cover sheet.
+  ///
+  /// Stamped from the map that described these bytes when they were filed —
+  /// never from a later compile's flag, and never without a matching digest.
+  /// The stamp is permanent, so neither revision equality nor a descriptor
+  /// stand-in may decide it: both can describe different same-revision bytes.
+  ///
+  /// Null on manifests written before the digest existed and on any download
+  /// whose digest disagreed with the map. Chrome then falls back through the
+  /// same digest predicate and otherwise keeps physical numbers.
+  final bool? hasCoverPage;
+
   final int byteSize;
   final DateTime downloadedAt;
+
+  CachedExport copyWith({
+    String? path,
+    int? revision,
+    bool? revisionIsExact,
+    String? digest,
+    int? byteSize,
+    DateTime? downloadedAt,
+    bool? hasCoverPage,
+  }) {
+    return CachedExport(
+      path: path ?? this.path,
+      revision: revision ?? this.revision,
+      revisionIsExact: revisionIsExact ?? this.revisionIsExact,
+      digest: digest ?? this.digest,
+      byteSize: byteSize ?? this.byteSize,
+      downloadedAt: downloadedAt ?? this.downloadedAt,
+      hasCoverPage: hasCoverPage ?? this.hasCoverPage,
+    );
+  }
 
   /// Whether this cached file still matches what the server is offering.
   ///
@@ -63,7 +218,10 @@ class CachedExport {
   /// the descriptor reported describes the older compile, so it is not compared
   /// against these bytes. Treating it as a miss would re-download the file the
   /// reader already has and tell them their finished book had just changed.
-  bool matches(MobileExportAvailability export) {
+  bool matches(
+    MobileExportAvailability export, {
+    MobilePdfPageNumbering? pageNumbering,
+  }) {
     final known = revision;
     if (known == null || !export.available) {
       return false;
@@ -74,6 +232,13 @@ class CachedExport {
     if (known != export.revision) {
       return false;
     }
+    // A map stamped for the offered revision is a stronger descriptor than
+    // size. Repairs intentionally keep contentRevision, and can keep byte size
+    // too, while replacing the PDF and its pagination. Missing digest on an
+    // older manifest is conservative here: fetch once and learn the bytes.
+    if (pageNumbering?.contentRevision == export.revision) {
+      return digest != null && digest == pageNumbering!.pdfDigest;
+    }
     final reported = export.byteSize;
     return reported == null || reported == byteSize;
   }
@@ -82,16 +247,19 @@ class CachedExport {
     return {
       if (revision != null) 'revision': revision,
       'revisionIsExact': revisionIsExact,
+      if (digest != null) 'digest': digest,
       'byteSize': byteSize,
       'downloadedAt': downloadedAt.toIso8601String(),
+      if (hasCoverPage != null) 'hasCoverPage': hasCoverPage,
     };
   }
 
   /// Reads a manifest back.
   ///
   /// A manifest written before the server reported provenance carries no
-  /// `revisionIsExact`, and defaults to false: it was filed under the
-  /// descriptor that asked for it, which is exactly what a stand-in is.
+  /// `revisionIsExact`, and defaults to false. A manifest written before byte
+  /// identity carries no `digest`; the constructor drops any old cover stamp
+  /// on it, and the cache attempts a digest promotion before numbering it.
   static CachedExport? fromJson(Map<String, dynamic> json, String path) {
     final revision = json['revision'];
     final byteSize = json['byteSize'];
@@ -101,12 +269,16 @@ class CachedExport {
     final downloadedAt = DateTime.tryParse(
       json['downloadedAt'] as String? ?? '',
     );
+    final hasCoverPage = json['hasCoverPage'];
+    final digest = json['digest'];
     return CachedExport(
       path: path,
       revision: revision,
       revisionIsExact: json['revisionIsExact'] == true,
+      digest: digest is String && digest.isNotEmpty ? digest : null,
       byteSize: byteSize,
       downloadedAt: downloadedAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+      hasCoverPage: hasCoverPage is bool ? hasCoverPage : null,
     );
   }
 }
@@ -115,19 +287,26 @@ class CachedExport {
 class ReaderBookmark {
   const ReaderBookmark({
     required this.page,
-    required this.label,
     required this.createdAt,
     this.revision,
   });
 
   final int page;
-  final String label;
   final DateTime createdAt;
 
   /// The content revision this bookmark was made against. A later recompile can
   /// repaginate the book, so a bookmark whose revision no longer matches is
   /// shown as approximate rather than silently trusted.
   final int? revision;
+
+  /// Label shown in the saved-places list.
+  ///
+  /// Always computed from [page], never stored: the cover offset can flip under
+  /// a bookmark when the book is recompiled, so a label written at bookmark
+  /// time would drift out of step with the footer and with the numbers chat
+  /// parses. Older devices persisted one; it is read back and discarded.
+  String displayedLabel({required bool hasCoverPage}) =>
+      printedPageLabel(page, hasCoverPage: hasCoverPage);
 
   /// A bookmark is exact only when both sides name the same known compile.
   ///
@@ -142,7 +321,6 @@ class ReaderBookmark {
   Map<String, dynamic> toJson() {
     return {
       'page': page,
-      'label': label,
       'createdAt': createdAt.toIso8601String(),
       if (revision != null) 'revision': revision,
     };
@@ -155,7 +333,6 @@ class ReaderBookmark {
     }
     return ReaderBookmark(
       page: page,
-      label: json['label'] as String? ?? 'Page $page',
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
@@ -250,8 +427,26 @@ class ReaderOutlineEntry {
   final int depth;
 
   /// Null when the source could not resolve a destination — the entry is then
-  /// shown but not tappable.
+  /// shown but not tappable. Physical pdfrx page; the sheet converts it for
+  /// display.
   final int? pageNumber;
+
+  /// Title shown in the Contents sheet. Recovered outlines name a row
+  /// `Page N` after the physical destination; those follow printed numbering.
+  String displayedTitle({required bool hasCoverPage}) {
+    final page = pageNumber;
+    if (page != null && title == 'Page $page') {
+      return printedPageLabel(page, hasCoverPage: hasCoverPage);
+    }
+    return title;
+  }
+
+  /// Trailing Contents number, or null when the row has no destination.
+  String? displayedPageText({required bool hasCoverPage}) {
+    final page = pageNumber;
+    if (page == null) return null;
+    return printedPageContentsLabel(page, hasCoverPage: hasCoverPage);
+  }
 }
 
 /// A passage the reader selected, resolved against the book's pages.
@@ -261,7 +456,9 @@ class ReaderSelection {
     required this.pdfPageNumber,
     this.bookPageIndex,
     this.exportRevision,
+    this.pdfDigest,
     this.placed = false,
+    this.hasCoverPage = false,
   });
 
   /// The selected text, already collapsed to single spaces.
@@ -280,6 +477,16 @@ class ReaderSelection {
   /// be translated through the server's current map.
   final int? exportRevision;
 
+  /// The digest of the PDF this selection was made in, and only when the page
+  /// map in force was measured from those same bytes. Null means the physical
+  /// sheet number below identifies nothing the server can translate.
+  ///
+  /// [exportRevision] cannot stand in for it. A repair republishes the same
+  /// revision over a different PDF, so the revisions still agree while
+  /// [pdfPageNumber] has become a sheet of a file the server's map no longer
+  /// describes — see `ReaderDocumentLoader.mappedPdfDigestFor`.
+  final String? pdfDigest;
+
   /// Whether placing the passage has finished.
   ///
   /// The menu opens the instant text is selected and the book page arrives a
@@ -288,31 +495,53 @@ class ReaderSelection {
   /// keeps the menu from flashing a failure it has not established yet.
   final bool placed;
 
+  /// Whether PDF sheet 1 is an unnumbered cover, from the page map that
+  /// describes the PDF this selection was made in. False when that map is
+  /// missing or belongs to a different compile — displayed numbers then stay
+  /// physical.
+  final bool hasCoverPage;
+
   /// How the resolved page reads in the menu and the action sheets.
   ///
   /// The page an edit will be aimed at is shown before the message is sent, so
   /// a passage placed on the wrong page is something the reader can see rather
   /// than something they discover in the proposal that comes back. The number
-  /// shown is the PDF page — the same one the reader chrome counts — never the
-  /// internal book page index, which no reader surface displays.
+  /// shown is the printed page — the same one the footer and Contents count —
+  /// never the internal book page index, which no reader surface displays.
   String get placementLabel {
     if (!placed) {
       return 'Finding page…';
     }
-    return bookPageIndex == null ? 'Page not identified' : 'Page $pdfPageNumber';
+    if (hasCoverPage && pdfPageNumber == 1) {
+      return 'Cover';
+    }
+    if (bookPageIndex == null) {
+      return 'Page not identified';
+    }
+    return printedPageLabel(pdfPageNumber, hasCoverPage: hasCoverPage);
   }
+
+  /// The printed page to name in a composed chat message, or null on the cover.
+  int? get displayPageNumber =>
+      printedPageForPdfPage(pdfPageNumber, hasCoverPage: hasCoverPage);
 
   /// The structured position sent with a selection-composed chat message.
   ///
   /// `pageIndex` is the book page the locator resolved — authoritative for
-  /// targeting — and `pdfPage` the printed page the reader saw, which the
-  /// server can translate through the book's page map when no index resolved.
-  Map<String, int> get chatReaderContext => {
+  /// targeting, and a model-space answer that no republication can invalidate,
+  /// so it travels on its own terms.
+  ///
+  /// `pdfPage` is the physical PDF sheet pdfrx reported, which the server looks
+  /// up through the book's page map when no index resolved. A sheet number
+  /// belongs to one file, so it only goes at all when the map in force was
+  /// measured from the file on screen — [pdfDigest] — and it goes *with* that
+  /// digest, because the server has to make the same check against whatever
+  /// has been published since this screen last read the book's status.
+  Map<String, Object> get chatReaderContext => {
     'pageIndex': ?bookPageIndex,
-    // The printed page is only meaningful against the exact revision it was
-    // read from; the server checks contentRevision before translating it.
-    if (exportRevision != null) 'pdfPage': pdfPageNumber,
+    if (exportRevision != null && pdfDigest != null) 'pdfPage': pdfPageNumber,
     'contentRevision': ?exportRevision,
+    'pdfDigest': ?pdfDigest,
   };
 
   /// The excerpt as it goes into a chat message.

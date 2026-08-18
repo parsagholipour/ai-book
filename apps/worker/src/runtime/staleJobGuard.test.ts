@@ -16,6 +16,24 @@ const current = {
 describe("stale generation target guard", () => {
   it("cancels superseded plan work", () => {
     expect(staleGenerationTargetReason({ ...current, planId: "plan-old" })).toContain("superseded");
+    expect(
+      staleGenerationTargetReason({ ...current, planId: "plan-old", jobCreatedCurrentPlan: true })
+    ).toContain("superseded");
+  });
+
+  it("does not treat a structural apply that created the current plan as stale", () => {
+    const apply = {
+      ...current,
+      type: "APPLY_BOOK_EDIT",
+      planId: "plan-old",
+      pageId: null,
+      pageProjectId: null
+    };
+    expect(staleGenerationTargetReason({ ...apply, jobCreatedCurrentPlan: true })).toBeNull();
+    expect(staleGenerationTargetReason(apply)).toContain("superseded");
+    expect(staleGenerationTargetReason({ ...apply, jobCreatedCurrentPlan: false })).toContain(
+      "superseded"
+    );
   });
 
   it("cancels cross-project page work", () => {

@@ -30,6 +30,8 @@ class MobileProjectStatus {
     this.retryState,
     this.retryMessage,
     this.recoveryQuote,
+    this.hasCoverPage,
+    this.pdfPageNumbering,
   }) : coverEnabled = coverEnabled ?? imagesEnabled ?? true,
        illustrationsEnabled = illustrationsEnabled ?? imagesEnabled ?? true,
        imageSettingsReported =
@@ -72,6 +74,16 @@ class MobileProjectStatus {
   bool get imagesEnabled => coverEnabled || illustrationsEnabled;
   final MobileProjectQuality quality;
   final DateTime updatedAt;
+
+  /// Whether PDF sheet 1 is an unnumbered cover. Null when there is no map.
+  ///
+  /// Reader chrome uses this only through [pdfPageNumbering]. Kept separately
+  /// for compatibility with status payloads and call sites written before the
+  /// map carried an exact publication identity.
+  final bool? hasCoverPage;
+
+  /// The exact PDF publication whose stored map supplied [hasCoverPage].
+  final MobilePdfPageNumbering? pdfPageNumbering;
 
   /// Whether the server is still actively working on the book; drives status
   /// streaming and detail-polling cadence. A scheduled automatic retry remains
@@ -157,6 +169,10 @@ class MobileProjectStatus {
         (json['quality'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
+      hasCoverPage: json['hasCoverPage'] as bool?,
+      pdfPageNumbering: MobilePdfPageNumbering.tryFromJson(
+        json['pdfPageNumbering'],
+      ),
     );
   }
 
@@ -174,6 +190,54 @@ class MobileProjectStatus {
   bool get requiresReview => status == 'review_required' || quality.isBlocked;
 
   bool get hasFailure => failureMessage != null && failureMessage!.isNotEmpty;
+}
+
+/// Exact identity of the PDF publication a stored numbering/map describes.
+///
+/// `contentRevision` alone is insufficient: a repair can publish different
+/// bytes without changing the manuscript revision. Both fields must match the
+/// open file before its cover flag can affect reader chrome.
+class MobilePdfPageNumbering {
+  const MobilePdfPageNumbering({
+    required this.hasCoverPage,
+    required this.contentRevision,
+    required this.pdfDigest,
+  });
+
+  final bool hasCoverPage;
+  final int contentRevision;
+  final String pdfDigest;
+
+  factory MobilePdfPageNumbering.fromJson(Map<String, dynamic> json) {
+    return MobilePdfPageNumbering(
+      hasCoverPage: json['hasCoverPage'] as bool,
+      contentRevision: json['contentRevision'] as int,
+      pdfDigest: json['pdfDigest'] as String,
+    );
+  }
+
+  /// Reads a status field conservatively. A partially deployed or legacy API
+  /// must leave reader chrome on physical numbering, not fail the whole status
+  /// response or turn an incomplete identity into a guess.
+  static MobilePdfPageNumbering? tryFromJson(Object? value) {
+    if (value is! Map) return null;
+    final json = value.cast<Object?, Object?>();
+    final hasCoverPage = json['hasCoverPage'];
+    final contentRevision = json['contentRevision'];
+    final pdfDigest = json['pdfDigest'];
+    if (hasCoverPage is! bool ||
+        contentRevision is! int ||
+        contentRevision < 0 ||
+        pdfDigest is! String ||
+        pdfDigest.isEmpty) {
+      return null;
+    }
+    return MobilePdfPageNumbering(
+      hasCoverPage: hasCoverPage,
+      contentRevision: contentRevision,
+      pdfDigest: pdfDigest,
+    );
+  }
 }
 
 class MobileGenerationRecoveryQuote {

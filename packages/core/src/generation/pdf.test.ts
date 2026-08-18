@@ -11,9 +11,13 @@ import {
   generateBookPdfWithPageMap,
   insertCoverPageBreak,
   localizeImagesInMarkdown,
-  prepareMarkdownForPdfDocument
+  markdownOpensOnCoverSheet,
+  prepareMarkdownForPdfDocument,
+  type BookPageMapPlan
 } from "./pdf.js";
-import { compileBookMarkdownWithPageAnchors } from "./markdown.js";
+import { compileBookMarkdown, compileBookMarkdownWithPageAnchors } from "./markdown.js";
+import { extractPdfNamedDestinations } from "./pdfNamedDestinations.js";
+import { printedPageForPdfPage } from "./pdfPageMap.js";
 
 afterAll(async () => {
   // Renders share one long-lived Chromium, and a live browser holds the event
@@ -178,6 +182,34 @@ describe("localizeImagesInMarkdown", () => {
     expect(insertCoverPageBreak(markdown)).toBe(markdown);
   });
 
+  it("detects manuscripts whose first sheet is unnumbered", () => {
+    expect(markdownOpensOnCoverSheet("![Cover](/assets/images/p/cover.jpg)\n\n# The Book\n")).toBe(true);
+    expect(markdownOpensOnCoverSheet('<div class="pdf-cover-page"><img src="cover.jpg" /></div>\n\n# The Book\n')).toBe(
+      true
+    );
+    expect(markdownOpensOnCoverSheet('<section class="book-title-page">\n  <h1>The Book</h1>\n</section>\n')).toBe(true);
+    expect(markdownOpensOnCoverSheet("# The Book\n\n![Illustration](/assets/images/p/page-1.png)\n")).toBe(false);
+  });
+
+  it("agrees with the cover break it predicts when the manuscript opens on whitespace", () => {
+    // The flag and the break used to carry a regex each, and only the flag's
+    // trimmed: a manuscript opening with a blank line — or a `book.md` read
+    // back with a BOM, which `trimStart` also removes — was reported as opening
+    // on an unnumbered cover sheet that the render never built, so every
+    // printed page number the chat and the Contents speak came out one ahead of
+    // the footer.
+    for (const lead of ["", "\n\n", "  \n", "\uFEFF"]) {
+      const withCover = `${lead}![Cover](/assets/images/p/cover.jpg)\n\n# The Book\n`;
+      expect(markdownOpensOnCoverSheet(withCover)).toBe(true);
+      expect(insertCoverPageBreak(withCover)).toMatch(/^<div class="pdf-cover-page"/);
+      expect(insertCoverPageBreak(withCover)).toContain("# The Book");
+
+      const withoutCover = `${lead}# The Book\n\n![Illustration](/assets/images/p/page-1.png)\n`;
+      expect(markdownOpensOnCoverSheet(withoutCover)).toBe(false);
+      expect(insertCoverPageBreak(withoutCover)).toBe(withoutCover);
+    }
+  });
+
   const itIfPdfTextAvailable = hasCommand("pdftotext") ? it : it.skip;
 
   itIfPdfTextAvailable("adds a Page X footer to generated PDFs", async () => {
@@ -194,6 +226,118 @@ describe("localizeImagesInMarkdown", () => {
 
     const text = execFileSync("pdftotext", [outputPath, "-"], { encoding: "utf8" });
     expect(text).toMatch(/\bPage\s+1\b/);
+  }, 30_000);
+
+  itIfPdfTextAvailable("numbers the sheet after the cover as Page 1", async () => {
+    const imageStorageDir = join(tmpdir(), `book-pdf-cover-number-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    const projectId = "proj-cover-number";
+    const imageDir = join(imageStorageDir, projectId);
+    await mkdir(imageDir, { recursive: true });
+    await writeFile(
+      join(imageDir, "cover.svg"),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="2400"><rect width="1800" height="2400" fill="red"/></svg>'
+    );
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    await generateBookPdf(
+      "![Book cover](http://localhost:4001/assets/images/proj-cover-number/cover.svg)\n# The Book\n\nFirst page of the story.",
+      {
+        imageStorageDir,
+        publicApiUrl: "http://localhost:4001",
+        outputPath
+      }
+    );
+
+    const cover = execFileSync("pdftotext", ["-f", "1", "-l", "1", outputPath, "-"], { encoding: "utf8" });
+    const afterCover = execFileSync("pdftotext", ["-f", "2", "-l", "2", outputPath, "-"], { encoding: "utf8" });
+    expect(cover).not.toMatch(/\bPage\s+\d+\b/);
+    expect(afterCover).toMatch(/\bPage\s+1\b/);
+    expect(afterCover).not.toMatch(/\bPage\s+2\b/);
+  }, 30_000);
+
+  itIfPdfTextAvailable("numbers the sheet after the title page as Page 1", async () => {
+    // Coverless books with an author get a title page instead of a cover, and
+    // `@page pdf-title` carries the same counter-reset. A CSS-string assertion
+    // cannot see whether Chrome honours it; the cover render above cannot
+    // either, because that book never names `pdf-title`.
+    const imageStorageDir = join(tmpdir(), `book-pdf-title-number-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    const markdown = compileBookMarkdown({
+      plan: {
+        title: "The Clockmaker",
+        premise: "p",
+        audience: "a",
+        chapters: [{ index: 1, title: "Beginnings", summary: "s", targetPages: 1 }],
+        characters: [],
+        questions: []
+      } as never,
+      pages: [{ index: 1, title: "Opening", markdown: "First page of the story." }],
+      authorName: "Ada Lovelace"
+    });
+    expect(markdown).toContain("book-title-page");
+    expect(markdown).not.toContain("pdf-cover-page");
+
+    await generateBookPdf(markdown, {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001",
+      outputPath
+    });
+
+    const titlePage = execFileSync("pdftotext", ["-f", "1", "-l", "1", outputPath, "-"], { encoding: "utf8" });
+    const afterTitle = execFileSync("pdftotext", ["-f", "2", "-l", "2", outputPath, "-"], { encoding: "utf8" });
+    expect(titlePage).toContain("The Clockmaker");
+    expect(titlePage).not.toMatch(/\bPage\s+\d+\b/);
+    expect(afterTitle).toContain("First page of the story.");
+    expect(afterTitle).toMatch(/\bPage\s+1\b/);
+    expect(afterTitle).not.toMatch(/\bPage\s+2\b/);
+  }, 30_000);
+
+  itIfPdfTextAvailable("keeps an overlong title page to one unnumbered sheet", async () => {
+    // `@page pdf-title` resets the page counter on every sheet it names, so a
+    // title page that fragmented would leave two unnumbered sheets and print
+    // page 1 on the third — while `printedPageOffset` counts exactly one.
+    // Nothing caps a title's length, so the stylesheet caps its height.
+    const imageStorageDir = join(tmpdir(), `book-pdf-long-title-test-${randomUUID()}`);
+    tempDirs.push(imageStorageDir);
+    await mkdir(imageStorageDir, { recursive: true });
+    const outputPath = join(imageStorageDir, "book.pdf");
+
+    const markdown = compileBookMarkdown({
+      plan: {
+        title: Array.from({ length: 60 }, (_, index) => `Interminable Title Clause ${index + 1}`).join(", "),
+        premise: "p",
+        audience: "a",
+        chapters: [{ index: 1, title: "Beginnings", summary: "s", targetPages: 1 }],
+        characters: [],
+        questions: []
+      } as never,
+      pages: [{ index: 1, title: "Opening", markdown: "First page of the story." }],
+      authorName: "Ada Lovelace"
+    });
+    expect(markdown).toContain("book-title-page");
+
+    await generateBookPdf(markdown, {
+      imageStorageDir,
+      publicApiUrl: "http://localhost:4001",
+      outputPath
+    });
+
+    const titlePage = execFileSync("pdftotext", ["-f", "1", "-l", "1", outputPath, "-"], { encoding: "utf8" });
+    const afterTitle = execFileSync("pdftotext", ["-f", "2", "-l", "2", outputPath, "-"], { encoding: "utf8" });
+    expect(titlePage).not.toMatch(/\bPage\s+\d+\b/);
+    expect(afterTitle).toContain("First page of the story.");
+    expect(afterTitle).toMatch(/\bPage\s+1\b/);
+    // And it clips from the *tail*. The cap arrived as `justify-content: center`
+    // plus `overflow: hidden`, which overflows a flex column at both ends: this
+    // sheet printed its first visible line as "Interminable Title Clause 10" and
+    // the opening nine clauses were nowhere in the PDF. A title page that keeps
+    // the numbering by losing the book's name is not a title page.
+    // Whitespace is normalised because a 34pt title wraps every three words.
+    expect(titlePage.replace(/\s+/g, " ")).toContain("Interminable Title Clause 1,");
   }, 30_000);
 
   it("builds a document outline from the chapter headings", async () => {
@@ -236,29 +380,40 @@ describe("localizeImagesInMarkdown", () => {
     // What it cannot see is `BOOK_PDF_OPTIONS.margin`, and nothing can: that
     // option is inert while `bookPdfCss` sets `@page { margin }`, which Chrome
     // honours instead. `pdfDocument.test.ts` asserts that value directly.
+    //
+    // Measuring must not move that count either. The HTML `normalized()` tests
+    // in `pdfPageAnchors.test.ts` only approximate layout neutrality — they
+    // strip markers and compare boxes, which cannot see Chrome fragment a
+    // glued span or a `display:none` nav. The same manuscript rendered with
+    // and without a `pageMapPlan` is the lock that can. Contents reprint is
+    // the other measuring pass; that lives on the compiled fixture below,
+    // because a Contents section here would force a page break and blind the
+    // typography pin the way the old per-chapter breaks did.
     const imageStorageDir = join(tmpdir(), `book-pdf-pagination-test-${randomUUID()}`);
     tempDirs.push(imageStorageDir);
     await mkdir(imageStorageDir, { recursive: true });
-    const outputPath = join(imageStorageDir, "book.pdf");
 
-    const body = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ".repeat(
-      18
-    );
-    const markdown = `# The Quiet Engine\n\nAn opening note.\n\n${Array.from(
-      { length: 12 },
-      (_, index) => `## Chapter ${index + 1}\n\nThis is the body of chapter ${index + 1}. ${body}`
-    ).join("\n\n")}`;
-
-    await generateBookPdf(markdown, {
+    const { markdown, pageMapPlan } = paginationManuscript();
+    const withoutPlanPath = join(imageStorageDir, "without-plan.pdf");
+    const withPlanPath = join(imageStorageDir, "with-plan.pdf");
+    const pdfOptions = {
       imageStorageDir,
       publicApiUrl: "http://localhost:4001",
-      outputPath,
       language: "en"
+    };
+
+    await generateBookPdf(markdown, { ...pdfOptions, outputPath: withoutPlanPath });
+    const measured = await generateBookPdfWithPageMap(markdown, {
+      ...pdfOptions,
+      outputPath: withPlanPath,
+      pageMapPlan
     });
 
-    const info = execFileSync("pdfinfo", [outputPath], { encoding: "utf8" });
-    expect(/^Pages:\s+(\d+)$/m.exec(info)?.[1]).toBe("9");
-  }, 30_000);
+    const withoutPlanPages = pdfPageCount(withoutPlanPath);
+    expect(withoutPlanPages).toBe("9");
+    expect(pdfPageCount(withPlanPath)).toBe(withoutPlanPages);
+    expect(measured.pageMap?.pages).toHaveLength(pageMapPlan.pageAnchors.length);
+  }, 90_000);
 
   const itIfPdfFontsAndTextAvailable = hasCommand("pdffonts") && hasCommand("pdftotext") ? it : it.skip;
 
@@ -476,6 +631,37 @@ function hasCommand(command: string): boolean {
   }
 }
 
+function pdfPageCount(path: string): string | undefined {
+  const info = execFileSync("pdfinfo", [path], { encoding: "utf8" });
+  return /^Pages:\s+(\d+)$/m.exec(info)?.[1];
+}
+
+/** Continuous twelve-chapter prose plus a plan that marks each chapter heading. */
+function paginationManuscript(): { markdown: string; pageMapPlan: BookPageMapPlan } {
+  const body =
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. ".repeat(
+      18
+    );
+  const markdown = `# The Quiet Engine\n\nAn opening note.\n\n${Array.from(
+    { length: 12 },
+    (_, index) => `## Chapter ${index + 1}\n\nThis is the body of chapter ${index + 1}. ${body}`
+  ).join("\n\n")}`;
+
+  const pageAnchors: BookPageMapPlan["pageAnchors"] = [];
+  let searchFrom = 0;
+  for (let index = 1; index <= 12; index += 1) {
+    const needle = `## Chapter ${index}\n`;
+    const markdownOffset = markdown.indexOf(needle, searchFrom);
+    if (markdownOffset < 0) {
+      throw new Error(`Pagination fixture missing ${needle.trim()}`);
+    }
+    pageAnchors.push({ pageIndex: index, destName: `bp-${index}`, markdownOffset });
+    searchFrom = markdownOffset + needle.length;
+  }
+
+  return { markdown, pageMapPlan: { pageAnchors, hasCoverPage: false, hasContents: false } };
+}
+
 async function readPpm(path: string): Promise<{ width: number; height: number; pixels: Buffer }> {
   const bytes = await readFile(path);
   let offset = 0;
@@ -530,7 +716,7 @@ describe("generateBookPdfWithPageMap", () => {
 
   const itIfPdfText = hasCommand("pdftotext") ? it : it.skip;
 
-  itIfPdfText("measures where every model page landed and reprints the Contents in PDF pages", async () => {
+  itIfPdfText("measures where every model page landed and reprints the Contents in printed pages", async () => {
     const imageStorageDir = join(tmpdir(), `book-pdf-map-test-${randomUUID()}`);
     tempDirs.push(imageStorageDir);
     await mkdir(imageStorageDir, { recursive: true });
@@ -565,13 +751,23 @@ describe("generateBookPdfWithPageMap", () => {
     });
     expect(compiled.hasContents).toBe(true);
 
-    const result = await generateBookPdfWithPageMap(compiled.markdown, {
+    const pdfOptions = {
       imageStorageDir,
       publicApiUrl: "http://localhost:4001",
+      language: "en"
+    };
+    // Same manuscript, no plan: markers and the Contents reprint must not
+    // add a page. HTML `normalized()` cannot see either pass.
+    const unmarked = await generateBookPdfWithPageMap(compiled.markdown, pdfOptions);
+    const result = await generateBookPdfWithPageMap(compiled.markdown, {
+      ...pdfOptions,
       outputPath,
-      language: "en",
       pageMapPlan: compiled
     });
+
+    expect(extractPdfNamedDestinations(result.pdf)?.pageCount).toBe(
+      extractPdfNamedDestinations(unmarked.pdf)?.pageCount
+    );
 
     const map = result.pageMap;
     expect(map).toBeDefined();
@@ -595,20 +791,22 @@ describe("generateBookPdfWithPageMap", () => {
       expect(text).toContain(`OpeningToken${page.index}`);
     }
 
-    // The Contents rows print the measured PDF pages — the same numbers the
-    // footer counts — rather than model page indexes. Chapter 2 opens at model
-    // page 5, which cannot be its PDF page: the front matter alone displaces it.
-    const chapterTwoStart = map.pages[4]!.startPdfPage;
-    expect(chapterTwoStart).not.toBe(5);
+    // The Contents rows print the numbers the footer counts — printed pages,
+    // which skip the cover when there is one — rather than model page indexes.
+    // Chapter 2 opens at model page 5, which cannot be its printed page: the
+    // front matter alone displaces it.
+    const chapterTwoPrinted = printedPageForPdfPage(map, map.pages[4]!.startPdfPage);
+    expect(chapterTwoPrinted).toBeDefined();
+    expect(chapterTwoPrinted).not.toBe(5);
     const contentsText = execFileSync(
       "pdftotext",
       ["-f", String(map.contentsStartPdfPage), "-l", String(map.contentsStartPdfPage), outputPath, "-"],
       { encoding: "utf8" }
     );
     expect(contentsText).toContain("Endings");
-    expect(contentsText).toContain(String(chapterTwoStart));
+    expect(contentsText).toContain(String(chapterTwoPrinted));
     expect(contentsText).not.toMatch(/\b5\b/);
-  }, 90_000);
+  }, 120_000);
 
   it("returns no map — and a whole book — when no plan is given", async () => {
     const imageStorageDir = join(tmpdir(), `book-pdf-no-plan-test-${randomUUID()}`);

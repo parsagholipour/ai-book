@@ -83,7 +83,10 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
           "chapter_heading",
           "insert_image",
           "move_image",
-          "remove_image"
+          "remove_image",
+          "insert_pages",
+          "delete_pages",
+          "move_pages"
         ])
         .optional(),
       editStyle: z.enum(["exact_replace", "rewrite"]).optional(),
@@ -100,6 +103,50 @@ export function decideActionSchema(actions: [DecideAction, ...DecideAction[]]) {
       /** True when the new picture replaces an existing illustration instead of adding another. */
       imageReplace: z.boolean().nullish(),
       pageIndexes: z.array(z.number().int().positive()).max(100).default([]),
+      /**
+       * A different instruction for particular pages, when one sentence asks
+       * for different things on each ("make page 3 funnier and page 7
+       * shorter"). Left empty the whole request covers every page in
+       * `pageIndexes`, which is the ordinary case.
+       */
+      perPageInstructions: z
+        .array(
+          z.object({
+            pageIndex: z.number().int().positive(),
+            instruction: z.string().trim().min(1).max(600)
+          })
+        )
+        .max(40)
+        .nullish(),
+      /**
+       * Where an insert_pages or move_pages lands: the page the new or moved
+       * pages go next to, named the way `pageIndexes` is and never stepped back
+       * by one. 0 is the head of the book.
+       */
+      structuralAnchorPageIndex: z.number().int().min(0).max(600).nullish(),
+      /**
+       * Which side of that page they land on. Absent is "after". "before" is
+       * resolved in `bookEditDecision.ts`, after the anchor has been read back
+       * into model pages — a router that subtracted the one itself emits a
+       * number the message never speaks, which is exactly what the
+       * printed-number copy guard reads as "already translated".
+       */
+      structuralAnchorPosition: z.enum(["after", "before"]).nullish(),
+      /**
+       * How many pages an insert_pages writes.
+       *
+       * Bounded far above `MAX_INSERTED_PAGES` deliberately. This schema is
+       * handed to the model as the tool's JSON schema, so a bound *at* the cap
+       * is an instruction to clamp: "add 12 pages after page 10" came back as
+       * 10, resolved as an accepted ten-page insert, and charged for ten with
+       * nothing saying two were dropped — while the same message on the
+       * router-outage path kept its twelve and was refused for free. The cap is
+       * `resolveStructuralPageEdit`'s alone, and it answers an over-long insert
+       * with a sentence naming the real limit; a number this field cannot carry
+       * is a refusal the reader can never reach. 600 matches `newTargetPages`
+       * and `structuralAnchorPageIndex` — a bound against nonsense, not a rule.
+       */
+      structuralPageCount: z.number().int().min(1).max(600).nullish(),
       /** Destination page for move_image. Source stays pageIndexes. */
       imageDestPageIndexes: z.array(z.number().int().positive()).max(100).nullish(),
       /**
@@ -152,14 +199,14 @@ const imageRules = (readerPagesArePdf: boolean) => [
 
 /**
  * In force only when the book's published PDF has a current page map: the
- * numbers a reader can see — the pdfrx page indicator, the printed footer, the
- * Contents column — are physical PDF pages, and the book's own page indexes are
+ * numbers a reader can see — the printed footer, the Contents column, the
+ * pdfrx chrome — skip the cover sheet, and the book's own page indexes are
  * invisible to them. Every page entry then carries `readerPages`, and the
  * model's job is the translation.
  */
 const READER_PAGE_RULES = [
   "Page numbers in the user's message are the PRINTED page numbers of the compiled book — the numbers the reader sees on the PDF pages, in its footer and in its table of contents. They are NOT the internal page index values. Each entry in pages carries readerPages: the printed pages that entry occupies. To act on \"page 12\", find the entries whose readerPages include 12 and put their index values into pageIndexes; never copy a printed number into pageIndexes directly.",
-  "readerPageContext names printed pages that hold no book text: the cover, the table of contents pages, and the sources list at the back. A request aimed at one of those is about the book's furniture rather than its prose — use editTarget back_matter or chapter_heading when it matches one, and otherwise action answer explaining what that printed page is. Never turn it into a page rewrite."
+  "readerPageContext names furniture that holds no book text: cover (true only when the PDF opens on an unnumbered cover sheet — omit it when printed page 1 is on the first sheet), contentsStartPage, and sourcesStartPage. A request aimed at one of those is about the book's furniture rather than its prose — use editTarget back_matter or chapter_heading when it matches one, and otherwise action answer explaining what that printed page is. Never turn it into a page rewrite. When cover is true, that sheet has no printed page number."
 ];
 
 export function routerSystemPrompt(
@@ -199,8 +246,11 @@ export function routerSystemPrompt(
           "Set editStyle to exact_replace for typos, renames, and quoted replacements; use rewrite for tone/style/content rewrites. Optionally set replacementFrom/replacementTo for exact replacements.",
           "Use editTarget back_matter, with backMatterSources false, when the user wants the sources / references / bibliography list at the end of the book gone (true to print it again). That list is generated at export time, so no page edit can remove it; this target is free.",
           "Use editTarget chapter_heading when the user wants chapter headings worded differently — dropping the word \"Chapter\", showing only the title, changing the numbering, or calling them Parts or Episodes. Set chapterHeadingStyle to title_only (just the title), number_title (\"1. The Web Spins\"), or label_number_title (\"Chapter 1: The Web Spins\", the default), and chapterHeadingLabel when they name a different word. Chapter headings are generated at export time from the title alone, so no page edit can change them; this target is free.",
-          "A request that changes how long the book is or whether it has pictures is structural, because both are decided when the book is planned. Set newTargetPages whenever the user names a length (\"make it 3 pages\", \"half as long\" — resolve it to a number), and illustrationsEnabled false when they want it without illustrations (true to add them). Report them even when the message also asks for other changes; the server prices the book you describe, so leaving them out quotes the old book's size.",
+          "A request that changes how long the book is or whether it has pictures is structural, because both are decided when the book is planned. Set newTargetPages whenever the user names the book's whole new length (\"make it 3 pages\", \"half as long\" — resolve it to a number), and illustrationsEnabled false when they want it without illustrations (true to add them). Report them even when the message also asks for other changes; the server prices the book you describe, so leaving them out quotes the old book's size.",
+          "Adding, removing or reordering particular pages is NOT structural, and newTargetPages is the book's total length rather than a number of pages to add. Use editTarget insert_pages (\"add three pages after page 10\", \"write a new opening page\"), delete_pages (\"delete page 7\", \"remove pages 4 and 5\") or move_pages (\"move page 12 to after page 4\"). Set structuralAnchorPageIndex to the page the new or moved pages go next to, filled exactly the way you fill pageIndexes and never stepped back by one yourself, and structuralAnchorPosition to before or after (after is the default) to say which side of that page they land on: \"add a page before page 10\" is structuralAnchorPageIndex for page 10 with structuralAnchorPosition before, and 0 with after is the front of the book. Set structuralPageCount for how many pages to add, and pageIndexes for the pages to delete or move. Reserve structural for replacing the book's premise, main character, audience or whole length, because it regenerates the entire book into a new copy.",
           "Set pageIndexes or chapterIndex when known. Set targetLanguage for language_copy.",
+          "pageIndexes is a list: a request naming several pages (\"edit pages 3, 5 and 7\", \"pages 4-6\") is one edit over all of them, not one page and not the whole book.",
+          "When the message asks for a different change on each of those pages (\"make page 3 funnier and page 7 shorter\"), also fill perPageInstructions with one entry per page, each carrying only that page's instruction. Leave it empty whenever one instruction covers every page — that is the ordinary case, and an entry that merely repeats the request makes the edit worse.",
           "Never invent credit prices or internal pricing tiers; the server prices propose_edit."
         ]
       : [

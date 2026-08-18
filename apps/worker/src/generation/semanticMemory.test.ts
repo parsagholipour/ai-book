@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   prisma: {
     character: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
-    location: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() }
+    location: { findMany: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
+    embedding: { create: vi.fn() },
+    $executeRawUnsafe: vi.fn()
   }
 }));
 
@@ -13,7 +15,50 @@ vi.mock("@book-maker/db", () => ({
   retrieveSimilarEmbeddings: vi.fn()
 }));
 
-import { updateEntityStateFromPage } from "./semanticMemory.js";
+import { storeEmbedding, updateEntityStateFromPage } from "./semanticMemory.js";
+
+/**
+ * `storeEmbedding` is the provider call and the insert composed, and the two
+ * halves are separately callable so a caller publishing under an ownership
+ * fence can put the fence between them (`generation/pageReview.ts`). These
+ * assertions are on the composed call, because that is what every other caller
+ * still uses and what the split must not have changed.
+ */
+describe("storeEmbedding", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("writes the vector row when the provider answers", async () => {
+    mocks.prisma.$executeRawUnsafe.mockResolvedValue(1);
+
+    await storeEmbedding("project-1", "page:3", "page-row-1", "Summary.", { embed: async () => [0.5, -0.25] });
+
+    expect(mocks.prisma.embedding.create).not.toHaveBeenCalled();
+    expect(mocks.prisma.$executeRawUnsafe.mock.calls[0]?.[6]).toBe("[0.5000000,-0.2500000]");
+  });
+
+  it("degrades to a vectorless row when the provider call fails", async () => {
+    await storeEmbedding("project-1", "page:3", "page-row-1", "Summary.", {
+      embed: async () => {
+        throw new Error("provider down");
+      }
+    });
+
+    expect(mocks.prisma.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(mocks.prisma.embedding.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ metadata: { vectorStored: false, error: "provider down" } })
+    });
+  });
+
+  it("degrades to a vectorless row when the vector insert itself fails", async () => {
+    mocks.prisma.$executeRawUnsafe.mockRejectedValue(new Error("type vector does not exist"));
+
+    await storeEmbedding("project-1", "page:3", "page-row-1", "Summary.", { embed: async () => [0.5] });
+
+    expect(mocks.prisma.embedding.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ metadata: { vectorStored: false, error: "type vector does not exist" } })
+    });
+  });
+});
 
 describe("updateEntityStateFromPage", () => {
   beforeEach(() => {

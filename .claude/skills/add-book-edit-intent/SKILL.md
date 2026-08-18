@@ -1,6 +1,6 @@
 ---
 name: add-book-edit-intent
-description: Use when adding or changing a conversational edit in the finished-book chat — a new `BookEditIntentKind` (alongside `page_rewrite`, `local_patch`, `back_matter`, `chapter_heading`, `add_image`, `move_image`, `continue_book`, `book_replan`), a new `editTarget` in `decideActionSchema`, a new `DecideAction`, or a change to how a request is priced, proposed or applied. The router lives in apps/api/src/bookEditIntent.ts (`classifyProjectChatMessage`, `normalizeIntentForStage`, `forcedDecision`, `PROPOSAL_GATED_EDIT_KINDS`) and the apply side in apps/api/src/mobile/bookEditIntents.ts (`handleProjectChatIntent`, `proposeBookEdit`) — two different ~900-line files whose names differ only by a plural. Reach for it on "make the chat understand X", "the chat quoted 960 credits to change a heading", "it keeps asking the same question", "the edit should be free", or "the proposal card says the wrong thing".
+description: Use when adding or changing a conversational edit in the finished-book chat — a new `BookEditIntentKind` (alongside `page_rewrite`, `local_patch`, `back_matter`, `chapter_heading`, `add_image`, `move_image`, `remove_image`, `restructure_pages`, `continue_book`, `book_replan`), a new `editTarget` in `decideActionSchema`, a new `DecideAction`, or a change to how a request is priced, proposed or applied. The router lives in apps/api/src/bookEditIntent.ts (`classifyProjectChatMessage`, `normalizeIntentForStage`, `forcedDecision`, `PROPOSAL_GATED_EDIT_KINDS`) and the apply side in apps/api/src/mobile/bookEditIntents.ts (`handleProjectChatIntent`, `proposeBookEdit`) — two different ~900-line files whose names differ only by a plural. Reach for it on "make the chat understand X", "the chat quoted 960 credits to change a heading", "it keeps asking the same question", "the edit should be free", or "the proposal card says the wrong thing".
 ---
 
 # Adding or changing a book-edit intent
@@ -68,6 +68,14 @@ heading that is synthesized at export time and stored in no page.
 
 Add the recogniser stage-gated (`options.stage === "complete"`) unless it genuinely applies before
 approval.
+
+**Structural?** Insert, delete or reorder pages is `restructure_pages`, and it is the one kind
+whose targets do not exist yet. It forks ahead of `affectedPagesForIntent` in both
+`proposeBookEdit` and `queueChatBookEdit` — that resolver filters against pages the book *has*, so
+an insert reaching it is answered "which page or exact phrase should I edit?" and never gets a
+card. Its work lives in `apps/api/src/mobile/restructurePageOperations.ts` and
+`structuralPageEdits.ts`, the shared resolver in `packages/core/src/generation/pageRestructure.ts`,
+and the worker's fork in `apps/worker/src/handlers/restructurePages.ts`.
 
 For a model-routed intent instead, edit `apps/api/src/bookEditRouterPrompt.ts`:
 `decideActionSchema`'s `editTarget` enum, any new payload fields beside it, and the prompt line that

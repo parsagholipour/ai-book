@@ -514,9 +514,36 @@ export function createBillingTestDb() {
           .filter((row) => ledgerMatchesWhere(row, where))
           .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null
       ),
-      findMany: vi.fn(async ({ where }: any) =>
-        [...state.ledger.values()].filter((row) => ledgerMatchesWhere(row, where ?? {}))
-      ),
+      findMany: vi.fn(async ({ where, orderBy, take, skip, cursor, select }: any) => {
+        let rows = [...state.ledger.values()].filter((row) => ledgerMatchesWhere(row, where ?? {}));
+        const orderClauses: any[] = Array.isArray(orderBy) ? orderBy : orderBy ? [orderBy] : [];
+        if (orderClauses.some((clause) => clause?.createdAt === "desc")) {
+          const byId = orderClauses.some((clause) => clause?.id === "desc");
+          rows = rows.sort(
+            (left, right) =>
+              right.createdAt.getTime() - left.createdAt.getTime() ||
+              (byId ? right.id.localeCompare(left.id) : 0)
+          );
+        }
+        // Cursor pagination, as the bounded refund scan uses it: the cursor row
+        // is found in the ordered list and `skip` steps past it.
+        if (cursor?.id !== undefined) {
+          const index = rows.findIndex((row) => row.id === cursor.id);
+          rows = index === -1 ? [] : rows.slice(index);
+        }
+        if (typeof skip === "number") {
+          rows = rows.slice(skip);
+        }
+        rows = rows.slice(0, take ?? rows.length);
+        if (select?.reversedByEntry) {
+          return rows.map((row) => ({
+            ...row,
+            reversedByEntry:
+              [...state.ledger.values()].find((candidate) => candidate.reversesEntryId === row.id) ?? null
+          }));
+        }
+        return rows;
+      }),
       create: vi.fn(async ({ data }: any) => {
         const row: Ledger = {
           id: `ledger-${++state.ledgerSeq}`,

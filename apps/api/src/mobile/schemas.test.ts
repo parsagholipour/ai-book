@@ -35,6 +35,26 @@ describe("mobile chat body schemas", () => {
     ).toBe(true);
   });
 
+  it("documents exactly the reader-context fields it accepts", () => {
+    // The nested object is `.strict()` too, and it is where the reader's file
+    // identity travels: a `pdfDigest` the docs omit is a physical `pdfPage`
+    // that documented clients can never get translated.
+    const documented = Object.keys(mobileProjectChatMessageOpenApiBody.properties.readerContext.properties).sort();
+    const accepted = Object.keys(mobileProjectChatMessageBodySchema.shape.readerContext.unwrap().shape).sort();
+
+    expect(documented).toEqual(accepted);
+    expect(accepted).toContain("pdfDigest");
+  });
+
+  it("accepts the reader's open-file identity alongside a physical sheet", () => {
+    expect(
+      mobileProjectChatMessageBodySchema.safeParse({
+        message: 'Rewrite "the storm broke".',
+        readerContext: { pdfPage: 7, contentRevision: 3, pdfDigest: "a".repeat(64) }
+      }).success
+    ).toBe(true);
+  });
+
   it("rejects an unknown field rather than silently dropping it", () => {
     expect(
       mobileProjectChatMessageBodySchema.safeParse({

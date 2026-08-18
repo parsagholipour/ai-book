@@ -196,6 +196,20 @@ describe("generatePage quality loop", () => {
     expect(mocks.revisePageDraft).not.toHaveBeenCalled();
   });
 
+  it("owns new continuity notes by the stable page id", async () => {
+    mocks.generatePageDraft.mockResolvedValue({
+      ...draftNamed("First"),
+      continuityNotes: ["Pip keeps the brass key."]
+    });
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ pageId: "page-1", scope: "page:1", body: "Pip keeps the brass key." })]
+    });
+  });
+
   it("queues the illustration before saving the page as COMPLETED", async () => {
     // A sibling page's maybeEnqueueCompile call must never observe this page
     // as terminal with no open image job behind it — the image job has to

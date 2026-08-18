@@ -16,9 +16,10 @@ import {
   injectBookPageAnchorMarkers,
   rewriteContentsPdfPageNumbers
 } from "./pdfPageAnchors.js";
+import { extractPdfNamedDestinations } from "./pdfNamedDestinations.js";
 import {
   buildBookPdfPageMap,
-  extractPdfNamedDestinations,
+  contentsChapterPrintedPages,
   type BookPdfPageMap
 } from "./pdfPageMap.js";
 import { applyRenderResourcePolicy } from "./renderResourcePolicy.js";
@@ -112,20 +113,65 @@ async function prepareMarkdownImagesForPdf(
   });
 }
 
+const COVER_PAGE_DIV_RE = /^<div\b[^>]*class=["'][^"']*\bpdf-cover-page\b/i;
+const TITLE_PAGE_SECTION_RE = /^<section\b[^>]*class=["'][^"']*\bbook-title-page\b/i;
+const LEADING_ILLUSTRATION_RE = /^!\[([^\]]*)]\(([^)]+)\)\s*/;
+
+/**
+ * The illustration a manuscript opens with, and whatever follows it.
+ *
+ * One predicate, because two callers ask the same question and have to get the
+ * same answer: {@link markdownOpensOnCoverSheet} claims the first sheet is
+ * unnumbered, and {@link insertCoverPageBreak} is what makes it so. They used to
+ * carry a regex each and only one of them trimmed, so a manuscript opening with
+ * a blank line — or a `book.md` read back with a BOM, which counts as
+ * whitespace here — was reported as having a cover sheet that the render never
+ * built, and every printed page number the chat, the Contents and the reader
+ * chrome speak came out one ahead of the footer.
+ *
+ * Trimming is the right half of that disagreement rather than merely the
+ * agreed one. Leading whitespace is not content — marked renders the same
+ * document with or without it — so the same book must not typeset differently
+ * for a newline nobody can see, and the cover-div branch below was already
+ * whitespace-tolerant on both sides.
+ */
+function leadingCoverIllustration(markdown: string): { alt: string; src: string; rest: string } | undefined {
+  const start = markdown.trimStart();
+  const match = start.match(LEADING_ILLUSTRATION_RE);
+  if (!match) {
+    return undefined;
+  }
+  return { alt: match[1] ?? "", src: match[2] ?? "", rest: start.slice(match[0].length) };
+}
+
+/**
+ * Whether this manuscript will print an unnumbered first sheet — a cover or
+ * the fallback title page. New PDFs always `counter-reset: page 0` on those
+ * named pages, so an unmeasured render still owes chrome that flag.
+ */
+export function markdownOpensOnCoverSheet(markdown: string): boolean {
+  const start = markdown.trimStart();
+  if (COVER_PAGE_DIV_RE.test(start)) {
+    return true;
+  }
+  if (TITLE_PAGE_SECTION_RE.test(start)) {
+    return true;
+  }
+  // `insertCoverPageBreak` wraps a leading illustration as the cover sheet.
+  return leadingCoverIllustration(markdown) !== undefined;
+}
+
 export function insertCoverPageBreak(markdown: string): string {
-  if (/^<div\b[^>]*class=["'][^"']*\bpdf-cover-page\b/i.test(markdown.trimStart())) {
+  if (COVER_PAGE_DIV_RE.test(markdown.trimStart())) {
     return markdown;
   }
 
-  const leadingImage = markdown.match(/^!\[([^\]]*)]\(([^)]+)\)(\s*)/);
-  if (!leadingImage) {
+  const leading = leadingCoverIllustration(markdown);
+  if (!leading) {
     return markdown;
   }
-  const full = leadingImage[0] ?? "";
-  const alt = leadingImage[1] ?? "";
-  const src = leadingImage[2] ?? "";
-  let rest = markdown.slice(full.length).trimStart();
-  rest = rest.replace(/^<div\b[^>]*class=["'][^"']*\bpage-break\b[^>]*>\s*<\/div>\s*/i, "");
+  const { alt, src } = leading;
+  const rest = leading.rest.replace(/^<div\b[^>]*class=["'][^"']*\bpage-break\b[^>]*>\s*<\/div>\s*/i, "");
 
   const altAttribute = escapeHtmlAttribute(alt);
   const cover = [
@@ -200,19 +246,22 @@ export async function generateBookPdfWithPageMap(
   let pageMap: BookPdfPageMap | undefined;
 
   if (plan && plan.pageAnchors.length > 0) {
-    let measured = measureBookPageMap(pdf, plan);
+    const measured = measureBookPageMap(pdf, plan);
     pageMap = measured?.map;
     // The Contents rows were compiled with model page indexes — the only
     // numbers that exist before a render does. Now that the chapters'
-    // real PDF pages are measured, print those and render once more. The
+    // printed pages are measured, write those and render once more. The
     // reprint can itself shift a break (a wider number wraps a long row), so
     // the printed numbers are re-checked once; a second disagreement keeps
     // the latest render — off by the shift on one row, never by a numbering
     // system.
     if (measured && plan.hasContents) {
       let printed = html;
-      for (let pass = 0; measured && pass < 2; pass += 1) {
-        const rewritten = rewriteContentsPdfPageNumbers(printed, measured.chapterPdfPages);
+      // Undefined means some chapter has no printed number at all, so there is
+      // nothing to rewrite the column to; the rows keep their model indexes.
+      let chapterPages = measured.chapterPrintedPages;
+      for (let pass = 0; chapterPages && pass < 2; pass += 1) {
+        const rewritten = rewriteContentsPdfPageNumbers(printed, chapterPages);
         if (rewritten === undefined || rewritten === printed) {
           break;
         }
@@ -226,10 +275,15 @@ export async function generateBookPdfWithPageMap(
         pdf = reprinted;
         pageMap = remeasured.map;
         printed = rewritten;
-        if (chapterPagesEqual(measured.chapterPdfPages, remeasured.chapterPdfPages)) {
+        if (
+          remeasured.chapterPrintedPages === undefined ||
+          chapterPagesEqual(chapterPages, remeasured.chapterPrintedPages)
+        ) {
+          // Either the reprint agrees, or it moved a chapter somewhere with no
+          // number to check against. Both keep this render and its numbers.
           break;
         }
-        measured = remeasured;
+        chapterPages = remeasured.chapterPrintedPages;
       }
     }
   }
@@ -240,10 +294,17 @@ export async function generateBookPdfWithPageMap(
   return { pdf, ...(pageMap ? { pageMap } : {}) };
 }
 
+/**
+ * The map, plus the printed numbers its Contents rows would be rewritten to —
+ * `undefined` for those when no such number exists for some chapter, which
+ * cancels the reprint rather than mixing numbering systems in the column. The
+ * map itself survives that: it is physical throughout and describes these bytes
+ * either way, and chat translates through it.
+ */
 function measureBookPageMap(
   pdf: Buffer,
   plan: BookPageMapPlan
-): { map: BookPdfPageMap; chapterPdfPages: number[] } | undefined {
+): { map: BookPdfPageMap; chapterPrintedPages: number[] | undefined } | undefined {
   const extracted = extractPdfNamedDestinations(pdf);
   if (!extracted) {
     return undefined;
@@ -257,18 +318,7 @@ function measureBookPageMap(
   if (!map) {
     return undefined;
   }
-  const chapterPdfPages: number[] = [];
-  for (const anchor of plan.pageAnchors) {
-    if (!anchor.destName.startsWith("chapter-")) {
-      continue;
-    }
-    const destination = extracted.destinations.get(anchor.destName);
-    if (!destination) {
-      return undefined;
-    }
-    chapterPdfPages.push(destination.pdfPage);
-  }
-  return { map, chapterPdfPages };
+  return { map, chapterPrintedPages: contentsChapterPrintedPages(map, plan.pageAnchors, extracted.destinations) };
 }
 
 function chapterPagesEqual(a: readonly number[], b: readonly number[]): boolean {

@@ -21,7 +21,9 @@ const {
   hasActiveSubscriptionEntitlement,
   recordVerifiedGooglePlayPurchase,
   refundCreditLedgerEntry,
+  refundCreditLedgerEntryPortion,
   refundLatestProjectOperationCredits,
+  refundedLedgerEntryIds,
   releaseReservationsByKeyPrefix,
   reserveCredits,
   resolvePlanTier,
@@ -29,6 +31,7 @@ const {
 } = await import("./billing.js");
 
 const JUNE = new Date("2026-06-15T12:00:00.000Z");
+const NEXT_DAY = new Date("2026-06-16T12:00:00.000Z");
 
 describe("credit ledger operations", () => {
   beforeEach(() => {
@@ -61,6 +64,202 @@ describe("credit ledger operations", () => {
 
     await refundCreditLedgerEntry(spend.id, "Generation failed");
     expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 1000, reservedCredits: 0, lifetimeCreditsSpent: 0 });
+  });
+
+  it("replays a partial settlement once, then tops up only the remainder on full failure", async () => {
+    // The page-priced shortfall: an insert charged for five pages that wrote
+    // two. Only the three missing pages come back, and the charge keeps its one
+    // cumulative reversal. A redelivery finds its claim key; a later failure
+    // grows that same row by the remaining 80 rather than paying 120 twice.
+    await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
+    const spend = await spendCredits({
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 200,
+      idempotencyKey: "attempt:insert-5"
+    });
+
+    const refund = await refundCreditLedgerEntryPortion({
+      entryId: spend!.id,
+      amountCredits: 120,
+      reason: "Structural edit wrote 2 of 5 paid pages",
+      idempotencyKey: "edit-shortfall:operation-1"
+    });
+
+    expect(refund).toMatchObject({ entryType: "REFUND", amountCredits: 120 });
+    expect(await getCreditBalance("user-a")).toMatchObject({
+      availableCredits: 920,
+      reservedCredits: 0,
+      lifetimeCreditsSpent: 80
+    });
+
+    // Redelivery of the same settlement.
+    const replayed = await refundCreditLedgerEntryPortion({
+      entryId: spend!.id,
+      amountCredits: 120,
+      reason: "Structural edit wrote 2 of 5 paid pages",
+      idempotencyKey: "edit-shortfall:operation-1"
+    });
+    expect(replayed?.id).toBe(refund?.id);
+    expect(replayed?.amountCredits).toBe(120);
+    expect(await refundedLedgerEntryIds([spend!.id])).toEqual(new Set());
+
+    // A full refund arriving afterwards — failEditOperation or the attempt
+    // reconciler — tops up the unpaid 80 exactly once.
+    await refundLatestProjectOperationCredits({
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      reason: "Edit failed"
+    });
+    await refundCreditLedgerEntry(spend!.id, "Edit failed again");
+    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 1000, lifetimeCreditsSpent: 0 });
+    expect(await refundedLedgerEntryIds([spend!.id])).toEqual(new Set([spend!.id]));
+    const reversals = [...fakeDb.state.ledger.values()].filter((entry) => entry.reversesEntryId === spend!.id);
+    expect(reversals).toHaveLength(1);
+    expect(reversals[0]).toMatchObject({ amountCredits: 200 });
+  });
+
+  it("keeps the reversal's own stamp and both settlements' reasons when a partial is topped up", async () => {
+    // The audit trail across a two-step reversal. The row is cumulative in
+    // amount only: `balanceAfterCredits` names the balance at the moment the
+    // row was written, so the top-up must not restate it — and the reason the
+    // partial settlement gave is the only record of why part of the charge came
+    // back, so it must survive the reason the failure gives later.
+    await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
+    const spend = await spendCredits({
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 200,
+      idempotencyKey: "attempt:insert-5",
+      now: JUNE
+    });
+
+    await refundCreditLedgerEntryPortion({
+      entryId: spend!.id,
+      amountCredits: 120,
+      reason: "Structural edit wrote 2 of 5 paid pages",
+      idempotencyKey: "edit-shortfall:operation-1",
+      now: JUNE
+    });
+
+    // Something else moves the balance between the two settlements, which is
+    // what makes a rewritten stamp unexplainable by any adjacent row.
+    const later = await spendCredits({
+      userId: "user-a",
+      operation: "FULL_BOOK_GENERATION",
+      amountCredits: 300,
+      idempotencyKey: "attempt:other-book",
+      now: NEXT_DAY
+    });
+    await refundCreditLedgerEntry(spend!.id, "Edit failed", NEXT_DAY);
+
+    const reversal = [...fakeDb.state.ledger.values()].find((entry) => entry.reversesEntryId === spend!.id)!;
+    const settlements = (reversal.metadata as { refundSettlements?: unknown[] }).refundSettlements;
+
+    // The money is unchanged: one reversal, cumulative to exactly the charge.
+    expect(
+      [...fakeDb.state.ledger.values()].filter((entry) => entry.reversesEntryId === spend!.id)
+    ).toHaveLength(1);
+    expect(reversal).toMatchObject({ entryType: "REFUND", amountCredits: 200 });
+    expect(await getCreditBalance("user-a")).toMatchObject({
+      availableCredits: 700,
+      reservedCredits: 0,
+      lifetimeCreditsSpent: 300
+    });
+    // …and the ledger still sums to the balance it describes.
+    expect(
+      [...fakeDb.state.ledger.values()]
+        .filter((entry) => entry.userId === "user-a")
+        .reduce((total, entry) => total + entry.amountCredits, 0)
+    ).toBe(700);
+
+    // The stamp is the balance at the moment this row was written — 920, after
+    // the partial went back — not the 700 the later top-up left behind.
+    expect(reversal.balanceAfterCredits).toBe(920);
+    // Every other row's stamp still describes its own moment too.
+    expect([...fakeDb.state.ledger.values()].find((entry) => entry.id === later!.id)?.balanceAfterCredits).toBe(620);
+
+    // Both reasons are recoverable: on the row an operator reads, and per
+    // settlement with the amount and balance each one produced.
+    expect(reversal.description).toBe("Structural edit wrote 2 of 5 paid pages; Edit failed");
+    expect(settlements).toEqual([
+      {
+        credits: 120,
+        reason: "Structural edit wrote 2 of 5 paid pages",
+        at: JUNE.toISOString(),
+        balanceAfterCredits: 920,
+        claimKey: "edit-shortfall:operation-1"
+      },
+      {
+        credits: 80,
+        reason: "Edit failed",
+        at: NEXT_DAY.toISOString(),
+        balanceAfterCredits: 700
+      }
+    ]);
+    expect((settlements as Array<{ credits: number }>).reduce((total, entry) => total + entry.credits, 0)).toBe(200);
+  });
+
+  it("reconstructs the first settlement of a reversal written before the trail existed", async () => {
+    // Rows already in production carry no `refundSettlements`, and the first
+    // top-up to reach one is exactly the write that used to lose its reason.
+    await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
+    const spend = await spendCredits({
+      userId: "user-a",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 200,
+      idempotencyKey: "attempt:legacy-insert",
+      now: JUNE
+    });
+    await refundCreditLedgerEntryPortion({
+      entryId: spend!.id,
+      amountCredits: 120,
+      reason: "Wrote 2 of 5 paid pages",
+      idempotencyKey: "edit-shortfall:legacy",
+      now: JUNE
+    });
+    const reversal = [...fakeDb.state.ledger.values()].find((entry) => entry.reversesEntryId === spend!.id)!;
+    const { refundSettlements: _dropped, ...legacyMetadata } = reversal.metadata as Record<string, unknown>;
+    reversal.metadata = legacyMetadata;
+
+    await refundCreditLedgerEntry(spend!.id, "Edit failed", NEXT_DAY);
+
+    expect(reversal).toMatchObject({ amountCredits: 200, balanceAfterCredits: 920 });
+    expect(reversal.description).toBe("Wrote 2 of 5 paid pages; Edit failed");
+    expect((reversal.metadata as { refundSettlements: unknown[] }).refundSettlements).toEqual([
+      {
+        credits: 120,
+        reason: "Wrote 2 of 5 paid pages",
+        at: reversal.createdAt.toISOString(),
+        balanceAfterCredits: 920
+      },
+      { credits: 80, reason: "Edit failed", at: NEXT_DAY.toISOString(), balanceAfterCredits: 1000 }
+    ]);
+    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 1000, lifetimeCreditsSpent: 0 });
+  });
+
+  it("gives the whole charge back when a portion would cover it", async () => {
+    // The degenerate shortfall — nothing written at all — is a full reversal,
+    // so it takes the path that also revokes entitlements and returns quota
+    // slots rather than a second, thinner implementation of one.
+    await grantCredits({ userId: "user-a", amountCredits: 1000, idempotencyKey: "grant:user-a" });
+    const spend = await spendCredits({
+      userId: "user-a",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 200,
+      idempotencyKey: "attempt:insert-none"
+    });
+
+    await refundCreditLedgerEntryPortion({
+      entryId: spend!.id,
+      amountCredits: 500,
+      reason: "wrote nothing",
+      idempotencyKey: "edit-shortfall:operation-none"
+    });
+
+    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 1000, lifetimeCreditsSpent: 0 });
   });
 
   it("releases only the still-RESERVED holds under a key prefix", async () => {
@@ -206,6 +405,129 @@ describe("credit ledger operations", () => {
     expect(secondRefund).toBeNull();
     expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 1000, lifetimeCreditsSpent: 0 });
     expect(await hasActiveProjectEntitlement({ userId: "user-a", projectId: "project-1", type: "EXPORT_UNLOCK" })).toBe(false);
+  });
+
+  it("passes over a fully reversed charge to top up the partly reversed one behind it", async () => {
+    // What makes a charge eligible is `reversedByEntry.amountCredits` being
+    // under the charge, not the relation being absent: the newest charge here
+    // came back whole and is finished with, while the one behind it is still
+    // owed the 80 its partial settlement left, and the oldest is untouched and
+    // must stay that way.
+    await grantCredits({ userId: "user-a", amountCredits: 5000, idempotencyKey: "grant:user-a" });
+    const untouched = await spendCredits({
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 100,
+      idempotencyKey: "spend:page-untouched"
+    });
+    const partlyReversed = await spendCredits({
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 200,
+      idempotencyKey: "spend:page-partial"
+    });
+    const fullyReversed = await spendCredits({
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 300,
+      idempotencyKey: "spend:page-full"
+    });
+    await refundCreditLedgerEntry(fullyReversed!.id, "Newest attempt failed");
+    await refundCreditLedgerEntryPortion({
+      entryId: partlyReversed!.id,
+      amountCredits: 120,
+      reason: "Wrote 2 of 5 paid pages",
+      idempotencyKey: "edit-shortfall:operation-9"
+    });
+
+    const refund = await refundLatestProjectOperationCredits({
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      reason: "Edit failed"
+    });
+
+    expect(refund?.amountCredits).toBe(200);
+    const reversals = [...fakeDb.state.ledger.values()].filter((entry) => entry.reversesEntryId !== null);
+    expect(reversals.map((entry) => entry.reversesEntryId).sort()).toEqual(
+      [fullyReversed!.id, partlyReversed!.id].sort()
+    );
+    expect(await refundedLedgerEntryIds([untouched!.id, partlyReversed!.id, fullyReversed!.id])).toEqual(
+      new Set([partlyReversed!.id, fullyReversed!.id])
+    );
+    // Only the 100 the untouched charge still owes stays spent.
+    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 4900, lifetimeCreditsSpent: 100 });
+  });
+
+  it("scans past a full page of settled charges to reach the one that still stands", async () => {
+    // A heavily edited book's history is longer than one scan page, and the
+    // charge that still stands can be at the bottom of it. The scan is bounded
+    // per round trip, not per project: it pages until it finds that charge.
+    await grantCredits({ userId: "user-a", amountCredits: 5000, idempotencyKey: "grant:user-a" });
+    const stillStanding = await spendCredits({
+      userId: "user-a",
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      amountCredits: 50,
+      idempotencyKey: "spend:page-oldest"
+    });
+    for (let index = 0; index < 30; index += 1) {
+      const charge = await spendCredits({
+        userId: "user-a",
+        projectId: "project-1",
+        operation: "PAGE_REGENERATION",
+        amountCredits: 10,
+        idempotencyKey: `spend:page-${index}`
+      });
+      await refundCreditLedgerEntry(charge!.id, "Page attempt failed");
+    }
+
+    fakeDb.prisma.creditLedgerEntry.findMany.mockClear();
+    const refund = await refundLatestProjectOperationCredits({
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      reason: "Edit failed"
+    });
+
+    expect(refund?.amountCredits).toBe(50);
+    const reversal = [...fakeDb.state.ledger.values()].find((entry) => entry.reversesEntryId === stillStanding!.id);
+    expect(reversal).toMatchObject({ amountCredits: 50 });
+    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 5000, lifetimeCreditsSpent: 0 });
+    // 31 charges, 25 to a page: the second page holds it, and no page loads the
+    // whole history.
+    const scans = fakeDb.prisma.creditLedgerEntry.findMany.mock.calls;
+    expect(scans).toHaveLength(2);
+    expect(scans.every((call: any[]) => call[0].take === 25)).toBe(true);
+  });
+
+  it("returns null when every charge in a long history is already fully reversed", async () => {
+    // The pathological case for a bounded scan: nothing is eligible, so it
+    // reaches the end of the history and says so rather than refunding a charge
+    // that already came back.
+    await grantCredits({ userId: "user-a", amountCredits: 5000, idempotencyKey: "grant:user-a" });
+    for (let index = 0; index < 30; index += 1) {
+      const charge = await spendCredits({
+        userId: "user-a",
+        projectId: "project-1",
+        operation: "PAGE_REGENERATION",
+        amountCredits: 10,
+        idempotencyKey: `spend:page-${index}`
+      });
+      await refundCreditLedgerEntry(charge!.id, "Page attempt failed");
+    }
+
+    fakeDb.prisma.creditLedgerEntry.findMany.mockClear();
+    const refund = await refundLatestProjectOperationCredits({
+      projectId: "project-1",
+      operation: "PAGE_REGENERATION",
+      reason: "Edit failed"
+    });
+
+    expect(refund).toBeNull();
+    expect(fakeDb.prisma.creditLedgerEntry.findMany.mock.calls).toHaveLength(2);
+    expect(await getCreditBalance("user-a")).toMatchObject({ availableCredits: 5000, lifetimeCreditsSpent: 0 });
   });
 });
 

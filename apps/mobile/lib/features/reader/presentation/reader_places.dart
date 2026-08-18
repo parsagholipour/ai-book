@@ -21,6 +21,7 @@ class ReaderPlaces {
     required this.currentRevision,
     required this.onStateChanged,
     required this.onGoToPage,
+    this.hasCoverPage = false,
   });
 
   final BuildContext context;
@@ -33,6 +34,10 @@ class ReaderPlaces {
   final void Function(ReaderState state) onStateChanged;
   final void Function(int page) onGoToPage;
 
+  /// Whether PDF sheet 1 is an unnumbered cover. Bookmark labels and Contents
+  /// trailing numbers skip it; [onGoToPage] still receives a physical sheet.
+  final bool hasCoverPage;
+
   void showContents() {
     showModalBottomSheet<void>(
       context: context,
@@ -41,6 +46,7 @@ class ReaderPlaces {
       builder: (sheetContext) => ReaderOutlineSheet(
         entries: outline,
         currentPage: state.lastPage,
+        hasCoverPage: hasCoverPage,
         onSelect: (page) {
           Navigator.of(sheetContext).pop();
           onGoToPage(page);
@@ -57,6 +63,7 @@ class ReaderPlaces {
       builder: (sheetContext) => ReaderBookmarksSheet(
         state: state,
         currentRevision: currentRevision,
+        hasCoverPage: hasCoverPage,
         onSelect: (bookmark) {
           Navigator.of(sheetContext).pop();
           onGoToPage(bookmark.page);
@@ -88,7 +95,6 @@ class ReaderPlaces {
       bookmarks.add(
         ReaderBookmark(
           page: page,
-          label: 'Page $page',
           createdAt: DateTime.now(),
           revision: revision,
         ),

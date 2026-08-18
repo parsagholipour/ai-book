@@ -41,6 +41,7 @@ class ReaderMarkupActions {
     required this.canModifyPlacement,
     required this.isMounted,
     required this.onGoToPage,
+    this.hasCoverPage = false,
   });
 
   final BuildContext context;
@@ -53,6 +54,7 @@ class ReaderMarkupActions {
   final bool Function() canModifyPlacement;
   final bool Function() isMounted;
   final void Function(int page) onGoToPage;
+  final bool hasCoverPage;
 
   // ------------------------------------------------------------------ creating
 
@@ -214,6 +216,7 @@ class ReaderMarkupActions {
       editingEnabled: editingEnabled,
       placementEnabled: canModifyPlacement(),
       bookActionsEnabled: canUseCurrentBook(),
+      hasCoverPage: hasCoverPage,
       onColorChanged: (index) =>
           controller.replace(annotation.recolored(index)),
     );
@@ -309,6 +312,7 @@ class ReaderMarkupActions {
         text: text,
         pdfPageNumber: annotation.page,
         bookPageIndex: annotation.bookPageIndex,
+        hasCoverPage: hasCoverPage,
       ),
       action: action,
     );
@@ -326,6 +330,7 @@ class ReaderMarkupActions {
         builder: (_, _) => ReaderAnnotationsSheet(
           annotations: controller.all,
           palette: palette,
+          hasCoverPage: hasCoverPage,
           onSelect: (annotation) {
             Navigator.of(sheetContext).pop();
             onGoToPage(annotation.page);
@@ -363,6 +368,7 @@ class ReaderMarkupActions {
     final text = readerMarkupShareText(
       bookTitle: bookTitle,
       annotations: controller.all,
+      hasCoverPage: hasCoverPage,
     );
     if (text.trim().isEmpty) return;
     await SharePlus.instance.share(ShareParams(text: text));

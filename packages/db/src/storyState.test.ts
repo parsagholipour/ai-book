@@ -80,4 +80,34 @@ describe("casRebuildProjectStoryState", () => {
     });
     expect(state?.facts[0]?.text).toBe("Ada packed.");
   });
+
+  it("does not publish a guarded rebuild after the project advances to another plan", async () => {
+    mocks.prisma.project.findUnique
+      .mockResolvedValueOnce({ storyState: null, currentPlanId: "plan-1" })
+      .mockResolvedValueOnce({ storyState: null, currentPlanId: "plan-3" });
+    mocks.prisma.project.updateMany.mockResolvedValue({ count: 0 });
+    mocks.prisma.page.findMany.mockResolvedValue([]);
+
+    const state = await casRebuildProjectStoryState("project-1", ["Old promise"], {
+      currentPlanId: "plan-1"
+    });
+
+    expect(state).toBeNull();
+    expect(mocks.prisma.page.findMany).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.project.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes the restored plan in the same CAS that publishes story state", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({ storyState: null, currentPlanId: "plan-1" });
+    mocks.prisma.project.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.page.findMany.mockResolvedValue([]);
+
+    await casRebuildProjectStoryState("project-1", [], { currentPlanId: "plan-1" });
+
+    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "project-1", currentPlanId: "plan-1", storyState: { equals: "DbNull" } }
+      })
+    );
+  });
 });

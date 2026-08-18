@@ -139,6 +139,17 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
     return generationJob;
   }
   try {
+    if (!(await prepareDurableJobId(generationJob.id))) {
+      const attempts = generationJob.dispatchAttempts + 1;
+      return prisma.generationJob.update({
+        where: { id: generationJob.id },
+        data: {
+          dispatchAttempts: attempts,
+          nextDispatchAt: new Date(Date.now() + dispatchBackoffMs(attempts)),
+          message: "Waiting for the generation queue"
+        }
+      });
+    }
     const bullJob = await queue.add(
       name,
       {
@@ -180,6 +191,62 @@ export async function dispatchWorkerGenerationJob(generationJobId: string) {
       }
     });
   }
+}
+
+/**
+ * BullMQ job ids are the durable row's id, so a delivery that is still in the
+ * processor — or a failed one that has not been removed — occupies the only
+ * id a requeue can use. Finished jobs are dropped; a live one means this
+ * push has to wait for reconciliation.
+ */
+async function prepareDurableJobId(jobId: string): Promise<boolean> {
+  const existing = await queue.getJob(jobId);
+  if (!existing) return true;
+  const state = await existing.getState();
+  if (
+    state === "active" ||
+    state === "waiting" ||
+    state === "delayed" ||
+    state === "prioritized" ||
+    state === "waiting-children"
+  ) {
+    return false;
+  }
+  try {
+    await existing.remove();
+  } catch {
+    // A remove racing another dispatcher is fine; add will say if the id is still taken.
+  }
+  return true;
+}
+
+/**
+ * Puts an in-flight GenerationJob back on the queue without settling it.
+ *
+ * A structural rollback that threw left the manuscript shifted and the stamp
+ * on the row. `markFailed` would refund that ACTIVE operation, clear its lease
+ * and restore COMPLETE over pages that have not been put back. Claiming
+ * ACTIVE → QUEUED and clearing `bullJobId` is what lets this delivery exit
+ * unrecoverably while a later one resumes drafting. `apply-book-edit` has no
+ * BullMQ retry budget, so the durable row is the retry.
+ */
+export async function redeliverWorkerGenerationJob(generationJobId: string): Promise<void> {
+  const requeued = await prisma.generationJob.updateMany({
+    where: { id: generationJobId, status: "ACTIVE" },
+    data: {
+      status: "QUEUED",
+      finishedAt: null,
+      error: null,
+      message: "Queued to resume a structural edit",
+      bullJobId: null,
+      dispatchedAt: null,
+      nextDispatchAt: null
+    }
+  });
+  if (requeued.count !== 1) {
+    return;
+  }
+  await dispatchWorkerGenerationJob(generationJobId);
 }
 
 export async function reconcileUndispatchedWorkerJobs(limit = 50): Promise<number> {

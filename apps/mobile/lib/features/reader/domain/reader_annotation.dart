@@ -77,10 +77,14 @@ sealed class ReaderAnnotation {
     final text = (body?.trim().isNotEmpty ?? false) ? body! : quote ?? '';
     final collapsed = text.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (collapsed.isEmpty) {
+      // Kind names, never the pdfrx sheet: the index subtitle already prints
+      // the cover-aware page, and "Page 3" here would disagree with "Page 2".
       return switch (kind) {
         ReaderAnnotationKind.ink => 'Drawing',
-        ReaderAnnotationKind.text => 'Empty note',
-        _ => 'Page $page',
+        ReaderAnnotationKind.text || ReaderAnnotationKind.note => 'Empty note',
+        ReaderAnnotationKind.highlight => 'Highlight',
+        ReaderAnnotationKind.underline => 'Underline',
+        ReaderAnnotationKind.strikethrough => 'Strikethrough',
       };
     }
     return collapsed.length <= 120

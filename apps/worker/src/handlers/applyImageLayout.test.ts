@@ -703,3 +703,137 @@ describe("applyImageLayout", () => {
     });
   });
 });
+
+/**
+ * `applyBookEdit` forks here on the operation's `kind`, so a job whose payload
+ * was rebuilt without `imageLayout` still arrives — and the Apply wrote the
+ * resolved intent onto the classifier for exactly that delivery.
+ */
+describe("applyImageLayout with no imageLayout on the payload", () => {
+  it("removes the picture the classifier's target names", async () => {
+    const assetPage = withTxPage({ ...sourcePage, markdown: "Prose.", imagePrompt: "a dragon" });
+    mocks.prisma.imageAsset.findFirst.mockResolvedValue({ id: "asset-1", page: assetPage });
+    mocks.tx.imageAsset.findUnique.mockResolvedValue({
+      id: "asset-1",
+      path: "http://localhost:4001/assets/images/project-1/page-1.jpg",
+      prompt: "a dragon",
+      pageId: "page-1"
+    });
+    mocks.tx.imageAsset.findFirst.mockResolvedValue(null);
+    mocks.tx.page.update.mockResolvedValue({ ...assetPage, imagePrompt: null, revision: 4 });
+
+    await applyImageLayout(job({ intentKind: "remove_image", imageLayout: undefined }), {
+      status: "QUEUED",
+      classifier: {
+        kind: "remove_image",
+        imageLayout: { action: "remove", targets: [{ operationId: "", assetId: "asset-1", pageIndex: 1 }] }
+      }
+    });
+
+    // The stored target is an asset id, so the picture is found the same way the
+    // payload's own `replaceAssetId` would have found it.
+    expect(mocks.prisma.imageAsset.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: "asset-1" }) })
+    );
+    expect(mocks.tx.imageAsset.update).toHaveBeenCalledWith({ where: { id: "asset-1" }, data: { pageId: null } });
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
+      skipFinalReview: true,
+      withoutQualityVerdict: true
+    });
+  });
+
+  it("rebuilds a chat-added picture's marker from the operation id that made it", async () => {
+    mocks.prisma.page.findFirst.mockResolvedValue({ ...sourcePage });
+    mocks.tx.page.update.mockResolvedValue({ ...sourcePage, markdown: "Prose.\n\nMore.", revision: 4 });
+
+    await applyImageLayout(job({ intentKind: "remove_image", imageLayout: undefined }), {
+      status: "QUEUED",
+      classifier: {
+        imageLayout: { action: "remove", targets: [{ operationId: "op-old", pageIndex: 1 }] }
+      }
+    });
+
+    // `chat-image-<operationId>` is the marker the insertion wrote and the one
+    // the API's own re-resolution rebuilds; disagreeing would act on a different
+    // picture than the card named.
+    expect(mocks.prisma.page.findFirst).toHaveBeenCalledWith({
+      where: { projectId: "project-1", markdown: { contains: "chat-image-op-old" } }
+    });
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-1" },
+      data: { markdown: "Prose.\n\nMore.", revision: { increment: 1 } }
+    });
+  });
+
+  it("moves to the classifier's destination page", async () => {
+    mocks.prisma.page.findFirst.mockResolvedValueOnce({ ...sourcePage }).mockResolvedValueOnce({ ...destPage });
+    mocks.tx.page.update.mockImplementation(async ({ where, data }: { where: { id: string }; data: { markdown?: string } }) =>
+      where.id === "page-1"
+        ? { ...sourcePage, markdown: data.markdown ?? sourcePage.markdown, revision: 4 }
+        : { ...destPage, markdown: data.markdown ?? destPage.markdown, revision: 5 }
+    );
+
+    await applyImageLayout(job({ imageLayout: undefined }), {
+      status: "QUEUED",
+      classifier: {
+        imageLayout: {
+          action: "move",
+          targets: [{ operationId: "op-old", pageIndex: 1 }],
+          destPlacement: "page",
+          destPageIndex: 2
+        }
+      }
+    });
+
+    expect(mocks.prisma.page.findFirst).toHaveBeenCalledWith({ where: { projectId: "project-1", index: 2 } });
+    expect(mocks.tx.page.update).toHaveBeenCalledWith({
+      where: { id: "page-2" },
+      data: {
+        markdown: "Later prose.\n\n![a dragon](/assets/images/project-1/chat-image-op-old-aaaa.jpg)",
+        revision: { increment: 1 }
+      }
+    });
+  });
+
+  it("settles as a delivered no-op when neither copy carries a request", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await applyImageLayout(job({ imageLayout: undefined }), { status: "QUEUED", classifier: { kind: "move_image" } });
+
+    // The same settlement a vanished picture gets: APPLIED with nothing done and
+    // the book put back where it was found. Throwing would fail a finished book
+    // over a request no retry could find, and a move is free, so there is
+    // nothing to hand back.
+    expect(mocks.prisma.page.findFirst).not.toHaveBeenCalled();
+    expect(mocks.prisma.$transaction).not.toHaveBeenCalled();
+    expect(mocks.prisma.bookEditOperation.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "APPLIED",
+          affectedPageIndexes: [],
+          classifier: expect.objectContaining({ layoutMissing: true })
+        })
+      })
+    );
+    expect(mocks.prisma.project.updateMany).toHaveBeenCalledWith({
+      where: { id: "project-1", status: "EDITING" },
+      data: { status: "COMPLETE" }
+    });
+    expect(mocks.maybeEnqueueCompile).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("replays an already-applied layout edit rather than reading either copy", async () => {
+    await applyImageLayout(job({ imageLayout: undefined }), { status: "APPLIED", classifier: {} });
+
+    // The redelivery fence comes first: the pages already moved, and only the
+    // export refresh is owed.
+    expect(mocks.prisma.bookEditOperation.updateMany).not.toHaveBeenCalled();
+    expect(mocks.invalidateProjectExports).toHaveBeenCalledWith("project-1");
+    expect(mocks.maybeEnqueueCompile).toHaveBeenCalledWith("project-1", "plan-1", {
+      skipFinalReview: true,
+      withoutQualityVerdict: true
+    });
+  });
+});

@@ -269,6 +269,7 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(response.body).toBe(bytes);
     expect(response.headers["x-export-provenance"]).toBe("exact");
     expect(response.headers["x-export-content-revision"]).toBe("7");
+    expect(response.headers["x-export-content-digest"]).toBe(exportContentDigest(Buffer.from(bytes)));
     await app.close();
   });
 
@@ -315,6 +316,7 @@ describe("mobile rate limits, exports and operator routes", () => {
     expect(response.body).toBe(replacement);
     expect(response.headers["x-export-provenance"]).toBe("mismatch");
     expect(response.headers["x-export-content-revision"]).toBeUndefined();
+    expect(response.headers["x-export-content-digest"]).toBe(exportContentDigest(Buffer.from(replacement)));
     await app.close();
   });
 

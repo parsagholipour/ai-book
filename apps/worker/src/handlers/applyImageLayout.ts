@@ -9,6 +9,7 @@ import {
 } from "../generation/imageLayoutPlan.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
+import { jsonRecord } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
@@ -35,6 +36,76 @@ export type ImageLayoutPayload = {
   dest?: LayoutDestRef;
 };
 
+/**
+ * The layout edit as the operation's own classifier holds it.
+ *
+ * `applyBookEdit` forks here on the operation's `kind`, never on this payload
+ * field, so a job whose `imageLayout` was rebuilt away — a hand requeue, a
+ * reconciler, a future trim — still arrives, and the Apply wrote the resolved
+ * intent onto the classifier in the same transaction that created the row. That
+ * copy is a different shape rather than the same one: the intent names its
+ * pictures as `targets` (an asset id, or a marker the picture's markdown line
+ * carries, or the operation id that marker is built from) and its destination as
+ * three flat fields, so this translates rather than casts. The marker rule is
+ * `resolveStoredLayoutTarget`'s (`apps/api/src/mobile/imageLayoutTargets.ts`) —
+ * the two have to agree about what a stored target means or a redelivery would
+ * act on a different picture than the card named.
+ *
+ * `null` means there is no usable request on either copy, which the caller
+ * settles as a delivered no-op: a move or a remove is free, so there is nothing
+ * to refund and nothing a retry could find.
+ */
+export function layoutPayloadFromClassifier(classifier: unknown): ImageLayoutPayload | null {
+  const layout = jsonRecord(jsonRecord(classifier).imageLayout);
+  const action = layout.action === "move" || layout.action === "remove" ? layout.action : null;
+  if (!action) {
+    return null;
+  }
+  const targets = Array.isArray(layout.targets) ? layout.targets : [];
+  const sources = targets.flatMap((entry): LayoutSourceRef[] => {
+    const target = jsonRecord(entry);
+    const pageIndex = typeof target.pageIndex === "number" ? target.pageIndex : null;
+    if (pageIndex === null) {
+      return [];
+    }
+    if (typeof target.assetId === "string" && target.assetId) {
+      return [{ pageIndex, replaceAssetId: target.assetId }];
+    }
+    const marker =
+      typeof target.marker === "string" && target.marker
+        ? target.marker
+        : typeof target.operationId === "string" && target.operationId
+          ? `chat-image-${target.operationId}`
+          : null;
+    return marker ? [{ pageIndex, replaceMarker: marker }] : [];
+  });
+  if (sources.length === 0) {
+    return null;
+  }
+  const dest = layoutDestFromClassifier(layout);
+  return { action, sources, ...(dest ? { dest } : {}) };
+}
+
+/**
+ * The stored intent's three destination fields as the one the resolver reads.
+ *
+ * `end_of_book` carries no page index on the intent and needs none here either:
+ * `resolveLayoutDest` re-reads the book's last page for that placement, which is
+ * the whole point of the placement. A move with no resolvable destination
+ * answers `null`, and the resolver refuses the edit exactly as it does for a
+ * destination page that has since gone.
+ */
+function layoutDestFromClassifier(layout: Record<string, unknown>): LayoutDestRef | null {
+  const position = layout.destPosition === "top" || layout.destPosition === "bottom" ? layout.destPosition : null;
+  if (layout.destPlacement === "end_of_book") {
+    return { placement: "end_of_book", pageIndex: 0, ...(position ? { position } : {}) };
+  }
+  if (layout.destPlacement === "page" && typeof layout.destPageIndex === "number") {
+    return { placement: "page", pageIndex: layout.destPageIndex, ...(position ? { position } : {}) };
+  }
+  return null;
+}
+
 /** Why a layout edit wrote nothing. Read back by the card, never by the reader. */
 type LayoutSkipReason = "missing" | "already_positioned";
 
@@ -53,7 +124,8 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
     projectId: string;
     operationId: string;
     planId?: string;
-    imageLayout: ImageLayoutPayload;
+    /** Optional: the fork that routes a job here tests the operation's `kind`, not this field. */
+    imageLayout?: ImageLayoutPayload;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
 
@@ -81,18 +153,34 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
   await advanceJobStep(generationJobId, "prepare", 20, "Preparing the illustration change");
 
-  const payloadSources = imageLayout.sources ?? (imageLayout.source ? [imageLayout.source] : []);
+  // The payload's copy first, the classifier's second — the same order and the
+  // same reason as `restructurePages`: the fork above is the operation's `kind`,
+  // so a job whose payload lost `imageLayout` still lands here.
+  const layout = imageLayout ?? layoutPayloadFromClassifier(operation.classifier);
+  if (!layout) {
+    // Neither copy survived. There is no picture to act on and no retry that
+    // could find one, so it settles the way a vanished picture does: APPLIED
+    // with nothing done and the book put back where it was found. Nothing to
+    // refund — a move and a remove are both free.
+    console.error(
+      `Image layout edit ${operationId} on project ${projectId} carries no request on its payload or its classifier`
+    );
+    await markLayoutSkipped(projectId, operationId, fallbackStatus);
+    return;
+  }
+
+  const payloadSources = layout.sources ?? (layout.source ? [layout.source] : []);
   const sources = (await Promise.all(payloadSources.map((source) => resolveLayoutSource(projectId, source)))).filter(
     (source): source is ResolvedLayoutSource => source !== null
   );
-  const dest = imageLayout.action === "move" ? await resolveLayoutDest(projectId, imageLayout.dest) : null;
-  if (sources.length === 0 || (imageLayout.action === "move" && !dest)) {
+  const dest = layout.action === "move" ? await resolveLayoutDest(projectId, layout.dest) : null;
+  if (sources.length === 0 || (layout.action === "move" && !dest)) {
     await markLayoutSkipped(projectId, operationId, fallbackStatus);
     return;
   }
 
   await advanceJobStep(generationJobId, "snapshot", 35, snapshotStepLabel(sources));
-  await advanceJobStep(generationJobId, "apply", 50, applyStepLabel(imageLayout, sources, dest));
+  await advanceJobStep(generationJobId, "apply", 50, applyStepLabel(layout, sources, dest));
 
   let applied: boolean;
   let skipReason: LayoutSkipReason | null = null;
@@ -109,10 +197,10 @@ export async function applyImageLayout(job: Job, operation: { status: string; cl
       const batch = await applyLayoutBatchInTx(tx, {
         projectId,
         operationId,
-        action: imageLayout.action,
+        action: layout.action,
         sources,
         dest,
-        ...(imageLayout.dest?.position ? { destPosition: imageLayout.dest.position } : {}),
+        ...(layout.dest?.position ? { destPosition: layout.dest.position } : {}),
         ...(language ? { language } : {})
       });
       if (batch.empty) {

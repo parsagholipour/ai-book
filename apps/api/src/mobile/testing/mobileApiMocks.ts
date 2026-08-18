@@ -203,6 +203,11 @@ export function dbModuleMock() {
       PrismaClientKnownRequestError: MockPrismaKnownRequestError
     },
     prisma: mockPrisma,
+    // The real values, because undo passes them straight through to
+    // `$transaction` and a suite asserting the ceiling would otherwise be
+    // asserting the mock's own numbers.
+    PAGE_RESTRUCTURE_TRANSACTION_OPTIONS: { timeout: 30_000, maxWait: 10_000 },
+    revertStructuralPageChange: vi.fn(),
     casRebuildProjectStoryState: vi.fn(),
     rebuildStoryStateFromPages: vi.fn()
   };

@@ -6,43 +6,25 @@ import {
   type ToolLoopTool
 } from "@book-maker/core";
 import { z } from "zod";
-import { backMatterIntent, backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
-import {
-  chapterHeadingEditFromDecision,
-  chapterHeadingIntent,
-  chapterHeadingIntentFromMessage,
-  type ChapterHeadingEdit
-} from "./bookEditChapterHeading.js";
+import type { StructuralPageEdit } from "@book-maker/core";
+import { backMatterIntentFromMessage, type BackMatterEdit } from "./bookEditBackMatter.js";
+import { chapterHeadingIntentFromMessage, type ChapterHeadingEdit } from "./bookEditChapterHeading.js";
+import { intentFromDecideAction } from "./bookEditDecision.js";
 import { classifyWithDegradedHeuristics, classifyWithHeuristics } from "./bookEditHeuristics.js";
-import {
-  imageInsertionIntentFromDecision,
-  imageLayoutIntentFromDecision,
-  type ImageInsertionEdit,
-  type ImageLayoutEdit
-} from "./bookEditImage.js";
-import {
-  decideActionSchema,
-  decideActionsFor,
-  routerSystemPrompt,
-  type DecideActionPayload
-} from "./bookEditRouterPrompt.js";
+import { type ImageInsertionEdit, type ImageLayoutEdit } from "./bookEditImage.js";
+import { decideActionSchema, decideActionsFor, routerSystemPrompt } from "./bookEditRouterPrompt.js";
 import { chatReplyQuoteForPrompt, type ChatReplyQuote } from "./chatReplyQuote.js";
 import {
-  chapterRegenerateFromMessage,
-  continuationRequestFromMessage,
   pageIndexesFromMessage,
-  replanSettingsFromEditMessage,
   showContentTargetFromMessage,
-  targetLanguageFromLanguageVersionRequest,
   type ReaderPageNumberContext
 } from "./bookEditMessage.js";
 import {
   furniturePageIntentFromMessage,
   MODEL_PAGE_NUMBERING,
-  modelPagesForCopiedPrintedPages,
   type ReaderPageNumbering
 } from "./bookPageNumbering.js";
-import { pdfSpanForModelPages } from "@book-maker/core";
+import { pdfSpanForModelPages, printedPageForPdfPage, printedPageOffset, totalPrintedPages } from "@book-maker/core";
 import { withTimeout } from "./withTimeout.js";
 
 // The message readers and the model-free classifier live next door; both are
@@ -85,7 +67,8 @@ export type BookEditIntentKind =
   | "chapter_heading"
   | "add_image"
   | "move_image"
-  | "remove_image";
+  | "remove_image"
+  | "restructure_pages";
 
 export type BookEditProjectStage = "plan_ready" | "approved_plan" | "complete" | "other";
 export type BookEditScope = "none" | "explicit_pages" | "matching_pages" | "all_pages";
@@ -111,6 +94,12 @@ export type BookEditReplacement = {
   to: string;
 };
 
+/** One page's own instruction inside a multi-page edit. */
+export type BookEditPageInstruction = {
+  pageIndex: number;
+  instruction: string;
+};
+
 /** What the user asked to read when the intent is show_content. */
 export type ShowContentTarget =
   | { type: "outline" }
@@ -132,8 +121,29 @@ export type BookEditIntent = {
   contentTarget?: ShowContentTarget | null;
   /** Target book language for language-version replans. */
   targetLanguage?: string | null;
+  /**
+   * A different instruction for particular pages, when one request asks for
+   * different things on each ("make page 3 funnier and page 7 shorter").
+   *
+   * Absent — the ordinary case — the whole request covers every page in
+   * `affectedPageIndexes`, which is what the worker has always done. Present,
+   * it only ever *narrows* what a page is told to do: a page with no entry
+   * still gets the request, so this can never silently drop an edit the reader
+   * paid for.
+   */
+  perPageInstructions?: BookEditPageInstruction[] | null;
   /** Set for continue_book intents: how many chapters to append. */
   continuation?: { chapterCount: number } | null;
+  /**
+   * Set for restructure_pages: which pages to insert, delete or move.
+   *
+   * The pages it touches are resolved by the worker against the book as it is
+   * then, which is why `affectedPageIndexes` stays empty for this kind — a page
+   * about to be created cannot be found by `affectedPagesForIntent`, and a
+   * structural intent that reached it would be answered "which page?" instead
+   * of priced.
+   */
+  structuralEdit?: StructuralPageEdit | null;
   /** Set for back_matter intents: whether the Sources list should be printed. */
   backMatter?: BackMatterEdit | null;
   /** Set for chapter_heading intents: how a chapter heading should read. */
@@ -171,7 +181,8 @@ export const PROPOSAL_GATED_EDIT_KINDS: ReadonlySet<BookEditIntentKind> = new Se
   "continue_book",
   "add_image",
   "move_image",
-  "remove_image"
+  "remove_image",
+  "restructure_pages"
 ]);
 
 export const CLASSIFIER_PAGE_SAMPLE_CAP = 120;
@@ -381,6 +392,10 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
   const canReadPages = options.pages.length > 0;
   const tools = canReadPages ? [readPageTool(options)] : [];
   const map = options.numbering.pdfPageMap;
+  const contentsStartPage =
+    map?.contentsStartPdfPage !== undefined ? printedPageForPdfPage(map, map.contentsStartPdfPage) : undefined;
+  const sourcesStartPage =
+    map?.backMatterStartPdfPage !== undefined ? printedPageForPdfPage(map, map.backMatterStartPdfPage) : undefined;
   const pageSample = classifierPageSample(options.pages, options.message, CLASSIFIER_PAGE_SAMPLE_CAP, {
     pdfPageMap: map
   });
@@ -392,9 +407,12 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
     if (!span) {
       return undefined;
     }
-    return span.startPdfPage === span.endPdfPage
-      ? String(span.startPdfPage)
-      : `${span.startPdfPage}-${span.endPdfPage}`;
+    const start = printedPageForPdfPage(map, span.startPdfPage);
+    const end = printedPageForPdfPage(map, span.endPdfPage);
+    if (start === undefined || end === undefined) {
+      return undefined;
+    }
+    return start === end ? String(start) : `${start}-${end}`;
   };
   const result = await runToolLoop({
     textModel: options.textModel,
@@ -474,12 +492,10 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
           ...(map
             ? {
                 readerPageContext: {
-                  totalPrintedPages: map.totalPdfPages,
-                  ...(map.hasCoverPage ? { coverPage: 1 } : {}),
-                  ...(map.contentsStartPdfPage !== undefined ? { contentsStartPage: map.contentsStartPdfPage } : {}),
-                  ...(map.backMatterStartPdfPage !== undefined
-                    ? { sourcesStartPage: map.backMatterStartPdfPage }
-                    : {})
+                  totalPrintedPages: totalPrintedPages(map),
+                  ...(printedPageOffset(map) > 0 ? { cover: true } : {}),
+                  ...(contentsStartPage !== undefined ? { contentsStartPage } : {}),
+                  ...(sourcesStartPage !== undefined ? { sourcesStartPage } : {})
                 }
               }
             : {})
@@ -499,256 +515,10 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
   });
 }
 
-/**
- * Maps the model's decide/propose_edit payload onto an internal BookEditIntent.
- * Pricing tiers (local_patch vs page_rewrite vs book_replan) are derived here
- * from editTarget + editStyle, never guessed as free-form kind labels.
- */
-/** Extra routing context; every field optional so tests and old callers stand. */
-export type IntentDecisionContext = {
-  clarifyExhausted?: boolean | undefined;
-  pageNumbering?: ReaderPageNumbering | undefined;
-  /** The model page a reader-selection message was sent from; see classifyProjectChatMessage. */
-  readerSelectionPageIndex?: number | undefined;
-};
-
-/** One router page channel, re-read as model pages when it holds printed numbers. */
-function routedModelPages(
-  channel: number[] | null | undefined,
-  message: string,
-  context: IntentDecisionContext
-): number[] {
-  const numbering = context.pageNumbering ?? MODEL_PAGE_NUMBERING;
-  return modelPagesForCopiedPrintedPages(message, numbering, [channel])?.[0] ?? channel ?? [];
-}
-
-export function intentFromDecideAction(
-  decision: DecideActionPayload,
-  message: string,
-  chapters: BookEditChapterContext[] = [],
-  context: IntentDecisionContext = {}
-): BookEditIntent {
-  if (decision.action === "propose_edit") {
-    return intentFromProposeEdit(decision, message, chapters, context);
-  }
-  if (decision.action === "show_content") {
-    return {
-      kind: "show_content",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      affectedPageIndexes: [],
-      assistantMessage: decision.assistantMessage,
-      scope: "none",
-      impact: "small_text",
-      clarification: "none",
-      contentTarget:
-        showContentTargetFromMessage(message, { pdfPageMap: context.pageNumbering?.pdfPageMap }) ?? {
-          type: "outline"
-        }
-    };
-  }
-  if (decision.action === "undo_last_edit") {
-    return {
-      kind: "undo_last_edit",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      affectedPageIndexes: [],
-      assistantMessage: decision.assistantMessage,
-      scope: "none",
-      impact: "small_text",
-      clarification: "none"
-    };
-  }
-  if (decision.action === "plan_revision") {
-    return {
-      kind: "plan_revision",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      affectedPageIndexes: [],
-      assistantMessage: decision.assistantMessage,
-      scope: "none",
-      impact: "small_text",
-      clarification: "none",
-      ...(decision.targetLanguage ? { targetLanguage: decision.targetLanguage } : {})
-    };
-  }
-  if (decision.action === "clarify") {
-    return {
-      kind: "clarify",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      // The same printed-number guard the propose path applies: forcedDecision
-      // turns a clarify that carries pages into an explicit-pages rewrite, so a
-      // copied number picks the wrong page here too.
-      affectedPageIndexes: routedModelPages(decision.pageIndexes, message, context),
-      assistantMessage: decision.assistantMessage,
-      scope: "none",
-      impact: "small_text",
-      // Always "scope", including when the model reports "none": it is what
-      // makes handleProjectChatIntent store resumable pendingEdit state. Honour
-      // the model's value here and the next turn has nothing to recover, so a
-      // fragment like "just add" gets routed on its own.
-      clarification: "scope"
-    };
-  }
-  return {
-    kind: "answer",
-    confidence: decision.confidence,
-    reasoning: decision.reasoning,
-    affectedPageIndexes: [],
-    assistantMessage: decision.assistantMessage,
-    scope: "none",
-    impact: "small_text",
-    clarification: "none"
-  };
-}
-
-export function intentFromProposeEdit(
-  decision: DecideActionPayload,
-  message: string,
-  chapters: BookEditChapterContext[] = [],
-  context: IntentDecisionContext = {}
-): BookEditIntent {
-  const target = decision.editTarget ?? "pages";
-  const style = decision.editStyle ?? (decision.replacementFrom ? "exact_replace" : "rewrite");
-  // Both page channels re-read as model pages when the model copied the printed
-  // numbers the message speaks. Everything below — including the image targets,
-  // whose pageIndexes win over the map-aware message fallbacks — reads them
-  // from here rather than off the decision.
-  const copied = modelPagesForCopiedPrintedPages(message, context.pageNumbering ?? MODEL_PAGE_NUMBERING, [
-    decision.pageIndexes,
-    decision.imageDestPageIndexes
-  ]);
-  const routed = copied?.[0] ?? decision.pageIndexes ?? [];
-  const imageDecision = copied
-    ? { ...decision, pageIndexes: routed, imageDestPageIndexes: copied[1] ?? decision.imageDestPageIndexes }
-    : decision;
-  const routedPageIndexes = [...new Set(routed)].sort((a, b) => a - b);
-  // The locator's model page is authoritative over parsing the bubble: a
-  // copied "page 12" maps to every model page that printed page holds, and
-  // adjacent pages routinely share one. Preferring the selection keeps a
-  // one-passage rewrite on the page the reader acted on (the quote still
-  // narrows via affectedPagesForIntent). A pageless page edit from a
-  // selection still targets that page rather than the "which page?" flows.
-  const pageIndexes =
-    context.readerSelectionPageIndex !== undefined && target === "pages"
-      ? [context.readerSelectionPageIndex]
-      : routedPageIndexes;
-  const chapterIndex = decision.chapterIndex ?? chapterRegenerateFromMessage(message);
-  const targetLanguage =
-    decision.targetLanguage ?? (target === "language_copy" ? targetLanguageFromLanguageVersionRequest(message) : null);
-
-  if (target === "continuation") {
-    const chapterCount = Math.min(
-      8,
-      Math.max(1, decision.newChapterCount ?? continuationRequestFromMessage(message)?.chapterCount ?? 1)
-    );
-    return {
-      kind: "continue_book",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      affectedPageIndexes: [],
-      assistantMessage: decision.assistantMessage,
-      scope: "none",
-      impact: "style_rewrite",
-      clarification: "none",
-      continuation: { chapterCount }
-    };
-  }
-
-  if (target === "back_matter") {
-    // Defaults to removal: the section only exists to be dropped, so a model
-    // that picks this target without saying which way meant "take it out".
-    return backMatterIntent({ includeSources: decision.backMatterSources ?? false }, decision);
-  }
-
-  if (target === "chapter_heading") {
-    return chapterHeadingIntent(
-      chapterHeadingEditFromDecision(decision.chapterHeadingStyle, decision.chapterHeadingLabel),
-      decision
-    );
-  }
-
-  if (target === "insert_image") {
-    return imageInsertionIntentFromDecision(imageDecision, message, context);
-  }
-
-  if (target === "move_image" || target === "remove_image") {
-    return imageLayoutIntentFromDecision(target === "move_image" ? "move" : "remove", imageDecision, message, context);
-  }
-
-  if (target === "language_copy" || target === "structural") {
-    const replanSettings = replanSettingsFromEditMessage(message, {
-      targetPages: decision.newTargetPages,
-      illustrations: decision.illustrationsEnabled
-    });
-    return {
-      kind: "book_replan",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      affectedPageIndexes: [],
-      assistantMessage: decision.assistantMessage,
-      scope: "all_pages",
-      impact: "structural_replan",
-      clarification: "none",
-      ...(targetLanguage ? { targetLanguage } : {}),
-      ...(replanSettings ? { replanSettings } : {})
-    };
-  }
-
-  if (target === "chapter") {
-    const chapter = chapterIndex ? chapters.find((candidate) => candidate.index === chapterIndex) : undefined;
-    return {
-      kind: "chapter_regenerate",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      affectedPageIndexes: chapter?.pageIndexes ?? pageIndexes,
-      assistantMessage: decision.assistantMessage,
-      scope: "explicit_pages",
-      impact: "style_rewrite",
-      clarification: chapterIndex ? "none" : "scope",
-      affectedChapterIndex: chapterIndex
-    };
-  }
-
-  const scope: BookEditScope =
-    target === "whole_book"
-      ? "all_pages"
-      : target === "matching"
-        ? "matching_pages"
-        : pageIndexes.length > 0
-          ? "explicit_pages"
-          : "none";
-
-  // A pageless "pages" target keeps its edit kind rather than becoming a
-  // clarify: the model committed to an edit and wrote assistantMessage as a
-  // confirmation of it, so surfacing that text as a clarify reply promises an
-  // edit while proposing nothing. proposeBookEdit resolves the target from the
-  // message (quoted text) or asks the one real "which page?" question itself.
-  if (style === "exact_replace") {
-    return {
-      kind: "local_patch",
-      confidence: decision.confidence,
-      reasoning: decision.reasoning,
-      affectedPageIndexes: pageIndexes,
-      assistantMessage: decision.assistantMessage,
-      scope,
-      impact: "small_text",
-      clarification: "none"
-    };
-  }
-
-  return {
-    kind: "page_rewrite",
-    confidence: decision.confidence,
-    reasoning: decision.reasoning,
-    affectedPageIndexes: pageIndexes,
-    assistantMessage: decision.assistantMessage,
-    scope,
-    impact: "style_rewrite",
-    clarification: "none"
-  };
-}
+// The decision mapping — how the router model's structured answer is read back
+// into an intent — lives next door, mirroring bookEditRouterPrompt.ts, which
+// holds everything the model is told. Re-exported unchanged.
+export { intentFromDecideAction, intentFromProposeEdit, type IntentDecisionContext } from "./bookEditDecision.js";
 
 function readPageTool(options: RouteAgentOptions): ToolLoopTool<{ index: number }> {
   const pagesByIndex = new Map(options.pages.map((page) => [page.index, page]));
@@ -810,7 +580,7 @@ function normalizeIntentForStage(
   }
   if (
     (stage === "plan_ready" || stage === "approved_plan") &&
-    ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate", "continue_book", "add_image"].includes(
+    ["local_patch", "page_rewrite", "book_replan", "chapter_regenerate", "continue_book", "add_image", "restructure_pages"].includes(
       bounded.kind
     )
   ) {
@@ -851,6 +621,9 @@ function normalizeIntentForStage(
  */
 function forcedDecision(intent: BookEditIntent, stage: BookEditProjectStage): BookEditIntent {
   const confidence = Math.max(intent.confidence, BOOK_EDIT_CONFIDENCE_THRESHOLD);
+  if (intent.kind === "restructure_pages") {
+    return forcedStructuralDecision(intent, confidence);
+  }
   if (intent.kind !== "clarify") {
     // A pageless page edit must not reach proposeBookEdit's "which page?"
     // question with the budget spent — that would be the second question this
@@ -874,5 +647,40 @@ function forcedDecision(intent: BookEditIntent, stage: BookEditProjectStage): Bo
     scope: intent.affectedPageIndexes.length > 0 ? "explicit_pages" : "all_pages",
     impact: "style_rewrite",
     clarification: "none"
+  };
+}
+
+/**
+ * What an unresolved structural request becomes once the question budget is
+ * spent — and the answer is different for each of the three actions, because
+ * only one of them has a safe default.
+ *
+ * An **insert** with no place named appends at the end: "add two pages" without
+ * a page number is a real request, appending is what a reader most often means,
+ * and the card still says where they are going before anything is charged. A
+ * **delete** or a **move** has no such default. Guessing a page to remove is not
+ * one Cancel away the way a rewrite is: the card would name a specific page and
+ * a reader skimming it would approve it. Those degrade to an answer instead.
+ */
+function forcedStructuralDecision(intent: BookEditIntent, confidence: number): BookEditIntent {
+  const edit = intent.structuralEdit;
+  if (!edit) {
+    return { ...intent, kind: "answer", confidence, clarification: "none" };
+  }
+  if (edit.action === "insert") {
+    return { ...intent, confidence, clarification: "none" };
+  }
+  if (edit.pageIndexes.length > 0) {
+    return { ...intent, confidence, clarification: "none" };
+  }
+  return {
+    ...intent,
+    kind: "answer",
+    confidence,
+    clarification: "none",
+    assistantMessage:
+      edit.action === "delete"
+        ? "I couldn’t tell which page to remove. Tell me the page number and I’ll take it out."
+        : "I couldn’t tell which page to move. Tell me the page number and where it should go."
   };
 }

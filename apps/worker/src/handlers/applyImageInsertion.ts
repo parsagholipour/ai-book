@@ -22,6 +22,7 @@ import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import {
   bookPlanSchema,
   createProviders,
+  jsonRecord,
   libraryCharactersFromMediaSettings,
   markdownLabels,
   matchLibraryCharacter,
@@ -71,13 +72,56 @@ export type ImageInsertionPayload = {
   replaceAssetId?: string;
 };
 
-export async function applyImageInsertion(job: Job, operation: { status: string }) {
+/**
+ * The insertion as the operation's own classifier holds it.
+ *
+ * `applyBookEdit` forks here on the operation's `kind`, never on this payload
+ * field, so a job whose `imageInsertion` was rebuilt away still arrives — and
+ * the Apply wrote the resolved intent onto the classifier in the same
+ * transaction that created the row. The intent's `imageEdit` is the queue-time
+ * contract in a different shape: its `replace` names the old picture by asset
+ * id, or by the marker its markdown line carries, or by the operation id that
+ * marker is built from, which is `queueChatAddImage`'s own rule
+ * (`apps/api/src/mobile/addImageOperations.ts`).
+ *
+ * Only the *subject* is irreplaceable. Every other field is re-validated against
+ * the live book below, so a stale one costs nothing; without a subject there is
+ * no picture to draw and no honest way to guess one, and `null` says so.
+ */
+export function insertionFromClassifier(classifier: unknown): ImageInsertionPayload | null {
+  const edit = jsonRecord(jsonRecord(classifier).imageEdit);
+  const subject = typeof edit.subject === "string" ? edit.subject.trim() : "";
+  if (!subject) {
+    return null;
+  }
+  const pageIndex = typeof edit.pageIndex === "number" ? edit.pageIndex : null;
+  const placement = edit.placement === "page" && pageIndex !== null ? "page" : "end_of_book";
+  const replace = jsonRecord(edit.replace);
+  const replaceAssetId = typeof replace.assetId === "string" && replace.assetId ? replace.assetId : null;
+  const replaceMarker =
+    typeof replace.marker === "string" && replace.marker
+      ? replace.marker
+      : typeof replace.operationId === "string" && replace.operationId
+        ? `chat-image-${replace.operationId}`
+        : null;
+  return {
+    subject,
+    placement,
+    // Read only for `placement: "page"` — an `end_of_book` insertion re-resolves
+    // the book's last page, which is what that placement means.
+    targetPageIndex: pageIndex ?? 0,
+    ...(replaceAssetId ? { replaceAssetId } : replaceMarker ? { replaceMarker } : {})
+  };
+}
+
+export async function applyImageInsertion(job: Job, operation: { status: string; classifier: unknown }) {
   const { projectId, operationId, request, planId, imageInsertion } = job.data as {
     projectId: string;
     operationId: string;
     request: string;
     planId?: string;
-    imageInsertion: ImageInsertionPayload;
+    /** Optional: the fork that routes a job here tests the operation's `kind`, not this field. */
+    imageInsertion?: ImageInsertionPayload;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
 
@@ -104,6 +148,22 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
     // decided stands.
     return;
   }
+  // The payload's copy first, the classifier's second, the same way the
+  // structural and layout forks read theirs. Asked *after* the two settle checks
+  // above — a redelivery of an APPLIED insertion still owes the book its export
+  // refresh, and the image it is replaying is already on the page whatever the
+  // payload now says — and *before* the EDITING write, so a job that cannot run
+  // does not drag a finished book into a status only a compile leaves.
+  const insertion = imageInsertion ?? insertionFromClassifier(operation.classifier);
+  if (!insertion) {
+    // Nothing to draw. Thrown rather than settled, which is this handler's rule
+    // for every other unusable target: the reader bought exactly this image, and
+    // only the failure path hands the credits back — `markFailed` fails the
+    // operation through the attempt, refunds the charge and the free-tier image
+    // slot with it, and restores the project out of EDITING. Settling it APPLIED
+    // would keep the money for a picture the book never gets.
+    throw new Error("This illustration edit carries no subject to draw");
+  }
   await prisma.project.update({ where: { id: projectId }, data: { status: "EDITING" } });
   await advanceJobStep(generationJobId, "prepare", 20, "Preparing the illustration");
 
@@ -127,8 +187,8 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
   // holds it now; "end of the book" re-resolves to whatever the last page is
   // now; an explicit page that vanished fails cleanly and the attempt
   // settlement refunds the charge.
-  const replaceMarker = typeof imageInsertion.replaceMarker === "string" ? imageInsertion.replaceMarker : undefined;
-  const replaceAssetId = typeof imageInsertion.replaceAssetId === "string" ? imageInsertion.replaceAssetId : undefined;
+  const replaceMarker = typeof insertion.replaceMarker === "string" ? insertion.replaceMarker : undefined;
+  const replaceAssetId = typeof insertion.replaceAssetId === "string" ? insertion.replaceAssetId : undefined;
   const replaceAsset = replaceAssetId
     ? await prisma.imageAsset.findFirst({
         where: { id: replaceAssetId, projectId, type: { in: ["SCENE_ILLUSTRATION", "DIAGRAM"] } },
@@ -144,14 +204,14 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
   const targetPage =
     replaceAsset?.page ??
     markerPage ??
-    (imageInsertion.placement === "end_of_book"
+    (insertion.placement === "end_of_book"
       ? await prisma.page.findFirst({ where: { projectId }, orderBy: { index: "desc" } })
-      : await prisma.page.findFirst({ where: { projectId, index: imageInsertion.targetPageIndex } }));
+      : await prisma.page.findFirst({ where: { projectId, index: insertion.targetPageIndex } }));
   if (!targetPage) {
     throw new Error(
-      imageInsertion.placement === "end_of_book"
+      insertion.placement === "end_of_book"
         ? "This book has no pages to add an illustration to"
-        : `Page ${imageInsertion.targetPageIndex} no longer exists, so the illustration has nowhere to go`
+        : `Page ${insertion.targetPageIndex} no longer exists, so the illustration has nowhere to go`
     );
   }
 
@@ -162,7 +222,7 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
   const selection = await insertionReferenceSelection({
     projectId,
     planVersionId: planVersion.id,
-    subject: imageInsertion.subject,
+    subject: insertion.subject,
     input,
     plan,
     image: providers.image,
@@ -170,11 +230,11 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
   });
   const trimmedRequest = request?.trim() ?? "";
   const imagePrompt = [
-    `Create one interior book illustration depicting: ${imageInsertion.subject}.`,
+    `Create one interior book illustration depicting: ${insertion.subject}.`,
     // The stored request carries the reader's wording and any appended library
     // character sheets (`requestWithCharacterContext`) — the only channel the
     // appearance rules travel through to this model.
-    trimmedRequest && trimmedRequest !== imageInsertion.subject.trim()
+    trimmedRequest && trimmedRequest !== insertion.subject.trim()
       ? `The reader's request, including any character notes:\n${trimmedRequest}`
       : "",
     characterReferencePromptInstruction(selection),
@@ -213,7 +273,7 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
   await mkdir(projectImageDir, { recursive: true });
   await writeFile(imagePath, optimizedImage.bytes);
 
-  const alt = imageAltFromSubject(imageInsertion.subject, markdownLabels(project.language).illustration);
+  const alt = imageAltFromSubject(insertion.subject, markdownLabels(project.language).illustration);
   const imageLine = `![${alt}](/assets/images/${projectId}/${filename})`;
   const publicPath = publicAssetUrl(
     config.PUBLIC_API_URL ?? "http://localhost:4001",
@@ -245,7 +305,7 @@ export async function applyImageInsertion(job: Job, operation: { status: string 
           projectId,
           current,
           replaceAsset,
-          subject: imageInsertion.subject,
+          subject: insertion.subject,
           publicPath,
           storedPrompt: imagePrompt
         });
@@ -589,7 +649,9 @@ async function insertionReferenceSelection(options: {
 // The page-markdown image helpers moved to `generation/imageMarkdown.ts` when
 // the layout handler needed them too — a handler may not import a sibling
 // handler. Re-exported here because they are this module's long-standing
-// public surface and several tests import them from this path.
+// public surface. Their tests are colocated with them
+// (`generation/imageMarkdown.test.ts`); they were in this file's suite until it
+// reached its size budget, and they need none of its mock harness.
 export {
   extractMarkdownImageLine,
   imageAltFromSubject,

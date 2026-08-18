@@ -76,9 +76,9 @@ function OperationsBody(props: { data: AdminOperationEconomics; days: number }) 
         {totals.refundedCredits > 0 ? (
           <p className="hero-caveat">
             <AlertTriangle size={14} aria-hidden />
-            {count(totals.refundedCredits)} credits across {count(totals.refundedRuns)} more{" "}
-            {totals.refundedRuns === 1 ? "charge was" : "charges were"} refunded and are not counted as revenue. What we
-            paid providers to serve them still is.
+            {count(totals.refundedCredits)} credits were returned across {count(totals.refundedRuns)}{" "}
+            {totals.refundedRuns === 1 ? "charge" : "charges"}, including partial refunds. Returned credits are not
+            counted as revenue; what we paid providers to serve the attempts still is.
           </p>
         ) : null}
         {totals.unbilledUsd > 0 ? (

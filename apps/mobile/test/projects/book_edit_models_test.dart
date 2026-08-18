@@ -90,6 +90,33 @@ void main() {
     expect(operation.displayAction, 'Retrying the revision automatically.');
   });
 
+  test('parses exact partial refunds and keeps the old full-refund flag safe', () {
+    Map<String, dynamic> operationJson() => {
+      'id': 'operation-refund',
+      'projectId': 'project-1',
+      'kind': 'restructure_pages',
+      'status': 'applied',
+      'affectedPageIndexes': [4, 5],
+      'creditsCharged': 200,
+      'currentAction': 'Pages inserted.',
+      'createdAt': '2026-06-15T12:00:00.000Z',
+    };
+
+    final partial = MobileBookEditOperation.fromJson({
+      ...operationJson(),
+      'creditsRefunded': false,
+      'creditsRefundedAmount': 120,
+    });
+    expect(partial.creditsRefunded, isFalse);
+    expect(partial.effectiveCreditsRefundedAmount, 120);
+
+    final oldFull = MobileBookEditOperation.fromJson({
+      ...operationJson(),
+      'creditsRefunded': true,
+    });
+    expect(oldFull.effectiveCreditsRefundedAmount, 200);
+  });
+
   test('leaves manualEdit null on ordinary assistant messages', () {
     final message = MobileProjectChatMessage.fromJson({
       'id': 'chat-2',

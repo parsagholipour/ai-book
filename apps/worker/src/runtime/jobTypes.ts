@@ -23,6 +23,43 @@ export function isStopRequestedError(error: unknown): boolean {
   return error instanceof StopRequestedError;
 }
 
+/**
+ * A structural redelivery waited out the owner's lease without ever acquiring
+ * it. `processJob` must not `markCompleted` — this delivery did not finish the
+ * work — and must not `markFailed`: acquire-wait `abandoned` means the owner
+ * is still holding a live lease, so failing the shared row would refund and
+ * fail an insert that is still drafting.
+ */
+export class UnownedStructuralDeliveryError extends Error {
+  constructor() {
+    super("Structural page edit wait gave up without owning the delivery");
+    this.name = "UnownedStructuralDeliveryError";
+  }
+}
+
+export function isUnownedStructuralDeliveryError(error: unknown): boolean {
+  return error instanceof UnownedStructuralDeliveryError;
+}
+
+/**
+ * Drafting failed and the revert did not put the book back, so the shifted
+ * manuscript is still there with its stamp. `processJob` must not `markFailed`:
+ * that would refund the ACTIVE operation, clear its lease and restore COMPLETE
+ * over pages that have not been put back. The handler has already yielded the
+ * lease and requeued the durable job; this delivery exits unrecoverably so it
+ * does not occupy a slot.
+ */
+export class StructuralRollbackRedeliveryError extends Error {
+  constructor() {
+    super("Structural page edit rollback failed; the shifted book was requeued to resume drafting");
+    this.name = "StructuralRollbackRedeliveryError";
+  }
+}
+
+export function isStructuralRollbackRedeliveryError(error: unknown): boolean {
+  return error instanceof StructuralRollbackRedeliveryError;
+}
+
 export function isStoppedGenerationJob(
   job: { status: string; message: string | null; error: string | null } | null
 ): boolean {

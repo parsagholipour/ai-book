@@ -5,8 +5,10 @@ import {
   readPublishedExport,
   removeExportProvenance,
   writeExportProvenance,
+  markdownOpensOnCoverSheet,
+  persistablePdfPageMapAfterRender,
   type AppConfig,
-  type BookPdfPageMap,
+  type PersistableBookPdfPageMap,
   type ExportArtifact
 } from "@book-maker/core";
 import { Prisma, prisma, type ProjectStatus } from "@book-maker/db";
@@ -249,11 +251,13 @@ async function publishRebuiltExport(options: {
   rendered: Buffer;
   /**
    * Same contract as the worker's `publishCompiledExports`: omitted leaves the
-   * stored map standing, `null` clears it, a map replaces it — stamped here
-   * with the claimed revision and this render's digest. An unmeasured PDF
-   * (no plan) must pass `null`: that render skipped the Contents reprint.
+   * stored map standing, `null` clears it, a map or cover-numbering stub
+   * replaces it — stamped here with the claimed revision and this render's
+   * digest. An unmeasured PDF (no plan) must pass a stub, not a stale map:
+   * that render skipped the Contents reprint, but chrome still needs to know
+   * whether the CSS skipped the cover.
    */
-  pdfPageMap?: BookPdfPageMap | null | undefined;
+  pdfPageMap?: PersistableBookPdfPageMap | null | undefined;
   pendingPath: string;
   publishedPath: string;
 }): Promise<boolean> {
@@ -349,7 +353,7 @@ async function renderAndPublishExport(options: {
   contentRevision: number;
   publishable: boolean;
   format: ProjectExportFormat;
-  render: (outputPath: string) => Promise<{ rendered: Buffer; pdfPageMap?: BookPdfPageMap | null | undefined }>;
+  render: (outputPath: string) => Promise<{ rendered: Buffer; pdfPageMap?: PersistableBookPdfPageMap | null | undefined }>;
 }): Promise<Buffer> {
   const { appConfig, projectId, format } = options;
   const projectDir = join(appConfig.BOOK_STORAGE_DIR, projectId);
@@ -434,13 +438,16 @@ export function rebuildProjectPdfExport(
           projectId,
           ...(manuscript.pageMapPlan ? { pageMapPlan: manuscript.pageMapPlan } : {})
         });
+        const hasCoverPage =
+          manuscript.pageMapPlan?.hasCoverPage ?? markdownOpensOnCoverSheet(manuscript.markdown);
         return {
           rendered: result.pdf,
-          // A measured rebuild replaces or clears. An unmeasured one (saved
-          // `book.md`, no plan, no Contents reprint) also clears: that PDF is
-          // not the pass the stored map was taken from, and a stale map is
-          // worse than none.
-          pdfPageMap: manuscript.pageMapPlan ? (result.pageMap ?? null) : null
+          // A measured rebuild replaces ranges. An unmeasured one (saved
+          // `book.md`, no plan, no Contents reprint) records cover-skip so
+          // chrome matches the footer; empty pages keep chat on model indexes.
+          // Never undefined here: only the worker's detached repair asks to
+          // keep the stored map, and this rebuild always publishes its own.
+          pdfPageMap: persistablePdfPageMapAfterRender({ pageMap: result.pageMap, hasCoverPage })
         };
       }
     });

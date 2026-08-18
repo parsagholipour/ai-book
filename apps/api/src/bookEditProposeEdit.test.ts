@@ -223,12 +223,12 @@ describe("propose_edit pricing mapping", () => {
 });
 
 describe("printed page numbers a router copied", () => {
-  // Cover on printed 1, Contents on 2, so every model page prints two ahead of
-  // its index — the divergence a copied number silently ignores.
+  // Cover is unnumbered, Contents is printed 1, so model pages print one ahead
+  // of a naive physical count — the divergence a copied number silently ignores.
   const numbering = readerPageNumbering(
     bookPageMapForProject({
       pdfPageMap: {
-        version: 1,
+        version: 2,
         totalPdfPages: 8,
         hasCoverPage: true,
         contentsStartPdfPage: 2,
@@ -258,26 +258,102 @@ describe("printed page numbers a router copied", () => {
 
   it("re-reads a copied page number as the model pages that printed page holds", () => {
     const intent = intentFromProposeEdit(
-      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
-      "Rewrite page 5 to be funnier.",
+      proposeEdit({ editTarget: "pages", pageIndexes: [4] }),
+      "Rewrite page 4 to be funnier.",
       chapters,
       { pageNumbering: numbering }
     );
 
-    // Printed page 5 carries the tail of model page 2 and the head of model 3.
+    // Printed page 4 is physical 5, which carries the tail of model page 2 and
+    // the head of model 3.
     expect(intent.affectedPageIndexes).toEqual([2, 3]);
     expect(intent.scope).toBe("explicit_pages");
   });
 
+  it("re-reads a whole list of copied page numbers", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [2, 4, 5] }),
+      "Rewrite pages 2, 4 and 5.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    // Printed 2 is model 1, printed 4 is the boundary of models 2 and 3, and
+    // printed 5 is model 3. The guard fires only because the message parser
+    // reads the whole list: with only "2" spoken, the set comparison fails and
+    // all three printed numbers are silently used as model indexes instead.
+    expect(intent.affectedPageIndexes).toEqual([1, 2, 3]);
+    expect(intent.scope).toBe("explicit_pages");
+  });
+
+  it("translates each per-page instruction onto the model pages that printed page holds", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({
+        editTarget: "pages",
+        pageIndexes: [2, 4],
+        perPageInstructions: [
+          { pageIndex: 2, instruction: "Make it funnier." },
+          { pageIndex: 4, instruction: "Make it shorter." }
+        ]
+      }),
+      "Make page 2 funnier and page 4 shorter.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    // Printed 2 is model 1; printed 4 is the boundary of models 2 and 3, so the
+    // instruction for it covers both. Each entry rides its own channel for
+    // exactly this reason — one shared list would lose which page it belonged to.
+    expect(intent.affectedPageIndexes).toEqual([1, 2, 3]);
+    expect(intent.perPageInstructions).toEqual([
+      { pageIndex: 1, instruction: "Make it funnier." },
+      { pageIndex: 2, instruction: "Make it shorter." },
+      { pageIndex: 3, instruction: "Make it shorter." }
+    ]);
+  });
+
+  it("prices a page the router wrote an instruction for but left out of pageIndexes", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({
+        editTarget: "pages",
+        pageIndexes: [],
+        perPageInstructions: [{ pageIndex: 3, instruction: "Trim the opening." }]
+      }),
+      "Trim the opening of that page.",
+      chapters
+    );
+
+    // An instruction is a request to edit that page, so it has to reach the
+    // set the card counts and the charge multiplies.
+    expect(intent.affectedPageIndexes).toEqual([3]);
+    expect(intent.scope).toBe("explicit_pages");
+  });
+
+  it("stands aside when the router named only some of the pages the message speaks", () => {
+    const intent = intentFromProposeEdit(
+      proposeEdit({ editTarget: "pages", pageIndexes: [2] }),
+      "Rewrite pages 2 and 4.",
+      chapters,
+      { pageNumbering: numbering }
+    );
+
+    // Deliberately a set *equality* rather than a containment test. A router
+    // that translated correctly can also answer a subset of the numbers the
+    // message speaks — an index that happens to equal one of them — and
+    // translating that a second time moves the edit to a page nobody named.
+    // Declining keeps the router's own answer, which is the safe half.
+    expect(intent.affectedPageIndexes).toEqual([2]);
+  });
+
   it("prefers the reader selection over a copied printed number", () => {
     const intent = intentFromProposeEdit(
-      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
-      'On page 5, rewrite this passage: "the old phrase".',
+      proposeEdit({ editTarget: "pages", pageIndexes: [4] }),
+      'On page 4, rewrite this passage: "the old phrase".',
       chapters,
       { pageNumbering: numbering, readerSelectionPageIndex: 2 }
     );
 
-    // Printed page 5 covers model pages 2 and 3; the locator already picked 2.
+    // Printed page 4 covers model pages 2 and 3; the locator already picked 2.
     expect(intent.affectedPageIndexes).toEqual([2]);
     expect(intent.scope).toBe("explicit_pages");
   });
@@ -303,7 +379,7 @@ describe("printed page numbers a router copied", () => {
       previewText: "the old phrase"
     }));
     const withoutSelection = classifyWithDegradedHeuristics(
-      'On page 5, rewrite this passage: "the old phrase".',
+      'On page 4, rewrite this passage: "the old phrase".',
       "complete",
       mappedPages,
       undefined,
@@ -313,7 +389,7 @@ describe("printed page numbers a router copied", () => {
     expect(withoutSelection.affectedPageIndexes).toEqual([2, 3]);
 
     const withSelection = classifyWithDegradedHeuristics(
-      'On page 5, rewrite this passage: "the old phrase".',
+      'On page 4, rewrite this passage: "the old phrase".',
       "complete",
       mappedPages,
       undefined,
@@ -356,8 +432,8 @@ describe("printed page numbers a router copied", () => {
 
   it("re-reads a copied page number named only in Persian", () => {
     const intent = intentFromProposeEdit(
-      proposeEdit({ editTarget: "pages", pageIndexes: [5] }),
-      "صفحه ۵ را بامزه‌تر بنویس",
+      proposeEdit({ editTarget: "pages", pageIndexes: [4] }),
+      "صفحه ۴ را بامزه‌تر بنویس",
       chapters,
       { pageNumbering: numbering }
     );
@@ -368,21 +444,21 @@ describe("printed page numbers a router copied", () => {
 
   it("leaves a printed number that holds no prose as the router wrote it", () => {
     const intent = intentFromProposeEdit(
-      proposeEdit({ editTarget: "pages", pageIndexes: [2] }),
-      "Rewrite page 2.",
+      proposeEdit({ editTarget: "pages", pageIndexes: [1] }),
+      "Rewrite page 1.",
       chapters,
       { pageNumbering: numbering }
     );
 
-    // Printed page 2 is the Contents: mapping it would move the edit onto a
+    // Printed page 1 is the Contents: mapping it would move the edit onto a
     // neighbouring page nobody named, so the router's own answer stands.
-    expect(intent.affectedPageIndexes).toEqual([2]);
+    expect(intent.affectedPageIndexes).toEqual([1]);
   });
 
   it("re-reads the placement of an inserted picture", () => {
     const intent = intentFromProposeEdit(
-      proposeEdit({ editTarget: "insert_image", imageSubject: "a dragon", pageIndexes: [3] }),
-      "Add a picture of a dragon on page 3.",
+      proposeEdit({ editTarget: "insert_image", imageSubject: "a dragon", pageIndexes: [2] }),
+      "Add a picture of a dragon on page 2.",
       chapters,
       { pageNumbering: numbering }
     );
@@ -393,8 +469,8 @@ describe("printed page numbers a router copied", () => {
 
   it("re-reads a Persian placement the router copied", () => {
     const intent = intentFromProposeEdit(
-      proposeEdit({ editTarget: "insert_image", imageSubject: "اژدها", pageIndexes: [3] }),
-      "در صفحه ۳ یک عکس از اژدها اضافه کن",
+      proposeEdit({ editTarget: "insert_image", imageSubject: "اژدها", pageIndexes: [2] }),
+      "در صفحه ۲ یک عکس از اژدها اضافه کن",
       chapters,
       { pageNumbering: numbering }
     );
@@ -405,8 +481,8 @@ describe("printed page numbers a router copied", () => {
 
   it("re-reads both ends of a move", () => {
     const intent = intentFromProposeEdit(
-      proposeEdit({ editTarget: "move_image", pageIndexes: [3], imageDestPageIndexes: [5] }),
-      "Move the picture from page 3 to page 5.",
+      proposeEdit({ editTarget: "move_image", pageIndexes: [2], imageDestPageIndexes: [3] }),
+      "Move the picture from page 2 to page 3.",
       chapters,
       { pageNumbering: numbering }
     );
@@ -424,11 +500,11 @@ describe("printed page numbers a router copied", () => {
         reasoning: "Ambiguous.",
         assistantMessage: "What should change on that page?",
         clarification: "scope",
-        pageIndexes: [5],
+        pageIndexes: [4],
         chapterIndex: null,
         targetLanguage: null
       },
-      "Fix page 5.",
+      "Fix page 4.",
       chapters,
       { pageNumbering: numbering }
     );

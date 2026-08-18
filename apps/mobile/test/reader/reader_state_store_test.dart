@@ -37,7 +37,6 @@ void main() {
         bookmarks: [
           ReaderBookmark(
             page: 12,
-            label: 'Page 12',
             createdAt: DateTime.utc(2026, 7, 25),
             revision: 7,
           ),
@@ -91,8 +90,8 @@ void main() {
       final state = ReaderState(
         lastPage: 3,
         bookmarks: [
-          ReaderBookmark(page: 2, label: 'a', createdAt: DateTime.utc(2026)),
-          ReaderBookmark(page: 90, label: 'b', createdAt: DateTime.utc(2026)),
+          ReaderBookmark(page: 2, createdAt: DateTime.utc(2026)),
+          ReaderBookmark(page: 90, createdAt: DateTime.utc(2026)),
         ],
       );
 
@@ -131,7 +130,6 @@ void main() {
         bookmarks: [
           ReaderBookmark(
             page: 12,
-            label: 'Page 12',
             createdAt: DateTime.utc(2026),
           ),
         ],
@@ -153,13 +151,19 @@ void main() {
     test('is approximate once the book has been recompiled', () {
       final bookmark = ReaderBookmark(
         page: 12,
-        label: 'Page 12',
         createdAt: DateTime.utc(2026),
         revision: 3,
       );
 
       expect(bookmark.isApproximateFor(3), isFalse);
       expect(bookmark.isApproximateFor(4), isTrue);
+    });
+
+    test('displayedLabel skips the cover sheet', () {
+      final bookmark = ReaderBookmark(page: 3, createdAt: DateTime.utc(2026));
+
+      expect(bookmark.displayedLabel(hasCoverPage: true), 'Page 2');
+      expect(bookmark.displayedLabel(hasCoverPage: false), 'Page 3');
     });
   });
 }

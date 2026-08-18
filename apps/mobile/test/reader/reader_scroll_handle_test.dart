@@ -74,6 +74,7 @@ Future<void> pumpHandle(
   WidgetTester tester,
   FakeViewerController controller, {
   bool alwaysVisible = false,
+  bool hasCoverPage = false,
   String? Function(int page)? chapterFor,
   VoidCallback? onPageTap,
 }) {
@@ -93,6 +94,7 @@ Future<void> pumpHandle(
               controller: controller,
               chapterFor: chapterFor ?? (_) => null,
               alwaysVisible: alwaysVisible,
+              hasCoverPage: hasCoverPage,
             ),
           ],
         ),
@@ -380,5 +382,27 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
     expect(find.text('Page 12 of 30'), findsNothing);
+  });
+
+  testWidgets('skips the cover in the drag bubble', (tester) async {
+    final controller = FakeViewerController(page: 1, totalPages: 10);
+    await pumpHandle(
+      tester,
+      controller,
+      alwaysVisible: true,
+      hasCoverPage: true,
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(AnimatedOpacity)),
+    );
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump();
+
+    expect(find.text('Cover'), findsOneWidget);
+    expect(find.text('Page 1 of 10'), findsNothing);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
   });
 }

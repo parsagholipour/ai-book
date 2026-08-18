@@ -3,160 +3,58 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job } from "bullmq";
-import type {
-  FinalBookQa,
-  ManuscriptQualityIssue,
-  PageQualityReport,
-  QualityFeatureId,
-  ReaderChapter,
-  StoryState
-} from "@book-maker/core";
-import type { ExportPageForRepair } from "../runtime/jobTypes.js";
+import { bookPdfCoverNumbering, type QualityFeatureId, type ReaderChapter } from "@book-maker/core";
 
-const mocks = vi.hoisted(() => ({
-  prisma: {
-    planVersion: { findUnique: vi.fn() },
-    project: { findUnique: vi.fn(), update: vi.fn() },
-    page: { update: vi.fn() },
-    continuityNote: { findMany: vi.fn(), createMany: vi.fn() },
-    generationJob: { update: vi.fn() }
-  },
-  revisePageDraftWithRestart: vi.fn(),
-  pageReportFromFinalQa: vi.fn(),
-  loadPagesForExport: vi.fn(),
-  storeEmbedding: vi.fn(),
-  generateJsonWithRetry: vi.fn(),
-  // Mutable so the whole-handler suite below can point storage at a temp dir.
-  config: { BOOK_STORAGE_DIR: "", IMAGE_STORAGE_DIR: "", PUBLIC_API_URL: "http://localhost:4001" },
-  strategy: {
-    executionMode: "whole-book",
-    compileMarkdown: vi.fn(),
-    // Delegates to the plain mocks so every existing assertion on
-    // `compileMarkdown` / `generatePdf` keeps observing the handler unchanged.
-    compileMarkdownWithPageAnchors: vi.fn((input: unknown) => ({
-      markdown: mocks.strategy.compileMarkdown(input),
-      pageAnchors: [],
-      hasCoverPage: false,
-      hasContents: false
-    })),
-    generatePdf: vi.fn(),
-    generatePdfWithPageMap: vi.fn(async (markdown: unknown, options: Record<string, unknown>) => {
-      const { pageMapPlan: _pageMapPlan, ...rest } = options;
-      return { pdf: await mocks.strategy.generatePdf(markdown, rest) };
-    }),
-    runFinalBookQa: vi.fn()
-  },
-  inputForPlanVersion: vi.fn(),
-  createReaderChaptersForExport: vi.fn(),
-  generateBookEpub: vi.fn(),
-  exportPublicationSuperseded: vi.fn(),
-  pendingExportPaths: vi.fn(),
-  publishCompiledExports: vi.fn(),
-  discardPendingExports: vi.fn(),
-  maybeEnqueueCharacterCandidatePreparation: vi.fn(),
-  loadProjectStoryState: vi.fn(
-    async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
-  ),
-  rebuildProjectStoryState: vi.fn(
-    async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
-  ),
-  rebuildStoryStateFromPages: vi.fn(
-    async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
-  ),
-  persistKeeperStoryDelta: vi.fn(),
-  loadQualityContext: vi.fn(async () => ({
-    settings: {},
-    tier: "balanced" as const,
-    enabled: (_feature: QualityFeatureId): boolean => false
-  }))
-}));
-
-vi.mock("@book-maker/db", () => ({
-  prisma: mocks.prisma,
-  Prisma: {},
-  researchCitationsForExport: async () => []
-}));
-vi.mock("../runtime/config.js", () => ({ config: mocks.config }));
-vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: mocks.inputForPlanVersion }));
-vi.mock("../generation/exportPublication.js", () => ({
-  discardPendingExports: mocks.discardPendingExports,
-  exportPublicationSuperseded: mocks.exportPublicationSuperseded,
-  pendingExportPaths: mocks.pendingExportPaths,
-  publishCompiledExports: mocks.publishCompiledExports
-}));
-vi.mock("../runtime/dispatch.js", () => ({ parallelPageWaveSize: () => 1 }));
-vi.mock("../runtime/jobLifecycle.js", () => ({
-  advanceJobStep: vi.fn(),
-  editOperationIdFromJob: (job: Job) =>
-    typeof job.data.operationId === "string" ? job.data.operationId : null,
-  updateJobProgress: vi.fn()
-}));
-vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {}, embedding: {} }) }));
-vi.mock("../generation/semanticMemory.js", () => ({
-  storeEmbedding: mocks.storeEmbedding,
-  // Mirrors the real predicate so fixtures choose their mode explicitly.
-  strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
-    strategy?.executionMode === "sequential-pages"
-}));
-vi.mock("./characters.js", () => ({
-  maybeEnqueueCharacterCandidatePreparation: mocks.maybeEnqueueCharacterCandidatePreparation
-}));
-vi.mock("../generation/bookHelpers.js", () => ({
-  extractRepairPageIndexes: (finalQa: { repairPageIndexes?: number[] }) => finalQa.repairPageIndexes ?? [],
-  loadPagesForExport: mocks.loadPagesForExport,
-  pageReportFromFinalQa: mocks.pageReportFromFinalQa,
-  parseChapterBrief: () => undefined,
-  strategyForInput: () => mocks.strategy,
-  toFinalQaPage: (page: unknown) => page,
-  toPriorPageContext: (page: unknown) => page,
-  formatQualityFailure: () => "quality failure detail"
-}));
-vi.mock("../generation/storyStateStore.js", () => ({
-  loadProjectStoryState: mocks.loadProjectStoryState,
-  rebuildProjectStoryState: mocks.rebuildProjectStoryState,
-  rebuildStoryStateFromPages: mocks.rebuildStoryStateFromPages
-}));
-vi.mock("../generation/qualityEnrichment.js", () => ({
-  persistKeeperStoryDelta: mocks.persistKeeperStoryDelta
-}));
-vi.mock("../generation/qualitySettings.js", () => ({
-  loadQualityContext: mocks.loadQualityContext,
-  applyPlanThinkingBoost: vi.fn()
-}));
+vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
+vi.mock("../runtime/config.js", async () => (await import("./testing/compileExportMocks.js")).configModuleMock());
+vi.mock(
+  "../generation/projectInput.js",
+  async () => (await import("./testing/compileExportMocks.js")).projectInputModuleMock()
+);
+vi.mock(
+  "../generation/exportPublication.js",
+  async () => (await import("./testing/compileExportMocks.js")).exportPublicationModuleMock()
+);
+vi.mock("../runtime/dispatch.js", async () => (await import("./testing/compileExportMocks.js")).dispatchModuleMock());
+vi.mock(
+  "../runtime/jobLifecycle.js",
+  async () => (await import("./testing/compileExportMocks.js")).jobLifecycleModuleMock()
+);
+vi.mock(
+  "../providers/loggedAdapters.js",
+  async () => (await import("./testing/compileExportMocks.js")).loggedAdaptersModuleMock()
+);
+vi.mock(
+  "../generation/semanticMemory.js",
+  async () => (await import("./testing/compileExportMocks.js")).semanticMemoryModuleMock()
+);
+vi.mock("./characters.js", async () => (await import("./testing/compileExportMocks.js")).charactersModuleMock());
+vi.mock(
+  "../generation/bookHelpers.js",
+  async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
+);
+vi.mock(
+  "../generation/storyStateStore.js",
+  async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
+);
+vi.mock(
+  "../generation/qualityEnrichment.js",
+  async () => (await import("./testing/compileExportMocks.js")).qualityEnrichmentModuleMock()
+);
+vi.mock(
+  "../generation/qualitySettings.js",
+  async () => (await import("./testing/compileExportMocks.js")).qualitySettingsModuleMock()
+);
 vi.mock("../generation/pageReview.js", async () => {
   const actual = await vi.importActual<typeof import("../generation/pageReview.js")>("../generation/pageReview.js");
-  return {
-    // The loop is the real one — the merge target this suite characterizes.
-    // Only the initial rewrite helper is mocked; loop rewrites go through the
-    // strategy's revisePageDraft.
-    runPageQualityLoop: actual.runPageQualityLoop,
-    revisePageDraftWithRestart: mocks.revisePageDraftWithRestart
-  };
+  return (await import("./testing/compileExportMocks.js")).pageReviewModuleMock(actual);
 });
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
-  return {
-    ...actual,
-    generateJsonWithRetry: mocks.generateJsonWithRetry,
-    // The chapterization call, spied rather than stubbed away: the whole point
-    // of the repair suite below is whether it happens at all.
-    createReaderChaptersForExport: mocks.createReaderChaptersForExport,
-    generateBookEpub: mocks.generateBookEpub,
-    bookPlanSchema: { parse: (value: unknown) => value },
-    // The real factory builds live adapters and demands provider keys.
-    createProviders: () => ({ text: {}, embedding: {}, image: {} })
-  };
+  return (await import("./testing/compileExportMocks.js")).coreModuleMock(actual);
 });
 
-import {
-  compileExport,
-  dedupeQualityIssues,
-  qualitySummaryMessage,
-  repairPagesFromFinalQa,
-  runBoundedChapterQualityReview
-} from "./compileExport.js";
-import { MAX_FINAL_QA_REVISIONS_PER_PAGE } from "../generation/tuning.js";
-import { StopRequestedError } from "../runtime/jobTypes.js";
+import { compileExport } from "./compileExport.js";
 import { readerChapterCachePath, writeCachedReaderChapters } from "../generation/readerChapterCache.js";
 import {
   DETACHED_FROM_PROJECT_LIFECYCLE,
@@ -165,263 +63,7 @@ import {
   PRESENTATION_RECOMPILE_FALLBACK_STATUS,
   readerChapterFingerprint
 } from "@book-maker/core";
-
-const report = (score: number, approved = false): PageQualityReport =>
-  ({ approved, score, issues: [], requiredRevisions: [], notes: "" }) as unknown as PageQualityReport;
-
-const draftNamed = (name: string) => ({
-  title: name,
-  markdown: `${name} text.`,
-  summary: `${name} summary.`,
-  imagePrompt: null,
-  continuityNotes: [] as string[]
-});
-
-function exportPage(index: number, overrides: Partial<ExportPageForRepair> = {}): ExportPageForRepair {
-  return {
-    id: `page-${index}`,
-    index,
-    title: `Page ${index}`,
-    markdown: `Page ${index} prose.`,
-    summary: `Page ${index} summary.`,
-    imagePrompt: null,
-    status: "COMPLETED",
-    chapter: null,
-    ...overrides
-  } as unknown as ExportPageForRepair;
-}
-
-const finalQa = (repairPageIndexes: number[]): FinalBookQa =>
-  ({ approved: repairPageIndexes.length === 0, issues: [], repairPageIndexes }) as unknown as FinalBookQa;
-
-describe("repairPagesFromFinalQa", () => {
-  // Sequential-pages so the repaired-page embedding write is exercised; other
-  // modes skip it because nothing ever reads their embeddings.
-  const strategy = { executionMode: "sequential-pages", reviewPageDraft: vi.fn(), revisePageDraft: vi.fn() };
-
-  const baseOptions = (overrides: Record<string, unknown> = {}) =>
-    ({
-      projectId: "project-1",
-      input: { targetPages: 2, mediaSettings: {} },
-      plan: { title: "Book", chapters: [] },
-      providers: { text: {}, embedding: {} },
-      strategy,
-      pages: [exportPage(1), exportPage(2)],
-      finalQa: finalQa([2]),
-      generationJobId: "gj-1",
-      ...overrides
-    }) as never;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
-    mocks.pageReportFromFinalQa.mockReturnValue(report(30));
-    mocks.loadPagesForExport.mockResolvedValue([exportPage(1), exportPage(2)]);
-    mocks.prisma.page.update.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
-      ...exportPage(2),
-      ...data
-    }));
-  });
-
-  it("returns undefined when final QA flagged nothing", async () => {
-    await expect(repairPagesFromFinalQa(baseOptions({ finalQa: finalQa([]) }))).resolves.toBeUndefined();
-    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
-  });
-
-  it("repairs a flagged page to COMPLETED and reloads the export set", async () => {
-    mocks.revisePageDraftWithRestart.mockResolvedValue({ ...draftNamed("Repaired"), continuityNotes: ["Pip stays."] });
-    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
-
-    const result = await repairPagesFromFinalQa(baseOptions());
-
-    expect(mocks.prisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "page-2" },
-        data: expect.objectContaining({
-          title: "Repaired",
-          status: "COMPLETED",
-          revision: { increment: 1 }
-        })
-      })
-    );
-    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledWith({
-      data: [expect.objectContaining({ scope: "page:2", body: "Pip stays.", tags: ["page", "2", "final-qa-repair"] })]
-    });
-    expect(mocks.storeEmbedding).toHaveBeenCalledWith(
-      "project-1",
-      "page:2",
-      "page-2",
-      "Repaired summary.",
-      expect.anything()
-    );
-    expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");
-    expect(result).toHaveLength(2);
-    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledWith(
-      expect.objectContaining({ pageIndex: 2, keeperWasRevised: true, previousExtract: null })
-    );
-  });
-
-  it("also repairs pages flagged by page-level QA, deduped and in order", async () => {
-    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
-    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
-
-    await repairPagesFromFinalQa(baseOptions({ finalQa: finalQa([2]), extraPageIndexes: [2, 1] }));
-
-    const updatedIds = mocks.prisma.page.update.mock.calls.map((call) => (call[0] as { where: { id: string } }).where.id);
-    expect(updatedIds).toEqual(["page-1", "page-2"]);
-  });
-
-  it("skips flagged indexes that have no page row", async () => {
-    await repairPagesFromFinalQa(baseOptions({ finalQa: finalQa([7]) }));
-
-    expect(mocks.revisePageDraftWithRestart).not.toHaveBeenCalled();
-    expect(mocks.prisma.page.update).not.toHaveBeenCalled();
-  });
-
-  it("keeps the best draft as FAILED_QA when no rewrite is approved", async () => {
-    // The first rewrite comes from the finalQa report; the loop's rewrites go
-    // through the strategy. One counter covers both.
-    let rewrite = 0;
-    mocks.revisePageDraftWithRestart.mockImplementation(async () => draftNamed(`Rewrite ${(rewrite += 1)}`));
-    strategy.revisePageDraft.mockImplementation(async () => draftNamed(`Rewrite ${(rewrite += 1)}`));
-    strategy.reviewPageDraft
-      .mockResolvedValueOnce(report(40))
-      .mockResolvedValueOnce(report(70))
-      .mockResolvedValue(report(55));
-
-    await repairPagesFromFinalQa(baseOptions());
-
-    expect(strategy.reviewPageDraft).toHaveBeenCalledTimes(MAX_FINAL_QA_REVISIONS_PER_PAGE);
-    expect(mocks.prisma.page.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "page-2" },
-        data: expect.objectContaining({
-          title: "Rewrite 2",
-          status: "FAILED_QA",
-          revision: { increment: MAX_FINAL_QA_REVISIONS_PER_PAGE },
-          qualityReport: expect.objectContaining({ score: 70 })
-        })
-      })
-    );
-    // A flagged page skips embedding until a repair actually lands.
-    expect(mocks.storeEmbedding).not.toHaveBeenCalled();
-    expect(mocks.persistKeeperStoryDelta).toHaveBeenCalledWith(
-      expect.objectContaining({ pageIndex: 2, keeperWasRevised: true })
-    );
-  });
-
-  it("enters recovery one attempt earlier than the page loops, because it counts from the first rewrite", async () => {
-    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Rewrite"));
-    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
-    strategy.reviewPageDraft.mockResolvedValue(report(40));
-
-    await repairPagesFromFinalQa(baseOptions());
-
-    // Loop rewrites are attempts 2..6. This loop counts attempts from the
-    // first rewrite — one later than the page loops count candidates — so the
-    // recovery escalation must land on attempt PAGE_QA_RECOVERY_CANDIDATE - 1
-    // (the third rewrite), not one rewrite later.
-    const escalated = strategy.revisePageDraft.mock.calls.map((call) =>
-      (call[0] as { report: { issues: string[] } }).report.issues.includes(
-        "Earlier generated replacements for this page were still rejected by QA."
-      )
-    );
-    expect(escalated).toEqual([
-      false, // attempt 2
-      true, // attempt 3 = PAGE_QA_RECOVERY_CANDIDATE - 1
-      true,
-      true,
-      true
-    ]);
-  });
-});
-
-describe("runBoundedChapterQualityReview", () => {
-  const baseOptions = (pages: ExportPageForRepair[]) =>
-    ({
-      input: { language: "en", mediaSettings: {} },
-      plan: { title: "Book", chapters: [{ index: 1, title: "Openings" }] },
-      pages,
-      textModel: {},
-      projectId: "project-1"
-    }) as never;
-
-  beforeEach(() => vi.clearAllMocks());
-
-  it("returns nothing for an empty book without calling the model", async () => {
-    await expect(runBoundedChapterQualityReview(baseOptions([]))).resolves.toEqual([]);
-    expect(mocks.generateJsonWithRetry).not.toHaveBeenCalled();
-  });
-
-  it("groups chapterless pages into synthetic chapters of eight and tags issues as model warnings", async () => {
-    mocks.generateJsonWithRetry.mockResolvedValue({
-      data: {
-        issues: [
-          { code: "CHAPTER_TRANSITION", message: "Abrupt jump.", guidance: "Bridge it.", affectedPageIndexes: [8, 9] }
-        ]
-      }
-    });
-    const pages = Array.from({ length: 9 }, (_, index) => exportPage(index + 1));
-
-    const issues = await runBoundedChapterQualityReview(baseOptions(pages));
-
-    const payload = JSON.parse(
-      (mocks.generateJsonWithRetry.mock.calls[0]![1] as { messages: Array<{ content: string }> }).messages[1]!.content
-    );
-    expect(payload.chapters.map((chapter: { index: number }) => chapter.index)).toEqual([1, 2]);
-    expect(payload.chapters[0].title).toBe("Openings");
-    expect(payload.chapters[1].title).toBe("Chapter 2");
-    expect(payload.transitions).toHaveLength(1);
-    expect(issues).toEqual([
-      expect.objectContaining({ code: "CHAPTER_TRANSITION", severity: "warning", source: "model" })
-    ]);
-  });
-
-  it("treats a model failure as no issues, but still propagates a user stop", async () => {
-    mocks.generateJsonWithRetry.mockRejectedValue(new Error("model outage"));
-    await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).resolves.toEqual([]);
-
-    mocks.generateJsonWithRetry.mockRejectedValue(new StopRequestedError());
-    await expect(runBoundedChapterQualityReview(baseOptions([exportPage(1)]))).rejects.toBeInstanceOf(
-      StopRequestedError
-    );
-  });
-});
-
-describe("quality report helpers", () => {
-  const issue = (overrides: Partial<ManuscriptQualityIssue> = {}): ManuscriptQualityIssue =>
-    ({
-      code: "CHAPTER_COHERENCE",
-      severity: "warning",
-      source: "model",
-      message: "Wanders.",
-      guidance: "Tighten.",
-      affectedPageIndexes: [1],
-      ...overrides
-    }) as ManuscriptQualityIssue;
-
-  it("dedupes issues by code, message, and affected pages", () => {
-    const kept = dedupeQualityIssues([
-      issue(),
-      issue(),
-      issue({ affectedPageIndexes: [2] }),
-      issue({ message: "Different." })
-    ]);
-    expect(kept).toHaveLength(3);
-  });
-
-  it("summarizes each quality state", () => {
-    expect(qualitySummaryMessage({ state: "blocked", issues: [issue()] } as never)).toBe(
-      "Review required: 1 integrity issue must be fixed before export."
-    );
-    expect(qualitySummaryMessage({ state: "review_recommended", issues: [issue(), issue()] } as never)).toBe(
-      "Export complete with 2 review recommendations."
-    );
-    expect(qualitySummaryMessage({ state: "passed", issues: [] } as never)).toBe(
-      "Export complete. Quality checks passed."
-    );
-  });
-});
+import { mocks } from "./testing/compileExportMocks.js";
 
 describe("compileExport reader chapters", () => {
   // A detached repair is queued by a status read or a download for as long as a
@@ -484,6 +126,18 @@ describe("compileExport reader chapters", () => {
     imagePath: undefined,
     imageAlt: "Illustration"
   }));
+  const projectRecord = (pdfPageMap: unknown = undefined) => ({
+    id: "project-1",
+    title: plan.title,
+    status: "COMPLETE",
+    contentRevision: 4,
+    authorName: null,
+    mediaSettings: {},
+    pages,
+    images: [],
+    research: [],
+    ...(pdfPageMap === undefined ? {} : { pdfPageMap })
+  });
 
   const job = (payload: Record<string, unknown> = {}) =>
     ({
@@ -521,17 +175,7 @@ describe("compileExport reader chapters", () => {
       planningPackage: plan,
       inputSnapshot: null
     });
-    mocks.prisma.project.findUnique.mockResolvedValue({
-      id: "project-1",
-      title: plan.title,
-      status: "COMPLETE",
-      contentRevision: 4,
-      authorName: null,
-      mediaSettings: {},
-      pages,
-      images: [],
-      research: []
-    });
+    mocks.prisma.project.findUnique.mockResolvedValue(projectRecord());
     mocks.strategy.runFinalBookQa.mockResolvedValue({
       approved: true,
       issues: [],
@@ -629,14 +273,23 @@ describe("compileExport reader chapters", () => {
         repairFormat: "pdf",
         generationJobId: "gj-1",
         // Unmeasured: the published bytes won, so this PDF skipped the
-        // Contents reprint the stored map includes.
-        pdfPageMap: null
+        // Contents reprint the stored map includes. Ranges are replaced with
+        // a cover-skip stub so chrome matches the footer; chat stays on
+        // model indexes.
+        pdfPageMap: bookPdfCoverNumbering(false)
       })
     );
   });
 
-  it("measures a repair whose deterministic recompile reproduces the published bytes", async () => {
+  it("publishes a successful measurement from a detached repair", async () => {
+    const pageMap = {
+      version: 2 as const,
+      totalPdfPages: 15,
+      hasCoverPage: false,
+      pages: [{ index: 1, startPdfPage: 2, endPdfPage: 15 }]
+    };
     mocks.strategy.compileMarkdown.mockReturnValue(publishedMarkdown);
+    mocks.strategy.generatePdfWithPageMap.mockResolvedValueOnce({ pdf: Buffer.from("pdf"), pageMap } as never);
 
     await compileExport(repairJob());
 
@@ -647,15 +300,45 @@ describe("compileExport reader chapters", () => {
       publishedMarkdown,
       expect.objectContaining({ pageMapPlan: expect.objectContaining({ pageAnchors: expect.any(Array) }) })
     );
-    // …but a repair whose measurement fails must not clear a stored map that
-    // was measured from this very manuscript.
-    const options = mocks.publishCompiledExports.mock.calls[0]![0] as Record<string, unknown>;
-    expect("pdfPageMap" in options).toBe(false);
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPageMap: pageMap })
+    );
+  });
+
+  it.each([
+    [
+      "a legacy version-1 map",
+      {
+        version: 1,
+        totalPdfPages: 14,
+        hasCoverPage: true,
+        pages: [{ index: 1, startPdfPage: 1, endPdfPage: 14 }]
+      }
+    ],
+    ["a null map", null],
+    [
+      "an existing version-2 map",
+      {
+        version: 2,
+        totalPdfPages: 14,
+        hasCoverPage: true,
+        pages: [{ index: 1, startPdfPage: 2, endPdfPage: 14 }]
+      }
+    ]
+  ])("replaces %s after a detached repair fails to remeasure", async (_label, storedMap) => {
+    mocks.prisma.project.findUnique.mockResolvedValueOnce(projectRecord(storedMap));
+    mocks.strategy.compileMarkdown.mockReturnValue(publishedMarkdown);
+
+    await compileExport(repairJob());
+
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPageMap: bookPdfCoverNumbering(false) })
+    );
   });
 
   it("publishes the measured page map with the compile, stamped inside the publisher", async () => {
     const pageMap = {
-      version: 1 as const,
+      version: 2 as const,
       totalPdfPages: 15,
       hasCoverPage: true,
       pages: [{ index: 1, startPdfPage: 3, endPdfPage: 15 }]
@@ -675,26 +358,48 @@ describe("compileExport reader chapters", () => {
     );
   });
 
-  it("clears the stored map when a measurable render could not be measured", async () => {
+  it("records cover-skip when a measurable render could not be measured", async () => {
     // The default generatePdfWithPageMap mock returns no pageMap: the render
-    // happened, the measurement failed. The stored map describes pagination
-    // this publication replaces, so the publisher must be told to clear it.
+    // happened, the measurement failed. Ranges from a previous compile would
+    // mistranslate this pagination, but chrome still needs to know the CSS
+    // skipped the cover — the plan's hasCoverPage, not a cleared column.
+    mocks.strategy.compileMarkdownWithPageAnchors.mockReturnValueOnce({
+      markdown: mocks.strategy.compileMarkdown({}),
+      pageAnchors: [],
+      hasCoverPage: true,
+      hasContents: false
+    });
     await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
 
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPageMap: null })
+      expect.objectContaining({ pdfPageMap: bookPdfCoverNumbering(true) })
     );
   });
 
-  it("clears the stored map when a repair renders the published markdown unmeasured", async () => {
+  it("replaces ranges with cover-skip when a no-plan repair renders published markdown", async () => {
     // No anchor plan exists for a markdown this process did not compile, so the
     // render skips markers and the Contents reprint. Same `book.md` is not the
     // same pagination — the reprint exists because digit width moves breaks —
     // and a map from the other Chromium pass would mistranslate chat targets.
+    // Cover-skip is still recorded from the manuscript's first sheet.
     await compileExport(repairJob());
 
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPageMap: null })
+      expect.objectContaining({ pdfPageMap: bookPdfCoverNumbering(false) })
+    );
+  });
+
+  it("records cover-skip from an unmeasured manuscript that opens on a cover", async () => {
+    await writeFile(
+      join(mocks.config.BOOK_STORAGE_DIR, "project-1", "book.md"),
+      "![Cover](/assets/images/p/cover.jpg)\n\n# Published layout\n\nExact compiled prose.\n",
+      "utf8"
+    );
+
+    await compileExport(repairJob());
+
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPageMap: bookPdfCoverNumbering(true) })
     );
   });
 
@@ -810,6 +515,7 @@ describe("compileExport reader chapters", () => {
       expect.objectContaining({
         ownsProjectStatus: true,
         status: "REVIEW_REQUIRED",
+        pdfPageMap: bookPdfCoverNumbering(false),
         generationAttemptId: null,
         editOperationId: null,
         characterPreparation: null

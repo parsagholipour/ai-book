@@ -4,6 +4,8 @@ import { createRunLogger, providerConfigSnapshot } from "./providers/runLogging.
 import {
   STOPPED_JOB_ERROR,
   isStopRequestedError,
+  isStructuralRollbackRedeliveryError,
+  isUnownedStructuralDeliveryError,
   type JobCompletion,
 } from "./runtime/jobTypes.js";
 import {
@@ -137,6 +139,13 @@ export async function processWorkerJob(job: Job): Promise<void> {
             .catch(() => undefined);
         }
       } catch (error) {
+        if (isStructuralRollbackRedeliveryError(error)) {
+          // Before stop and markFailed: both of those refund the ACTIVE
+          // operation and restore COMPLETE, and the revert did not land.
+          await runLogger.append("job.structural_rollback_redelivery", { error: serializeError(error) });
+          throw new UnrecoverableError(errorMessage(error));
+        }
+
         if (isStopRequestedError(error)) {
           await runLogger.append("job.stopped", {});
           await markStopped(job);
@@ -147,6 +156,13 @@ export async function processWorkerJob(job: Job): Promise<void> {
           await runLogger.append("job.stopped", { interruptedError: serializeError(error) });
           await markStopped(job);
           throw new UnrecoverableError(STOPPED_JOB_ERROR);
+        }
+
+        if (isUnownedStructuralDeliveryError(error)) {
+          // A waiter that never acquired the lease. Completing would block the
+          // owner's later markFailed; failing would refund a live insert.
+          await runLogger.append("job.unowned_structural_delivery", { error: serializeError(error) });
+          throw new UnrecoverableError(errorMessage(error));
         }
 
         if (shouldRecoverJobAttempt(job, error)) {

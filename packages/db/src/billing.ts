@@ -22,6 +22,7 @@ export {
   getCreditBalance,
   grantCredits,
   refundCreditLedgerEntry,
+  refundCreditLedgerEntryPortion,
   refundLatestProjectOperationCredits,
   refundedLedgerEntryIds,
   releaseReservationsByKeyPrefix,

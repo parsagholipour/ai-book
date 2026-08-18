@@ -12,6 +12,7 @@
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { jsonRecord } from "../schemas/jsonCoercion.js";
 
 const MAX_SNAPSHOT_CHARACTERS = 10;
 const MAX_FIELDS_PER_CHARACTER = 12;
@@ -62,10 +63,6 @@ export type LibraryCharacterSnapshot = {
   /** Absent on snapshots written before adoption existed; read as "generated". */
   portraitSource?: LibraryCharacterPortraitSource | undefined;
 };
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
 
 function boundedText(value: unknown, maxLength: number): string {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";

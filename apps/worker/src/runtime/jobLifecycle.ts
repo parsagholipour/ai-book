@@ -4,6 +4,7 @@ import {
   bookGenerationChargeFromPayloads,
   isPresentationOnlyRecompile,
   isRecoverableNetworkError,
+  parseStructuralApplication,
   payloadOwnsProjectOutcome,
   presentationRecompileFallbackStatus,
   shouldBypassConfiguredRetries as retryPolicyShouldBypass,
@@ -16,6 +17,7 @@ import {
   markGenerationAttemptActive,
   markGenerationAttemptSucceeded,
   refundCreditLedgerEntry,
+  refundCreditLedgerEntryPortion,
   refundLatestProjectOperationCredits,
   releaseManuscriptImportUse
 } from "@book-maker/db/billing";
@@ -135,8 +137,26 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
   if (!project) {
     return "The target project no longer exists.";
   }
-
   const planId = typeof job.data.planId === "string" ? job.data.planId : null;
+  // A structural shift replaces its own plan before its delivery settles; the
+  // operation linkage and exact stamp pair prove this mismatch is that shift.
+  const operationId = editOperationIdFromJob(job);
+  const structuralOperation =
+    generationJob.type === "APPLY_BOOK_EDIT" && planId && project.currentPlanId !== planId && operationId
+      ? await prisma.bookEditOperation.findUnique({
+          where: { id: operationId },
+          select: { projectId: true, generationJobId: true, kind: true, status: true, classifier: true }
+        })
+      : null;
+  const structuralApplication = parseStructuralApplication(structuralOperation?.classifier);
+  const jobCreatedCurrentPlan =
+    project.currentPlanId !== null &&
+    structuralOperation?.projectId === payloadProjectId &&
+    structuralOperation.generationJobId === generationJobId &&
+    structuralOperation.kind === "RESTRUCTURE_PAGES" &&
+    (structuralOperation.status === "ACTIVE" || structuralOperation.status === "APPLIED") &&
+    structuralApplication?.basePlanVersionId === planId &&
+    structuralApplication?.newPlanVersionId === project.currentPlanId;
   const pageId = typeof job.data.pageId === "string" ? job.data.pageId : null;
   const page = pageId
     ? await prisma.page.findUnique({ where: { id: pageId }, select: { projectId: true } })
@@ -150,7 +170,8 @@ export async function staleGenerationJobReason(job: Job): Promise<string | null>
     pageId,
     pageProjectId: page?.projectId ?? null,
     contentRevision: generationJob.contentRevision,
-    projectContentRevision: project.contentRevision
+    projectContentRevision: project.contentRevision,
+    jobCreatedCurrentPlan
   });
 }
 
@@ -497,7 +518,8 @@ export async function failEditOperation(
   const claimed = await prisma.bookEditOperation
     .updateMany({
       where: { id: operationId, status: { in: ["QUEUED", "ACTIVE"] } },
-      data: { status: "FAILED", error: reason }
+      // Clear structural ownership with the terminal verdict, not before it.
+      data: { status: "FAILED", error: reason, structuralLeaseToken: null, structuralLeaseExpiresAt: null }
     })
     .catch(() => ({ count: 0 }));
   if (claimed.count !== 1 || options.refund === false) {
@@ -512,6 +534,119 @@ export async function failEditOperation(
       console.error(`Failed to refund edit operation ${operationId}`, error);
     });
   }
+}
+
+/**
+ * Hands back the charge for an edit that settles without applying anything.
+ *
+ * A handler that records a skip and returns normally is *completing*, so no
+ * failure path runs at all: `markCompleted` marks the attempt SUCCEEDED, and an
+ * attempt's credits are reserved **and committed** when the edit is queued, so
+ * nothing downstream ever gives them back. `restructurePages` settles a stale
+ * insert exactly that way — the book changed under the card, the pages it was
+ * charged for are never written — and kept the money on the strength of a
+ * comment claiming the throw it does not make would have refunded it.
+ *
+ * Closing the attempt is half the fix rather than bookkeeping:
+ * `markGenerationAttemptSucceeded` claims a QUEUED or ACTIVE row moments later,
+ * so an attempt left open is marked SUCCEEDED over a spend this just reversed,
+ * with `refundPending` cleared and `reconcileGenerationAttemptRefunds` never
+ * looking at it again. CANCELED rather than FAILED because nothing broke — and
+ * it makes any redelivery of the job stale, which is right: there is nothing
+ * left to run.
+ *
+ * It deliberately does not swallow. `failGenerationAttempt` leaves
+ * `refundPending` behind when its own transaction fails, and the throw carries
+ * the delivery into `markFailed`, which asks for the same settlement again;
+ * a caught error is a kept charge nobody is looking for. Call it *before*
+ * claiming the operation APPLIED for the same reason — the throw then finds the
+ * row still ACTIVE, which is what `failEditOperation` claims.
+ */
+export async function refundSkippedEditOperation(job: Job, reason: string): Promise<void> {
+  const attemptId = generationAttemptIdFromJob(job);
+  if (attemptId) {
+    await failGenerationAttempt(attemptId, reason, "CANCELED");
+    return;
+  }
+  // An attempt-less charged edit records its entry on the operation row — the
+  // same handle `failEditOperation` refunds through when it owns the failure.
+  const operationId = editOperationIdFromJob(job);
+  if (!operationId) {
+    return;
+  }
+  const operation = await prisma.bookEditOperation.findUnique({
+    where: { id: operationId },
+    select: { ledgerEntryId: true }
+  });
+  if (operation?.ledgerEntryId) {
+    await refundCreditLedgerEntry(operation.ledgerEntryId, reason);
+  }
+}
+
+/**
+ * Hands back the pages a priced edit billed for and did not write.
+ *
+ * The sibling of `refundSkippedEditOperation`, for the case that settles as a
+ * delivered *part* rather than a delivered nothing. A structural insert charges
+ * `pagesBilled × pageRegenerationPerPage` up front and its apply resumes against
+ * the page ids the shift recorded — so a redelivery meeting a book that holds
+ * only some of them writes only some of them, and every path out of there is a
+ * *completion*: `markCompleted` marks the attempt SUCCEEDED, and neither
+ * `markFailed`, `failGenerationAttempt` nor `failEditOperation` ever runs.
+ * Nothing broke, so nothing may fail the book — but the reader paid for five
+ * pages and has two, `operationCanUndo` offers an undo of the shift rather than
+ * of the charge, and the shortfall used to be kept in silence.
+ *
+ * `bookEditCreditCost` prices `restructure_pages` as `pagesBilled` times a
+ * per-page rate with no flat half, so the share of the charge the missing pages
+ * carried is exactly their share of the pages — read off the operation row's own
+ * `creditsCharged` rather than recomputed from a price list that an operator may
+ * have edited since the edit was quoted.
+ *
+ * Like `refundSkippedEditOperation` it does not swallow: a kept charge nobody is
+ * looking for is worse than a delivery that fails loudly, and the caller runs it
+ * *before* claiming the operation APPLIED so a throw leaves behind the ACTIVE
+ * row `failEditOperation` claims. The operation id makes the ledger settlement
+ * replay-safe while still allowing a later full failure to top it up.
+ */
+export async function refundUnwrittenEditPages(
+  job: Job,
+  options: { billedPages: number; writtenPages: number; reason: string }
+): Promise<void> {
+  const missing = options.billedPages - options.writtenPages;
+  if (options.billedPages <= 0 || missing <= 0) {
+    return;
+  }
+  const operationId = editOperationIdFromJob(job);
+  if (!operationId) {
+    return;
+  }
+  const operation = await prisma.bookEditOperation.findUnique({
+    where: { id: operationId },
+    select: { ledgerEntryId: true, creditsCharged: true }
+  });
+  if (!operation?.ledgerEntryId || operation.creditsCharged <= 0) {
+    return;
+  }
+  const owed = Math.round((operation.creditsCharged * missing) / options.billedPages);
+  if (owed <= 0) {
+    return;
+  }
+  console.warn("Refunding the pages a paid edit billed and could not write", {
+    event: "generation.edit_page_shortfall_refunded",
+    operationId,
+    projectId: job.data.projectId,
+    billedPages: options.billedPages,
+    writtenPages: options.writtenPages,
+    creditsCharged: operation.creditsCharged,
+    refundedCredits: owed
+  });
+  await refundCreditLedgerEntryPortion({
+    entryId: operation.ledgerEntryId,
+    amountCredits: owed,
+    reason: options.reason,
+    idempotencyKey: `edit-page-shortfall:${operationId}`
+  });
 }
 
 export function editOperationIdFromJob(job: Job): string | null {

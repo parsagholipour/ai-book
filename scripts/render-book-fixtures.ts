@@ -171,6 +171,26 @@ const FIXTURES: ReadonlyArray<{ name: string; language: string; markdown: string
     markdown: `![Book cover](${image("cover.svg")})\n\n# The Covered Book\n\nOpening.\n\n${paragraphs(6, "Chapter")}`
   },
   {
+    // The coverless front matter — `formatTitlePage` in markdown.ts, reproduced
+    // verbatim because the harness renders markdown rather than compiling a book.
+    // It is a *fixed-height, clipped* sheet whose stack is centred by auto
+    // margins, so it is the one piece of furniture where a stylesheet edit can
+    // silently lose a line rather than move a break; nothing else in the corpus
+    // names `pdf-title`, which is why an earlier version of this list let a
+    // title-sheet change through unseen.
+    name: "title-page-en",
+    language: "en",
+    markdown: [
+      '<section class="book-title-page">',
+      '  <h1 class="book-title-page__title">The Quiet Engine and Its Several Discontents</h1>',
+      '  <p class="book-title-page__subtitle">A study of machines that would rather not</p>',
+      '  <p class="book-title-page__byline">by Ada Lovelace</p>',
+      "</section>",
+      "",
+      paragraphs(6, "Chapter")
+    ].join("\n")
+  },
+  {
     name: "fifteen-chapters",
     language: "en",
     markdown: `# The Long Index\n\n<div class="book-contents book-contents--dense">\n<p class="book-contents__eyebrow">Contents</p>\n<h2>Contents</h2>\n<div class="book-contents__ornament"></div>\n<ul class="book-contents__list">\n${Array.from(

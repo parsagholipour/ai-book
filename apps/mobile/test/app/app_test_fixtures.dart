@@ -350,7 +350,7 @@ class FakeProjectsRepository implements ProjectsRepository {
     String? requestId,
     String? replyToMessageId,
     List<String>? mentionedCharacterIds,
-    Map<String, int>? readerContext,
+    Map<String, Object>? readerContext,
   }) async {
     final reply = MobileProjectChatMessage(
       id: 'reply',

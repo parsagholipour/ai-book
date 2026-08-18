@@ -28,6 +28,29 @@ reuse them; read them and add your branch alongside the others.
 
 ## Image layout
 
+**The image forks are decided by the operation's `kind` too, and the payload they used to read is
+the more expensive half of that mistake.** `applyBookEdit` gated `applyImageLayout` on
+`job.data.imageLayout` and `applyImageInsertion` on `job.data.imageInsertion` — the exact shape the
+structural fork below was moved off — so a `MOVE_IMAGE`, `REMOVE_IMAGE` or `ADD_IMAGE` job whose
+payload was rebuilt without its key fell through to the text-rewrite path. That is worse here than
+for a structural job, because an image payload's `affectedPageIndexes` is **not** empty: it names
+the pages the pictures sit on, so the loop found them and rewrote them. "Remove the illustration on
+page 3" became a model rewrite of page 3's prose — two calls on an edit priced at zero — and an
+`add_image` spent the picture's charge rewriting the page it was going on, both settling APPLIED
+with snapshots for a text edit nobody asked for, and both **outside** the handlers' own redelivery
+fences, because the unconditional ACTIVE and EDITING writes come before the fork. Each handler now
+reads its request off the payload first and off `BookEditOperation.classifier` second
+(`layoutPayloadFromClassifier`, `insertionFromClassifier`): the Apply writes the resolved intent
+there in the same transaction that creates the row, and those two translate its shape — `targets`
+carrying an asset id, a marker, or the operation id `chat-image-<id>` is built from — into the
+queue-time one, by the same rule `resolveStoredLayoutTarget` and `queueChatAddImage` use on the API
+side. A job carrying **neither** copy parts ways with price: a move or a remove is free, so it
+settles as a delivered no-op through `markLayoutSkipped`, the path a vanished picture already takes;
+an insertion is the whole purchase, so it throws, and only the failure path hands back the charge
+and the free-tier image slot with it (`markFailed` → the attempt → `failEditOperation`, then the
+project out of EDITING). That throw is asked *after* both settle checks — an APPLIED redelivery
+still owes the book its export refresh — and *before* the EDITING write.
+
 **A hero leaves `pageId` only in the same step that gives it a markdown line.** The demote path
 used to write the destination page without the line and unlink the asset anyway whenever
 `assetsImagePathFrom` came back null, which took the picture out of the book with nothing in the
@@ -35,6 +58,246 @@ manuscript to show for it — reachable in any deployment whose `PUBLIC_API_URL`
 prefix, since `new URL(path).pathname` is then `/api/assets/images/…`. That resolver
 (`packages/core/src/generation/bookImageAssets.ts`) is shared with `editChanges.ts` for the same
 reason, and a null answer refuses the whole move rather than half-applying it.
+
+## Structural page edits
+
+- **Every fork out of `applyBookEdit` — structural and both image ones — is decided by the operation's `kind`, never by the payload.**
+  (The image half is written up under *Image layout* above, where the same gate cost more.)
+  `applyBookEdit` gated on `job.data.structuralEdit`, which made
+  `structuralEditFromClassifier` — the fallback `restructurePageOperations.ts` writes the request
+  onto the classifier *for* — unreachable, and sent any structural job whose payload lost the field
+  down the text-rewrite path instead. That path is not a no-op but something odder: a
+  `RESTRUCTURE_PAGES` payload's `affectedPageIndexes` is always `[]`, so it claimed the operation
+  ACTIVE and the project EDITING **outside** the redelivery fence and then died on "No matching
+  pages found for this edit" — a paid insert failed for a reason that is not what went wrong, with
+  the shift never attempted. `BookEditOperation.kind` is a non-null column written once at creation
+  and touched by nothing afterwards; the payload is JSON a hand-requeue, a reconciler or a future
+  trim can rebuild without a key. Gate on the column, and let the handler find the edit on either
+  copy. A job carrying neither settles through `settleSkippedRestructure` with
+  `structuralSkipped: "missing_request"` rather than throwing — see the refund rule below, and note
+  that throwing would restore the book as COMPLETE whatever it came in as and leave the row
+  recoverable, so `/resume` would charge again for a request that is still not there.
+- **A structural edit's redelivery stamp comes down in the same transaction that puts the book back.**
+  `restructurePages.ts` fences a second delivery on `classifier.structuralApplication`, written by
+  the transaction that shifted the indexes: its presence is proof the shift landed, and a resumed
+  delivery skips straight to drafting the page *ids* it recorded. The rollback is the same claim in
+  reverse, so `rollbackStructuralChange` erases the stamp inside the revert's own transaction —
+  a stamp outliving the shape it describes sent the next delivery past the shift, into
+  `findUnique`s that all miss and `continue`, and out the far side marking the operation APPLIED
+  and recompiling an unchanged book, which the paid retry lane had just charged for again. If the
+  revert *fails* the stamp survives on purpose: nothing was put back, so resuming into drafting is
+  right. That delivery must not fall into `markFailed` — generic settlement refunds the ACTIVE
+  operation, clears its lease and restores COMPLETE over a manuscript that is still shifted. It
+  yields the lease, requeues the durable job and exits unrecoverably
+  (`StructuralRollbackRedeliveryError`) so the next delivery can draft the ids the stamp still
+  names. `stampDescribesBook` asks the same question of the book itself before resuming — an
+  insert whose recorded ids the book no longer holds does not get resumed on the strength of the
+  stamp alone — so the fence does not rest on two writes agreeing. What that answer buys is a
+  second, *locked* look and not a re-apply: it sends the delivery back through
+  `applyStructuralPageChange`, whose lease CAS still answers `resumed` while the stamp is on the
+  row, so the shift re-runs only once a rollback has taken the stamp down too.
+- **An edit the reader has already undone is terminal for every delivery of it.** The reader's Undo
+  runs the same `revertStructuralPageChange` the rollback does but deliberately *keeps*
+  `structuralApplication` — it is the record of what the edit did and what the operation card reads
+  back — and stamps `classifier.undoneAt` in the same transaction. So a redelivery finds a stamp
+  that still says "the shift landed" describing a shape the book no longer has, and the row is
+  still APPLIED: it took the export tail, which deletes the PDF the undo's own recompile had just
+  published and bumps `contentRevision` past the revision that compile is waiting to claim, all for
+  an edit that is already gone. `restructurePages.ts` stands down on `undoneAt` before any of that,
+  on the handed-in row and again on the re-read one (an undo can only land on an APPLIED row, which
+  is the status the ACTIVE claim skips, so the re-read is the first thing that can see one that
+  arrived mid-delivery). It writes **nothing** on that path — no refund, no pre-edit status restore,
+  no classifier rewrite — and that is the second half of the rule: `canUndoBookEdit`
+  (`apps/api/src/mobile/manualEdits.ts`) reads exactly `undoneAt`, so any settlement written here —
+  `settleSkippedRestructure` merging a classifier read before the undo, say — would put an
+  already-reverted edit back in front of the reader as undoable and revert it a second time. The
+  predicate is asked with the button's own test for that reason.
+- **A settlement merges onto the classifier it re-reads under its own row lock, never the copy the
+  delivery carried in.** `settleSkippedRestructure` wrote `{ ...stored.classifier, structuralSkipped }`
+  onto a row read near the top of the handler — before the plan-version reads, the provider
+  construction and the whole `applyStructuralPageChange` transaction — so anything written into that
+  JSON across the window came straight back off: a concurrent rollback's `structuralRolledBackAt`, a
+  stamp a racing delivery had just committed, and the reader's `undoneAt`. That last one is the
+  expensive one, and this was the remaining door by which it could be erased — an undo runs against
+  an APPLIED row, so it commits while this delivery holds the row ACTIVE on its way to a refusal, by
+  which time the terminal branch above has already read the row. `canUndoBookEdit` reads exactly
+  `undoneAt`, so putting the pre-undo copy back re-offers Undo on an already-reverted edit and runs
+  `revertStructuralPageChange` a second time over a restored book, un-deleting its pages and
+  re-approving the base plan. The settle now opens its transaction with the APPLIED claim, which is
+  what takes the row's write lock, reads the classifier under that lock and merges onto what it
+  found — the rule `applyStructuralPageChange` writes its own stamp by
+  (`apps/worker/src/generation/CLAUDE.md`), and the reason the lease columns live outside
+  `classifier` at all. Both writes stay in the one transaction, so the marker still cannot land
+  before the write that takes the book out of EDITING.
+- **The stamp proves the shift; the durable lease owns everything after it.** The transaction's
+  database-time CAS is the first statement, so one delivery shifts and receives the expiring token.
+  A concurrent `already-applied` loser waits instead of falling through: returning immediately
+  would mark the shared `GenerationJob` COMPLETED under the winner, while drafting would give both
+  deliveries the same inserted page ids. If the owner crashes, expiry lets the waiting redelivery
+  resume those ids; if it crashed after APPLIED, the replacement owns only the export tail. A
+  heartbeat keeps ordinary provider waits live, `reviewAndSaveGeneratedPage.assertOwnership` fences
+  the page upsert *and everything that save publishes behind it*
+  (`apps/worker/src/generation/CLAUDE.md`), APPLIED is conditional on the token, and rollback begins by renewing that same
+  unexpired token inside its transaction. A stale catch therefore cannot revert, fail or refund the
+  winner. The lease completes only after the compile dispatch tail; its columns are deliberately
+  outside `classifier`, whose whole-document merges would otherwise erase a concurrent heartbeat.
+  **The pre-flight refusal settles under the same lease**, which is the half that was missing: the
+  page read `resolveStructuralPageEdit` answers against is taken outside every claim, and "the pages
+  this request names are not in the book" is exactly what a *winning* delivery leaves behind — it
+  deleted them, or moved the indexes the request was written against. Settling on that read refunded
+  the charge, marked the row APPLIED with `structuralSkipped` and put the book back down under a
+  delivery that had already shifted it, whose own APPLIED write then failed (it claims ACTIVE) and
+  whose rollback could not run either, because that renews the lease the settlement had just
+  cleared: a shifted manuscript, the pre-edit PDF with no recompile coming, a refund, and a row
+  saying the edit was delivered as a no-op — which `operationCanUndo` refuses an Undo.
+  `settleRefusedRestructure` therefore takes the claim **before** the refund, settles only while it
+  owns an unstamped, unfinished row, and hands every other answer to `resumeClaimedStructuralDelivery`
+  the way the shift's own losers are handed there. **Acquiring that lease is only half of holding
+  it.** The settle then refunded with no heartbeat and wrote unconditionally, so a ledger call, a
+  paused process or a failover outlasting the three-minute expiry let a replacement acquire and
+  begin shifting while this transaction marked *its* live edit APPLIED with `structuralSkipped`,
+  cleared its token and restored the project — the same three writes one lease later, with the
+  charge handed back under a delivery still working against it. `settleSkippedRestructure`
+  (`restructurePagesSettlement.ts`, its own file for that reason) runs a heartbeat for the whole
+  call, proves ownership at the barrier *before* the refund — the last moment the money can still
+  be declined — and writes through `settleSkippedStructuralPageLeaseTx`, the skip's twin of
+  `markStructuralPageLeaseApplied`: the same database-time CAS on this token, an unexpired lease
+  and an ACTIVE row, returning the classifier the marker merges onto. Zero rows writes **nothing**
+  — not the marker, not the project's status — and returns rather than throwing, because throwing
+  hands a book somebody else is editing to `markFailed`. The refund is already spent by then and
+  logged loudly; that order is deliberate, since the alternative is an APPLIED row no refund path
+  reaches. A reader's Undo landing since the handler's
+  re-read is not that skip-settle: the winner's shift is already back, Undo is allowed as soon as
+  the row is APPLIED (before `markCompleted` succeeds the still-ACTIVE attempt), and skip-settling
+  would refund that attempt and overwrite the Undo's EDITING + `contentRevision` bump with the
+  pre-edit COMPLETE — after which `bookPageMapForProject` refuses the behind map. That path writes
+  nothing, the same as the early `undoneAt` branches. The `stale` branch was
+  always fenced — `applyStructuralPageChange` asks the resolver's question again under the claim it
+  is holding — and this is the same fence given to the refusal decided before that transaction.
+  **A wait that gives up is not a successful return.** Both waits carry a deadline now (see
+  `apps/worker/src/generation/CLAUDE.md`), so every caller has a third answer to hold.
+  `resumeClaimedStructuralDelivery` reads acquire-wait `abandoned` as owning nothing and **throws
+  `UnownedStructuralDeliveryError`**: no tail to replay, no EDITING to hand back, and no return
+  into `markCompleted`, which would mark the shared `GenerationJob` COMPLETED under a live owner
+  still drafting (a 10-page insert routinely outlasts the wait). `processJob` must not `markFailed`
+  that error either — acquire-wait `abandoned` is a *busy* owner, so failing the row would refund
+  and fail an insert that is still writing. The waiter exits unrecoverably so it does not occupy a
+  slot; the owner keeps the durable job. The two lease-lost catches around drafting and rollback
+  still **rethrow** the lost-lease error after a *completion* wait that answers `abandoned`: that
+  wait means nobody finished the shift, so `markFailed` settles it the way it settles any other
+  drafting failure, with the refund, the FAILED row and the book out of EDITING. Returning there
+  instead would leave the project in the state no sweep reaches, over a wait that had already given
+  up. The three waits *after* the export tail ignore the answer on purpose: the recompile is queued
+  by then, so all that is missing is the lease's own completion write, and the next delivery
+  replays that tail idempotently.
+- **A delivered edit outlives a recompile it could not queue.** `maybeEnqueueCompile` is the last
+  thing every apply handler does, and by then the pages are written, the operation is APPLIED and
+  the old exports are already deleted — so its failure has nothing to do with whether the edit
+  landed. `restructurePages.ts` used to make the call from inside the same `try` as drafting, and a
+  Redis blip after a successful insert therefore reverted the shift, flipped the delivered
+  operation FAILED and rethrew into `markFailed`, which marked a book that was COMPLETE a moment
+  earlier FAILED: the reader's new pages vanished, the book asked for attention, and the leftover
+  stamp met the next delivery. `queueRestructureCompile` swallows it instead, the way
+  `applyBookEdit` and `applyImageInsertion` already swallowed theirs — and so does
+  `replayAppliedRestructure`, where the operation is APPLIED before the job even starts. The
+  recovery is the same for all three: a project left COMPLETE with its files missing is exactly
+  what `ensureExportRepairQueued` rebuilds. **EDITING is the state to avoid** once nothing is coming
+  to leave it: no sweep reaches it and the repair lane refuses it — which is why all four forks
+  restore a settled status on `not-ready`, the one dispatch outcome with no compile behind it.
+- **The status a fork restores rides the payload, because the enqueue is what takes it away.** It is
+  COMPLETE for almost every book and REVIEW_REQUIRED for the ones the reader still has to look at,
+  and nothing on this side can tell them apart: `queueChatRestructurePages` writes
+  `status: "EDITING"` in the same committed transaction as the `GenerationJob` row, so the project
+  already says EDITING before the first delivery starts. `restructurePages.ts` read it one line
+  *after* its own EDITING write and then tested `project.status === "REVIEW_REQUIRED"`; moving that
+  read one line *earlier* only relocated the dead code, and a book with open quality findings still
+  came out of any restructure looking finished. A redelivery has it worse still, because the first
+  delivery leaves EDITING on purpose, so `replayAppliedRestructure`'s own read was never a pre-edit
+  status either. The Apply now stamps `PRE_EDIT_PROJECT_STATUS` (`packages/core/src/jobScope.ts`,
+  beside the presentation reprint's own fallback key) onto the payload from the row it is about to
+  move, `preEditProjectStatus(job.data)` reads it back once at the top of the handler, and that one
+  value reaches every path that settles the book itself: the skipped-edit no-op, the `not-ready`
+  restore, and the replay's. A job with no key means COMPLETE, which is what every row enqueued
+  before it meant. It is a *fallback*, never a publish: the success path still leaves the project
+  EDITING for the recompile, which earns its own verdict and writes the status itself.
+- **Every apply fork stays EDITING until its recompile publishes, and the page map is why.**
+  `restructurePages.ts` used to retire EDITING before invalidating the exports, so that the outcome
+  of a lost enqueue was already the state the repair lane rebuilds. But EDITING is not only a
+  progress light: `bookPageMapForProject` (`apps/api/src/bookPageNumbering.ts`) reads it as "the new
+  PDF has not been published, so the reader is still looking at the file this map was measured
+  from", and it is the *only* window in which a map behind the manuscript is kept in force. Retiring
+  it in the same write that bumped `contentRevision` therefore refused the `pdfPageMap` that
+  transaction had just carefully re-pointed (`repointedPageMapUpdate`), from the instant the edit
+  landed until the recompile published minutes later — and a book that is COMPLETE is a book the
+  chat will take an edit for, so the reader's next "page 12" was read as model page 12 while printed
+  page 12 was still on screen. The status now moves the way `applyBookEdit`, `applyImageInsertion`
+  and `applyImageLayout` move it, with `queueRestructureCompile` restoring the pre-edit status on
+  `not-ready`. The write that *puts* it there is conditional for the mirror-image reason
+  (`claimProjectEditing`), and its count is what every abandoning path reads. The ACTIVE claim
+  above it fences nothing concurrent — ACTIVE matches ACTIVE — so a second delivery can settle the
+  whole edit between that statement and this one, and settling puts the book back *down*. An
+  unconditional `update` then lifted a finished book into EDITING, and the forks that follow it
+  write nothing and queue nothing: the shift's claim answering `completed` or `settled` on a
+  skipped row, and a waited lease that was already complete, all returned with the book stranded
+  in a state no sweep reaches. `releaseProjectEditingClaim` hands `preEditProjectStatus` back on
+  exactly those forks, and only when the count says this delivery is what moved the book — a
+  `false` count means the project was already EDITING, which is the owning fork's window and has
+  to be left standing.
+- **An edit that settles itself as a delivered no-op has to refund itself too.** `restructurePages`
+  answers a resolver refusal — the book changed under the card — by marking the operation APPLIED
+  with `classifier.structuralSkipped` and returning normally, which is right: nothing broke, and
+  throwing would mark a finished book FAILED. But *completing* is the one path no refund reaches.
+  The attempt behind a chat edit reserves **and commits** its credits when the edit is queued
+  (`startGenerationAttempt`), so `markCompleted` marks that attempt SUCCEEDED and the spend is
+  final; `markFailed`, `failGenerationAttempt` and `failEditOperation` never run. A skipped
+  *insert* was charged `pagesBilled × pageRegenerationPerPage` for pages nobody will ever read, and
+  `operationCanUndo` refuses the row, so the reader had no recovery either. The branch now calls
+  `refundSkippedEditOperation` (`runtime/jobLifecycle.ts`, the only file in the worker that
+  refunds) **before** claiming the operation APPLIED, and that order is the point twice over: the
+  attempt is closed CANCELED so the completion behind it cannot claim a SUCCEEDED it would clear
+  `refundPending` with, and a settlement that throws leaves the ACTIVE row `failEditOperation`
+  claims. A free delete or move goes through the same call — it is a no-op on an operation with no
+  ledger entry, and branching on the price is how the next priced skip inherits this bug.
+- **A delivered no-op is APPLIED too, and the redelivery tail is not idempotent for it.** Both the
+  entry fence and the `activated.count === 0` re-read used to answer any APPLIED row with
+  `replayAppliedRestructure`, which is right for a row that shifted pages — its exports are already
+  deleted, and the recompile its first delivery may have died before queueing has to be queued again
+  — and destructive for one carrying `classifier.structuralSkipped`. That row changed *nothing*: no
+  shift, no drafting, no export invalidated, `contentRevision` untouched. Replaying it deletes the
+  finished PDF the reader is holding, moves the manuscript past the `pdfPageMap` measured from it
+  (held in force only while the project is EDITING, so a `not-ready` dispatch restores COMPLETE with
+  the map one revision behind and the chat silently drops back to model indexes for a book whose
+  printed numbers never moved), and queues a full unbilled `compile-export` — no `skipFinalReview`,
+  not detached, so it owns the verdict and a `blocked` report hands a COMPLETE book back as
+  REVIEW_REQUIRED. All off a redelivery of an edit that did nothing. `settleAppliedRestructure` keys
+  on the marker, which already exists and is the same one `operationCanUndo` reads to refuse the row
+  an Undo. The reachable door is not the crash window but the racing one: `staleGenerationJobReason`
+  cancels a redelivery whose attempt the refund closed CANCELED, but a second delivery already past
+  that check — a stalled lock reclaimed, a stray host worker on the same queue — lands on the
+  APPLIED row the first one just wrote. For the same reason the skip's two writes are now **one
+  transaction**: the marker is what tells that second delivery to stand down, so it may not land
+  before the write that takes the project out of EDITING.
+- **An insert that delivers fewer pages than it billed refunds the difference, and the count that
+  drives both is the one drafting actually wrote.** The no-op rule above covers a delivery that
+  applied *nothing*; this is the same rule for a delivery that applied *some*. A resumed insert
+  drafts the page ids the stamp recorded, and `stampDescribesBook` resumes on a partial survival —
+  deliberately, because the survivors sit at indexes the tail was already shifted for, so
+  re-applying would shift it again and insert a duplicate set beside them. `draftInsertedPages`
+  therefore `continue`d past ids the book no longer held **in silence**, and the operation settled
+  APPLIED having written two of five pages while `pagesBilled` was five: a completion, so
+  `markCompleted` marked the attempt SUCCEEDED, `operationCanUndo` offered an undo of the shift
+  rather than of the charge, and no failure path ever ran. The loop now logs every skip and returns
+  the ids it wrote; `affectedPageIndexes` and `refundUnwrittenEditPages` (`runtime/jobLifecycle.ts`)
+  both read that list, and the refund runs **before** the APPLIED claim for the reason
+  `settleSkippedRestructure`'s does. `restructure_pages` is priced per page with no flat half, so
+  the share owed is the missing pages' share of `BookEditOperation.creditsCharged`.
+  Redelivery safety is the ledger's: `refundCreditLedgerEntryPortion` records the operation-derived
+  settlement key on the charge's cumulative reversal, so the same shortfall moves nothing twice;
+  a later full failure tops up only the remainder. See `packages/db/CLAUDE.md`.
+- **Only the post-APPLIED window is that handler's to flip.** The `updateMany` after the rollback
+  claims `status: "APPLIED"` and deliberately does not claim ACTIVE: a drafting failure — the
+  ordinary one — leaves the operation ACTIVE, and `markFailed` settles exactly that row through
+  the attempt and `failEditOperation`. Widening the claim takes the row out from under the refund.
 
 ## Covers and portraits
 

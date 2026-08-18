@@ -158,6 +158,7 @@ extension _ReaderViewSurface on _ReaderViewState {
         ReaderScrollHandle(
           controller: _controller,
           chapterFor: _chapterFor,
+          hasCoverPage: _hasCoverPage,
           // Panning is off while drawing, so the handle is then the only way to
           // reach another page and must not fade away.
           alwaysVisible: _annotations.isMarkingUp,
@@ -233,6 +234,7 @@ extension _ReaderViewSurface on _ReaderViewState {
       palette: _markupPalette,
       currentPage: _state.lastPage,
       pageCount: _pageCount,
+      hasCoverPage: _hasCoverPage,
       chapterTitle: _chapterFor(_state.lastPage),
       bookmarked: _state.hasBookmarkOn(_state.lastPage),
       onContents: () => _onMenuAction(ReaderMenuAction.contents),
@@ -265,7 +267,11 @@ extension _ReaderViewSurface on _ReaderViewState {
   /// So the descriptor is re-read first, and the bytes are stored under
   /// whichever one actually asked for them.
   Future<void> _retryDownload() {
-    return widget.loader.load(widget.export, refresh: widget.onRefreshExport);
+    return widget.loader.load(
+      widget.export,
+      refresh: widget.onRefreshExport,
+      pageNumbering: widget.status.pdfPageNumbering,
+    );
   }
 }
 

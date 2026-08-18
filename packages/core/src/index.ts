@@ -58,6 +58,7 @@ export * from "./generation/voiceCharacters.js";
 export * from "./generation/readerChapters.js";
 export * from "./generation/exactReplacement.js";
 export * from "./generation/replanSettings.js";
+export * from "./generation/pageRestructure.js";
 export * from "./generation/manuscriptQuality.js";
 export * from "./generation/cover.js";
 export * from "./generation/coverText.js";
@@ -75,6 +76,7 @@ export * from "./generation/pdf.js";
 export * from "./generation/pdfCss.js";
 export * from "./generation/pdfDocument.js";
 export * from "./generation/pdfPageAnchors.js";
+export * from "./generation/pdfNamedDestinations.js";
 export * from "./generation/pdfPageMap.js";
 export * from "./generation/browserPool.js";
 export * from "./generation/browserPoolSignals.js";
@@ -92,3 +94,6 @@ export * from "./audiobook/voices.js";
 export * from "./jobSteps.js";
 export * from "./jobScope.js";
 export * from "./jobDispatch.js";
+// The record coercion every workspace reaches for. Only these two names leave
+// the package — the rest of `schemas/jsonCoercion.js` stays internal.
+export { isRecord, jsonRecord } from "./schemas/jsonCoercion.js";

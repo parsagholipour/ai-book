@@ -15,6 +15,7 @@ import {
   replacementTermsFromMessage,
   replanSettingsFromEditMessage,
   showContentTargetFromMessage,
+  spokenPageNumbersFromMessage,
   targetLanguageFromLanguageVersionRequest
 } from "./bookEditMessage.js";
 import type {
@@ -26,6 +27,8 @@ import type {
   ShowContentTarget
 } from "./bookEditIntent.js";
 import { MODEL_PAGE_NUMBERING, type ReaderPageNumbering } from "./bookPageNumbering.js";
+import { structuralPageEditFromMessage, structuralPageIntent } from "./bookEditStructure.js";
+import { totalPrintedPages, type ReplanSettings, type StructuralPageEdit } from "@book-maker/core";
 
 /**
  * How this classification run reads and speaks page numbers, plus the model
@@ -121,6 +124,42 @@ export function classifyWithHeuristics(
   };
 }
 
+/**
+ * The settings a replan may adopt from a message, with the media half dropped
+ * when the request named a page.
+ *
+ * Dropped rather than merely un-counted: these settings ride the intent into the
+ * replan, so leaving them on a request that became structural for some other
+ * reason would still turn a book's illustrations off because one sentence asked
+ * about one page's picture. A length is not scoped that way — "make it 3 pages"
+ * is about the book however many pages it names.
+ */
+function bookWideReplanSettings(
+  settings: ReplanSettings | undefined,
+  bookWide: boolean
+): ReplanSettings | undefined {
+  if (!settings || bookWide) {
+    return settings;
+  }
+  const { targetPages } = settings;
+  return targetPages === undefined ? undefined : { targetPages };
+}
+
+/** What the assistant says it is about to do, before the card names the price. */
+function structuralAcknowledgement(edit: StructuralPageEdit): string {
+  if (edit.action === "delete") {
+    return edit.pageIndexes.length === 1
+      ? "I\u2019ll remove that page and renumber the rest of the book."
+      : "I\u2019ll remove those pages and renumber the rest of the book.";
+  }
+  if (edit.action === "move") {
+    return "I\u2019ll move those pages and renumber the rest of the book.";
+  }
+  return edit.pageCount === 1
+    ? "I\u2019ll write a new page there and renumber the rest of the book."
+    : `I\u2019ll write ${edit.pageCount} new pages there and renumber the rest of the book.`;
+}
+
 function continuationAcknowledgement(chapterCount: number): string {
   return chapterCount > 1
     ? `I’ll write ${chapterCount} new chapters that continue your book in its own voice.`
@@ -164,11 +203,21 @@ export function classifyWithDegradedHeuristics(
   // A new length or a decision about pictures can only be honoured by replanning
   // — a page rewrite cannot change how many pages there are — so naming either
   // one is structural on its own, whatever verb the request used.
-  const replanSettings = replanSettingsFromEditMessage(message);
+  // …but the decision about pictures has to be about the *book*.
+  // `negativeMediaPreference` reads "remove … picture" wherever it appears, so a
+  // page-scoped picture request — the free `remove_image` the router would have
+  // routed — arrived here as a whole-book rebuild that also switched
+  // illustrations off for good. Naming a page is what tells the two apart;
+  // "remove all the pictures" names none and still replans.
+  const bookWide = explicitPages.length === 0 && spokenPageNumbersFromMessage(message).length === 0;
+  const replanSettings = bookWideReplanSettings(replanSettingsFromEditMessage(message), bookWide);
   const structural =
     replanSettings?.targetPages !== undefined ||
     replanSettings?.fullIllustrations !== undefined ||
-    /\b(add|remove|delete|new)\s+(a\s+)?(chapter|section|page)\b/i.test(message) ||
+    // "page" deliberately absent: adding or removing particular pages is a
+    // structural *page* edit now, and routing it here forked a whole new
+    // project and regenerated the book to add three pages to it.
+    /\b(add|remove|delete|new)\s+(a\s+)?(chapter|section)\b/i.test(message) ||
     /\b(change|switch|replace|swap|turn|make|move|reorder|restructure)\b.{0,80}\b(audience|premise|book type|length|structure|outline|plan|ending|title|cover|visual identity|illustration style)\b/i.test(
       message
     ) ||
@@ -204,6 +253,21 @@ export function classifyWithDegradedHeuristics(
       impact: "small_text",
       clarification: "none"
     };
+  }
+
+  // Before the continuation and before the structural battery: this is the
+  // model-free half of insert/delete/move, and without it a router outage turns
+  // "add two pages after page 10" into a whole-book quote.
+  const structuralPages =
+    stage === "complete"
+      ? structuralPageEditFromMessage(message, pages, numbering.pdfPageMap ? { pdfPageMap: numbering.pdfPageMap } : {})
+      : null;
+  if (structuralPages && (structuralPages.anchored || structuralPages.edit.action === "insert")) {
+    return structuralPageIntent(structuralPages, {
+      confidence: 0.86,
+      reasoning: "The user asked to change which pages the book has.",
+      assistantMessage: structuralAcknowledgement(structuralPages.edit)
+    });
   }
 
   const continuation = stage === "complete" ? continuationRequestFromMessage(message) : null;
@@ -527,7 +591,7 @@ function answerMessage(message: string, pages: BookEditPageContext[], numbering:
     // The printed count when it is known — the number on the reader's screen —
     // and the manuscript count otherwise.
     return numbering.pdfPageMap
-      ? `This book is ${numbering.pdfPageMap.totalPdfPages} pages long as compiled, from ${pages.length} generated pages.`
+      ? `This book is ${totalPrintedPages(numbering.pdfPageMap)} pages long as compiled, from ${pages.length} generated pages.`
       : `This book currently has ${pages.length} generated pages.`;
   }
   if (/\bsummar/i.test(message)) {

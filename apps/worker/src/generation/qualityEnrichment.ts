@@ -152,7 +152,7 @@ export function mergeEntityAndStoryStateLines(
   return merged;
 }
 
-export async function persistKeeperStoryDelta(options: {
+export type KeeperStoryDeltaOptions = {
   projectId: string;
   pageIndex: number;
   draft: PageDraft;
@@ -163,7 +163,21 @@ export async function persistKeeperStoryDelta(options: {
   keeperWasRevised: boolean;
   currentState: StoryState;
   quality?: QualityGateContext | undefined;
-}): Promise<StoryState | null> {
+};
+
+/**
+ * The model half of `persistKeeperStoryDelta`, on its own so a caller that has
+ * to publish under an ownership fence can spend the call *before* the fence and
+ * leave nothing but writes behind it.
+ *
+ * A revised keeper is re-extracted because the review's own extract described a
+ * draft that is no longer the one being saved; an unrevised keeper reuses it.
+ * Either way this writes nothing, so a caller that stands down after it has
+ * published no story state at all.
+ */
+export async function keeperStoryExtractForSave(
+  options: KeeperStoryDeltaOptions
+): Promise<StoryExtractResult | null> {
   const quality = options.quality ?? (await loadQualityContext(options.input));
   if (!quality.enabled("storyExtractAudit")) {
     return null;
@@ -187,13 +201,33 @@ export async function persistKeeperStoryDelta(options: {
       return null;
     }
   }
-  if (!extract) {
-    return null;
-  }
+  return extract;
+}
+
+/** The write half: one delta, no provider call, nothing long to straddle. */
+export async function persistStoryExtract(options: {
+  projectId: string;
+  pageIndex: number;
+  plan: BookPlan;
+  extract: StoryExtractResult;
+}): Promise<StoryState | null> {
   return persistPageStoryDelta({
     projectId: options.projectId,
     pageIndex: options.pageIndex,
-    delta: extract.storyDelta,
+    delta: options.extract.storyDelta,
     seedPromises: options.plan.promises ?? []
+  });
+}
+
+export async function persistKeeperStoryDelta(options: KeeperStoryDeltaOptions): Promise<StoryState | null> {
+  const extract = await keeperStoryExtractForSave(options);
+  if (!extract) {
+    return null;
+  }
+  return persistStoryExtract({
+    projectId: options.projectId,
+    pageIndex: options.pageIndex,
+    plan: options.plan,
+    extract
   });
 }

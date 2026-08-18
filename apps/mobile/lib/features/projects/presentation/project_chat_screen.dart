@@ -38,10 +38,10 @@ class ProjectChatLaunch {
   final String? send;
 
   /// Where in the book the reader composed [send]: the book page the locator
-  /// resolved (`pageIndex`) and the printed PDF page they were looking at
-  /// (`pdfPage`). The server targets the edit by these rather than re-parsing
-  /// the message text.
-  final Map<String, int>? readerContext;
+  /// resolved (`pageIndex`), and the physical PDF sheet they were looking at
+  /// (`pdfPage`) with the digest of the file it is a sheet of. The server
+  /// targets the edit by these rather than re-parsing the message text.
+  final Map<String, Object>? readerContext;
 }
 
 class ProjectChatScreen extends ConsumerStatefulWidget {
@@ -65,7 +65,7 @@ class ProjectChatScreen extends ConsumerStatefulWidget {
   final String? initialMessage;
 
   /// The reader position [initialMessage] was composed from, sent alongside it.
-  final Map<String, int>? initialReaderContext;
+  final Map<String, Object>? initialReaderContext;
 
   @override
   ConsumerState<ProjectChatScreen> createState() => _ProjectChatScreenState();
@@ -95,12 +95,12 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   /// quoted — kept separately so a retry resends the same reply.
   ChatReplyTarget? _replyTarget;
   ChatReplyTarget? _pendingSendReplyTo;
-  Map<String, int>? _pendingSendReaderContext;
+  Map<String, Object>? _pendingSendReaderContext;
 
   /// A reader-composed message parked in the composer while the book was busy,
   /// with the position it was composed from. The context re-attaches only when
   /// the parked text is sent verbatim; an edited message drops it.
-  Map<String, int>? _parkedReaderContext;
+  Map<String, Object>? _parkedReaderContext;
   String? _parkedMessage;
   String? _pendingEditRequestId;
   String? _pendingEditMessage;
@@ -582,7 +582,7 @@ class _ProjectChatScreenState extends ConsumerState<ProjectChatScreen>
   Future<void> _sendMessage(
     String message, {
     ChatReplyTarget? replyTo,
-    Map<String, int>? readerContext,
+    Map<String, Object>? readerContext,
   }) async {
     // Retrying the same text reuses the request ID, so the server replays
     // the original turn instead of duplicating it. The quoted message is part

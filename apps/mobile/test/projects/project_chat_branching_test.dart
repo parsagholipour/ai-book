@@ -228,7 +228,7 @@ class _BranchingProjectsRepository implements ProjectsRepository {
     String? requestId,
     String? replyToMessageId,
     List<String>? mentionedCharacterIds,
-    Map<String, int>? readerContext,
+    Map<String, Object>? readerContext,
   }) async {
     return _appendTurn(parentId: _chat().messages.last.id, message: message);
   }

@@ -26,6 +26,7 @@ abstract interface class ReaderRepository {
     required MobileExportAvailability export,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    MobilePdfPageNumbering? pageNumbering,
   });
 
   Future<ReaderState> loadState(String projectId);
@@ -109,12 +110,14 @@ class MobileReaderRepository implements ReaderRepository {
     required MobileExportAvailability export,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    MobilePdfPageNumbering? pageNumbering,
   }) {
     return _cache.ensure(
       projectId: projectId,
       export: export,
       onProgress: onProgress,
       cancelToken: cancelToken,
+      pageNumbering: pageNumbering,
     );
   }
 

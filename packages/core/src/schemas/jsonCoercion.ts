@@ -3,8 +3,13 @@ import { z } from "zod";
 /**
  * Defensive JSON-coercion toolkit shared by the schema clusters in this
  * directory. Model output arrives wrapped, renamed, and half-typed; these
- * helpers read it charitably before the strict schemas judge it. Internal to
- * schemas/ — not re-exported from the package index.
+ * helpers read it charitably before the strict schemas judge it.
+ *
+ * `isRecord` and `jsonRecord` are the exception to "internal to schemas/":
+ * every workspace reads Prisma `Json` columns and provider payloads through
+ * that one predicate, so the package index re-exports the two of them. Keep
+ * the rest of this file unexported — and if the coercion is ever hardened
+ * (rejecting class instances, say), this is the only place it has to change.
  */
 
 export function unwrapJsonObject(keys: string[]) {

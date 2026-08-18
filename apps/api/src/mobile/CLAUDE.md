@@ -124,15 +124,23 @@ hangs rather than failing, which is slow to diagnose.
   model is *told*, as opposed to how its answer is read), which is why those import types back
   from it but never values.
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.**
-  A reader saying "page 10" means the number on the PDF page in front of them — the pdfrx
-  indicator, the printed footer and the Contents column all count physical PDF pages — while every
-  internal target is a model `Page.index`. The translation is `Project.pdfPageMap`: measured at
-  publish time from the rendered bytes by both publishers, stamped with the revision they claimed,
-  and read through `bookPageMapForProject` (`apps/api/src/bookPageNumbering.ts`), which refuses a
-  map from any other revision. On the way in, `pageIndexesFromMessage` and friends resolve spoken
-  numbers through the map — an edit target landing on furniture (cover, Contents, Sources) resolves
-  to **nothing** rather than to whichever model page shares the number, while read/placement
-  targets take the nearest page of prose — and the router model is given each page's `readerPages`
+  A reader saying "page 10" means the number on the PDF page in front of them — the printed
+  footer, the Contents column and the pdfrx chrome, which skip the cover sheet — while every
+  internal target is a model `Page.index`. Stored map ranges are physical (cover = PDF page 1);
+  `printedPageForPdfPage` / `pdfPageForPrintedPage` convert, gated on map version: version 1
+  stays on physical numbering (those PDFs counted the cover), version 2+ skips the cover.
+  The translation is `Project.pdfPageMap`: measured at publish time from the rendered
+  bytes by both publishers, stamped with the revision they claimed, and read through
+  `bookPageMapForProject`
+  (`apps/api/src/bookPageNumbering.ts`), which refuses a map from any other revision — except
+  during EDITING, when the new PDF has not been published yet and the reader is still looking at
+  the file that map describes. Dropping it there would make a typed "page 12" fall back to a
+  model index while printed page 12 is still on screen; selection-composed edits already send
+  `pageIndex`, so they never hit this. On the way in, `pageIndexesFromMessage` and friends
+  resolve spoken numbers through the map — an edit target landing on furniture (Contents,
+  Sources — the cover has no printed number) resolves to **nothing** rather than to whichever
+  model page shares the number, while read/placement targets take the nearest page of prose —
+  and the router model is given each page's `readerPages`
   plus the furniture ranges and told to return model indexes. **Told, and then checked**: a
   decision whose page channels name exactly the printed numbers the message speaks is the
   signature of a model that copied instead of translating, so `modelPagesForCopiedPrintedPages`
@@ -141,16 +149,194 @@ hangs rather than failing, which is slow to diagnose.
   `show_content`. It stays deliberately narrow: a translated index (one the message never
   mentions) and a printed number that holds no prose keep the router's own answer. Spoken
   numbers include the same page-words the length parser already knows, so "صفحه ۵" is a
-  copy just as much as "page 5". On the way out, every proposal card,
+  copy just as much as "page 5". **The parser has to read the whole list or the guard cannot
+  fire**: it once took only the first number after the word, so "edit pages 3, 5 and 7" spoke `{3}`
+  against a router that named `{3,5,7}`, the set comparison failed, and three *printed* numbers
+  were used as model indexes — the wrong three pages, with the card rendering them back through
+  `displayPages` so the confirmation looked right. The comparison stays an **equality** rather than
+  a containment: a router that translated correctly can also answer a subset of the numbers spoken
+  (an index that happens to equal one of them), and translating that a second time moves the edit
+  to a page nobody named. **A number the router had to compute is invisible to the guard, so
+  nothing may ask it to compute one**: the structural anchor was once specified as "one less than
+  the named page" when the reader says *before*, and a decremented number is exactly the signature
+  of a model that translated — so the guard declined, the printed anchor was consumed as a model
+  index, and "add a page before page 10" opened the gap after model page 9. The router now names
+  the page itself with `structuralAnchorPosition` beside it, and `anchorPageIndexFromDecision`
+  (`bookEditDecision.ts`) takes the step afterwards, in model pages, off whichever end of the
+  translated span the side calls for. **Which end is one rule with two readers**, so it lives in
+  `anchorModelPageIndex` (`bookEditMessage.ts`) rather than beside either of them: a printed sheet
+  routinely holds several short model pages — one ending on it, one wholly inside it, one starting
+  there — and `structuralIntentFromDecision` borrows the model-free recogniser's anchor whenever
+  the router named none. The recogniser resolved that sheet to a *single* page, the first one to
+  start on it (`primaryModelPageForPdfPage`), so "add a page after page 10" opened the gap past the
+  sheet or in the middle of it depending only on whether the router had filled the channel.
+  On the way out, every proposal card,
   queued reply and operation card renders through a `ReaderPageNumbering`
-  (`mobile/bookEditCopy.ts`, `mobile/editOperationCopy.ts`), and the DTOs carry a separate
+  (`mobile/bookEditCopy.ts`, `mobile/editOperationCopy.ts`), and **the way out has two ends of the
+  span as well**: `displayPage` is the number a reader calls a model page by, `displayPageEnd` is
+  the last sheet it prints on, and every "after page N" — the insert chip's `afterReaderPage`, the
+  proposal bubble, the move destination, the applied insert's card — is the *end*, because that is
+  the sheet the new or moved pages actually follow. Printing the start named a sheet before where
+  the prose lands on any page long enough to span two, which is the same widening
+  `anchorModelPageIndex` takes `Math.max` over on the way in. **A place the card cannot name is
+  left out of the sentence rather than approximated, and there are two ways to fail to name one.**
+  `displayPageEnd` answers a page the map has never seen with the model index, which is the right
+  degradation inside a *list* of pages — dropping one out of "pages 3 and 4" is worse — and the
+  wrong one where the number stands alone as a place, because "after page 8" is read as a printed
+  number and names a sheet holding something else; `printedPageEnd` is that same end answering
+  `undefined` instead, and the applied insert's card drops the clause on it. The other way is the
+  anchor itself: that card derives it as the first page the apply *wrote*, less one, which is
+  `insertAfterIndex` only while the whole run is in the book. A resumed delivery drafts just the
+  recorded ids the book still holds (`stampDescribesBook` resumes on a partial survival on purpose;
+  `refundUnwrittenEditPages` hands back the rest), so `insertedPagesLocation` compares the stamp's
+  `insertedPageIds` against the pages written and names only the count when they disagree — one
+  less than the first survivor is a page of the insert itself or the gap another left, and neither
+  has a sheet in the map that was measured before either existed. The two placements the *request*
+  settles outright are read from it and not from the pages: `0` survives the resolver's clamp and
+  `null` is clamped to the last page, so "the front" and "the end" are true of every delivery.
+  The operation DTO reports that settlement as `creditsRefundedAmount`; `creditsRefunded` is true
+  only when the cumulative reversal covers the whole charge. The app shows both the net kept amount
+  and the returned portion for a partial delivery rather than striking through the gross price.
+  **Before Apply the placement is resolved once and every surface reads that one answer.**
+  `structuralPlacementOf` (`mobile/structuralPageEdits.ts`) answers `front` | `after` a printed page
+  | `end` | `unnamed`, and the three rules live only there: an insert's landing page is the
+  resolver's clamped `insertAfterIndex` while a move's is the request's own anchor — a plan that is
+  not an insert carries `insertAfterIndex: 0`, so a move reading it would send every page to the
+  front of the book — the number is the anchor's `printedPageEnd`, and `unnamed` covers both a
+  delete, which puts its pages nowhere, and a destination the map cannot place. Each surface keeps
+  only its own words for it: `structuralProposalSummary` the sentence, `structuralCardBlock` the
+  wire, `MobileEditProposal.pageLabel` the chip. They used to resolve it separately and had already
+  drifted — the wire fields were gated on `action === "insert"`, so "Move page 3 after page 5" was
+  drawn beside a chip naming no destination at all, and both halves read the anchor through
+  `displayPageEnd`, which hands back the model index for a page an earlier, not-yet-recompiled edit
+  added. The block sends `atFrontOfBook`/`afterReaderPage` beside the resolved `placement` because
+  shipped app builds read those two, and a proposal lives on the chat message: a card written before
+  `placement` existed is still read by inferring one from them
+  (`MobileStructuralPlacement._placementFrom`, `project_chat_models.dart`).
+  The DTOs carry a separate
   `readerPageNumbers` array — `affectedPageIndexes` stay model indexes on purpose, because the
   Edit-Mode deep links and the worker payloads navigate by them. A selection composed in the
   reader sends its resolved model page as structured `readerContext` (authoritative over parsing
-  its own text, whose visible number is now the PDF page). **No map means the old behaviour
-  exactly**: books compiled before the map, or whose measurement failed, keep model-index parsing
-  and copy byte for byte, which is also the graceful path for every test and every legacy
-  transcript.
+  its own text, whose visible number is now the printed page). When its local locator resolved
+  nothing, that context falls back to the **physical pdfrx sheet** — and a sheet number belongs to
+  one file, so it travels with that file's `pdfDigest` and
+  `modelPageForReaderContext` translates it only against a map measured from those exact bytes.
+  The revision is not enough on either side: a repair republishes the same `contentRevision` over a
+  new PDF and stamps the new map with it, so the revisions still agree while sheet 7 of the file
+  still open is a different page from sheet 7 of the file the map now describes. Missing identity —
+  a legacy map with no digest, an older app that sends none — refuses the sheet rather than
+  guessing; the message's own printed numbers still route as they always did. The resolved
+  `pageIndex` is unaffected either way, because a model page is a page of the manuscript rather
+  than a sheet of one compile of it. **No translatable map means the
+  old chat behaviour exactly**: books compiled before the map, or whose measurement failed, keep
+  model-index parsing and copy byte for byte, which is also the graceful path for every test and
+  every legacy transcript. Measurement failure is not a blank column: new PDFs always skip the
+  cover in CSS, so the compile still records cover-skip numbering (`hasCoverPage` on status)
+  and chrome matches the footer. Status exposes that flag together with the stored numbering's
+  own `contentRevision` and `pdfDigest` as `pdfPageNumbering`; the app compares the digest with the
+  downloaded bytes before using it. The project revision is not a substitute — EDITING keeps a
+  behind map deliberately, and a repair may replace PDF bytes at the same revision and size.
+  Legacy maps missing either stamp expose no numbering identity and the app stays physical. Chat
+  stays on model indexes because a stub has no ranges.
+- **Changing *which* pages a book has is its own edit, and it used to be a whole new project.**
+  `restructure_pages` covers insert, delete and move; which one it was rides
+  `structuralEdit` on the intent and the operation's classifier, so the dozen lists that switch on
+  a kind gained one arm rather than three. It is a **fork of `apply-book-edit`**
+  (`handlers/restructurePages.ts`), not a job type: everything a new type would buy already covers
+  `APPLY_BOOK_EDIT`, and a new one needs entries in eight cross-workspace lists that do not
+  typecheck against each other. Before it existed the request had nowhere to land — the router
+  prompt calls a length change `structural`, and the model-free battery in
+  `classifyWithDegradedHeuristics` matched `add|remove|delete|new (a) chapter|section|page` — so
+  "add 3 pages after page 10" became a `book_replan`, which forks a **second `Project` row** and
+  regenerates the book, priced as a whole book. Both halves had to be narrowed; fixing only the
+  regex leaves the live path exactly as it was. Two things about it are load-bearing:
+  it **forks before `affectedPagesForIntent`** in both `proposeBookEdit` and `queueChatBookEdit`,
+  because that resolver filters against pages which *currently exist* and a page about to be
+  created is not one — reaching it, an insert is answered "which page or exact phrase should I
+  edit?" and never gets a card at all; and `anchorPageIndex` is `number | null` where **`0` is the
+  front of the book and `null` is "no place named"**, an insert appending for the second and a move
+  refusing it. Deleting and reordering call no model, so both are **free**, the same reasoning that
+  prices `move_image` and `remove_image` at zero — only `pagesBilled` (an insert's new pages) is
+  charged, at the rate a continuation pays. `resolveStructuralPageEdit`
+  (`packages/core/src/generation/pageRestructure.ts`) is the one resolver the quote and the job both
+  run, and it refuses rather than throws: a delete that would empty the book or leave a `Chapter`
+  row with no pages settles for free with a sentence naming what is in the way.
+  **Its caps are its own, and nothing upstream may clamp a request down to them.** A request the
+  resolver refuses is answered free, in prose naming the real limit ("I can add up to 10 pages at a
+  time"); the same request quietly narrowed on the way in is a card, a price and a charge for an
+  edit nobody asked for, with the pages that were dropped mentioned nowhere. `bookEditDecision.ts`
+  used to `Math.min` the router's `structuralPageCount` against `MAX_INSERTED_PAGES`, and
+  `structuralPageCount`'s zod bound *was* that cap — which reaches the model as `maximum`, so a
+  router asked for twelve pages answered ten — while the model-free recogniser clamped nothing at
+  all: one message, "add 12 pages after page 10", got a ten-page insert through the router and a
+  free refusal through a router outage. Both bounds are now well above the cap and only the
+  resolver reads it. The floor on that same line is a different rule and stays: it is what turns a
+  router that named no count, and a borrowed recognition that is not an insert, into the one page
+  "add a page" means.
+  **The stored `structuralEdit` is the Apply's whole instruction, so an Apply that lost it settles
+  for free instead of defaulting.** `structuralEditFromMetadata` drops a stored edit that no longer
+  parses rather than half-reading it, and `structuralEditForProposal`'s one-page-append default
+  belongs to the *proposal* side, where nothing is reserved and the card is one Cancel away. Read on
+  the Apply it turned a confirmed "Remove page 2" into a priced append at the end of the book —
+  under the quote ceiling on any card that quoted more than one page, so it charged — and left the
+  free ones bouncing back as a brand-new proposal for an edit nobody asked for.
+  **It is reviewed from its stamp, because it snapshots nothing.** `changesAvailable` counted
+  `PageEditSnapshot` rows, and a structural edit writes none — it rewrites no page, and a removed
+  page's snapshot would cascade away with the page it describes — so the app's only review
+  affordance was switched off for the one edit that moves whole pages, and the Flutter screen's
+  `restructure_pages` arm could not be reached at all. `editChangesAvailable`
+  (`mobile/projectChat.ts`) asks `hasBookEditUndoRecord`, which reads
+  `classifier.structuralApplication` beside the count — the
+  same stamp `operationCanUndo` and the worker's redelivery fence rest on: written in the
+  transaction that shifted the indexes, erased by the rollback, so its presence *is* "this edit
+  changed the book's shape". A delivered no-op (`structuralSkipped`) returns before the shift and
+  carries no stamp, so it stays unreviewable for the same reason it stays un-undoable.
+  `loadEditChanges` then answers with **no page diffs** — there is no before and after to show —
+  and the two word totals its own record can account for: the removed pages ride the stamp whole,
+  the inserted ones are `Page` rows the drafting pass wrote. **The live progress card said the
+  opposite of that same fact**: sharing `APPLY_BOOK_EDIT`'s step keys means sharing its reader copy,
+  so the step the worker spends shifting page indexes was announced as "Saving a version to undo".
+  The worker's own step title is right and unusable — `advanceJobStep` puts it in
+  `GenerationJob.message`, which these serializers never forward — so `editProgress.ts` keeps the
+  words and picks them per `structuralEdit.action` (falling back on `intentKind`), the same payload
+  discriminator the admin operations map reads.
+- **The model-free recogniser fires only when the verb's object *is* the page.** `bookEditStructure.ts`
+  runs third in `classifyWithDegradedHeuristics`, ahead of the replan battery and with no image or
+  patch recogniser in front of it (image requests have no regex fast path by design), so whatever it
+  claims is what an outage turns the request into. Its delete and move patterns used to allow twenty
+  arbitrary characters between the verb and the page word, which reads "a page word nearby" — and
+  nearby is where a reader writes what the page *holds*: "remove the picture on page 3" was answered
+  with "I'll remove that page and renumber the rest of the book", as were the title, the last line
+  and the photo on a page, and "move the picture on page 3 to after page 5" moved the page. So the
+  object is now a closed grammar — determiner, qualifiers, then a page the message **names** —
+  composed from the same list sources `pageIndexesFromMessage` reads (`NAMED_PAGE_LIST_SOURCE`), with
+  the exceptions written down rather than approximated: a trailing noun means the page was a locator
+  ("add page numbers", "delete page 3's picture"), a shortening clause is a rewrite ("cut page 3 down
+  to half"), and a negation is not a request. Targets come from the matched clause, never the whole
+  message, so "delete page 3, it repeats page 7" removes one page. **Fixing that pattern alone makes
+  things worse, which is why the other half moved with it**: `negativeMediaPreferenceFromMessage`
+  matches "remove … picture" anywhere, so what falls through lands on `structural` and quotes a whole
+  rebuild *with illustrations switched off* — that reading is now gated on the request naming no page
+  (`bookWideReplanSettings`), and a page-scoped picture request degrades to `clarify`, which is the
+  landing the model-free path was designed to give it.
+- **Undoing a structural edit moves the book to a different plan version, and the recompile has to
+  follow it there.** `undoLastBookEdit` is handed a `project` read before its transaction, and
+  every other undo can queue its recompile against that row's `currentPlanId`. A structural one
+  cannot: applying it approved a `PlanVersion` of its own, and when that version is still current
+  `revertStructuralPageChange` deletes it inside the same transaction — so the id in hand names a
+  plan that is gone by the time the compile runs. If a continuation has since advanced the plan,
+  the revert keeps and reconciles that later version instead, because it also keeps the pages the
+  continuation appended; restoring the pre-structural plan would make the page set and plan
+  disagree. The revert returns whichever version is current afterwards and the recompile names
+  that; the compatibility/refusal policy and the `null` case are in `packages/db/CLAUDE.md`. This
+  is not a compile that merely fails: it owns the book's outcome, so its throw marked a finished,
+  delivered book FAILED and refunded the generation — the most expensive possible result of a
+  free undo.
+  It also runs under `PAGE_RESTRUCTURE_TRANSACTION_OPTIONS`, the ceiling the apply side names,
+  because it replays that work backwards in one transaction — the raw index shifts, both
+  `PlanVersion` writes, then every snapshot on top — and Prisma's 5 s default aborts that midway
+  on a long book — the very edit that was allowed 30 s to make the shape cannot be given back
+  under 5 s, and the reader's Undo just errors.
 - **Moving and removing a picture are free, and neither is a page edit.** `move_image` and
   `remove_image` are their own intent kinds and their own `BookEditOperationKind`s, priced at 0 in
   `bookEditCreditCost` and applied by `apply-book-edit`'s layout fork
@@ -172,9 +358,51 @@ re-resolves *those* one by one and never re-runs the scope query, so a picture a
 card and the tap is not swept into an edit the reader never saw. A layout edit that finds
 nothing writes `classifier.layoutMissing` with a reason: the worker cannot write a chat message,
 so `layoutSkipSummary` in `mobile/projectSerializers.ts` is where the queued reply's promise gets
-corrected, and `operationCanUndo` refuses those rows — they have no snapshots, so
-`undoLastBookEdit`'s `snapshots.length > 0` filter would skip them and revert the *previous*
+corrected, and no Undo is offered for those rows — they write no snapshot, so the shared undo
+predicate below refuses them where `undoLastBookEdit` would otherwise revert the *previous*
 edit instead.
+
+- **Undo is offered only for an edit the undo would actually revert, and that is one predicate.**
+  `canUndoBookEdit` (`mobile/manualEdits.ts`) is the whole rule: APPLIED, an undoable kind, not
+  already undone, and carrying the record the undo restores from — `PageEditSnapshot` rows for
+  anything that rewrote text or moved a picture, the `structuralApplication` stamp for an edit that
+  changed which pages the book has. The card's button (`operationCanUndo`), the picker inside
+  `undoLastBookEdit` and "See changes" (`editChangesAvailable`, which is the record half,
+  `hasBookEditUndoRecord`, on its own) all read it. A row one of them says yes to and another skips
+  is not a harmless no-op Undo: the picker takes the newest row *with* a record, so the reader taps
+  Undo on this edit's card and the edit before it is reverted, under this one's confirmation
+  sentence. The three used to be written out separately, and the card's copy enumerated the ways a
+  record can be missing — `classifier.layoutMissing`, then `classifier.structuralSkipped` — which
+  is how the two shapes that carry no marker at all were missed: a structural apply whose
+  `rollbackStructuralChange` erased the stamp while the `updateMany` flipping the row APPLIED →
+  FAILED afterwards is `.catch()`ed away, and an exact-mode edit whose skipped pages had their
+  snapshots deleted (`applyBookEdit`). Ask for the record rather than for the absence of a marker,
+  and the next shape is covered too. The snapshot count is the one thing the predicate cannot fetch
+  itself, so a caller that did not select `_count` reads as zero and the button goes missing —
+  which is the degraded state worth having.
+  **The picker asks it a second time inside its own transaction, under the operation row's write
+  lock**, the way `settleSkippedRestructure` does on the worker side — the row moves in the window
+  the picker's read opens. The reader taps Undo while a structural apply is still drafting; the
+  drafting dies, `rollbackStructuralChange` puts the pages back, erases `structuralApplication` and
+  writes `structuralRolledBackAt`, and the row goes FAILED (or stays APPLIED, because that flip is
+  `.catch()`ed). The undo then ran `revertStructuralPageChange` a *second* time over an
+  already-restored book — deleting a `newPlanVersionId` that is gone, re-approving the base plan —
+  and wrote `{ ...pre-rollback classifier, undoneAt }` back over the rollback's own record, putting
+  the stamp back and dropping `structuralRolledBackAt`. So the transaction opens with a conditional
+  `updateMany` claiming the still-APPLIED row (its count is the status half), re-reads the
+  classifier under that lock, and asks `canUndoBookEdit` again before anything else is written —
+  including the project's EDITING/`contentRevision` bump, which now comes after the claim rather
+  than before it, so a refused undo leaves no revision behind and nothing to recompile. A refusal
+  answers "nothing to undo" rather than falling through to the next row: the picker takes the
+  newest row *with* a record, so falling through reverts the edit before this one under this one's
+  confirmation. It also settles two undos racing each other — the second waits on the lock, then
+  reads its own `undoneAt`.
+  A structural delete can leave one live snapshot and park another from the same older multi-page
+  operation. `_count.archivedSnapshots` is therefore part of that predicate too: any archived row
+  makes the older operation incomplete and neither reviewable nor undoable. Structural Undo restores
+  those rows under their original operation ids before its own `undoneAt` lands, so the next Undo in
+  the chain sees the older edit whole again. If the delete instead becomes permanent, the archive's
+  plain key outlives retirement of the structural operation and keeps that partial history hidden.
 
 ## Export repair and the quality verdict
 
@@ -407,7 +635,14 @@ of the same manuscript can have fixed.
   (`requestWithCharacterContext` in `editOperations.ts`). The bare message is what
   `classifyProjectChatMessage`, `affectedPagesForIntent` and `exactReplacementFromMessage` read —
   a sheet inside it would move page targeting — and the visible transcript and proposal card stay
-  as typed. In the creation chat mentions are message-level `{id, name}` refs, so
+  as typed. **"The payload" means every string in it the model will see, and one of them is not
+  the request**: `applyBookEdit.ts` *substitutes* a `perPageInstructions` entry for the whole
+  request on the page it names, so composing the sheets onto `request` alone rewrote the pages the
+  reader actually named — "make page 3 funnier and page 7 shorter" — with no idea who the mentioned
+  character is, while every unnamed page in the same edit had the sheet.
+  `pageInstructionsWithCharacterContext` composes the payload copy of those entries; the ones on
+  the intent stay bare, because that is what the card shows and what the resumable pending state
+  rebuilds from. In the creation chat mentions are message-level `{id, name}` refs, so
   `activeThreadPayload` branch-filters them for free, and every turn re-reads the live rows so a
   library edit propagates; the build snapshot is the moment that stops.
 

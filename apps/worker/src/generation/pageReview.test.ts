@@ -9,16 +9,20 @@ const mocks = vi.hoisted(() => ({
   },
   enqueueWorkerJob: vi.fn(),
   updateJobProgress: vi.fn(),
-  storeEmbedding: vi.fn(),
+  prepareEmbedding: vi.fn(),
+  writePreparedEmbedding: vi.fn(),
   updateEntityStateFromPage: vi.fn(),
-  loadContinuityNotes: vi.fn()
+  loadContinuityNotes: vi.fn(),
+  keeperStoryExtractForSave: vi.fn(),
+  persistStoryExtract: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
 vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorkerJob }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: mocks.updateJobProgress }));
 vi.mock("./semanticMemory.js", () => ({
-  storeEmbedding: mocks.storeEmbedding,
+  prepareEmbedding: mocks.prepareEmbedding,
+  writePreparedEmbedding: mocks.writePreparedEmbedding,
   updateEntityStateFromPage: mocks.updateEntityStateFromPage,
   // Mirrors the real predicate so fixtures choose their mode explicitly.
   retrieveSemanticResearchNotes: async () => [],
@@ -44,7 +48,8 @@ vi.mock("./qualityEnrichment.js", () => ({
     storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
     styleExcerpts: []
   }),
-  persistKeeperStoryDelta: vi.fn()
+  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
+  persistStoryExtract: mocks.persistStoryExtract
 }));
 vi.mock("./bookHelpers.js", () => ({
   formatQualityFailure: () => "quality failure detail",
@@ -283,6 +288,21 @@ describe("repairPageBriefForRecovery", () => {
     expect(secondCall.data.productionBrief.pages.map((page) => page.pageIndex)).toEqual([5, 6, 7]);
   });
 
+  it("does not persist the repaired brief when ownership went during the repair call", async () => {
+    // The one write on the drafting side of the page save, and the chapter's
+    // other pages read it back — so a delivery that lost the book across the
+    // repair call must not leave its opinion of the beats behind.
+    mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: chapterBriefFixture() });
+    const assertOwnership = vi.fn().mockRejectedValue(new Error("lost its durable lease"));
+
+    await expect(repairPageBriefForRecovery({ ...(callOptions() as object), assertOwnership } as never)).rejects.toThrow(
+      "lost its durable lease"
+    );
+
+    expect(strategy.repairPageBrief).toHaveBeenCalledTimes(1);
+    expect(mocks.prisma.chapter.updateMany).not.toHaveBeenCalled();
+  });
+
   it("gives up and logs rather than looping forever when every attempt loses the race", async () => {
     mocks.prisma.chapter.findUnique.mockResolvedValue({ productionBrief: chapterBriefFixture() });
     mocks.prisma.chapter.updateMany.mockResolvedValue({ count: 0 });
@@ -369,11 +389,16 @@ describe("reviewAndSaveGeneratedPage", () => {
       generationJobId: "gj-1"
     }) as never;
 
+  const storyExtract = { storyDelta: { facts: ["The robin flew."] }, contradictions: [] };
+  const preparedVector = { vectorLiteral: "[0.1,0.2]", error: null };
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.loadContinuityNotes.mockResolvedValue([]);
     mocks.prisma.page.upsert.mockResolvedValue({ id: "page-row-1", revision: 1 });
     strategy.shouldIllustratePage.mockReturnValue(false);
+    mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
+    mocks.prepareEmbedding.mockResolvedValue(preparedVector);
   });
 
   it("saves an approved first draft as COMPLETED at revision 1", async () => {
@@ -389,12 +414,13 @@ describe("reviewAndSaveGeneratedPage", () => {
         update: expect.objectContaining({ status: "COMPLETED", revision: 1, title: "First" })
       })
     );
-    expect(mocks.storeEmbedding).toHaveBeenCalledWith(
+    expect(mocks.prepareEmbedding).toHaveBeenCalledWith("First summary.", expect.anything());
+    expect(mocks.writePreparedEmbedding).toHaveBeenCalledWith(
       "project-1",
       "page:3",
       "page-row-1",
       "First summary.",
-      expect.anything()
+      preparedVector
     );
     expect(context).toEqual({ index: 3, title: "First", markdown: "First text.", summary: "First summary." });
   });
@@ -415,6 +441,7 @@ describe("reviewAndSaveGeneratedPage", () => {
       data: [
         expect.objectContaining({
           projectId: "project-1",
+          pageId: "page-row-1",
           scope: "page:3",
           body: "The robin is named Pip.",
           tags: ["page", "3", "test-strategy"]
@@ -455,9 +482,126 @@ describe("reviewAndSaveGeneratedPage", () => {
         })
       })
     );
-    expect(mocks.storeEmbedding).not.toHaveBeenCalled();
+    expect(mocks.prepareEmbedding).not.toHaveBeenCalled();
+    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
     expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
     expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
+    // A flagged page still publishes its story delta: the final review rewrites
+    // the page and needs the state the keeper actually left behind.
+    expect(mocks.persistStoryExtract).toHaveBeenCalledTimes(1);
     expect(context).toMatchObject({ index: 3, title: "Rewrite 2" });
+  });
+});
+
+describe("reviewAndSaveGeneratedPage ownership fence", () => {
+  // The structural-insert shape: a delivery drafting under a durable lease that
+  // a replacement can take over mid-page. Everything the save publishes after
+  // the page row — the story delta, the continuity notes, the entity state and
+  // the embedding — is read back by *later* pages, so a delivery that has lost
+  // the book must leave none of it behind. The page row itself is the winner's
+  // to redo: it is keyed on project+index and the winner drafts the same ids.
+  const strategy = {
+    id: "test-strategy",
+    executionMode: "sequential-pages",
+    reviewPageDraft: vi.fn(),
+    revisePageDraft: vi.fn(),
+    repairPageBrief: vi.fn(),
+    shouldIllustratePage: vi.fn()
+  };
+
+  const storyExtract = { storyDelta: { facts: ["The robin flew."] }, contradictions: [] };
+
+  const fencedOptions = (assertOwnership: () => Promise<void>) =>
+    ({
+      projectId: "project-1",
+      planId: "plan-1",
+      input: { mediaSettings: {} },
+      plan: { title: "Book", chapters: [] },
+      providers: { text: {}, embedding: {} },
+      strategy,
+      draft: { ...draftNamed("First"), index: 3, imagePrompt: "A robin", continuityNotes: ["The robin is named Pip."] },
+      chapterId: null,
+      previousPages: [],
+      generationJobId: "gj-1",
+      assertOwnership
+    }) as never;
+
+  /** Every write the page save publishes for later pages to read back. */
+  const expectNothingPublished = () => {
+    expect(mocks.persistStoryExtract).not.toHaveBeenCalled();
+    expect(mocks.prisma.continuityNote.createMany).not.toHaveBeenCalled();
+    expect(mocks.updateEntityStateFromPage).not.toHaveBeenCalled();
+    expect(mocks.writePreparedEmbedding).not.toHaveBeenCalled();
+    expect(mocks.enqueueWorkerJob).not.toHaveBeenCalled();
+  };
+
+  /** Holds for the first `holdFor` barriers, then reports takeover. */
+  const fenceLostAfter = (holdFor: number) => {
+    let barriers = 0;
+    return vi.fn(async () => {
+      barriers += 1;
+      if (barriers > holdFor) {
+        throw new Error("Structural page edit delivery lost its durable lease");
+      }
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.loadContinuityNotes.mockResolvedValue([]);
+    mocks.prisma.page.upsert.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    strategy.shouldIllustratePage.mockReturnValue(true);
+    strategy.reviewPageDraft.mockResolvedValue(report(90, { approved: true }));
+    mocks.keeperStoryExtractForSave.mockResolvedValue(storyExtract);
+    mocks.prepareEmbedding.mockResolvedValue({ vectorLiteral: "[0.1,0.2]", error: null });
+  });
+
+  it("publishes the whole tail while the fence holds, and asks it three times", async () => {
+    const fence = fenceLostAfter(Number.POSITIVE_INFINITY);
+
+    await reviewAndSaveGeneratedPage(fencedOptions(fence));
+
+    // Before the page upsert, before the provider calls, and before the writes.
+    expect(fence).toHaveBeenCalledTimes(3);
+    expect(mocks.persistStoryExtract).toHaveBeenCalledWith(expect.objectContaining({ extract: storyExtract }));
+    expect(mocks.prisma.continuityNote.createMany).toHaveBeenCalledTimes(1);
+    expect(mocks.updateEntityStateFromPage).toHaveBeenCalledTimes(1);
+    expect(mocks.writePreparedEmbedding).toHaveBeenCalledTimes(1);
+    expect(mocks.enqueueWorkerJob).toHaveBeenCalledTimes(1);
+  });
+
+  it("spends no provider call and publishes nothing when ownership goes right after the page upsert", async () => {
+    // Lost before the story extract: the barrier after the upsert is what stops
+    // a delivery that no longer owns the book paying for state it may not write.
+    const fence = fenceLostAfter(1);
+
+    await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
+
+    expect(mocks.prisma.page.upsert).toHaveBeenCalledTimes(1);
+    expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
+    expect(mocks.prepareEmbedding).not.toHaveBeenCalled();
+    expectNothingPublished();
+  });
+
+  it("publishes nothing when ownership goes during the provider calls, after the model answered", async () => {
+    // Lost after the model call, before the write: the extract and the vector
+    // are in hand, and the publish barrier is what keeps them out of the book.
+    const fence = fenceLostAfter(2);
+
+    await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
+
+    expect(mocks.keeperStoryExtractForSave).toHaveBeenCalledTimes(1);
+    expect(mocks.prepareEmbedding).toHaveBeenCalledTimes(1);
+    expectNothingPublished();
+  });
+
+  it("does not even save the page when ownership is already gone before the upsert", async () => {
+    const fence = fenceLostAfter(0);
+
+    await expect(reviewAndSaveGeneratedPage(fencedOptions(fence))).rejects.toThrow("lost its durable lease");
+
+    expect(mocks.prisma.page.upsert).not.toHaveBeenCalled();
+    expect(mocks.keeperStoryExtractForSave).not.toHaveBeenCalled();
+    expectNothingPublished();
   });
 });

@@ -28,20 +28,23 @@ export async function rebuildStoryStateFromPages(
 }
 
 /**
- * Rebuild Project.storyState from page deltas and CAS-write it.
+ * Rebuild Project.storyState from page deltas and CAS-write it. An optional
+ * plan guard keeps a compensation from publishing after another edit advances
+ * the project beyond the plan whose promises seeded this rebuild.
  * Returns the rebuilt pack, or the last observed pack if every CAS attempt lost.
  */
 export async function casRebuildProjectStoryState(
   projectId: string,
-  seedPromises: readonly string[] = []
+  seedPromises: readonly string[] = [],
+  guard?: { currentPlanId: string | null }
 ): Promise<StoryState | null> {
   let expected: unknown = undefined;
   for (let attempt = 0; attempt < STORY_STATE_CAS_ATTEMPTS; attempt += 1) {
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { storyState: true }
+      select: { storyState: true, currentPlanId: true }
     });
-    if (!project) {
+    if (!project || (guard && project.currentPlanId !== guard.currentPlanId)) {
       return null;
     }
     expected = project.storyState;
@@ -49,6 +52,7 @@ export async function casRebuildProjectStoryState(
     const claimed = await prisma.project.updateMany({
       where: {
         id: projectId,
+        ...(guard ? { currentPlanId: guard.currentPlanId } : {}),
         storyState: storyStateCasEquals(expected)
       },
       data: { storyState: next as Prisma.InputJsonValue }

@@ -24,6 +24,7 @@ import {
   READER_FACING_PAGE_BRIEF_RULES,
   buildPageInstruction,
   chapterBriefPayloadForPageScope,
+  compactFollowingPages,
   compactPriorPages,
   pageScopePayload,
   reviewerStyleRules,
@@ -49,6 +50,12 @@ export type ReviewPageOptions = {
   pageIndex: number;
   draft: PageDraft;
   previousPages: PriorPageContext[];
+  /**
+   * Prose that already exists after this page. Empty for a book written front
+   * to back; set when a page is inserted into a finished one, where a reviewer
+   * that cannot see what follows reads a correct hand-off as a stalled ending.
+   */
+  nextPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
   textModel: TextModelAdapter;
   styleExcerpts?: string[] | undefined;
@@ -129,12 +136,17 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
               pageIndex: options.pageIndex,
               draft: options.draft,
               previousPages: compactPriorPages(options.previousPages, 5, 800),
+              ...(options.nextPages && options.nextPages.length > 0
+                ? { followingPages: compactFollowingPages(options.nextPages, 2, 800) }
+                : {}),
               ...(options.styleExcerpts && options.styleExcerpts.length > 0
                 ? { styleExcerpts: options.styleExcerpts }
                 : {}),
               continuityNotes: options.continuityNotes.slice(-20),
               instruction:
-                "Approve only if this is a finished, specific page that can appear in the final book without visible generation artifacts, repeated beats, or stalled progression."
+                options.nextPages && options.nextPages.length > 0
+                  ? "Approve only if this is a finished, specific page that can appear in the final book without visible generation artifacts or repeated beats. followingPages is prose that already exists after this page: judge progression by whether this page leads into it without repeating it, not by whether the page resolves on its own."
+                  : "Approve only if this is a finished, specific page that can appear in the final book without visible generation artifacts, repeated beats, or stalled progression."
             },
             null,
             2
@@ -202,6 +214,11 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
           "If the current pageBrief requires a recurring action type from previousPages, keep the required action but change the physical details, sentence rhythm, and consequence.",
           "Do not reuse distinctive phrases from previousPages; replace them with fresh concrete wording.",
           "Use pageScope to keep the replacement inside the current global page and chapter-local position.",
+          ...(options.nextPages && options.nextPages.length > 0
+            ? [
+                "followingPages is prose that already exists after this page and is not being rewritten. The replacement must end so the first of them reads on naturally, and must not repeat a beat or line that already appears there."
+              ]
+            : []),
           "The current pageBrief is authoritative. Do not import futureChapterPageBriefs or later chapter keyBeats unless they are explicitly assigned to this page.",
           IMAGE_PROMPT_CHARACTER_RULE,
           ...targetLanguageGenerationGuidance(options.input.language),
@@ -233,6 +250,9 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             rejectedDraft: options.draft,
             qualityReport: options.report,
             previousPages: compactPriorPages(options.previousPages, 4, 700),
+            ...(options.nextPages && options.nextPages.length > 0
+              ? { followingPages: compactFollowingPages(options.nextPages, 2, 700) }
+              : {}),
             ...(options.styleExcerpts && options.styleExcerpts.length > 0
               ? { styleExcerpts: options.styleExcerpts }
               : {}),

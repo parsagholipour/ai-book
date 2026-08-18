@@ -14,13 +14,13 @@ import {
   type MobileProjectChatMessageResponseDto,
   type MobileProjectChatResponseDto
 } from "./dto.js";
-import { UNDOABLE_EDIT_KINDS } from "./manualEdits.js";
+import { canUndoBookEdit, hasBookEditUndoRecord } from "./manualEdits.js";
 import { findOpenProposalId } from "./pendingEditState.js";
 import { currentActionForEditOperation } from "./editOperationCopy.js";
 import { normalizeJobStatus, serializePlan } from "./projectSerializers.js";
 import { MODEL_PAGE_NUMBERING, numberingForProject, type ReaderPageNumbering } from "../bookPageNumbering.js";
 import { generationRecoveryQuote } from "./generationRetryQuote.js";
-import { clipText, jsonInputValue, jsonRecord, jsonValue } from "./support.js";
+import { clipText, jsonInputValue, jsonValue } from "./support.js";
 import { prisma } from "@book-maker/db";
 import { InsufficientCreditsError } from "@book-maker/db/billing";
 
@@ -52,7 +52,7 @@ export async function loadProjectChatResponse(
       // rows themselves are only read when the user opens the diff.
       include: {
         generationJob: { select: { id: true, status: true } },
-        ledgerEntry: { select: { status: true, reversedByEntry: { select: { id: true } } } },
+        ledgerEntry: { select: { status: true, reversedByEntry: { select: { id: true, amountCredits: true } } } },
         generationAttempts: {
           orderBy: { createdAt: "desc" },
           take: 1,
@@ -65,7 +65,7 @@ export async function loadProjectChatResponse(
             refundPending: true
           }
         },
-        _count: { select: { snapshots: true } }
+        _count: { select: { snapshots: true, archivedSnapshots: true } }
       }
     }),
     // The printed-page numbering for every operation card in the transcript —
@@ -74,7 +74,7 @@ export async function loadProjectChatResponse(
     // numbering systems in one thread.
     prisma.project.findUnique({
       where: { id: projectId },
-      select: { pdfPageMap: true, contentRevision: true }
+      select: { pdfPageMap: true, contentRevision: true, status: true }
     })
   ]);
   const pageNumbering = projectRow ? numberingForProject(projectRow) : MODEL_PAGE_NUMBERING;
@@ -274,7 +274,7 @@ export async function replayProjectChatRequest(
     }) as Promise<MobileBookEditOperationRecord | null>,
     prisma.project.findUnique({
       where: { id: projectId },
-      select: { pdfPageMap: true, contentRevision: true }
+      select: { pdfPageMap: true, contentRevision: true, status: true }
     })
   ]);
   if (!assistantMessage) {
@@ -537,9 +537,33 @@ export function serializeBookEditOperation(
     appliedAt: operation.appliedAt?.toISOString() ?? null,
     anchorMessageId: operation.assistantMessageId ?? operation.userMessageId ?? null,
     canUndo: options?.canUndo ?? false,
-    changesAvailable: (operation._count?.snapshots ?? 0) > 0,
-    creditsRefunded: operationCreditsRefunded(operation)
+    changesAvailable: editChangesAvailable(operation),
+    creditsRefunded: operationCreditsRefunded(operation),
+    creditsRefundedAmount: operationCreditsRefundedAmount(operation)
   };
+}
+
+/**
+ * Whether "See changes" has anything to open.
+ *
+ * The same record undo restores from, asked as a question:
+ * `hasBookEditUndoRecord` (`manualEdits.ts`) is snapshots for a text or image
+ * edit and the `structuralApplication` stamp for a structural one, which is
+ * why reading the snapshot count alone left the app's only review affordance
+ * switched off for the one edit that moves whole pages. A delivered no-op
+ * needs no arm of its own: it returns before the shift and writes neither, so
+ * it stays unreviewable — the same answer `operationCanUndo` gives it, from
+ * the same predicate.
+ *
+ * `_count` is only present when the query asked for it; a caller that did not
+ * gets "nothing to review" rather than a card that opens on nothing.
+ */
+export function editChangesAvailable(operation: MobileBookEditOperationRecord): boolean {
+  return hasBookEditUndoRecord({
+    classifier: operation.classifier,
+    snapshotCount: operation._count?.snapshots ?? 0,
+    archivedSnapshotCount: operation._count?.archivedSnapshots ?? 0
+  });
 }
 
 /**
@@ -550,30 +574,45 @@ export function serializeBookEditOperation(
  * its row and gains a separate reversing entry.
  */
 export function operationCreditsRefunded(operation: MobileBookEditOperationRecord): boolean {
-  const ledgerEntry = operation.ledgerEntry;
-  if (!ledgerEntry) {
-    return false;
-  }
-  return ledgerEntry.status === "REFUNDED" || Boolean(ledgerEntry.reversedByEntry);
+  return operation.creditsCharged > 0 && operationCreditsRefundedAmount(operation) >= operation.creditsCharged;
 }
 
+/** Exact credits returned, capped to the operation's recorded charge. */
+export function operationCreditsRefundedAmount(operation: MobileBookEditOperationRecord): number {
+  const ledgerEntry = operation.ledgerEntry;
+  if (!ledgerEntry) {
+    return 0;
+  }
+  if (ledgerEntry.status === "REFUNDED") {
+    return operation.creditsCharged;
+  }
+  return Math.min(operation.creditsCharged, Math.max(ledgerEntry.reversedByEntry?.amountCredits ?? 0, 0));
+}
+
+/**
+ * Whether to draw Undo on this operation's card.
+ *
+ * It is `canUndoBookEdit` (`manualEdits.ts`) and nothing else, because
+ * `undoLastBookEdit` picks its candidate with the same call: an operation this
+ * says yes to but the picker skips is an Undo that reverts the *previous,
+ * older* edit — a layout edit that found nothing, a structural one the worker
+ * declined, a rolled-back structural apply whose FAILED flip did not land, an
+ * exact-mode edit whose skipped pages had their snapshots deleted. Naming
+ * those one at a time is what let the last two through.
+ *
+ * The snapshot count is the one thing this cannot ask for itself, and a
+ * missing `_count` reads as zero: the only caller that draws the button
+ * (`loadProjectChatResponse`) selects it, and a caller that forgets loses the
+ * button rather than pointing it at the wrong edit.
+ */
 export function operationCanUndo(operation: MobileBookEditOperationRecord): boolean {
-  if (operation.status !== "APPLIED") {
-    return false;
-  }
-  if (!(UNDOABLE_EDIT_KINDS as readonly string[]).includes(operation.kind)) {
-    return false;
-  }
-  const classifier = jsonRecord(operation.classifier);
-  // A layout edit that found nothing to move or remove is APPLIED with no
-  // snapshots, and `undoLastBookEdit` picks its candidate with
-  // `snapshots.length > 0` — so an Undo offered here would skip this operation
-  // and silently revert the *previous* edit instead. The two have to agree about
-  // which operation is undoable.
-  if (classifier.layoutMissing === true) {
-    return false;
-  }
-  return classifier.undoneAt === undefined;
+  return canUndoBookEdit({
+    status: operation.status,
+    kind: operation.kind,
+    classifier: operation.classifier,
+    snapshotCount: operation._count?.snapshots ?? 0,
+    archivedSnapshotCount: operation._count?.archivedSnapshots ?? 0
+  });
 }
 
 export async function loadProjectForChat(userId: string, projectId: string) {

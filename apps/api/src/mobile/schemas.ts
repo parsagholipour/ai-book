@@ -219,14 +219,20 @@ export const mobileProjectChatMessageBodySchema = z
     // stored edit request, never the routed text or the visible transcript.
     mentionedCharacterIds: z.array(z.string().trim().min(1).max(64)).max(10).optional(),
     // Where in the book a reader-selection message was composed: the book page
-    // the app's locator resolved (authoritative for targeting), the printed
-    // PDF page the reader saw, and the export revision they were reading —
-    // so the server never re-guesses a position the app already knows.
+    // the app's locator resolved (authoritative for targeting), the physical
+    // PDF sheet the reader saw, and the identity of the file they were reading
+    // it in — so the server never re-guesses a position the app already knows.
+    // `pdfPage` is a sheet number in one exact PDF, so it travels with that
+    // file's `pdfDigest`: a repair republishes the same `contentRevision` over
+    // different bytes, and without the digest the sheet would be translated
+    // through the replacement's map. Both identity fields are required before
+    // `pdfPage` is read at all — see `modelPageForReaderContext`.
     readerContext: z
       .object({
         pageIndex: z.number().int().min(1).max(10_000).optional(),
         pdfPage: z.number().int().min(1).max(20_000).optional(),
-        contentRevision: z.number().int().min(0).optional()
+        contentRevision: z.number().int().min(0).optional(),
+        pdfDigest: z.string().trim().min(1).max(128).optional()
       })
       .strict()
       .optional(),
@@ -570,7 +576,8 @@ export const mobileProjectChatMessageOpenApiBody = {
       properties: {
         pageIndex: { type: "integer", minimum: 1, maximum: 10000 },
         pdfPage: { type: "integer", minimum: 1, maximum: 20000 },
-        contentRevision: { type: "integer", minimum: 0 }
+        contentRevision: { type: "integer", minimum: 0 },
+        pdfDigest: { type: "string", minLength: 1, maxLength: 128 }
       }
     },
     requestId: { type: "string", minLength: 8, maxLength: 64 }

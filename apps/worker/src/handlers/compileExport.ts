@@ -15,6 +15,7 @@ import {
   pendingExportPaths,
   publishCompiledExports
 } from "../generation/exportPublication.js";
+import { loadContinuityNotes } from "../generation/generationContext.js";
 import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
 import {
   readCompatibleCachedReaderChapters,
@@ -51,7 +52,9 @@ import {
   includeSourcesPreference,
   isDetachedFromProjectLifecycle,
   isPresentationOnlyRecompile,
+  markdownOpensOnCoverSheet,
   payloadOwnsProjectOutcome,
+  persistablePdfPageMapAfterRender,
   publicAssetUrl,
   presentationRecompileFallbackStatus,
   readerChapterFingerprint,
@@ -59,7 +62,7 @@ import {
   runDeterministicManuscriptChecks,
   unpaidPromiseIssues,
   type BookGenerationStrategy,
-  type BookPdfPageMap,
+  type PersistableBookPdfPageMap,
   type BookPlan,
   type CompiledBookMarkdown,
   type CreateProjectInput,
@@ -399,9 +402,10 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   // indexes. When it does not, the exact published bytes win, unmeasured: no
   // markers, no Contents reprint. That is a different Chromium pass than the
   // one the stored map was measured from (the reprint exists because digit
-  // width moves breaks), so the column is cleared. A book without a map is the
-  // graceful path; a map from a different pagination is the wrong-page edit
-  // the map exists to stop.
+  // width moves breaks), so the stored ranges give way to a cover-skip stub —
+  // chrome keeps the footer numbering, chat drops back to model indexes. A book
+  // chat cannot translate is the graceful path; a map from a different
+  // pagination is the wrong-page edit the map exists to stop.
   const recompiled = await compileCurrentMarkdown();
   const compiled =
     detachedRepair && publishedMarkdown !== undefined && recompiled.markdown !== publishedMarkdown
@@ -419,7 +423,7 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   const pending = pendingExportPaths(projectDir);
   let epubProduced = true;
   let characterPreparationJobId: string | null = null;
-  let pdfPageMapUpdate: BookPdfPageMap | null | undefined;
+  let pdfPageMapUpdate: PersistableBookPdfPageMap | undefined;
   try {
     if (repairFormat === null || repairReconstructedMarkdown) {
       await writeFile(pending.markdown, markdown, "utf8");
@@ -435,18 +439,13 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
         projectId,
         ...(compiled ? { pageMapPlan: compiled } : {})
       });
-      // A measured render replaces the stored map; a measurable render that
-      // could not be measured clears it — the old map describes pagination
-      // this publication is about to replace. A measured *repair* whose
-      // measurement failed is the exception: it reprinted the same manuscript
-      // the stored map was taken from, with the same plan, so the column
-      // stands via `undefined`. An unmeasured repair (no plan) is not that
-      // case — it skipped the Contents reprint — and clears.
-      if (compiled) {
-        pdfPageMapUpdate = pdfResult.pageMap ?? (detachedRepair ? undefined : null);
-      } else {
-        pdfPageMapUpdate = null;
-      }
+      // A complete measurement wins. Every failed or plan-less measurement
+      // replaces stored ranges with cover numbering for these newly rendered
+      // bytes: matching manuscript text does not prove matching pagination.
+      pdfPageMapUpdate = persistablePdfPageMapAfterRender({
+        pageMap: pdfResult.pageMap,
+        hasCoverPage: compiled?.hasCoverPage ?? markdownOpensOnCoverSheet(markdown)
+      });
     }
     const generateEpub = () =>
       generateBookEpub(markdown, {
@@ -707,11 +706,7 @@ export async function repairPagesFromFinalQa(options: {
     `Repairing pages ${repairPageIndexes.join(", ")} after final QA`
   );
 
-  const continuity = await prisma.continuityNote.findMany({
-    where: { projectId: options.projectId },
-    orderBy: { createdAt: "desc" },
-    take: 28
-  });
+  const continuityNotes = await loadContinuityNotes(options.projectId);
   let pages = [...options.pages];
   let currentState = await rebuildStoryStateFromPages(options.projectId, options.plan.promises ?? []);
 
@@ -727,7 +722,6 @@ export async function repairPagesFromFinalQa(options: {
     const chapterBrief = parseChapterBrief(page.chapter?.productionBrief);
     const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === page.index);
     const previousPages = pages.filter((candidate) => candidate.index < page.index).map(toPriorPageContext);
-    const continuityNotes = continuity.map((note) => note.body);
     const finalQaReport = pageReportFromFinalQa(options.finalQa, pageIndex, options.input.targetPages);
     let draft = await revisePageDraftWithRestart({
       strategy: options.strategy,
@@ -857,6 +851,7 @@ export async function repairPagesFromFinalQa(options: {
       await prisma.continuityNote.createMany({
         data: draft.continuityNotes.map((body) => ({
           projectId: options.projectId,
+          pageId: page.id,
           scope: `page:${page.index}`,
           body,
           tags: ["page", String(page.index), "final-qa-repair"]

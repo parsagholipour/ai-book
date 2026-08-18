@@ -1,7 +1,8 @@
-import type {
-  ManuscriptStyleProfile,
-  ParsedManuscript,
-  SegmentedManuscript
+import {
+  jsonRecord,
+  type ManuscriptStyleProfile,
+  type ParsedManuscript,
+  type SegmentedManuscript
 } from "@book-maker/core";
 
 /**
@@ -92,8 +93,4 @@ export function importStyleProfileFromMediaSettings(mediaSettings: unknown): Rec
 export function normalizeImportedLanguage(detected: string | undefined, fallback: string): string {
   const cleaned = detected?.trim() ?? "";
   return cleaned.length >= 2 && cleaned.length <= 40 ? cleaned : fallback;
-}
-
-function jsonRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

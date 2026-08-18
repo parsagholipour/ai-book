@@ -167,8 +167,7 @@ describe("lazy export rebuilds", () => {
     expect(projectDirEntries()).toEqual(["book.pdf", "book.pdf.provenance.json"]);
   });
 
-  it("clears the stored page map when a rebuild renders saved book.md unmeasured", async () => {
-    const { Prisma } = await import("@book-maker/db");
+  it("records cover-skip when a rebuild renders saved book.md unmeasured", async () => {
     mockPrisma.project.findUnique.mockResolvedValue({ ...projectRow(7), pages: [] });
     writeFileSync(join(bookStorageDir, "project-1", "book.md"), "# Saved\n\nProse.\n");
     mockGeneratePdf.mockImplementation(renderWriting("unmeasured-pdf"));
@@ -178,7 +177,9 @@ describe("lazy export rebuilds", () => {
 
     expect(mockPrisma.project.update).toHaveBeenCalledWith({
       where: { id: "project-1" },
-      data: expect.objectContaining({ pdfPageMap: Prisma.DbNull })
+      data: expect.objectContaining({
+        pdfPageMap: expect.objectContaining({ version: 2, hasCoverPage: false, pages: [] })
+      })
     });
   });
 

@@ -5,7 +5,7 @@ import {
 } from "../prompting/readingLevel.js";
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
 import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
-import { jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
+import { isRecord, jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 
 /**
@@ -73,6 +73,16 @@ export type GeneratePageOptions = {
   pageIndex: number;
   previousSummaries: string[];
   previousPages?: PriorPageContext[] | undefined;
+  /**
+   * Pages that already exist *after* this one and are not being rewritten.
+   *
+   * Empty for every page a book writes front to back, which is why the drafting
+   * context has only ever looked backwards. A page inserted into a finished
+   * book is the case that needs it: it has to hand off to prose the reader
+   * already has, and without seeing that prose it either stops mid-thought or
+   * writes the following page's beat a second time.
+   */
+  nextPages?: PriorPageContext[] | undefined;
   continuityNotes: string[];
   researchNotes: string[];
   /** Semantically retrieved long-range context outside the recency window. */
@@ -160,7 +170,24 @@ export function chapterBriefPayloadForPageScope(brief: ChapterBrief | undefined)
 }
 
 export function compactPriorPages(pages: PriorPageContext[], count: number, excerptLength: number) {
-  return pages.slice(-count).map((page) => ({
+  return compactPageContexts(pages.slice(-count), excerptLength);
+}
+
+/**
+ * The forward twin of {@link compactPriorPages}, and it must take the pages
+ * from the *front*.
+ *
+ * The nearest prior page is the last one; the nearest following page is the
+ * first. Trimming a forward window with `slice(-count)` keeps the pages
+ * furthest from the hand-off and drops the one the draft actually has to land
+ * into — which reads as a plausible window and is exactly wrong.
+ */
+export function compactFollowingPages(pages: PriorPageContext[], count: number, excerptLength: number) {
+  return compactPageContexts(pages.slice(0, count), excerptLength);
+}
+
+function compactPageContexts(pages: PriorPageContext[], excerptLength: number) {
+  return pages.map((page) => ({
     index: page.index,
     title: page.title,
     summary: page.summary,
@@ -287,9 +314,10 @@ export function arrayLikeField(record: Record<string, unknown>, key: string): un
   return undefined;
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
+// The predicate itself lives in `schemas/jsonCoercion.ts`; this module carried a
+// second copy of it. Re-exported so the drafting and page-map layers keep
+// reading it off the helper bundle they already import.
+export { isRecord };
 
 export function numberField(record: Record<string, unknown>, keys: string[]): number | undefined {
   for (const key of keys) {

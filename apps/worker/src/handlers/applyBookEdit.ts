@@ -7,10 +7,18 @@ import { maybeEnqueueCompile } from "../runtime/dispatch.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { applyImageInsertion, type ImageInsertionPayload } from "./applyImageInsertion.js";
 import { applyImageLayout, type ImageLayoutPayload } from "./applyImageLayout.js";
+import { restructurePages } from "./restructurePages.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
 import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
 import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
-import { bookPlanSchema, createProviders, hasExactMatch, jsonPayloadToRecord, type ExactReplacement } from "@book-maker/core";
+import {
+  bookPlanSchema,
+  createProviders,
+  hasExactMatch,
+  jsonPayloadToRecord,
+  type ExactReplacement,
+  type StructuralPageEdit
+} from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
@@ -37,8 +45,7 @@ export async function applyBookEdit(job: Job) {
     planId,
     exactReplacement,
     mode,
-    imageInsertion,
-    imageLayout
+    perPageInstructions
   } = job.data as {
     projectId: string;
     operationId: string;
@@ -53,7 +60,32 @@ export async function applyBookEdit(job: Job) {
      * paid for, so a page that no longer matches is skipped instead.
      */
     mode?: "exact";
+    /**
+     * A different instruction for particular pages, when the reader asked for
+     * different things on each ("make page 3 funnier and page 7 shorter").
+     * Absent — the ordinary case — every page gets the whole request, and a
+     * page with no entry does too, so this can only ever narrow what one page
+     * is told rather than drop an edit that was charged for.
+     *
+     * An entry *replaces* `request` for its page, so the API composes the
+     * @-mentioned characters' sheets onto each instruction the same way it
+     * composes them onto `request` — use the string as it arrives.
+     */
+    perPageInstructions?: { pageIndex: number; instruction: string }[];
+    /**
+     * Insert, delete or reorder pages. Read by `restructurePages` rather than
+     * here — the fork below is decided by the operation's `kind`, because this
+     * field is the copy that can go missing.
+     */
+    structuralEdit?: StructuralPageEdit;
+    /**
+     * Render one illustration. Read by `applyImageInsertion`, and optional for
+     * the same reason `structuralEdit` is: the fork below is decided by the
+     * operation's `kind`, so a payload rebuilt without this key still arrives
+     * and the handler reads the request back off the classifier.
+     */
     imageInsertion?: ImageInsertionPayload;
+    /** Move or remove existing illustrations. Read by `applyImageLayout`, same rule. */
     imageLayout?: ImageLayoutPayload;
   };
   const generationJobId = job.data.generationJobId as string | undefined;
@@ -61,14 +93,52 @@ export async function applyBookEdit(job: Job) {
   if (!operation) {
     throw new Error("Book edit operation not found");
   }
-  if (imageLayout) {
+  if (operation.kind === "RESTRUCTURE_PAGES") {
+    // Forked on the operation's own column, not on the payload's
+    // `structuralEdit`. The payload is JSON a hand-requeue or a reconciler can
+    // rebuild without that field, and everything downstream of this line reads
+    // a structural job as a text one: `affectedPageIndexes` is always empty for
+    // this kind, so the rewrite loop below claims the operation ACTIVE and the
+    // project EDITING *outside* the structural fence and then dies on "No
+    // matching pages found for this edit" — a paid insert failed for a reason
+    // that is not what went wrong, with the shift never attempted. `kind` is
+    // written once, when the operation is created, and no later write touches
+    // it; `restructurePages` finds the edit itself, on the payload or on the
+    // classifier the same enqueue wrote it to.
+    //
+    // Forked *first* for the strongest version of the reason the image forks
+    // are: this one commits an index shift, and its fence is a stamp written in
+    // the same transaction as that shift. Reaching the unconditional ACTIVE
+    // write below before the fence runs would put a redelivery on the far side
+    // of it.
+    await restructurePages(job, operation);
+    return;
+  }
+  if (operation.kind === "MOVE_IMAGE" || operation.kind === "REMOVE_IMAGE") {
+    // On the column, for the same reason as above and with a worse failure
+    // behind it. These two gated on `job.data.imageLayout`, so a job whose
+    // payload was rebuilt without that key fell through to the rewrite loop —
+    // and a layout payload's `affectedPageIndexes` is *not* empty, it names the
+    // pages the pictures sit on. So "remove the illustration on page 3" was
+    // handed to the prose rewriter as an instruction about page 3: two model
+    // calls on an edit priced at zero, a page of prose replaced, snapshots and
+    // an APPLIED operation claiming a text edit nobody asked for — all of it
+    // outside the layout handler's own redelivery fence, because the
+    // unconditional ACTIVE and EDITING writes below run before it. The
+    // classifier carries the resolved intent the Apply wrote in the same
+    // transaction as the operation row, so the handler finds the edit on either
+    // copy; a job carrying neither settles as a delivered no-op, which is the
+    // path a vanished picture already takes.
     await applyImageLayout(job, operation);
     return;
   }
-  if (imageInsertion) {
+  if (operation.kind === "ADD_IMAGE") {
     // A paid one-off illustration, not a text rewrite. Forked before the
     // unconditional ACTIVE/EDITING writes below so the insertion can run its
-    // own redelivery fence against the operation's pre-write status.
+    // own redelivery fence against the operation's pre-write status, and forked
+    // on the column rather than on `job.data.imageInsertion` for the reason
+    // above: the reader bought a picture, and the rewrite loop would have spent
+    // the charge rewriting the page it was going on.
     await applyImageInsertion(job, operation);
     return;
   }
@@ -138,6 +208,11 @@ export async function applyBookEdit(job: Job) {
     );
 
   const skippedPageIndexes: number[] = [];
+  // A page named by the reader gets its own instruction; every other page in
+  // the edit gets the request, which is what this loop has always done. Both
+  // strings already carry the mentioned characters' sheets — neither may be
+  // rebuilt from the operation's classifier, whose entries are the bare ones.
+  const instructionForPage = new Map((perPageInstructions ?? []).map((entry) => [entry.pageIndex, entry.instruction]));
   const seedPromises = plan.promises ?? [];
   let currentState = await loadProjectStoryState(projectId, seedPromises);
   try {
@@ -167,7 +242,7 @@ export async function applyBookEdit(job: Job) {
             plan,
             strategy,
             providers,
-            request,
+            request: instructionForPage.get(page.index) ?? request,
             generationJobId,
             onPhase: (phase) => reportPage(page, offset, phase)
           });
@@ -204,6 +279,7 @@ export async function applyBookEdit(job: Job) {
         await prisma.continuityNote.createMany({
           data: updated.continuityNotes.map((body) => ({
             projectId,
+            pageId: page.id,
             scope: `page:${page.index}:edit:${operationId}`,
             body,
             tags: ["page", String(page.index), "edit"]

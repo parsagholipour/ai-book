@@ -6,6 +6,7 @@ import 'package:pdfrx/pdfrx.dart';
 import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/haptics.dart';
 import '../../../shared/ui/motion.dart';
+import '../domain/reader_models.dart';
 
 /// The handle on the right edge that scrolls the book.
 ///
@@ -27,6 +28,7 @@ class ReaderScrollHandle extends StatefulWidget {
     required this.controller,
     required this.chapterFor,
     this.alwaysVisible = false,
+    this.hasCoverPage = false,
     super.key,
   });
 
@@ -42,6 +44,9 @@ class ReaderScrollHandle extends StatefulWidget {
   /// is then the only way to get to another page, and a handle that fades out
   /// would strand them on the page they started on.
   final bool alwaysVisible;
+
+  /// Whether PDF sheet 1 is an unnumbered cover. Displayed numbers skip it.
+  final bool hasCoverPage;
 
   /// Height of the pill.
   ///
@@ -229,9 +234,11 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
         : ReaderScrollHandle.restingOpacity;
     return Semantics(
       label: 'Scroll through the book',
-      value:
-          'Page ${widget.controller.pageNumber ?? 1} of '
-          '${widget.controller.pageCount}',
+      value: printedPagePositionLabel(
+        widget.controller.pageNumber ?? 1,
+        widget.controller.pageCount,
+        hasCoverPage: widget.hasCoverPage,
+      ),
       slider: true,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -283,7 +290,11 @@ class _ReaderScrollHandleState extends State<ReaderScrollHandle> {
                 ),
               ),
             Text(
-              'Page $page of ${widget.controller.pageCount}',
+              printedPagePositionLabel(
+                page,
+                widget.controller.pageCount,
+                hasCoverPage: widget.hasCoverPage,
+              ),
               style: theme.textTheme.labelSmall?.copyWith(
                 color: colors.onInverseSurface.withValues(alpha: 0.75),
               ),

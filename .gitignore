@@ -18,7 +18,8 @@ storage/audio/**
 storage/attachments/**
 output/imagegen/
 output/cover-designs/
-output/book-fixtures/
+# The skill's own recipe writes -before/-after beside the default directory.
+output/book-fixtures*/
 apps/worker/storage/books/**
 apps/worker/storage/images/**
 !storage/books/.gitkeep

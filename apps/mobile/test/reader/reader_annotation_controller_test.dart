@@ -43,6 +43,7 @@ class MemoryReaderRepository implements ReaderRepository {
     required MobileExportAvailability export,
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    MobilePdfPageNumbering? pageNumbering,
   }) => throw UnimplementedError();
 
   @override

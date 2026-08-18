@@ -1,5 +1,6 @@
 import type { BookPlan, ChapterPlan, CreateProjectInput } from "../schemas/book.js";
 import { isSourceForwardBookCategory } from "../categories.js";
+import { jsonRecord } from "../schemas/jsonCoercion.js";
 import { DEFAULT_MARKDOWN_LABELS, markdownLabels, type MarkdownLabels } from "./markdownLabels.js";
 
 // Re-exported because `markdownLabels` was always part of this module's surface
@@ -134,19 +135,13 @@ export function sanitizeChapterHeadingLabel(raw: unknown): string | undefined {
  * replan to take effect.
  */
 export function chapterHeadingStylePreference(mediaSettings: unknown): ChapterHeadingStyle | undefined {
-  const candidate = mediaSettingsRecord(mediaSettings).chapterHeadingStyle;
+  const candidate = jsonRecord(mediaSettings).chapterHeadingStyle;
   return CHAPTER_HEADING_STYLES.find((style) => style === candidate);
 }
 
 /** The custom label, read from the same place and under the same rule. */
 export function chapterHeadingLabelPreference(mediaSettings: unknown): string | undefined {
-  return sanitizeChapterHeadingLabel(mediaSettingsRecord(mediaSettings).chapterHeadingLabel);
-}
-
-function mediaSettingsRecord(mediaSettings: unknown): Record<string, unknown> {
-  return mediaSettings && typeof mediaSettings === "object" && !Array.isArray(mediaSettings)
-    ? (mediaSettings as Record<string, unknown>)
-    : {};
+  return sanitizeChapterHeadingLabel(jsonRecord(mediaSettings).chapterHeadingLabel);
 }
 
 /**
@@ -157,7 +152,7 @@ function mediaSettingsRecord(mediaSettings: unknown): Record<string, unknown> {
  * replanning.
  */
 export function includeSourcesPreference(mediaSettings: unknown): boolean | undefined {
-  const settings = mediaSettingsRecord(mediaSettings);
+  const settings = jsonRecord(mediaSettings);
   return typeof settings.includeSources === "boolean" ? settings.includeSources : undefined;
 }
 

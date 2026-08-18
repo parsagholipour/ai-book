@@ -1,6 +1,6 @@
 ---
 name: verify-pdf-typography
-description: Use when a change could move a page break in an exported book — a failing sha256 assertion in packages/core/src/generation/pdfDocument.test.ts ("still resolves md-to-pdf's markdown.css unchanged", "still resolves highlight.js' github theme unchanged"), a failing page-count assertion in pdf.test.ts, or any edit to `pdfCss.ts`, `pdfDocument.ts`, `BOOK_PDF_OPTIONS`, the `@page` margins, `bookPdfCss`, the export fonts, or the pinned `md-to-pdf` / `marked` versions. The procedure is `pnpm render:fixtures` with `--baseline <ref>`, `--compare` and `--install`, over the seven-book fixture corpus in scripts/render-book-fixtures.ts. Reach for it on "the css digest test is failing", "can I bump md-to-pdf", "did this change the layout", "update the stylesheet hash", or "the page count test says 9 but I get 10".
+description: Use when a change could move a page break in an exported book — a failing sha256 assertion in packages/core/src/generation/pdfDocument.test.ts ("still resolves md-to-pdf's markdown.css unchanged", "still resolves highlight.js' github theme unchanged"), a failing page-count assertion in pdf.test.ts, or any edit to `pdfCss.ts`, `pdfDocument.ts`, `BOOK_PDF_OPTIONS`, the `@page` margins, `bookPdfCss`, the export fonts, or the pinned `md-to-pdf` / `marked` versions. The procedure is `pnpm render:fixtures` with `--baseline <ref>`, `--compare` and `--install`, over the eight-book fixture corpus in scripts/render-book-fixtures.ts. Reach for it on "the css digest test is failing", "can I bump md-to-pdf", "did this change the layout", "update the stylesheet hash", or "the page count test says 9 but I get 10".
 ---
 
 # Verifying book typography did not drift
@@ -51,8 +51,13 @@ it can gate a commit.
 
 Read `scripts/render-book-fixtures.ts` before improvising: the flag parsing is hand-rolled
 (`--install` is filtered out first, then `--compare` / `--baseline` are matched positionally) and
-the corpus is the `FIXTURES` array near the top — seven books covering both text directions, CJK,
-illustrations, rich blocks, a cover-first layout and a dense fifteen-chapter Contents.
+the corpus is the `FIXTURES` array near the top — eight books covering both text directions, CJK,
+illustrations, rich blocks, a cover-first layout, the coverless title sheet and a dense
+fifteen-chapter Contents.
+
+The title sheet is the one fixture whose failure is not a moved break. `.book-title-page` is a
+fixed-height clipped box, so a stylesheet edit there loses a line instead of reflowing it, and
+`--compare` reports that as pixels rather than as `PAGE COUNT`. Read its raster, not just its count.
 
 ## Reading the comparison
 
@@ -101,6 +106,11 @@ When the corpus comes back clean and the change is intentional:
   `packages/core/src/generation/pdfDocument.test.ts`. Recompute with
   `sha256sum` over the paths `bookPdfBaseStylesheetPaths()` resolves (they come out of
   `md-to-pdf`'s own `require`, not this tree's).
+- `PAGE_GEOMETRY_SHA256` in `packages/core/src/generation/pdfCss.test.ts` — the same alarm for
+  *our* sheet, over everything in `BOOK_PDF_CSS` that is not purely a colour. Those two digests pin
+  only md-to-pdf's bundled stylesheets, so before this one existed a `@page` margin or a title-sheet
+  height could move every book with nothing firing at all. Recompute it by printing what the test
+  computes; never by pasting the received value without reading the comparison first.
 - Page count: the `expect(…).toBe("9")` in `packages/core/src/generation/pdf.test.ts`.
 
 Record what the comparison said in the commit message — the next person to see the digest fire

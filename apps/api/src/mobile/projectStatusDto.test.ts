@@ -5,7 +5,11 @@ vi.mock("@book-maker/db/billing", async () => (await import("./testing/mobileApi
 vi.mock("../queue.js", async () => (await import("./testing/mobileApiMocks.js")).queueModuleMock());
 vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMocks.js")).projectStatusModuleMock());
 
-import { DETACHED_FROM_PROJECT_LIFECYCLE, PRESENTATION_ONLY_RECOMPILE } from "@book-maker/core";
+import {
+  bookPdfCoverNumbering,
+  DETACHED_FROM_PROJECT_LIFECYCLE,
+  PRESENTATION_ONLY_RECOMPILE
+} from "@book-maker/core";
 import { buildProjectStatus } from "../projectStatus.js";
 import {
   bearer,
@@ -649,6 +653,115 @@ describe("mobile project status DTO", () => {
       ]
     });
     expect(JSON.stringify(status)).not.toMatch(/job-revision|REVISE_PLAN|queue/);
+    await app.close();
+  });
+
+  it("reports hasCoverPage from the current page map", async () => {
+    mockAccessTokens({ "token-a": "user-a" });
+    mockPrisma.project.findFirst.mockResolvedValue({ id: "project-1" });
+    const map = {
+      version: 2,
+      totalPdfPages: 8,
+      hasCoverPage: true,
+      pages: [{ index: 1, startPdfPage: 3, endPdfPage: 4 }],
+      contentRevision: 3,
+      pdfDigest: "pdf-digest-a"
+    };
+    const app = await buildMobileApp();
+    // The status DTO is the only place the app reads this flag from, so every
+    // shape of stored map is asked for here.
+    const statusFor = async (
+      pdfPageMap: unknown,
+      options: { contentRevision?: number; status?: string } = {}
+    ) => {
+      vi.mocked(buildProjectStatus).mockResolvedValue(
+        statusRecord({
+          project: {
+            id: "project-1",
+            contentRevision: options.contentRevision ?? 3,
+            ...(options.status ? { status: options.status } : {}),
+            ...(pdfPageMap === undefined ? {} : { pdfPageMap })
+          }
+        })
+      );
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/mobile/projects/project-1/status",
+        headers: bearer("token-a")
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json().status;
+    };
+
+    await expect(statusFor(map)).resolves.toMatchObject({
+      hasCoverPage: true,
+      pdfPageNumbering: {
+        hasCoverPage: true,
+        contentRevision: 3,
+        pdfDigest: "pdf-digest-a"
+      }
+    });
+    await expect(statusFor({ ...map, hasCoverPage: false })).resolves.toMatchObject({
+      hasCoverPage: false,
+      pdfPageNumbering: {
+        hasCoverPage: false,
+        contentRevision: 3,
+        pdfDigest: "pdf-digest-a"
+      }
+    });
+    // Version-1 maps counted the cover; chrome must not skip sheet 1.
+    expect((await statusFor({ ...map, version: 1 })).hasCoverPage).toBe(false);
+    // A failed measurement still records cover-skip so chrome matches the footer,
+    // and so does a renumber that lost a range — an applied page delete leaves
+    // exactly this shape (`repointedPageMapUpdate`), which is why nulling the
+    // column there took the flag away from every deleted-page book.
+    expect(
+      (
+        await statusFor({
+          ...bookPdfCoverNumbering(true),
+          contentRevision: 3,
+          pdfDigest: "pdf-digest-a"
+        })
+      ).hasCoverPage
+    ).toBe(true);
+    expect(
+      (
+        await statusFor({
+          ...bookPdfCoverNumbering(true, 1),
+          contentRevision: 3,
+          pdfDigest: "pdf-digest-a"
+        })
+      ).hasCoverPage
+    ).toBe(false);
+    // The marker is a refusal for chat, never for chrome, so a stub written
+    // before it existed reads the same.
+    expect(
+      (
+        await statusFor({
+          version: 2,
+          hasCoverPage: true,
+          pages: [],
+          contentRevision: 3,
+          pdfDigest: "pdf-digest-a"
+        })
+      ).hasCoverPage
+    ).toBe(true);
+    // During EDITING the stored map is deliberately behind the project. The
+    // DTO exposes that map's identity, never the offered project revision.
+    await expect(statusFor(map, { contentRevision: 4, status: "EDITING" })).resolves.toMatchObject({
+      pdfPageNumbering: { contentRevision: 3, pdfDigest: "pdf-digest-a" }
+    });
+    // A same-revision repair changes the exact byte identity on the wire.
+    await expect(statusFor({ ...map, pdfDigest: "pdf-digest-b" })).resolves.toMatchObject({
+      pdfPageNumbering: { contentRevision: 3, pdfDigest: "pdf-digest-b" }
+    });
+    // Legacy rows missing either stamp are not enough to number an exact file.
+    expect(await statusFor({ ...map, pdfDigest: undefined })).not.toHaveProperty("hasCoverPage");
+    expect(await statusFor({ ...map, contentRevision: undefined })).not.toHaveProperty("pdfPageNumbering");
+    // A map measured against another revision describes a book the reader is
+    // no longer looking at, so it answers nothing at all.
+    expect(await statusFor({ ...map, contentRevision: 2 })).not.toHaveProperty("hasCoverPage");
+    expect(await statusFor(undefined)).not.toHaveProperty("pdfPageNumbering");
     await app.close();
   });
 });

@@ -11,9 +11,9 @@
  *
  * The quantities come from what was actually charged, not from what exists: a
  * book counts when a `FULL_BOOK_GENERATION` entry was written for it in the
- * window, so drafts nobody paid for never inflate the projection. A charge that
- * was later refunded does not count either — it is still a `SPEND`/`SETTLED`
- * row, which is why every query here goes through `CHARGE_KEPT`.
+ * window, so drafts nobody paid for never inflate the projection. Fully
+ * refunded flat operations do not count; a partly refunded structural edit
+ * contributes only the page indexes it actually delivered.
  *
  * `coverage` is the honesty check. Re-pricing the drivers at the *current* list
  * should reproduce what was really charged; when it doesn't, the model is
@@ -35,9 +35,9 @@ import {
   settleVoiceCall,
   tierPriceKey
 } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { Prisma, prisma } from "@book-maker/db";
 import { inputSnapshotFromProject } from "../mobile/projectSerializers.js";
-import { CHARGE_KEPT, round2, type AdminWindow } from "./metrics.js";
+import { SETTLED_CHARGE, SETTLED_REFUND, netSettledCredits, round2, type AdminWindow } from "./metrics.js";
 
 /** Quantities only for the keys that are prices — see `PLAN_ALLOWANCE_KEYS`. */
 export type PricingDrivers = Record<CreditPriceKey, number>;
@@ -89,6 +89,31 @@ function audiobookPageCount(metadata: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
 }
 
+type SpendCountRow = {
+  project_id: string | null;
+  operation: string;
+  count: number;
+};
+
+type AudiobookChargeRow = { metadata: unknown };
+
+/**
+ * A reversal is an amount, not a boolean: only a refund that covers the original
+ * charge drops the row. Partial structural refunds stay in so their delivered
+ * page indexes can still become driver quantities.
+ *
+ * Kept as a string and wrapped with `Prisma.raw` only when the query runs, so
+ * importing this module does not require `Prisma.raw` to exist yet.
+ */
+const NOT_FULLY_REFUNDED_SQL = `
+  NOT EXISTS (
+    SELECT 1 FROM "CreditLedgerEntry" r
+    WHERE r."reversesEntryId" = e.id
+      AND r."entryType" = 'REFUND' AND r.status = 'SETTLED'
+      AND r."amountCredits" >= ABS(e."amountCredits")
+  )
+`;
+
 export function revenueAtPricing(drivers: PricingDrivers, pricing: CreditPricing): number {
   return (Object.keys(drivers) as CreditPriceKey[]).reduce(
     (total, key) => total + drivers[key] * pricing[key],
@@ -101,23 +126,32 @@ export async function loadPricingDrivers(
   currentPricing: CreditPricing
 ): Promise<PricingDriverReport> {
   const inWindow = { gte: window.since, lte: window.until };
-  // A refunded charge earned nothing, so it must not become a driver quantity
-  // either — projecting revenue from it would price against work we gave away.
-  const spend = { ...CHARGE_KEPT, createdAt: inWindow };
-
-  const [bookCharges, replanCharges, flatCounts, chargedTotal, providerTotal, voiceCalls, edits, audiobookCharges] = await Promise.all([
-    prisma.creditLedgerEntry.groupBy({
-      by: ["projectId"],
-      _count: { _all: true },
-      where: { ...spend, operation: "FULL_BOOK_GENERATION", projectId: { not: null } }
+  // Flat operations are all-or-nothing, but the linked-row predicate must still
+  // be amount-aware: structural edits can have a smaller cumulative reversal,
+  // so merely seeing `reversedByEntry` is not proof a charge disappeared.
+  // A fully refunded charge earned nothing, so Postgres drops it here rather
+  // than loading every refund in the window into Node. Partial structural
+  // delivery is handled from its exact affected-page indexes below.
+  const [spendRows, chargedTotal, refundedTotal, providerTotal, voiceCalls, edits, audiobookCharges] = await Promise.all([
+    prisma.$queryRaw<SpendCountRow[]>`
+      SELECT
+        e."projectId" AS project_id,
+        e.operation::text AS operation,
+        COUNT(*)::double precision AS count
+      FROM "CreditLedgerEntry" e
+      WHERE e."entryType" = 'SPEND' AND e.status = 'SETTLED'
+        AND e."createdAt" >= ${window.since}::timestamptz AND e."createdAt" <= ${window.until}::timestamptz
+        AND ${Prisma.raw(NOT_FULLY_REFUNDED_SQL)}
+      GROUP BY e."projectId", e.operation
+    `,
+    prisma.creditLedgerEntry.aggregate({ _sum: { amountCredits: true }, where: { ...SETTLED_CHARGE, createdAt: inWindow } }),
+    prisma.creditLedgerEntry.aggregate({
+      _sum: { amountCredits: true },
+      where: {
+        ...SETTLED_REFUND,
+        reversesEntry: { is: { ...SETTLED_CHARGE, createdAt: inWindow } }
+      }
     }),
-    prisma.creditLedgerEntry.groupBy({
-      by: ["projectId"],
-      _count: { _all: true },
-      where: { ...spend, operation: "BOOK_REPLAN", projectId: { not: null } }
-    }),
-    prisma.creditLedgerEntry.groupBy({ by: ["operation"], _count: { _all: true }, where: spend }),
-    prisma.creditLedgerEntry.aggregate({ _sum: { amountCredits: true }, where: spend }),
     prisma.providerCallLog.aggregate({ _sum: { costHint: true }, where: { costHint: { not: null }, createdAt: inWindow } }),
     prisma.voiceCall.findMany({ where: { startedAt: inWindow }, select: { elapsedSeconds: true } }),
     prisma.bookEditOperation.findMany({
@@ -126,18 +160,34 @@ export async function loadPricingDrivers(
       // its quality tier. Without them every edit lands in the balanced bucket
       // and `coverage` drifts the first time a premium book is edited — which
       // is the one number here whose job is to notice that.
-      select: { kind: true, affectedPageIndexes: true, project: { select: { mediaSettings: true } } }
+      select: {
+        kind: true,
+        affectedPageIndexes: true,
+        ledgerEntry: {
+          select: { status: true, amountCredits: true, reversedByEntry: { select: { amountCredits: true } } }
+        },
+        project: { select: { mediaSettings: true } }
+      }
     }),
     // The per-page half of an audiobook charge is only recoverable from the
     // reservation metadata — the ledger row holds a total, not a page count.
-    prisma.creditLedgerEntry.findMany({
-      where: { ...spend, operation: "AUDIOBOOK_GENERATION" },
-      select: { metadata: true }
-    })
+    prisma.$queryRaw<AudiobookChargeRow[]>`
+      SELECT e.metadata
+      FROM "CreditLedgerEntry" e
+      WHERE e."entryType" = 'SPEND' AND e.status = 'SETTLED'
+        AND e.operation = 'AUDIOBOOK_GENERATION'
+        AND e."createdAt" >= ${window.since}::timestamptz AND e."createdAt" <= ${window.until}::timestamptz
+        AND ${Prisma.raw(NOT_FULLY_REFUNDED_SQL)}
+    `
   ]);
 
   const projectIds = [
-    ...new Set([...bookCharges, ...replanCharges].map((row) => row.projectId).filter((id): id is string => Boolean(id)))
+    ...new Set(
+      spendRows
+        .filter((row) => row.operation === "FULL_BOOK_GENERATION" || row.operation === "BOOK_REPLAN")
+        .map((row) => row.project_id)
+        .filter((id): id is string => Boolean(id))
+    )
   ];
   const projects = projectIds.length
     ? await prisma.project.findMany({ where: { id: { in: projectIds } }, select: projectSelect })
@@ -179,17 +229,20 @@ export async function loadPricingDrivers(
     drivers.exportUnlock += times;
   };
 
-  for (const charge of bookCharges) {
-    addBook(charge.projectId, charge._count._all);
-  }
-  for (const charge of replanCharges) {
-    drivers.bookReplanBase += charge._count._all;
-    // A replan is priced as its base plus a fresh full-book estimate.
-    addBook(charge.projectId, charge._count._all);
+  for (const row of spendRows) {
+    if (row.operation === "FULL_BOOK_GENERATION") {
+      addBook(row.project_id, Number(row.count));
+    } else if (row.operation === "BOOK_REPLAN") {
+      drivers.bookReplanBase += Number(row.count);
+      // A replan is priced as its base plus a fresh full-book estimate.
+      addBook(row.project_id, Number(row.count));
+    }
   }
 
   const countOf = (operation: string) =>
-    flatCounts.find((row) => row.operation === operation)?._count._all ?? 0;
+    spendRows
+      .filter((row) => row.operation === operation)
+      .reduce((total, row) => total + Number(row.count), 0);
   // Standalone unlocks only — the bundled ones are already counted above.
   drivers.exportUnlock += countOf("EXPORT_UNLOCK");
   drivers.planRevision += countOf("PLAN_REVISION");
@@ -207,7 +260,19 @@ export async function loadPricingDrivers(
     drivers.audiobookPerPage += audiobookPageCount(charge.metadata);
   }
 
-  for (const edit of edits) {
+  const deliveredEdits = edits.filter((edit) => {
+    const entry = edit.ledgerEntry;
+    // Old operation rows can predate the ledger link; keep their previous
+    // behaviour and let coverage reveal any mismatch.
+    if (!entry) {
+      return true;
+    }
+    if (entry.status === "REFUNDED") {
+      return false;
+    }
+    return Math.abs(entry.amountCredits) > (entry.reversedByEntry?.amountCredits ?? 0);
+  });
+  for (const edit of deliveredEdits) {
     const pages = Math.max(1, edit.affectedPageIndexes.length);
     const tier = modelTierFromMediaSettings(edit.project?.mediaSettings);
     if (edit.kind === "LOCAL_PATCH") {
@@ -215,6 +280,11 @@ export async function loadPricingDrivers(
       drivers[tierPriceKey("bookTextEditPerPage", tier)] += pages;
     } else if (edit.kind === "PAGE_REWRITE" || edit.kind === "CHAPTER_REGENERATE" || edit.kind === "CONTINUE_BOOK") {
       drivers[tierPriceKey("pageRegenerationPerPage", tier)] += pages;
+    } else if (edit.kind === "RESTRUCTURE_PAGES") {
+      // Only an insert is billed, and its `affectedPageIndexes` are the pages
+      // it wrote — a delete or a move settles with an empty list and costs
+      // nothing, so the `Math.max(1, …)` floor above must not apply to it.
+      drivers[tierPriceKey("pageRegenerationPerPage", tier)] += edit.affectedPageIndexes.length;
     } else if (edit.kind === "ADD_IMAGE") {
       // A chat-inserted illustration is one image at the book's tier — the
       // target page rides along in affectedPageIndexes but is not a quantity.
@@ -223,7 +293,10 @@ export async function loadPricingDrivers(
     // BOOK_REPLAN edits are already priced through the ledger above.
   }
 
-  const chargedCredits = Math.abs(chargedTotal._sum.amountCredits ?? 0);
+  const chargedCredits = netSettledCredits(
+    chargedTotal._sum.amountCredits ?? 0,
+    refundedTotal._sum.amountCredits ?? 0
+  );
   const modelledCredits = revenueAtPricing(drivers, currentPricing);
 
   return {
@@ -233,7 +306,7 @@ export async function loadPricingDrivers(
     // One book is one base charge, whichever tier's base it drove.
     books: drivers.fullBookBaseFast + drivers.fullBookBase + drivers.fullBookBasePremium + drivers.fullBookBaseUltra,
     voiceMinutes: drivers.voiceCallPerMinute,
-    edits: edits.length,
+    edits: deliveredEdits.length,
     coverage: {
       chargedCredits,
       modelledCredits,

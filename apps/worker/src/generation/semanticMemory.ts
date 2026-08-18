@@ -319,6 +319,61 @@ export async function retrieveSemanticResearchNotes(options: {
   }
 }
 
+/**
+ * An embedded vector held in memory, or the failure that stands in for one.
+ * Produced by `prepareEmbedding` and consumed by `writePreparedEmbedding`.
+ */
+export type PreparedEmbedding = { vectorLiteral: string | null; error: string | null };
+
+/**
+ * The provider half of `storeEmbedding`, split out so a caller publishing under
+ * an ownership fence can spend the embedding call *before* the fence and leave
+ * only the insert behind it. Writes nothing, and fails the way the combined
+ * call did: an embedding a provider could not produce becomes the degraded row
+ * rather than an error, because a missing vector must not fail a written page.
+ */
+export async function prepareEmbedding(
+  text: string,
+  embedding: { embed(text: string): Promise<number[]> }
+): Promise<PreparedEmbedding> {
+  try {
+    const vector = await embedding.embed(text);
+    return { vectorLiteral: `[${vector.map((value) => Number(value).toFixed(7)).join(",")}]`, error: null };
+  } catch (error) {
+    return { vectorLiteral: null, error: embeddingErrorMessage(error) };
+  }
+}
+
+/** The write half: one insert, no provider call, nothing long to straddle. */
+export async function writePreparedEmbedding(
+  projectId: string,
+  scope: string,
+  sourceId: string,
+  text: string,
+  prepared: PreparedEmbedding
+): Promise<void> {
+  if (prepared.vectorLiteral) {
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO "Embedding" ("id", "projectId", "scope", "sourceId", "text", "vector", "metadata")
+       VALUES ($1, $2, $3, $4, $5, $6::vector, $7::jsonb)`,
+        randomUUID(),
+        projectId,
+        scope,
+        sourceId,
+        text,
+        prepared.vectorLiteral,
+        JSON.stringify({ provider: config.MOCK_AI ? "fake" : "gemini" })
+      );
+      return;
+    } catch (error) {
+      await createDegradedEmbedding(projectId, scope, sourceId, text, embeddingErrorMessage(error));
+      return;
+    }
+  }
+  await createDegradedEmbedding(projectId, scope, sourceId, text, prepared.error ?? "Unknown embedding error");
+}
+
 export async function storeEmbedding(
   projectId: string,
   scope: string,
@@ -326,32 +381,21 @@ export async function storeEmbedding(
   text: string,
   embedding: { embed(text: string): Promise<number[]> }
 ) {
-  try {
-    const vector = await embedding.embed(text);
-    const vectorLiteral = `[${vector.map((value) => Number(value).toFixed(7)).join(",")}]`;
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "Embedding" ("id", "projectId", "scope", "sourceId", "text", "vector", "metadata")
-       VALUES ($1, $2, $3, $4, $5, $6::vector, $7::jsonb)`,
-      randomUUID(),
-      projectId,
-      scope,
-      sourceId,
-      text,
-      vectorLiteral,
-      JSON.stringify({ provider: config.MOCK_AI ? "fake" : "gemini" })
-    );
-  } catch (error) {
-    await prisma.embedding.create({
-      data: {
-        projectId,
-        scope,
-        sourceId,
-        text,
-        metadata: {
-          vectorStored: false,
-          error: error instanceof Error ? error.message : "Unknown embedding error"
-        }
-      }
-    });
-  }
+  await writePreparedEmbedding(projectId, scope, sourceId, text, await prepareEmbedding(text, embedding));
+}
+
+function embeddingErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown embedding error";
+}
+
+function createDegradedEmbedding(
+  projectId: string,
+  scope: string,
+  sourceId: string,
+  text: string,
+  error: string
+): Promise<unknown> {
+  return prisma.embedding.create({
+    data: { projectId, scope, sourceId, text, metadata: { vectorStored: false, error } }
+  });
 }

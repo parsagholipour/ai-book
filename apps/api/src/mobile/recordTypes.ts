@@ -153,11 +153,12 @@ export type MobileBookEditOperationRecord = {
   /**
    * The credit entry this operation spent against, when the query asked for it.
    * A reserved entry is refunded in place (`REFUNDED`); a settled one is
-   * reversed by a separate entry, which is what `reversedByEntry` catches.
+   * reversed by a separate cumulative entry. Its amount may be less than the
+   * original charge when a page-priced operation delivered only part.
    */
-  ledgerEntry?: { status: string; reversedByEntry?: { id: string } | null } | null;
-  /** Present when the query asked for it; how many pages this edit snapshotted. */
-  _count?: { snapshots: number };
+  ledgerEntry?: { status: string; reversedByEntry?: { id: string; amountCredits: number } | null } | null;
+  /** Present when the query asked for it; live and structurally parked snapshots. */
+  _count?: { snapshots: number; archivedSnapshots?: number };
   createdAt: Date;
   appliedAt: Date | null;
 };

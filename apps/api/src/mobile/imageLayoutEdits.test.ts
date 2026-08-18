@@ -431,8 +431,18 @@ describe("chat image layout", () => {
     );
     expect(operationCanUndo(inPlace as never)).toBe(false);
 
-    // An ordinary applied layout edit is untouched by any of that.
-    expect(operationCanUndo(appliedEditOperationRecord({ kind: "REMOVE_IMAGE" }) as never)).toBe(true);
+    // An ordinary applied layout edit is untouched by any of that: it
+    // snapshotted the page it unlinked the picture from, which is what the undo
+    // restores and therefore what the button is drawn from.
+    expect(
+      operationCanUndo(
+        appliedEditOperationRecord({ kind: "REMOVE_IMAGE", _count: { snapshots: 1 } }) as never
+      )
+    ).toBe(true);
+    // And a record is what makes it undoable, not the absence of a marker: a
+    // layout edit that wrote no snapshot is skipped by the picker whatever its
+    // classifier says.
+    expect(operationCanUndo(appliedEditOperationRecord({ kind: "REMOVE_IMAGE" }) as never)).toBe(false);
   });
 
   it("prices move and remove at zero", () => {

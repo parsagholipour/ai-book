@@ -540,7 +540,24 @@ describe("mobile plan revision retries and operations", () => {
     state.bookEditOperations.push(
       failedPlanRevisionOperationRecord({
         id: "operation-reversed",
-        ledgerEntry: { id: "ledger-2", status: "SETTLED", reversedByEntry: { id: "ledger-refund" } }
+        ledgerEntry: {
+          id: "ledger-2",
+          status: "SETTLED",
+          reversedByEntry: { id: "ledger-refund", amountCredits: 40 }
+        }
+      })
+    );
+    // Partly delivered: reports the exact return without claiming the whole
+    // operation was refunded.
+    state.bookEditOperations.push(
+      failedPlanRevisionOperationRecord({
+        id: "operation-partial",
+        creditsCharged: 35,
+        ledgerEntry: {
+          id: "ledger-4",
+          status: "SETTLED",
+          reversedByEntry: { id: "ledger-refund-partial", amountCredits: 20 }
+        }
       })
     );
     // Charged and kept.
@@ -556,9 +573,10 @@ describe("mobile plan revision retries and operations", () => {
     });
     const byId = new Map<string, any>(response.json().operations.map((operation: any) => [operation.id, operation]));
 
-    expect(byId.get("operation-released")).toMatchObject({ creditsRefunded: true });
-    expect(byId.get("operation-reversed")).toMatchObject({ creditsRefunded: true });
-    expect(byId.get("operation-charged")).toMatchObject({ creditsRefunded: false });
+    expect(byId.get("operation-released")).toMatchObject({ creditsRefunded: true, creditsRefundedAmount: 40 });
+    expect(byId.get("operation-reversed")).toMatchObject({ creditsRefunded: true, creditsRefundedAmount: 40 });
+    expect(byId.get("operation-partial")).toMatchObject({ creditsRefunded: false, creditsRefundedAmount: 20 });
+    expect(byId.get("operation-charged")).toMatchObject({ creditsRefunded: false, creditsRefundedAmount: 0 });
     await app.close();
   });
 

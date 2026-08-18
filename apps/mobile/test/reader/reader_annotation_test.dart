@@ -358,5 +358,37 @@ void main() {
       );
       expect(ink.preview, 'Drawing');
     });
+
+    test('empty markup names the kind, not the physical sheet', () {
+      TextMarkupAnnotation markup(ReaderMarkupStyle style) {
+        return TextMarkupAnnotation(
+          id: style.name,
+          page: 3,
+          revision: 1,
+          colorIndex: 0,
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          style: style,
+          rects: const [],
+          quote: '   ',
+        );
+      }
+
+      expect(markup(ReaderMarkupStyle.highlight).preview, 'Highlight');
+      expect(markup(ReaderMarkupStyle.underline).preview, 'Underline');
+      expect(markup(ReaderMarkupStyle.strikethrough).preview, 'Strikethrough');
+
+      final emptyNote = NoteAnnotation(
+        id: 'n',
+        page: 3,
+        revision: 1,
+        colorIndex: 0,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+        anchor: const NormPoint(0.1, 0.1),
+        body: '  ',
+      );
+      expect(emptyNote.preview, 'Empty note');
+    });
   });
 }

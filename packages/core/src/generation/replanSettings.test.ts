@@ -79,6 +79,46 @@ describe("explicitTargetPagesFromText", () => {
     expect(explicitTargetPagesFromText("kein 10 Seiten Buch")).toBeUndefined();
   });
 
+  it("reads pages being added as a delta, never as the book's new length", () => {
+    // The incident: "add 3 pages" routed as a whole-book replan, which priced,
+    // planned and regenerated a THREE page book. The reader asked for N+3.
+    expect(explicitTargetPagesFromText("add 3 pages at the end")).toBeUndefined();
+    expect(explicitTargetPagesFromText("insert 2 pages before the ending")).toBeUndefined();
+    expect(explicitTargetPagesFromText("append another 4 pages")).toBeUndefined();
+    expect(explicitTargetPagesFromText("I want 2 more pages")).toBeUndefined();
+    expect(explicitTargetPagesFromText("give me 5 extra pages")).toBeUndefined();
+    // Postposed, the quantifier is stranded — nothing follows for it to modify.
+    expect(explicitTargetPagesFromText("I want 3 pages more")).toBeUndefined();
+    expect(explicitTargetPagesFromText("3 pages more please")).toBeUndefined();
+    expect(explicitTargetPagesFromText("3 pages more, please")).toBeUndefined();
+    expect(explicitTargetPagesFromText("I want 3 pages more at the end")).toBeUndefined();
+    expect(explicitTargetPagesFromText("I need 5 pages extra")).toBeUndefined();
+    // Verb-last languages state the same delta on the other side of the count.
+    expect(explicitTargetPagesFromText("۳ صفحه اضافه کن")).toBeUndefined();
+  });
+
+  it("still reads a length when the word after it is a degree adverb, not a delta", () => {
+    // "more" here modifies an adjective, so the count beside it is the book's
+    // length. Read as a delta it dropped the number entirely and the request
+    // routed as a page rewrite or a clarify — the opposite of the bug the
+    // additive guard was added for.
+    expect(explicitTargetPagesFromText("make it 20 pages more detailed")).toBe(20);
+    expect(explicitTargetPagesFromText("make it 30 pages more colorful")).toBe(30);
+    expect(explicitTargetPagesFromText("make it 12 pages more suitable for kids")).toBe(12);
+    expect(explicitTargetPagesFromText("make it 20 pages extra detailed")).toBe(20);
+    // "more or less" approximates the length; it does not add to it.
+    expect(explicitTargetPagesFromText("make it 20 pages more or less")).toBe(20);
+    expect(explicitTargetPagesFromText("make it 20 pages, more or less")).toBe(20);
+    expect(explicitTargetPagesFromText("20 pages more or less")).toBe(20);
+  });
+
+  it("still reads a length that merely sits beside an addition", () => {
+    // "add" here is about a dragon, not about pages — a flat window would read
+    // it as a delta and stop sizing a book the reader plainly described.
+    expect(explicitTargetPagesFromText("make it 3 pages and add a picture of a dragon")).toBe(3);
+    expect(explicitTargetPagesFromText("a 24 page workbook, and add an index")).toBe(24);
+  });
+
   it("keeps a negation inside its own clause", () => {
     expect(explicitTargetPagesFromText("make it 5 pages, not 10")).toBe(5);
     expect(explicitTargetPagesFromText("I do not want illustrations, 10 pages")).toBe(10);

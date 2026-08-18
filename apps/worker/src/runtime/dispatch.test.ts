@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => {
   return {
     KnownRequestError,
     queueAdd: vi.fn(),
+    queueGetJob: vi.fn(),
     prisma: {
       project: { findUnique: vi.fn(), findMany: vi.fn() },
       planVersion: { findUnique: vi.fn() },
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => {
         findMany: vi.fn(),
         create: vi.fn(),
         update: vi.fn(),
+        updateMany: vi.fn(),
         count: vi.fn()
       }
     },
@@ -34,7 +36,7 @@ vi.mock("@book-maker/db", () => ({
   prisma: mocks.prisma,
   Prisma: { PrismaClientKnownRequestError: mocks.KnownRequestError }
 }));
-vi.mock("./queue.js", () => ({ queue: { add: mocks.queueAdd } }));
+vi.mock("./queue.js", () => ({ queue: { add: mocks.queueAdd, getJob: mocks.queueGetJob } }));
 vi.mock("./config.js", () => ({ config: { MAX_PARALLEL_PAGE_JOBS: 3 } }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => mocks.input }));
 
@@ -48,6 +50,7 @@ import {
   maybeEnqueueCompile,
   maybeEnqueueCover,
   parallelPageWaveSize,
+  redeliverWorkerGenerationJob,
   reconcileStrandedGeneration,
   reconcileUndispatchedWorkerJobs,
   workerJobNameForType
@@ -114,6 +117,7 @@ beforeEach(() => {
     ...data
   }));
   mocks.queueAdd.mockResolvedValue({ id: "bull-1" });
+  mocks.queueGetJob.mockResolvedValue(undefined);
 });
 
 describe("enqueueWorkerJob", () => {
@@ -324,6 +328,68 @@ describe("dispatchWorkerGenerationJob", () => {
     mocks.prisma.generationJob.findUnique.mockResolvedValue(generationRow({ type: "NOT_A_JOB_TYPE" }));
 
     await expect(dispatchWorkerGenerationJob("gj-1")).resolves.toMatchObject({ type: "NOT_A_JOB_TYPE" });
+    expect(mocks.queueAdd).not.toHaveBeenCalled();
+  });
+
+  it("removes a finished Bull job occupying the durable id before pushing again", async () => {
+    const remove = vi.fn();
+    mocks.queueGetJob.mockResolvedValue({ getState: async () => "failed", remove });
+    mocks.prisma.generationJob.findUnique.mockResolvedValue(generationRow());
+
+    await dispatchWorkerGenerationJob("gj-1");
+
+    expect(remove).toHaveBeenCalled();
+    expect(mocks.queueAdd).toHaveBeenCalledWith(
+      "generate-page",
+      expect.objectContaining({ generationJobId: "gj-1" }),
+      expect.objectContaining({ jobId: "gj-1" })
+    );
+  });
+
+  it("defers when the durable id is still held by a live Bull job", async () => {
+    mocks.queueGetJob.mockResolvedValue({ getState: async () => "active", remove: vi.fn() });
+    mocks.prisma.generationJob.findUnique.mockResolvedValue(generationRow());
+
+    await dispatchWorkerGenerationJob("gj-1");
+
+    expect(mocks.queueAdd).not.toHaveBeenCalled();
+    expect(mocks.prisma.generationJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          nextDispatchAt: expect.any(Date),
+          message: "Waiting for the generation queue"
+        })
+      })
+    );
+  });
+});
+
+describe("redeliverWorkerGenerationJob", () => {
+  it("claims an ACTIVE row back to QUEUED and dispatches it", async () => {
+    mocks.prisma.generationJob.updateMany.mockResolvedValue({ count: 1 });
+    mocks.prisma.generationJob.findUnique.mockResolvedValue(generationRow({ type: "APPLY_BOOK_EDIT" }));
+
+    await redeliverWorkerGenerationJob("gj-1");
+
+    expect(mocks.prisma.generationJob.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "gj-1", status: "ACTIVE" },
+        data: expect.objectContaining({ status: "QUEUED", bullJobId: null })
+      })
+    );
+    expect(mocks.queueAdd).toHaveBeenCalledWith(
+      "apply-book-edit",
+      expect.objectContaining({ generationJobId: "gj-1", projectId: "project-1" }),
+      expect.objectContaining({ jobId: "gj-1" })
+    );
+  });
+
+  it("does not dispatch a row that is no longer ACTIVE", async () => {
+    mocks.prisma.generationJob.updateMany.mockResolvedValue({ count: 0 });
+
+    await redeliverWorkerGenerationJob("gj-1");
+
+    expect(mocks.prisma.generationJob.findUnique).not.toHaveBeenCalled();
     expect(mocks.queueAdd).not.toHaveBeenCalled();
   });
 });

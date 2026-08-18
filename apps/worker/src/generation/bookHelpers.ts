@@ -64,8 +64,22 @@ export function strategyForInput(input: CreateProjectInput): BookGenerationStrat
   return resolved.strategy;
 }
 
-export async function nextPlanVersion(projectId: string): Promise<number> {
-  const latest = await prisma.planVersion.findFirst({
+/**
+ * The number the project's next `PlanVersion` takes.
+ *
+ * `client` is how a caller derives it *inside* its own transaction, and the
+ * default is the only reason it is optional. `@@unique([projectId, version])`
+ * means this read and the `create` it feeds are one operation: read outside the
+ * transaction that writes, and any plan version another writer commits in
+ * between turns the create into a `23505` that rolls the whole transaction
+ * back. `pageRestructure.ts` passes its `tx` for exactly that reason — see the
+ * note above `applyStructuralPageChange`.
+ */
+export async function nextPlanVersion(
+  projectId: string,
+  client: Prisma.TransactionClient = prisma
+): Promise<number> {
+  const latest = await client.planVersion.findFirst({
     where: { projectId },
     orderBy: { version: "desc" }
   });
