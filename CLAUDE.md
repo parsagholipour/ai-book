@@ -251,7 +251,7 @@ code in that area, however obvious the rule looks.
 - **A recompile makes no model call, and that is a cache with one rule.** → apps/worker/src/generation/CLAUDE.md
 - **The mobile export routes never render.** → apps/api/src/mobile/CLAUDE.md + apps/mobile/lib/features/projects/CLAUDE.md + apps/api/src/routes/CLAUDE.md
 - **A download says which compile answered it, because the URL cannot.** → packages/core/src/generation/CLAUDE.md + apps/mobile/lib/features/reader/CLAUDE.md
-- **A physical PDF sheet may only be read against the file it is a sheet of, and only a digest says which that is.** → apps/mobile/lib/features/reader/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **A sheet number belongs to one file, so it may only be sent with that file's digest.** → apps/mobile/lib/features/reader/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A book only earns the word "Chapter" by being long enough to need it.** → packages/core/src/generation/CLAUDE.md
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
