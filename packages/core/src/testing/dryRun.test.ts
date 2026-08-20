@@ -111,7 +111,13 @@ describe("deterministic dry run", () => {
     expect(plan.premise).toBe(input.prompt);
     expect(plan.chapters.map((chapter) => chapter.title)).toEqual(["Rituals as Infrastructure", "The Room Learns"]);
     expect(plan.chapters[0]?.illustrationPrompts).toEqual(["A kitchen table arranged like a quiet command center."]);
-    expect(plan.voiceGuide).toEqual(["Measured, practical, and precise."]);
+    // The model's own single voice rule survives first; the style-contract
+    // floor appends the fallback composition behind it rather than letting one
+    // line become the book's whole contract.
+    expect(plan.voiceGuide[0]).toBe("Measured, practical, and precise.");
+    expect(plan.voiceGuide.length).toBeGreaterThanOrEqual(2);
+    expect(plan.antiAiRules[0]).toBe("Avoid vague power-language.");
+    expect(plan.antiAiRules.length).toBeGreaterThanOrEqual(3);
     expect(plan.questions[0]?.prompt).toBe("Should examples be domestic or workplace-focused?");
     expect(plan.researchNotes).toHaveLength(0);
   });

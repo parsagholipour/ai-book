@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
     continuityNote: { createMany: vi.fn() }
   },
   rewritePageForUserRequest: vi.fn(),
+  loadQualityContext: vi.fn(async () => ({
+    settings: {},
+    tier: "balanced" as const,
+    enabled: (_feature: string): boolean => false
+  })),
   maybeEnqueueCompile: vi.fn(),
   storeEmbedding: vi.fn(),
   invalidateProjectExports: vi.fn(),
@@ -33,18 +38,31 @@ vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({}
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: async () => ({ id: "project-1", currentPlanId: "plan-1" }),
   invalidateProjectExports: mocks.invalidateProjectExports,
+  loadStyleLockPages: async () => [],
   strategyForInput: () => ({})
 }));
 vi.mock("./applyImageInsertion.js", () => ({ applyImageInsertion: mocks.applyImageInsertion }));
 vi.mock("./applyImageLayout.js", () => ({ applyImageLayout: mocks.applyImageLayout }));
 vi.mock("./restructurePages.js", () => ({ restructurePages: mocks.restructurePages }));
+vi.mock("../generation/qualitySettings.js", () => ({
+  loadQualityContext: mocks.loadQualityContext,
+  applyPlanThinkingBoost: vi.fn()
+}));
 vi.mock("../generation/storyStateStore.js", () => ({
   rebuildProjectStoryState: vi.fn(),
   loadProjectStoryState: vi.fn(async () => ({ promises: [], facts: [], entities: {}, unanswered: [] }))
 }));
-vi.mock("../generation/qualityEnrichment.js", () => ({
-  persistKeeperStoryDelta: vi.fn()
-}));
+vi.mock("../generation/qualityEnrichment.js", async () => {
+  const actual = await vi.importActual<typeof import("../generation/qualityEnrichment.js")>(
+    "../generation/qualityEnrichment.js"
+  );
+  // The real factory rather than an `undefined` stub. Nothing in this suite
+  // reaches it — `rewritePageForUserRequest`, the one caller behind the
+  // partially-mocked `replanBook.js` below, is itself mocked here, and its
+  // style audit is measured in `replanBook.test.ts`. Keeping the real one means
+  // un-mocking that caller does not silently ship an inert auditor.
+  return { ...actual, persistKeeperStoryDelta: vi.fn() };
+});
 vi.mock("./replanBook.js", async () => {
   const actual = await import("./replanBook.js");
   return { locallyPatchedPage: actual.locallyPatchedPage, rewritePageForUserRequest: mocks.rewritePageForUserRequest };
@@ -298,6 +316,44 @@ describe("applyBookEdit in exact mode", () => {
       })
     );
     expect(rebuildProjectStoryState).toHaveBeenCalledWith("project-1", []);
+  });
+
+  it("reads the operator's quality gates once for the whole edit", async () => {
+    // `rewritePageForUserRequest` loaded its own per page and
+    // `persistKeeperStoryDelta` loaded another behind it, so a three-page edit
+    // spent six reads — and a Quality-tab save landing between two of them ran
+    // the first pages of one edit under one gate configuration and the rest
+    // under another, which is the split a compile already fixed by hoisting one
+    // context above its passes.
+    mocks.prisma.page.findMany.mockResolvedValue([page(1, "One."), page(2, "Two."), page(3, "Three.")]);
+    mocks.rewritePageForUserRequest.mockResolvedValue({
+      title: "Page",
+      markdown: "Rewritten.",
+      summary: "Summary.",
+      continuityNotes: [],
+      qualityReport: { approved: true }
+    });
+
+    await applyBookEdit(
+      job({
+        projectId: "project-1",
+        operationId: "op-1",
+        request: "Make it funnier",
+        affectedPageIndexes: [1, 2, 3],
+        planId: "plan-1"
+      })
+    );
+
+    expect(mocks.loadQualityContext).toHaveBeenCalledTimes(1);
+    const quality = await mocks.loadQualityContext.mock.results[0]!.value;
+    const handedTo = [
+      ...mocks.rewritePageForUserRequest.mock.calls.map((call) => call[0].quality),
+      ...vi.mocked(persistKeeperStoryDelta).mock.calls.map((call) => (call[0] as { quality?: unknown }).quality)
+    ];
+    expect(handedTo).toHaveLength(6);
+    for (const handed of handedTo) {
+      expect(handed).toBe(quality);
+    }
   });
 
   it("gives each named page its own instruction and the rest the whole request", async () => {

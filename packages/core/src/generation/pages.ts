@@ -130,6 +130,8 @@ export type GenerateChapterDraftOptions = {
   previousPages: PriorPageContext[];
   continuityNotes: string[];
   researchNotes: string[];
+  /** Pinned accepted-page excerpts, separate from recency. */
+  styleExcerpts?: string[] | undefined;
   textModel: TextModelAdapter;
 };
 
@@ -142,6 +144,8 @@ export type GenerateBatchDraftOptions = {
   previousPages: PriorPageContext[];
   continuityNotes: string[];
   researchNotes: string[];
+  /** Pinned accepted-page excerpts, separate from recency. */
+  styleExcerpts?: string[] | undefined;
   textModel: TextModelAdapter;
 };
 
@@ -311,6 +315,9 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
             previousPages: compactPriorPages(options.previousPages, 6, 900),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             researchNotes: options.researchNotes.slice(0, 18),
+            ...(options.styleExcerpts && options.styleExcerpts.length > 0
+              ? { styleExcerpts: options.styleExcerpts }
+              : {}),
             pageGuidance: {
               targetWordsPerPage: targetWordsPerPage(options.input),
               instruction:
@@ -379,6 +386,9 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
             previousPages: compactPriorPages(options.previousPages, 8, 900),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             researchNotes: options.researchNotes.slice(0, 18),
+            ...(options.styleExcerpts && options.styleExcerpts.length > 0
+              ? { styleExcerpts: options.styleExcerpts }
+              : {}),
             pageGuidance: {
               targetWordsPerPage: targetWordsPerPage(options.input),
               instruction:

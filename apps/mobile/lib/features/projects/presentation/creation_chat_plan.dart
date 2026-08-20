@@ -418,12 +418,13 @@ class _ChapterRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                chapter.title,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
+              if (chapter.title.trim().isNotEmpty)
+                Text(
+                  chapter.title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
               if (chapter.summary.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(

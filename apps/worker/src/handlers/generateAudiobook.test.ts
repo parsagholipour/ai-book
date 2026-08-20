@@ -221,6 +221,22 @@ describe("generateAudiobook provider fallback", () => {
     expect(mocks.logEvents).not.toContain("tts.fallback.start");
   });
 
+  it("stores a localized player title for an untitled continuation chapter", async () => {
+    mocks.prisma.project.findUnique.mockResolvedValue({
+      id: "project-1",
+      title: "Book",
+      language: "fa",
+      contentRevision: 3
+    });
+    mocks.prisma.page.findMany.mockResolvedValue([
+      { index: 1, title: "One", markdown: "متن فصل.", chapter: { index: 5, title: "" } }
+    ]);
+
+    await generateAudiobook(job());
+
+    expect(chapterRows).toEqual([expect.objectContaining({ index: 5, title: "فصل 5" })]);
+  });
+
   it("starts directly on OpenAI when preflight projects beyond the Gemini budget", async () => {
     recentGeminiCalls = 90;
     await generateAudiobook(job());

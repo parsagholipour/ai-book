@@ -1,13 +1,8 @@
 import { clipQualityText, clipQualityTextPrefix, clipQualityTextSuffix, qualityIssuesFromFinalQa } from "../generation/exportQualityReview.js";
 import {
   extractRepairPageIndexes,
-  loadPagesForExport,
-  pageReportFromFinalQa,
-  parseChapterBrief,
   strategyForInput,
-  toFinalQaPage,
-  toPriorPageContext,
-  formatQualityFailure
+  toFinalQaPage
 } from "../generation/bookHelpers.js";
 import {
   discardPendingExports,
@@ -15,19 +10,15 @@ import {
   pendingExportPaths,
   publishCompiledExports
 } from "../generation/exportPublication.js";
-import { loadContinuityNotes } from "../generation/generationContext.js";
-import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
 import {
   readCompatibleCachedReaderChapters,
   readerChaptersFromPublishedMarkdown,
   readerChaptersWithCache
 } from "../generation/readerChapterCache.js";
-import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { loadQualityContext } from "../generation/qualitySettings.js";
-import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
 import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
-import { MAX_FINAL_QA_REVISIONS_PER_PAGE, PAGE_QA_RECOVERY_CANDIDATE } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
+import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { parallelPageWaveSize } from "../runtime/dispatch.js";
@@ -61,7 +52,6 @@ import {
   resolvePublicImageUrl,
   runDeterministicManuscriptChecks,
   unpaidPromiseIssues,
-  type BookGenerationStrategy,
   type PersistableBookPdfPageMap,
   type BookPlan,
   type CompiledBookMarkdown,
@@ -69,10 +59,9 @@ import {
   type FinalBookQa,
   type ManuscriptQualityIssue,
   type ManuscriptQualityReport,
-  type ProviderSet,
   type TextModelAdapter
 } from "@book-maker/core";
-import { pageScope, Prisma, prisma, researchCitationsForExport } from "@book-maker/db";
+import { Prisma, prisma, researchCitationsForExport } from "@book-maker/db";
 import { Job } from "bullmq";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -172,6 +161,12 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
   plan = exportContext.plan;
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
+  // One compile, one quality context. The repair pass below and the integrity
+  // pass after it both gate on these operator settings, and loading them twice
+  // let an edit saved on the Quality tab in between run a single compile under
+  // two different revisions — the repaired pages written against one gate set,
+  // the report that ships them against another.
+  const quality = await loadQualityContext(input);
   const failedQaPageIndexes = pages.filter((page) => page.status === "FAILED_QA").map((page) => page.index);
   // Only the repair pass below reads this, and only when the final review runs.
   // A `skipFinalReview` recompile — every presentation toggle, undo and manual
@@ -228,11 +223,17 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
         plan,
         providers,
         strategy,
+        quality,
         pages,
         finalQa,
         extraPageIndexes: [
           ...failedQaPageIndexes,
-          ...initialIntegrityIssues().flatMap((issue) => issue.affectedPageIndexes)
+          // Errors only: warning-severity issues (a repeated phrase, an unpaid
+          // promise) are review recommendations, not licences to model-rewrite
+          // every page they touch.
+          ...initialIntegrityIssues()
+            .filter((issue) => issue.severity === "error")
+            .flatMap((issue) => issue.affectedPageIndexes)
         ],
         generationJobId
       });
@@ -263,7 +264,6 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
 
   // Always rerun integrity checks after repair attempts. Manual edits may
   // skip model rewriting, but they can never bypass publication integrity.
-  const quality = await loadQualityContext(input);
   const storyState =
     (await rebuildProjectStoryState(projectId, plan.promises ?? [])) ??
     (await rebuildStoryStateFromPages(projectId, plan.promises ?? []));
@@ -284,7 +284,16 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
     }),
     ...unpaidPromiseQualityIssues
   ];
-  const qualityReport = buildManuscriptQualityReport(deterministicIssues, dedupeQualityIssues(modelQualityIssues));
+  // `runFinalReview` is what makes a deterministic warning speak for the book.
+  // Every `skipFinalReview` recompile — an undo, an exact replacement, a chat
+  // edit's apply — owns the quality verdict and re-runs these whole-book checks
+  // over prose it never touched, so without this a free edit re-graded a book
+  // that passed months ago as "review recommended", permanently: the repair pass
+  // above only rewrites `severity === "error"`. Errors still block from either
+  // mode; see `buildManuscriptQualityReport`.
+  const qualityReport = buildManuscriptQualityReport(deterministicIssues, dedupeQualityIssues(modelQualityIssues), {
+    finalReviewRan: runFinalReview
+  });
   if (generationJobId) {
     await prisma.generationJob.update({
       where: { id: generationJobId },
@@ -676,199 +685,4 @@ export function qualitySummaryMessage(report: ManuscriptQualityReport): string {
     return `Export complete with ${report.issues.length} review recommendation${report.issues.length === 1 ? "" : "s"}.`;
   }
   return "Export complete. Quality checks passed.";
-}
-
-export async function repairPagesFromFinalQa(options: {
-  projectId: string;
-  input: CreateProjectInput;
-  plan: BookPlan;
-  providers: ProviderSet;
-  strategy: BookGenerationStrategy;
-  pages: ExportPageForRepair[];
-  finalQa: FinalBookQa;
-  /** Additional page indexes to repair (e.g. pages that failed page-level QA). */
-  extraPageIndexes?: number[] | undefined;
-  generationJobId?: string | undefined;
-}): Promise<ExportPageForRepair[] | undefined> {
-  // Global editor pass: every flagged page is eligible for repair, not just
-  // the first few — large books get the same treatment as short ones.
-  const repairPageIndexes = [
-    ...new Set([...(options.extraPageIndexes ?? []), ...extractRepairPageIndexes(options.finalQa, options.input.targetPages)])
-  ].sort((first, second) => first - second);
-  if (repairPageIndexes.length === 0) {
-    return undefined;
-  }
-
-  await advanceJobStep(
-    options.generationJobId,
-    "qa",
-    35,
-    `Repairing pages ${repairPageIndexes.join(", ")} after final QA`
-  );
-
-  // Whole book: the final-QA repair rewrites a page inside a finished
-  // manuscript and must not contradict the pages after it.
-  const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
-  let pages = [...options.pages];
-  let currentState = await rebuildStoryStateFromPages(options.projectId, options.plan.promises ?? []);
-
-  for (const pageIndex of repairPageIndexes) {
-    const page = pages.find((candidate) => candidate.index === pageIndex);
-    if (!page) {
-      continue;
-    }
-
-    const chapterPlan = page.chapter
-      ? options.plan.chapters.find((chapter) => chapter.index === page.chapter?.index)
-      : undefined;
-    const chapterBrief = parseChapterBrief(page.chapter?.productionBrief);
-    const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === page.index);
-    const previousPages = pages.filter((candidate) => candidate.index < page.index).map(toPriorPageContext);
-    const finalQaReport = pageReportFromFinalQa(options.finalQa, pageIndex, options.input.targetPages);
-    let draft = await revisePageDraftWithRestart({
-      strategy: options.strategy,
-      generationJobId: options.generationJobId,
-      context: `Final QA repair for page ${pageIndex}`,
-      reviseOptions: {
-        input: options.input,
-        plan: options.plan,
-        chapter: chapterPlan,
-        chapterBrief,
-        pageBrief,
-        pageIndex,
-        draft: {
-          title: page.title,
-          markdown: page.markdown,
-          summary: page.summary,
-          continuityNotes: []
-        },
-        report: finalQaReport,
-        previousPages,
-        continuityNotes,
-        textModel: options.providers.text
-      }
-    });
-
-    const initialReport = await options.strategy.reviewPageDraft({
-      input: options.input,
-      plan: options.plan,
-      chapter: chapterPlan,
-      chapterBrief,
-      pageBrief,
-      pageIndex,
-      draft,
-      previousPages,
-      continuityNotes,
-      textModel: options.providers.text
-    });
-    const outcome = await runPageQualityLoop({
-      strategy: options.strategy,
-      input: options.input,
-      plan: options.plan,
-      chapter: chapterPlan,
-      chapterBrief,
-      pageBrief,
-      pageIndex,
-      draft,
-      report: initialReport,
-      previousPages,
-      continuityNotes,
-      textModel: options.providers.text,
-      generationJobId: options.generationJobId,
-      maxCandidates: MAX_FINAL_QA_REVISIONS_PER_PAGE,
-      // This loop counts attempts from the first rewrite; the page loops
-      // count candidates from the original draft, one earlier. Both enter
-      // recovery mode at the third rewrite.
-      recoveryRevision: PAGE_QA_RECOVERY_CANDIDATE - 1,
-      reviseContext: `Final QA repair for page ${pageIndex}`
-    });
-    draft = outcome.draft;
-    const qualityReport = outcome.report;
-    const revisionAttempts = outcome.attempts;
-
-    if (!qualityReport.approved) {
-      // Keep the best draft and an honest report; the page stays flagged but
-      // does not block the rest of the export.
-      await prisma.page.update({
-        where: { id: page.id },
-        data: {
-          title: draft.title,
-          markdown: draft.markdown,
-          summary: draft.summary,
-          imagePrompt: draft.imagePrompt ?? page.imagePrompt,
-          status: "FAILED_QA",
-          revision: { increment: revisionAttempts },
-          qualityReport: qualityReport as Prisma.InputJsonValue
-        }
-      });
-      const failedKeeperState = await persistKeeperStoryDelta({
-        projectId: options.projectId,
-        pageIndex,
-        draft,
-        textModel: options.providers.text,
-        plan: options.plan,
-        input: options.input,
-        previousExtract: null,
-        keeperWasRevised: true,
-        currentState
-      });
-      if (failedKeeperState) {
-        currentState = failedKeeperState;
-      }
-      await updateJobProgress(options.generationJobId, {
-        message: `Final QA repair could not fully fix page ${pageIndex}; exporting its best draft. ${formatQualityFailure(pageIndex, qualityReport)}`
-      });
-      continue;
-    }
-
-    const updatedPage = await prisma.page.update({
-      where: { id: page.id },
-      data: {
-        title: draft.title,
-        markdown: draft.markdown,
-        summary: draft.summary,
-        imagePrompt: draft.imagePrompt ?? page.imagePrompt,
-        status: "COMPLETED",
-        revision: { increment: revisionAttempts },
-        qualityReport: qualityReport as Prisma.InputJsonValue
-      },
-      include: { images: true, chapter: true }
-    });
-    const keptKeeperState = await persistKeeperStoryDelta({
-      projectId: options.projectId,
-      pageIndex,
-      draft,
-      textModel: options.providers.text,
-      plan: options.plan,
-      input: options.input,
-      previousExtract: null,
-      keeperWasRevised: true,
-      currentState
-    });
-    if (keptKeeperState) {
-      currentState = keptKeeperState;
-    }
-
-    if (draft.continuityNotes.length > 0) {
-      await prisma.continuityNote.createMany({
-        data: draft.continuityNotes.map((body) => ({
-          projectId: options.projectId,
-          pageId: page.id,
-          scope: pageScope(page.index),
-          body,
-          tags: ["page", String(page.index), "final-qa-repair"]
-        }))
-      });
-    }
-
-    if (strategyUsesSemanticMemory(options.strategy)) {
-      await storeEmbedding(
-        { projectId: options.projectId, scope: pageScope(page.index), sourceId: page.id, text: draft.summary },
-        options.providers.embedding
-      );
-    }
-    pages = pages.map((candidate) => (candidate.index === page.index ? updatedPage : candidate));
-  }
-
-  return loadPagesForExport(options.projectId);
 }

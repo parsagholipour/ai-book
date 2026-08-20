@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildChapterNarration, DEFAULT_TTS_SAMPLE_RATE } from "@book-maker/core";
 import {
+  audiobookChapterDisplayTitle,
   audiobookChapterPlans,
   joinNarrationChunks,
   narratedChapterLabel,
@@ -74,6 +75,17 @@ describe("audiobookChapterPlans", () => {
 
   it("has nothing to narrate for a book with no finished pages", () => {
     expect(audiobookChapterPlans([])).toEqual([]);
+  });
+});
+
+describe("audiobookChapterDisplayTitle", () => {
+  it("localizes the display fallback for a chapter whose stored title is empty", () => {
+    expect(audiobookChapterDisplayTitle({ index: 5, title: "" }, "fa")).toBe("فصل 5");
+    expect(audiobookChapterDisplayTitle({ index: 5, title: "" }, "ar")).toBe("الفصل 5");
+  });
+
+  it("keeps a real chapter title unchanged", () => {
+    expect(audiobookChapterDisplayTitle({ index: 5, title: "The Return" }, "fa")).toBe("The Return");
   });
 });
 

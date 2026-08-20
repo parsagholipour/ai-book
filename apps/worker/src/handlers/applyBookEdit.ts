@@ -10,6 +10,7 @@ import { applyImageLayout, type ImageLayoutPayload } from "./applyImageLayout.js
 import { restructurePages } from "./restructurePages.js";
 import { locallyPatchedPage, rewritePageForUserRequest } from "./replanBook.js";
 import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
+import { loadQualityContext } from "../generation/qualitySettings.js";
 import { loadProjectStoryState, rebuildProjectStoryState } from "../generation/storyStateStore.js";
 import {
   bookPlanSchema,
@@ -162,6 +163,13 @@ export async function applyBookEdit(job: Job) {
   const plan = bookPlanSchema.parse(effectivePlanVersion.planningPackage);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
+  // One read of the operator's gates for the whole edit, the way a compile
+  // reads them once for all of its passes. `rewritePageForUserRequest` used to
+  // load its own per page and `persistKeeperStoryDelta` loaded another behind
+  // it, so a ten-page edit spent twenty reads — and a Quality-tab save landing
+  // between two of them ran the first pages of one edit under one gate
+  // configuration and the rest under another.
+  const quality = await loadQualityContext(input);
   const pages = await prisma.page.findMany({
     where: { projectId, index: { in: affectedPageIndexes } },
     orderBy: { index: "asc" },
@@ -243,6 +251,7 @@ export async function applyBookEdit(job: Job) {
             strategy,
             providers,
             request: instructionForPage.get(page.index) ?? request,
+            quality,
             generationJobId,
             onPhase: (phase) => reportPage(page, offset, phase)
           });
@@ -304,7 +313,8 @@ export async function applyBookEdit(job: Job) {
         input,
         previousExtract: null,
         keeperWasRevised: true,
-        currentState
+        currentState,
+        quality
       });
       if (nextState) {
         currentState = nextState;

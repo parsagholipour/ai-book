@@ -1,7 +1,7 @@
 import { type BookEditIntent } from "../bookEditIntent.js";
 import { quotedTexts, replacementTermsFromMessage } from "../bookEditMessage.js";
 import { type ProjectForChat } from "./projectChat.js";
-import { bookPlanSchema, type ExactReplacement } from "@book-maker/core";
+import { bookPlanSchema, chapterDisplayHeading, type ExactReplacement } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
 
 /**
@@ -12,7 +12,10 @@ import { prisma } from "@book-maker/db";
  * page count these functions return, so they are worth reading on their own.
  */
 
-export function planSummaryForClassifier(planVersion: { planningPackage: unknown }): string {
+export function planSummaryForClassifier(
+  planVersion: { planningPackage: unknown },
+  language?: string | undefined
+): string {
   const parsed = bookPlanSchema.safeParse(planVersion.planningPackage);
   if (!parsed.success) {
     return "";
@@ -21,7 +24,16 @@ export function planSummaryForClassifier(planVersion: { planningPackage: unknown
     parsed.data.title,
     parsed.data.premise,
     parsed.data.audience,
-    ...parsed.data.chapters.slice(0, 8).map((chapter) => `${chapter.index}. ${chapter.title}: ${chapter.summary}`)
+    // A failed continuation outline stores "" titles; the classifier still
+    // needs a name per row, so a blank falls back to the book's own heading —
+    // the same fallback the router prompt takes in bookEditIntent.ts, in the
+    // book's language so a Persian continuation is فصل 2 rather than Chapter 2.
+    ...parsed.data.chapters
+      .slice(0, 8)
+      .map(
+        (chapter) =>
+          `${chapter.index}. ${chapter.title.trim() || chapterDisplayHeading(chapter, language ? { language } : undefined)}: ${chapter.summary}`
+      )
   ]
     .filter(Boolean)
     .join("\n")

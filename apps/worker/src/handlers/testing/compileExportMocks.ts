@@ -23,6 +23,10 @@ export const mocks = {
   revisePageDraftWithRestart: vi.fn(),
   pageReportFromFinalQa: vi.fn(),
   loadPagesForExport: vi.fn(),
+  // The repair pins its style anchor through the shared loader, which answers
+  // with COMPLETED pages only. Empty by default: the in-memory export set
+  // already holds the book's opening pages whenever they are accepted.
+  loadStyleLockPages: vi.fn(async (): Promise<Array<Record<string, unknown>>> => []),
   storeEmbedding: vi.fn(),
   generateJsonWithRetry: vi.fn(),
   // Mutable so the whole-handler suite can point storage at a temp dir.
@@ -63,6 +67,15 @@ export const mocks = {
     async (): Promise<StoryState> => ({ promises: [], facts: [], entities: {}, unanswered: [] })
   ),
   persistKeeperStoryDelta: vi.fn(),
+  // The style audit's provider boundary. A suite that opts into the real
+  // `revisedDraftStyleAuditor` runs the real `withStyleAudit` on top of this,
+  // so the only thing standing in for a model is the audit verdict itself.
+  auditPageStyle: vi.fn(
+    async (_options: {
+      markdown: string;
+      styleExcerpts: string[];
+    }): Promise<{ styleOk: boolean; styleIssues: string[] }> => ({ styleOk: true, styleIssues: [] })
+  ),
   loadQualityContext: vi.fn(async () => ({
     settings: {},
     tier: "balanced" as const,
@@ -111,6 +124,7 @@ export const charactersModuleMock = () => ({
 export const bookHelpersModuleMock = () => ({
   extractRepairPageIndexes: (finalQa: { repairPageIndexes?: number[] }) => finalQa.repairPageIndexes ?? [],
   loadPagesForExport: mocks.loadPagesForExport,
+  loadStyleLockPages: mocks.loadStyleLockPages,
   pageReportFromFinalQa: mocks.pageReportFromFinalQa,
   parseChapterBrief: () => undefined,
   strategyForInput: () => mocks.strategy,
@@ -125,7 +139,19 @@ export const storyStateStoreModuleMock = () => ({
   rebuildStoryStateFromPages: mocks.rebuildStoryStateFromPages
 });
 
-export const qualityEnrichmentModuleMock = () => ({ persistKeeperStoryDelta: mocks.persistKeeperStoryDelta });
+/**
+ * Opt-in, the way `pageReviewModuleMock` is: called with no argument the style
+ * auditor is stubbed to `undefined` — what the real factory answers with the
+ * gate off, and the shape a suite that does not care about the audit wants,
+ * since it costs that suite nothing. Called with the actual module the real
+ * factory runs, and the audit reaches `mocks.auditPageStyle` through the core
+ * mock. Only a suite that asserts on the audit should opt in; the default keeps
+ * every other one unchanged.
+ */
+export const qualityEnrichmentModuleMock = (actual?: typeof import("../../generation/qualityEnrichment.js")) => ({
+  persistKeeperStoryDelta: mocks.persistKeeperStoryDelta,
+  revisedDraftStyleAuditor: actual ? actual.revisedDraftStyleAuditor : vi.fn(() => undefined)
+});
 
 export const qualitySettingsModuleMock = () => ({
   loadQualityContext: mocks.loadQualityContext,
@@ -142,6 +168,10 @@ export const pageReviewModuleMock = (actual: typeof import("../../generation/pag
 export const coreModuleMock = (actual: typeof import("@book-maker/core")) => ({
   ...actual,
   generateJsonWithRetry: mocks.generateJsonWithRetry,
+  // The style audit's one model call, mocked at the barrel because
+  // `qualityEnrichment.ts` imports it from there. `withStyleAudit` stays real,
+  // so a suite opting into the auditor measures the real penalty arithmetic.
+  auditPageStyle: mocks.auditPageStyle,
   // The chapterization call, spied rather than stubbed away: the whole point of
   // the repair suite is whether it happens at all.
   createReaderChaptersForExport: mocks.createReaderChaptersForExport,

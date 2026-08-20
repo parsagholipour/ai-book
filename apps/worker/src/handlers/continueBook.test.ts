@@ -23,7 +23,12 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   generateJsonWithRetry: vi.fn(),
   generatePageDraft: vi.fn(),
-  reviewAndSaveGeneratedPage: vi.fn()
+  reviewAndSaveGeneratedPage: vi.fn(),
+  qualityEnabled: vi.fn((_feature: string): boolean => false),
+  styleExcerptsForPage: vi.fn(
+    async (options: { quality: { enabled: (feature: string) => boolean } }): Promise<string[]> =>
+      options.quality.enabled("styleExcerpts") ? ["opening-voice"] : []
+  )
 }));
 
 vi.mock("@book-maker/db", async () => ({
@@ -41,6 +46,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
   nextPlanVersion: mocks.nextPlanVersion,
   planInputSnapshot: (input: unknown) => input,
   strategyForInput: () => ({ generatePageDraft: mocks.generatePageDraft }),
+  styleExcerptsForPage: mocks.styleExcerptsForPage,
   toPriorPageContext: (page: { index: number; title: string; summary: string }) => ({
     index: page.index,
     title: page.title,
@@ -62,6 +68,14 @@ vi.mock("../generation/projectInput.js", () => ({
     language: "en",
     mediaSettings: {}
   })
+}));
+vi.mock("../generation/qualitySettings.js", () => ({
+  loadQualityContext: async () => ({
+    settings: {},
+    tier: "balanced",
+    enabled: (feature: string) => mocks.qualityEnabled(feature)
+  }),
+  applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
@@ -120,6 +134,7 @@ function trailingPage(index: number) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.qualityEnabled.mockReturnValue(false);
   mockTransactions();
   mocks.prisma.bookEditOperation.findUnique.mockResolvedValue({ id: "op-1", status: "ACTIVE" });
   mocks.prisma.bookEditOperation.update.mockResolvedValue({});
@@ -285,5 +300,23 @@ describe("continueBook compensation", () => {
     for (const call of mocks.prisma.bookEditOperation.updateMany.mock.calls) {
       expect((call[0] as { where: { status: string } }).where.status).toBe("APPLIED");
     }
+  });
+});
+
+describe("continueBook style excerpts", () => {
+  it("passes the style lock into the page draft when the excerpts gate is on", async () => {
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleExcerpts");
+
+    await continueBook(job());
+
+    expect(mocks.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ styleExcerpts: ["opening-voice"] })
+    );
+  });
+
+  it("omits style excerpts from the page draft when the gate is off", async () => {
+    await continueBook(job());
+
+    expect(mocks.generatePageDraft.mock.calls[0]![0]).not.toHaveProperty("styleExcerpts");
   });
 });

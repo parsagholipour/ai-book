@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { unsupportedGenerateWithTools } from "../adapters/fake.js";
+import type { TextModelAdapter } from "../adapters/types.js";
+import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
+import { generateBatchDraft, generateChapterDraft } from "./pages.js";
 import {
   missingStyleLockIndexes,
   pagesForStyleExcerpts,
@@ -98,5 +102,99 @@ describe("style lock helpers", () => {
     expect(recency.map((entry) => entry.index)).toEqual([17, 18]);
     expect(pinStyleExcerpts(merged)[0]).toContain("opening-voice");
     expect(pinStyleExcerpts(merged)[1]).toContain("second-voice");
+  });
+});
+
+describe("chapter and batch draft style excerpts", () => {
+  const input = {
+    prompt: "A story.",
+    category: "STORY",
+    targetPages: 10,
+    complexity: 5,
+    temperature: 0.8,
+    language: "en",
+    mediaSettings: {
+      fullIllustrations: false,
+      illustrationCadence: "template-driven",
+      includeCover: true,
+      coverTemplate: "auto",
+      finalReview: true,
+      toneProfile: "neutral"
+    }
+  } as CreateProjectInput;
+  const plan = makeFallbackPlan(input);
+  const excerpts = ["Opening voice.", "Second page voice."];
+  const markdown =
+    "The chapel door had been painted black so many times that the grain underneath looked bruised. Jack pressed two fingers to the iron latch and felt it tremble.";
+
+  function capturingModel(pages: Array<{ index: number; title: string; markdown: string; summary: string; continuityNotes: string[] }>) {
+    const capture: { payload?: Record<string, unknown>; model: TextModelAdapter } = {
+      model: {
+        async generateText() {
+          return { text: "", model: "test-model", provider: "test" };
+        },
+        async generateJson(options) {
+          capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, unknown>;
+          return { data: options.schema.parse({ pages }), text: "{}", model: "test-model", provider: "test" };
+        },
+        async *streamText() {
+          yield "";
+        },
+        generateWithTools: unsupportedGenerateWithTools
+      }
+    };
+    return capture;
+  }
+
+  it("includes the excerpts in the user payload only when they are nonempty", async () => {
+    const withExcerpts = capturingModel([
+      { index: 2, title: "Turn", markdown, summary: "Jack moves.", continuityNotes: [] }
+    ]);
+    await generateChapterDraft({
+      input,
+      plan,
+      chapter: plan.chapters[0]!,
+      chapterPageStart: 2,
+      chapterPageEnd: 2,
+      previousPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      styleExcerpts: excerpts,
+      textModel: withExcerpts.model
+    });
+    expect(withExcerpts.payload?.styleExcerpts).toEqual(excerpts);
+
+    const omitted = capturingModel([
+      { index: 2, title: "Turn", markdown, summary: "Jack moves.", continuityNotes: [] }
+    ]);
+    await generateChapterDraft({
+      input,
+      plan,
+      chapter: plan.chapters[0]!,
+      chapterPageStart: 2,
+      chapterPageEnd: 2,
+      previousPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: omitted.model
+    });
+    expect(omitted.payload).not.toHaveProperty("styleExcerpts");
+
+    const batch = capturingModel([
+      { index: 4, title: "Turn", markdown, summary: "Jack moves.", continuityNotes: [] }
+    ]);
+    await generateBatchDraft({
+      input,
+      plan,
+      chapterBriefs: [],
+      pageStart: 4,
+      pageEnd: 4,
+      previousPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      styleExcerpts: excerpts,
+      textModel: batch.model
+    });
+    expect(batch.payload?.styleExcerpts).toEqual(excerpts);
   });
 });

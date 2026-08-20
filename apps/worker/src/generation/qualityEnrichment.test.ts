@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   loadProjectStoryState: vi.fn(),
   rebuildStoryStateFromPages: vi.fn(),
   persistPageStoryDelta: vi.fn(),
-  extractStoryState: vi.fn()
+  extractStoryState: vi.fn(),
+  auditPageStyle: vi.fn()
 }));
 
 vi.mock("@book-maker/db", () => ({ prisma: {}, Prisma: {} }));
@@ -31,11 +32,17 @@ vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
   return {
     ...actual,
-    extractStoryState: mocks.extractStoryState
+    extractStoryState: mocks.extractStoryState,
+    auditPageStyle: mocks.auditPageStyle
   };
 });
 
-import { enrichPageQualityReport, mergeEntityAndStoryStateLines, persistKeeperStoryDelta } from "./qualityEnrichment.js";
+import {
+  enrichPageQualityReport,
+  mergeEntityAndStoryStateLines,
+  persistKeeperStoryDelta,
+  revisedDraftStyleAuditor
+} from "./qualityEnrichment.js";
 
 const TARGET_PAGES = 8;
 
@@ -169,7 +176,8 @@ describe("enrichPageQualityReport unpaid promises", () => {
       previousPages: [],
       researchNotes: [],
       textModel: {} as TextModelAdapter,
-      projectId: "project-1"
+      projectId: "project-1",
+      styleExcerpts: []
     });
 
     expect(result.report.approved).toBe(true);
@@ -192,7 +200,8 @@ describe("enrichPageQualityReport unpaid promises", () => {
       previousPages: [],
       researchNotes: [],
       textModel: {} as TextModelAdapter,
-      projectId: "project-1"
+      projectId: "project-1",
+      styleExcerpts: []
     });
 
     expect(result.report.approved).toBe(false);
@@ -230,7 +239,8 @@ describe("enrichPageQualityReport unpaid promises", () => {
       textModel: {} as TextModelAdapter,
       projectId: "project-1",
       quality: storyExtractEnabled(),
-      storyState: openPromiseState
+      storyState: openPromiseState,
+      styleExcerpts: []
     });
 
     expect(mocks.loadQualityContext).not.toHaveBeenCalled();
@@ -238,6 +248,114 @@ describe("enrichPageQualityReport unpaid promises", () => {
     expect(mocks.rebuildStoryStateFromPages).toHaveBeenCalledWith("project-1", ["Find the seal"]);
     expect(result.report.approved).toBe(true);
     expect(result.report.issues.join(" ")).not.toMatch(/Unpaid promise/);
+  });
+});
+
+describe("revisedDraftStyleAuditor", () => {
+  const styleAuditorEnabled = () => ({
+    settings: {},
+    tier: "balanced",
+    enabled: (feature: string) => feature === "styleAuditor"
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns undefined when the gate is off or there is nothing to compare against", () => {
+    const base = {
+      projectId: "project-1",
+      plan,
+      textModel: {} as TextModelAdapter,
+      quality: styleAuditorEnabled()
+    };
+
+    expect(revisedDraftStyleAuditor({ ...base, styleExcerpts: [] })).toBeUndefined();
+    expect(
+      revisedDraftStyleAuditor({ ...base, styleExcerpts: ["excerpt"], quality: storyExtractEnabled() })
+    ).toBeUndefined();
+  });
+
+  it("stops calling the provider after its per-page budget and lets the approval stand", async () => {
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: false, styleIssues: ["Register drifts."] });
+    const auditor = revisedDraftStyleAuditor({
+      projectId: "project-1",
+      plan,
+      textModel: {} as TextModelAdapter,
+      styleExcerpts: ["excerpt"],
+      quality: styleAuditorEnabled()
+    });
+
+    // `maxCandidates` bounds revise/review pairs, not these calls: a page the
+    // reviewer keeps approving and this audit keeps rejecting would otherwise
+    // spend one uncounted provider call per approved revision.
+    const first = await auditor!(3, draft, approvedReport);
+    const second = await auditor!(3, draft, approvedReport);
+    expect(first.approved).toBe(false);
+    expect(second.approved).toBe(false);
+
+    const third = await auditor!(3, draft, approvedReport);
+    expect(third).toBe(approvedReport);
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(2);
+  });
+
+  it("tells the auditor when the page's change was the reader's own request", async () => {
+    // On a paid chat edit a register shift is what was bought, so the audit is
+    // told the excerpts are allowed to be departed from exactly that far.
+    // Without it "make page 12 more dramatic" is drift against the book's
+    // opening pages, and the edit ships FAILED_QA.
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+    const auditor = revisedDraftStyleAuditor({
+      projectId: "project-1",
+      plan,
+      textModel: {} as TextModelAdapter,
+      styleExcerpts: ["excerpt"],
+      quality: styleAuditorEnabled(),
+      userRequest: "make page 12 more dramatic"
+    });
+
+    await auditor!(12, draft, approvedReport);
+
+    expect(mocks.auditPageStyle).toHaveBeenCalledWith(
+      expect.objectContaining({ userRequest: "make page 12 more dramatic", styleExcerpts: ["excerpt"] })
+    );
+  });
+
+  it("says nothing about a request on a page nobody asked to change", async () => {
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+    const auditor = revisedDraftStyleAuditor({
+      projectId: "project-1",
+      plan,
+      textModel: {} as TextModelAdapter,
+      styleExcerpts: ["excerpt"],
+      quality: styleAuditorEnabled()
+    });
+
+    await auditor!(12, draft, approvedReport);
+
+    expect(mocks.auditPageStyle.mock.calls[0]![0]).not.toHaveProperty("userRequest");
+  });
+
+  it("gives every page its own audit budget", async () => {
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+    const makeAuditor = () =>
+      revisedDraftStyleAuditor({
+        projectId: "project-1",
+        plan,
+        textModel: {} as TextModelAdapter,
+        styleExcerpts: ["excerpt"],
+        quality: styleAuditorEnabled()
+      });
+
+    const pageThree = makeAuditor();
+    await pageThree!(3, draft, approvedReport);
+    await pageThree!(3, draft, approvedReport);
+    await pageThree!(3, draft, approvedReport);
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(2);
+
+    const pageFour = makeAuditor();
+    await pageFour!(4, draft, approvedReport);
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(3);
   });
 });
 

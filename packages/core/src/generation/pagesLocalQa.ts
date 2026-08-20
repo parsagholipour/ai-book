@@ -1,7 +1,9 @@
 import type { TextModelAdapter } from "../adapters/types.js";
+import { isSignpostingBookCategory } from "../categories.js";
 import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import type { CreateProjectInput, PageDraft, PageQualityReport } from "../schemas/book.js";
 import type { FinalQaPage, ReviewPageOptions } from "./pages.js";
+import { PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
 
 /**
  * The deterministic local-QA block: model-free page and manuscript checks, the
@@ -39,8 +41,7 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
     issues.push("Page contains placeholder or scaffold prose.");
   }
 
-  const promptLeak = PROMPT_LEAK_PATTERNS.find((pattern) => pattern.test(text));
-  if (promptLeak) {
+  if (containsPromptLeak(text, PAGE_PROMPT_LEAK_PATTERNS)) {
     checks.promptLeakFree = false;
     issues.push("Page leaks prompts, schema, image instructions, or production notes.");
   }
@@ -66,6 +67,16 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
   if (hasFormulaicAdjacentContrast(currentBody)) {
     checks.styleNatural = false;
     issues.push("Page stacks adjacent contrast sentences in a generic AI-rhetorical pattern.");
+  }
+
+  if (hasFormulaicContrastOveruse(currentBody)) {
+    checks.styleNatural = false;
+    issues.push("Page leans repeatedly on the formulaic 'not just X, it's Y' contrast pattern.");
+  }
+
+  if (!isSignpostingBookCategory(options.input.category) && hasChapterOpenerScaffold(currentBody)) {
+    checks.styleNatural = false;
+    issues.push("Page announces what the chapter will cover instead of covering it.");
   }
 
   if (hasExcessiveDashUse(currentBody)) {
@@ -307,9 +318,52 @@ function tokenize(text: string): string[] {
     .filter((token) => token.length > 2);
 }
 
+/**
+ * Space-separated scripts count one word per run, but CJK and the unsegmented
+ * Southeast Asian scripts have no spaces to split on: a whole Thai clause or a
+ * Chinese sentence between punctuation marks is a single `\p{L}` run, so
+ * counting runs made every normal-length page "too short to show meaningful
+ * progression" and burned its whole revision budget on a false failure. Those
+ * scripts are estimated from character counts instead — ~2 chars per word for
+ * CJK, ~4 for Thai-like scripts — which is rough in both directions but keeps
+ * the min/max gates meaningful rather than always-firing. The estimate counts
+ * code points, never UTF-16 units (a supplementary-plane Han character is one
+ * character, not a leftover extra word), classifies by Script_Extensions so a
+ * shared character like the katakana prolonged sound mark ー stays part of the
+ * word it lengthens, and folds combining marks into the letter they modify —
+ * a Thai tone mark neither splits the run it sits in nor feeds the divisor.
+ */
 function countReadableWords(text: string): number {
-  return text.match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+  const tokens = text.match(/[\p{L}\p{N}\p{M}]+(?:['-][\p{L}\p{N}\p{M}]+)*/gu) ?? [];
+  let count = 0;
+  for (const token of tokens) {
+    let cjkChars = 0;
+    let unsegmentedChars = 0;
+    let spacedChars = 0;
+    for (const character of token) {
+      if (COMBINING_MARK_PATTERN.test(character)) {
+        continue;
+      }
+      if (CJK_CHARACTER_PATTERN.test(character)) {
+        cjkChars += 1;
+      } else if (UNSEGMENTED_CHARACTER_PATTERN.test(character)) {
+        unsegmentedChars += 1;
+      } else {
+        spacedChars += 1;
+      }
+    }
+    count += Math.ceil(cjkChars / 2) + Math.ceil(unsegmentedChars / 4);
+    if (spacedChars > 0) {
+      count += 1;
+    }
+  }
+  return count;
 }
+
+// No Hangul here: Korean is space-separated, so the run count is already right.
+const CJK_CHARACTER_PATTERN = /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}]/u;
+const UNSEGMENTED_CHARACTER_PATTERN = /[\p{Script_Extensions=Thai}\p{Script_Extensions=Lao}\p{Script_Extensions=Khmer}\p{Script_Extensions=Myanmar}]/u;
+const COMBINING_MARK_PATTERN = /\p{M}/u;
 
 function sentenceLengthStats(text: string): { average: number; max: number } {
   const sentenceWordCounts = splitSentences(text).map(countReadableWords).filter((count) => count > 0);
@@ -325,6 +379,23 @@ function sentenceLengthStats(text: string): { average: number; max: number } {
 
 function hasFormulaicProofLeap(text: string): boolean {
   return PROOF_LEAP_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * The everyday half of the contrast-pair tell, which the adjacent-contrast
+ * detector below deliberately misses: "It's not just a recipe, it's a
+ * philosophy" carries no grandiose thesis word, so THESIS_ABSTRACTION_PATTERN
+ * never fires on it. One instance is ordinary human prose; a page built on the
+ * formula is the tell, so this counts occurrences and only fires on overuse —
+ * two "punch" resolutions, or three setups on a single page.
+ */
+function hasFormulaicContrastOveruse(text: string): boolean {
+  const setups = text.match(CONTRAST_SETUP_PATTERN)?.length ?? 0;
+  if (setups < 2) {
+    return false;
+  }
+  const punches = text.match(CONTRAST_PUNCH_PATTERN)?.length ?? 0;
+  return punches >= 2 || setups >= 3;
 }
 
 function hasFormulaicAdjacentContrast(text: string): boolean {
@@ -350,6 +421,103 @@ function hasFormulaicAdjacentContrast(text: string): boolean {
   }
   return false;
 }
+
+/**
+ * Scaffold is the *book* announcing its agenda, so this reads the page's own
+ * narration and never a character's mouth. The patterns match a sentence, not
+ * a speaker: `"In this chapter, we will learn about clouds," said Professor
+ * Hoot` is correct KIDS/STORY prose — and neither category is exempt — yet it
+ * flipped styleNatural on every draft candidate, so the quality loop spent its
+ * whole revision budget rewriting dialogue that was already right.
+ *
+ * Voice is the distinction here, not position, which is why the scan still
+ * covers the whole body instead of a leading window: an agenda sentence is
+ * scaffold wherever it sits, and the "in the following pages, we will" twin is
+ * usually the page's *last* line, so a leading window would quietly retire it.
+ */
+function hasChapterOpenerScaffold(body: string): boolean {
+  const narration = narrationOutsideQuotedSpeech(body);
+  return CHAPTER_OPENER_SCAFFOLD_PATTERNS.some((pattern) => pattern.test(narration));
+}
+
+/**
+ * The page with everything a character or a source said removed from it.
+ * A whole line is quoted when it is a markdown blockquote, or when it opens
+ * with an em/en dash — the French, Spanish and Russian dialogue convention,
+ * the same one `countStyleDashes` already reads a line for. Inside a line,
+ * spans are removed by quotation marks, and there is no single convention to
+ * key off: this ships Persian and Arabic books, where the guillemets are the
+ * quotation marks, and CJK books, which quote with corner brackets, so the
+ * table below is keyed by opener and lists every closer that opener takes.
+ */
+function narrationOutsideQuotedSpeech(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => {
+      if (BLOCKQUOTE_LINE_PATTERN.test(line)) {
+        return "";
+      }
+      const firstContentIndex = line.search(/\S/);
+      if (firstContentIndex >= 0 && isDash(line[firstContentIndex])) {
+        return "";
+      }
+      return stripQuotedSpans(line);
+    })
+    .join("\n");
+}
+
+/**
+ * An unterminated opener takes the rest of its line: English opens every
+ * paragraph of a continued speech and closes only the last, and a hard-wrapped
+ * quote breaks the same way. Reading too much of a page as dialogue only ever
+ * misses a scaffold sentence; reading too little fails a page that was right,
+ * and that failure costs the page its revisions.
+ */
+function stripQuotedSpans(line: string): string {
+  let narration = "";
+  let index = 0;
+  while (index < line.length) {
+    const character = line[index]!;
+    const closers = DIALOGUE_QUOTE_CLOSERS.get(character);
+    if (closers === undefined) {
+      narration += character;
+      index += 1;
+      continue;
+    }
+
+    let closeIndex = -1;
+    for (let scan = index + 1; scan < line.length; scan += 1) {
+      if (closers.includes(line[scan]!)) {
+        closeIndex = scan;
+        break;
+      }
+    }
+    if (closeIndex < 0) {
+      return `${narration} `;
+    }
+
+    narration += " ";
+    index = closeIndex + 1;
+  }
+  return narration;
+}
+
+const BLOCKQUOTE_LINE_PATTERN = /^\s{0,3}>/;
+
+/**
+ * Openers to the closers they take. The straight apostrophe is deliberately
+ * absent: `it's` would open a quote on every page written with one.
+ */
+const DIALOGUE_QUOTE_CLOSERS = new Map<string, string>([
+  ['"', '"'],
+  ["“", "”"], // “ … ”
+  ["„", "“”"], // „ … “ and „ … ”
+  ["‘", "’"], // ‘ … ’
+  ["«", "»"], // « … » — Persian, Arabic, French, Russian
+  ["»", "«"], // » … « — German, Danish
+  ["「", "」"], // 「 … 」
+  ["『", "』"] // 『 … 』
+]);
 
 function hasExcessiveDashUse(text: string): boolean {
   const dashCount = countStyleDashes(text);
@@ -397,10 +565,24 @@ function isDialogueAttributionDash(line: string, index: number): boolean {
 function splitSentences(text: string): string[] {
   return text
     .replace(/\s+/g, " ")
-    .split(/(?<=[.!?؟۔…])\s+/)
+    .split(SENTENCE_BOUNDARY_PATTERN)
     .map((sentence) => sentence.trim())
     .filter(Boolean);
 }
+
+/**
+ * Where one sentence ends and the next begins, in three script shapes: a
+ * spaced terminator (Latin and Arabic-script punctuation, with any closing
+ * quotes riding along), a full-width CJK terminator that takes no space after
+ * it — its closing quotes/brackets ride along too — and, in the unsegmented
+ * Southeast Asian scripts, the space itself, which is those scripts' sentence
+ * mark. Splitting only on spaced ASCII terminators left a zh/ja page as one
+ * "sentence" whose word count was the whole page, so the kids sentence-length
+ * gate fired on every page and no rewrite could satisfy it. Kept consistent
+ * with the scripts countReadableWords estimates above.
+ */
+const SENTENCE_BOUNDARY_PATTERN =
+  /(?<=[。！？។။][」』】〉》）'’"”]*)(?![」』】〉》）'’"”])|(?<=[.!?؟۔…]['’"”»)\]]*)\s+|(?<=[\p{Script_Extensions=Thai}\p{Script_Extensions=Lao}\p{Script_Extensions=Khmer}\p{Script_Extensions=Myanmar}])\s+/u;
 
 function hasVagueEnding(draft: PageDraft): boolean {
   const endingText = `${draft.markdown}\n${draft.summary}`.toLowerCase();
@@ -421,18 +603,35 @@ const PLACEHOLDER_PATTERNS = [
   /drafted content for/i
 ];
 
-const PROMPT_LEAK_PATTERNS = [
-  /global visual style/i,
-  /continuity rules:/i,
-  /return json/i,
-  /json schema/i,
-  /pageinstruction/i,
-  /image prompt/i,
-  /avoid text inside images/i,
-  /generation instructions/i,
-  /production instructions/i,
-  /do not mention ai/i
+/**
+ * Forward-looking chapter scaffold: prose that announces the chapter's agenda
+ * instead of being the chapter. PAGE_BRIEF_META_LANGUAGE_PATTERNS covers the
+ * closing/transition shapes; these are their opening twins. Which categories
+ * are allowed to signpost is `isSignpostingBookCategory` (`../categories.ts`),
+ * beside every other per-category rule; `hasChapterOpenerScaffold` above is
+ * what decides where on the page these are allowed to match.
+ */
+const CHAPTER_OPENER_SCAFFOLD_PATTERNS = [
+  /\b(?:in|throughout)\s+this\s+(?:chapter|section|book|guide)\s*,?\s+(?:we|you|i)\s+(?:will|['’]ll|shall|are\s+going\s+to)\b/i,
+  /\bthis\s+(?:chapter|section|part|guide)\s+(?:will\s+)?(?:explores?|examines?|covers?|introduces?|discusses?|outlines?|delves?\s+into|looks?\s+at)\b/i,
+  /\bby\s+the\s+end\s+of\s+this\s+(?:chapter|section|book|guide)\s*,?\s+(?:we|you)\b/i,
+  /\bin\s+the\s+(?:following|next)\s+(?:pages|sections)\s*,?\s+(?:we|you|i)\s+(?:will|['’]ll)\b/i
 ];
+
+/**
+ * "not just X" — the setup half of the everyday contrast formula. "not only"
+ * is deliberately absent: it is the ordinary correlative ("not only builders,
+ * but also arbiters"), standard prose in any register, not the slop formula.
+ */
+const CONTRAST_SETUP_PATTERN = /\b(?:not|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t)\s+(?:just|merely|simply)\b/gi;
+
+/**
+ * The punch: "…not just X — it's Y" / "…not just X. It is Y." No "but" before
+ * the pronoun: "not simply X, but they were Y" is the correlative again, and
+ * the formula's tell is the pronoun restarting the clause bare.
+ */
+const CONTRAST_PUNCH_PATTERN =
+  /\b(?:not|isn['’]?t|aren['’]?t|wasn['’]?t|weren['’]?t)\s+(?:just|merely|simply)\b[^.!?؟\n]{0,80}[.,;:—–-]\s*(?:it|this|that|she|he|they|we)\s*(?:['’](?:s|re)|\s+(?:is|was|are|were))\b/gi;
 
 const PAGE_BRIEF_META_LANGUAGE_PATTERNS = [
   /\b(?:concluding|conclude|concludes|closing|close|ending|end)\s+the\s+(?:survey|chapter|section|discussion|analysis|page)\b/i,

@@ -1,8 +1,9 @@
-import { toPriorPageContext, type strategyForInput } from "../generation/bookHelpers.js";
+import { styleExcerptsForPage, toPriorPageContext, type strategyForInput } from "../generation/bookHelpers.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generation/generationContext.js";
 import { reviewAndSaveGeneratedPage } from "../generation/pageReview.js";
 import { isStructuralPageLeaseLostError } from "../generation/structuralPageLease.js";
 import type { inputForPlanVersion } from "../generation/projectInput.js";
+import { loadQualityContext } from "../generation/qualitySettings.js";
 import type { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import type { bookPlanSchema } from "@book-maker/core";
@@ -60,6 +61,7 @@ export async function draftInsertedPages(options: {
   // matching chapter": the loader returns the unfiltered notes for every such
   // page, so they all share one entry.
   const researchNotesByChapter = new Map<number | null, string[]>();
+  const quality = await loadQualityContext(options.input);
   await advanceJobStep(options.generationJobId, "apply", 40, "Writing the new pages", { done: 0, total });
 
   for (const [offset, pageId] of options.insertedPageIds.entries()) {
@@ -119,17 +121,26 @@ export async function draftInsertedPages(options: {
       researchNotesByChapter.set(chapterKey, researchNotes);
     }
 
+    const priorPageContext = previousPages.slice(-6);
+    const styleExcerpts = await styleExcerptsForPage({
+      projectId,
+      pageIndex: page.index,
+      recencyPages: priorPageContext,
+      input: options.input,
+      quality
+    });
     const draft = await options.strategy.generatePageDraft({
       input: options.input,
       plan: options.plan,
       ...(chapterPlan ? { chapter: chapterPlan } : {}),
       pageIndex: page.index,
       previousSummaries: previousPages.map((entry) => entry.summary).slice(-40),
-      previousPages: previousPages.slice(-6),
+      previousPages: priorPageContext,
       ...(nextPages.length > 0 ? { nextPages } : {}),
       continuityNotes,
       researchNotes,
-      textModel: options.providers.text
+      textModel: options.providers.text,
+      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     });
     await options.assertLease();
     try {

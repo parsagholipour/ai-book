@@ -52,6 +52,7 @@ export function buildPageDraftSystemContent(
     "Do not replay an encounter, decision, exposition point, or emotional beat that already appeared in recent pages.",
     "If the pageBrief requires a recurring action type from earlier pages, such as running, waiting, arguing, or explaining, use fresh concrete details and make the outcome different.",
     "Treat previousPages as a phrase blacklist for distinctive action wording; do not reuse memorable clauses from earlier pages.",
+    "Vary how pages open: do not begin this page with the same opening move, image, or sentence shape the recentPages excerpts begin with.",
     "Use pageScope to distinguish global page position from chapter-local position.",
     ...(options.nextPages && options.nextPages.length > 0
       ? [

@@ -4,8 +4,6 @@ import {
   extractStoryState,
   formatStoryStateLines,
   hasResearchIntent,
-  pinStyleExcerpts,
-  sampleExcerptsFromInput,
   unpaidPromiseIssues,
   verifyPageClaims,
   withClaimVerification,
@@ -29,10 +27,9 @@ export type EnrichedPageReview = {
   report: PageQualityReport;
   extract: StoryExtractResult | null;
   storyState: StoryState;
-  styleExcerpts: string[];
 };
 
-type QualityGateContext = {
+export type QualityGateContext = {
   enabled: (feature: QualityFeatureId) => boolean;
 };
 
@@ -46,19 +43,23 @@ export async function enrichPageQualityReport(options: {
   researchNotes: string[];
   textModel: TextModelAdapter;
   projectId: string;
-  /** Precomputed style lock (pages 1–2). When absent, pinned from previousPages. */
-  styleExcerpts?: string[] | undefined;
+  /**
+   * The caller's pinned style lock — pages 1–2, loaded when its own window no
+   * longer reaches them — or empty when the gate is off. **Required**, and that
+   * is the fix rather than the shape: this used to pin from `previousPages`
+   * when absent, so a caller that handed in a recency window (`continueBook`
+   * passes the last eighteen pages) had a continuation at page 41 audited and
+   * revised against pages 23 and 24 instead of the book's opening voice, and
+   * nothing said so. A caller with nothing to pin passes `[]` and means it.
+   */
+  styleExcerpts: string[];
   quality?: QualityGateContext | undefined;
   storyState?: StoryState | undefined;
 }): Promise<EnrichedPageReview> {
   const quality = options.quality ?? (await loadQualityContext(options.input));
   const storyState =
     options.storyState ?? (await loadProjectStoryState(options.projectId, options.plan.promises ?? []));
-  const styleExcerpts =
-    options.styleExcerpts ??
-    (quality.enabled("styleExcerpts")
-      ? pinStyleExcerpts(options.previousPages, sampleExcerptsFromInput(options.input))
-      : []);
+  const styleExcerpts = options.styleExcerpts;
   let report = options.report;
   let extract: StoryExtractResult | null = null;
 
@@ -116,6 +117,7 @@ export async function enrichPageQualityReport(options: {
         textModel: options.textModel,
         markdown: options.draft.markdown,
         voiceGuide: options.plan.voiceGuide,
+        antiAiRules: options.plan.antiAiRules,
         styleExcerpts
       });
       report = withStyleAudit(report, audit);
@@ -127,7 +129,86 @@ export async function enrichPageQualityReport(options: {
     }
   }
 
-  return { report, extract, storyState, styleExcerpts };
+  return { report, extract, storyState };
+}
+
+export type RevisedDraftStyleAuditor = (
+  pageIndex: number,
+  draft: PageDraft,
+  report: PageQualityReport
+) => Promise<PageQualityReport>;
+
+/**
+ * Ceiling on re-audit provider calls per page. `maxCandidates` bounds the
+ * revise/review pairs but nothing counted the audits layered on top: every
+ * revision the reviewer approved bought one more `auditPageStyle` call, so a
+ * page oscillating between the two gates spent up to six uncounted calls on
+ * top of the one `enrichPageQualityReport` already made. After this many
+ * second opinions the reviewer's approval stands unaudited.
+ */
+const MAX_REVISED_DRAFT_STYLE_AUDITS = 2;
+
+/**
+ * The style audit for drafts the quality loop rewrites. `enrichPageQualityReport`
+ * runs once, on the initial draft, so the dedicated auditor used to see exactly
+ * one of up to seven candidates: a rewrite that fixed the flagged beat but
+ * reintroduced excerpt-divergent register shipped through a strictly weaker
+ * gate than the draft it replaced — and the auditor exists precisely because
+ * the general reviewer approves pages it would reject. `runPageQualityLoop`
+ * calls this on a revision the reviewer has approved; a flip back to
+ * not-approved keeps the loop revising inside its existing candidate budget,
+ * and the audits themselves are capped at `MAX_REVISED_DRAFT_STYLE_AUDITS`
+ * per page — the closure is built once per page, so its counter is the page's.
+ *
+ * Returns undefined when the gate is off or there is nothing to compare
+ * against, so `runPageQualityLoop` — its one caller, which builds it out of the
+ * same excerpts it revises and reviews with — can simply skip the audit.
+ * Failure degrades to the unaudited report, the same bargain
+ * `enrichPageQualityReport` makes; only a user stop travels out.
+ */
+export function revisedDraftStyleAuditor(options: {
+  projectId: string;
+  plan: BookPlan;
+  textModel: TextModelAdapter;
+  styleExcerpts: string[];
+  quality: QualityGateContext;
+  /**
+   * Set only on a page the reader asked to change, and it changes what the
+   * audit is *for*: a requested tone or register shift is the edit landing, not
+   * drift to reject. See `auditPageStyle`.
+   */
+  userRequest?: string | undefined;
+}): RevisedDraftStyleAuditor | undefined {
+  if (!options.quality.enabled("styleAuditor") || options.styleExcerpts.length === 0) {
+    return undefined;
+  }
+  let auditsSpent = 0;
+  return async (pageIndex, draft, report) => {
+    if (auditsSpent >= MAX_REVISED_DRAFT_STYLE_AUDITS) {
+      return report;
+    }
+    // Spent on the attempt, not the success: a throwing call may still have
+    // cost provider spend, and retrying it against the same excerpts is the
+    // unbounded shape this counter exists to close.
+    auditsSpent += 1;
+    try {
+      const audit = await auditPageStyle({
+        textModel: options.textModel,
+        markdown: draft.markdown,
+        voiceGuide: options.plan.voiceGuide,
+        antiAiRules: options.plan.antiAiRules,
+        styleExcerpts: options.styleExcerpts,
+        ...(options.userRequest ? { userRequest: options.userRequest } : {})
+      });
+      return withStyleAudit(report, audit);
+    } catch (error) {
+      if (isStopRequestedError(error)) {
+        throw error;
+      }
+      console.warn(`Style auditor skipped for project ${options.projectId} page ${pageIndex}`, error);
+      return report;
+    }
+  };
 }
 
 export function storyStateLinesForPack(state: StoryState): string[] {

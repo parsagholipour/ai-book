@@ -32,7 +32,7 @@ export const QUALITY_FEATURE_DEFAULTS: QualityFeatureSettings = {
   planCritic: ["ultra", "premium", "balanced", "fast"],
   claimVerifier: ["ultra", "premium", "balanced", "fast"],
   styleExcerpts: ["ultra", "premium", "balanced", "fast"],
-  styleAuditor: ["ultra", "premium"],
+  styleAuditor: ["ultra", "premium", "balanced"],
   pageMapCritic: ["ultra", "premium"],
   writerTools: ["ultra"],
   bestOfPolish: ["ultra"],

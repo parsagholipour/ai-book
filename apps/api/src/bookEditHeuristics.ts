@@ -292,7 +292,7 @@ export function classifyWithDegradedHeuristics(
       confidence: 0.88,
       reasoning: "The user asked to regenerate a specific chapter.",
       affectedPageIndexes: chapter?.pageIndexes ?? [],
-      assistantMessage: chapter
+      assistantMessage: chapter?.title.trim()
         ? `I’ll rewrite chapter ${chapterRegen} (“${chapter.title}”) with that direction.`
         : `I’ll rewrite chapter ${chapterRegen} with that direction.`,
       scope: "explicit_pages",

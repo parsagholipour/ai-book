@@ -68,6 +68,7 @@ vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: async () => ({ ...mocks.projectRow }),
   invalidateProjectExports: mocks.invalidateProjectExports,
   strategyForInput: () => ({ generatePageDraft: mocks.generatePageDraft }),
+  styleExcerptsForPage: async () => [],
   toPriorPageContext: (page: { index: number; title: string; markdown: string; summary: string }) => ({
     index: page.index,
     title: page.title,
@@ -80,6 +81,7 @@ vi.mock("../generation/generationContext.js", () => ({
   loadResearchNotesForGeneration: async () => []
 }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: () => ({ targetPages: 6 }) }));
+vi.mock("../generation/qualitySettings.js", () => ({ loadQualityContext: async () => ({ enabled: () => false }) }));
 vi.mock("../generation/storyStateStore.js", () => ({
   rebuildProjectStoryState: mocks.rebuildProjectStoryState,
   rebuildRolledBackProjectStoryState: mocks.rebuildRolledBackProjectStoryState

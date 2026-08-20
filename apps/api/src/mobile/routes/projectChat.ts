@@ -311,7 +311,9 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
             stage,
             pages,
             chapters: chatChaptersForProject(project),
-            planSummary: project.currentPlan ? planSummaryForClassifier(project.currentPlan) : undefined,
+            planSummary: project.currentPlan
+              ? planSummaryForClassifier(project.currentPlan, project.language)
+              : undefined,
             recentMessages: activeMessages.slice(-12).map((message) => ({
               role: message.role === "USER" ? "user" : "assistant",
               content: message.content
@@ -320,6 +322,7 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
             loadPageBody: async (index) => (await loadChatPageBodies(id, [index])).get(index) ?? null,
             clarifyExhausted,
             pageNumbering,
+            ...(project.language ? { language: project.language } : {}),
             ...(readerSelection ? { readerSelection } : {}),
             // Given to the router, not merged into the message: without a
             // referent "make that shorter" falls to the heuristics' catch-all

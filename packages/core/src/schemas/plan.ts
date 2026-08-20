@@ -54,15 +54,103 @@ function mergePlanRecords(
   return merged;
 }
 
-function normalizePlanScalarArrays(value: Record<string, unknown>): Record<string, unknown> {
+/**
+ * `.min(1)` on the schema checks array length, not content, so a planner that
+ * emitted `[""]` or `["Write naturally", "write naturally"]` used to satisfy it
+ * — and because plan arrays replace atomically, that vacuous list displaced the
+ * fallback contract and became the "Avoid:" line of every draft and review
+ * prompt in the book. Cleanup here; the quality floor that appends real rules
+ * back is `ensurePlanStyleContract` in generation/planner.ts.
+ */
+const MAX_STYLE_RULES = 24;
+const MAX_STYLE_RULE_LENGTH = 500;
+
+/**
+ * A UTF-16 slice is not a truncation. `.slice(0, 500)` cuts an emoji that
+ * straddles index 500 in half, and the lone high surrogate left behind is a
+ * legal JS string that `JSON.stringify` writes as `\ud83d` — which Postgres
+ * `jsonb` **rejects**. So a model that padded one style rule past the cap and
+ * ended it in an emoji did not produce a shortened rule; it failed the plan at
+ * the *write*, after the parse had passed, taking the whole planning job with
+ * it. Counting code points instead can never split a pair.
+ *
+ * A surrogate the model itself sent unpaired is dropped for the same reason:
+ * `JSON.parse("\"\\ud83d\"")` hands one straight through, and nothing
+ * downstream can store it however it got here.
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+function truncateCharacters(value: string, maxLength: number): string {
+  const storable = value.replace(LONE_SURROGATE, "");
+  const characters = [...storable];
+  return characters.length > maxLength ? characters.slice(0, maxLength).join("") : storable;
+}
+
+const GENERIC_VOICE_GUIDE = ["Write in a natural, specific human voice suited to the book's audience."];
+const GENERIC_ANTI_AI_RULES = [
+  "Avoid formulaic AI rhetoric: stock transitions, proof-leap phrases, contrast-pair clichés, and inflated abstractions."
+];
+
+/** Whatever this parse already had to fall back on: the current plan of a revision, or an echoed outline. */
+type PlanStyleSource = { voiceGuide?: unknown; antiAiRules?: unknown };
+
+function cleanStyleRules(value: unknown): string[] {
+  const coerced = coerceStringArray(value);
+  const rules = Array.isArray(coerced) ? coerced : [];
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const rule of rules) {
+    if (typeof rule !== "string") {
+      continue;
+    }
+    const trimmed = truncateCharacters(rule.trim(), MAX_STYLE_RULE_LENGTH);
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    cleaned.push(trimmed);
+    if (cleaned.length >= MAX_STYLE_RULES) {
+      break;
+    }
+  }
+  return cleaned;
+}
+
+/**
+ * An emitted `[]` is not an omitted field, but `mergePlanRecords` skips only
+ * undefined and null — so an empty array arrives here having already replaced
+ * the plan it was patching. It used to fail `.min(1)` and the revision was
+ * repaired or rejected; substituting the generic pair instead would let "make it
+ * shorter" trade a book's whole voice contract for one line of boilerplate. So a
+ * list that cleans down to nothing means "not provided": restore what this parse
+ * was falling back on — the current plan on a revision, the template outline on
+ * initial planning. The generic pair is the last resort, for a parse with no
+ * fallback at all, because a stored plan whose arrays clean down to nothing must
+ * stay readable or the book it describes cannot be compiled, revised, or
+ * continued.
+ */
+function cleanStyleRuleArray(value: unknown, fallback: unknown, generic: string[]): string[] {
+  const cleaned = cleanStyleRules(value);
+  if (cleaned.length > 0) {
+    return cleaned;
+  }
+  const restored = cleanStyleRules(fallback);
+  return restored.length > 0 ? restored : [...generic];
+}
+
+function normalizePlanScalarArrays(
+  value: Record<string, unknown>,
+  fallback: PlanStyleSource | undefined
+): Record<string, unknown> {
   return {
     ...value,
-    voiceGuide: coerceStringArray(value.voiceGuide),
-    antiAiRules: coerceStringArray(value.antiAiRules)
+    voiceGuide: cleanStyleRuleArray(value.voiceGuide, fallback?.voiceGuide, GENERIC_VOICE_GUIDE),
+    antiAiRules: cleanStyleRuleArray(value.antiAiRules, fallback?.antiAiRules, GENERIC_ANTI_AI_RULES)
   };
 }
 
-function normalizeBookPlan(value: unknown): unknown {
+function normalizeBookPlan(value: unknown, fallback: PlanStyleSource | undefined): unknown {
   if (!isRecord(value)) {
     return value;
   }
@@ -79,15 +167,18 @@ function normalizeBookPlan(value: unknown): unknown {
     return unwrapped;
   }
 
-  return normalizePlanScalarArrays({
-    ...unwrapped,
-    writingComplexity:
-      unwrapped.writingComplexity ??
-      unwrapped.complexity ??
-      unwrapped.writing_complexity ??
-      unwrapped.writingLevel ??
-      unwrapped.readingLevel
-  });
+  return normalizePlanScalarArrays(
+    {
+      ...unwrapped,
+      writingComplexity:
+        unwrapped.writingComplexity ??
+        unwrapped.complexity ??
+        unwrapped.writing_complexity ??
+        unwrapped.writingLevel ??
+        unwrapped.readingLevel
+    },
+    fallback ?? fallbackOutline
+  );
 }
 
 function normalizeBookPlanWithFallback(fallback: BookPlan) {
@@ -109,7 +200,7 @@ function normalizeBookPlanWithFallback(fallback: BookPlan) {
         ? mergePlanRecords(fallbackRecord, value)
         : mergePlanRecords(fallbackRecord, outer);
 
-    return normalizeBookPlan(candidate);
+    return normalizeBookPlan(candidate, fallbackRecord);
   };
 }
 
@@ -294,7 +385,7 @@ const bookPlanObjectSchema = z.object({
   illustrationPlan: illustrationPlanSchema
 });
 
-export const bookPlanSchema = z.preprocess(normalizeBookPlan, bookPlanObjectSchema);
+export const bookPlanSchema = z.preprocess((value) => normalizeBookPlan(value, undefined), bookPlanObjectSchema);
 
 export function bookPlanSchemaWithFallback(fallback: BookPlan) {
   return z.preprocess(normalizeBookPlanWithFallback(fallback), bookPlanObjectSchema);

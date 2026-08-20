@@ -426,6 +426,9 @@ function looksLikePageLevelPartition(
 
 type DisplayChapter = Pick<ChapterPlan, "index" | "title" | "summary">;
 
+/** Everything a heading is built from, which is all {@link chapterDisplayHeading} may ask a caller for. */
+type ChapterHeadingFields = Pick<DisplayChapter, "index" | "title">;
+
 /** The heading wording in force for one compile: a style plus the word to use for "Chapter". */
 type ChapterHeadingFormat = { style: ChapterHeadingStyle; word: string };
 
@@ -443,17 +446,33 @@ function chapterHeadingFormat(
 }
 
 /**
- * Never returns an empty string. A chapter with no usable title falls back to
- * the numbered form even under `title_only`, because a bare `## ` is not a
- * heading to anything downstream: `splitIntoChapters` in `epub.ts` matches
- * `^##\s+(.+)$`, so an empty one would silently fold that chapter into the
- * previous one rather than render badly.
+ * Never returns an empty string. A chapter with no usable title — what
+ * `fallbackContinuationOutline` (`apps/worker/src/handlers/continueBookSupport.ts`)
+ * writes when a continuation's outline call fails — is headed by its own number
+ * instead, because a bare `## ` is not a heading to anything downstream:
+ * `splitIntoChapters` in `epub.ts` matches `^##\s+(.+)$`, so an empty one would
+ * silently fold that chapter into the previous one rather than render badly.
+ *
+ * **Which number is the whole subtlety, and `title_only` is not the other
+ * styles.** That style is not only a stated preference ("don't say Chapter,
+ * just the title"); it is also what `chapterHeadingFormat` gives every book too
+ * short to earn chapter apparatus, whose rule is that a book earns the word
+ * "Chapter" by being long enough to need it (`chapterPresentationFor`, and
+ * `packages/core/src/generation/CLAUDE.md`). A labelled fallback answered both
+ * with "Chapter 4" — printed into a booklet that says "Chapter" nowhere else,
+ * and into the one book whose reader had asked for exactly that word to go
+ * away. So under `title_only` the fallback is the bare index, which satisfies
+ * the epub constraint without introducing the label. Every other style carries
+ * the label word by definition, so there it stays the labelled numbered form.
+ *
+ * `formatContentsItem` takes a titleless chapter's whole row from here for the
+ * same reason it is the one place that decides the wording: the two can only
+ * agree by being the same answer.
  */
-function formatChapterHeading(chapter: DisplayChapter, heading: ChapterHeadingFormat): string {
+function formatChapterHeading(chapter: ChapterHeadingFields, heading: ChapterHeadingFormat): string {
   const clean = cleanChapterTitle(chapter, heading);
-  const numbered = `${heading.word} ${chapter.index}`;
   if (!clean) {
-    return numbered;
+    return heading.style === "title_only" ? String(chapter.index) : `${heading.word} ${chapter.index}`;
   }
   if (heading.style === "title_only") {
     return clean;
@@ -461,7 +480,35 @@ function formatChapterHeading(chapter: DisplayChapter, heading: ChapterHeadingFo
   if (heading.style === "number_title") {
     return `${chapter.index}. ${clean}`;
   }
-  return `${numbered}: ${clean}`;
+  return `${heading.word} ${chapter.index}: ${clean}`;
+}
+
+/**
+ * The label a chapter carries *outside* the compiled book — a chat card, the
+ * edit router's prompt, a plan list. It is {@link formatChapterHeading}'s own
+ * answer on purpose: these surfaces name a chapter the reader meets in the
+ * book, and a second rule for the same words is a second set of words.
+ *
+ * Never empty, which is what the callers needed. Each of them interpolated
+ * `Chapter.title` straight into a label, and a continuation whose outline call
+ * failed stores that title empty on purpose — so an outline card read "5. ", a
+ * chapter card read "Chapter 5: " with nothing after the colon, and the router
+ * was handed a nameless chapter. The empty title is right (the alternative,
+ * inventing "New chapter 5", printed English into books written in other
+ * languages); it is the *rendering* of it that belongs in one place.
+ *
+ * `language` localizes the label word exactly as the printed heading's is.
+ * Pass the book's own language on a surface that speaks it, and leave it off
+ * on one that does not.
+ */
+export function chapterDisplayHeading(
+  chapter: ChapterHeadingFields,
+  options?: { style?: ChapterHeadingStyle | undefined; language?: string | undefined }
+): string {
+  return formatChapterHeading(chapter, {
+    style: options?.style ?? DEFAULT_CHAPTER_HEADING_STYLE,
+    word: markdownLabels(options?.language).chapter
+  });
 }
 
 /**
@@ -521,17 +568,29 @@ function formatContentsItem(
   { pageIndex, chapter }: { pageIndex: number; chapter: DisplayChapter },
   heading: ChapterHeadingFormat
 ): string {
+  const clean = cleanChapterTitle(chapter, heading);
   // The eyebrow carries whatever numbering the heading style kept, and is
   // dropped entirely under `title_only`. Every sibling span sets its own
   // `grid-column` in the PDF stylesheet, so removing this one loses the line
   // without reflowing the title, leader and page number.
+  //
+  // A titleless chapter drops it under *every* style and takes its whole row
+  // from `formatChapterHeading`, which is the only thing that keeps the row and
+  // the page it points at saying the same words: that function heads such a
+  // chapter with its own number — labelled ("Chapter 3") under the two numbered
+  // styles, bare ("3") under `title_only`, which is the one that may print no
+  // label word at all. So a `number_title` eyebrow left the Contents reading
+  // "3 …… 12" against a page headed "Chapter 3", and a `label_number_title` one
+  // left the name column empty. It also keeps an English "Untitled" out of a
+  // book written in another language. The continuation fallback writes exactly
+  // these chapters.
   const label =
-    heading.style === "title_only"
+    !clean || heading.style === "title_only"
       ? ""
       : heading.style === "number_title"
         ? escapeHtml(String(chapter.index))
         : escapeHtml(`${heading.word} ${chapter.index}`);
-  const title = escapeHtml(cleanChapterTitle(chapter, heading) || "Untitled");
+  const title = escapeHtml(clean || formatChapterHeading(chapter, heading));
   const page = escapeHtml(String(pageIndex));
   const href = `#${chapterAnchorId(chapter)}`;
   return [
@@ -554,7 +613,7 @@ function formatContentsItem(
  * former because model-written titles arrive as "Chapter 3: ..." regardless of
  * language, the latter so switching to "Part" does not render "Part 1: Part 1: X".
  */
-function cleanChapterTitle(chapter: DisplayChapter, heading?: ChapterHeadingFormat): string {
+function cleanChapterTitle(chapter: ChapterHeadingFields, heading?: ChapterHeadingFormat): string {
   let clean = chapter.title.trim().replace(/^#+\s*/, "").replace(/\s+/g, " ");
   const words = [...new Set(["chapter", ...(heading ? [heading.word.toLowerCase()] : [])])];
   const duplicatePrefix = new RegExp(

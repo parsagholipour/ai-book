@@ -13,12 +13,14 @@ import {
   nextPlanVersion,
   planInputSnapshot,
   strategyForInput,
+  styleExcerptsForPage,
   toPriorPageContext
 } from "../generation/bookHelpers.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generation/generationContext.js";
 import { reviewAndSaveGeneratedPage } from "../generation/pageReview.js";
 import { importStyleProfileFromMediaSettings } from "./importBookSupport.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
+import { loadQualityContext } from "../generation/qualitySettings.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { maybeEnqueueCompile } from "../runtime/dispatch.js";
@@ -83,6 +85,7 @@ export async function continueBook(job: Job) {
   const plan = bookPlanSchema.parse(basePlanVersion.planningPackage);
   const strategy = strategyForInput(input);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
+  const quality = await loadQualityContext(input);
 
   // --- Redelivery fence ------------------------------------------------------
   // The pre-continuation boundary is the plan named by the payload's `planId`,
@@ -261,16 +264,25 @@ export async function continueBook(job: Job) {
           `Writing page ${pageIndex}`,
           { done: drafted, total: newPageIndexes.length, pageIndex }
         );
+        const priorPageContext = previousPages.slice(-6);
+        const styleExcerpts = await styleExcerptsForPage({
+          projectId,
+          pageIndex,
+          recencyPages: priorPageContext,
+          input,
+          quality
+        });
         const draft = await strategy.generatePageDraft({
           input,
           plan: extendedPlan,
           chapter: chapterPlan,
           pageIndex,
           previousSummaries: [...previousSummaries, ...previousPages.map((page) => page.summary)].slice(-40),
-          previousPages: previousPages.slice(-6),
+          previousPages: priorPageContext,
           continuityNotes,
           researchNotes,
-          textModel: providers.text
+          textModel: providers.text,
+          ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
         });
         // The same review → revise loop, honest FAILED_QA status, continuity
         // notes and entity state every generated page gets — a continuation

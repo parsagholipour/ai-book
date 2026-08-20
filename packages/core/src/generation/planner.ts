@@ -1,7 +1,12 @@
 import type { JsonResult, ResearchAdapter, TextModelAdapter } from "../adapters/types.js";
 import { targetLanguageGenerationGuidance, targetLanguagePayload } from "../prompting/language.js";
 import { kidsReadingGuidanceLines, kidsReadingGuidancePayload } from "../prompting/readingLevel.js";
-import { getTemplateForInput, makeFallbackPlan, type TemplateDefinition } from "../prompting/templates.js";
+import {
+  getTemplateForInput,
+  makeFallbackPlan,
+  planStyleContract,
+  type TemplateDefinition
+} from "../prompting/templates.js";
 import { plannerToneGuidance, toneProfileFromMediaSettings } from "../prompting/tone.js";
 import {
   bookPlanModelOutputSchemaWithFallback,
@@ -143,10 +148,13 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
     });
     return normalizePlanPageTargets(
       reconcilePlanLibraryCharacters(
-        {
-          ...plan,
-          questions: plan.questions.slice(0, 1)
-        },
+        ensurePlanStyleContract(
+          {
+            ...plan,
+            questions: plan.questions.slice(0, 1)
+          },
+          { input: options.input, toneProfile }
+        ),
         librarySnapshots
       ),
       options.input.targetPages
@@ -154,6 +162,54 @@ export async function createPlanningPackage(options: CreatePlanOptions): Promise
   } catch (error) {
     throw new Error(`AI planner returned an invalid plan. No fallback plan was created. ${formatErrorMessage(error)}`);
   }
+}
+
+const MIN_VOICE_GUIDE_RULES = 2;
+const MIN_ANTI_AI_RULES = 3;
+
+/**
+ * The quality floor under the plan's style contract. Plan arrays replace
+ * atomically, so a planner that answered the antiAiRules instruction with one
+ * vacuous rule wholesale displaced the rich fallback set that omitting the
+ * field would have preserved — and nothing downstream re-checks the field, so
+ * that one rule became the book-specific half of every draft and review
+ * prompt. A list that is too short to be a real contract gets `planStyleContract`
+ * — the same composition `makeFallbackPlan` seeds a plan with, `input` and all,
+ * so a kids book keeps its reading band — appended back, deduped; a plan the
+ * model filled in properly comes back by identity.
+ */
+export function ensurePlanStyleContract(
+  plan: BookPlan,
+  options: { input?: CreateProjectInput | undefined; toneProfile: ToneProfile }
+): BookPlan {
+  const contract = planStyleContract(options.input, options.toneProfile);
+  const voiceGuide =
+    plan.voiceGuide.length >= MIN_VOICE_GUIDE_RULES
+      ? plan.voiceGuide
+      : appendUniqueRules(plan.voiceGuide, contract.voiceGuide);
+  const antiAiRules =
+    plan.antiAiRules.length >= MIN_ANTI_AI_RULES
+      ? plan.antiAiRules
+      : appendUniqueRules(plan.antiAiRules, contract.antiAiRules);
+  if (voiceGuide === plan.voiceGuide && antiAiRules === plan.antiAiRules) {
+    return plan;
+  }
+  return { ...plan, voiceGuide, antiAiRules };
+}
+
+function appendUniqueRules(current: string[], additions: string[]): string[] {
+  const seen = new Set(current.map((rule) => rule.trim().toLowerCase()));
+  const merged = [...current];
+  for (const addition of additions) {
+    const trimmed = addition.trim();
+    const key = trimmed.toLowerCase();
+    if (!trimmed || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(trimmed);
+  }
+  return merged;
 }
 
 export async function revisePlanningPackage(options: RevisePlanOptions): Promise<BookPlan> {
@@ -221,11 +277,14 @@ export async function revisePlanningPackage(options: RevisePlanOptions): Promise
     ).slice(0, 1);
     return normalizePlanPageTargets(
       reconcilePlanLibraryCharacters(
-        {
-          ...revised,
-          questions,
-          researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
-        },
+        ensurePlanStyleContract(
+          {
+            ...revised,
+            questions,
+            researchNotes: mergeResearchNotes(options.currentPlan.researchNotes, revised.researchNotes)
+          },
+          { input: options.input, toneProfile }
+        ),
         librarySnapshots
       ),
       targetPages

@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { BookPlan } from "@book-maker/core";
+import { chapterDisplayHeading, type BookPlan } from "@book-maker/core";
 import {
   continuationChapterPlans,
+  continuationOutlineAiSchema,
   continuationPageIndexes,
   distributeContinuationPages,
-  fallbackContinuationOutline
+  fallbackContinuationOutline,
+  UNTITLED_CONTINUATION_CHAPTER
 } from "./continueBookSupport.js";
 
 describe("distributeContinuationPages", () => {
@@ -53,5 +55,38 @@ describe("fallbackContinuationOutline", () => {
   it("falls back to a generic directive for empty requests", () => {
     const outline = fallbackContinuationOutline("   ", 1);
     expect(outline.chapters[0]!.summary).toContain("Continue the story");
+  });
+
+  it("leaves its chapters untitled rather than inventing an English name", () => {
+    const outline = fallbackContinuationOutline("Write what happens after the wedding", 2);
+
+    expect(outline.chapters.map((chapter) => chapter.title)).toEqual([
+      UNTITLED_CONTINUATION_CHAPTER,
+      UNTITLED_CONTINUATION_CHAPTER
+    ]);
+    // Nothing re-parses this outline — it is built, not validated — but every
+    // surface that shows one of its chapters has to have an answer for the
+    // empty title, and that answer is one function.
+    const chapters = continuationChapterPlans({ chapters: [{ index: 4 }] } as unknown as BookPlan, outline, [2, 2], 5);
+    expect(chapters.map((chapter) => chapterDisplayHeading(chapter))).toEqual(["Chapter 5", "Chapter 6"]);
+  });
+});
+
+describe("continuationOutlineAiSchema", () => {
+  it("refuses an untitled chapter from the model", () => {
+    const untitled = { chapters: [{ title: "", summary: "The sequel begins.", keyBeats: [] }] };
+
+    expect(continuationOutlineAiSchema.safeParse(untitled).success).toBe(false);
+    // Only the *model* is held to that. The same outline is the one the
+    // fallback builds, and the job runs on it unparsed.
+    expect(fallbackContinuationOutline("The sequel begins.", 1).chapters[0]!.title).toBe("");
+  });
+
+  it("accepts a named chapter and defaults its beats", () => {
+    const parsed = continuationOutlineAiSchema.parse({
+      chapters: [{ title: "  New Dawn  ", summary: "The sequel begins." }]
+    });
+
+    expect(parsed.chapters).toEqual([{ title: "New Dawn", summary: "The sequel begins.", keyBeats: [] }]);
   });
 });

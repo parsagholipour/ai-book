@@ -1,4 +1,11 @@
-import { formatQualityFailure, getProjectOrThrow, parseChapterBrief, strategyForInput, toPriorPageContext } from "../generation/bookHelpers.js";
+import {
+  formatQualityFailure,
+  getProjectOrThrow,
+  parseChapterBrief,
+  strategyForInput,
+  styleExcerptsForPage,
+  toPriorPageContext
+} from "../generation/bookHelpers.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "../generation/generationContext.js";
 import { pageRevisionMessage, runPageQualityLoop } from "../generation/pageReview.js";
 import {
@@ -32,10 +39,6 @@ import {
   formatStoryStateLines,
   generateBestOfPageDrafts,
   generatePageDraftWithWriterTools,
-  missingStyleLockIndexes,
-  pagesForStyleExcerpts,
-  pinStyleExcerpts,
-  sampleExcerptsFromInput,
   type PriorPageContext
 } from "@book-maker/core";
 import { pageScope, Prisma, prisma } from "@book-maker/db";
@@ -167,15 +170,13 @@ export async function generatePage(job: Job) {
     : [];
   const storyLines = formatStoryStateLines(storyState);
   const entityState = mergeEntityAndStoryStateLines(entityStateLines, storyLines);
-  const styleLockPages = quality.enabled("styleExcerpts")
-    ? await loadStyleLockPages(projectId, page.index, priorPageContext)
-    : [];
-  const styleExcerpts = quality.enabled("styleExcerpts")
-    ? pinStyleExcerpts(
-        pagesForStyleExcerpts(priorPageContext, styleLockPages),
-        sampleExcerptsFromInput(input)
-      )
-    : [];
+  const styleExcerpts = await styleExcerptsForPage({
+    projectId,
+    pageIndex: page.index,
+    recencyPages: priorPageContext,
+    input,
+    quality
+  });
 
   // Sequential drafting uses the same `bestOfPolish` gate as polish
   // (`polishPageWithQualityGates`). Operator `draftCandidates` only applies
@@ -282,10 +283,11 @@ export async function generatePage(job: Job) {
     projectId,
     quality,
     storyState,
-    ...(quality.enabled("styleExcerpts") ? { styleExcerpts } : {})
+    styleExcerpts
   });
 
   const outcome = await runPageQualityLoop({
+    projectId,
     strategy,
     input,
     plan,
@@ -304,6 +306,7 @@ export async function generatePage(job: Job) {
     repairBrief: true,
     reviseContext: `Page ${page.index}`,
     reviseProgress: 70,
+    quality,
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     ...(quality.enabled("claimRetrieve")
       ? {
@@ -461,19 +464,4 @@ async function settleIndependentLoads<T extends readonly unknown[] | []>(
   return settled.map((result) => (result as PromiseFulfilledResult<unknown>).value) as unknown as {
     -readonly [K in keyof T]: Awaited<T[K]>;
   };
-}
-
-async function loadStyleLockPages(
-  projectId: string,
-  pageIndex: number,
-  recencyPages: PriorPageContext[]
-): Promise<PriorPageContext[]> {
-  const missing = missingStyleLockIndexes(recencyPages, pageIndex);
-  if (missing.length === 0) {
-    return [];
-  }
-  const loaded = await prisma.page.findMany({
-    where: { projectId, index: { in: missing }, status: "COMPLETED" }
-  });
-  return loaded.map(toPriorPageContext);
 }

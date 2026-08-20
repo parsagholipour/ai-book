@@ -15,10 +15,11 @@ import { enqueueWorkerJob, maybeEnqueueCompile, maybeEnqueueCover } from "../run
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type ChapterSetup, type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { range } from "../runtime/serialization.js";
-import { chapterSetupsForPlan, reviewWholeBookDraftPages } from "./bookHelpers.js";
+import { chapterSetupsForPlan, reviewWholeBookDraftPages, styleExcerptsForPage } from "./bookHelpers.js";
 import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { reviewAndSaveGeneratedPage } from "./pageReview.js";
-import { persistKeeperStoryDelta } from "./qualityEnrichment.js";
+import { persistKeeperStoryDelta, type QualityGateContext } from "./qualityEnrichment.js";
+import { loadQualityContext } from "./qualitySettings.js";
 import { polishPageWithQualityGates } from "./qualityDrafting.js";
 import { storeEmbedding, strategyUsesSemanticMemory } from "./embeddingWrites.js";
 import { updateEntityStateFromPage } from "./entityState.js";
@@ -104,6 +105,7 @@ export async function generateBookChapterWholePass(options: {
     generationJobId: options.generationJobId
   });
   await maybeEnqueueCover(options.projectId, options.planId, options.input);
+  const quality = await loadQualityContext(options.input);
 
   for (const [chapterIndex, setup] of chapterSetups.entries()) {
     if (setup.endPage < resumeFromPage) {
@@ -119,6 +121,13 @@ export async function generateBookChapterWholePass(options: {
     // pages already agreed with.
     const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup.chapter);
+    const styleExcerpts = await styleExcerptsForPage({
+      projectId: options.projectId,
+      pageIndex: setup.startPage,
+      recencyPages: previousPages,
+      input: options.input,
+      quality
+    });
     const draft = await generateChapterDraft({
       input: options.input,
       plan: options.plan,
@@ -129,7 +138,8 @@ export async function generateBookChapterWholePass(options: {
       previousPages,
       continuityNotes,
       researchNotes,
-      textModel: options.providers.text
+      textModel: options.providers.text,
+      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     });
 
     for (const pageDraft of draft.pages) {
@@ -222,6 +232,7 @@ export async function generateBookBatchWindow(options: {
     generationJobId: options.generationJobId
   });
   await maybeEnqueueCover(options.projectId, options.planId, options.input);
+  const quality = await loadQualityContext(options.input);
   const totalBatches = Math.ceil(options.input.targetPages / batchSize);
 
   for (
@@ -236,6 +247,13 @@ export async function generateBookBatchWindow(options: {
     });
     const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy);
+    const styleExcerpts = await styleExcerptsForPage({
+      projectId: options.projectId,
+      pageIndex: pageStart,
+      recencyPages: previousPages,
+      input: options.input,
+      quality
+    });
     let draft: { pages: IndexedPageDraft[] };
     try {
       draft = await generateBatchDraft({
@@ -247,7 +265,8 @@ export async function generateBookBatchWindow(options: {
         previousPages,
         continuityNotes,
         researchNotes,
-        textModel: options.providers.text
+        textModel: options.providers.text,
+        ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
       });
     } catch (error) {
       if (!isRecoverableBatchDraftRangeError(error)) {
@@ -274,7 +293,8 @@ export async function generateBookBatchWindow(options: {
           strategy: options.strategy,
           chapterSetups,
           pageIndex,
-          previousPages
+          previousPages,
+          quality
         });
       }
 
@@ -312,11 +332,19 @@ export async function generateBatchFallbackPageDraft(options: {
   chapterSetups: ChapterSetup[];
   pageIndex: number;
   previousPages: PriorPageContext[];
+  quality: QualityGateContext;
 }): Promise<IndexedPageDraft> {
   const setup = chapterSetupForPage(options.chapterSetups, options.pageIndex);
   const chapterBrief = setup?.brief;
   const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup?.chapter);
+  const styleExcerpts = await styleExcerptsForPage({
+    projectId: options.projectId,
+    pageIndex: options.pageIndex,
+    recencyPages: options.previousPages,
+    input: options.input,
+    quality: options.quality
+  });
   const draft = await options.strategy.generatePageDraft({
     input: options.input,
     plan: options.plan,
@@ -328,7 +356,8 @@ export async function generateBatchFallbackPageDraft(options: {
     previousPages: options.previousPages,
     continuityNotes,
     researchNotes,
-    textModel: options.providers.text
+    textModel: options.providers.text,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
   });
 
   return { ...draft, index: options.pageIndex };

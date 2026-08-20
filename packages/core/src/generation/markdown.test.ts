@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assertBookLikeMarkdown,
+  CHAPTER_HEADING_STYLES,
+  chapterDisplayHeading,
   chapterHeadingLabelPreference,
   chapterHeadingStylePreference,
   chapterPresentationFor,
@@ -451,7 +453,42 @@ describe("compileBookMarkdown", () => {
     expect(markdown).toContain('<span class="book-contents__chapter">Part 1</span>');
   });
 
-  it("never emits an empty heading when a titleless chapter is set to titles only", () => {
+  it.each(CHAPTER_HEADING_STYLES)(
+    "gives a titleless chapter the heading's own words in the Contents under %s",
+    (chapterHeadingStyle) => {
+      const plan = withTwoMultiPageChapters(storyPlan());
+      // The shape a continuation whose outline call failed compiles to:
+      // `fallbackContinuationOutline` writes empty chapter titles on purpose.
+      const markdown = compileBookMarkdown({
+        plan: { ...plan, chapters: [{ ...plan.chapters[0]!, title: "   " }, plan.chapters[1]!] },
+        pages: chapteredPages(),
+        chapterHeadingStyle
+      });
+
+      // `title_only` is the one style that may print no label word at all, so
+      // its fallback is the bare number rather than "Chapter 1".
+      const expected = chapterHeadingStyle === "title_only" ? "1" : "Chapter 1";
+      expect(markdown).toMatch(new RegExp(`^## ${expected}$`, "m"));
+      expect(contentsRowText(markdown, "#chapter-1")).toBe(expected);
+      // The eyebrow would say "1" under `number_title` while the page it links
+      // to says "Chapter 1", and the name column would be empty under either
+      // numbered style.
+      expect(markdown).not.toContain('<span class="book-contents__name"></span>');
+      expect(findBookLikeMarkdownIssues(markdown)).toEqual([]);
+    }
+  );
+
+  it("keeps the eyebrow and the title apart for a chapter that has one", () => {
+    const markdown = compileBookMarkdown({
+      plan: withTwoMultiPageChapters(storyPlan()),
+      pages: chapteredPages(),
+      chapterHeadingStyle: "number_title"
+    });
+
+    expect(contentsRowText(markdown, "#chapter-1")).toBe("1 Opening Move");
+  });
+
+  it("heads a titleless chapter with its bare number when the reader asked for titles only", () => {
     const plan = withTwoMultiPageChapters(storyPlan());
     const markdown = compileBookMarkdown({
       plan: { ...plan, chapters: [{ ...plan.chapters[0]!, title: "   " }, plan.chapters[1]!] },
@@ -461,7 +498,36 @@ describe("compileBookMarkdown", () => {
 
     // A bare "## " would fold this chapter into the previous one in the EPUB.
     expect(markdown).not.toMatch(/^##\s*$/m);
-    expect(markdown).toContain("## Chapter 1");
+    expect(markdown).toMatch(/^## 1$/m);
+    // The reader asked for the word to go away; a fallback is not an exception.
+    expect(markdown).not.toContain("Chapter 1");
+  });
+
+  it("keeps the chapter word out of a short book whose continuation chapter is untitled", () => {
+    // Six pages over two even chapters is `sections` presentation: titles alone,
+    // no Contents, and no "Chapter" anywhere — the rule a labelled fallback used
+    // to break for exactly the chapter a failed continuation outline appends.
+    const plan = storyPlan();
+    const markdown = compileBookMarkdown({
+      plan: {
+        ...plan,
+        chapters: [
+          { index: 1, title: "Opening Move", summary: "Open the book.", targetPages: 3, keyBeats: [] },
+          { index: 2, title: "", summary: "Continue from where it left off.", targetPages: 3, keyBeats: [] }
+        ]
+      },
+      pages: Array.from({ length: 6 }, (_, offset) => ({
+        index: offset + 1,
+        title: `Movement ${offset + 1}`,
+        markdown: `Prose for page ${offset + 1}.`
+      }))
+    });
+
+    expect(markdown).toContain("## Opening Move");
+    expect(markdown).toMatch(/^## 2$/m);
+    expect(markdown).not.toContain("Chapter");
+    expect(markdown).not.toMatch(/^##\s*$/m);
+    expect(findBookLikeMarkdownIssues(markdown)).toEqual([]);
   });
 
   it("still strips a page's own heading after the chapter style changes", () => {
@@ -519,6 +585,34 @@ describe("compileBookMarkdown", () => {
       "page-number image alt text"
     ]);
     expect(() => assertBookLikeMarkdown(badMarkdown)).toThrow(/reader-facing generation artifacts/);
+  });
+});
+
+describe("chapterDisplayHeading", () => {
+  it("labels a chapter the way the book's own heading does", () => {
+    expect(chapterDisplayHeading({ index: 3, title: "The Web Spins" })).toBe("Chapter 3: The Web Spins");
+    expect(chapterDisplayHeading({ index: 3, title: "The Web Spins" }, { style: "number_title" })).toBe(
+      "3. The Web Spins"
+    );
+    expect(chapterDisplayHeading({ index: 3, title: "The Web Spins" }, { style: "title_only" })).toBe("The Web Spins");
+    // Same de-duplication the printed heading gets: a model-written title
+    // arriving as "Chapter 3: ..." must not be labelled twice.
+    expect(chapterDisplayHeading({ index: 3, title: "Chapter 3: The Web Spins" }, { style: "number_title" })).toBe(
+      "3. The Web Spins"
+    );
+  });
+
+  it("never comes back empty for the untitled chapter a failed continuation writes", () => {
+    // The label sites used to interpolate the stored title raw, so these read
+    // "3. " and "Chapter 3: " with nothing after them.
+    expect(chapterDisplayHeading({ index: 3, title: "" })).toBe("Chapter 3");
+    expect(chapterDisplayHeading({ index: 3, title: "   " }, { style: "number_title" })).toBe("Chapter 3");
+    expect(chapterDisplayHeading({ index: 3, title: "" }, { style: "title_only" })).toBe("3");
+  });
+
+  it("localizes the label word for a surface that speaks the book's language", () => {
+    expect(chapterDisplayHeading({ index: 3, title: "" }, { language: "persian" })).toBe("فصل 3");
+    expect(chapterDisplayHeading({ index: 3, title: "آغاز" }, { language: "persian" })).toBe("فصل 3: آغاز");
   });
 });
 
@@ -654,6 +748,18 @@ function chapteredPages(overrides: MarkdownPage[] = []): MarkdownPage[] {
     const index = offset + 1;
     return byIndex.get(index) ?? { index, title: `Movement ${index}`, markdown: `Prose for page ${index}.` };
   });
+}
+
+/**
+ * The words one Contents row actually prints, eyebrow first — the row as a
+ * reader sees it, which is what has to match the chapter's own heading.
+ */
+function contentsRowText(markdown: string, href: string): string {
+  const row = markdown.split(`href="${href}"`)[1]?.split("</a>")[0] ?? "";
+  return [...row.matchAll(/<span class="book-contents__(?:chapter|name)">([^<]*)<\/span>/g)]
+    .map((match) => match[1] ?? "")
+    .filter((text) => text.length > 0)
+    .join(" ");
 }
 
 function withPageLikeChapters(plan: ReturnType<typeof makeFallbackPlan>): ReturnType<typeof makeFallbackPlan> {

@@ -1,4 +1,5 @@
 import {
+  chapterDisplayHeading,
   chapterPresentationFor,
   concatPcm16ChunksWithSilence,
   createDeterministicReaderChapters,
@@ -34,6 +35,14 @@ export type AudiobookChapterPlan = {
   title: string;
   pages: Array<{ index: number; title: string; markdown: string }>;
 };
+
+/** The chapter name stored for player metadata; real titles stay untouched. */
+export function audiobookChapterDisplayTitle(
+  chapter: Pick<AudiobookChapterPlan, "index" | "title">,
+  language: string | null | undefined
+): string {
+  return chapter.title.trim() || chapterDisplayHeading(chapter, language ? { language } : undefined);
+}
 
 /**
  * Chapters come from the book's own `Chapter` rows when it has them, and from

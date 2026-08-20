@@ -35,7 +35,7 @@ import { generateGroundedProjectAnswer } from "./groundedAnswer.js";
 import { replayClaimedProposal } from "./proposalExecutionClaims.js";
 import { isPrismaUniqueConflict, jsonInputValue, languageDisplayName } from "./support.js";
 import { findPendingProposalById, type PendingEditState } from "./pendingEditState.js";
-import { bookPlanSchema, resolveStructuralPageEdit, type TextModelAdapter } from "@book-maker/core";
+import { bookPlanSchema, chapterDisplayHeading, resolveStructuralPageEdit, type TextModelAdapter } from "@book-maker/core";
 import { type FastifyReply } from "fastify";
 import { randomUUID } from "node:crypto";
 import {
@@ -766,6 +766,12 @@ export async function contentCardForTarget(
   target: NonNullable<BookEditIntent["contentTarget"]>
 ): Promise<MobileContentCard | null> {
   const numbering = numberingForProject(project);
+  // Every chapter label here is the book's own heading (`chapterDisplayHeading`,
+  // packages/core/src/generation/markdown.ts) rather than the stored title: a
+  // continuation whose outline call failed stores that title empty on purpose,
+  // and interpolating it left rows reading "5. " and "Chapter 5: ".
+  const chapterLabel = (chapter: { index: number; title: string }, style?: "number_title" | "title_only"): string =>
+    chapterDisplayHeading(chapter, { language: project.language, ...(style ? { style } : {}) });
   if (target.type === "outline") {
     const plan = project.currentPlan ? bookPlanSchema.safeParse(project.currentPlan.planningPackage) : null;
     if (plan?.success) {
@@ -773,7 +779,7 @@ export async function contentCardForTarget(
         type: "outline",
         title: plan.data.title || project.title,
         sections: plan.data.chapters.map((chapter) => ({
-          label: `${chapter.index}. ${chapter.title}`,
+          label: chapterLabel(chapter, "number_title"),
           body: chapter.summary
         }))
       };
@@ -783,7 +789,7 @@ export async function contentCardForTarget(
         type: "outline",
         title: project.title,
         sections: project.chapters.map((chapter) => ({
-          label: `${chapter.index}. ${chapter.title}`,
+          label: chapterLabel(chapter, "number_title"),
           body: chapter.summary
         }))
       };
@@ -803,14 +809,14 @@ export async function contentCardForTarget(
     );
     return {
       type: "chapter",
-      title: chapter ? `Chapter ${target.index}: ${chapter.title}` : `Chapter ${target.index}`,
+      title: chapterLabel(chapter ?? { index: target.index, title: "" }),
       sections:
         chapterPages.length > 0
           ? chapterPages.map((page) => ({
               label: `Page ${numbering.displayPage(page.index)}${page.title ? ` — ${page.title}` : ""}`,
               body: page.summary || (bodies.get(page.index) ?? "").slice(0, 280)
             }))
-          : [{ label: chapter!.title, body: chapter!.summary }]
+          : [{ label: chapterLabel(chapter!, "title_only"), body: chapter!.summary }]
     };
   }
   const page = project.pages.find((candidate) => candidate.index === target.index);

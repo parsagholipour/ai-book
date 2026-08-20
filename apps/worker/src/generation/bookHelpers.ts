@@ -5,9 +5,13 @@ import { cleanOptionalText } from "../runtime/serialization.js";
 import {
   chapterBriefSchema,
   exportProvenancePaths,
+  missingStyleLockIndexes,
   normalizePlanPageTargets,
+  pagesForStyleExcerpts,
+  pinStyleExcerpts,
   resolveBookGenerationStrategy,
   reviewPageDraftLocally,
+  sampleExcerptsFromInput,
   type BookGenerationStrategy,
   type BookPlan,
   type ChapterBrief,
@@ -18,6 +22,7 @@ import {
   type OptimizedImage,
   type PageQualityReport,
   type PriorPageContext,
+  type QualityFeatureId,
   type TextModelAdapter
 } from "@book-maker/core";
 import { Prisma, prisma } from "@book-maker/db";
@@ -195,6 +200,51 @@ export function toPriorPageContext(page: { index: number; title: string; markdow
     markdown: page.markdown,
     summary: page.summary
   };
+}
+
+/**
+ * The accepted style-lock pages (1–2) when the recency window no longer
+ * reaches them, so `pinStyleExcerpts` pins the book's opening voice rather
+ * than whatever the window happens to start at. Shared by the generate-page
+ * handler and the finished-book rewrite paths (chat page edits, final-QA
+ * repair), which used to review without any style anchor at all.
+ */
+export async function loadStyleLockPages(
+  projectId: string,
+  pageIndex: number,
+  recencyPages: PriorPageContext[]
+): Promise<PriorPageContext[]> {
+  const missing = missingStyleLockIndexes(recencyPages, pageIndex);
+  if (missing.length === 0) {
+    return [];
+  }
+  const loaded = await prisma.page.findMany({
+    where: { projectId, index: { in: missing }, status: "COMPLETED" }
+  });
+  return loaded.map(toPriorPageContext);
+}
+
+/**
+ * The generate-page composition: recency plus any loaded pages 1–2, then
+ * `pinStyleExcerpts`. One function so a writer and the review that scores it
+ * cannot silently pin different prose — the continue-book path used to draft
+ * from the recency window and audit against the opening lock.
+ */
+export async function styleExcerptsForPage(options: {
+  projectId: string;
+  pageIndex: number;
+  recencyPages: PriorPageContext[];
+  input: CreateProjectInput;
+  quality: { enabled: (feature: QualityFeatureId) => boolean };
+}): Promise<string[]> {
+  if (!options.quality.enabled("styleExcerpts")) {
+    return [];
+  }
+  const styleLockPages = await loadStyleLockPages(options.projectId, options.pageIndex, options.recencyPages);
+  return pinStyleExcerpts(
+    pagesForStyleExcerpts(options.recencyPages, styleLockPages),
+    sampleExcerptsFromInput(options.input)
+  );
 }
 
 export function toFinalQaPage(page: { index: number; title: string; markdown: string; summary: string }) {

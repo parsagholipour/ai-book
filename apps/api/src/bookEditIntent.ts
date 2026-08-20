@@ -1,4 +1,5 @@
 import {
+  chapterDisplayHeading,
   runToolLoop,
   withRecoverableNetworkRetry,
   type ReplanSettings,
@@ -278,6 +279,12 @@ export async function classifyProjectChatMessage(options: {
    * the message text — the exact page the user acted on is known here.
    */
   readerSelection?: { pageIndex?: number | undefined } | undefined;
+  /**
+   * The project's language, so untitled chapters in the router prompt are
+   * named the way the book names them. Without it the fallback is English
+   * "Chapter 2" while a Persian reader sees فصل 2.
+   */
+  language?: string | undefined;
 }): Promise<BookEditIntent> {
   const message = options.message.trim();
   const chapters = options.chapters ?? [];
@@ -349,7 +356,8 @@ export async function classifyProjectChatMessage(options: {
       clarifyExhausted,
       numbering,
       ...(readerSelection ? { readerSelection } : {}),
-      ...(options.replyTo ? { replyTo: options.replyTo } : {})
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+      ...(options.language ? { language: options.language } : {})
     });
     return normalizeIntentForStage(
       withDeterministicContentTarget(routed, message, numbering),
@@ -380,6 +388,7 @@ type RouteAgentOptions = {
   numbering: ReaderPageNumbering;
   readerSelection?: { pageIndex?: number | undefined } | undefined;
   replyTo?: ChatReplyQuote | undefined;
+  language?: string | undefined;
 };
 
 /**
@@ -470,7 +479,17 @@ async function routeWithToolAgent(options: RouteAgentOptions): Promise<BookEditI
             const readerPages = readerPagesFor(chapter.pageIndexes);
             return {
               index: chapter.index,
-              title: chapter.title,
+              // A continuation whose outline call failed stores an empty title
+              // (`UNTITLED_CONTINUATION_CHAPTER`), and a nameless chapter in
+              // this list is one the router cannot resolve a reference to. It
+              // is named here the way the book names it — including the book's
+              // language, so a Persian continuation is فصل 2, not Chapter 2.
+              title:
+                chapter.title.trim() ||
+                chapterDisplayHeading(
+                  chapter,
+                  options.language ? { language: options.language } : undefined
+                ),
               pageIndexes: chapter.pageIndexes,
               ...(readerPages !== undefined ? { readerPages } : {})
             };

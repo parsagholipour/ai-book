@@ -14,8 +14,34 @@ const mocks = vi.hoisted(() => ({
   updateEntityStateFromPage: vi.fn(),
   loadContinuityNotes: vi.fn(),
   keeperStoryExtractForSave: vi.fn(),
-  persistStoryExtract: vi.fn()
+  persistStoryExtract: vi.fn(),
+  // Controllable: `reviewAndSaveGeneratedPage` pins its excerpts out of
+  // whatever this returns, and the whole of finding C is that it used to load
+  // nothing at all.
+  loadStyleLockPages: vi.fn(
+    async (
+      _projectId?: string,
+      _pageIndex?: number,
+      _recencyPages?: Array<Record<string, unknown>>
+    ): Promise<Array<Record<string, unknown>>> => []
+  ),
+  enrichPageQualityReport: vi.fn(),
+  // The style audit's provider boundary. `withStyleAudit` above it stays real.
+  auditPageStyle: vi.fn(),
+  qualityEnabled: vi.fn((_feature: string): boolean => false)
 }));
+
+/**
+ * The enrichment pass is stubbed, but the excerpts it is *handed* are not
+ * incidental: they are the pin this function derives once and hands to the
+ * enrichment pass and the review loop alike, so the tests below read them off
+ * the call rather than off the answer.
+ */
+const stubbedEnrichment = async ({ report }: { report: unknown }) => ({
+  report,
+  extract: null,
+  storyState: { promises: [], facts: [], entities: {}, unanswered: [] }
+});
 
 vi.mock("@book-maker/db", async () => ({
   prisma: mocks.prisma,
@@ -41,36 +67,65 @@ vi.mock("./qualitySettings.js", () => ({
   loadQualityContext: async () => ({
     settings: {},
     tier: "balanced",
-    enabled: () => false
+    enabled: (feature: string) => mocks.qualityEnabled(feature)
   }),
   applyPlanThinkingBoost: vi.fn()
 }));
-vi.mock("./qualityEnrichment.js", () => ({
-  enrichPageQualityReport: async ({ report }: { report: unknown }) => ({
-    report,
-    extract: null,
-    storyState: { promises: [], facts: [], entities: {}, unanswered: [] },
-    styleExcerpts: []
-  }),
-  keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
-  persistStoryExtract: mocks.persistStoryExtract
-}));
-vi.mock("./bookHelpers.js", () => ({
-  formatQualityFailure: () => "quality failure detail",
-  parseChapterBrief: (value: unknown) => (value ? value : undefined)
-}));
+vi.mock("./qualityEnrichment.js", async () => {
+  const actual = await vi.importActual<typeof import("./qualityEnrichment.js")>("./qualityEnrichment.js");
+  return {
+    enrichPageQualityReport: mocks.enrichPageQualityReport,
+    // The real factory: whether the handler builds an auditor at all, and out
+    // of which excerpts, is exactly what the style-audit tests below measure.
+    revisedDraftStyleAuditor: actual.revisedDraftStyleAuditor,
+    keeperStoryExtractForSave: mocks.keeperStoryExtractForSave,
+    persistStoryExtract: mocks.persistStoryExtract
+  };
+});
+vi.mock("@book-maker/core", async () => {
+  const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");
+  return { ...actual, auditPageStyle: mocks.auditPageStyle };
+});
+vi.mock("./bookHelpers.js", async () => {
+  const { pagesForStyleExcerpts, pinStyleExcerpts, sampleExcerptsFromInput } = await vi.importActual<
+    typeof import("@book-maker/core")
+  >("@book-maker/core");
+  return {
+    formatQualityFailure: () => "quality failure detail",
+    loadStyleLockPages: mocks.loadStyleLockPages,
+    parseChapterBrief: (value: unknown) => (value ? value : undefined),
+    // The real pin, the mocked loader: so the suite still observes
+    // `loadStyleLockPages` while the helper under test is the same composition.
+    styleExcerptsForPage: async (options: {
+      projectId: string;
+      pageIndex: number;
+      recencyPages: Array<{ index: number; title: string; markdown: string; summary: string }>;
+      input: Parameters<typeof sampleExcerptsFromInput>[0];
+      quality: { enabled: (feature: string) => boolean };
+    }) => {
+      if (!options.quality.enabled("styleExcerpts")) {
+        return [];
+      }
+      const lockPages = (await mocks.loadStyleLockPages(
+        options.projectId,
+        options.pageIndex,
+        options.recencyPages
+      )) as Array<{ index: number; title: string; markdown: string; summary: string }>;
+      return pinStyleExcerpts(
+        pagesForStyleExcerpts(options.recencyPages, lockPages),
+        sampleExcerptsFromInput(options.input)
+      );
+    }
+  };
+});
 
 import {
-  bestDraftCandidate,
-  pageRevisionMessage,
-  pageRewriteReport,
   repairPageBriefForRecovery,
-  replacePageBriefInChapterBrief,
   reviewAndSaveGeneratedPage,
   revisePageDraftWithRestart,
-  shouldRepairPageBriefForRecovery
+  runPageQualityLoop
 } from "./pageReview.js";
-import { MAX_PAGE_QA_CANDIDATES, PAGE_QA_RECOVERY_CANDIDATE } from "./tuning.js";
+import { MAX_PAGE_QA_CANDIDATES } from "./tuning.js";
 
 const report = (score: number, overrides: Partial<PageQualityReport> = {}): PageQualityReport =>
   ({
@@ -90,129 +145,169 @@ const draftNamed = (name: string) => ({
   continuityNotes: [] as string[]
 });
 
-describe("bestDraftCandidate", () => {
-  it("keeps the higher-scoring draft and keeps the incumbent on a tie", () => {
-    const first = { draft: draftNamed("First"), revision: 1, report: report(60) };
-    const second = { draft: draftNamed("Second"), revision: 2, report: report(70) };
-    const tie = { draft: draftNamed("Tie"), revision: 3, report: report(70) };
+/** Gate stub in the shape `loadQualityContext` answers with. */
+const qualityGates = (...enabled: string[]) => ({ enabled: (feature: string) => enabled.includes(feature) });
 
-    expect(bestDraftCandidate(first, second)).toBe(second);
-    expect(bestDraftCandidate(second, first)).toBe(second);
-    expect(bestDraftCandidate(second, tie)).toBe(second);
-  });
+/** A page long enough for `pinStyleExcerpts` to accept it as a style anchor. */
+const anchorPage = (index: number, voice: string) => ({
+  index,
+  title: `Page ${index}`,
+  markdown: `${voice} ${"prose ".repeat(20)}`,
+  summary: `Summary ${index}`
 });
 
-describe("pageRevisionMessage", () => {
-  it("announces plain revising before the recovery candidate and recovery after", () => {
-    expect(pageRevisionMessage(3, PAGE_QA_RECOVERY_CANDIDATE - 1, 6)).toBe("Revising page 3 (rewrite 2/6)");
-    expect(pageRevisionMessage(3, PAGE_QA_RECOVERY_CANDIDATE, 6)).toBe(
-      `Quality recovery rewrite page 3 (rewrite ${PAGE_QA_RECOVERY_CANDIDATE - 1}/6)`
-    );
-  });
+beforeEach(() => {
+  // Set here rather than in each suite's own `beforeEach`, which clears calls
+  // but keeps implementations: one test's excerpts or verdict would otherwise
+  // be the next one's default.
+  mocks.enrichPageQualityReport.mockImplementation(stubbedEnrichment);
+  mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
+  mocks.qualityEnabled.mockReturnValue(false);
+  mocks.loadStyleLockPages.mockResolvedValue([]);
 });
 
-describe("pageRewriteReport", () => {
-  it("passes the report through untouched below the recovery candidate", () => {
-    const original = report(40);
-    expect(pageRewriteReport(original, PAGE_QA_RECOVERY_CANDIDATE - 1)).toBe(original);
+describe("runPageQualityLoop style audit", () => {
+  /** The excerpts a caller pins once and the loop is expected to reuse whole. */
+  const excerpts = ["Opening voice, pinned.", "Second page voice, pinned."];
+
+  type LoopCall = { styleExcerpts?: string[]; report: PageQualityReport };
+
+  const strategyApproving = () => ({
+    revisePageDraft: vi.fn(async (_options: LoopCall) => draftNamed("Rewrite")),
+    reviewPageDraft: vi.fn(async (_options: LoopCall) => report(85, { approved: true }))
   });
 
-  it("escalates to a structural-replacement briefing at the recovery candidate", () => {
-    const original = report(40, { issues: ["Too repetitive"], requiredRevisions: ["Vary it"], notes: "Meh." });
-    const escalated = pageRewriteReport(original, PAGE_QA_RECOVERY_CANDIDATE);
-
-    expect(escalated).not.toBe(original);
-    expect(escalated.issues).toContain("Too repetitive");
-    expect(escalated.issues).toContain("Earlier generated replacements for this page were still rejected by QA.");
-    expect(escalated.requiredRevisions.length).toBeGreaterThan(original.requiredRevisions.length);
-    expect(escalated.notes).toContain("Quality recovery mode");
+  /** Rejects once, then approves — so one rewrite runs before the audit. */
+  const strategyRejectingOnce = () => ({
+    revisePageDraft: vi.fn(async (_options: LoopCall) => draftNamed("Rewrite")),
+    reviewPageDraft: vi
+      .fn<(options: LoopCall) => Promise<PageQualityReport>>()
+      .mockResolvedValueOnce(report(40))
+      .mockResolvedValue(report(85, { approved: true }))
   });
 
-  it("honors a caller-supplied recovery threshold", () => {
-    // The final-QA loop counts attempts from the first rewrite, one later than
-    // the page loops count candidates, so it passes the threshold minus one to
-    // enter recovery at the same third rewrite.
-    const original = report(40);
-    expect(pageRewriteReport(original, PAGE_QA_RECOVERY_CANDIDATE - 1, PAGE_QA_RECOVERY_CANDIDATE - 1)).not.toBe(original);
-    expect(pageRewriteReport(original, PAGE_QA_RECOVERY_CANDIDATE - 2, PAGE_QA_RECOVERY_CANDIDATE - 1)).toBe(original);
-  });
-});
+  const loopWith = (overrides: Record<string, unknown>) =>
+    runPageQualityLoop({
+      projectId: "project-1",
+      input: {} as never,
+      plan: {} as never,
+      pageIndex: 4,
+      draft: draftNamed("Initial"),
+      report: report(50),
+      previousPages: [],
+      continuityNotes: [],
+      textModel: {} as never,
+      maxCandidates: MAX_PAGE_QA_CANDIDATES,
+      reviseContext: "Page 4",
+      quality: qualityGates("styleAuditor"),
+      styleExcerpts: excerpts,
+      ...overrides
+    } as never);
 
-describe("shouldRepairPageBriefForRecovery", () => {
-  const brief = { pageIndex: 3, goal: "Introduce the robin" } as unknown as PageProductionBeat;
+  const auditedWith = () =>
+    mocks.auditPageStyle.mock.calls.map((call) => call[0] as { markdown: string; styleExcerpts: string[] });
 
-  it("requires a brief and the recovery candidate", () => {
-    expect(shouldRepairPageBriefForRecovery(PAGE_QA_RECOVERY_CANDIDATE, report(40), undefined)).toBe(false);
-    expect(shouldRepairPageBriefForRecovery(PAGE_QA_RECOVERY_CANDIDATE - 1, report(40), brief)).toBe(false);
-  });
+  beforeEach(() => vi.clearAllMocks());
 
-  it("repairs on failed repetition or progression checks", () => {
-    expect(
-      shouldRepairPageBriefForRecovery(
-        PAGE_QA_RECOVERY_CANDIDATE,
-        report(40, { checks: { repetitionOk: false, progressionOk: true } } as never),
-        brief
-      )
-    ).toBe(true);
-    expect(
-      shouldRepairPageBriefForRecovery(
-        PAGE_QA_RECOVERY_CANDIDATE,
-        report(40, { checks: { repetitionOk: true, progressionOk: false } } as never),
-        brief
-      )
-    ).toBe(true);
-  });
+  it("builds its auditor out of the very array it revises and reviews with", async () => {
+    // The finding this closes: every caller used to hand-assemble the excerpts
+    // and an auditor built from them, and nothing checked the two were the same
+    // set. The loop owns both now, so the identity is asserted here once — by
+    // reference, so a second derivation fails even where the two agree today.
+    const strategy = strategyApproving();
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
 
-  it("repairs when the feedback text blames the brief, and not otherwise", () => {
-    expect(
-      shouldRepairPageBriefForRecovery(
-        PAGE_QA_RECOVERY_CANDIDATE,
-        report(40, { issues: ["This page repeats the same argument as page 2."] }),
-        brief
-      )
-    ).toBe(true);
-    expect(
-      shouldRepairPageBriefForRecovery(PAGE_QA_RECOVERY_CANDIDATE, report(40, { issues: ["Weak verbs."] }), brief)
-    ).toBe(false);
-  });
-});
+    await loopWith({ strategy });
 
-describe("replacePageBriefInChapterBrief", () => {
-  const baseBrief = (): ChapterBrief =>
-    ({
-      chapterIndex: 1,
-      pages: [
-        { pageIndex: 1, requiredContinuity: [] },
-        { pageIndex: 2, requiredContinuity: [] }
-      ],
-      continuityFocus: ["the robin's name"]
-    }) as unknown as ChapterBrief;
-
-  it("returns undefined without a chapter brief", () => {
-    expect(replacePageBriefInChapterBrief(undefined, { pageIndex: 1 } as never)).toBeUndefined();
+    expect(strategy.revisePageDraft.mock.calls[0]![0].styleExcerpts).toBe(excerpts);
+    expect(strategy.reviewPageDraft.mock.calls[0]![0].styleExcerpts).toBe(excerpts);
+    expect(auditedWith()[0]!.styleExcerpts).toBe(excerpts);
   });
 
-  it("replaces a matching page brief in place and merges continuity focus", () => {
-    const chapterBrief = baseBrief();
-    const repaired = { pageIndex: 2, requiredContinuity: ["the storm", "the robin's name"] } as unknown as PageProductionBeat;
+  it("builds no auditor with the gate off, or with nothing pinned to compare against", async () => {
+    await loopWith({ strategy: strategyApproving(), quality: qualityGates() });
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
 
-    const updated = replacePageBriefInChapterBrief(chapterBrief, repaired);
-
-    expect(updated?.pages.map((page) => page.pageIndex)).toEqual([1, 2]);
-    expect(updated?.pages[1]).toBe(repaired);
-    expect(updated?.continuityFocus).toEqual(["the robin's name", "the storm"]);
-    // The caller keeps using its original reference, so the update is also
-    // written through onto it.
-    expect(chapterBrief.pages[1]).toBe(repaired);
+    await loopWith({ strategy: strategyApproving(), styleExcerpts: [] });
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
   });
 
-  it("inserts an unknown page brief in index order", () => {
-    const chapterBrief = baseBrief();
-    const inserted = { pageIndex: 0, requiredContinuity: [] } as unknown as PageProductionBeat;
+  it("audits the seed report the caller hands in when nothing has audited it yet", async () => {
+    // The chat rewrite and the final-QA repair both seed this loop with a
+    // report straight off `reviewPageDraft`, and both used to run their own
+    // copy of this block before calling in.
+    const strategy = strategyApproving();
 
-    const updated = replacePageBriefInChapterBrief(chapterBrief, inserted);
+    const outcome = await loopWith({ strategy, report: report(85, { approved: true }) });
 
-    expect(updated?.pages.map((page) => page.pageIndex)).toEqual([0, 1, 2]);
+    expect(auditedWith().map((call) => call.markdown)).toEqual(["Initial text."]);
+    expect(strategy.revisePageDraft).not.toHaveBeenCalled();
+    expect(outcome.approved).toBe(true);
+    expect(outcome.revision).toBe(1);
+  });
+
+  it("does not pay for the seed audit twice when the enrichment pass already ran it", async () => {
+    // `withStyleAudit` stamps `stylePenalty` on everything it returns, so a
+    // page job's enriched seed says it has been audited. Auditing it again is a
+    // second provider call on the same draft, out of the same per-page budget.
+    const strategy = strategyApproving();
+
+    await loopWith({ strategy, report: report(85, { approved: true, stylePenalty: 0 } as never) });
+
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
+  });
+
+  it("re-audits an approved revision and keeps revising when the audit rejects it", async () => {
+    const strategy = strategyApproving();
+    mocks.auditPageStyle
+      .mockResolvedValueOnce({ styleOk: false, styleIssues: ["Register drifts into lecture mode."] })
+      .mockResolvedValue({ styleOk: true, styleIssues: [] });
+
+    const outcome = await loopWith({ strategy });
+
+    // The reviewer approved the first rewrite; the audit rejected it, so the
+    // loop revised again, and the second rewrite passed both gates.
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(2);
+    expect(strategy.revisePageDraft).toHaveBeenCalledTimes(2);
+    expect(outcome.approved).toBe(true);
+    expect(outcome.revision).toBe(3);
+  });
+
+  it("does not audit a revision the reviewer already rejected", async () => {
+    const strategy = strategyRejectingOnce();
+
+    const outcome = await loopWith({ strategy, pageIndex: 2 });
+
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(1);
+    expect(auditedWith()[0]!.markdown).toBe("Rewrite text.");
+    expect(outcome.approved).toBe(true);
+  });
+
+  it("tells the auditor a register change the reader asked for, and holds every rewrite to it", async () => {
+    // Finding B. The excerpts are the book's opening pages, so "make page 12
+    // more dramatic" *is* a register shift: audited by the plain rules it was
+    // rejected, the approval was flipped, the small user-edit budget went on
+    // pulling the page back toward the voice the reader asked it to leave, and
+    // the edit was delivered FAILED_QA.
+    const strategy = strategyRejectingOnce();
+
+    await loopWith({ strategy, report: report(50), userRequest: "make page 12 more dramatic" });
+
+    expect(auditedWith()[0]).toMatchObject({ userRequest: "make page 12 more dramatic" });
+    const briefings = strategy.revisePageDraft.mock.calls.map((call) => call[0].report.requiredRevisions);
+    expect(briefings).toHaveLength(2);
+    for (const briefing of briefings) {
+      expect(briefing).toContain("Keep the user's requested edit applied: make page 12 more dramatic");
+    }
+  });
+
+  it("says nothing about a user request on a page nobody asked to change", async () => {
+    const strategy = strategyApproving();
+
+    await loopWith({ strategy });
+
+    expect(auditedWith()[0]).not.toHaveProperty("userRequest");
+    expect(strategy.revisePageDraft.mock.calls[0]![0].report.requiredRevisions).toEqual([]);
   });
 });
 
@@ -491,6 +586,153 @@ describe("reviewAndSaveGeneratedPage", () => {
     // the page and needs the state the keeper actually left behind.
     expect(mocks.persistStoryExtract).toHaveBeenCalledTimes(1);
     expect(context).toMatchObject({ index: 3, title: "Rewrite 2" });
+  });
+
+  /** The book's opening pages, which is what a style lock is. */
+  const lockPages = [anchorPage(1, "opening-voice"), anchorPage(2, "second-voice")];
+  const pinned = lockPages.map((page) => page.markdown.trim());
+
+  /** The recency window a continuation hands in: pages 23–24, not the opening. */
+  const continuationWindow = [anchorPage(23, "late-voice"), anchorPage(24, "later-voice")];
+
+  const savedReport = () =>
+    (mocks.prisma.page.upsert.mock.calls[0]![0] as { create: { qualityReport: Record<string, unknown> } }).create
+      .qualityReport;
+
+  /** The style lock the loop's first rewrite was anchored to. */
+  const revisedWith = () => (strategy.revisePageDraft.mock.calls[0]![0] as { styleExcerpts?: string[] }).styleExcerpts;
+
+  /** The pin the enrichment pass was handed — the one array everything reads. */
+  const enrichedWith = () =>
+    (mocks.enrichPageQualityReport.mock.calls[0]![0] as { styleExcerpts?: string[] }).styleExcerpts;
+
+  const withStyleLock = () => {
+    mocks.loadStyleLockPages.mockResolvedValue(lockPages);
+    strategy.reviewPageDraft.mockResolvedValueOnce(report(50)).mockResolvedValue(report(85, { approved: true }));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
+  };
+
+  it("pins the book's opening voice, not the window the caller drafted from", async () => {
+    // This path loaded no style lock at all, so the enrichment pass fell back to
+    // pinning from `previousPages` — and `continueBook` hands in the last
+    // eighteen pages, so a continuation at page 41 was anchored to pages 23 and
+    // 24. Every other rewrite path takes the real lock; this was the one left.
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleExcerpts");
+    withStyleLock();
+    const options = { ...(baseOptions() as object), previousPages: continuationWindow } as never;
+
+    await reviewAndSaveGeneratedPage(options);
+
+    expect(mocks.loadStyleLockPages).toHaveBeenCalledWith("project-1", 3, continuationWindow);
+    expect(enrichedWith()).toEqual(pinned);
+    expect(enrichedWith()!.join(" ")).not.toMatch(/late-voice|later-voice/);
+    // One derivation, three readers: the first review, the enrichment pass and
+    // the loop's own anchor are the same array rather than copies that happen
+    // to agree. The first review used to omit the lock entirely.
+    expect(strategy.reviewPageDraft.mock.calls[0]![0].styleExcerpts).toBe(enrichedWith());
+    expect(revisedWith()).toBe(enrichedWith());
+  });
+
+  it("loads no style lock at all when the excerpts gate is off", async () => {
+    withStyleLock();
+
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    expect(mocks.loadStyleLockPages).not.toHaveBeenCalled();
+    expect(enrichedWith()).toEqual([]);
+    expect(strategy.reviewPageDraft.mock.calls[0]![0].styleExcerpts).toBeUndefined();
+    expect(revisedWith()).toBeUndefined();
+  });
+
+  it("audits an approved revision against the very array the loop revised with", async () => {
+    // The auditor is the loop's, built out of the excerpts the loop was handed,
+    // and the assertion is by reference: deriving them a second way fails here
+    // even where the two derivations agree today.
+    mocks.qualityEnabled.mockImplementation(
+      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
+    );
+    withStyleLock();
+
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(1);
+    const audited = mocks.auditPageStyle.mock.calls[0]![0] as { markdown: string; styleExcerpts: string[] };
+    expect(audited.markdown).toBe("Rewrite text.");
+    expect(audited.styleExcerpts).toEqual(pinned);
+    expect(audited.styleExcerpts).toBe(revisedWith());
+    // Zero rather than absent: it is what marks the report as audited at all.
+    expect(savedReport().stylePenalty).toBe(0);
+  });
+
+  it("builds no auditor with the gate off, or with nothing pinned to compare against", async () => {
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleExcerpts");
+    withStyleLock();
+
+    // Excerpts pinned, auditor gate off: the rewrite is still anchored to them.
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
+    expect(revisedWith()).toEqual(pinned);
+    expect(savedReport()).not.toHaveProperty("stylePenalty");
+
+    // Auditor gate on, excerpts gate off: nothing is even loaded to pin.
+    vi.clearAllMocks();
+    mocks.prisma.page.upsert.mockResolvedValue({ id: "page-row-1", revision: 1 });
+    mocks.enrichPageQualityReport.mockImplementation(stubbedEnrichment);
+    mocks.qualityEnabled.mockImplementation((feature: string) => feature === "styleAuditor");
+    withStyleLock();
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    expect(mocks.loadStyleLockPages).not.toHaveBeenCalled();
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
+  });
+
+  it("carries a failed audit's penalty and issues into the report it saves", async () => {
+    mocks.qualityEnabled.mockImplementation(
+      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
+    );
+    mocks.loadStyleLockPages.mockResolvedValue(lockPages);
+    // The reviewer approves the first rewrite and rejects the rest, so the
+    // audited draft is the keeper and its report is what the page is saved on.
+    strategy.reviewPageDraft
+      .mockResolvedValueOnce(report(50))
+      .mockResolvedValueOnce(report(85, { approved: true }))
+      .mockResolvedValue(report(40));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
+    mocks.auditPageStyle.mockResolvedValue({
+      styleOk: false,
+      styleIssues: ["Register drifts into lecture mode.", "Rhythm ignores the opening."]
+    });
+
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    expect(mocks.prisma.page.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ status: "FAILED_QA" }) })
+    );
+    expect(savedReport()).toMatchObject({ score: 85, stylePenalty: 30 });
+    expect(savedReport().issues).toContain("Register drifts into lecture mode.");
+  });
+
+  it("spends at most two re-audits on a page, and starts the next page with a fresh budget", async () => {
+    // The reviewer approves every rewrite and the audit rejects every one, so
+    // nothing but the counter can stop the two gates trading provider calls.
+    mocks.qualityEnabled.mockImplementation(
+      (feature: string) => feature === "styleExcerpts" || feature === "styleAuditor"
+    );
+    withStyleLock();
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: false, styleIssues: ["Register drifts."] });
+
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    // Two, then the third approval stands unaudited and ends the loop.
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(2);
+    expect(savedReport()).not.toHaveProperty("stylePenalty");
+
+    // The closure is built once per call, so the next page pays for its own.
+    strategy.reviewPageDraft.mockResolvedValueOnce(report(50)).mockResolvedValue(report(85, { approved: true }));
+    await reviewAndSaveGeneratedPage(baseOptions());
+
+    expect(mocks.auditPageStyle).toHaveBeenCalledTimes(4);
   });
 });
 

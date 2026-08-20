@@ -542,7 +542,27 @@ describe("compileExport reader chapters", () => {
     logged.mockRestore();
   });
 
-  it("records unpaid plan promises as warnings so compile is not blocked", async () => {
+  /** The quality report this compile persisted onto its own job row. */
+  function persistedQualityReport(): {
+    state: string;
+    issues: Array<{ code: string; severity: string; source: string }>;
+  } {
+    const qualityUpdate = mocks.prisma.generationJob.update.mock.calls.find(
+      (call) => (call[0] as { data?: { qualityReport?: { state?: string } } }).data?.qualityReport
+    );
+    if (!qualityUpdate) {
+      throw new Error("expected compile to persist a qualityReport");
+    }
+    return (
+      qualityUpdate[0] as {
+        data: {
+          qualityReport: { state: string; issues: Array<{ code: string; severity: string; source: string }> };
+        };
+      }
+    ).data.qualityReport;
+  }
+
+  function withUnpaidPromise(): void {
     mocks.loadQualityContext.mockResolvedValue({
       settings: {},
       tier: "balanced",
@@ -554,34 +574,140 @@ describe("compileExport reader chapters", () => {
       entities: {},
       unanswered: []
     });
+  }
+
+  it("records unpaid plan promises as warnings so compile is not blocked", async () => {
+    withUnpaidPromise();
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    const report = persistedQualityReport();
+    // A deterministic warning recommends review but never blocks: the project
+    // still publishes COMPLETE, not REVIEW_REQUIRED. arrayContaining because
+    // the fixture's identical filler pages also earn a REPEATED_PHRASE warning.
+    expect(report.state).toBe("review_recommended");
+    expect(report.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "UNPAID_PROMISE",
+          severity: "warning",
+          source: "deterministic"
+        })
+      ])
+    );
+    expect(report.issues.every((issue) => issue.severity === "warning")).toBe(true);
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
+  });
+
+  it("keeps a deterministic-only recompile from re-grading a book on warnings alone", async () => {
+    // Every `skipFinalReview` recompile — an undo, a verified exact replacement,
+    // a chat edit's apply — owns the quality verdict and re-runs the whole-book
+    // checks over prose the edit never touched. Reading a warning off one of
+    // those downgraded a book that had passed to "review recommended" for good:
+    // the repair pass only rewrites `severity === "error"`, so nothing could
+    // clear it and every later recompile re-asserted it.
+    withUnpaidPromise();
 
     await compileExport(job({ contentRevision: 4, skipFinalReview: true }));
 
-    const qualityUpdate = mocks.prisma.generationJob.update.mock.calls.find(
-      (call) => (call[0] as { data?: { qualityReport?: { state?: string } } }).data?.qualityReport
-    );
-    if (!qualityUpdate) {
-      throw new Error("expected compile to persist a qualityReport");
-    }
-    const report = (
-      qualityUpdate[0] as {
-        data: {
-          qualityReport: {
-            state: string;
-            issues: Array<{ code: string; severity: string; source: string }>;
-          };
-        };
-      }
-    ).data.qualityReport;
+    const report = persistedQualityReport();
     expect(report.state).toBe("passed");
-    expect(report.issues).toEqual([
-      expect.objectContaining({
-        code: "UNPAID_PROMISE",
-        severity: "warning",
-        source: "deterministic"
-      })
-    ]);
+    // Recorded all the same — the row is where an operator reads what this
+    // compile saw. Only the state is the claim the app's quality card acts on.
+    expect(report.issues.map((issue) => issue.code)).toContain("UNPAID_PROMISE");
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
+  });
+
+  it.each([
+    ["a full compile", {}],
+    ["a deterministic-only recompile", { skipFinalReview: true }]
+  ])("blocks %s on an integrity error", async (_label, payload) => {
+    // Publication integrity is never bypassed by an edit: the warning gate
+    // above must not reach errors.
+    mocks.prisma.project.findUnique.mockResolvedValue({
+      ...projectRecord(),
+      pages: pages.map((page) => (page.index === 2 ? { ...page, markdown: "TODO: write this page." } : page))
+    });
+
+    await compileExport(job({ contentRevision: 4, ...payload }));
+
+    expect(persistedQualityReport().state).toBe("blocked");
+    expect(mocks.publishCompiledExports).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "REVIEW_REQUIRED" })
+    );
+  });
+
+  it("runs the final-QA repair and the integrity pass under one quality context", async () => {
+    // The repair pass used to load its own, so an operator saving the Quality
+    // tab between the two loads split one compile across two revisions: the
+    // pages rewritten under one gate set, the report that ships them under
+    // another. The second revision here enables nothing, so either half
+    // reading it drops its assertion below.
+    mocks.loadQualityContext
+      .mockResolvedValueOnce({
+        settings: {},
+        tier: "balanced",
+        enabled: (feature: QualityFeatureId) => feature === "styleExcerpts" || feature === "storyExtractAudit"
+      })
+      .mockResolvedValue({
+        settings: {},
+        tier: "balanced",
+        enabled: (_feature: QualityFeatureId): boolean => false
+      });
+    mocks.rebuildProjectStoryState.mockResolvedValue({
+      promises: [{ id: "p1", text: "The lantern will be lit.", status: "open", openedAtPage: 0 }],
+      facts: [],
+      entities: {},
+      unanswered: []
+    });
+    // Flagged once, so the repair pass runs; the rerun after it approves.
+    mocks.strategy.runFinalBookQa.mockResolvedValueOnce({
+      approved: false,
+      issues: [],
+      requiredFixes: [],
+      repairPageIndexes: [2]
+    });
+    const repairedMarkdown = "Repaired page 2 prose about the walk home and everything seen along it.";
+    mocks.revisePageDraftWithRestart.mockResolvedValue({
+      title: "Page 2",
+      markdown: repairedMarkdown,
+      summary: "Page 2 summary.",
+      imagePrompt: null,
+      continuityNotes: []
+    });
+    mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+    mocks.prisma.page.update.mockResolvedValue({ ...compilePage(2), markdown: repairedMarkdown });
+    mocks.loadPagesForExport.mockResolvedValue(pages);
+    const reviewPageDraft = vi.fn().mockResolvedValue({
+      approved: true,
+      score: 90,
+      issues: [],
+      requiredRevisions: [],
+      notes: ""
+    });
+    Object.assign(mocks.strategy, { reviewPageDraft });
+
+    try {
+      await compileExport(job({ contentRevision: 4 }));
+    } finally {
+      delete (mocks.strategy as { reviewPageDraft?: unknown }).reviewPageDraft;
+    }
+
+    // The repair pass read the first revision: `styleExcerpts` was on, so the
+    // rewrite of page 2 was anchored to the book's opening page.
+    const revise = mocks.revisePageDraftWithRestart.mock.calls[0]![0] as {
+      reviseOptions: { styleExcerpts?: string[] };
+    };
+    expect(revise.reviseOptions.styleExcerpts).toEqual([pages[0]!.markdown]);
+    // And so did the integrity pass after it: `storyExtractAudit` was on, so
+    // the plan's unpaid promise reached the report the compile publishes.
+    const qualityUpdate = mocks.prisma.generationJob.update.mock.calls.find(
+      (call) => (call[0] as { data?: { qualityReport?: unknown } }).data?.qualityReport
+    );
+    const report = (qualityUpdate![0] as { data: { qualityReport: { issues: Array<{ code: string }> } } }).data
+      .qualityReport;
+    expect(report.issues.map((issue) => issue.code)).toContain("UNPAID_PROMISE");
+    expect(mocks.loadQualityContext).toHaveBeenCalledTimes(1);
   });
 
   it("retires stale EPUB on an undo/manual recompile whose conversion fails", async () => {

@@ -17,6 +17,7 @@ import {
   type SynthesizedChunkTiming
 } from "@book-maker/core";
 import {
+  audiobookChapterDisplayTitle,
   audiobookChapterPlans,
   joinNarrationChunks,
   narratedChapterLabel,
@@ -96,7 +97,7 @@ export async function generateAudiobook(job: Job) {
   // so a narration that failed before it could clean up would otherwise leave
   // its chapters on disk forever.
   await removeSupersededAudiobookDirs(projectId, audiobookId);
-  await syncChapterRows(audiobookId, narrations, plans);
+  await syncChapterRows(audiobookId, narrations, plans, project.language);
 
   // Only READY chapters that exist in the *current* partition count: rows from
   // an older, larger partition would start `completed` above the chapter total
@@ -488,7 +489,8 @@ async function narrateChapter(options: {
 async function syncChapterRows(
   audiobookId: string,
   narrations: ChapterNarration[],
-  plans: AudiobookChapterPlan[]
+  plans: AudiobookChapterPlan[],
+  language: string | null | undefined
 ): Promise<void> {
   const planByIndex = new Map(plans.map((plan) => [plan.index, plan]));
   for (const narration of narrations) {
@@ -496,7 +498,7 @@ async function syncChapterRows(
     const pageStartIndex = plan?.pages[0]?.index;
     const pageEndIndex = plan?.pages[plan.pages.length - 1]?.index;
     const shared = {
-      title: narration.title,
+      title: plan ? audiobookChapterDisplayTitle(plan, language) : narration.title,
       estimatedDurationMs: Math.round(narration.estimatedDurationMs),
       segmentCount: narration.segments.length,
       ...(pageStartIndex === undefined ? {} : { pageStartIndex }),

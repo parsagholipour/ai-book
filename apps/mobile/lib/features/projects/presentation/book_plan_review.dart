@@ -553,6 +553,12 @@ class _ChapterTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    // Nothing guarantees a chapter has been named: a continuation whose outline
+    // call failed stores an empty title on purpose, rather than inventing an
+    // English one for a book written in another language (the server renders
+    // such a chapter by its number, which this tile already shows in the badge).
+    // The title row is dropped rather than left blank above the summary.
+    final title = chapter.title.trim();
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -577,13 +583,15 @@ class _ChapterTile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                chapter.title,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 4),
+              if (title.isNotEmpty) ...[
+                Text(
+                  title,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 4),
+              ],
               Text(chapter.summary),
               const SizedBox(height: 4),
               Text(

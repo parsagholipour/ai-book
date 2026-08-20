@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FinalBookQa, ManuscriptQualityIssue, PageQualityReport } from "@book-maker/core";
+import type { FinalBookQa, ManuscriptQualityIssue, PageQualityReport, QualityFeatureId } from "@book-maker/core";
 import type { ExportPageForRepair } from "../runtime/jobTypes.js";
 
 vi.mock("@book-maker/db", async () => (await import("./testing/compileExportMocks.js")).dbModuleMock());
@@ -34,10 +34,14 @@ vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
 );
-vi.mock(
-  "../generation/qualityEnrichment.js",
-  async () => (await import("./testing/compileExportMocks.js")).qualityEnrichmentModuleMock()
-);
+// Opted in: this suite is the one that measures the style audit, so it runs
+// the real `revisedDraftStyleAuditor` down to the mocked `auditPageStyle`.
+vi.mock("../generation/qualityEnrichment.js", async () => {
+  const actual = await vi.importActual<typeof import("../generation/qualityEnrichment.js")>(
+    "../generation/qualityEnrichment.js"
+  );
+  return (await import("./testing/compileExportMocks.js")).qualityEnrichmentModuleMock(actual);
+});
 vi.mock(
   "../generation/qualitySettings.js",
   async () => (await import("./testing/compileExportMocks.js")).qualitySettingsModuleMock()
@@ -54,9 +58,9 @@ vi.mock("@book-maker/core", async () => {
 import {
   dedupeQualityIssues,
   qualitySummaryMessage,
-  repairPagesFromFinalQa,
   runBoundedChapterQualityReview
 } from "./compileExport.js";
+import { repairPagesFromFinalQa } from "./compileExportRepair.js";
 import { MAX_FINAL_QA_REVISIONS_PER_PAGE } from "../generation/tuning.js";
 import { StopRequestedError } from "../runtime/jobTypes.js";
 import { mocks } from "./testing/compileExportMocks.js";
@@ -86,6 +90,14 @@ function exportPage(index: number, overrides: Partial<ExportPageForRepair> = {})
   } as unknown as ExportPageForRepair;
 }
 
+/** A page long enough for `pinStyleExcerpts` to accept it as a style anchor. */
+const lockPage = (index: number) =>
+  exportPage(index, { markdown: `Page ${index} prose, long enough to anchor the book's style lock.` });
+
+const qualityGates = (...enabled: QualityFeatureId[]) => ({
+  enabled: (feature: QualityFeatureId) => enabled.includes(feature)
+});
+
 const finalQa = (repairPageIndexes: number[]): FinalBookQa =>
   ({ approved: repairPageIndexes.length === 0, issues: [], repairPageIndexes }) as unknown as FinalBookQa;
 
@@ -101,14 +113,33 @@ describe("repairPagesFromFinalQa", () => {
       plan: { title: "Book", chapters: [] },
       providers: { text: {}, embedding: {} },
       strategy,
+      quality: qualityGates(),
       pages: [exportPage(1), exportPage(2)],
       finalQa: finalQa([2]),
       generationJobId: "gj-1",
       ...overrides
     }) as never;
 
+  /** The style lock each rewrite was handed, in repair order. */
+  const reviseStyleExcerpts = () =>
+    mocks.revisePageDraftWithRestart.mock.calls.map(
+      (call) => (call[0] as { reviseOptions: { styleExcerpts?: string[] } }).reviseOptions.styleExcerpts
+    );
+
+  /** What each style audit was asked about, in audit order. */
+  const auditCalls = () => mocks.auditPageStyle.mock.calls.map((call) => call[0]);
+
+  /** Every page write the repair made, in repair order. */
+  const savedPageData = () =>
+    mocks.prisma.page.update.mock.calls.map(
+      (call) => (call[0] as { data: { status: string; qualityReport: Record<string, unknown> } }).data
+    );
+
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks keeps implementations, so a previous test's verdict would
+    // otherwise carry into the next one.
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: true, styleIssues: [] });
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
     mocks.pageReportFromFinalQa.mockReturnValue(report(30));
     mocks.loadPagesForExport.mockResolvedValue([exportPage(1), exportPage(2)]);
@@ -232,6 +263,253 @@ describe("repairPagesFromFinalQa", () => {
       true,
       true
     ]);
+  });
+
+  it("gates on the compile's own quality context and loads none of its own", async () => {
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+    const pages = [lockPage(1), lockPage(2)];
+
+    await repairPagesFromFinalQa(baseOptions({ pages, quality: qualityGates("styleExcerpts") }));
+
+    expect(mocks.loadQualityContext).not.toHaveBeenCalled();
+    expect(reviseStyleExcerpts()).toEqual([[pages[0]!.markdown]]);
+
+    mocks.revisePageDraftWithRestart.mockClear();
+    await repairPagesFromFinalQa(baseOptions({ pages, quality: qualityGates() }));
+
+    expect(mocks.loadQualityContext).not.toHaveBeenCalled();
+    expect(reviseStyleExcerpts()).toEqual([undefined]);
+  });
+
+  it("pins one style lock as soon as two pages supply it, and answers per page until then", async () => {
+    // `pinStyleExcerpts` sorts ascending and keeps the first two substantial
+    // pages, so the answer only moves while the opening is still growing: page
+    // 1 has nothing behind it and falls back to the import samples, page 2 has
+    // one page, and every repair from there on pins the same two — which is
+    // what lets the loop hoist it out.
+    const pages = [1, 2, 3, 4].map(lockPage);
+    mocks.revisePageDraftWithRestart.mockImplementation(
+      async (options: { reviseOptions: { pageIndex: number } }) => ({
+        ...draftNamed(`Repaired ${options.reviseOptions.pageIndex}`),
+        markdown: `Repaired page ${options.reviseOptions.pageIndex} prose, long enough to anchor the lock.`
+      })
+    );
+    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+    mocks.prisma.page.update.mockImplementation(
+      async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => ({
+        ...lockPage(Number(where.id.replace("page-", ""))),
+        ...data
+      })
+    );
+
+    await repairPagesFromFinalQa(
+      baseOptions({
+        input: {
+          targetPages: 4,
+          mediaSettings: {
+            mobile: { import: { styleProfile: { sampleExcerpts: ["Imported voice one.", "Imported voice two."] } } }
+          }
+        },
+        pages,
+        quality: qualityGates("styleExcerpts"),
+        finalQa: finalQa([1, 2, 3, 4])
+      })
+    );
+
+    const repaired = (index: number) => `Repaired page ${index} prose, long enough to anchor the lock.`;
+    expect(reviseStyleExcerpts()).toEqual([
+      ["Imported voice one.", "Imported voice two."],
+      [repaired(1), "Imported voice one."],
+      [repaired(1), repaired(2)],
+      // The hoisted answer, and the one a fourth recomputation would give.
+      [repaired(1), repaired(2)]
+    ]);
+  });
+
+  it("never anchors the repair to a page the QA pipeline rejected", async () => {
+    // This pass reads `loadPagesForExport`, which has no status filter, so a
+    // FAILED_QA page 1 — a best draft the pipeline *rejected* — became the voice
+    // every repaired page in the book was rewritten and audited against, on the
+    // last writer before a book ships. The shared style-lock loader answers with
+    // COMPLETED pages only, and an opening it cannot supply falls back to the
+    // import samples exactly as an absent one does.
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+    const pages = [
+      exportPage(1, {
+        status: "FAILED_QA",
+        markdown: "Rejected opening prose, kept as the best draft and long enough to pin."
+      }),
+      lockPage(2),
+      lockPage(3)
+    ];
+
+    await repairPagesFromFinalQa(
+      baseOptions({
+        input: {
+          targetPages: 3,
+          mediaSettings: { mobile: { import: { styleProfile: { sampleExcerpts: ["Imported voice one."] } } } }
+        },
+        pages,
+        quality: qualityGates("styleExcerpts"),
+        finalQa: finalQa([3])
+      })
+    );
+
+    // Page 3's repair: the only accepted page behind it is page 2, and the
+    // loader is asked for the opening the export set could not supply.
+    expect(mocks.loadStyleLockPages).toHaveBeenCalledWith("project-1", 3, [pages[1]]);
+    expect(reviseStyleExcerpts()[0]).toEqual([pages[1]!.markdown, "Imported voice one."]);
+    expect(reviseStyleExcerpts()[0]!.join(" ")).not.toContain("Rejected opening");
+  });
+
+  it("does not anchor a later repair to an opening that failed earlier in the same pass", async () => {
+    const pages = [lockPage(1), lockPage(2), lockPage(3)];
+    mocks.revisePageDraftWithRestart.mockImplementation(
+      async (options: { reviseOptions: { pageIndex: number } }) => ({
+        ...draftNamed(`Repair ${options.reviseOptions.pageIndex}`),
+        markdown: `Repair ${options.reviseOptions.pageIndex} prose, long enough to anchor the lock.`
+      })
+    );
+    strategy.revisePageDraft.mockImplementation(async (options: { pageIndex: number }) => ({
+      ...draftNamed(`Rewrite ${options.pageIndex}`),
+      markdown: `Rewrite ${options.pageIndex} prose, long enough to anchor the lock.`
+    }));
+    strategy.reviewPageDraft.mockImplementation(async (options: { pageIndex: number }) =>
+      options.pageIndex === 1 ? report(40) : report(85, true)
+    );
+    mocks.prisma.page.update.mockImplementation(
+      async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => ({
+        ...lockPage(Number(where.id.replace("page-", ""))),
+        ...data
+      })
+    );
+
+    await repairPagesFromFinalQa(
+      baseOptions({
+        input: {
+          targetPages: 3,
+          mediaSettings: { mobile: { import: { styleProfile: { sampleExcerpts: ["Imported voice."] } } } }
+        },
+        pages,
+        quality: qualityGates("styleExcerpts"),
+        finalQa: finalQa([1, 3])
+      })
+    );
+
+    expect(mocks.loadStyleLockPages).toHaveBeenCalledWith("project-1", 3, [pages[1]]);
+    expect(reviseStyleExcerpts()[1]).toEqual([pages[1]!.markdown, "Imported voice."]);
+    expect(reviseStyleExcerpts()[1]!.join(" ")).not.toContain("Page 1 prose");
+  });
+
+  it("audits the repair against the very array the rewrite was anchored to", async () => {
+    // The finding this closes: nothing checked that the auditor and the
+    // rewrite's `styleExcerpts` come off the same pin. They are asserted
+    // identical by reference, so re-deriving either one separately fails here
+    // even if the two derivations happen to agree today.
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+    const pages = [lockPage(1), lockPage(2)];
+
+    await repairPagesFromFinalQa(baseOptions({ pages, quality: qualityGates("styleExcerpts", "styleAuditor") }));
+
+    expect(auditCalls()).toHaveLength(1);
+    expect(auditCalls()[0]!.markdown).toBe("Repaired text.");
+    expect(auditCalls()[0]!.styleExcerpts).toEqual([pages[0]!.markdown]);
+    expect(auditCalls()[0]!.styleExcerpts).toBe(reviseStyleExcerpts()[0]);
+    // A clean audit stamps zero rather than nothing, which is what tells the
+    // draft comparison this report was seen by the auditor at all.
+    expect(savedPageData()[0]).toMatchObject({ status: "COMPLETED", qualityReport: { stylePenalty: 0 } });
+  });
+
+  it("builds no auditor unless the gate is on and there is a lock to compare against", async () => {
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+    const pages = [lockPage(1), lockPage(2)];
+
+    // Excerpts pinned, auditor gate off: the rewrite is still anchored, and
+    // the saved report carries no penalty key, so nothing later can mistake it
+    // for a report that passed the audit.
+    await repairPagesFromFinalQa(baseOptions({ pages, quality: qualityGates("styleExcerpts") }));
+
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
+    expect(reviseStyleExcerpts()).toEqual([[pages[0]!.markdown]]);
+    expect(savedPageData()[0]!.qualityReport).not.toHaveProperty("stylePenalty");
+
+    // Auditor gate on, nothing pinned: there is nothing to audit against.
+    await repairPagesFromFinalQa(baseOptions({ pages, quality: qualityGates("styleAuditor") }));
+
+    expect(mocks.auditPageStyle).not.toHaveBeenCalled();
+  });
+
+  it("carries a failed audit's penalty and issues into the report the repair saves", async () => {
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    // The reviewer approves the repair and rejects every rewrite after it, so
+    // the audited draft is the keeper and its report is what ships.
+    strategy.reviewPageDraft.mockResolvedValueOnce(report(85, true)).mockResolvedValue(report(40));
+    strategy.revisePageDraft.mockResolvedValue(draftNamed("Rewrite"));
+    mocks.auditPageStyle.mockResolvedValue({
+      styleOk: false,
+      styleIssues: ["Register drifts into lecture mode.", "Rhythm ignores the opening."]
+    });
+
+    await repairPagesFromFinalQa(
+      baseOptions({ pages: [lockPage(1), lockPage(2)], quality: qualityGates("styleExcerpts", "styleAuditor") })
+    );
+
+    const saved = savedPageData()[0]!;
+    expect(saved.status).toBe("FAILED_QA");
+    expect(saved.qualityReport).toMatchObject({ score: 85, stylePenalty: 30 });
+    expect(saved.qualityReport.issues).toContain("Register drifts into lecture mode.");
+    expect(saved.qualityReport.requiredRevisions).toContain("Revise style: Register drifts into lecture mode.");
+  });
+
+  it("spends at most two style audits per page, and gives the next page a fresh budget", async () => {
+    // The reviewer approves every rewrite and the audit rejects every one, so
+    // nothing but the counter can stop the two gates trading provider calls.
+    mocks.revisePageDraftWithRestart.mockImplementation(
+      async (options: { reviseOptions: { pageIndex: number } }) =>
+        draftNamed(`Repair ${options.reviseOptions.pageIndex}`)
+    );
+    strategy.revisePageDraft.mockImplementation(async (options: { pageIndex: number }) =>
+      draftNamed(`Rewrite ${options.pageIndex}`)
+    );
+    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+    mocks.auditPageStyle.mockResolvedValue({ styleOk: false, styleIssues: ["Register drifts."] });
+    mocks.prisma.page.update.mockImplementation(
+      async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => ({
+        ...lockPage(Number(where.id.replace("page-", ""))),
+        ...data
+      })
+    );
+
+    await repairPagesFromFinalQa(
+      baseOptions({
+        input: {
+          targetPages: 2,
+          mediaSettings: {
+            mobile: { import: { styleProfile: { sampleExcerpts: ["Imported voice one.", "Imported voice two."] } } }
+          }
+        },
+        pages: [lockPage(1), lockPage(2)],
+        quality: qualityGates("styleExcerpts", "styleAuditor"),
+        finalQa: finalQa([1, 2])
+      })
+    );
+
+    // Two per page and no more — the closure is built inside the page loop, so
+    // page 1 exhausting its budget must not spend page 2's.
+    expect(auditCalls().map((call) => call.markdown)).toEqual([
+      "Repair 1 text.",
+      "Rewrite 1 text.",
+      "Repair 2 text.",
+      "Rewrite 2 text."
+    ]);
+    // The third approval on each page is the one the cap lets through, so both
+    // pages ship on a report the auditor never saw.
+    expect(savedPageData().map((data) => data.status)).toEqual(["COMPLETED", "COMPLETED"]);
+    expect(savedPageData().map((data) => data.qualityReport.stylePenalty)).toEqual([undefined, undefined]);
   });
 });
 

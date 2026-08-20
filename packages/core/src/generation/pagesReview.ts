@@ -214,6 +214,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
           ...READER_FACING_PAGE_BRIEF_RULES,
           "If the current pageBrief requires a recurring action type from previousPages, keep the required action but change the physical details, sentence rhythm, and consequence.",
           "Do not reuse distinctive phrases from previousPages; replace them with fresh concrete wording.",
+          "Vary how pages open: do not begin the replacement with the same opening move, image, or sentence shape the previousPages excerpts begin with.",
           "Use pageScope to keep the replacement inside the current global page and chapter-local position.",
           ...(options.nextPages && options.nextPages.length > 0
             ? [

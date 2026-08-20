@@ -1,7 +1,7 @@
 import { isSourceForwardBookCategory, type BookCategory } from "../categories.js";
-import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
+import type { BookPlan, CreateProjectInput, ToneProfile } from "../schemas/book.js";
 import { kidsAudienceLabelForInput, kidsReadingGuidanceLines } from "./readingLevel.js";
-import { toneProfileFromMediaSettings, writerToneGuidance } from "./tone.js";
+import { HUMAN_STYLE_GUARDRAILS, toneLabel, toneProfileFromMediaSettings, writerToneGuidance } from "./tone.js";
 
 export type TemplateDefinition = {
   slug: string;
@@ -463,22 +463,75 @@ export function getTemplateForInput(input: Pick<CreateProjectInput, "category" |
   );
 }
 
+export type PlanStyleContract = {
+  voiceGuide: string[];
+  antiAiRules: string[];
+};
+
+/**
+ * The style contract a plan is composed from: the template's own rules, the kids
+ * reading band, and the tone profile split into its two halves. Two sites need
+ * it — `makeFallbackPlan` seeds a plan with it, and `ensurePlanStyleContract`
+ * (generation/planner.ts) tops a thin model contract back up to it — so it is
+ * written once. The second site used to carry its own copy that took no `input`,
+ * and every picture book whose planner answered voiceGuide with one line lost
+ * the age-appropriate vocabulary and sentence rules from the contract that feeds
+ * the drafting, review, and audit passes.
+ *
+ * `input` is optional because a plan revision can run without one; the tone
+ * halves are the part of the contract that is always restorable.
+ */
+export function planStyleContract(
+  input: CreateProjectInput | undefined,
+  toneProfile: ToneProfile
+): PlanStyleContract {
+  const template = input ? getTemplateForInput(input) : undefined;
+  const tone = writerToneStyleRules(toneProfile);
+  return {
+    voiceGuide: [
+      ...(template?.styleRules.voice ?? []),
+      ...(input ? kidsReadingGuidanceLines(input) : []),
+      ...tone.voice
+    ],
+    antiAiRules: [...(template?.styleRules.antiAi ?? []), ...tone.antiAi]
+  };
+}
+
+/**
+ * `writerToneGuidance` is one prompt list holding three different things: a
+ * label line, the profile's own voice rules, and the shared human-style
+ * guardrails that follow them. A plan files the middle under voiceGuide, the
+ * last under antiAiRules, and the label under neither — "Tone profile: Neutral."
+ * names the profile for a prompt heading and is not a rule anyone can write to.
+ * Splitting at the first guardrail rather than at `slice(0, 3)` / `slice(3)`
+ * keeps the halves right the next time a line is added to either end of it.
+ */
+function writerToneStyleRules(profile: ToneProfile): { voice: string[]; antiAi: string[] } {
+  const lines = writerToneGuidance(profile);
+  const firstGuardrail = lines.indexOf(HUMAN_STYLE_GUARDRAILS[0] ?? "");
+  const avoidFrom = firstGuardrail >= 0 ? firstGuardrail : lines.length;
+  const labelLine = `Tone profile: ${toneLabel(profile)}.`;
+  return {
+    voice: lines.slice(0, avoidFrom).filter((line) => line !== labelLine),
+    antiAi: lines.slice(avoidFrom)
+  };
+}
+
 export function makeFallbackPlan(input: CreateProjectInput): BookPlan {
   const template = getTemplateForInput(input);
   const chapterCount = Math.max(1, Math.ceil(input.targetPages / 12));
   const basePages = Math.floor(input.targetPages / chapterCount);
   const extra = input.targetPages % chapterCount;
   const title = input.title ?? deriveTitle(input.prompt);
-  const toneRules = writerToneGuidance(toneProfileFromMediaSettings(input.mediaSettings));
-  const kidsReadingRules = kidsReadingGuidanceLines(input);
+  const styleContract = planStyleContract(input, toneProfileFromMediaSettings(input.mediaSettings));
 
   return {
     title,
     premise: input.prompt,
     audience: audienceForInput(input),
     writingComplexity: input.complexity,
-    voiceGuide: [...template.styleRules.voice, ...kidsReadingRules, ...toneRules.slice(0, 3)],
-    antiAiRules: [...template.styleRules.antiAi, ...toneRules.slice(3)],
+    voiceGuide: styleContract.voiceGuide,
+    antiAiRules: styleContract.antiAiRules,
     questions: [],
     chapters: Array.from({ length: chapterCount }, (_, index) => ({
       index: index + 1,

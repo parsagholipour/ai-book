@@ -26,7 +26,12 @@ const mocks = vi.hoisted(() => ({
   reviewWholeBookDraftPages: vi.fn(),
   persistKeeperStoryDelta: vi.fn(),
   storeEmbedding: vi.fn(),
-  updateEntityStateFromPage: vi.fn()
+  updateEntityStateFromPage: vi.fn(),
+  qualityEnabled: vi.fn((_feature?: string): boolean => false),
+  styleExcerptsForPage: vi.fn(
+    async (options: { quality: { enabled: (feature: string) => boolean } }): Promise<string[]> =>
+      options.quality.enabled("styleExcerpts") ? ["opening-voice"] : []
+  )
 }));
 
 vi.mock("@book-maker/db", async () => ({
@@ -57,7 +62,8 @@ vi.mock("./characterReferences.js", () => ({
 }));
 vi.mock("./bookHelpers.js", () => ({
   chapterSetupsForPlan: mocks.chapterSetupsForPlan,
-  reviewWholeBookDraftPages: mocks.reviewWholeBookDraftPages
+  reviewWholeBookDraftPages: mocks.reviewWholeBookDraftPages,
+  styleExcerptsForPage: mocks.styleExcerptsForPage
 }));
 vi.mock("./generationContext.js", async () => {
   const actual = await vi.importActual<typeof import("./generationContext.js")>("./generationContext.js");
@@ -75,7 +81,7 @@ vi.mock("./qualitySettings.js", () => ({
   loadQualityContext: async () => ({
     settings: {},
     tier: "balanced",
-    enabled: () => false
+    enabled: (feature: string) => mocks.qualityEnabled(feature)
   }),
   applyPlanThinkingBoost: vi.fn()
 }));
@@ -151,6 +157,7 @@ function baseOptions(strategy: ReturnType<typeof baseStrategy>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.qualityEnabled.mockReturnValue(false);
   mocks.loadDirectResumeContext.mockResolvedValue({ chapters: [], pages: [] });
   mocks.directResumeStateForContext.mockReturnValue({ kind: "fresh" });
   mocks.prepareChapterSetups.mockResolvedValue(twoChapterSetups());
@@ -277,6 +284,63 @@ describe("generateBookBatchWindow", () => {
 
     expect(strategy.generatePageDraft).toHaveBeenCalledTimes(4);
     expect(mocks.reviewAndSaveGeneratedPage).toHaveBeenCalledTimes(4);
+  });
+
+  it("passes the style lock into chapter, batch and fallback drafts when the gate is on", async () => {
+    mocks.qualityEnabled.mockImplementation((feature?: string) => feature === "styleExcerpts");
+    const chapterStrategy = baseStrategy();
+    chapterStrategy.generateChapterDraft.mockImplementation(async ({ chapter }: { chapter: { index: number } }) => ({
+      pages: chapter.index === 1 ? [pageDraft(1), pageDraft(2)] : [pageDraft(3), pageDraft(4)]
+    }));
+
+    await generateBookChapterWholePass(baseOptions(chapterStrategy));
+
+    expect(chapterStrategy.generateChapterDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ styleExcerpts: ["opening-voice"] })
+    );
+
+    const batchStrategy = baseStrategy();
+    batchStrategy.batchSize = 2;
+    batchStrategy.generateBatchDraft.mockImplementation(
+      async ({ pageStart, pageEnd }: { pageStart: number; pageEnd: number }) => ({
+        pages: pageStart === 1 ? [pageDraft(1)] : [pageDraft(pageStart), pageDraft(pageEnd)]
+      })
+    );
+    batchStrategy.generatePageDraft.mockResolvedValue(pageDraft(2));
+
+    await generateBookBatchWindow(baseOptions(batchStrategy));
+
+    expect(batchStrategy.generateBatchDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ styleExcerpts: ["opening-voice"] })
+    );
+    expect(batchStrategy.generatePageDraft).toHaveBeenCalledWith(
+      expect.objectContaining({ styleExcerpts: ["opening-voice"] })
+    );
+  });
+
+  it("omits style excerpts from chapter and fallback drafts when the gate is off", async () => {
+    const chapterStrategy = baseStrategy();
+    chapterStrategy.generateChapterDraft.mockImplementation(async ({ chapter }: { chapter: { index: number } }) => ({
+      pages: chapter.index === 1 ? [pageDraft(1), pageDraft(2)] : [pageDraft(3), pageDraft(4)]
+    }));
+
+    await generateBookChapterWholePass(baseOptions(chapterStrategy));
+
+    expect(chapterStrategy.generateChapterDraft.mock.calls[0]![0]).not.toHaveProperty("styleExcerpts");
+
+    const batchStrategy = baseStrategy();
+    batchStrategy.batchSize = 2;
+    batchStrategy.generateBatchDraft.mockImplementation(
+      async ({ pageStart, pageEnd }: { pageStart: number; pageEnd: number }) => ({
+        pages: pageStart === 1 ? [pageDraft(1)] : [pageDraft(pageStart), pageDraft(pageEnd)]
+      })
+    );
+    batchStrategy.generatePageDraft.mockResolvedValue(pageDraft(2));
+
+    await generateBookBatchWindow(baseOptions(batchStrategy));
+
+    expect(batchStrategy.generateBatchDraft.mock.calls[0]![0]).not.toHaveProperty("styleExcerpts");
+    expect(batchStrategy.generatePageDraft.mock.calls[0]![0]).not.toHaveProperty("styleExcerpts");
   });
 
   it("rethrows anything that is not a recoverable batch-range failure", async () => {

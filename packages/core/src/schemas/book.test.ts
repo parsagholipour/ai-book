@@ -523,6 +523,41 @@ describe("createProjectSchema", () => {
   });
 });
 
+describe("plan style-contract cleanup", () => {
+  it("trims, drops empties, and case-insensitively dedupes voiceGuide and antiAiRules", () => {
+    const plan = bookPlanSchema.parse({
+      ...minimalPlan("template-driven"),
+      voiceGuide: ["  Calm and exact.  ", "", "calm and exact.", "Concrete verbs."],
+      antiAiRules: ["Avoid stock transitions.", "   ", "avoid stock transitions."]
+    });
+
+    expect(plan.voiceGuide).toEqual(["Calm and exact.", "Concrete verbs."]);
+    expect(plan.antiAiRules).toEqual(["Avoid stock transitions."]);
+  });
+
+  it("substitutes a generic contract when the arrays clean down to nothing", () => {
+    // `.min(1)` checks array length, not content: `[""]` used to parse and
+    // become the whole "Avoid:" line of every draft prompt in the book.
+    const plan = bookPlanSchema.parse({
+      ...minimalPlan("template-driven"),
+      voiceGuide: [""],
+      antiAiRules: ["   "]
+    });
+
+    expect(plan.voiceGuide.length).toBeGreaterThan(0);
+    expect(plan.voiceGuide[0]).not.toBe("");
+    expect(plan.antiAiRules.join(" ")).toMatch(/formulaic AI rhetoric/);
+  });
+
+  it("keeps a stored plan readable when the style fields are missing entirely", () => {
+    const { voiceGuide: _voiceGuide, antiAiRules: _antiAiRules, ...rest } = minimalPlan("template-driven");
+    const plan = bookPlanSchema.parse(rest);
+
+    expect(plan.voiceGuide.length).toBeGreaterThan(0);
+    expect(plan.antiAiRules.length).toBeGreaterThan(0);
+  });
+});
+
 function minimalPlan(cadence: string) {
   return {
     title: "Heat Cities",

@@ -6,10 +6,12 @@ import {
   planInputSnapshot,
   planMediaSettingsSnapshot,
   strategyForInput,
+  styleExcerptsForPage,
   toPriorPageContext
 } from "../generation/bookHelpers.js";
 import { loadContinuityNotes } from "../generation/generationContext.js";
 import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
+import { type QualityGateContext } from "../generation/qualityEnrichment.js";
 import { inputForPlanVersion, inputWithMessageMediaPreferences, inputWithMobileSourceMaterial } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -279,6 +281,14 @@ export async function rewritePageForUserRequest(options: {
   strategy: BookGenerationStrategy;
   providers: ProviderSet;
   request: string;
+  /**
+   * The edit's own quality context, loaded once by `applyBookEdit` and handed
+   * to every page it touches. Loaded per page, a ten-page edit read the
+   * operator's gates ten times, and a Quality-tab save landing mid-edit ran one
+   * edit under two different configurations — the same split a compile fixed by
+   * hoisting one context above its passes.
+   */
+  quality: QualityGateContext;
   generationJobId?: string | undefined;
   /**
    * Called as the page moves between writing and reading back, so the caller
@@ -298,6 +308,21 @@ export async function rewritePageForUserRequest(options: {
   const chapterPlan = options.plan.chapters.find((chapter) => chapter.index === options.page.chapter?.index);
   const chapterBrief = parseChapterBrief(options.page.chapter?.productionBrief);
   const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === options.page.index);
+  // The same style lock a generated page reviews against. A chat rewrite lands
+  // mid-book among pages that were excerpt-anchored at generation, and this
+  // path used to carry no excerpts and never run the style auditor — the one
+  // guard that catches register drift the general reviewer approves, missing
+  // from exactly the request ("make page 12 more dramatic") most likely to
+  // produce it. That request now travels with the lock, because it is also the
+  // one request against which a register shift is the *point*.
+  const quality = options.quality;
+  const styleExcerpts = await styleExcerptsForPage({
+    projectId: options.projectId,
+    pageIndex: options.page.index,
+    recencyPages: priorPageContext,
+    input: options.input,
+    quality
+  });
   const report: PageQualityReport = {
     approved: false,
     score: 50,
@@ -341,7 +366,8 @@ export async function rewritePageForUserRequest(options: {
       report,
       previousPages: priorPageContext,
       continuityNotes,
-      textModel: options.providers.text
+      textModel: options.providers.text,
+      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     }
   });
   await options.onPhase?.("review");
@@ -355,17 +381,18 @@ export async function rewritePageForUserRequest(options: {
     draft,
     previousPages: priorPageContext,
     continuityNotes,
-    textModel: options.providers.text
+    textModel: options.providers.text,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
   });
-  if (initialReport.approved) {
-    return { ...draft, qualityReport: initialReport };
-  }
   // A rejected rewrite used to be stored as-is with its report ignored. Give
   // it the same bounded revise → re-review loop a generated page gets, with a
   // smaller budget — the requested edit is already in the draft, so revisions
-  // must repair quality without undoing it, which is what the injected
-  // required revision pins down.
+  // must repair quality without undoing it, which `userRequest` pins down. An
+  // approved rewrite goes through the same call rather than returning early:
+  // the loop is what audits an approved report, this one included, and it
+  // returns it untouched when the audit is clean.
   const outcome = await runPageQualityLoop({
+    projectId: options.projectId,
     strategy: options.strategy,
     input: options.input,
     plan: options.plan,
@@ -374,13 +401,7 @@ export async function rewritePageForUserRequest(options: {
     pageBrief,
     pageIndex: options.page.index,
     draft,
-    report: {
-      ...initialReport,
-      requiredRevisions: [
-        `Keep the user's requested edit applied: ${options.request}`,
-        ...initialReport.requiredRevisions
-      ]
-    },
+    report: initialReport,
     previousPages: priorPageContext,
     continuityNotes,
     textModel: options.providers.text,
@@ -389,6 +410,9 @@ export async function rewritePageForUserRequest(options: {
     repairBrief: false,
     reviseContext: `User edit page ${options.page.index}`,
     reviseProgress: 62,
+    quality,
+    userRequest: options.request,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     onRewrite: async () => {
       await options.onPhase?.("draft");
     }

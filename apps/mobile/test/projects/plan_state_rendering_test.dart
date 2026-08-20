@@ -107,6 +107,74 @@ void main() {
 
     expect(revisionMessage, contains('Answer: Forgiveness, Justice'));
   });
+
+  // A continuation whose outline call failed appends chapters with no title —
+  // stored empty on purpose, rather than named in English for a book written in
+  // another language. The tile rendered that as a blank heading over the summary.
+  testWidgets('an unnamed chapter keeps its summary and drops the title row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [
+              ProjectPlanReview(
+                project: fakeProjectWithPlan(),
+                plan: fakePlanWithUnnamedChapter(),
+                billing: fakeBilling(),
+                revisionController: TextEditingController(),
+                busyAction: null,
+                onQuestionAnswers: (_) async {},
+                onRevisionRequest: (_) async {},
+                onApprovePlan: () async {},
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Set the promise'), findsOneWidget);
+    expect(find.text('Continue from where the book left off.'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Text && (widget.data?.trim().isEmpty ?? false),
+      ),
+      findsNothing,
+    );
+  });
+}
+
+MobilePlan fakePlanWithUnnamedChapter() {
+  final base = fakePlan();
+  return MobilePlan(
+    id: base.id,
+    projectId: base.projectId,
+    version: base.version,
+    status: base.status,
+    title: base.title,
+    premise: base.premise,
+    audience: base.audience,
+    questions: base.questions,
+    chapters: const [
+      MobilePlanChapter(
+        index: 1,
+        title: 'Set the promise',
+        summary: 'Define the result the student should get.',
+        targetPages: 8,
+      ),
+      MobilePlanChapter(
+        index: 2,
+        title: '',
+        summary: 'Continue from where the book left off.',
+        targetPages: 4,
+      ),
+    ],
+    createdAt: base.createdAt,
+    updatedAt: base.updatedAt,
+  );
 }
 
 MobilePlan fakeMultiQuestionPlan() {

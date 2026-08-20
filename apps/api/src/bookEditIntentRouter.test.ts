@@ -126,6 +126,75 @@ describe("book edit intent AI router", () => {
     expect(call.tools.map((tool: { name: string }) => tool.name)).toEqual(["read_page", "decide"]);
   });
 
+  it("names an untitled chapter in the prompt instead of handing the router a blank title", async () => {
+    const model = fakeDecideModel({
+      action: "plan_revision",
+      confidence: 0.97,
+      reasoning: "The model handled the routing.",
+      assistantMessage: "I’ll revise the plan with that media preference.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+
+    await classifyProjectChatMessage({
+      message: "Make the examples warmer and more practical.",
+      stage: "plan_ready",
+      pages,
+      // What a continuation whose outline call failed appends: the stored title
+      // is empty on purpose, and the router cannot resolve "chapter 2" against
+      // a chapter with no name at all.
+      chapters: [
+        { index: 1, title: "The Race Begins", pageIndexes: [1] },
+        { index: 2, title: "", pageIndexes: [2] }
+      ],
+      textModel: model
+    });
+
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
+    const prompt = JSON.parse(call.messages.at(-1)!.content);
+    expect(prompt.chapters.map((chapter: { title: string }) => chapter.title)).toEqual([
+      "The Race Begins",
+      "Chapter 2"
+    ]);
+  });
+
+  it("names an untitled chapter in the book's language rather than English Chapter N", async () => {
+    const model = fakeDecideModel({
+      action: "plan_revision",
+      confidence: 0.97,
+      reasoning: "The model handled the routing.",
+      assistantMessage: "I’ll revise the plan with that media preference.",
+      clarification: "none",
+      pageIndexes: [],
+      chapterIndex: null,
+      targetLanguage: null
+    });
+
+    await classifyProjectChatMessage({
+      message: "Make the examples warmer and more practical.",
+      stage: "plan_ready",
+      pages,
+      // Same untitled continuation as the English fallback above: the prompt
+      // has to name it the way the printed book does, or a reader saying
+      // «فصل 2» is talking about a chapter the router only knows as Chapter 2.
+      chapters: [
+        { index: 1, title: "The Race Begins", pageIndexes: [1] },
+        { index: 2, title: "", pageIndexes: [2] }
+      ],
+      language: "persian",
+      textModel: model
+    });
+
+    const call = vi.mocked(model.generateWithTools).mock.calls[0]![0];
+    const prompt = JSON.parse(call.messages.at(-1)!.content);
+    expect(prompt.chapters.map((chapter: { title: string }) => chapter.title)).toEqual([
+      "The Race Begins",
+      "فصل 2"
+    ]);
+  });
+
   it("falls back to degraded heuristics when the AI router fails", async () => {
     const model = fakeFailingTextModel();
 

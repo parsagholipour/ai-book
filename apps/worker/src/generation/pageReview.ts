@@ -1,10 +1,16 @@
-import { formatQualityFailure, parseChapterBrief } from "./bookHelpers.js";
+import { formatQualityFailure, parseChapterBrief, styleExcerptsForPage } from "./bookHelpers.js";
 import { enqueueWorkerJob } from "../runtime/dispatch.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { uniqueStrings } from "../runtime/serialization.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
-import { enrichPageQualityReport, keeperStoryExtractForSave, persistStoryExtract } from "./qualityEnrichment.js";
+import {
+  enrichPageQualityReport,
+  keeperStoryExtractForSave,
+  persistStoryExtract,
+  revisedDraftStyleAuditor,
+  type QualityGateContext
+} from "./qualityEnrichment.js";
 import { prepareEmbedding, strategyUsesSemanticMemory, writePreparedEmbedding } from "./embeddingWrites.js";
 import { updateEntityStateFromPage } from "./entityState.js";
 import { retrieveSemanticResearchNotes } from "./researchMemory.js";
@@ -16,6 +22,7 @@ import {
   PAGE_QA_RECOVERY_CANDIDATE
 } from "./tuning.js";
 import {
+  styleAuditedScoreBeats,
   type BookGenerationStrategy,
   type BookPlan,
   type ChapterBrief,
@@ -27,6 +34,7 @@ import {
   type PriorPageContext,
   type ProviderSet,
   type RevisePageOptions,
+  type StyleAuditedScore,
   type TextModelAdapter
 } from "@book-maker/core";
 import { pageScope, Prisma, prisma } from "@book-maker/db";
@@ -40,10 +48,15 @@ export type DraftCandidate = { draft: PageDraft; revision: number; report: PageQ
 /**
  * A rewrite is not guaranteed to improve: the sixth attempt can score below the
  * second. Every review loop keeps its keeper through this one comparison so a
- * failed page is saved at its strongest draft, not its latest.
+ * failed page is saved at its strongest draft, not its latest. Only some
+ * candidates are ever style-audited — the initial draft and reviewer-approved
+ * revisions — so the comparison is `styleAuditedScoreBeats`, which counts the
+ * audit's penalty only against another audited candidate: subtracted from
+ * `score` itself, the penalty handed the keeper's seat to a rejected rewrite
+ * the auditor never saw.
  */
 export function bestDraftCandidate(best: DraftCandidate, candidate: DraftCandidate): DraftCandidate {
-  return candidate.report.score > best.report.score ? candidate : best;
+  return styleAuditedScoreBeats(candidate.report, best.report) ? candidate : best;
 }
 
 export type PageQualityLoopOutcome = {
@@ -59,8 +72,8 @@ export type PageQualityLoopOutcome = {
 
 /**
  * The one score → revise → re-score loop behind every page review: the
- * generate-page handler, the direct passes' per-page review, and the final-QA
- * repair in compile-export.
+ * generate-page handler, the direct passes' per-page review, the chat page
+ * rewrite and the final-QA repair in compile-export.
  *
  * The counting base is the caller's: the page loops count *candidates* from
  * the original draft (`maxCandidates` = MAX_PAGE_QA_CANDIDATES), while final
@@ -68,8 +81,23 @@ export type PageQualityLoopOutcome = {
  * passes `recoveryRevision: PAGE_QA_RECOVERY_CANDIDATE - 1`. Both enter
  * recovery mode at the third rewrite; collapsing the two numbers into one
  * constant silently delays that by a rewrite.
+ *
+ * **The style audit is the loop's, not the caller's.** Every caller used to
+ * hand-assemble the same triple — a `styleExcerpts` array, a
+ * `revisedDraftStyleAuditor` built from exactly those excerpts, and (in the two
+ * callers whose seed report comes straight off `reviewPageDraft`) a duplicated
+ * pre-loop "if the seed was approved, audit it too" block. Four copies of a
+ * pair that is only meaningful when both halves name the *same* array: an audit
+ * against excerpts the rewrite was not written from measures nothing, and the
+ * only thing keeping them equal was that each copy happened to derive them the
+ * same way. So the loop takes the excerpts and the quality gates and builds the
+ * auditor itself, and audits **every** approved report it sees, the seed
+ * included. A seed that has already been audited says so — see
+ * `alreadyStyleAudited` — which is what keeps `enrichPageQualityReport`'s audit
+ * of the initial draft from being paid for twice.
  */
 export async function runPageQualityLoop(options: {
+  projectId: string;
   strategy: BookGenerationStrategy;
   input: CreateProjectInput;
   plan: BookPlan;
@@ -95,7 +123,26 @@ export async function runPageQualityLoop(options: {
   repairBrief?: boolean | undefined;
   reviseContext: string;
   reviseProgress?: number | undefined;
+  /**
+   * The pinned style lock. One array, three readers — the rewrite, the review
+   * and the audit the loop builds below — because a second derivation of it is
+   * a comparison against prose the draft was never written from.
+   */
   styleExcerpts?: string[] | undefined;
+  /** The operator's gate configuration; the loop reads `styleAuditor` off it. */
+  quality: QualityGateContext;
+  /**
+   * The reader's own edit request, set only when this loop is repairing a page
+   * they asked to change. It reaches two places, and both are load-bearing.
+   * Every rewrite briefing gets "keep the requested edit applied", so a quality
+   * revision cannot quietly undo what was paid for. And the style auditor is
+   * told the change was requested: without it, "make page 12 more dramatic"
+   * lands as a register shift away from the opening-pages excerpts, the audit
+   * flips the reviewer's approval, the small user-edit budget burns pulling the
+   * page back toward the voice it was asked to leave, and the edit is delivered
+   * FAILED_QA — which then feeds the next compile's repair pass.
+   */
+  userRequest?: string | undefined;
   retrieveResearch?: ((draft: PageDraft, report: PageQualityReport) => Promise<string[]>) | undefined;
   /** Per-rewrite progress reporting, in the caller's own style. */
   onRewrite?: ((revision: number) => Promise<void>) | undefined;
@@ -105,8 +152,25 @@ export async function runPageQualityLoop(options: {
    */
   assertOwnership?: (() => Promise<void>) | undefined;
 }): Promise<PageQualityLoopOutcome> {
+  const styleExcerpts = options.styleExcerpts ?? [];
+  const auditApprovedRevision = revisedDraftStyleAuditor({
+    projectId: options.projectId,
+    plan: options.plan,
+    textModel: options.textModel,
+    styleExcerpts,
+    quality: options.quality,
+    ...(options.userRequest ? { userRequest: options.userRequest } : {})
+  });
+  const auditApproved = async (candidate: PageDraft, candidateReport: PageQualityReport) =>
+    auditApprovedRevision && candidateReport.approved && !alreadyStyleAudited(candidateReport)
+      ? auditApprovedRevision(options.pageIndex, candidate, candidateReport)
+      : candidateReport;
+
   let draft = options.draft;
-  let report = options.report;
+  // Before `best` is seeded, not after: the audit may flip the seed's approval
+  // and stamp its penalty, and a keeper comparison run against the pre-audit
+  // copy would hand the page's seat to a rewrite on scores from two scales.
+  let report = await auditApproved(draft, options.report);
   let pageBrief = options.pageBrief;
   let revision = 1;
   let best: DraftCandidate = { draft, revision, report };
@@ -151,12 +215,16 @@ export async function runPageQualityLoop(options: {
         chapterPageEnd: options.chapterPageEnd,
         pageIndex: options.pageIndex,
         draft,
-        report: pageRewriteReport(report, nextRevision, options.recoveryRevision ?? PAGE_QA_RECOVERY_CANDIDATE),
+        report: pageRewriteReport(
+          keepUserRequestApplied(report, options.userRequest),
+          nextRevision,
+          options.recoveryRevision ?? PAGE_QA_RECOVERY_CANDIDATE
+        ),
         previousPages: options.previousPages,
         ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
         continuityNotes: options.continuityNotes,
         textModel: options.textModel,
-        ...(options.styleExcerpts && options.styleExcerpts.length > 0 ? { styleExcerpts: options.styleExcerpts } : {}),
+        ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
         ...(await retrievedResearchForRevise(options, draft, report))
       }
     });
@@ -175,8 +243,9 @@ export async function runPageQualityLoop(options: {
       ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
       continuityNotes: options.continuityNotes,
       textModel: options.textModel,
-      ...(options.styleExcerpts && options.styleExcerpts.length > 0 ? { styleExcerpts: options.styleExcerpts } : {})
+      ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
     });
+    report = await auditApproved(draft, report);
     best = bestDraftCandidate(best, { draft, revision, report });
   }
 
@@ -184,6 +253,37 @@ export async function runPageQualityLoop(options: {
     return { approved: true, draft, report, revision, attempts: revision };
   }
   return { approved: false, draft: best.draft, report: best.report, revision: best.revision, attempts: revision };
+}
+
+/**
+ * Whether this exact report has already been through the style auditor.
+ *
+ * `withStyleAudit` stamps `stylePenalty` on everything it returns — zero when
+ * the audit passed — precisely so a report can say it was audited at all, which
+ * is what `styleAuditedScoreBeats` compares candidates on. The seed report a
+ * page job hands this loop has been audited by `enrichPageQualityReport`
+ * already; the seed a chat rewrite or a final-QA repair hands in comes straight
+ * off `reviewPageDraft` and has not. That difference is the whole of who owes a
+ * seed audit, and reading it off the report is what lets one rule serve both.
+ * The field travels *beside* `PageQualityReport` rather than inside its schema,
+ * hence the narrowing.
+ */
+function alreadyStyleAudited(report: PageQualityReport): boolean {
+  return (report as StyleAuditedScore).stylePenalty !== undefined;
+}
+
+/**
+ * A quality rewrite of a page the reader asked to change must repair the page
+ * *around* their edit, never back out of it — the request is already in the
+ * draft, and the rewrite is being asked for because something else about the
+ * page failed review.
+ */
+function keepUserRequestApplied(report: PageQualityReport, userRequest: string | undefined): PageQualityReport {
+  const instruction = userRequest ? `Keep the user's requested edit applied: ${userRequest}` : "";
+  if (!instruction || report.requiredRevisions.includes(instruction)) {
+    return report;
+  }
+  return { ...report, requiredRevisions: [instruction, ...report.requiredRevisions] };
 }
 
 /**
@@ -252,6 +352,20 @@ export async function reviewAndSaveGeneratedPage(options: {
   const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, options.chapter);
   const quality = await loadQualityContext(options.input);
+  // The book's own opening voice, not whatever the caller's window happens to
+  // start at. This path had no lock at all, so `enrichPageQualityReport` fell
+  // back to pinning from `previousPages` — and `continueBook` passes the last
+  // eighteen pages, so a continuation drafted at page 41 was audited and
+  // revised against pages 23 and 24. The initial `reviewPageDraft` used to
+  // omit the lock even after the enrich/loop gained it, so on balanced the
+  // auditor flipped a page the first reviewer had never compared to pages 1–2.
+  const styleExcerpts = await styleExcerptsForPage({
+    projectId: options.projectId,
+    pageIndex: options.draft.index,
+    recencyPages: options.previousPages,
+    input: options.input,
+    quality
+  });
   const initialReport = await options.strategy.reviewPageDraft({
     input: options.input,
     plan: options.plan,
@@ -265,7 +379,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     previousPages: options.previousPages,
     ...(options.nextPages && options.nextPages.length > 0 ? { nextPages: options.nextPages } : {}),
     continuityNotes,
-    textModel: options.providers.text
+    textModel: options.providers.text,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {})
   });
   const enriched = await enrichPageQualityReport({
     input: options.input,
@@ -277,10 +392,12 @@ export async function reviewAndSaveGeneratedPage(options: {
     researchNotes,
     textModel: options.providers.text,
     projectId: options.projectId,
-    quality
+    quality,
+    styleExcerpts
   });
 
   const outcome = await runPageQualityLoop({
+    projectId: options.projectId,
     strategy: options.strategy,
     input: options.input,
     plan: options.plan,
@@ -301,7 +418,8 @@ export async function reviewAndSaveGeneratedPage(options: {
     maxCandidates: MAX_PAGE_QA_CANDIDATES,
     repairBrief: true,
     reviseContext: `Page ${options.draft.index}`,
-    ...(enriched.styleExcerpts.length > 0 ? { styleExcerpts: enriched.styleExcerpts } : {}),
+    quality,
+    ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
     ...(quality.enabled("claimRetrieve")
       ? {
           retrieveResearch: (draft: PageDraft) =>

@@ -3,7 +3,7 @@ import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { GenerateJsonOptions, GenerateTextOptions, JsonResult, TextModelAdapter, TextResult } from "../adapters/types.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { BookPlan, CreateProjectInput } from "../schemas/book.js";
-import { createPlanningPackage, normalizePlanPageTargets, revisePlanningPackage } from "./planner.js";
+import { createPlanningPackage, ensurePlanStyleContract, normalizePlanPageTargets, revisePlanningPackage } from "./planner.js";
 
 describe("createPlanningPackage", () => {
   it("reports real planning phases around research and generation", async () => {
@@ -419,6 +419,47 @@ describe("revisePlanningPackage", () => {
 
     expect(revised.questions.map((question) => question.prompt)).toEqual([necessaryPrompt]);
   });
+
+  it("keeps the book's style contract when the revision emits empty style arrays", async () => {
+    const input = testInput();
+    const currentPlan: BookPlan = {
+      ...makeFallbackPlan(input),
+      voiceGuide: ["Keep the fable dry and unhurried.", "Let the turtle's patience read as stubbornness."],
+      antiAiRules: ["No moral-of-the-story closing line.", "Never call the race a journey.", "No sparkle words."]
+    };
+    const textModel: TextModelAdapter = {
+      async generateJson<T>(_options: GenerateJsonOptions<T>): Promise<JsonResult<T>> {
+        return {
+          data: { title: "The Shorter Race", voiceGuide: [], antiAiRules: [] } as T,
+          text: "{\"title\":\"The Shorter Race\",\"voiceGuide\":[],\"antiAiRules\":[]}",
+          model: "test-model",
+          provider: "test"
+        };
+      },
+      async generateText(_options: GenerateTextOptions): Promise<TextResult> {
+        throw new Error("Not used");
+      },
+      async *streamText(_options: GenerateTextOptions): AsyncGenerator<string> {
+        throw new Error("Not used");
+      },
+      generateWithTools: unsupportedGenerateWithTools
+    };
+
+    const revised = await revisePlanningPackage({
+      currentPlan,
+      userMessage: "Make it shorter.",
+      textModel,
+      input,
+      targetPages: input.targetPages
+    });
+
+    // An emitted `[]` is a field the model had nothing to say about, not a
+    // request to delete the contract: "make it shorter" must not cost the book
+    // its voice.
+    expect(revised.title).toBe("The Shorter Race");
+    expect(revised.voiceGuide).toEqual(currentPlan.voiceGuide);
+    expect(revised.antiAiRules).toEqual(currentPlan.antiAiRules);
+  });
 });
 
 describe("normalizePlanPageTargets", () => {
@@ -494,3 +535,62 @@ function unusedTextModel(): TextModelAdapter {
     generateWithTools: unsupportedGenerateWithTools
   };
 }
+
+describe("ensurePlanStyleContract", () => {
+  it("returns a plan whose contract is already substantial by identity", () => {
+    const plan = makeFallbackPlan(
+      testInput({ prompt: "Write a practical field guide to observing suburban wildlife at dawn" })
+    );
+
+    expect(ensurePlanStyleContract(plan, { toneProfile: "neutral" })).toBe(plan);
+  });
+
+  it("appends the fallback composition under a vacuous contract, keeping the model's rules first", () => {
+    const input = testInput({ prompt: "Write a practical field guide to observing suburban wildlife at dawn" });
+    const plan: BookPlan = {
+      ...makeFallbackPlan(input),
+      voiceGuide: ["Write naturally"],
+      antiAiRules: ["Write naturally"]
+    };
+
+    const ensured = ensurePlanStyleContract(plan, { input, toneProfile: "neutral" });
+
+    expect(ensured.voiceGuide[0]).toBe("Write naturally");
+    expect(ensured.voiceGuide.length).toBeGreaterThanOrEqual(2);
+    expect(ensured.antiAiRules[0]).toBe("Write naturally");
+    expect(ensured.antiAiRules.length).toBeGreaterThanOrEqual(3);
+    // The tone guardrails travel even with no template supplied.
+    expect(ensured.antiAiRules.join(" ")).toMatch(/em dashes/i);
+  });
+
+  it("restores the kids reading band a picture book's thin contract left out", () => {
+    const input = testInput({
+      prompt: "A simple picture book about a turtle and a rabbit learning to race kindly",
+      category: "KIDS",
+      complexity: 3,
+      mediaSettings: { ...testInput().mediaSettings, audienceAgeRange: "4-6" }
+    });
+    const plan: BookPlan = { ...makeFallbackPlan(input), voiceGuide: ["Write naturally"] };
+
+    const ensured = ensurePlanStyleContract(plan, { input, toneProfile: "neutral" });
+
+    // The reading band is the half `makeFallbackPlan` composes from `input`, so
+    // it is the half a contract rebuilt without one silently loses.
+    expect(ensured.voiceGuide.join(" ")).toMatch(/20-65 words per page/i);
+    expect(ensured.voiceGuide.join(" ")).toMatch(/picture-book vocabulary/i);
+    expect(ensured.voiceGuide).toEqual(expect.arrayContaining(makeFallbackPlan(input).voiceGuide));
+  });
+
+  it("does not file the tone profile's label line as a style rule", () => {
+    const input = testInput();
+    const plan: BookPlan = { ...makeFallbackPlan(input), voiceGuide: ["Write naturally"] };
+
+    const ensured = ensurePlanStyleContract(plan, { input, toneProfile: "neutral" });
+
+    // "Tone profile: Neutral." names the profile for a prompt heading; nobody
+    // can write to it, so it belongs to neither half of the contract.
+    expect(ensured.voiceGuide.some((rule) => rule.startsWith("Tone profile:"))).toBe(false);
+    expect(ensured.antiAiRules.some((rule) => rule.startsWith("Tone profile:"))).toBe(false);
+    expect(makeFallbackPlan(input).voiceGuide.some((rule) => rule.startsWith("Tone profile:"))).toBe(false);
+  });
+});
