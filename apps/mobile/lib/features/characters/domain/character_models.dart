@@ -98,6 +98,34 @@ class CharacterField {
   }
 }
 
+/// One durable @mention in a character description.
+class CharacterMention {
+  const CharacterMention({required this.id, required this.name});
+
+  final String id;
+  final String name;
+
+  factory CharacterMention.fromJson(Map<String, dynamic> json) =>
+      CharacterMention(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+
+  static List<CharacterMention> listFromJson(Object? json) {
+    if (json is! List) return const [];
+    return [
+      for (final entry in json)
+        if (entry is Map && entry['id'] is String && entry['name'] is String)
+          CharacterMention(
+            id: entry['id'] as String,
+            name: entry['name'] as String,
+          ),
+    ];
+  }
+}
+
 /// An account-wide library character. Books snapshot these at build time and
 /// hold no reference back, so nothing here belongs to any one project.
 class LibraryCharacter {
@@ -105,6 +133,7 @@ class LibraryCharacter {
     required this.id,
     required this.name,
     this.description = '',
+    this.mentions = const [],
     this.fields = const [],
     this.portraitStatus = CharacterPortraitStatus.none,
     this.portraitError,
@@ -122,6 +151,7 @@ class LibraryCharacter {
   final String id;
   final String name;
   final String description;
+  final List<CharacterMention> mentions;
   final List<CharacterField> fields;
   final CharacterPortraitStatus portraitStatus;
 
@@ -169,6 +199,7 @@ class LibraryCharacter {
       id: json['id'] as String,
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
+      mentions: CharacterMention.listFromJson(json['mentions']),
       fields: CharacterField.listFromJson(json['fields']),
       portraitStatus: CharacterPortraitStatus.fromWire(
         json['portraitStatus'] as String?,
@@ -193,6 +224,7 @@ class LibraryCharacter {
       'id': id,
       'name': name,
       'description': description,
+      'mentions': [for (final mention in mentions) mention.toJson()],
       'fields': [for (final field in fields) field.toJson()],
       'portraitStatus': portraitStatus.wire,
       'portraitError': portraitError,
@@ -230,6 +262,7 @@ class LibraryCharacter {
   LibraryCharacter copyWith({
     String? name,
     String? description,
+    List<CharacterMention>? mentions,
     List<CharacterField>? fields,
     CharacterPortraitStatus? portraitStatus,
     Object? portraitError = _sentinel,
@@ -246,6 +279,7 @@ class LibraryCharacter {
       id: id,
       name: name ?? this.name,
       description: description ?? this.description,
+      mentions: mentions ?? this.mentions,
       fields: fields ?? this.fields,
       portraitStatus: portraitStatus ?? this.portraitStatus,
       portraitError: identical(portraitError, _sentinel)

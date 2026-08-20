@@ -385,6 +385,12 @@ class _CharacterProfileScreenState
     ref.invalidate(charactersProvider);
   }
 
+  Future<void> _openMentionedCharacter(String characterId) async {
+    await Navigator.of(context).push(characterProfileRoute(characterId));
+    if (!mounted) return;
+    ref.invalidate(charactersProvider);
+  }
+
   Future<void> _applySuggestion(
     LibraryCharacter character,
     String? suggestion,
@@ -553,6 +559,7 @@ class _CharacterProfileScreenState
                   onUseSuggestion: (suggestion) =>
                       _applySuggestion(character, suggestion),
                   onDismissSuggestion: () => _applySuggestion(character, null),
+                  onOpenMention: _openMentionedCharacter,
                 ),
               ),
             ),

@@ -21,11 +21,16 @@ void main() {
     WidgetTester tester,
     LibraryCharacter saved, {
     List<CharacterImage> images = const [],
+    List<LibraryCharacter>? libraryCharacters,
     // A character mid-drawing never settles: the poll is a periodic timer and
     // the card carries an indeterminate progress bar.
     bool settle = true,
   }) async {
-    final repository = FakeCharactersRepository(saved, images: images);
+    final repository = FakeCharactersRepository(
+      saved,
+      images: images,
+      libraryCharacters: libraryCharacters,
+    );
     // Tall enough that every sliver builds: the strip is the last one, and a
     // lazy sliver below the fold is not in the tree to be found.
     tester.view.physicalSize = const Size(1200, 3000);
@@ -34,9 +39,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [charactersRepositoryProvider.overrideWithValue(repository)],
-        child: MaterialApp(
-          home: CharacterProfileScreen(characterId: saved.id),
-        ),
+        child: MaterialApp(home: CharacterProfileScreen(characterId: saved.id)),
       ),
     );
     if (settle) {
@@ -73,7 +76,10 @@ void main() {
 
     // No vision provider, a timeout, or an honest "unsure": the server made no
     // claim about the image, so neither may the page.
-    for (final kind in <CharacterPhotoKind?>[null, CharacterPhotoKind.unknown]) {
+    for (final kind in <CharacterPhotoKind?>[
+      null,
+      CharacterPhotoKind.unknown,
+    ]) {
       testWidgets('a ${kind?.name ?? "never read"} photo is not called real', (
         tester,
       ) async {
@@ -270,7 +276,9 @@ void main() {
           portraitStatus: CharacterPortraitStatus.ready,
           portraitSource: CharacterPortraitSource.generated,
         ),
-        images: [testImage(id: 'img-new', isMain: true, isCurrentReference: true)],
+        images: [
+          testImage(id: 'img-new', isMain: true, isCurrentReference: true),
+        ],
       );
 
       expect(
@@ -438,6 +446,61 @@ void main() {
     });
   });
 
+  group('linked descriptions', () {
+    testWidgets('a saved @mention opens the linked character profile', (
+      tester,
+    ) async {
+      final bram = testCharacter(id: 'char-2', name: 'Bram');
+      final mina = testCharacter(
+        description: 'Best friends with @Bram.',
+        mentions: const [CharacterMention(id: 'char-2', name: 'Bram')],
+      );
+      await pumpProfile(tester, mina, libraryCharacters: [mina, bram]);
+
+      expect(
+        find.byKey(const ValueKey('character-linked-description')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('character-mention-char-2')));
+      await tester.pumpAndSettle();
+      expect(find.text('Bram'), findsWidgets);
+    });
+
+    testWidgets('an unlinked @name remains ordinary prose', (tester) async {
+      await pumpProfile(tester, testCharacter(description: 'Once knew @Bram.'));
+
+      expect(
+        find.byKey(const ValueKey('character-linked-description')),
+        findsNothing,
+      );
+      expect(find.text('Once knew @Bram.'), findsOneWidget);
+    });
+
+    testWidgets('linked profiles can be followed through nested navigation', (
+      tester,
+    ) async {
+      final cora = testCharacter(id: 'char-3', name: 'Cora');
+      final bram = testCharacter(
+        id: 'char-2',
+        name: 'Bram',
+        description: 'Trusts @Cora.',
+        mentions: const [CharacterMention(id: 'char-3', name: 'Cora')],
+      );
+      final mina = testCharacter(
+        description: 'Best friends with @Bram.',
+        mentions: const [CharacterMention(id: 'char-2', name: 'Bram')],
+      );
+      await pumpProfile(tester, mina, libraryCharacters: [mina, bram, cora]);
+
+      await tester.tap(find.byKey(const ValueKey('character-mention-char-2')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('character-mention-char-3')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cora'), findsWidgets);
+    });
+  });
+
   group('the redraw asks first', () {
     LibraryCharacter drawn() => testCharacter(
       portraitStatus: CharacterPortraitStatus.ready,
@@ -565,9 +628,7 @@ void main() {
       testCharacter(photoKind: CharacterPhotoKind.photograph),
     );
 
-    await tester.tap(
-      find.byKey(const ValueKey('character-generate-portrait')),
-    );
+    await tester.tap(find.byKey(const ValueKey('character-generate-portrait')));
     await tester.pumpAndSettle();
 
     expect(repository.portraitRequests, hasLength(1));

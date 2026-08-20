@@ -6,6 +6,7 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../data/characters_repository.dart';
 import '../domain/character_models.dart';
+import '../domain/character_mentions.dart';
 
 /// Creates or edits one library character.
 ///
@@ -32,6 +33,7 @@ const _descriptionMax = 2000;
 const _fieldsMax = 12;
 const _fieldKeyMax = 40;
 const _fieldValueMax = 300;
+const _mentionsMax = 10;
 
 const _suggestedFieldKeys = ['Age', 'Job', 'Languages', 'Personality', 'Likes'];
 
@@ -70,6 +72,15 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
     for (final field in widget.character?.fields ?? const <CharacterField>[])
       _FieldRow(key: field.key, value: field.value),
   ];
+  late final Map<String, String> _insertedMentionTextById = {
+    for (final mention
+        in widget.character?.mentions ?? const <CharacterMention>[])
+      mention.id: '@${mention.name}',
+  };
+  late List<CharacterMention> _attachedMentions =
+      widget.character?.mentions ?? const <CharacterMention>[];
+  CharacterMentionQuery? _mentionQuery;
+  ProviderSubscription<AsyncValue<CharacterLibrary>>? _characterLibraryWatch;
 
   /// Rows taken out of [_fields] stay alive until the sheet closes: their
   /// text fields may still be animating out when they are removed.
@@ -83,13 +94,37 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
   bool _suggestionBusy = false;
   String? _nameError;
 
+  /// Whether the reader themselves changed the description — typed in it, took
+  /// the photo suggestion, or tapped a mention chip.
+  ///
+  /// It is tracked rather than derived, because the sheet resolves mentions on
+  /// its own: a pre-feature character whose prose says "Inspired by @bram" gets
+  /// a link the moment the library arrives, which is a change to
+  /// [_attachedMentions] that no comparison can tell from an edit. Deriving
+  /// "changed" from that state turned a look-and-Save into a PATCH — one that
+  /// canonicalizes the prose, writes a durable link nobody made, and retires
+  /// the pending photo suggestion, which sending any description does.
+  bool _descriptionEdited = false;
+
   /// Set the moment the reader taps "Use this", so the card goes away without
   /// waiting for the PATCH that retires it server-side — which only happens
   /// when they save.
   bool _suggestionTaken = false;
 
   @override
+  void initState() {
+    super.initState();
+    _descriptionController.addListener(_syncDescriptionMentions);
+    _characterLibraryWatch = ref.listenManual(charactersProvider, (_, next) {
+      // Resolve a name that was typed while the library request was still in
+      // flight as soon as the identities needed to disambiguate it arrive.
+      if (mounted && next.hasValue) _syncDescriptionMentions();
+    });
+  }
+
+  @override
   void dispose() {
+    _characterLibraryWatch?.close();
     _nameController.dispose();
     _descriptionController.dispose();
     for (final row in _fields) {
@@ -100,6 +135,109 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
     }
     super.dispose();
   }
+
+  List<LibraryCharacter> get _loadedCharacters =>
+      ref.read(charactersProvider).asData?.value.characters ??
+      const <LibraryCharacter>[];
+
+  void _syncDescriptionMentions() {
+    if (!mounted) return;
+    final text = _descriptionController.text;
+    _insertedMentionTextById.removeWhere(
+      (_, mentionText) => !characterTextHasMention(text, mentionText),
+    );
+    final selection = _descriptionController.selection;
+    final caret = selection.isValid && selection.isCollapsed
+        ? selection.baseOffset
+        : -1;
+    final query = caret < 0 ? null : characterMentionQueryAt(text, caret);
+    final attached = resolveCharacterMentions(
+      text: text,
+      inserted: _insertedMentionTextById,
+      characters: _loadedCharacters,
+      excludeCharacterId: _saved?.id,
+      // One past the cap: an over-full set has to stay visible here, because a
+      // set trimmed to a legal-looking length is what silently dropped a link
+      // the prose still carried on the next save.
+      limit: _mentionsMax + 1,
+    );
+    final changed =
+        query?.start != _mentionQuery?.start ||
+        query?.query != _mentionQuery?.query ||
+        !_sameMentionIds(attached, _attachedMentions);
+    if (!changed) return;
+    setState(() {
+      _mentionQuery = query;
+      _attachedMentions = attached;
+    });
+  }
+
+  bool _sameMentionIds(
+    List<CharacterMention> left,
+    List<CharacterMention> right,
+  ) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index].id != right[index].id) return false;
+    }
+    return true;
+  }
+
+  void _insertMention(LibraryCharacter character) {
+    final query = _mentionQuery;
+    if (query == null) return;
+    final text = _descriptionController.text;
+    final selection = _descriptionController.selection;
+    final caret = selection.isValid && selection.isCollapsed
+        ? selection.baseOffset
+        : text.length;
+    final mentionText = '@${character.name}';
+    final replacement = '$mentionText ';
+    final inserted =
+        text.substring(0, query.start) + replacement + text.substring(caret);
+    // A tap is not IME input, so the field's own maxLength formatter never runs
+    // over this text. Without the check the chip could push the description
+    // past a cap whose counter is hidden, and the save would come back as the
+    // route's generic message with nothing on screen explaining it.
+    if (_overDescriptionLimit(inserted)) {
+      _refuseMention('That would make the description too long.');
+      return;
+    }
+    // The limit belongs to the set of distinct characters, so a second
+    // occurrence of one already attached is not a new mention.
+    if (_attachedMentions.length >= _mentionsMax &&
+        !_attachedMentions.any((mention) => mention.id == character.id)) {
+      _refuseMention(
+        'A description can mention up to $_mentionsMax characters.',
+      );
+      return;
+    }
+    _descriptionEdited = true;
+    _insertedMentionTextById[character.id] = mentionText;
+    _descriptionController.value = TextEditingValue(
+      text: inserted,
+      selection: TextSelection.collapsed(
+        offset: query.start + replacement.length,
+      ),
+    );
+  }
+
+  /// Says why an insertion was refused, having changed nothing: the text and
+  /// the half-typed `@token` are left exactly as the reader had them, so a
+  /// silent refusal would look like a tap that missed.
+  void _refuseMention(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showAppSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Whether [text] is past either ceiling the description has: the field's own
+  /// [_descriptionMax], counted in the grapheme clusters Flutter's maxLength
+  /// counts, and the server's cap on the trimmed string, counted in the UTF-16
+  /// units zod measures.
+  bool _overDescriptionLimit(String text) =>
+      text.characters.length > _descriptionMax ||
+      text.trim().length > _descriptionMax;
 
   bool get _busy => _saving || _suggestionBusy;
 
@@ -170,6 +308,50 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
     if (fields == null) return;
     final description = _descriptionController.text.trim();
     final saved = _saved;
+    final mentionIds = [for (final mention in _attachedMentions) mention.id];
+
+    String? changedName;
+    String? changedDescription;
+    List<CharacterField>? changedFields;
+    List<String>? changedMentions;
+    if (saved != null) {
+      changedName = name != saved.name ? name : null;
+      changedFields = _sameFields(fields, saved.fields) ? null : fields;
+      // Only what the reader did to the description counts. Everything the
+      // sheet resolved on its own — see [_descriptionEdited] — leaves this an
+      // unchanged form, and an unchanged form pops without a request.
+      if (_descriptionEdited) {
+        changedDescription = description != saved.description
+            ? description
+            : null;
+        changedMentions = _sameMentionIds(_attachedMentions, saved.mentions)
+            ? null
+            : mentionIds;
+      }
+      if (changedName == null &&
+          changedDescription == null &&
+          changedFields == null &&
+          changedMentions == null) {
+        Navigator.of(context).pop();
+        return;
+      }
+    }
+    // The route refuses more than this, and the alternative to saying so is
+    // sending a set quietly cut down to the cap — which deletes a link the
+    // reader can still see in their own prose.
+    final sendsMentions =
+        saved == null || changedDescription != null || changedMentions != null;
+    if (sendsMentions && mentionIds.length > _mentionsMax) {
+      messenger.showAppSnackBar(
+        SnackBar(
+          content: Text(
+            'A description can mention up to $_mentionsMax characters. '
+            'Remove a few @names and save again.',
+          ),
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -179,32 +361,37 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
       if (saved == null) {
         final created = await ref
             .read(charactersRepositoryProvider)
-            .create(name: name, description: description, fields: fields);
+            .create(
+              name: name,
+              description: description,
+              fields: fields,
+              mentionedCharacterIds: mentionIds,
+            );
         if (!mounted) return;
         ref.invalidate(charactersProvider);
         // Closes and hands the character back: their page is where a face gets
         // added, so staying open with newly-unlocked sections was a waypoint.
         Navigator.of(context).pop(created);
       } else {
-        final changedName = name != saved.name ? name : null;
-        final changedDescription =
-            description != saved.description ? description : null;
-        final changedFields = _sameFields(fields, saved.fields) ? null : fields;
-        if (changedName == null &&
-            changedDescription == null &&
-            changedFields == null) {
-          Navigator.of(context).pop();
-          return;
-        }
-        await ref.read(charactersRepositoryProvider).update(
-          id: saved.id,
-          name: changedName,
-          description: changedDescription,
-          fields: changedFields,
-        );
+        final updated = await ref
+            .read(charactersRepositoryProvider)
+            .update(
+              id: saved.id,
+              name: changedName,
+              // A mention-set change is meaningful even when the prose itself
+              // did not change, so send the current description with that set.
+              description:
+                  changedDescription ??
+                  (changedMentions != null ? description : null),
+              fields: changedFields,
+              mentionedCharacterIds:
+                  changedDescription != null || changedMentions != null
+                  ? mentionIds
+                  : null,
+            );
         if (!mounted) return;
         ref.invalidate(charactersProvider);
-        Navigator.of(context).pop(saved);
+        Navigator.of(context).pop(updated);
       }
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -231,6 +418,9 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
   void _useSuggestion(String suggestion) {
     setState(() {
       _descriptionController.text = suggestion;
+      // Setting the text this way runs no `onChanged`, and taking the offer is
+      // as much the reader's edit as typing it would have been.
+      _descriptionEdited = true;
       _suggestionTaken = true;
     });
   }
@@ -275,6 +465,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
       for (final character in characters) {
         if (character.id == saved.id) {
           if (!identical(character, saved)) setState(() => _saved = character);
+          _syncDescriptionMentions();
           return;
         }
       }
@@ -329,6 +520,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
               ),
               const SizedBox(height: 12),
               TextField(
+                key: const ValueKey('character-description-field'),
                 controller: _descriptionController,
                 maxLength: _descriptionMax,
                 minLines: 3,
@@ -338,7 +530,27 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
                   counterText: '',
                   hintText: 'What they look like, how they act, who they are.',
                 ),
+                onChanged: (_) => _descriptionEdited = true,
               ),
+              if (_mentionQuery != null) ...[
+                const SizedBox(height: 8),
+                _mentionSuggestions(_mentionQuery!),
+              ],
+              if (_attachedMentions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  key: const ValueKey('character-description-mentions'),
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final mention in _attachedMentions)
+                      Chip(
+                        avatar: const Icon(Icons.person_outline, size: 16),
+                        label: Text('@${mention.name}'),
+                      ),
+                  ],
+                ),
+              ],
               if (suggestion != null) ...[
                 const SizedBox(height: 12),
                 _suggestionCard(suggestion),
@@ -381,6 +593,35 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _mentionSuggestions(CharacterMentionQuery query) {
+    final library = ref.watch(charactersProvider);
+    final needle = query.query.trim().toLowerCase();
+    final matches = [
+      for (final character
+          in library.asData?.value.characters ?? const <LibraryCharacter>[])
+        if (character.id != _saved?.id &&
+            (needle.isEmpty || character.name.toLowerCase().contains(needle)))
+          character,
+    ];
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        key: const ValueKey('character-mention-suggestions'),
+        scrollDirection: Axis.horizontal,
+        itemCount: matches.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final character = matches[index];
+          return ActionChip(
+            avatar: const Icon(Icons.person_outline, size: 16),
+            label: Text(character.name),
+            onPressed: _busy ? null : () => _insertMention(character),
+          );
+        },
       ),
     );
   }

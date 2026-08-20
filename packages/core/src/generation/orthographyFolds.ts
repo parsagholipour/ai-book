@@ -14,7 +14,7 @@
  * **What is shared here is the character lists and the folds, not the boundary
  * rules.** Where a name ends, where a leak phrase may start, and whether a
  * combining mark counts as part of a word are per-caller questions that are
- * deliberately answered differently — `isNameCharacter` in the mobile mention
+ * deliberately answered differently — `isLibraryCharacterNameCharacterAt` in the mention
  * scanner treats a mark as part of the word it follows, precisely so that
  * `@मीर` cannot end inside `@मीरा`, while the fold below deletes the marks a
  * *spelling* may carry or not. Neither may be narrowed to agree with the other.

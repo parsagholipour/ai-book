@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../domain/character_models.dart';
+import '../domain/character_mentions.dart';
 
 /// Who the character is: the description a book writes them from, the details
 /// beside it, and the description the server read off their photo while it is
@@ -13,6 +14,7 @@ class CharacterProfileDetails extends StatelessWidget {
     required this.onEdit,
     required this.onUseSuggestion,
     required this.onDismissSuggestion,
+    required this.onOpenMention,
     super.key,
   });
 
@@ -21,6 +23,7 @@ class CharacterProfileDetails extends StatelessWidget {
   final VoidCallback onEdit;
   final void Function(String suggestion) onUseSuggestion;
   final VoidCallback onDismissSuggestion;
+  final ValueChanged<String> onOpenMention;
 
   String? get _suggestion {
     final suggestion = character.suggestedDescription?.trim();
@@ -58,7 +61,7 @@ class CharacterProfileDetails extends StatelessWidget {
             ),
           )
         else
-          Text(character.description, style: theme.textTheme.bodyMedium),
+          _descriptionText(context),
         if (suggestion != null) ...[
           const SizedBox(height: AppSpacing.sm),
           AppCard(
@@ -134,6 +137,52 @@ class CharacterProfileDetails extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _descriptionText(BuildContext context) {
+    final theme = Theme.of(context);
+    final ranges = savedCharacterMentionRanges(
+      character.description,
+      character.mentions,
+    );
+    if (ranges.isEmpty) {
+      return Text(character.description, style: theme.textTheme.bodyMedium);
+    }
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    for (final range in ranges) {
+      if (range.start > cursor) {
+        spans.add(
+          TextSpan(text: character.description.substring(cursor, range.start)),
+        );
+      }
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: GestureDetector(
+            key: ValueKey('character-mention-${range.mention.id}'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => onOpenMention(range.mention.id),
+            child: Text(
+              character.description.substring(range.start, range.end),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      );
+      cursor = range.end;
+    }
+    if (cursor < character.description.length) {
+      spans.add(TextSpan(text: character.description.substring(cursor)));
+    }
+    return Text.rich(
+      TextSpan(style: theme.textTheme.bodyMedium, children: spans),
+      key: const ValueKey('character-linked-description'),
     );
   }
 }

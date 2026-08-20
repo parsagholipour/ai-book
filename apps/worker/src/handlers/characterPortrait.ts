@@ -12,6 +12,7 @@ import {
   libraryCharacterRelativeFile,
   optimizeImageForStorage,
   pruneLibraryCharacterImages,
+  stripLibraryCharacterMentionMarkers,
   type LibraryCharacterField
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
@@ -38,7 +39,13 @@ export async function generateCharacterPortrait(job: Job): Promise<void> {
   }
 
   const character = await prisma.libraryCharacter.findFirst({
-    where: { id: libraryCharacterId, userId }
+    where: { id: libraryCharacterId, userId },
+    include: {
+      outgoingMentions: {
+        orderBy: { sortOrder: "asc" },
+        include: { targetCharacter: { select: { id: true, name: true } } }
+      }
+    }
   });
   if (!character) {
     throw new Error("The library character behind this portrait no longer exists.");
@@ -61,7 +68,10 @@ export async function generateCharacterPortrait(job: Job): Promise<void> {
   const prompt = buildLibraryCharacterPortraitPrompt(
     {
       name: character.name,
-      description: character.description,
+      description: stripLibraryCharacterMentionMarkers(
+        character.description,
+        (character.outgoingMentions ?? []).map((mention) => mention.targetCharacter)
+      ),
       // The recorded look, so a redraw lands on the same person rather than
       // inventing a new one for every generation.
       ...(character.appearance ? { appearance: character.appearance } : {}),

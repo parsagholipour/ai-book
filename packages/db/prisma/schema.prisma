@@ -1058,11 +1058,31 @@ model LibraryCharacter {
   createdAt      DateTime                       @default(now())
   updatedAt      DateTime                       @updatedAt
 
-  user   User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  images LibraryCharacterImage[]
+  user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images           LibraryCharacterImage[]
+  outgoingMentions LibraryCharacterMention[] @relation("LibraryCharacterMentionSource")
+  incomingMentions LibraryCharacterMention[] @relation("LibraryCharacterMentionTarget")
 
   @@unique([userId, name])
   @@index([userId, createdAt])
+}
+
+/// One durable, directed @mention from a character description to another
+/// character in the same user's library. The description remains the prose
+/// authority; this row gives its @Name token a stable identity across renames.
+model LibraryCharacterMention {
+  sourceCharacterId String
+  targetCharacterId String
+  /// First textual occurrence in the source description. Used for recursive
+  /// cast expansion; repeated mentions of one target still occupy one row.
+  sortOrder         Int
+
+  sourceCharacter LibraryCharacter @relation("LibraryCharacterMentionSource", fields: [sourceCharacterId], references: [id], onDelete: Cascade)
+  targetCharacter LibraryCharacter @relation("LibraryCharacterMentionTarget", fields: [targetCharacterId], references: [id], onDelete: Cascade)
+
+  @@id([sourceCharacterId, targetCharacterId])
+  @@index([sourceCharacterId, sortOrder])
+  @@index([targetCharacterId])
 }
 
 /// One retained version of a character's picture — every upload and every

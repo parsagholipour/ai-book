@@ -64,6 +64,11 @@ export const mockPrisma = ({
     updateMany: vi.fn(),
     deleteMany: vi.fn()
   },
+  libraryCharacterMention: {
+    findMany: vi.fn(),
+    createMany: vi.fn(),
+    deleteMany: vi.fn()
+  },
   libraryCharacterImage: {
     findFirst: vi.fn(),
     findMany: vi.fn(),
@@ -98,6 +103,9 @@ export function resetCharacterImageMocks(): void {
   mockPrisma.libraryCharacterImage.findFirst.mockResolvedValue(null);
   mockPrisma.libraryCharacterImage.deleteMany.mockResolvedValue({ count: 1 });
   mockPrisma.libraryCharacterImage.delete.mockResolvedValue({ id: "character-image-1" });
+  mockPrisma.libraryCharacterMention.findMany.mockResolvedValue([]);
+  mockPrisma.libraryCharacterMention.createMany.mockResolvedValue({ count: 0 });
+  mockPrisma.libraryCharacterMention.deleteMany.mockResolvedValue({ count: 0 });
 }
 
 export const mockBilling = (() => {

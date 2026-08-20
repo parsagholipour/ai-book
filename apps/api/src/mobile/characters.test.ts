@@ -37,7 +37,17 @@ function characterRecord(overrides: Record<string, unknown> = {}) {
     portraitJobId: null,
     createdAt: new Date("2026-08-01T10:00:00.000Z"),
     updatedAt: new Date("2026-08-01T10:00:00.000Z"),
+    outgoingMentions: [],
     ...overrides
+  };
+}
+
+function outgoingMention(target: Record<string, unknown>, sortOrder: number) {
+  return {
+    sourceCharacterId: "char-1",
+    targetCharacterId: target.id,
+    sortOrder,
+    targetCharacter: target
   };
 }
 
@@ -117,6 +127,10 @@ describe("mobile character library routes", () => {
   beforeEach(() => {
     resetMobileHarness();
     mockAccessTokens({ "token-a": "user-a" });
+    // Both write paths open their transaction by claiming the row they edit.
+    // Won by default — the uncontended case these tests are about; the races
+    // live in `characterWriteConflicts.test.ts`.
+    mockPrisma.libraryCharacter.updateMany.mockResolvedValue({ count: 1 });
   });
   afterEach(teardownMobileHarness);
 
@@ -181,6 +195,200 @@ describe("mobile character library routes", () => {
     await app.close();
   });
 
+  it("creates canonical durable mentions in first-token order", async () => {
+    const bram = characterRecord({ id: "char-2", name: "Bram" });
+    const mina = characterRecord({ id: "char-3", name: "Mina" });
+    const source = characterRecord({
+      description: "@bram met @Mina, then @Bram returned."
+    });
+    const hydrated = characterRecord({
+      description: "@Bram met @Mina, then @Bram returned.",
+      outgoingMentions: [outgoingMention(bram, 0), outgoingMention(mina, 1)]
+    });
+    mockPrisma.libraryCharacter.count.mockResolvedValue(0);
+    mockPrisma.libraryCharacter.create.mockResolvedValue(source);
+    // An IN query has no caller order; the stored order must come from prose.
+    mockPrisma.libraryCharacter.findMany.mockResolvedValue([mina, bram]);
+    mockPrisma.libraryCharacter.findFirst.mockResolvedValue(hydrated);
+    mockPrisma.libraryCharacter.update.mockResolvedValue(hydrated);
+
+    const app = await buildMobileApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/characters",
+      headers: bearer("token-a"),
+      payload: {
+        name: "Luna",
+        description: source.description,
+        // A duplicate id represents repeated prose, not another cast slot.
+        mentionedCharacterIds: ["char-2", "char-3", "char-2"]
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().character).toMatchObject({
+      description: "@Bram met @Mina, then @Bram returned.",
+      mentions: [
+        { id: "char-2", name: "Bram" },
+        { id: "char-3", name: "Mina" }
+      ]
+    });
+    expect(mockPrisma.libraryCharacterMention.createMany).toHaveBeenCalledWith({
+      data: [
+        { sourceCharacterId: "char-1", targetCharacterId: "char-2", sortOrder: 0 },
+        { sourceCharacterId: "char-1", targetCharacterId: "char-3", sortOrder: 1 }
+      ]
+    });
+    await app.close();
+  });
+
+  it("rejects missing, foreign, self, and tokenless mention targets", async () => {
+    const cases = [
+      { ids: ["char-foreign"], targets: [], description: "Knows @Bram.", status: 404 },
+      {
+        ids: ["char-1"],
+        targets: [characterRecord()],
+        description: "Knows @Luna.",
+        status: 400
+      },
+      {
+        ids: ["char-2"],
+        targets: [characterRecord({ id: "char-2", name: "Bram" })],
+        description: "Knows Bram.",
+        status: 400
+      }
+    ];
+    const app = await buildMobileApp();
+    for (const testCase of cases) {
+      vi.mocked(mockPrisma.libraryCharacter.findMany).mockReset();
+      mockPrisma.libraryCharacter.count.mockResolvedValue(0);
+      mockPrisma.libraryCharacter.create.mockResolvedValue(
+        characterRecord({ description: testCase.description })
+      );
+      mockPrisma.libraryCharacter.findMany.mockResolvedValue(testCase.targets);
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/mobile/characters",
+        headers: bearer("token-a"),
+        payload: {
+          name: "Luna",
+          description: testCase.description,
+          mentionedCharacterIds: testCase.ids
+        }
+      });
+      expect(response.statusCode).toBe(testCase.status);
+    }
+    await app.close();
+  });
+
+  it("preserves surviving links for old clients and honors an explicit empty set", async () => {
+    const bram = characterRecord({ id: "char-2", name: "Bram" });
+    const linked = characterRecord({
+      description: "Knows @Bram.",
+      outgoingMentions: [outgoingMention(bram, 0)]
+    });
+    mockPrisma.libraryCharacter.findFirst
+      .mockResolvedValueOnce(linked)
+      .mockResolvedValueOnce(linked)
+      .mockResolvedValueOnce(linked)
+      .mockResolvedValueOnce(characterRecord({ description: "Knows Bram." }));
+    mockPrisma.libraryCharacter.findMany.mockResolvedValue([bram]);
+    mockPrisma.libraryCharacter.update.mockImplementation(
+      async ({ data }: { data: Record<string, unknown> }) => characterRecord(data)
+    );
+    const app = await buildMobileApp();
+
+    const legacy = await app.inject({
+      method: "PATCH",
+      url: "/api/mobile/characters/char-1",
+      headers: bearer("token-a"),
+      payload: { description: "Still knows @bram." }
+    });
+    expect(legacy.statusCode).toBe(200);
+    expect(mockPrisma.libraryCharacterMention.createMany).toHaveBeenLastCalledWith({
+      data: [{ sourceCharacterId: "char-1", targetCharacterId: "char-2", sortOrder: 0 }]
+    });
+
+    const explicitClear = await app.inject({
+      method: "PATCH",
+      url: "/api/mobile/characters/char-1",
+      headers: bearer("token-a"),
+      payload: { description: "Knows Bram.", mentionedCharacterIds: [] }
+    });
+    expect(explicitClear.statusCode).toBe(200);
+    expect(explicitClear.json().character.mentions).toEqual([]);
+    expect(mockPrisma.libraryCharacterMention.deleteMany).toHaveBeenCalledTimes(2);
+    await app.close();
+  });
+
+  it("rewrites incoming tokens on rename and rejects descriptions that would overflow", async () => {
+    const bram = characterRecord({ id: "char-2", name: "Bram" });
+    const mina = characterRecord({
+      id: "char-1",
+      name: "Mina",
+      description: "Friends with @Bram and @BRAM.",
+      outgoingMentions: [{ targetCharacter: { id: "char-2", name: "Bram" } }]
+    });
+    mockPrisma.libraryCharacter.findFirst.mockImplementation(
+      async ({ where }: { where: { id?: string } }) => (where.id === "char-1" ? mina : bram)
+    );
+    mockPrisma.libraryCharacterMention.findMany.mockResolvedValue([{ sourceCharacter: mina }]);
+    mockPrisma.libraryCharacter.update.mockImplementation(
+      async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) =>
+        characterRecord({ id: where.id, ...data })
+    );
+    const app = await buildMobileApp();
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: "/api/mobile/characters/char-2",
+      headers: bearer("token-a"),
+      payload: { name: "Bramwell" }
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(mockPrisma.libraryCharacter.update).toHaveBeenCalledWith({
+      where: { id: "char-1" },
+      data: { description: "Friends with @Bramwell and @Bramwell." }
+    });
+
+    mina.description = `${"x".repeat(1993)} @Bram`;
+    const conflict = await app.inject({
+      method: "PATCH",
+      url: "/api/mobile/characters/char-2",
+      headers: bearer("token-a"),
+      payload: { name: "B".repeat(80) }
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json().error.code).toBe("CHARACTER_MENTION_TOO_LONG");
+    await app.close();
+  });
+
+  it("turns incoming mentions into plain names when deleting a character", async () => {
+    const bram = characterRecord({ id: "char-2", name: "Bram" });
+    const mina = characterRecord({
+      id: "char-1",
+      name: "Mina",
+      description: "Knows @Bram and @Bram.",
+      outgoingMentions: [{ targetCharacter: { id: "char-2", name: "Bram" } }]
+    });
+    mockPrisma.libraryCharacter.findFirst.mockImplementation(
+      async ({ where }: { where: { id?: string } }) => (where.id === "char-1" ? mina : bram)
+    );
+    mockPrisma.libraryCharacterMention.findMany.mockResolvedValue([{ sourceCharacter: mina }]);
+    mockPrisma.libraryCharacter.deleteMany.mockResolvedValue({ count: 1 });
+    const app = await buildMobileApp();
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/mobile/characters/char-2",
+      headers: bearer("token-a")
+    });
+    expect(response.statusCode).toBe(200);
+    expect(mockPrisma.libraryCharacter.update).toHaveBeenCalledWith({
+      where: { id: "char-1" },
+      data: { description: "Knows Bram and Bram." }
+    });
+    await app.close();
+  });
+
   it("refuses creation past the library cap", async () => {
     mockPrisma.libraryCharacter.count.mockResolvedValue(100);
     const app = await buildMobileApp();
@@ -200,7 +408,8 @@ describe("mobile character library routes", () => {
     mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
       characterRecord({ portraitStatus: "GENERATING", portraitJobId: "job-portrait" })
     );
-    mockPrisma.libraryCharacter.deleteMany.mockResolvedValue({ count: 0 });
+    // The portrait guard now rides the claim, so it is the claim that loses.
+    mockPrisma.libraryCharacter.updateMany.mockResolvedValue({ count: 0 });
     mockPrisma.generationJob.findUnique.mockResolvedValue({ status: "ACTIVE" });
     const app = await buildMobileApp();
     const response = await app.inject({
@@ -219,9 +428,10 @@ describe("mobile character library routes", () => {
     mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
       characterRecord({ portraitStatus: "GENERATING", portraitJobId: "job-portrait" })
     );
-    mockPrisma.libraryCharacter.deleteMany
+    mockPrisma.libraryCharacter.updateMany
       .mockResolvedValueOnce({ count: 0 })
       .mockResolvedValueOnce({ count: 1 });
+    mockPrisma.libraryCharacter.deleteMany.mockResolvedValue({ count: 1 });
     mockPrisma.generationJob.findUnique.mockResolvedValue({ status: "FAILED" });
     const app = await buildMobileApp();
     const response = await app.inject({

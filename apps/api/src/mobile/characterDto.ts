@@ -24,6 +24,8 @@ export type MobileLibraryCharacterDto = {
   id: string;
   name: string;
   description: string;
+  /** Durable directed links represented by @Name tokens in `description`. */
+  mentions: Array<{ id: string; name: string }>;
   fields: Array<{ key: string; value: string }>;
   portraitStatus: MobileLibraryCharacterPortraitStatus;
   portraitError: string | null;

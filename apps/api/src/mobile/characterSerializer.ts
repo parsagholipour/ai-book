@@ -12,6 +12,7 @@ import type {
   MobileLibraryCharacterPortraitSource,
   MobileLibraryCharacterPortraitStatus
 } from "./dto.js";
+import { characterMentionRefs, type LibraryCharacterWithMentions } from "./characterMentions.js";
 
 /**
  * An appearance a photo upload read but did not apply, offered on that
@@ -44,7 +45,7 @@ export function libraryCharacterPortraitUrl(
 }
 
 export function serializeLibraryCharacter(
-  character: LibraryCharacterModel,
+  character: LibraryCharacterModel & Partial<Pick<LibraryCharacterWithMentions, "outgoingMentions">>,
   offered: OfferedCharacterReading = {}
 ): MobileLibraryCharacterDto {
   const id = encodeURIComponent(character.id);
@@ -54,6 +55,7 @@ export function serializeLibraryCharacter(
     id: character.id,
     name: character.name,
     description: character.description,
+    mentions: characterMentionRefs(character),
     fields: fieldsFromJson(character.fields),
     portraitStatus: PORTRAIT_STATUS[character.portraitStatus],
     portraitError: character.portraitStatus === "FAILED" ? character.portraitError : null,

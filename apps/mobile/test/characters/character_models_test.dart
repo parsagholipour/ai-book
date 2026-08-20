@@ -23,6 +23,7 @@ Map<String, dynamic> characterJson({
     'id': id,
     'name': name,
     'description': description,
+    'mentions': const <dynamic>[],
     'fields': fields,
     'portraitStatus': portraitStatus,
     'portraitError': portraitError,

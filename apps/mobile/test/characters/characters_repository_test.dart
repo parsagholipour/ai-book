@@ -15,6 +15,7 @@ Map<String, dynamic> characterJson({
     'id': id,
     'name': name,
     'description': 'Brave',
+    'mentions': const <dynamic>[],
     'fields': [
       {'key': 'Age', 'value': '9'},
     ],
@@ -176,6 +177,7 @@ void main() {
       'fields': [
         {'key': 'Age', 'value': '9'},
       ],
+      'mentionedCharacterIds': [],
     });
     expect(created.name, 'Mina');
   });
@@ -207,6 +209,31 @@ void main() {
     expect(api.calls.single.method, 'PATCH');
     expect(api.calls.single.path, '/api/mobile/characters/char-1');
     expect(api.calls.single.data, {'name': 'Nova'});
+  });
+
+  test('create and update send durable character mention ids', () async {
+    api.nextData = {'character': characterJson()};
+
+    await repository.create(
+      name: 'Mina',
+      description: 'Friends with @Bram.',
+      mentionedCharacterIds: const ['char-2'],
+    );
+    expect(
+      (api.calls.single.data as Map<String, dynamic>)['mentionedCharacterIds'],
+      ['char-2'],
+    );
+
+    api.calls.clear();
+    await repository.update(
+      id: 'char-1',
+      description: 'Friends with @Bram.',
+      mentionedCharacterIds: const ['char-2'],
+    );
+    expect(api.calls.single.data, {
+      'description': 'Friends with @Bram.',
+      'mentionedCharacterIds': ['char-2'],
+    });
   });
 
   test('delete hits the character route', () async {
@@ -243,16 +270,22 @@ void main() {
     expect(started.creditsCharged, 40);
   });
 
-  test('generatePortrait forwards a requestId for idempotent retries', () async {
-    api.nextData = {
-      'character': characterJson(portraitStatus: 'queued'),
-      'creditsCharged': 40,
-    };
+  test(
+    'generatePortrait forwards a requestId for idempotent retries',
+    () async {
+      api.nextData = {
+        'character': characterJson(portraitStatus: 'queued'),
+        'creditsCharged': 40,
+      };
 
-    await repository.generatePortrait(id: 'char-1', requestId: 'req-12345678');
+      await repository.generatePortrait(
+        id: 'char-1',
+        requestId: 'req-12345678',
+      );
 
-    expect(api.calls.single.data, {'requestId': 'req-12345678'});
-  });
+      expect(api.calls.single.data, {'requestId': 'req-12345678'});
+    },
+  );
 
   test('uploadPhoto goes through the shared byte transport', () async {
     // The repository used to carry its own PUT, a copy of `ApiClient.postBytes`

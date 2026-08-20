@@ -645,11 +645,18 @@ of the same manuscript can have fixed.
   rebuilds from. In the creation chat mentions are message-level `{id, name}` refs, so
   `activeThreadPayload` branch-filters them for free, and every turn re-reads the live rows so a
   library edit propagates; the build snapshot is the moment that stops. Where a *typed* `@name`
-  ends is `isNameCharacter` in `creationBuild.ts`, and its `\p{M}` is deliberate: it is the exact
+  ends is `isLibraryCharacterNameCharacterAt` in core, which the build sweep calls rather than
+  keeping its own copy, and its `\p{M}` is deliberate: it is the exact
   opposite of what `foldCharacterName` does with combining marks one package over, because a
   word-boundary test needs the mark that a spelling-fold has to drop. Both halves are argued
   together in `packages/core/src/generation/CLAUDE.md`; neither may be narrowed to agree with the
-  other.
+  other. The boundary rule is spelled twice — those core helpers, and the Dart composer's
+  `_nameCharacter` — and the two only
+  move together, because a token the composer refuses and the build sweep then binds is an
+  invisible cast member. The rows themselves are read through `expandLibraryCharacterGraph`, which
+  follows durable description links outward from the mentioned characters: every explicitly tapped
+  character always reaches the model, the ten-cap bounds only the linked expansion behind them,
+  and the mention routes derive their 404 from its `missingIds` instead of a second read.
 
 ## Voice and audiobook routes
 

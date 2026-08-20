@@ -62,6 +62,11 @@ import { advisorSnapshotForStorage, createCreationBuildHelpers, sendFinalizeOutc
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
 import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
+import {
+  expandLibraryCharacterGraph,
+  generationDescription,
+  orderedCharacterRefs
+} from "../characterMentions.js";
 
 /**
  * Branching creation chat: sessions, messages, attachments, preflight and build.
@@ -224,20 +229,22 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
         // Same resolution as the message route: mentions must work on a chat's
         // very first message, not only once a session exists.
         const startMentionIds = [...new Set(parsedBody.data.mentionedCharacterIds ?? [])];
-        const startMentioned = startMentionIds.length
-          ? await prisma.libraryCharacter.findMany({ where: { id: { in: startMentionIds }, userId: auth.user.id } })
-          : [];
-        if (startMentioned.length !== startMentionIds.length) {
+        // One scoped read: the graph names the ids it could not find, so the
+        // ownership check is not a second query over the same rows.
+        const { characters: startContextCharacters, missingIds: startMissingIds } =
+          await expandLibraryCharacterGraph(auth.user.id, startMentionIds);
+        if (startMissingIds.length > 0) {
           return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "A mentioned character is no longer in your library.");
         }
+        // The message records what the reader tapped; the linked characters
+        // ride the turn only.
+        const startCharacterRefs = orderedCharacterRefs(startMentionIds, startContextCharacters);
         const nextMessages: MobileCreationMessage[] = [
           ...greetingMessages,
           {
             role: "user" as const,
             content: firstMessage,
-            ...(startMentioned.length > 0
-              ? { characters: startMentioned.map((character) => ({ id: character.id, name: character.name })) }
-              : {})
+            ...(startCharacterRefs.length > 0 ? { characters: startCharacterRefs } : {})
           }
         ].slice(-60);
         const turnRequest: MobileCreationTurnRequest = {
@@ -245,12 +252,13 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
           presets: parsedBody.data.presets ? mobileCreationPresetsSchema.parse(parsedBody.data.presets) : undefined,
           sourceNotes: parsedBody.data.sourceNotes,
           optionalDetails: parsedBody.data.optionalDetails,
-          ...(startMentioned.length > 0
+          ...(startContextCharacters.length > 0
             ? {
-                characters: startMentioned.map((character) => ({
+                characters: startContextCharacters.map((character) => ({
                   id: character.id,
                   name: character.name,
-                  description: character.description,
+                  description: generationDescription(character),
+                  ...(character.appearance ? { appearance: character.appearance } : {}),
                   fields: characterFieldsFromJson(character.fields)
                 }))
               }
@@ -377,15 +385,21 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       }));
 
       // Mentions resolve against the live library — same pattern as the
-      // attachment pool above, except the pool is the user's own table.
+      // attachment pool above, except the pool is the user's own table. Only
+      // the id and the name are read: the transcript stores a light ref, and
+      // the sheets the model sees are the branch union loaded below, which is
+      // a superset of this message's picks.
       const mentionedIds = [...new Set(parsedBody.data.mentionedCharacterIds ?? [])];
       const mentionedCharacters = mentionedIds.length
-        ? await prisma.libraryCharacter.findMany({ where: { id: { in: mentionedIds }, userId: auth.user.id } })
+        ? await prisma.libraryCharacter.findMany({
+            where: { id: { in: mentionedIds }, userId: auth.user.id },
+            select: { id: true, name: true }
+          })
         : [];
       if (mentionedCharacters.length !== mentionedIds.length) {
         return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "A mentioned character is no longer in your library.");
       }
-      const characterRefs = mentionedCharacters.map((character) => ({ id: character.id, name: character.name }));
+      const characterRefs = orderedCharacterRefs(mentionedIds, mentionedCharacters);
 
       const priorTree = creationTreeFromPayload(parsedPayload.data);
       // A reply can quote either role, and it is resolved against the whole
@@ -421,12 +435,20 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
       // Every character mentioned anywhere on the ACTIVE branch rides the turn
       // as fresh library rows — re-read each turn so edits propagate, and
       // branch-scoped so an edited-away mention stays out of this thread.
+      //
+      // **The union is not capped, and must not be.** Each message caps its own
+      // picks at ten, but a chat is many messages, and the system prompt tells
+      // the model every selected sheet arrives under `characters`. Only the
+      // linked characters behind them are bounded. A character deleted since
+      // being mentioned drops out silently — the reader is not editing it now,
+      // so `missingIds` is not a 404 here.
       const activeCharacterIds = [
         ...new Set(activeMessages.flatMap((message) => (message.characters ?? []).map((ref) => ref.id)))
       ];
-      const activeCharacters = activeCharacterIds.length
-        ? await prisma.libraryCharacter.findMany({ where: { id: { in: activeCharacterIds }, userId: auth.user.id } })
-        : [];
+      const { characters: activeCharacters } = await expandLibraryCharacterGraph(
+        auth.user.id,
+        activeCharacterIds
+      );
       const turnRequest: MobileCreationTurnRequest = {
         messages: activeMessages,
         ...(activeCharacters.length > 0
@@ -434,7 +456,8 @@ export async function registerMobileCreationSessionRoutes(fastify: FastifyInstan
               characters: activeCharacters.map((character) => ({
                 id: character.id,
                 name: character.name,
-                description: character.description,
+                description: generationDescription(character),
+                ...(character.appearance ? { appearance: character.appearance } : {}),
                 fields: characterFieldsFromJson(character.fields)
               }))
             }

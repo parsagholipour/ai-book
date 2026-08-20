@@ -26,6 +26,7 @@ abstract interface class CharactersRepository {
     required String name,
     String description = '',
     List<CharacterField> fields = const [],
+    List<String> mentionedCharacterIds = const [],
   });
 
   /// Partial update: only non-null arguments travel, and the API requires at
@@ -36,6 +37,7 @@ abstract interface class CharactersRepository {
     String? name,
     String? description,
     List<CharacterField>? fields,
+    List<String>? mentionedCharacterIds,
     bool? dismissSuggestion,
   });
 
@@ -96,6 +98,7 @@ class MobileCharactersRepository implements CharactersRepository {
     required String name,
     String description = '',
     List<CharacterField> fields = const [],
+    List<String> mentionedCharacterIds = const [],
   }) async {
     final response = await apiClient.postJson(
       '/api/mobile/characters',
@@ -103,6 +106,7 @@ class MobileCharactersRepository implements CharactersRepository {
         'name': name,
         'description': description,
         'fields': [for (final field in fields) field.toJson()],
+        'mentionedCharacterIds': mentionedCharacterIds,
       },
     );
     return _characterFrom(response);
@@ -114,6 +118,7 @@ class MobileCharactersRepository implements CharactersRepository {
     String? name,
     String? description,
     List<CharacterField>? fields,
+    List<String>? mentionedCharacterIds,
     bool? dismissSuggestion,
   }) async {
     final response = await apiClient.patchJson(
@@ -121,7 +126,9 @@ class MobileCharactersRepository implements CharactersRepository {
       data: <String, dynamic>{
         'name': ?name,
         'description': ?description,
-        if (fields != null) 'fields': [for (final field in fields) field.toJson()],
+        if (fields != null)
+          'fields': [for (final field in fields) field.toJson()],
+        'mentionedCharacterIds': ?mentionedCharacterIds,
         'dismissSuggestion': ?dismissSuggestion,
       },
     );
@@ -260,7 +267,7 @@ final characterAssetHeadersProvider =
 /// It also means the strip survives the library's 3-second poll, which
 /// invalidates [charactersProvider] and would otherwise wipe the pictures a
 /// mutation response had just put in state.
-final characterImagesProvider =
-    FutureProvider.autoDispose.family<List<CharacterImage>, String>((ref, id) {
+final characterImagesProvider = FutureProvider.autoDispose
+    .family<List<CharacterImage>, String>((ref, id) {
       return ref.watch(charactersRepositoryProvider).images(id);
     });

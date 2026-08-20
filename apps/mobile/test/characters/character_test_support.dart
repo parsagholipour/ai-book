@@ -15,11 +15,13 @@ LibraryCharacter testCharacter({
   CharacterPortraitStatus portraitStatus = CharacterPortraitStatus.none,
   String? portraitError,
   bool usedInBooks = false,
+  List<CharacterMention> mentions = const [],
 }) {
   return LibraryCharacter(
     id: id,
     name: name,
     description: description,
+    mentions: mentions,
     suggestedDescription: suggestedDescription,
     hasPhoto: hasPhoto,
     photoKind: photoKind,
@@ -64,11 +66,16 @@ CharacterImage testImage({
 /// what the UI asked the server to do — which is the only thing the widgets
 /// actually own.
 class FakeCharactersRepository implements CharactersRepository {
-  FakeCharactersRepository(this._character, {List<CharacterImage>? images})
-    : _images = images ?? const [];
+  FakeCharactersRepository(
+    this._character, {
+    List<CharacterImage>? images,
+    List<LibraryCharacter>? libraryCharacters,
+  }) : _images = images ?? const [],
+       _libraryCharacters = libraryCharacters ?? [_character];
 
   LibraryCharacter _character;
   List<CharacterImage> _images;
+  final List<LibraryCharacter> _libraryCharacters;
 
   final List<Map<String, Object?>> updates = [];
   final List<String> deletedPhotos = [];
@@ -78,8 +85,13 @@ class FakeCharactersRepository implements CharactersRepository {
   final List<int> uploadedByteLengths = [];
 
   @override
-  Future<CharacterLibrary> list() async =>
-      CharacterLibrary(characters: [_character], portraitCredits: 45);
+  Future<CharacterLibrary> list() async => CharacterLibrary(
+    characters: [
+      for (final character in _libraryCharacters)
+        if (character.id == _character.id) _character else character,
+    ],
+    portraitCredits: 45,
+  );
 
   @override
   Future<LibraryCharacter> update({
@@ -87,6 +99,7 @@ class FakeCharactersRepository implements CharactersRepository {
     String? name,
     String? description,
     List<CharacterField>? fields,
+    List<String>? mentionedCharacterIds,
     bool? dismissSuggestion,
   }) async {
     updates.add({
@@ -94,12 +107,19 @@ class FakeCharactersRepository implements CharactersRepository {
       'name': ?name,
       'description': ?description,
       'fields': ?fields?.length,
+      'mentionedCharacterIds': ?mentionedCharacterIds,
       'dismissSuggestion': ?dismissSuggestion,
     });
     _character = _character.copyWith(
       name: name,
       description: description,
       fields: fields,
+      mentions: mentionedCharacterIds == null
+          ? null
+          : [
+              for (final id in mentionedCharacterIds)
+                CharacterMention(id: id, name: id),
+            ],
       suggestedDescription: dismissSuggestion == true || description != null
           ? null
           : _character.suggestedDescription,
@@ -112,6 +132,7 @@ class FakeCharactersRepository implements CharactersRepository {
     required String name,
     String description = '',
     List<CharacterField> fields = const [],
+    List<String> mentionedCharacterIds = const [],
   }) async => _character;
 
   @override

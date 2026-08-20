@@ -50,6 +50,8 @@ import {
   creditCostForOperation,
   foldCharacterName,
   generateJsonWithRetry,
+  isLibraryCharacterNameCharacterAt,
+  libraryCharacterMentionTokenEndsAt,
   libraryCharacterRelativeFile,
 } from "@book-maker/core";
 import { linearizeCreationMessages } from "../creationChatTree.js";
@@ -63,6 +65,7 @@ import {
 import { type FastifyReply } from "fastify";
 import type { MobileRouteContext } from "./routeContext.js";
 import { assessCurrentContentRestrictions } from "../contentRestrictions.js";
+import { expandLibraryCharacterGraph, generationDescription } from "./characterMentions.js";
 
 class CreationSessionConflictError extends Error {
   constructor() {
@@ -468,11 +471,17 @@ async function libraryCharacterSnapshotsForBuild(
   if (ids.length === 0) {
     return [];
   }
-  const rows = await prisma.libraryCharacter.findMany({ where: { id: { in: ids }, userId } });
+  // The cap here is a *total*: `mobileCreationCharacterSnapshotSchema` accepts
+  // no more than this many, and the ids above are already clamped to it — so
+  // the linked characters get whatever room the tapped cast leaves, and a
+  // branch that filled the list on its own carries no expansion rather than
+  // failing the payload re-parse. A character deleted since being mentioned is
+  // simply missing, which is why nothing here reads `missingIds`.
+  const { characters: rows } = await expandLibraryCharacterGraph(userId, ids, BUILD_CHARACTER_SNAPSHOT_LIMIT);
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    description: row.description,
+    description: generationDescription(row),
     // The look, when one has been recorded. Absent rather than empty: the
     // planner prompt branches on whether a character has one at all, and
     // "" would read as "recorded, and it is nothing" — which is the invented
@@ -565,7 +574,13 @@ function scanTypedMentions(
     const needle = `@${candidate.folded}`;
     for (let at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
       const end = at + needle.length;
-      if (isNameCharacter(haystack[at - 1]) || isNameCharacter(haystack[end])) {
+      // Same boundary helpers the composer and the description scanner use, so
+      // a UTF-16 unit that is only half of 𐐀 cannot open a word, and a hyphen
+      // that joins the next word still binds nobody.
+      if (
+        isLibraryCharacterNameCharacterAt(haystack, at - 1) ||
+        !libraryCharacterMentionTokenEndsAt(haystack, end)
+      ) {
         continue;
       }
       // A longer name got here first and this match is inside it.
@@ -577,19 +592,6 @@ function scanTypedMentions(
     }
   }
   return found.sort((left, right) => left.at - right.at).map((entry) => entry.id);
-}
-
-/**
- * Whether a character continues the word a scanned mention sits in.
- *
- * `\p{M}` is in there because a combining mark belongs to the letter before it:
- * `foldCharacterName` keeps the marks that are letters (Devanagari matras, Thai
- * sara, the kana dakuten), so without it "@मीर" would end cleanly in front of
- * the "ा" of "@मीरा" and bind a library character the reader did not name —
- * the same sub-token bind that put one reader's saved face on "Luna-Bear".
- */
-function isNameCharacter(character: string | undefined): boolean {
-  return character !== undefined && /[\p{L}\p{N}\p{M}]/u.test(character);
 }
 
 export function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcome): FastifyReply {

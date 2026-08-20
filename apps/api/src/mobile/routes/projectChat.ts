@@ -55,6 +55,11 @@ import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
+import {
+  expandLibraryCharacterGraph,
+  generationDescription,
+  orderedCharacterRefs
+} from "../characterMentions.js";
 
 /**
  * Post-generation chat: messages, edit proposals, undo and branch switching.
@@ -146,27 +151,34 @@ export async function registerMobileProjectChatRoutes(fastify: FastifyInstance, 
       // block that rides the *stored* edit request (pendingEdit states and job
       // payloads) — never the routed text, whose words drive page targeting
       // and exact-replacement parsing, and never the visible transcript.
+      // One scoped read answers both questions: the graph names every id it
+      // could not find, so the ownership check needs no second query over the
+      // very rows it just fetched.
       const mentionedIds = [...new Set(parsed.data.mentionedCharacterIds ?? [])];
-      const mentionedCharacters = mentionedIds.length
-        ? await prisma.libraryCharacter.findMany({ where: { id: { in: mentionedIds }, userId: auth.user.id } })
-        : [];
-      if (mentionedCharacters.length !== mentionedIds.length) {
+      const { characters: contextCharacters, missingIds } = await expandLibraryCharacterGraph(
+        auth.user.id,
+        mentionedIds
+      );
+      if (missingIds.length > 0) {
         return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "A mentioned character is no longer in your library.");
       }
-      const characterRefs = mentionedCharacters.map((character) => ({ id: character.id, name: character.name }));
+      // The transcript records what the reader tapped, never what the links
+      // dragged in behind it, which is what keeps the visible chip list equal
+      // to the composer's.
+      const characterRefs = orderedCharacterRefs(mentionedIds, contextCharacters);
       // The appearance travels with the profile, and the rule travels with it.
       // An edit is where a saved character is most likely to be *redrawn* —
       // "put Natalia on the last page" — and a model given only a biography
       // invents a look, writes it into the illustration prompt, and the prompt
       // beats the reference image attached beside it.
-      const mentionSnapshots = mentionedCharacters.map((character) => ({
+      const mentionSnapshots = contextCharacters.map((character) => ({
         id: character.id,
         name: character.name,
-        description: character.description,
+        description: generationDescription(character),
         ...(character.appearance ? { appearance: character.appearance } : {}),
         fields: characterFieldsFromJson(character.fields)
       }));
-      const mentionContext = mentionedCharacters.length
+      const mentionContext = contextCharacters.length
         ? [
             "Mentioned character profiles (the user's own library characters; treat as authoritative canon):",
             libraryCharacterPromptBlock(mentionSnapshots),

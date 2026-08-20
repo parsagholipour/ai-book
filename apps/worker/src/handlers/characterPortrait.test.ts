@@ -137,6 +137,21 @@ describe("generateCharacterPortrait", () => {
     });
   });
 
+  it("strips mention markers before the description reaches the prompt", async () => {
+    mocks.prisma.libraryCharacter.findFirst.mockResolvedValue(
+      characterRow({
+        description: "Travels with @Bram.",
+        outgoingMentions: [{ targetCharacter: { id: "char-2", name: "Bram" } }]
+      })
+    );
+
+    await generateCharacterPortrait(job);
+
+    const prompt = mocks.generateImageBytes.mock.calls[0]![0].prompt as string;
+    expect(prompt).toContain("Travels with Bram.");
+    expect(prompt).not.toContain("@Bram");
+  });
+
   it("feeds the uploaded photo as the reference image when it exists on disk", async () => {
     const userDir = join(mocks.imageStorageDir, "characters", "user-1");
     mkdirSync(userDir, { recursive: true });

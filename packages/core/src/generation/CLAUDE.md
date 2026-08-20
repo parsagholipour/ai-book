@@ -410,15 +410,26 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   so "मीरा" and "मारा" both folded to "मर" and the matcher seeded one saved character's face onto
   the other. Thai sara and (after the NFD) the Japanese dakuten were the same collision. A script
   nobody enumerated keeps its marks, because a missed match is a character drawn from prose and a
-  merged one is the unrecoverable half of the very rule below. **The mention scanner's rule about
-  marks runs the other way, and both are right.** `isNameCharacter`
-  (`apps/api/src/mobile/creationBuild.ts`), the word-boundary test deciding where a typed `@name`
+  merged one is the unrecoverable half of the very rule below.   **The mention scanner's rule about
+  marks runs the other way, and both are right.** `isLibraryCharacterNameCharacterAt`
+  (`libraryCharacterMentions.ts`), the word-boundary test deciding where a typed `@name`
   ends, matches `\p{M}` on purpose: a combining mark belongs to the letter before it, so with marks
   outside the boundary class `@मीर` ends cleanly in front of the "ा" of `@मीरा` and binds a saved
   character the reader never named — `Luna` seeding `Luna-Bear` again, in a script where the
   sub-token is invisible. One rule says a mark is not part of the *spelling*; the other says it is
   part of the *word*. Neither may be narrowed to agree with the other, because each is closing a
-  collision the other cannot see. And containment is whole-token because sub-token matching put one
+  collision the other cannot see. The boundary class is one rule spelled twice —
+  `isLibraryCharacterNameCharacterAt` + `libraryCharacterMentionTokenEndsAt` in
+  `libraryCharacterMentions.ts` (the description scanner and the build sweep in
+  `apps/api/src/mobile/creationBuild.ts` both call these), and `_nameCharacter` +
+  `_endsMentionToken` in the Dart twin (`apps/mobile/lib/features/characters/domain/character_mentions.dart`)
+  — and the two only move together:
+  the composer and the build sweep disagreeing is how the server silently bound the `Luna` the
+  composer had just refused to show inside a typed `@Luna-Bear`. The class carries ZWNJ/ZWJ, so the
+  scanner itself no longer reads `علی‌رضا` as ending after `علی`; the trailing rule is that an
+  apostrophe after a complete name ends the token (`@Luna's` still binds Luna) while a hyphen
+  joining the next word does not (`@Luna-Bear` binds nobody unless `Luna-Bear` is itself saved).
+  And containment is whole-token because sub-token matching put one
   reader's saved face on a character they never saved — `Sam` seeded `Sam's Mother`, `Luna` seeded
   `Luna-Bear`, and ZWNJ is category `Cf`, so the old `[^\p{L}\p{N}]` boundary read `علی‌رضا` as a
   word break and matched a library `علی`. An **ambiguous** containment resolves to null: a missing

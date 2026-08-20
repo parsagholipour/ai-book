@@ -22,35 +22,6 @@ class _MentionQuery {
   final String query;
 }
 
-/// One resolved mention, with where in the text it was found.
-///
-/// The offset is not carried any further than this file: it exists so the
-/// chips read in the order the sentence names people rather than in whatever
-/// order the candidates happened to be tried.
-typedef _MentionMatch = ({String id, String name, int offset});
-
-/// A name that may be attached to the message, and the id to send if it is.
-class _MentionCandidate {
-  const _MentionCandidate({
-    required this.id,
-    required this.name,
-    required this.token,
-    required this.inserted,
-  });
-
-  final String id;
-  final String name;
-
-  /// The literal `@Name` to look for, already lowercased.
-  final String token;
-
-  /// True when the reader picked this character off the suggestion strip, so
-  /// the id is known rather than inferred. Those win ties against a library
-  /// name of the same length, which is what settles two characters sharing a
-  /// name: an explicit pick is not ambiguous.
-  final bool inserted;
-}
-
 /// How many mentions one message may carry.
 ///
 /// The API caps `mentionedCharacterIds` at ten and rejects the whole send with
@@ -228,80 +199,17 @@ List<MobileCreationCharacterRef> _resolveComposerMentions({
   required Map<String, String> inserted,
   required List<LibraryCharacter> characters,
 }) {
-  final lower = text.toLowerCase();
-  final ambiguous = _ambiguousMentionNames(characters);
-  final candidates = <_MentionCandidate>[
-    for (final entry in inserted.entries)
-      _MentionCandidate(
-        id: entry.key,
-        // The library is the authority on spelling; the stored text is the
-        // fallback for a character deleted since the mention was made.
-        name: _characterNamed(characters, entry.key)?.name ??
-            entry.value.substring(1),
-        token: entry.value.toLowerCase(),
-        inserted: true,
-      ),
-    for (final character in characters)
-      if (!ambiguous.contains(character.name.toLowerCase()))
-        _MentionCandidate(
-          id: character.id,
-          name: character.name,
-          token: '@${character.name}'.toLowerCase(),
-          inserted: false,
-        ),
-  ]..sort((a, b) {
-    final byLength = b.token.length.compareTo(a.token.length);
-    if (byLength != 0) return byLength;
-    if (a.inserted == b.inserted) return a.name.compareTo(b.name);
-    return a.inserted ? -1 : 1;
-  });
-
-  final claimed = <_MentionSpan>[];
-  final found = <_MentionMatch>[];
-  for (final candidate in candidates) {
-    if (found.any((match) => match.id == candidate.id)) continue;
-    final start = _findMentionStart(lower, candidate.token, claimed);
-    if (start == null) continue;
-    claimed.add(_MentionSpan(start, start + candidate.token.length));
-    found.add((id: candidate.id, name: candidate.name, offset: start));
-  }
-  found.sort((a, b) => a.offset.compareTo(b.offset));
+  // The resolver returns one past `limit` so callers can see an over-full
+  // set; this caller is the one that drops (see _maxMentionsPerMessage).
   return [
-    for (final match in found.take(_maxMentionsPerMessage))
-      MobileCreationCharacterRef(id: match.id, name: match.name),
+    for (final mention in resolveCharacterMentions(
+      text: text,
+      inserted: inserted,
+      characters: characters,
+      limit: _maxMentionsPerMessage,
+    ).take(_maxMentionsPerMessage))
+      MobileCreationCharacterRef(id: mention.id, name: mention.name),
   ];
-}
-
-/// Names more than one saved character answers to, lowercased. A mention of one
-/// of these names is dropped rather than guessed at.
-Set<String> _ambiguousMentionNames(List<LibraryCharacter> characters) {
-  final seen = <String, int>{};
-  for (final character in characters) {
-    final name = character.name.toLowerCase();
-    seen[name] = (seen[name] ?? 0) + 1;
-  }
-  return {
-    for (final entry in seen.entries)
-      if (entry.value > 1) entry.key,
-  };
-}
-
-LibraryCharacter? _characterNamed(List<LibraryCharacter> characters, String id) {
-  for (final character in characters) {
-    if (character.id == id) return character;
-  }
-  return null;
-}
-
-/// Half-open `[start, end)` of one resolved mention in the composer text.
-class _MentionSpan {
-  const _MentionSpan(this.start, this.end);
-
-  final int start;
-  final int end;
-
-  bool overlaps(int otherStart, int otherEnd) =>
-      otherStart < end && start < otherEnd;
 }
 
 /// Whether [mentionText] (`@Name`) occurs in [text] as a whole mention.
@@ -310,61 +218,17 @@ class _MentionSpan {
 /// still that reader's pick, and dropping it silently was half of how a
 /// mention went missing.
 bool _textHasMention(String text, String mentionText) {
-  return _findMentionStart(
-        text.toLowerCase(),
-        mentionText.toLowerCase(),
-        const <_MentionSpan>[],
-      ) !=
-      null;
+  return characterTextHasMention(text, mentionText);
 }
-
-/// The first unclaimed occurrence of [token] in [lower] (both already
-/// lowercased) that stands as a whole mention, or null.
-///
-/// A mention has to open a word — otherwise `write@luna.example` names Luna —
-/// and has to end one, or `@Sam` would ride along inside `@Samantha` and a
-/// deleted short mention would never drop out. [claimed] holds the spans longer
-/// names already took, which is what keeps `@Luna` from also matching inside
-/// `@Luna Vega`.
-int? _findMentionStart(String lower, String token, List<_MentionSpan> claimed) {
-  if (token.length < 2) return null;
-  var index = lower.indexOf(token);
-  while (index != -1) {
-    final end = index + token.length;
-    final opensWord = index == 0 || _isMentionBoundary(lower[index - 1]);
-    final endsWord = end >= lower.length || !_isNameCharacter(lower[end]);
-    final free = !claimed.any((span) => span.overlaps(index, end));
-    if (opensWord && endsWord && free) return index;
-    index = lower.indexOf(token, index + 1);
-  }
-  return null;
-}
-
-final _nameCharacter = RegExp(r'[\p{L}\p{N}]', unicode: true);
-
-bool _isNameCharacter(String character) => _nameCharacter.hasMatch(character);
 
 /// The `token` at [caret], or null when the caret is not inside one. The `@`
-/// must open a word (start of text or after whitespace) and the token must be
-/// short and single-line, so ordinary email addresses never trigger the strip.
+/// must open a word (start of text or after non-name punctuation) and the token
+/// must be short and single-line, so ordinary email addresses never trigger it.
 _MentionQuery? _mentionQueryAt(String text, int caret) {
-  if (caret < 0 || caret > text.length) return null;
-  final upToCaret = text.substring(0, caret);
-  final at = upToCaret.lastIndexOf('@');
-  if (at < 0) return null;
-  if (at > 0 && !_isMentionBoundary(upToCaret[at - 1])) return null;
-  final query = upToCaret.substring(at + 1);
-  if (query.length > 40 || query.contains('\n') || query.contains('@')) {
-    return null;
-  }
-  return _MentionQuery(start: at, query: query);
-}
-
-/// Whitespace plus the zero-width joiners and directional marks Persian and
-/// other RTL keyboards insert — an `@` after a ZWNJ still opens the strip.
-bool _isMentionBoundary(String character) {
-  if (character.trim().isEmpty) return true;
-  return const {'‌', '‍', '‎', '‏'}.contains(character);
+  final query = characterMentionQueryAt(text, caret);
+  return query == null
+      ? null
+      : _MentionQuery(start: query.start, query: query.query);
 }
 
 /// Horizontal strip of matching library characters, shown while an `@token`

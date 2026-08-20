@@ -9,6 +9,10 @@ import {
 import { prisma, type LibraryCharacterImageModel, type LibraryCharacterModel } from "@book-maker/db";
 import { stat } from "node:fs/promises";
 import { deleteLibraryCharacterFile, saveLibraryCharacterFile } from "./characterStorage.js";
+import {
+  libraryCharacterMentionInclude,
+  type LibraryCharacterWithMentions
+} from "./characterMentions.js";
 
 /**
  * The retained-history half of the character library.
@@ -22,8 +26,11 @@ import { deleteLibraryCharacterFile, saveLibraryCharacterFile } from "./characte
 /** Statuses in which a portrait job owns the character row. */
 export const PORTRAIT_OPEN_STATUSES = ["QUEUED", "GENERATING"] as const;
 
-export async function ownedCharacter(id: string, userId: string): Promise<LibraryCharacterModel | null> {
-  return prisma.libraryCharacter.findFirst({ where: { id, userId } });
+export async function ownedCharacter(id: string, userId: string): Promise<LibraryCharacterWithMentions | null> {
+  return prisma.libraryCharacter.findFirst({
+    where: { id, userId },
+    include: libraryCharacterMentionInclude
+  });
 }
 
 /** One retained picture, scoped by all three of image, character and owner. */

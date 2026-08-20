@@ -51,6 +51,23 @@ import {
 import type { MobileRouteContext } from "../routeContext.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
 import { fingerprintGenerationRequest } from "../support.js";
+import {
+  CharacterMentionError,
+  characterMentionRefs,
+  libraryCharacterMentionInclude,
+  replaceCharacterMentions,
+  rewriteIncomingCharacterMentions,
+  survivingMentionIds,
+  unlinkIncomingCharacterMentions
+} from "../characterMentions.js";
+import {
+  CharacterDeleteClaimLostError,
+  CharacterRowMovedError,
+  claimCharacterRow,
+  isRetryableTransactionConflict,
+  namesMentionPrimaryKey,
+  sendCharacterEditConflict
+} from "../characterWriteConflicts.js";
 
 /**
  * The account-wide character library ("consistent characters").
@@ -183,6 +200,7 @@ export async function registerMobileCharacterRoutes(
       }
       const characters = await prisma.libraryCharacter.findMany({
         where: { userId: auth.user.id },
+        include: libraryCharacterMentionInclude,
         orderBy: { createdAt: "asc" }
       });
       return {
@@ -226,19 +244,42 @@ export async function registerMobileCharacterRoutes(
         );
       }
       try {
-        const character = await prisma.libraryCharacter.create({
-          data: {
-            userId: auth.user.id,
-            name: body.data.name,
-            description: body.data.description,
-            // Null rather than "": "no appearance recorded" is a state the
-            // planner prompt branches on, so it gets one representation.
-            appearance: body.data.appearance || null,
-            fields: body.data.fields
+        const character = await prisma.$transaction(async (tx) => {
+          const created = await tx.libraryCharacter.create({
+            data: {
+              userId: auth.user.id,
+              name: body.data.name,
+              description: body.data.description,
+              // Null rather than "": "no appearance recorded" is a state the
+              // planner prompt branches on, so it gets one representation.
+              appearance: body.data.appearance || null,
+              fields: body.data.fields
+            }
+          });
+          if (body.data.mentionedCharacterIds.length === 0) {
+            return { ...created, outgoingMentions: [] };
           }
+          const description = await replaceCharacterMentions(tx, {
+            sourceCharacterId: created.id,
+            userId: auth.user.id,
+            description: body.data.description,
+            mentionedCharacterIds: body.data.mentionedCharacterIds
+          });
+          if (description !== created.description) {
+            await tx.libraryCharacter.update({ where: { id: created.id }, data: { description } });
+          }
+          return tx.libraryCharacter.findFirst({
+            where: { id: created.id, userId: auth.user.id },
+            include: libraryCharacterMentionInclude
+          });
         });
+        if (!character) throw new Error("Created character could not be reloaded.");
         return reply.code(201).send({ character: serializeLibraryCharacter(character) satisfies MobileLibraryCharacterDto });
       } catch (error) {
+        if (error instanceof CharacterMentionError) {
+          const status = error.code === "CHARACTER_NOT_FOUND" ? 404 : 400;
+          return sendMobileError(reply, status, error.code, error.message);
+        }
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
           return sendMobileError(reply, 409, "CHARACTER_NAME_TAKEN", "You already have a character with that name.");
         }
@@ -287,21 +328,69 @@ export async function registerMobileCharacterRoutes(
         // retire it: it describes a description the user has now settled, and
         // an offer that survives being taken is offered forever.
         const clearsSuggestion = body.data.description !== undefined || body.data.dismissSuggestion === true;
-        const updated = await prisma.libraryCharacter.update({
-          where: { id: character.id },
-          data: {
-            ...(body.data.name !== undefined ? { name: body.data.name } : {}),
-            ...(body.data.description !== undefined ? { description: body.data.description } : {}),
-            // Sent-and-empty is a deliberate clear, which is why the write is
-            // keyed on the key being present rather than on the value.
-            ...(body.data.appearance !== undefined ? { appearance: body.data.appearance || null } : {}),
-            ...(body.data.fields !== undefined ? { fields: body.data.fields } : {}),
-            ...(clearsSuggestion ? { suggestedDescription: null } : {})
+        const updated = await prisma.$transaction(async (tx) => {
+          const nextName = body.data.name ?? character.name;
+          // Before a single sibling description is touched: this is both the
+          // lock every write below runs under and the proof that `@Luna` is
+          // still what those descriptions say. A rename that landed since
+          // `ownedCharacter` read the row would make the rewrite match nothing
+          // and strand its markers — see `claimCharacterRow`.
+          if (!(await claimCharacterRow(tx, { id: character.id, userId: auth.user.id, name: character.name }))) {
+            throw new CharacterRowMovedError();
           }
+          await rewriteIncomingCharacterMentions(tx, character.id, character.name, nextName);
+
+          const requestedMentionIds = body.data.mentionedCharacterIds ??
+            (body.data.description !== undefined
+              ? survivingMentionIds(body.data.description, characterMentionRefs(character))
+              : null);
+          const description = requestedMentionIds
+            ? await replaceCharacterMentions(tx, {
+                sourceCharacterId: character.id,
+                userId: auth.user.id,
+                description: body.data.description ?? character.description,
+                mentionedCharacterIds: requestedMentionIds
+              })
+            : body.data.description;
+          const row = await tx.libraryCharacter.update({
+            where: { id: character.id },
+            data: {
+              ...(body.data.name !== undefined ? { name: body.data.name } : {}),
+              ...(description !== undefined ? { description } : {}),
+              // Sent-and-empty is a deliberate clear, which is why the write is
+              // keyed on the key being present rather than on the value.
+              ...(body.data.appearance !== undefined ? { appearance: body.data.appearance || null } : {}),
+              ...(body.data.fields !== undefined ? { fields: body.data.fields } : {}),
+              ...(clearsSuggestion ? { suggestedDescription: null } : {})
+            }
+          });
+          if (!requestedMentionIds) {
+            return { ...row, outgoingMentions: character.outgoingMentions };
+          }
+          return tx.libraryCharacter.findFirst({
+            where: { id: character.id, userId: auth.user.id },
+            include: libraryCharacterMentionInclude
+          });
         });
+        if (!updated) throw new Error("Updated character could not be reloaded.");
         return { character: serializeLibraryCharacter(updated) satisfies MobileLibraryCharacterDto };
       } catch (error) {
+        if (error instanceof CharacterMentionError) {
+          const status = error.code === "CHARACTER_NOT_FOUND"
+            ? 404
+            : error.code === "CHARACTER_MENTION_TOO_LONG"
+              ? 409
+              : 400;
+          return sendMobileError(reply, status, error.code, error.message);
+        }
+        if (error instanceof CharacterRowMovedError || isRetryableTransactionConflict(error)) {
+          return sendCharacterEditConflict(reply);
+        }
         if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+          // Only the library's own `[userId, name]` is the reader's to fix.
+          if (namesMentionPrimaryKey(error)) {
+            return sendCharacterEditConflict(reply);
+          }
           return sendMobileError(reply, 409, "CHARACTER_NAME_TAKEN", "You already have a character with that name.");
         }
         throw error;
@@ -328,28 +417,69 @@ export async function registerMobileCharacterRoutes(
       const historyFiles = (await loadCharacterImages(character.id, auth.user.id)).map(
         (image) => image.fileName
       );
-      // The conditional delete is the real guard; the worker owns the row
-      // while a portrait is in flight and must find it when it finishes.
-      const deleted = await prisma.libraryCharacter.deleteMany({
-        where: { id: character.id, portraitStatus: { notIn: [...PORTRAIT_OPEN_STATUSES] } }
-      });
-      if (deleted.count !== 1) {
-        // A claim can outlive its job: a worker killed hard never runs its
-        // failure path, and nothing else resets an account-level row. When the
-        // backing job is no longer open the claim is stale, and delete is the
-        // user's escape hatch rather than a wedge.
-        if (await portraitClaimIsLive(character)) {
-          return sendMobileError(
-            reply,
-            409,
-            "PORTRAIT_IN_PROGRESS",
-            "This character's portrait is still being drawn. Try again when it finishes."
-          );
+      // The conditional claim is the real guard, and it carries both halves:
+      // the worker owns the row while a portrait is in flight and must find it
+      // when it finishes, and the strip below is an exact-token match on the
+      // name this claim re-asserts. It runs *before* the sibling descriptions
+      // rather than after them, which is the lock order PATCH takes too.
+      const deleteCharacter = async (guardPortrait: boolean): Promise<boolean> => {
+        try {
+          return await prisma.$transaction(async (tx) => {
+            const claimed = await claimCharacterRow(tx, {
+              id: character.id,
+              userId: auth.user.id,
+              name: character.name,
+              ...(guardPortrait
+                ? { where: { portraitStatus: { notIn: [...PORTRAIT_OPEN_STATUSES] } } }
+                : {})
+            });
+            if (!claimed) {
+              // Which half of the claim failed decides the answer, so the row
+              // is read rather than assumed: a portrait in flight is the escape
+              // hatch below, a row that is gone is the 404 this has always
+              // given, and a rename under us is a conflict worth retrying.
+              const current = await tx.libraryCharacter.findFirst({
+                where: { id: character.id, userId: auth.user.id },
+                select: { name: true }
+              });
+              if (current && current.name !== character.name) throw new CharacterRowMovedError();
+              throw new CharacterDeleteClaimLostError();
+            }
+            await unlinkIncomingCharacterMentions(tx, character.id, character.name);
+            const deleted = await tx.libraryCharacter.deleteMany({
+              where: { id: character.id, userId: auth.user.id }
+            });
+            if (deleted.count !== 1) throw new CharacterDeleteClaimLostError();
+            return true;
+          });
+        } catch (error) {
+          if (error instanceof CharacterDeleteClaimLostError) return false;
+          throw error;
         }
-        const forced = await prisma.libraryCharacter.deleteMany({ where: { id: character.id } });
-        if (forced.count !== 1) {
-          return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+      };
+      try {
+        if (!(await deleteCharacter(true))) {
+          // A claim can outlive its job: a worker killed hard never runs its
+          // failure path, and nothing else resets an account-level row. When the
+          // backing job is no longer open the claim is stale, and delete is the
+          // user's escape hatch rather than a wedge.
+          if (await portraitClaimIsLive(character)) {
+            return sendMobileError(
+              reply,
+              409,
+              "PORTRAIT_IN_PROGRESS",
+              "This character's portrait is still being drawn. Try again when it finishes."
+            );
+          }
+          if (!(await deleteCharacter(false))) {
+            return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
+          }
         }
+      } catch (error) {
+        if (error instanceof CharacterRowMovedError || isRetryableTransactionConflict(error)) {
+          return sendCharacterEditConflict(reply);
+        }
+        throw error;
       }
       for (const fileName of historyFiles) {
         await deleteLibraryCharacterFile(appConfig.IMAGE_STORAGE_DIR, auth.user.id, fileName);
@@ -500,7 +630,12 @@ export async function registerMobileCharacterRoutes(
         where: { id: character.id },
         data: { photoPath: null, photoKind: null, suggestedDescription: null }
       });
-      return { character: serializeLibraryCharacter(updated) satisfies MobileLibraryCharacterDto };
+      return {
+        character: serializeLibraryCharacter({
+          ...updated,
+          outgoingMentions: character.outgoingMentions
+        }) satisfies MobileLibraryCharacterDto
+      };
     }
   );
 

@@ -19,6 +19,7 @@ export const LIBRARY_CHARACTER_DESCRIPTION_MAX = 2_000;
  */
 export const LIBRARY_CHARACTER_APPEARANCE_MAX = MAX_APPEARANCE_LENGTH;
 export const LIBRARY_CHARACTER_FIELDS_MAX = 12;
+export const LIBRARY_CHARACTER_MENTION_MAX = 10;
 
 /**
  * What the character looks like, in words. Empty clears it — and clearing is a
@@ -39,7 +40,10 @@ export const mobileCharacterCreateBodySchema = z
     name: z.string().trim().min(1).max(LIBRARY_CHARACTER_NAME_MAX),
     description: z.string().trim().max(LIBRARY_CHARACTER_DESCRIPTION_MAX).default(""),
     appearance: appearanceSchema.default(""),
-    fields: z.array(libraryCharacterFieldSchema).max(LIBRARY_CHARACTER_FIELDS_MAX).default([])
+    fields: z.array(libraryCharacterFieldSchema).max(LIBRARY_CHARACTER_FIELDS_MAX).default([]),
+    // Duplicate ids are harmless and collapse in the service. The product
+    // limit is ten distinct targets, not ten array entries.
+    mentionedCharacterIds: z.array(z.string().trim().min(1).max(64)).max(LIBRARY_CHARACTER_LIMIT_PER_USER).default([])
   })
   .strict();
 
@@ -49,6 +53,7 @@ export const mobileCharacterUpdateBodySchema = z
     description: z.string().trim().max(LIBRARY_CHARACTER_DESCRIPTION_MAX).optional(),
     appearance: appearanceSchema.optional(),
     fields: z.array(libraryCharacterFieldSchema).max(LIBRARY_CHARACTER_FIELDS_MAX).optional(),
+    mentionedCharacterIds: z.array(z.string().trim().min(1).max(64)).max(LIBRARY_CHARACTER_LIMIT_PER_USER).optional(),
     /**
      * Turns down the description read off the photo. It is a change on its own
      * — a user who dismisses a suggestion and edits nothing else must not get
@@ -63,6 +68,7 @@ export const mobileCharacterUpdateBodySchema = z
       body.description !== undefined ||
       body.appearance !== undefined ||
       body.fields !== undefined ||
+      body.mentionedCharacterIds !== undefined ||
       body.dismissSuggestion !== undefined,
     { message: "Send at least one field to update." }
   );
@@ -105,7 +111,12 @@ export const mobileCharacterCreateOpenApiBody = {
     name: { type: "string", minLength: 1, maxLength: LIBRARY_CHARACTER_NAME_MAX },
     description: { type: "string", maxLength: LIBRARY_CHARACTER_DESCRIPTION_MAX },
     appearance: { type: "string", maxLength: LIBRARY_CHARACTER_APPEARANCE_MAX },
-    fields: { type: "array", items: characterFieldOpenApi, maxItems: LIBRARY_CHARACTER_FIELDS_MAX }
+    fields: { type: "array", items: characterFieldOpenApi, maxItems: LIBRARY_CHARACTER_FIELDS_MAX },
+    mentionedCharacterIds: {
+      type: "array",
+      items: { type: "string", minLength: 1, maxLength: 64 },
+      maxItems: LIBRARY_CHARACTER_LIMIT_PER_USER
+    }
   },
   required: ["name"]
 } as const;
@@ -118,6 +129,11 @@ export const mobileCharacterUpdateOpenApiBody = {
     description: { type: "string", maxLength: LIBRARY_CHARACTER_DESCRIPTION_MAX },
     appearance: { type: "string", maxLength: LIBRARY_CHARACTER_APPEARANCE_MAX },
     fields: { type: "array", items: characterFieldOpenApi, maxItems: LIBRARY_CHARACTER_FIELDS_MAX },
+    mentionedCharacterIds: {
+      type: "array",
+      items: { type: "string", minLength: 1, maxLength: 64 },
+      maxItems: LIBRARY_CHARACTER_LIMIT_PER_USER
+    },
     dismissSuggestion: { type: "boolean" }
   }
 } as const;

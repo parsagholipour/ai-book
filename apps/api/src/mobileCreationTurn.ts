@@ -133,6 +133,7 @@ export type CreationTurnCharacter = {
   id: string;
   name: string;
   description: string;
+  appearance?: string | undefined;
   fields: Array<{ key: string; value: string }>;
 };
 

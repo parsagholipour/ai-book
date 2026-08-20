@@ -191,7 +191,7 @@ export function planLibraryCharacterGuidance(snapshots: readonly LibraryCharacte
   }
   const names = snapshots.map((snapshot) => `"${snapshot.name}"`).join(", ");
   return [
-    `The user defined these characters in their library and asked for them by name: ${names}. Their saved records are:`,
+    `The user defined these characters in their library and selected them directly or through relationships saved in character descriptions: ${names}. Treat every one as requested cast. Their saved records are:`,
     libraryCharacterPromptBlock(snapshots),
     "Each of them MUST appear in the plan's characters array with the name written EXACTLY as given, letter for letter and in its own script: never translate, transliterate, shorten, or re-spell a saved name, whatever the book's target language is.",
     "Derive each one's role and traits from their stored description and details, and never contradict a stated attribute such as age, job, or language.",
