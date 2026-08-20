@@ -29,7 +29,11 @@ const mocks = vi.hoisted(() => ({
   updateEntityStateFromPage: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db", async () => ({
+  prisma: mocks.prisma,
+  Prisma: {},
+  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
+}));
 vi.mock("../runtime/dispatch.js", () => ({
   enqueueWorkerJob: mocks.enqueueWorkerJob,
   maybeEnqueueCompile: mocks.maybeEnqueueCompile,
@@ -75,14 +79,14 @@ vi.mock("./qualitySettings.js", () => ({
   }),
   applyPlanThinkingBoost: vi.fn()
 }));
-vi.mock("./semanticMemory.js", () => ({
+vi.mock("./embeddingWrites.js", () => ({
   storeEmbedding: mocks.storeEmbedding,
-  updateEntityStateFromPage: mocks.updateEntityStateFromPage,
   // Mirrors the real predicate: the direct passes are never sequential-pages,
   // so their books skip semantic-memory writes nothing would ever read.
   strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
     strategy?.executionMode === "sequential-pages"
 }));
+vi.mock("./entityState.js", () => ({ updateEntityStateFromPage: mocks.updateEntityStateFromPage }));
 
 import {
   generateBookBatchWindow,

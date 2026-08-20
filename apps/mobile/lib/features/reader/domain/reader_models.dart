@@ -537,12 +537,19 @@ class ReaderSelection {
   /// measured from the file on screen — [pdfDigest] — and it goes *with* that
   /// digest, because the server has to make the same check against whatever
   /// has been published since this screen last read the book's status.
-  Map<String, Object> get chatReaderContext => {
-    'pageIndex': ?bookPageIndex,
-    if (exportRevision != null && pdfDigest != null) 'pdfPage': pdfPageNumber,
-    'contentRevision': ?exportRevision,
-    'pdfDigest': ?pdfDigest,
-  };
+  Map<String, Object> get chatReaderContext {
+    final revision = exportRevision;
+    final digest = pdfDigest;
+    return {
+      'pageIndex': ?bookPageIndex,
+      // The sheet and the file it is a sheet of go together or not at all.
+      if (revision != null && digest != null) ...{
+        'pdfPage': pdfPageNumber,
+        'pdfDigest': digest,
+      },
+      'contentRevision': ?revision,
+    };
+  }
 
   /// The excerpt as it goes into a chat message.
   ///

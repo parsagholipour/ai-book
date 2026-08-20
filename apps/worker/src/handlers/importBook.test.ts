@@ -19,10 +19,7 @@ vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnque
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn() }));
 vi.mock("../runtime/config.js", () => ({ config: { ATTACHMENT_STORAGE_DIR: "/tmp/test-attachments" } }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {} }) }));
-vi.mock("../generation/semanticMemory.js", () => ({
-  storeEmbedding: vi.fn(),
-  strategyUsesSemanticMemory: () => false
-}));
+vi.mock("../generation/embeddingWrites.js", () => ({ storeEmbedding: vi.fn(), strategyUsesSemanticMemory: () => false }));
 vi.mock("../generation/projectInput.js", () => ({ inputFromProject: () => ({}) }));
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: mocks.getProjectOrThrow,

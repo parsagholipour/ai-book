@@ -158,7 +158,8 @@ mock registry deadlocks and the suite hangs instead of failing.
 
 ## Conventions
 
-- ESM everywhere. Relative imports carry the `.js` extension (`./foo.js`), even from `.ts`.
+- ESM everywhere. Relative imports carry the `.js` extension (`./foo.js`), even from `.ts` — but
+  `packages/db` uses `.ts`, to match its generated Prisma client. → packages/db/CLAUDE.md
 - TypeScript is strict, plus `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`.
   An optional property means "may be absent", not "may be `undefined`" — write
   `{ ...(x ? { x } : {}) }` rather than `{ x: undefined }`.
@@ -200,12 +201,26 @@ code in that area, however obvious the rule looks.
 - **An edit the reader has already undone is terminal for every delivery of it.** → apps/worker/src/handlers/CLAUDE.md
 - **A settlement merges onto the classifier it re-reads under its own row lock, never the copy the delivery carried in.** → apps/worker/src/handlers/CLAUDE.md
 - **A delivered edit outlives a recompile it could not queue.** → apps/worker/src/handlers/CLAUDE.md
+- **The status a fork restores rides the payload, because the enqueue is what takes it away.** → apps/worker/src/handlers/CLAUDE.md
 - **An edit that settles itself as a delivered no-op has to refund itself too.** → apps/worker/src/handlers/CLAUDE.md
+- **A delivered no-op is APPLIED too, and the redelivery tail is not idempotent for it.** → apps/worker/src/handlers/CLAUDE.md
+- **An insert that delivers fewer pages than it billed refunds the difference, and the count that drives both is the one drafting actually wrote.** → apps/worker/src/handlers/CLAUDE.md + packages/db/CLAUDE.md
+- **Only the post-APPLIED window is that handler's to flip.** → apps/worker/src/handlers/CLAUDE.md
 - **Every apply fork stays EDITING until its recompile publishes, and the page map is why.** → apps/worker/src/handlers/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **A page's long-range memory stops at the page being drafted, because a retry redrafts into a finished book.** → apps/worker/src/generation/CLAUDE.md
+- **A repair the provider refuses is written down, or it is paid for again on every page.** → apps/worker/src/generation/CLAUDE.md
+- **The hole set is a query, and the `LIMIT` is what the backoff protects.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
+- **A cancellation raised inside a tool escapes the tool loop; only a tool *failure* becomes a tool result.** → packages/core/src/adapters/CLAUDE.md
+- **A page's independent loads fan out, and which failure comes back is decided rather than raced.** → apps/worker/src/handlers/CLAUDE.md
+- **Whether the writer tools run at all is decided by what this handler loaded, not by what the book is.** → apps/worker/src/handlers/CLAUDE.md
+- **An embedding write may degrade, never fail the page that produced it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
+- **Both arms build their scope filter from one function, because a fusion is only meaningful over one candidate set.** → packages/db/CLAUDE.md
+- **A needle and the column it is scored against are folded together, or not at all.** → packages/db/CLAUDE.md
 
 ### Credits and billing
 
 - **Credits are reserved, then committed or refunded.** → packages/db/CLAUDE.md
+- **A charge has one cumulative reversal, and partial settlements name their claim.** → packages/db/CLAUDE.md
 - **A balance is two pools, and spending draws the expiring one first.** → packages/db/CLAUDE.md
 - **The free month is granted lazily, not by a cron.** → packages/db/CLAUDE.md
 - **Cancelling belongs to Google Play; the app's job is to say what it costs and then re-ask.** → apps/api/src/mobile/CLAUDE.md
@@ -226,6 +241,7 @@ code in that area, however obvious the rule looks.
 - **A verified exact replacement is free, and the verification is what makes it safe.** → apps/api/src/mobile/CLAUDE.md
 - **The model-free recogniser fires only when the verb's object *is* the page.** → apps/api/src/mobile/CLAUDE.md
 - **The chat speaks the printed page numbers, and the model indexes never reach the reader.** → apps/api/src/mobile/CLAUDE.md
+- **Changing *which* pages a book has is its own edit, and it used to be a whole new project.** → apps/api/src/mobile/CLAUDE.md
 - **Undoing a structural edit moves the book to a different plan version, and the recompile has to follow it there.** → packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **Undo is offered only for an edit the undo would actually revert, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md
 
@@ -242,6 +258,7 @@ code in that area, however obvious the rule looks.
 - **`photoPath` is not a reference; `portraitPath` is, and the upload decides which one an image becomes.** → apps/api/src/mobile/CLAUDE.md
 - **The face is fed in twice, and only ever into spare budget.** → apps/worker/src/generation/CLAUDE.md
 - **A mentioned character's sheet rides the stored edit request, never the routed text.** → apps/api/src/mobile/CLAUDE.md
+- **The mention scanner's rule about marks runs the other way, and both are right.** → packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 
 ### Compiling, rendering and exports
 
@@ -255,11 +272,17 @@ code in that area, however obvious the rule looks.
 - **A compile publishes by claiming the revision it compiled, and it renders somewhere else until it has.** → apps/worker/src/generation/CLAUDE.md + packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A book only earns the word "Chapter" by being long enough to need it.** → packages/core/src/generation/CLAUDE.md
 - **The page map is measured from the published PDF's own bytes, and measuring must move nothing.** → packages/core/src/generation/CLAUDE.md
+- **A publication may replace the page map; it may never refuse to publish over it.** → apps/worker/src/generation/CLAUDE.md
 - **The coverless title sheet is capped at exactly one page, and it clips from the tail.** → packages/core/src/generation/CLAUDE.md
+- **Every renumber parks before it lands, because neither unique index is deferrable.** → packages/db/CLAUDE.md
 - **A page renumber carries the page map with it; only a sheet that would lose its page clears it.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
+- **A moved page's old chapter rides the same stamp as its old index.** → apps/worker/src/generation/CLAUDE.md
 - **A page that goes away takes its semantic memory with it, because nothing else will.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md
+- **One arm of a hybrid retrieval must not be able to settle the other, and an arm nobody engaged is not a survivor.** → packages/db/CLAUDE.md
 - **A structural delete parks the page's older Undo history outside the Page cascade.** → apps/worker/src/generation/CLAUDE.md + packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **A deleted page comes back as it was, not as an approved one.** → packages/db/CLAUDE.md
+- **The recorded page order is what the edit found, not what the undo will meet.** → packages/db/CLAUDE.md
+- **A cross-chapter move has two coordinates to undo.** → packages/db/CLAUDE.md
 
 ### Audiobook and voice
 
@@ -285,8 +308,10 @@ code in that area, however obvious the rule looks.
 - **Nothing joins a provider call to the charge that paid for it, so the Operations tab derives it three ways.** → apps/api/src/admin/CLAUDE.md
 - **A costless call has four different causes and the Costs tab splits all four.** → apps/api/src/admin/CLAUDE.md
 - **"Revenue" is two different numbers and the dashboard shows both.** → apps/api/src/admin/CLAUDE.md
+- **A reversal is an amount, not a boolean.** → apps/api/src/admin/CLAUDE.md
 
 ### Local stack
 
 - Docker bind-mounts the repo, so `node_modules` uses anonymous volumes. → kept in full under ## Commands above
 - **`make up` and `pnpm dev` are the same queue.** → kept in full under ## Commands above
+- **An opt-in suite is made inert by not being *loaded*, not by skipping itself.** → packages/db/CLAUDE.md

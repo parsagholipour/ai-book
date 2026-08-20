@@ -91,6 +91,14 @@ export type GeneratePageOptions = {
   entityState?: string[] | undefined;
   /** Pinned accepted-page excerpts, separate from recency. */
   styleExcerpts?: string[] | undefined;
+  /**
+   * Fetch a stored page by global index from the whole manuscript, not just the
+   * loaded window. Injected by the worker because core cannot import the DB;
+   * absent in tests and non-sequential modes, which fall back to the window.
+   */
+  lookupStoredPage?: ((pageIndex: number) => Promise<PriorPageContext | null>) | undefined;
+  /** Hybrid semantic/keyword search over the book's stored page memory, injected by the worker. */
+  searchStoredMemory?: ((query: string) => Promise<string[]>) | undefined;
   textModel: TextModelAdapter;
 };
 

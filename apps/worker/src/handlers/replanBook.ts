@@ -293,7 +293,8 @@ export async function rewritePageForUserRequest(options: {
     take: 18
   });
   const priorPageContext = previousPages.reverse().map(toPriorPageContext);
-  const continuityNotes = await loadContinuityNotes(options.projectId);
+  // Whole book: a replan reasons about the manuscript as it stands.
+  const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const chapterPlan = options.plan.chapters.find((chapter) => chapter.index === options.page.chapter?.index);
   const chapterBrief = parseChapterBrief(options.page.chapter?.productionBrief);
   const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === options.page.index);

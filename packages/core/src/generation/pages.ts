@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ImageAdapter, ImageFallbackMetadata, TextModelAdapter } from "../adapters/types.js";
 import { isDiagramFriendlyBookCategory } from "../categories.js";
+import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload
@@ -308,7 +309,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
               end: options.chapterPageEnd
             },
             previousPages: compactPriorPages(options.previousPages, 6, 900),
-            continuityNotes: options.continuityNotes.slice(-24),
+            continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             researchNotes: options.researchNotes.slice(0, 18),
             pageGuidance: {
               targetWordsPerPage: targetWordsPerPage(options.input),
@@ -376,7 +377,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
             illustrationPlan: options.plan.illustrationPlan,
             pageMap: pageMapForRange(options.chapterBriefs, options.pageStart, options.pageEnd),
             previousPages: compactPriorPages(options.previousPages, 8, 900),
-            continuityNotes: options.continuityNotes.slice(-24),
+            continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             researchNotes: options.researchNotes.slice(0, 18),
             pageGuidance: {
               targetWordsPerPage: targetWordsPerPage(options.input),
@@ -445,7 +446,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
             draft: options.draft,
             previousPages: compactPriorPages(options.previousPages, 4, 800),
             nextPages: compactPriorPages(options.nextPages, 3, 800),
-            continuityNotes: options.continuityNotes.slice(-24),
+            continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             researchNotes: options.researchNotes.slice(0, 18),
             instruction: buildPageInstruction(options.pageIndex, options.input.targetPages)
           },

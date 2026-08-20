@@ -13,9 +13,10 @@ const mocks = vi.hoisted(() => ({
   updateJobProgress: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({
+vi.mock("@book-maker/db", async () => ({
   prisma: mocks.prisma,
-  Prisma: {}
+  Prisma: {},
+  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
 }));
 vi.mock("../runtime/jobLifecycle.js", () => ({
   updateJobProgress: mocks.updateJobProgress

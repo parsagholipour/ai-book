@@ -13,14 +13,21 @@ import {
   applyPageOrder,
   deletePageContinuityNotes,
   discardLegacyPageContinuityNotes,
+  EMBEDDING_REPOINT_PARK_PREFIX,
+  landedPageScopeSql,
   pageContinuityNoteRepointStatements,
-  pageEmbeddingRepointStatements,
+  pageEmbeddingRepointCollisionQuery,
+  PageEmbeddingRepointCollisionError,
+  pageEmbeddingRepointPasses,
   pageOrderStatements,
   pageShiftStatements,
   repointedPageMapUpdate,
+  repointPageEmbeddings,
   shiftPageIndexes,
+  type PageEmbeddingRepointCollision,
   type PageOrderEntry,
-  type PageOrderingStatement
+  type PageOrderingStatement,
+  type RawExecutor
 } from "./pageOrdering.ts";
 
 type Row = { id: string; index: number };
@@ -152,22 +159,509 @@ describe("rewriting the whole page order", () => {
   });
 });
 
+type ScopeRow = { sourceId: string | null; scope: string };
+
+/**
+ * `landedPageScopeSql` as JavaScript: the scope a row holds once pass two has
+ * run. Identity on anything that is not parked, exactly as the anchored
+ * `regexp_replace` is, which is what lets the probe compare a live row and a
+ * parked one with one expression.
+ */
+const PARKED_SCOPE_PATTERN = new RegExp(`^${EMBEDDING_REPOINT_PARK_PREFIX}([0-9]+):`);
+
+const landedScope = (scope: string): string => {
+  const parked = PARKED_SCOPE_PATTERN.exec(scope);
+  return parked ? `page:${parked[1]}` : scope;
+};
+
+/** What one emitted statement writes, read out of its own SQL and parameters. */
+function applyScopeStatement(rows: readonly ScopeRow[], statement: PageOrderingStatement): ScopeRow[] {
+  if (statement.sql.includes("FROM (VALUES")) {
+    const written = /SET "scope" = '([^']*)' \|\| v\.idx::text \|\| ':' \|\| e\."scope"/.exec(statement.sql)?.[1];
+    expect(written, `no recognisable SET in: ${statement.sql}`).toBeTypeOf("string");
+    const targets = new Map<string, number>();
+    for (let offset = 1; offset < statement.params.length; offset += 2) {
+      targets.set(String(statement.params[offset]), Number(statement.params[offset + 1]));
+    }
+    return rows.map((row) =>
+      row.sourceId !== null && targets.has(row.sourceId) && row.scope.startsWith("page:")
+        ? { ...row, scope: `${written!}${targets.get(row.sourceId)!}:${row.scope}` }
+        : { ...row }
+    );
+  }
+  // Pass two is checked against the exported fragment rather than parsed out of
+  // the SQL, because the fragment is the thing the probe shares: a pass two
+  // that spelled its own `regexp_replace` would be the drift this asserts away,
+  // and modelling it here would hide that.
+  expect(statement.sql, `no recognisable SET in: ${statement.sql}`).toContain(landedPageScopeSql('"scope"'));
+  return rows.map((row) => ({ ...row, scope: landedScope(row.scope) }));
+}
+
+/**
+ * Applies the scope statements this module emits, the way Postgres would, and
+ * refuses any state the `@@unique([projectId, scope])` index would refuse.
+ *
+ * The `SET` expression is read out of the SQL rather than assumed, so a version
+ * that collapses back to one statement is executed as the one statement it is,
+ * rather than as the two-pass shape the caller hoped for.
+ *
+ * The check that matters is *per statement*, not on the final scopes: a plain
+ * unique index is verified as each row is written, and nothing pins the order
+ * a statement writes its rows in. So a statement is safe only when every value
+ * it writes is free of every **other** row's value at the moment the statement
+ * begins — one that lands on a value another row still holds raises `23505` the
+ * moment the two are visited in the wrong order, which is exactly what the
+ * single statement this re-point used to be did. Checking only the end state
+ * would pass that version, because its end state is perfectly unique.
+ */
+function runScopeStatements(rows: readonly ScopeRow[], statements: readonly PageOrderingStatement[]): ScopeRow[] {
+  let current = rows.map((row) => ({ ...row }));
+  for (const statement of statements) {
+    const before = current.map((row) => row.scope);
+    const next = applyScopeStatement(current, statement);
+    next.forEach((row, offset) => {
+      if (row.scope === before[offset]) {
+        return;
+      }
+      const held = before.findIndex((scope, other) => other !== offset && scope === row.scope);
+      expect(held, `writing "${row.scope}" while row ${held} still holds it, in: ${statement.sql}`).toBe(-1);
+    });
+    current = next;
+    const scopes = current.map((row) => row.scope);
+    expect(new Set(scopes).size, `duplicate scope after: ${statement.sql}`).toBe(scopes.length);
+  }
+  return current;
+}
+
+/**
+ * Both passes as the list this model runs, which is deliberately *not* what
+ * {@link pageEmbeddingRepointPasses} hands back. The pair is named rather than
+ * ordered because an array of statements is exactly what
+ * `runPageOrderingStatements` takes, so park-then-land with no probe between
+ * them can no longer be spelled by passing one builder's result along.
+ */
+const repointPasses = (projectId: string, entries: readonly PageOrderEntry[]): PageOrderingStatement[] => {
+  const passes = pageEmbeddingRepointPasses(projectId, entries);
+  return passes ? [passes.park, passes.land] : [];
+};
+
+/** One `page:<index>` embedding per page, the way `storeEmbedding` writes them. */
+const pageScopes = (count: number): ScopeRow[] =>
+  Array.from({ length: count }, (_value, offset) => ({
+    sourceId: `page-${offset + 1}`,
+    scope: `page:${offset + 1}`
+  }));
+
+const scopeOf = (rows: readonly ScopeRow[], sourceId: string): string | undefined =>
+  rows.find((row) => row.sourceId === sourceId)?.scope;
+
 describe("re-pointing semantic memory at moved pages", () => {
   it("keys on the page id and leaves other scopes alone", () => {
-    const [statement] = pageEmbeddingRepointStatements("project-1", [
+    const passes = pageEmbeddingRepointPasses("project-1", [
       { pageId: "page-4", index: 6 },
       { pageId: "page-5", index: 7 }
     ]);
 
     // The id survives a renumber; the index parsed out of the scope string is
     // the very thing that just became wrong.
-    expect(statement?.params).toEqual(["project-1", "page-4", 6, "page-5", 7]);
-    expect(statement?.sql).toContain(`"scope" LIKE 'page:%'`);
-    expect(statement?.sql).toContain('e."projectId" = $1');
+    expect(passes?.park.params).toEqual(["project-1", "page-4", 6, "page-5", 7]);
+    expect(passes?.park.sql).toContain(`"scope" LIKE 'page:%'`);
+    expect(passes?.park.sql).toContain('e."projectId" = $1');
+  });
+
+  it("parks and then lands, because the scope index is not deferrable either", () => {
+    const passes = pageEmbeddingRepointPasses("project-1", [{ pageId: "page-4", index: 5 }]);
+
+    // Two statements, not one. `@@unique([projectId, scope])` is a plain unique
+    // index, so a single overlapping UPDATE raises 23505 mid-statement and takes
+    // the whole restructure transaction — and every page insert, delete, move
+    // and Undo — down with it. They are a named pair rather than an array,
+    // because an array is what `runPageOrderingStatements` takes.
+    expect(passes?.park.sql).toContain(
+      `SET "scope" = '${EMBEDDING_REPOINT_PARK_PREFIX}' || v.idx::text || ':' || e."scope"`
+    );
+    // Pass two is unconditional over the project rather than a second join, so
+    // it cannot leave a parked row behind, and it is still scoped to one book.
+    expect(passes?.land.params).toEqual(["project-1"]);
+    expect(passes?.land.sql).toContain('"projectId" = $1');
+    expect(passes?.land.sql).toContain(`"scope" LIKE '${EMBEDDING_REPOINT_PARK_PREFIX}%'`);
+  });
+
+  it("parks one page's two page scopes apart, because a page id names more than one", () => {
+    // `sourceId -> page:%` is one-to-many — `deletePageEmbeddings` matches it
+    // with `startsWith` for that reason. `repairPageEmbeddings` resolves the
+    // page at an index and only then spends a provider call, so an edit
+    // committing inside that window has it insert `page:4` for a page that by
+    // now holds `page:6`; a page job lagging in BullMQ backoff writes its stale
+    // index the same way. Keyed on the destination alone, one statement set
+    // both of those rows to one `page-repoint:9`: `23505` from pass one, which
+    // is the failure the split exists to prevent.
+    const rows: ScopeRow[] = [
+      { sourceId: "page-4", scope: "page:4" },
+      { sourceId: "page-4", scope: "page:6" },
+      { sourceId: "page-5", scope: "page:5" }
+    ];
+    const passes = pageEmbeddingRepointPasses("project-1", [{ pageId: "page-4", index: 9 }]);
+
+    // Pass one alone: pass two is where those two rows genuinely meet, and the
+    // probe between the passes is what answers for that.
+    const parked = runScopeStatements(rows, [passes!.park]);
+
+    expect(parked.map((row) => row.scope)).toEqual([
+      `${EMBEDDING_REPOINT_PARK_PREFIX}9:page:4`,
+      `${EMBEDDING_REPOINT_PARK_PREFIX}9:page:6`,
+      "page:5"
+    ]);
+  });
+
+  it("parks outside every filter that reads a page scope", () => {
+    // `page:-4` would be the literal analogue of the negative half `Page.index`
+    // parks in, and it is the wrong answer: `LIKE 'page:%'` and Prisma's
+    // `startsWith: "page:"` both match it, so retrieval, repair and the
+    // whole-book wipes would all read a parked row as a live page.
+    const parked = `${EMBEDDING_REPOINT_PARK_PREFIX}4:page:2`;
+
+    expect(parked.startsWith("page:")).toBe(false);
+    expect(parked).not.toMatch(/^page:/);
+  });
+
+  it("shifts every scope up by one without ever colliding", () => {
+    // One page inserted after page 3 of a ten-page book: the tail moves to
+    // 5..11, so page:4 is written to 'page:5' while the row holding 'page:5' is
+    // still live. This is the case that failed every structural page edit.
+    const rows: ScopeRow[] = [
+      ...pageScopes(10),
+      { sourceId: "source-1", scope: "research:source-1" },
+      { sourceId: null, scope: "chapter:1" }
+    ];
+    const order: PageOrderEntry[] = Array.from({ length: 7 }, (_value, offset) => ({
+      pageId: `page-${offset + 4}`,
+      index: offset + 5
+    }));
+
+    const moved = runScopeStatements(rows, repointPasses("project-1", order));
+
+    expect(scopeOf(moved, "page-4")).toBe("page:5");
+    expect(scopeOf(moved, "page-10")).toBe("page:11");
+    // The head of the book is not named by an insert's order and keeps its own
+    // numbers; nothing outside `page:%` is touched at all.
+    expect(scopeOf(moved, "page-1")).toBe("page:1");
+    expect(scopeOf(moved, "page-3")).toBe("page:3");
+    expect(scopeOf(moved, "source-1")).toBe("research:source-1");
+    expect(moved.some((row) => row.scope === "chapter:1")).toBe(true);
+    expect(moved.every((row) => !row.scope.startsWith(EMBEDDING_REPOINT_PARK_PREFIX))).toBe(true);
+  });
+
+  it("closes a delete's gap, which shifts the other way", () => {
+    // Page 4 of eight is gone and `deletePageEmbeddings` took its row first, so
+    // 5..8 come down onto 4..7 — 'page:5' lands on the live 'page:4'... except
+    // that row is already gone, and 'page:6' lands on the row this statement is
+    // still holding at 'page:5'.
+    const rows = pageScopes(8).filter((row) => row.sourceId !== "page-4");
+    const order: PageOrderEntry[] = [
+      { pageId: "page-1", index: 1 },
+      { pageId: "page-2", index: 2 },
+      { pageId: "page-3", index: 3 },
+      { pageId: "page-5", index: 4 },
+      { pageId: "page-6", index: 5 },
+      { pageId: "page-7", index: 6 },
+      { pageId: "page-8", index: 7 }
+    ];
+
+    const moved = runScopeStatements(rows, repointPasses("project-1", order));
+
+    expect(moved.map((row) => row.scope)).toEqual([
+      "page:1",
+      "page:2",
+      "page:3",
+      "page:4",
+      "page:5",
+      "page:6",
+      "page:7"
+    ]);
+  });
+
+  it("reverses a whole book, which is the worst case for collisions", () => {
+    const order: PageOrderEntry[] = Array.from({ length: 6 }, (_value, offset) => ({
+      pageId: `page-${offset + 1}`,
+      index: 6 - offset
+    }));
+
+    const moved = runScopeStatements(pageScopes(6), repointPasses("project-1", order));
+
+    expect(moved.map((row) => row.scope)).toEqual(["page:6", "page:5", "page:4", "page:3", "page:2", "page:1"]);
   });
 
   it("emits nothing for an empty order", () => {
-    expect(pageEmbeddingRepointStatements("project-1", [])).toEqual([]);
+    expect(pageEmbeddingRepointPasses("project-1", [])).toBeNull();
+  });
+});
+
+/**
+ * An `Embedding` table one statement at a time, refusing exactly what
+ * `@@unique([projectId, scope])` refuses and answering the collision probe out
+ * of the same rows.
+ *
+ * The refusal is what makes the guard's test mean something: with the check
+ * taken out, the partial order below reaches pass two and this stand-in raises
+ * the `23505` Postgres would, so the case fails either way — but only one of
+ * the two failures is a diagnosis.
+ */
+function scopeExecutor(rows: readonly ScopeRow[]) {
+  let state = rows.map((row) => ({ ...row }));
+  const collisions = () =>
+    state.flatMap((parked) => {
+      if (!parked.scope.startsWith(EMBEDDING_REPOINT_PARK_PREFIX)) {
+        return [];
+      }
+      // The probe's own question, in the probe's own terms: not "is the live
+      // scope taken" but "does any other row of this project land where this
+      // one does" — which is one comparison for a live `page:5` and for a
+      // second parked row of the same page.
+      const landing = landedScope(parked.scope);
+      return state
+        .filter((other) => other !== parked && landedScope(other.scope) === landing)
+        .map((other) => ({
+          parkedScope: parked.scope,
+          landingScope: landing,
+          heldScope: other.scope,
+          heldSourceId: other.sourceId
+        }));
+    });
+  return {
+    scopeOf: (sourceId: string) => state.find((row) => row.sourceId === sourceId)?.scope,
+    $executeRawUnsafe: async (sql: string, ...params: unknown[]) => {
+      const before = state.map((row) => row.scope);
+      const next = applyScopeStatement(state, { sql, params });
+      next.forEach((row, offset) => {
+        if (row.scope === before[offset]) {
+          return;
+        }
+        if (before.some((scope, other) => other !== offset && scope === row.scope)) {
+          throw new Error(`duplicate key value violates unique constraint "Embedding_projectId_scope_key"`);
+        }
+      });
+      state = next;
+      return next.length;
+    },
+    $queryRawUnsafe: async <T,>(_sql: string, ..._params: unknown[]): Promise<T> => collisions() as T
+  };
+}
+
+/**
+ * The statements and the probe in the order they reached the database, for the
+ * cases about *when* the check runs rather than what it finds.
+ *
+ * `regexp_replace` is what tells the two statements apart: pass one writes the
+ * parking prefix, pass two is the one that rewrites it away.
+ */
+function repointTrace(collisions: readonly PageEmbeddingRepointCollision[]) {
+  const steps: string[] = [];
+  return {
+    steps,
+    $executeRawUnsafe: async (sql: string, ..._params: unknown[]) => {
+      steps.push(sql.includes("regexp_replace") ? "land" : "park");
+      return 0;
+    },
+    $queryRawUnsafe: async <T,>(_sql: string, ..._params: unknown[]): Promise<T> => {
+      steps.push("probe");
+      return collisions as T;
+    }
+  };
+}
+
+describe("guarding a re-point ordering that does not name every page it lands on", () => {
+  it("names the ordering rather than letting pass two raise 23505", async () => {
+    // A single-entry order on a book where page 5 is still page 5: pass one
+    // parks page-4's row at the destination, and pass two would write it onto
+    // the live 'page:5' — the collision the two passes exist to prevent, from
+    // inside a transaction that has already renumbered the book.
+    const executor = scopeExecutor(pageScopes(6));
+
+    await expect(repointPageEmbeddings(executor, "project-1", [{ pageId: "page-4", index: 5 }])).rejects.toThrow(
+      PageEmbeddingRepointCollisionError
+    );
+  });
+
+  it("carries the scopes that prove it, and the page still holding the destination", async () => {
+    const executor = scopeExecutor(pageScopes(6));
+    const failure = await repointPageEmbeddings(executor, "project-1", [{ pageId: "page-4", index: 5 }]).catch(
+      (error: unknown) => error
+    );
+
+    expect(failure).toBeInstanceOf(PageEmbeddingRepointCollisionError);
+    expect((failure as PageEmbeddingRepointCollisionError).collisions).toEqual([
+      {
+        parkedScope: `${EMBEDDING_REPOINT_PARK_PREFIX}5:page:4`,
+        landingScope: "page:5",
+        heldScope: "page:5",
+        heldSourceId: "page-5"
+      }
+    ]);
+    expect((failure as PageEmbeddingRepointCollisionError).message).toContain("page:5");
+  });
+
+  it("names a page holding two page scopes, which no ordering can repair", async () => {
+    // The other half of the same question, and the one pass one used to raise
+    // `23505` over on its own: a repair that landed `page:4` for a page already
+    // holding `page:6` leaves both rows keyed on one `sourceId`, and a re-point
+    // to 9 would have to make both of them `page:9`. Pass one now parks them
+    // apart, so what answers is the probe rather than the constraint.
+    const executor = scopeExecutor([
+      { sourceId: "page-4", scope: "page:4" },
+      { sourceId: "page-4", scope: "page:6" }
+    ]);
+    const failure = await repointPageEmbeddings(executor, "project-1", [{ pageId: "page-4", index: 9 }]).catch(
+      (error: unknown) => error
+    );
+
+    expect(failure).toBeInstanceOf(PageEmbeddingRepointCollisionError);
+    expect((failure as PageEmbeddingRepointCollisionError).collisions).toEqual([
+      {
+        parkedScope: `${EMBEDDING_REPOINT_PARK_PREFIX}9:page:4`,
+        landingScope: "page:9",
+        heldScope: `${EMBEDDING_REPOINT_PARK_PREFIX}9:page:6`,
+        heldSourceId: "page-4"
+      },
+      {
+        parkedScope: `${EMBEDDING_REPOINT_PARK_PREFIX}9:page:6`,
+        landingScope: "page:9",
+        heldScope: `${EMBEDDING_REPOINT_PARK_PREFIX}9:page:4`,
+        heldSourceId: "page-4"
+      }
+    ]);
+  });
+
+  it("also catches a row whose page is long gone, which no ordering can name", async () => {
+    // `Embedding` has no foreign key to `Page`, so a book edited on a build
+    // that predates `deletePageEmbeddings` can hold a `page:%` row belonging to
+    // nothing. Pass one keys on `sourceId` and cannot park it.
+    const rows: ScopeRow[] = [...pageScopes(3), { sourceId: "page-gone", scope: "page:4" }];
+    const executor = scopeExecutor(rows);
+    const order: PageOrderEntry[] = [
+      { pageId: "page-1", index: 1 },
+      { pageId: "page-2", index: 2 },
+      { pageId: "page-3", index: 4 }
+    ];
+
+    await expect(repointPageEmbeddings(executor, "project-1", order)).rejects.toThrow(
+      PageEmbeddingRepointCollisionError
+    );
+  });
+
+  it("lets the same partial order through when nothing holds the destination", async () => {
+    // The precondition is about the rows, not about the order's length: page 5
+    // is gone from memory, so there is nothing for the parked row to land on.
+    const executor = scopeExecutor(pageScopes(6).filter((row) => row.sourceId !== "page-5"));
+
+    await repointPageEmbeddings(executor, "project-1", [{ pageId: "page-4", index: 5 }]);
+
+    expect(executor.scopeOf("page-4")).toBe("page:5");
+  });
+
+  it("lets an insert's tail-only ordering through, which is the caller that is partial", async () => {
+    // `movedPageOrder` names only the pages an insert shifted. Their
+    // destinations all sit past the head it leaves out, so the head holds none
+    // of them — that is what makes a partial ordering legal here.
+    const executor = scopeExecutor(pageScopes(10));
+    const order: PageOrderEntry[] = Array.from({ length: 7 }, (_value, offset) => ({
+      pageId: `page-${offset + 4}`,
+      index: offset + 5
+    }));
+
+    await repointPageEmbeddings(executor, "project-1", order);
+
+    expect(executor.scopeOf("page-1")).toBe("page:1");
+    expect(executor.scopeOf("page-4")).toBe("page:5");
+    expect(executor.scopeOf("page-10")).toBe("page:11");
+  });
+
+  it("lets a whole-book permutation through, which is every other caller", async () => {
+    const executor = scopeExecutor(pageScopes(6));
+    const order: PageOrderEntry[] = Array.from({ length: 6 }, (_value, offset) => ({
+      pageId: `page-${offset + 1}`,
+      index: 6 - offset
+    }));
+
+    await repointPageEmbeddings(executor, "project-1", order);
+
+    expect(executor.scopeOf("page-1")).toBe("page:6");
+    expect(executor.scopeOf("page-6")).toBe("page:1");
+  });
+
+  it("emits no statements at all for an empty order", async () => {
+    const executor = scopeExecutor(pageScopes(2));
+    const executed = vi.spyOn(executor, "$executeRawUnsafe");
+
+    await repointPageEmbeddings(executor, "project-1", []);
+
+    expect(executed).not.toHaveBeenCalled();
+  });
+
+  it("probes between the two passes on every re-point, not only the ones that collide", async () => {
+    const executor = repointTrace([]);
+
+    await repointPageEmbeddings(executor, "project-1", [{ pageId: "page-4", index: 5 }]);
+
+    // Not park-then-land with a check somewhere near it: the probe is a step of
+    // the re-point, and after pass one is the only place it can be exact.
+    expect(executor.steps).toEqual(["park", "probe", "land"]);
+  });
+
+  it("stops at the probe that answers, so the statement it guards never runs", async () => {
+    const executor = repointTrace([
+      {
+        parkedScope: `${EMBEDDING_REPOINT_PARK_PREFIX}5:page:4`,
+        landingScope: "page:5",
+        heldScope: "page:5",
+        heldSourceId: "page-5"
+      }
+    ]);
+
+    await expect(repointPageEmbeddings(executor, "project-1", [{ pageId: "page-4", index: 5 }])).rejects.toThrow(
+      PageEmbeddingRepointCollisionError
+    );
+
+    expect(executor.steps).toEqual(["park", "probe"]);
+  });
+
+  it("cannot be handed an executor that would skip the probe", async () => {
+    // `RawExecutor` requires the read, so a cast is the only way left to write
+    // the executor this used to accept — and what it used to do with one was
+    // park the rows, skip the assertion and land them unguarded, silently. The
+    // rows are parked here too; what differs is that the run does not survive
+    // it. An executor that cannot be asked cannot re-point.
+    const deaf = { $executeRawUnsafe: async () => 0 } as unknown as RawExecutor;
+
+    await expect(repointPageEmbeddings(deaf, "project-1", [{ pageId: "page-4", index: 5 }])).rejects.toThrow(
+      TypeError
+    );
+  });
+
+  it("asks the question pass two answers, with pass two's own fragment", () => {
+    const probe = pageEmbeddingRepointCollisionQuery("project-1");
+    const passes = pageEmbeddingRepointPasses("project-1", [{ pageId: "page-4", index: 5 }]);
+
+    // Not two `regexp_replace` literals a test holds equal: one exported
+    // fragment, written into pass two's SET and into *both* sides of the
+    // probe's join, so the check cannot come to ask a question the statement it
+    // guards does not answer.
+    expect(passes?.land.sql).toContain(landedPageScopeSql('"scope"'));
+    expect(probe.sql).toContain(landedPageScopeSql('parked."scope"'));
+    expect(probe.sql).toContain(landedPageScopeSql('other."scope"'));
+    // One book, and no row is ever its own collision.
+    expect(probe.params).toEqual(["project-1"]);
+    expect(probe.sql).toContain('parked."projectId" = $1');
+    expect(probe.sql).toContain('other."projectId" = parked."projectId"');
+    expect(probe.sql).toContain('other."id" <> parked."id"');
+  });
+
+  it("cannot be run past the probe by handing the pair to the statement runner", () => {
+    // The hole this closes was reachability, not the guard: while the passes
+    // came back as a `PageOrderingStatement[]`, `runPageOrderingStatements`
+    // accepted the builder's result outright — park and land, no probe, one
+    // call. A named pair is not that array.
+    expect(Array.isArray(pageEmbeddingRepointPasses("project-1", [{ pageId: "page-4", index: 5 }]))).toBe(false);
   });
 });
 
@@ -210,7 +704,9 @@ describe("running the statements", () => {
       $executeRawUnsafe: async (sql: string, ...params: unknown[]) => {
         calls.push({ sql, params });
         return 0;
-      }
+      },
+      /** Neither statement pair below parks a scope, so the probe has nothing to find. */
+      $queryRawUnsafe: async <T,>(): Promise<T> => [] as T
     };
   };
 

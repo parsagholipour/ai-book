@@ -77,6 +77,32 @@ function draftOptions(overrides: Partial<GeneratePageOptions> = {}): GeneratePag
   };
 }
 
+/** The options the drafting under test handed `runToolLoop`. */
+function loopCall(): {
+  purpose: string;
+  maxModelCalls: number;
+  temperature: number;
+  messages: ChatMessage[];
+  tools: Array<{ name: string; execute: (args: Record<string, unknown>) => Promise<unknown> }>;
+} {
+  return runToolLoopMock.mock.calls[0]?.[0];
+}
+
+/** The tool that loop registered under `name`, or undefined if it registered none. */
+function toolFromLoop(name: string) {
+  return loopCall().tools.find((tool) => tool.name === name);
+}
+
+/** The window the worker loads: the completed pages immediately before this one. */
+function recencyWindow(startIndex: number, length = 18) {
+  return Array.from({ length }, (_, offset) => ({
+    index: startIndex + offset,
+    title: `Page ${startIndex + offset}`,
+    markdown: `Prose from page ${startIndex + offset}.`,
+    summary: `Summary of page ${startIndex + offset}.`
+  }));
+}
+
 describe("generatePageDraftWithWriterTools", () => {
   beforeEach(() => {
     runToolLoopMock.mockReset();
@@ -89,6 +115,78 @@ describe("generatePageDraftWithWriterTools", () => {
 
   it("does not skip when research notes are present", () => {
     expect(shouldSkipWriterTools({ storyState: emptyStoryState(), researchNotes: ["A note."] })).toBe(false);
+  });
+
+  it("does not skip a page whose window no longer reaches page 1 and can search stored memory", () => {
+    expect(
+      shouldSkipWriterTools({
+        storyState: emptyStoryState(),
+        researchNotes: [],
+        // Drafting page 200: pages 1-181 are stored and outside the prompt.
+        previousPages: recencyWindow(182),
+        searchStoredMemory: async () => []
+      })
+    ).toBe(false);
+  });
+
+  it("still skips a late page when the caller injected no memory search", () => {
+    expect(
+      shouldSkipWriterTools({
+        storyState: emptyStoryState(),
+        researchNotes: [],
+        previousPages: recencyWindow(182)
+      })
+    ).toBe(true);
+  });
+
+  it("still skips while the window reaches page 1, so early pages pay for no tool loop", () => {
+    expect(
+      shouldSkipWriterTools({
+        storyState: emptyStoryState(),
+        researchNotes: [],
+        // Drafting page 5: pages 1-4 are the window, so a search can only
+        // return prose the prompt already carries.
+        previousPages: recencyWindow(1, 4),
+        searchStoredMemory: async () => []
+      })
+    ).toBe(true);
+  });
+
+  it("gives a late page search_memory even when story state never populated and there was no research", async () => {
+    const searchStoredMemory = vi.fn(async () => ["Page 12: the brass key goes under the stairs."]);
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({
+        pageIndex: 200,
+        previousPages: recencyWindow(182),
+        researchNotes: [],
+        searchStoredMemory
+      }),
+      storyState: emptyStoryState(),
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    expect(loopCall().tools.map((tool) => tool.name)).toContain("search_memory");
+  });
+
+  it("falls back on an early page even when a memory search was injected", async () => {
+    const searchStoredMemory = vi.fn(async () => ["Page 1: …"]);
+    const fallbackDraft = { ...finishedDraft, title: "Fallback" };
+    const draft = await generatePageDraftWithWriterTools({
+      ...draftOptions({
+        pageIndex: 5,
+        previousPages: recencyWindow(1, 4),
+        researchNotes: [],
+        searchStoredMemory
+      }),
+      storyState: emptyStoryState(),
+      fallback: async () => fallbackDraft
+    });
+
+    expect(draft.title).toBe("Fallback");
+    expect(runToolLoopMock).not.toHaveBeenCalled();
+    expect(searchStoredMemory).not.toHaveBeenCalled();
   });
 
   it("falls back without calling the tool loop when state and research are empty", async () => {
@@ -113,13 +211,7 @@ describe("generatePageDraftWithWriterTools", () => {
     });
 
     expect(runToolLoopMock).toHaveBeenCalledTimes(1);
-    const loop = runToolLoopMock.mock.calls[0]?.[0] as {
-      purpose: string;
-      maxModelCalls: number;
-      temperature: number;
-      messages: ChatMessage[];
-      tools: Array<{ name: string }>;
-    };
+    const loop = loopCall();
 
     expect(loop.purpose).toBe("write-page-with-tools");
     expect(MECHANICAL_TEXT_PURPOSES.has(loop.purpose)).toBe(false);
@@ -132,6 +224,7 @@ describe("generatePageDraftWithWriterTools", () => {
     expect(systemMessage).toMatch(/Do not mention AI, prompts, plans/i);
     expect(systemMessage).toMatch(/Treat pageBrief purpose, beat, requiredContinuity, and endingPressure as internal assignment notes/i);
     expect(systemMessage).toMatch(/You may look up an earlier page/i);
+    expect(systemMessage).not.toMatch(/search_memory/);
     expect(userMessage).toBeTruthy();
 
     const payload = JSON.parse(userMessage) as {
@@ -187,6 +280,127 @@ describe("generatePageDraftWithWriterTools", () => {
       title: "Dry Run Turn 7",
       summary: expect.stringMatching(/Page 7/)
     });
+  });
+
+  it("refuses lookup_page for the current page or later without querying storage", async () => {
+    const lookupStoredPage = vi.fn(async () => {
+      throw new Error("storage should not be queried");
+    });
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({ lookupStoredPage, pageIndex: 10 }),
+      storyState,
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    const lookupPage = toolFromLoop("lookup_page");
+
+    await expect(lookupPage?.execute({ pageIndex: 10 })).resolves.toEqual({ error: "No stored page 10." });
+    await expect(lookupPage?.execute({ pageIndex: 11 })).resolves.toEqual({ error: "No stored page 11." });
+    expect(lookupStoredPage).not.toHaveBeenCalled();
+  });
+
+  it("registers search_memory and its instruction only when searchStoredMemory is provided", async () => {
+    const searchStoredMemory = vi.fn(async () => ["Page 4: …"]);
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({ searchStoredMemory }),
+      storyState,
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    const loop = loopCall();
+    const systemMessage = loop.messages.find((message) => message.role === "system")?.content ?? "";
+
+    expect(loop.tools.map((tool) => tool.name)).toEqual([
+      "lookup_page",
+      "lookup_entity",
+      "search_research",
+      "search_memory"
+    ]);
+    expect(systemMessage).toMatch(
+      /Use search_memory to recall an earlier page by meaning or keyword when you need older continuity/
+    );
+  });
+
+  it("falls back to lookupStoredPage when the requested page is earlier but outside the window", async () => {
+    const storedPage = {
+      index: 5,
+      title: "The Brass Key",
+      markdown: "Tomas wrapped the brass key in oilcloth and pocketed it.",
+      summary: "Tomas hides the brass key under the stairs."
+    };
+    const lookupStoredPage = vi.fn(async (pageIndex: number) => (pageIndex === 5 ? storedPage : null));
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({
+        lookupStoredPage,
+        pageIndex: 10,
+        previousPages: [
+          {
+            index: 1,
+            title: "The Checkpoint",
+            markdown: "At the checkpoint, Jack showed the guard the cracked seal.",
+            summary: "Jack passes the checkpoint by refusing to hide the seal."
+          }
+        ]
+      }),
+      storyState,
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    const lookupPage = toolFromLoop("lookup_page");
+
+    await expect(lookupPage?.execute({ pageIndex: 5 })).resolves.toEqual({
+      index: 5,
+      title: storedPage.title,
+      summary: storedPage.summary,
+      excerpt: storedPage.markdown.slice(0, 900)
+    });
+    expect(lookupStoredPage).toHaveBeenCalledWith(5);
+  });
+
+  it("executes search_memory against the injected callback", async () => {
+    const searchStoredMemory = vi.fn(async () => ["Page 4: …"]);
+    await generatePageDraftWithWriterTools({
+      ...draftOptions({ searchStoredMemory }),
+      storyState,
+      fallback: async () => {
+        throw new Error("fallback should not run");
+      }
+    });
+
+    const searchMemory = toolFromLoop("search_memory");
+
+    await expect(searchMemory?.execute({ query: "brass key" })).resolves.toEqual(["Page 4: …"]);
+    expect(searchStoredMemory).toHaveBeenCalledWith("brass key");
+
+    searchStoredMemory.mockResolvedValueOnce([]);
+    await expect(searchMemory?.execute({ query: "brass key" })).resolves.toEqual({
+      error: "No matching earlier pages."
+    });
+  });
+
+  it("lets a stopped run out instead of falling back to the ordinary draft path", async () => {
+    // The worker's StopRequestedError by shape: packages/core is the leaf of
+    // `apps/* -> packages/db -> packages/core` and cannot import the class.
+    const stop = Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" });
+    runToolLoopMock.mockRejectedValue(stop);
+    const fallback = vi.fn(async () => finishedDraft);
+
+    await expect(
+      generatePageDraftWithWriterTools({
+        ...draftOptions(),
+        storyState,
+        fallback
+      })
+    ).rejects.toBe(stop);
+    // Falling back would draft the page again and write it against a run the
+    // reader already cancelled.
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it("falls back when the tool loop fails", async () => {

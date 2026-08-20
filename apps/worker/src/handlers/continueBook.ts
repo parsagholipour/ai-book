@@ -26,7 +26,7 @@ import { advanceJobStep } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError } from "../runtime/jobTypes.js";
 import { errorMessage } from "../runtime/serialization.js";
 import { bookPlanSchema, createProviders, generateJsonWithRetry, type BookPlan, type TextModelAdapter } from "@book-maker/core";
-import { prisma } from "@book-maker/db";
+import { pageScope, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
 /**
@@ -131,7 +131,7 @@ export async function continueBook(job: Job) {
       await tx.page.deleteMany({ where: { projectId, chapterId: { in: strandedChapterIds } } });
       await tx.chapter.deleteMany({ where: { projectId, index: { gt: baseChapterBoundary } } });
       await tx.embedding.deleteMany({
-        where: { projectId, scope: { in: strandedPages.map((page) => `page:${page.index}`) } }
+        where: { projectId, scope: { in: strandedPages.map((page) => pageScope(page.index)) } }
       });
       await tx.project.update({
         where: { id: projectId },
@@ -235,7 +235,9 @@ export async function continueBook(job: Job) {
       done: 0,
       total: newPageIndexes.length
     });
-    const continuityNotes = await loadContinuityNotes(projectId);
+    // Whole book: a continuation is written past the last page, so nothing the
+    // project holds is ahead of it.
+    const continuityNotes = await loadContinuityNotes(projectId, { beforePageIndex: null });
     const earlierSummaries = await prisma.page.findMany({
       where: { projectId, index: { lte: lastPageIndex }, status: "COMPLETED" },
       orderBy: { index: "asc" },
@@ -315,7 +317,7 @@ export async function continueBook(job: Job) {
         await tx.page.deleteMany({ where: { projectId, index: { gt: lastPageIndex } } });
         await tx.chapter.deleteMany({ where: { projectId, index: { gte: startChapterIndex } } });
         await tx.embedding.deleteMany({
-          where: { projectId, scope: { in: newPageIndexes.map((index) => `page:${index}`) } }
+          where: { projectId, scope: { in: newPageIndexes.map((index) => pageScope(index)) } }
         });
         await tx.project.update({
           where: { id: projectId },

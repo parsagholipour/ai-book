@@ -6,6 +6,16 @@ commit or a refund *mean* something — nothing above it can change that.
 `src/generated/` is produced by Prisma and gitignored. Run `pnpm db:generate` after touching
 `prisma/schema.prisma`; never edit it by hand.
 
+**Relative imports in this package carry `.ts`, not `.js`** — the opposite of `apps/*` and
+`packages/core`, and deliberate. `schema.prisma` sets `importFileExtension = "ts"`, so the
+generated client's own imports read `./enums.ts`, and `src/client.ts` and `src/index.ts` reach
+into that tree the same way. Nothing here is ever compiled to JavaScript — every `build` script
+is `tsc --noEmit`, `exports` points at `./src/index.ts`, and the API, worker and seed run the
+sources under `tsx` — so a `.js` specifier names a file that does not exist and only resolves
+because TypeScript and `tsx` both substitute the `.ts` back. It therefore typechecks, which is
+why a stray `.js` import can sit here unnoticed. Match the package, not the root convention, and
+don't flip the generator setting to make the root convention true.
+
 ## Importing billing
 
 `src/billing.ts` is a facade over `billingLedger.ts` (balances), `billingEntitlements.ts`,
@@ -37,6 +47,67 @@ both ends of the queue need them: the worker shifts `Page.index` when it applies
 and the API runs the identical steps when the reader taps Undo. Two copies of a compensation is how
 those ends start disagreeing about the same row.
 
+- **Every renumber parks before it lands, because neither unique index is deferrable.**
+  `@@unique([projectId, index])` on `Page` and `@@unique([projectId, scope])` on `Embedding` are
+  both plain `CREATE UNIQUE INDEX`, checked row by row as a statement runs, and a renumber overlaps
+  by construction — inserting one page after page 3 writes 4 onto the 5 another row still holds. One
+  statement therefore raises `23505` mid-flight and rolls back the whole restructure transaction:
+  every page insert, delete and move, and every Undo of one. `Page` parks in the negative half of
+  its range; `Embedding.scope` parks under `EMBEDDING_REPOINT_PARK_PREFIX`, which is deliberately
+  *not* `page:-<index>` — every page-scope reader in the repo filters `LIKE 'page:%'` or
+  `startsWith: "page:"`, and all of them match `page:-4`. Both second passes are unconditional over
+  the project, so no parked row can be left behind.
+  **A park key names the destination *and* the scope the row came from, because `sourceId -> page:%`
+  is one-to-many.** `deletePageEmbeddings` matches with `startsWith` for exactly that reason: a row
+  is upserted on `(projectId, scope)` and nothing holds a page to one of them, so
+  `repairPageEmbeddings` — which resolves the page sitting at an index and only then spends a
+  provider call — inserts `page:<old>` for a page that by now holds `page:<new>` when an edit commits
+  inside that window, and a page job lagging in BullMQ backoff (the race `000056` was written for)
+  writes its own stale index the same way. Keyed on the destination alone, one statement set *both*
+  of that page's rows to the one `page-repoint:<index>` value: `23505` from **pass one**, the failure
+  the split exists to prevent, and before 000056 a silent collapse of two rows into one. With the
+  row's own scope in the key the parked values are as distinct as the rows are, since
+  `(projectId, scope)` is unique, so pass one can collide with neither a live scope nor another
+  parked one.
+  A pass two that lands everything at once carries a precondition pass one cannot check: the
+  ordering must name every page **currently holding one of its own destination indexes**, or a
+  parked row is written onto a live one and the `23505` the split exists to prevent arrives from the
+  statement that was supposed to be safe. `pageOrderStatements` states it as "name every page" and
+  every caller obliges. The embedding re-point is deliberately looser — an insert names only the
+  tail it shifted, whose destinations all sit past the head it leaves out — so
+  `repointPageEmbeddings` asserts it instead of assuming it, *between* the two passes. That
+  placement is what makes the check exact rather than conservative: by then the parked rows **are**
+  the set pass two will write, so one join over the scopes they are about to become answers the
+  question with no reference to the ordering and no array of ids to ship, and a destination whose
+  page owns no `page:%` row at all is correctly not a collision. Both sides of that join go through
+  `landedPageScopeSql`, the same fragment pass two's own `SET` is written with — one function rather
+  than two `regexp_replace` literals a test holds equal, the hazard `lexicalMatchSql` is written
+  against one section down, because a probe asking a slightly different question than the statement
+  it guards answers "no collision" to a collision. Applying it to the *other* side too is what makes
+  one join cover both hazards: the fragment is the identity on a scope that is not parked, so a live
+  `page:5` compares as itself while a second parked row of the same page compares as the index it is
+  headed for. It costs the live side the `(projectId, scope)` index probe it used to get — a
+  function on both sides is not a lookup — and a range scan over one project's rows once per
+  structural edit is the right price for a hazard the indexed spelling could not see at all. A hit
+  throws `PageEmbeddingRepointCollisionError`, which names the fault and carries the scopes that
+  prove it, rather than a constraint name arriving from inside a transaction that has already
+  deleted pages, renumbered the book and written a `PlanVersion`. It also catches the two violations
+  no ordering can repair: a `page:%` row whose page is already gone, which pass one keys on
+  `sourceId` and therefore cannot park, and a page holding two page scopes, which have no one index
+  to become. The assertion has no skip in it: `RawExecutor` requires
+  `$queryRawUnsafe` alongside `$executeRawUnsafe`, so an executor that cannot answer the probe
+  cannot park rows either. That read was optional once, only so a hand-written stand-in stayed a
+  legal executor, and the check therefore turned itself off for exactly the executors the suites
+  hand it — green over a re-point nothing guarded. And the guard is on the only *composed* path:
+  `pageEmbeddingRepointPasses` returns a named `{ park, land }` rather than the
+  `PageOrderingStatement[]` it used to, because that array was precisely what
+  `runPageOrderingStatements` takes — park-then-land with no probe between them was an assembly the
+  two exported signatures offered, and the integration suite took it. The raw path stays reachable
+  on purpose, since that suite is where the `23505` itself is measured against a real Postgres, but
+  reaching it is now a caller naming both passes rather than handing one builder's result to a
+  runner that happened to accept it. `pageOrdering.integration.test.ts` is where that `23505` and
+  the parked-against-parked case are measured, because a stand-in that models a unique index is not
+  the index.
 - **A page renumber carries the page map with it; only a sheet that would lose its page clears it.**
   Everything keyed on `Page.index` moves with it, and that is more than the `Page` table: the
   `page:<index>` semantic-memory scopes go through `repointPageEmbeddings`, and
@@ -138,9 +209,196 @@ those ends start disagreeing about the same row.
   `refundFailedProjectCredits` handed the generation back — from a free undo. A caller that gets
   `null` has no plan to compile at all and must put the project back rather than leave it in EDITING.
 
+## Hybrid retrieval
+
+One module per arm: `src/embeddingRetrieval.ts` is the cosine (pgvector) arm,
+`src/lexicalRetrieval.ts` is the `pg_trgm` arm and its script fold, `src/hybridRetrieval.ts` fuses
+the two, `src/retrievalArms.ts` is the degrade policy below — which the worker also uses over
+continuity notes — `src/embeddingRepairTargets.ts` is the hole query, and `src/retrievalQuery.ts`
+holds the pieces the queries are assembled from, including the `RetrievalCandidate` row shape every
+arm returns. `src/index.ts` re-exports the arms **by name** rather than with `export *`, because
+they hand each other helpers (the builders in `retrievalQuery.ts`, `cleanLexicalTerms`, and the
+already-cleaned `retrieveCleanedLexicalEmbeddings` the latter feeds) that are seams inside the
+split, not surface this package offers — `RetrievalCandidate` is the exception, because it is what
+a caller's rows are and it has to be nameable.
+
+- **Both arms build their scope filter from one function, because a fusion is only meaningful over
+  one candidate set.** `embeddingScopeConditions` (`src/retrievalQuery.ts`) emits the `scopePrefix`
+  / `excludeScopes` / `beforePageIndex` conditions in the arm's own spelling of the scope column
+  (`"scope"`, `e."scope"`) and returns them **with** the parameter list they are numbered against —
+  numbering read off `params.length` rather than tracked in a counter, so a placeholder cannot come
+  to name a value that is not there. The two arms used to be two transcriptions of the same three
+  blocks, each with its own hand-counted `let nextParam = 3`; a condition added to one and not the
+  other would have made the fusion a comparison between two different books, and nothing would have
+  failed. `retrievalQuery.test.ts` is that missing failure: it compares everything in each arm's
+  emitted `WHERE` that is not the arm's own conditions, so an extra filter on one side alone is
+  caught rather than merely the shared ones being present. That hazard has a second home one level
+  up, where `retrieveHybridEmbeddings` has to *forward* the filter into each arm: every field of an
+  `EmbeddingScopeFilter` is optional, so a hand-copied enumeration reaching one arm and not the
+  other compiles exactly as quietly as the two transcriptions did. It builds one `armFilter` value
+  and spreads it into both calls, and `hybridRetrieval.test.ts` repeats the builder suite's
+  comparison over the whole hybrid — isolating each arm's scope conditions by the column they name,
+  which neither arm's own conditions mention, and comparing them whole. Forwarding is also where
+  the filter's deliberate asymmetry lives: `scopePrefix` and `excludeScopes` are tested for
+  truthiness because an empty prefix and an empty exclusion list narrow nothing, while
+  `beforePageIndex` is tested against `undefined` because 0 is falsy and means "no earlier page" —
+  the bound the book's first page retrieves under. It is a module of its own rather than a
+  corner of the cosine arm because `embeddingRepairTargets.ts` borrows the row cap from it and is
+  deliberately not one of the arms. That cap (`retrievalRowLimit`, 1..50) takes a number and has no
+  default folded into it: the arms name `DEFAULT_RETRIEVAL_TOP_K` themselves, while the repair
+  pass's `limit` is required and carries its caller's own batch size — `retrievalTopK` is where the
+  arms name that default, so `options.topK ?? DEFAULT_RETRIEVAL_TOP_K` is written once rather than
+  at each arm and again at the fusion.
+  **The row the arms hand back is spelled there too, for the same reason the filter is.**
+  `RetrievalCandidate` (and `RetrievalCandidateSqlRow` / `mapRetrievalCandidates`, which coerce the
+  `similarity` a driver may decode as a string) were two transcriptions of one object literal, one
+  per arm, next to the `WHERE` blocks that were two transcriptions until `embeddingScopeConditions`
+  was extracted. `fuseHybridEmbeddingRanks` merges the arms by `id` and spreads a row of either into
+  one `HybridEmbedding`, so a field one arm selects and the other does not is a field whose presence
+  depends on which arm ranked the page first, and no RRF score reveals it.
+
+`retrieveLexicalContinuityNotes` searches `ContinuityNote` rather than `Embedding`, and its
+`beforePageIndex` is a **required** `number | null` — the whole-book callers say `null` — because
+the worker's `loadContinuityNotes` had shipped its trigram arm without inheriting the forward bound
+its embedding twin already had (`apps/worker/src/generation/CLAUDE.md`). It bounds through the
+`pageId` foreign key rather than `pageScopeIndexSql` (`src/retrievalQuery.ts`): an edit's notes
+are scoped `page:<index>:edit:<operationId>`, which that pattern resolves to NULL, so bounding on
+the scope would drop every edited page's notes instead of placing them in time. Notes with no
+`pageId` are project-scoped once the ownership predicate has run, and no page bounds them.
+
+- **One arm of a hybrid retrieval must not be able to settle the other, and an arm nobody engaged
+  is not a survivor.** `retrieveHybridEmbeddings` runs a cosine arm and a `pg_trgm` arm and fuses
+  their rankings. It ran them as one `Promise.all`, so a database where migration
+  `000055_trigram_memory_search` could not `CREATE EXTENSION pg_trgm` — no superuser on a managed
+  Postgres, or a stack migrated before that branch — failed the *whole* call on every page:
+  `retrieveSemanticPageMemory` caught it and returned `[]`, and every page past the recency window
+  lost all long-range continuity, which is strictly worse than the vector-only behaviour the lexical
+  arm was added to improve on. The arms settle separately now and either one degrades to the other's
+  rows through `degradeRetrievalArm` — the same policy the worker's `loadContinuityNotes` wraps
+  its optional promise in. That wrap was hand-rolled there first, which is exactly how it came to
+  be missing here, so the policy is one exported function rather than a habit.
+  Fusion needs no special case: an RRF score is a sum over the rankings a row appears in, so an
+  empty ranking contributes nothing and the survivor keeps its own order and its whole `topK`.
+  What still throws is a retrieval where *nothing* answered — both arms engaged and both failed
+  (as an `AggregateError`, so a chronic fault under a transient one is still in the log), or the one
+  engaged arm failing in vector-only or lexical-only mode — because an empty array there reads to
+  every caller as "no page matched". A degraded arm is *counted* per (arm, message) per process and
+  reported on a ladder — the first occurrence, then every power of ten. A missing extension fails on
+  every page of every book, so one line per page job would bury the only thing worth knowing; but
+  reporting only the first line is right for a permanent fault and wrong for an intermittent one,
+  and the two reach this code as the same stable message — a connection reset that recurs would
+  otherwise be reported by the first page job that met it and by none of the ten thousand after.
+  Each later rung carries the running count and the project it hit, so the same message on a book
+  that is not the one in the first line reads as a fault spreading rather than an environment fact
+  standing still. A message not seen before still prints, so a new SQL fault is not hidden behind an
+  older one, and the 64-key cap on the census is a memory bound and nothing else: a count it drops
+  restarts that message's ladder, which can only make reporting louder.
+  **Which arms are engaged is one derivation, not two.** The needles are cleaned once, at the top of
+  `retrieveHybridEmbeddings`, and that array is both what the count is read from and what the lexical
+  arm searches with — `retrieveCleanedLexicalEmbeddings` takes a branded `CleanLexicalTerms` so a
+  caller cannot hand the raw ones on and have them folded, deduped and cut a second time. It used to
+  do exactly that: the same per-character fold over every needle twice per retrieval, and, more than
+  wasted work, two separate answers to the question the paragraph above settles a whole call on. The
+  count decides whether a failing arm degrades or throws, so nothing may be able to say "engaged"
+  here and "nothing to search" one function down.
+  **And a degrade must not swallow a stop.** `rethrowIf` is a **required** `((error: unknown) =>
+  boolean) | null` on this function — the worker passes `isStopRequestedError`, the package's own
+  integration suites pass `null` — for the reason `retrieveLexicalContinuityNotes`' `beforePageIndex`
+  is required: every production caller is inside a page job a reader can stop, an optional predicate
+  is silently absent at the next call site, and a degrade *looks* like success, so what an omission
+  costs is a stopped generation coming back as a slightly thinner memory instead of as a stop.
+  `loadContinuityNotes` had been passing one to `degradeRetrievalArm` all along and this entry point
+  passed none, which is the same shape of hole as the `Promise.all` above. It reaches both arms'
+  `degradeRetrievalArm` calls and, separately, the both-arms-failed path: `isStopRequestedError` does
+  not look inside an `AggregateError`, so a stop bundled into one is a stop lost just as surely.
+  **`degradeRetrievalArm` itself requires it too, so the argument above is a type rather than a
+  habit.** Requiring it only at this entry point left the shared policy taking `rethrowIf?:` — the
+  very shape the paragraph rules out — and the helper is what a *new* degrade site imports: the
+  worker's `loadContinuityNotes` and `createDegradedEmbedding` (`apps/worker/src/generation/`) call
+  it directly, without passing through here. Every existing caller was already passing a predicate,
+  so nothing changed but the compiler's answer to the next one that forgets. This function forwards
+  its own `rethrowIf` into both arms unconditionally now, rather than through a
+  `{ ...(x ? { x } : {}) }` spread that made a `null` claim and a forgotten option indistinguishable
+  one level down.
+
+- **A needle and the column it is scored against are folded together, or not at all.** The worker
+  picks a page's trigram needles with `foldCharacterName`, so a plan character named "علی" is
+  correctly recognised in a brief that spells him "علي" — and then it handed the *raw* plan name
+  to `strict_word_similarity`, where Postgres folds nothing. Measured: 0.333 against a summary
+  written with the Arabic yeh, 0.077 for "یاسمین", 0.0 for "کریم" — all under
+  `LEXICAL_SIMILARITY_FLOOR`, so a Persian book's pages were unreachable by their own characters'
+  names while the docblock said otherwise. `foldLexicalText` now folds every needle inside
+  `cleanLexicalTerms` and `lexicalFoldSql` folds the column in the same query, because folding one
+  side only moves the mismatch. Both trigram queries — over `Embedding.text` and over
+  `ContinuityNote.body` — build that scoring block from one `lexicalMatchSql`, which takes the
+  branded `CleanLexicalTerms` and emits the folded column, the needle placeholder numbered against
+  them, the floor and the ranking together: the pairing is what the signature is for, rather than
+  something two transcriptions of one lateral happened to agree on. Only that block is shared —
+  the two `SELECT` lists, tables, ownership predicates and page bounds stay at their call sites,
+  because the embeddings arm bounds on the `page:<index>` scope and the note search on the
+  `pageId` foreign key. It is deliberately *not* `foldCharacterName`: that fold answers
+  "same person" and deletes ZWNJ, collapses whitespace and drops a per-script list of optional
+  marks, while pg_trgm scores *words* — "علی" against "علی‌محمدیان" measures 1.0 on the ZWNJ word
+  break and 0.25 once it is deleted, so adopting it would have bought the fix with a regression.
+  Its mark list cannot cross into SQL either: Postgres regex has no Unicode-property classes, so
+  the enumeration would have to be copied into the query (or into an index) and thereafter kept in
+  step by migration. A 1:1 `translate()` map can change neither length nor word boundaries.
+  That map is **one** `[from, to]` table and both `translate()` arguments are derived from it,
+  because the two strings carry an equal-length invariant nothing in the language holds them to:
+  `translate` *deletes* a `from` character the `to` string is too short to answer, so an addition on
+  one side alone folds the column into a space the needle is not folded into — every needle carrying
+  that character scores 0, no arm degrades, nothing raises. `compileLexicalFold` refuses at module
+  load what a pair table still cannot state on its own: an entry that is not one character on each
+  side (codepoints, not UTF-16 units), a repeated source character (`translate` keeps the first
+  mapping and `Map` the last), and a quote or backslash the SQL literal could not carry. Nothing is
+  lost to folding a column: `000055_trigram_memory_search` dropped the trigram GIN indexes on purpose — `gin_trgm_ops`
+  cannot serve a `strict_word_similarity(...) > floor` predicate at all — and `translate` is
+  IMMUTABLE, so an expression index stays available if that ever changes. The measurements live in
+  the opt-in `lexicalRetrieval.integration.test.ts`.
+
+- **Finding what a page's memory is *missing* belongs here too, and the `LIMIT` is the point.**
+  `findPageEmbeddingRepairTargets` answers "which pages below this index have no usable
+  `page:<index>` row", for the worker's per-page repair pass. It is in this package rather than in
+  the worker because it is a query over two tables this package owns, and because it is the kind of
+  SQL a mock cannot vouch for — `embeddingRepairTargets.integration.test.ts` measures it against a
+  real Postgres. Three properties are not stylistic. The backoff window is a `WHERE` predicate so
+  the `LIMIT` cuts what survives it — a limit taken first would let three pages a provider refuses
+  hold every repair slot forever, which is the starvation the worker's backoff exists to prevent.
+  It is `NOT EXISTS`, not `LEFT JOIN … IS NULL`, because only the anti-join lets the `LIMIT` stop
+  the scan early (measured on a 300-page book: 0.72 ms against 2.1 ms and two sorts) and because an
+  outer join would emit a page twice on a database that predates `000056`'s unique index. And the
+  degraded test ends in `IS TRUE`, because the predicate is used *negated*: healthy metadata has no
+  `vectorStored` key, `->` gives NULL, and `NOT (NULL AND …)` is NULL — which silently reclassified
+  every healthy page as a hole until the integration suite caught it.
+  **What counts as degraded is one rule with two spellings, and both live in that file.**
+  `embeddingIsDegraded` reads a row Prisma handed back, `degradedEmbeddingSql` reads the `jsonb`
+  column, and they cannot share an implementation — so they share a file, under the docblock that
+  says why they mean the same thing: the boolean `false`, never the string `"false"`, and metadata
+  that is not an object at all is not degraded. The function used to live in
+  `apps/worker/src/generation/researchMemory.ts`, one package away from the query it had to agree
+  with; that pass imports it from here now. What they cannot share in code they share in
+  `src/testing/degradedEmbeddingShapes.ts` — one table of metadata shapes stating the rule's
+  answers, run through the function by `embeddingRepairTargets.test.ts` with no database and
+  through Postgres, shape by shape against the function, by the integration suite. The worker's
+  research suite restates the function in its `@book-maker/db` mock factory for `dbScopeMocks`'
+  reasons, and carries that file's "keep it equal" note.
+
 ## Tests
 
-`src/testing/billingTestDb.ts` is the shared harness. Nothing here needs a live Postgres.
+`src/testing/billingTestDb.ts` is the shared harness. Nothing here needs a live Postgres — except
+the three opt-in suites (`*.integration.test.ts`), which `vitest.config.ts` leaves out of collection
+unless `DB_INTEGRATION=true`.
+
+- **An opt-in suite is made inert by not being *loaded*, not by skipping itself.** All three of
+  those files import `prisma` from `src/client.ts`, and `describe.skipIf(!enabled)` skips only the
+  test bodies — the file's imports still ran, so every ordinary `pnpm test` built a `PrismaPg` adapter and
+  a `PrismaClient` against the default `localhost:55432` URL: a pg pool per suite, and a handle for
+  vitest to tear down, in the run that is supposed to need no database at all. The exclusion in
+  `vitest.config.ts` is what actually makes them inert, and it is a glob over `*.integration.test.ts`
+  rather than a list of files, so the next opt-in suite written by copying one of these cannot bring
+  the pool back. The `skipIf` stays as a second guard, for a runner that reaches the file under some
+  other config. One consequence worth knowing: without the variable, naming one of those files on the
+  command line reports "No test files found" — that is this exclusion, not a mistyped path.
 
 ## The reserve, commit, refund loop
 

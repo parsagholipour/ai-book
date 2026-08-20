@@ -21,7 +21,7 @@ import {
   type WholeBookPageDraft,
   seedStoryStateFromPromises
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
 
 /**
  * Persistent book-generation state shared by the direct passes: chapter setup,
@@ -119,7 +119,7 @@ export async function resetBookForDirectGeneration(
     await tx.page.deleteMany({ where: { projectId } });
     await tx.chapter.deleteMany({ where: { projectId } });
     await tx.continuityNote.deleteMany({ where: { projectId } });
-    await tx.embedding.deleteMany({ where: { projectId, scope: { startsWith: "page:" } } });
+    await tx.embedding.deleteMany({ where: { projectId, scope: { startsWith: PAGE_SCOPE_PREFIX } } });
     await tx.project.update({
       where: { id: projectId },
       data: {

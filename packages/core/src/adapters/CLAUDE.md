@@ -23,6 +23,44 @@ budget failing the same way.
 
 Stop-abort signalling is currently wired into the DeepSeek and Gemini adapters only.
 
+- **A cancellation raised inside a tool escapes the tool loop; only a tool *failure* becomes a tool
+  result.** `runToolLoop`'s whole point is that a tool blowing up is recoverable — the throw comes
+  back as `{error: "The <tool> tool failed: …"}` and the model works around it. A stop is the one
+  error that must not: answered that way it reads to the model as "that tool is unavailable", so
+  the loop continues, the model finishes, and the caller writes and bills an answer for a run the
+  reader already cancelled. `executeToolCall` (`toolLoop.ts`) therefore rethrows whatever the
+  loop's `rethrowIf` claims, defaulting to `isCancellationError` (`retry.ts`). That predicate asks
+  the error *who it is* — an `AbortError` or `StopRequestedError` `name`, an `ABORT_ERR` code, over
+  the error and every nested `cause` — and not what it says, because the class it is really looking
+  for, the worker's `StopRequestedError`, sits on the far side of
+  `apps/* → packages/db → packages/core` and cannot be imported here; it holds the line the worker
+  holds with `isStopRequestedError` in `prepareEmbedding`, `writePreparedEmbedding` and
+  `degradeRetrievalArm`'s `rethrowIf`. **Identity, not prose**: the older `isStopOrAbortError`
+  reads message text too, which is right where a false positive only *suppresses* something — a
+  retry not taken in `isSpeechProviderFallbackError`, a fallback provider not tried in
+  `isTextProviderFallbackError`, an error that still surfaces as the failure it is — and wrong
+  here, where it would promote a recoverable failure to a fatal one. This one loop is shared by the
+  worker's writer tools and by the API's two chat loops, so a provider or HTTP client whose message
+  merely says "request aborted" would have ended a chat turn the model could have worked around.
+  Narrowing costs the worker nothing: `LoggingEmbeddingAdapter.embed` runs `assertJobNotStopped` on
+  its way out, so a cancellation reaching a tool is already a `StopRequestedError` when it is
+  thrown, and everything downstream gates on `instanceof StopRequestedError`, narrower still. The
+  rule belongs to the loop rather than to one tool because every tool inherits it: `search_memory`
+  (`generation/writerTools.ts`) is only the first writer tool that reaches a provider at all —
+  `lookup_page`, `lookup_entity` and `search_research` read what is already in memory or in the
+  database — and the stop comes from the `assertJobNotStopped` inside
+  `LoggingEmbeddingAdapter.embed`, which `searchStoredMemory` reaches through
+  `retrieveSemanticPageMemory`. **The caller owes the same.**
+  `generatePageDraftWithWriterTools` catches everything the loop throws, because a tool-loop fault
+  must not fail a book — but a stop caught there falls back to the ordinary draft path and writes
+  the page anyway, so it re-raises instead. The API's two loops (`mobileCreation.ts`,
+  `bookEditIntent.ts`) have no stop signal to honour at all, and today nothing of theirs can trip
+  the default either — `web_search` replaces whatever it caught with fixed model-facing prose,
+  `read_page` swallows its load with `.catch(() => null)`, and the settings tools cannot throw. That
+  is an accident of three handlers rather than a property of the surface, which is what
+  `rethrowIf: null` is for: an explicit "nothing a tool throws ends this turn", worth passing at
+  both call sites the next time either grows a tool that reaches the network directly.
+
 ## Tests
 
 Colocated, and they stub `process.env` rather than reading a `.env` — nothing here needs a real key

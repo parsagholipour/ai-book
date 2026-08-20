@@ -1,4 +1,4 @@
-import { ensureSeedTemplates, prisma } from "./index.js";
+import { ensureSeedTemplates, prisma } from "./index.ts";
 
 async function main() {
   await ensureSeedTemplates();

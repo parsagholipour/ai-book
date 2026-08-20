@@ -102,13 +102,16 @@ export async function draftInsertedPages(options: {
     // look hoistable and is not: `reviewAndSaveGeneratedPage` writes a
     // `ContinuityNote` row for every page it approves, so what this reads on
     // iteration N+1 includes what iteration N wrote — the established facts the
-    // next inserted page must not contradict, at the head of a `createdAt desc`
-    // list of 28. Hoisting it would hand every page of the insert the same
+    // next inserted page must not contradict, at the *end* of a 28-note list
+    // ordered by ascending priority, which is the end a prompt keeps when it
+    // truncates. Hoisting it would hand every page of the insert the same
     // pre-insert snapshot to save a handful of cheap round trips, and it would
     // not even be a saving: the page reviewer reloads the notes itself
     // (`pageReview.ts`), so a contradiction the draft was no longer shown is
     // caught one step later by a QA rewrite, which is a whole model call.
-    const continuityNotes = await loadContinuityNotes(projectId);
+    // Whole book: an inserted page lands into prose that already exists on both
+    // sides of it, which is why `nextPages` is read above.
+    const continuityNotes = await loadContinuityNotes(projectId, { beforePageIndex: null });
     const chapterKey = chapterPlan?.index ?? null;
     let researchNotes = researchNotesByChapter.get(chapterKey);
     if (!researchNotes) {

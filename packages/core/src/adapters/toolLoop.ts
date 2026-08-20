@@ -1,4 +1,5 @@
 import { parseJsonObject } from "./json.js";
+import { isCancellationError } from "./retry.js";
 import type {
   ChatMessage,
   TextModelAdapter,
@@ -17,7 +18,9 @@ import type {
  *
  * Reliability properties:
  * - Invalid tool arguments become error tool-results the model can repair.
- * - Tool handler failures become error tool-results, never thrown turns.
+ * - Tool handler failures become error tool-results, never thrown turns —
+ *   except whatever `rethrowIf` claims, by default a cancellation; see
+ *   {@link ToolLoopOptions.rethrowIf} and {@link executeToolCall}.
  * - A plain-text reply where a finish tool was required is recovered by
  *   parsing the text as the finish payload, then by one explicit nudge.
  * - The loop is bounded by maxModelCalls; callers keep their deterministic
@@ -25,7 +28,11 @@ import type {
  */
 
 export type ToolLoopTool<TArgs = unknown> = ToolDefinition<TArgs> & {
-  /** Returns the tool result; non-string results are JSON-serialized. Throwing produces an error result. */
+  /**
+   * Returns the tool result; non-string results are JSON-serialized. Throwing
+   * produces an error result — except what {@link ToolLoopOptions.rethrowIf}
+   * claims, by default a cancellation, which the loop rethrows.
+   */
   execute: (args: TArgs) => Promise<unknown> | unknown;
   /**
    * A pure side-effect tool's result only echoes its input (update a setting,
@@ -72,6 +79,20 @@ export type ToolLoopOptions<TFinish = string> = {
   onToolResult?: ((event: ToolLoopToolEvent) => void | Promise<void>) | undefined;
   /** Cap on serialized tool result content fed back to the model. */
   maxToolResultChars?: number | undefined;
+  /**
+   * What a tool may throw that must *not* become a tool result but end the loop.
+   * Defaults to `isCancellationError`, which reads the error's identity — an
+   * `AbortError`/`StopRequestedError` `name`, an `ABORT_ERR` code — rather than
+   * its prose, so a provider failure whose message happens to say "request
+   * aborted" stays recoverable. Pass `null` for a loop with no cancellation to
+   * honour, and nothing a tool throws can end the turn.
+   *
+   * Optional, where `degradeRetrievalArm`'s `rethrowIf` (`packages/db`) is
+   * required: there an omission *swallows* a stop, so the compiler has to ask at
+   * every call site. Here an omission is the escaping behaviour, and it is the
+   * opt-out that has to be said out loud.
+   */
+  rethrowIf?: ((error: unknown) => boolean) | null | undefined;
 };
 
 export type ToolLoopResult<TFinish = string> = {
@@ -95,6 +116,8 @@ const DEFAULT_MAX_TOOL_RESULT_CHARS = 16_000;
 export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFinish>): Promise<ToolLoopResult<TFinish>> {
   const maxModelCalls = Math.max(1, options.maxModelCalls ?? DEFAULT_MAX_MODEL_CALLS);
   const maxToolResultChars = Math.max(200, options.maxToolResultChars ?? DEFAULT_MAX_TOOL_RESULT_CHARS);
+  // `??` would read an explicit `null` — "nothing escapes" — as no answer at all.
+  const rethrowIf = options.rethrowIf === undefined ? isCancellationError : options.rethrowIf;
   const toolsByName = new Map(options.tools.map((tool) => [tool.name, tool]));
   const toolDefinitions: ToolDefinition[] = [
     ...options.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
@@ -147,7 +170,7 @@ export async function runToolLoop<TFinish = string>(options: ToolLoopOptions<TFi
       messages.push({ role: "assistant", content: result.text, toolCalls: workCalls });
       let anyToolError = false;
       for (const call of workCalls) {
-        const event = await executeToolCall(call, toolsByName.get(call.name), maxToolResultChars);
+        const event = await executeToolCall(call, toolsByName.get(call.name), maxToolResultChars, rethrowIf);
         anyToolError ||= event.isError;
         toolEvents.push(event);
         await options.onToolResult?.(event);
@@ -218,7 +241,8 @@ async function executeToolCall(
   call: ToolCall,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tool: ToolLoopTool<any> | undefined,
-  maxToolResultChars: number
+  maxToolResultChars: number,
+  rethrowIf: ((error: unknown) => boolean) | null
 ): Promise<ToolLoopToolEvent> {
   if (!tool) {
     return {
@@ -242,6 +266,20 @@ async function executeToolCall(
     const content = typeof result === "string" ? result : JSON.stringify(result ?? {});
     return { call, resultContent: truncateToolResult(content, maxToolResultChars), isError: false };
   } catch (error) {
+    if (rethrowIf?.(error)) {
+      // A stopped run is not a tool failure. Answered as a tool result it
+      // reads to the model as "that tool is unavailable": the loop continues,
+      // the model finishes, and the caller writes and bills an answer for a
+      // run the user already cancelled. The rule lives here rather than around
+      // one tool because every tool inherits it — `search_memory`
+      // (`generation/writerTools.ts`) is only the first one to reach a
+      // provider at all, and the worker's stop check is inside that call.
+      // Which errors qualify is the predicate's to say, and it asks the error
+      // who it is, not what it says: this hatch is shared with loops that have
+      // no cancellation to honour, where converting a recoverable provider
+      // failure into a dead turn is the only thing a loose match can do.
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
     return {
       call,

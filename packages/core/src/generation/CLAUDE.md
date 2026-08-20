@@ -401,10 +401,24 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   plan character back to its portrait: `matchLibraryCharacter`
   (`packages/core/src/generation/libraryCharacters.ts`) tries folded exact equality then
   **whole-token** containment, and a rename by the planner degrades to an unseeded sheet, never an
-  error. Both halves of that are scars. Everything is compared through `foldCharacterName` (NFD
-  then strip marks, drop ZWNJ/ZWJ/bidi, fold Arabic kaf/yeh onto Persian, fold Arabic-Indic
-  digits) because a Persian name saved from one keyboard and echoed by a model trained on the
-  other was two different names; and containment is whole-token because sub-token matching put one
+  error. Both halves of that are scars. Everything is compared through `foldCharacterName` (NFD,
+  drop the *optional* marks listed in `OPTIONAL_SPELLING_MARKS`, drop ZWNJ/ZWJ/bidi, fold Arabic
+  kaf/yeh onto Persian, fold Arabic-Indic digits) because a Persian name saved from one keyboard
+  and echoed by a model trained on the other was two different names. That mark list is an
+  **allowlist** — Latin/Greek/Cyrillic accents, Hebrew niqqud and the Arabic marks, all things a
+  spelling carries or does not — and never `\p{M}`, which it was: Devanagari matras are `Mn`/`Mc`,
+  so "मीरा" and "मारा" both folded to "मर" and the matcher seeded one saved character's face onto
+  the other. Thai sara and (after the NFD) the Japanese dakuten were the same collision. A script
+  nobody enumerated keeps its marks, because a missed match is a character drawn from prose and a
+  merged one is the unrecoverable half of the very rule below. **The mention scanner's rule about
+  marks runs the other way, and both are right.** `isNameCharacter`
+  (`apps/api/src/mobile/creationBuild.ts`), the word-boundary test deciding where a typed `@name`
+  ends, matches `\p{M}` on purpose: a combining mark belongs to the letter before it, so with marks
+  outside the boundary class `@मीर` ends cleanly in front of the "ा" of `@मीरा` and binds a saved
+  character the reader never named — `Luna` seeding `Luna-Bear` again, in a script where the
+  sub-token is invisible. One rule says a mark is not part of the *spelling*; the other says it is
+  part of the *word*. Neither may be narrowed to agree with the other, because each is closing a
+  collision the other cannot see. And containment is whole-token because sub-token matching put one
   reader's saved face on a character they never saved — `Sam` seeded `Sam's Mother`, `Luna` seeded
   `Luna-Bear`, and ZWNJ is category `Cf`, so the old `[^\p{L}\p{N}]` boundary read `علی‌رضا` as a
   word break and matched a library `علی`. An **ambiguous** containment resolves to null: a missing
@@ -439,7 +453,7 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   `visualRules` from the recorded appearance or leaves them empty, re-appends a snapshot character
   the plan dropped, and collapses two entries that resolve to one snapshot. It is what turns
   translation, rename, near-duplicate and invented-twin from silent wrong output into a no-op.
-  Revision needed it most: `mobileLibraryCharacterGuidance` was called from the initial planner
+  Revision needed it most: `planLibraryCharacterGuidance` was called from the initial planner
   **only**, and `revisePlanningPackage` serialized no `userInput` and no `mediaSettings` at all, so
   any "make it shorter" after approval re-decided the saved character against nothing. Arrays merge
   as atomic replacements, so whatever came back won.

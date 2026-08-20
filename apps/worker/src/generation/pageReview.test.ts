@@ -17,18 +17,22 @@ const mocks = vi.hoisted(() => ({
   persistStoryExtract: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db", async () => ({
+  prisma: mocks.prisma,
+  Prisma: {},
+  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
+}));
 vi.mock("../runtime/dispatch.js", () => ({ enqueueWorkerJob: mocks.enqueueWorkerJob }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: mocks.updateJobProgress }));
-vi.mock("./semanticMemory.js", () => ({
+vi.mock("./embeddingWrites.js", () => ({
   prepareEmbedding: mocks.prepareEmbedding,
   writePreparedEmbedding: mocks.writePreparedEmbedding,
-  updateEntityStateFromPage: mocks.updateEntityStateFromPage,
   // Mirrors the real predicate so fixtures choose their mode explicitly.
-  retrieveSemanticResearchNotes: async () => [],
   strategyUsesSemanticMemory: (strategy: { executionMode?: string }) =>
     strategy?.executionMode === "sequential-pages"
 }));
+vi.mock("./entityState.js", () => ({ updateEntityStateFromPage: mocks.updateEntityStateFromPage }));
+vi.mock("./researchMemory.js", () => ({ retrieveSemanticResearchNotes: async () => [] }));
 vi.mock("./generationContext.js", () => ({
   loadContinuityNotes: mocks.loadContinuityNotes,
   loadResearchNotesForGeneration: async () => []
@@ -416,10 +420,7 @@ describe("reviewAndSaveGeneratedPage", () => {
     );
     expect(mocks.prepareEmbedding).toHaveBeenCalledWith("First summary.", expect.anything());
     expect(mocks.writePreparedEmbedding).toHaveBeenCalledWith(
-      "project-1",
-      "page:3",
-      "page-row-1",
-      "First summary.",
+      { projectId: "project-1", scope: "page:3", sourceId: "page-row-1", text: "First summary." },
       preparedVector
     );
     expect(context).toEqual({ index: 3, title: "First", markdown: "First text.", summary: "First summary." });

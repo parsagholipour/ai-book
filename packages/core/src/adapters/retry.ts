@@ -142,11 +142,53 @@ export function isSpeechProviderFallbackError(error: unknown): boolean {
   });
 }
 
-function isStopOrAbortError(error: unknown): boolean {
+/**
+ * A cancellation rather than a failure: the run was stopped, or the call was
+ * aborted, so nothing downstream may retry it, fall back from it, or fold it
+ * into a value the caller keeps working with.
+ *
+ * The class itself — the worker's `StopRequestedError`, which
+ * `LoggingEmbeddingAdapter.embed` and its siblings raise off `assertJobNotStopped`
+ * — is not reachable from here: `packages/core` is the leaf of
+ * `apps/* -> packages/db -> packages/core`. So this matches the shape instead,
+ * over `name`, `message` and every nested `cause`, which is what lets a policy
+ * inside core hold the line the worker's own `isStopRequestedError` holds on
+ * its side of the boundary.
+ */
+export function isStopOrAbortError(error: unknown): boolean {
   return collectErrorDescriptors(error).some((descriptor) =>
     descriptor.messages.some((message) =>
       /(?:AbortError|StopRequestedError|stop requested|stopped by user|request aborted)/i.test(message)
     )
+  );
+}
+
+const CANCELLATION_ERROR_NAMES = new Set(["ABORTERROR", "STOPREQUESTEDERROR"]);
+
+/**
+ * The same question read off the error's *identity* rather than its prose: the
+ * `name` an `AbortController`'s `DOMException` carries, the `name` the worker's
+ * `StopRequestedError` sets on itself, or the `ABORT_ERR` code beside them —
+ * over the error and every nested `cause`, as above.
+ *
+ * {@link isStopOrAbortError} reads message text too, and that width is right
+ * where a false positive only ever *suppresses* something: a retry not taken, a
+ * fallback provider not tried, an error that still surfaces as the failure it
+ * is. It is wrong where a false positive turns a recoverable failure into a
+ * fatal one — `runToolLoop`'s escape hatch, where a provider whose message
+ * merely says "request aborted" would end a chat turn the model could otherwise
+ * have worked around. That call site reads this predicate instead.
+ *
+ * Narrowing costs the worker nothing: `LoggingEmbeddingAdapter.embed` runs
+ * `assertJobNotStopped` on its way out, so a cancellation reaching a tool is
+ * already a `StopRequestedError` by the time it is thrown, and every consumer
+ * of the escape gates on `instanceof StopRequestedError` — narrower still.
+ */
+export function isCancellationError(error: unknown): boolean {
+  return collectErrorDescriptors(error).some(
+    (descriptor) =>
+      descriptor.code?.toUpperCase() === "ABORT_ERR" ||
+      descriptor.names.some((name) => CANCELLATION_ERROR_NAMES.has(name.toUpperCase()))
   );
 }
 
@@ -186,13 +228,20 @@ function collectErrorDescriptors(
   value: unknown,
   seen = new WeakSet<object>(),
   depth = 0
-): Array<{ code?: string | undefined; status?: number | undefined; retryAfterMs?: number | undefined; messages: string[] }> {
+): Array<{
+  code?: string | undefined;
+  status?: number | undefined;
+  retryAfterMs?: number | undefined;
+  /** `name` alone — the identity half of {@link messages}, for predicates that must not read prose. */
+  names: string[];
+  messages: string[];
+}> {
   if (value === null || value === undefined || depth > 6) {
     return [];
   }
 
   if (typeof value !== "object") {
-    return [{ messages: [String(value)] }];
+    return [{ names: [], messages: [String(value)] }];
   }
 
   if (seen.has(value)) {
@@ -201,14 +250,14 @@ function collectErrorDescriptors(
   seen.add(value);
 
   const record = value as Record<string, unknown>;
-  const messages = [record.name, record.message, record.type]
-    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    .map((item) => item.trim());
+  const names = trimmedStrings([record.name]);
+  const messages = [...names, ...trimmedStrings([record.message, record.type])];
 
   const descriptor = {
     code: typeof record.code === "string" ? record.code : undefined,
     status: numericField(record.status ?? record.statusCode),
     retryAfterMs: numericField(record.retryAfterMs),
+    names,
     messages
   };
 
@@ -229,6 +278,12 @@ function collectErrorArray(value: unknown, seen: WeakSet<object>, depth: number)
     return [];
   }
   return value.flatMap((item) => collectErrorDescriptors(item, seen, depth));
+}
+
+function trimmedStrings(values: unknown[]): string[] {
+  return values
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim());
 }
 
 function numericField(value: unknown): number | undefined {

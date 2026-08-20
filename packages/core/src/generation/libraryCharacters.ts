@@ -135,24 +135,78 @@ export function libraryCharactersFromMediaSettings(mediaSettings: unknown): Libr
 }
 
 /**
+ * The marks {@link foldCharacterName} is allowed to delete: the ones a name may
+ * or may not carry, where dropping them turns two spellings of one name into
+ * one string.
+ *
+ * **An allowlist, and it has to stay one.** This was `\p{M}` — every combining
+ * mark — which is right for a diacritic and catastrophic for a script whose
+ * *vowels* are combining marks. Devanagari matras are `Mn`/`Mc`, so "मीरा" and
+ * "मारा" both folded to the bare consonants "मर": two saved characters were one
+ * name to `matchLibraryCharacter`, and a page's continuity note about one of
+ * them was written onto the other one's state. Thai sara, Lao, Khmer, Tibetan
+ * and Thaana vowel signs are the same story, and NFD makes Japanese one too —
+ * it splits ガ into カ + `U+3099`, so a blanket strip devoiced every kana it
+ * touched. The two failure directions are not symmetric, and that is what
+ * settles the shape: an optional mark this list forgets costs a *missed* match,
+ * which is a character drawn from prose, while a letter it deletes merges two
+ * people — the stranger-wearing-the-reader's-face outcome
+ * `matchLibraryCharacter` refuses an ambiguous containment to avoid. So a
+ * script nobody enumerated here keeps its marks.
+ *
+ * What is on the list, and why each one is genuinely optional:
+ *
+ * - `U+0300–U+036F`, what NFD yields for every precomposed Latin, Greek and
+ *   Cyrillic letter. "José"/"Jose", "Nguyễn"/"Nguyen": the accent is something a
+ *   keyboard has or has not got, and it is this fold's original motivation.
+ * - The Hebrew points `U+0591–U+05BD`, `U+05BF`, `U+05C1`, `U+05C2`, `U+05C4`,
+ *   `U+05C5`, `U+05C7` — niqqud, cantillation and the shin/sin dots. Modern
+ *   Hebrew is written *unpointed*, and pointing is added for children's books,
+ *   poetry and scripture, so "שָׁלוֹם" and "שלום" are one word. That is the harakat
+ *   claim and not the matra one, which is why Hebrew sits on this side of the
+ *   line while Devanagari does not. The block's punctuation is excluded on
+ *   purpose: maqaf `U+05BE` joins two words, so deleting it would rewrite the
+ *   name rather than normalise it.
+ * - `U+0610–U+061A`, `U+064B–U+065F`, `U+0670` and the `Mn` runs of
+ *   `U+06D6–U+06ED` — the Arabic marks: harakat, the honorific and Quranic
+ *   signs, the dagger alef, and the hamza and maddah NFD yields for أ إ آ ؤ ئ.
+ *   Deleting that last group is what folds those onto bare alef and waw, and is
+ *   half the reason the NFD is there at all.
+ * - `U+0640`, the tatweel — not a mark at all (it is `Lm`) but a pure
+ *   elongation glyph, and never the difference between two names.
+ *
+ * Every codepoint above is `\p{M}` except the tatweel, and the ranges are
+ * written out rather than taken as whole blocks so that stays checkable.
+ */
+const OPTIONAL_SPELLING_MARKS =
+  /[\u0300-\u036F\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06DC\u06DF-\u06E4\u06E7\u06E8\u06EA-\u06ED\u0640]+/gu;
+
+/**
  * The comparison form of a character name.
  *
- * Every step here is a case that silently unseeded a book. NFD-then-strip-marks
- * makes NFC "José" and its decomposed twin the same string, and takes Arabic
- * diacritics (a shadda the planner echoed back) with it. The kaf/yeh folds are
- * the Arabic and Persian codepoints for letters that render identically and are
- * typed interchangeably — a name saved from a Persian keyboard and echoed by a
- * model trained on Arabic text is otherwise two different names. ZWNJ and ZWJ
- * are *removed* rather than treated as separators, which is the whole reason
+ * Every step here is a case that silently unseeded a book. NFD then
+ * {@link OPTIONAL_SPELLING_MARKS} makes NFC "José" and its decomposed twin the
+ * same string, and takes an Arabic diacritic (a shadda the planner echoed back)
+ * with it — but only where such a mark is optional, which is a per-script
+ * question that constant answers and this fold used to get wrong. The kaf/yeh
+ * folds are the Arabic and Persian codepoints for letters that render
+ * identically and are typed interchangeably — a name saved from a Persian
+ * keyboard and echoed by a model trained on Arabic text is otherwise two
+ * different names. ZWNJ and ZWJ are *removed* rather than treated as
+ * separators, which is the whole reason
  * "علی‌رضا" stopped matching a library "علی": they are Cf, so the old boundary
  * class `[^\p{L}\p{N}]` accepted one as a word break and seeded an unrelated
  * character with the reader's saved face.
+ *
+ * The result stays in NFD, so a mark the fold keeps is kept in one canonical
+ * form on both sides of every comparison: composed क़ and क + nukta fold alike,
+ * and so do the two spellings of a Bengali two-part vowel.
  */
 export function foldCharacterName(value: string): string {
   return value
     .normalize("NFD")
     .replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/gu, "")
-    .replace(/\p{M}+/gu, "")
+    .replace(OPTIONAL_SPELLING_MARKS, "")
     .replace(/ك/gu, "ک")
     .replace(/[يى]/gu, "ی")
     .replace(/[٠-٩]/gu, (digit) => String(digit.charCodeAt(0) - 0x0660))

@@ -20,7 +20,8 @@ import { chapterSetupForPage, loadContinuityNotes, loadResearchNotesForGeneratio
 import { reviewAndSaveGeneratedPage } from "./pageReview.js";
 import { persistKeeperStoryDelta } from "./qualityEnrichment.js";
 import { polishPageWithQualityGates } from "./qualityDrafting.js";
-import { storeEmbedding, strategyUsesSemanticMemory, updateEntityStateFromPage } from "./semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory } from "./embeddingWrites.js";
+import { updateEntityStateFromPage } from "./entityState.js";
 import {
   type BookGenerationStrategy,
   type BookPlan,
@@ -30,7 +31,7 @@ import {
   type WholeBookPageDraft,
   seedStoryStateFromPromises
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { pageScope, Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
 
 /**
  * The book-level generation passes (chapter-whole, batch window, draft-then-polish,
@@ -112,7 +113,11 @@ export async function generateBookChapterWholePass(options: {
       progress: 35 + Math.round((chapterIndex / Math.max(chapterSetups.length, 1)) * 45),
       message: `Drafting chapter ${chapterIndex + 1}/${chapterSetups.length}`
     });
-    const continuityNotes = await loadContinuityNotes(options.projectId);
+    // Whole book, here and at this file's three other note loads: these passes
+    // write a book front to back, so nothing stored is ahead of what they are
+    // drafting, and a resumed pass re-reads the same manuscript the finished
+    // pages already agreed with.
+    const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup.chapter);
     const draft = await generateChapterDraft({
       input: options.input,
@@ -229,7 +234,7 @@ export async function generateBookBatchWindow(options: {
       progress: 35 + Math.round((batchIndex / Math.max(totalBatches, 1)) * 45),
       message: `Drafting pages ${pageStart}-${pageEnd}`
     });
-    const continuityNotes = await loadContinuityNotes(options.projectId);
+    const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
     const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy);
     let draft: { pages: IndexedPageDraft[] };
     try {
@@ -310,7 +315,7 @@ export async function generateBatchFallbackPageDraft(options: {
 }): Promise<IndexedPageDraft> {
   const setup = chapterSetupForPage(options.chapterSetups, options.pageIndex);
   const chapterBrief = setup?.brief;
-  const continuityNotes = await loadContinuityNotes(options.projectId);
+  const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, setup?.chapter);
   const draft = await options.strategy.generatePageDraft({
     input: options.input,
@@ -478,7 +483,7 @@ export async function generateBookDraftThenPolish(options: {
       progress: 35 + Math.round((pageOffset / Math.max(pagesToPolish.length, 1)) * 45),
       message: `Polishing page ${pageDraft.index}`
     });
-    const continuityNotes = await loadContinuityNotes(options.projectId);
+    const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
     const setup = chapterSetupForPage(chapterSetups, pageDraft.index);
     const chapterBrief = setup?.brief;
     const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === pageDraft.index);
@@ -579,7 +584,7 @@ export async function generateBookWholePass(options: {
     await tx.page.deleteMany({ where: { projectId: options.projectId } });
     await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
     await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
-    await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: "page:" } } });
+    await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: PAGE_SCOPE_PREFIX } } });
     await tx.project.update({
       where: { id: options.projectId },
       data: {
@@ -633,7 +638,7 @@ export async function generateBookWholePass(options: {
       for (const body of pageDraft.continuityNotes) {
         continuityNotes.push({
           pageId: page.id,
-          scope: `page:${pageDraft.index}`,
+          scope: pageScope(pageDraft.index),
           body,
           tags: ["page", String(pageDraft.index), "whole-book"]
         });
@@ -671,7 +676,10 @@ export async function generateBookWholePass(options: {
   // passes writing it paid one embedding per page for rows nothing queries.
   if (strategyUsesSemanticMemory(options.strategy)) {
     for (const page of savedPages) {
-      await storeEmbedding(options.projectId, `page:${page.index}`, page.id, page.summary, options.providers.embedding);
+      await storeEmbedding(
+        { projectId: options.projectId, scope: pageScope(page.index), sourceId: page.id, text: page.summary },
+        options.providers.embedding
+      );
     }
     for (const reviewedPage of reviewedPages) {
       await updateEntityStateFromPage(options.projectId, reviewedPage.draft.index, reviewedPage.draft.continuityNotes);

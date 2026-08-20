@@ -579,8 +579,17 @@ function scanTypedMentions(
   return found.sort((left, right) => left.at - right.at).map((entry) => entry.id);
 }
 
+/**
+ * Whether a character continues the word a scanned mention sits in.
+ *
+ * `\p{M}` is in there because a combining mark belongs to the letter before it:
+ * `foldCharacterName` keeps the marks that are letters (Devanagari matras, Thai
+ * sara, the kana dakuten), so without it "@मीर" would end cleanly in front of
+ * the "ा" of "@मीरा" and bind a library character the reader did not name —
+ * the same sub-token bind that put one reader's saved face on "Luna-Bear".
+ */
 function isNameCharacter(character: string | undefined): boolean {
-  return character !== undefined && /[\p{L}\p{N}]/u.test(character);
+  return character !== undefined && /[\p{L}\p{N}\p{M}]/u.test(character);
 }
 
 export function sendFinalizeOutcome(reply: FastifyReply, outcome: FinalizeOutcome): FastifyReply {

@@ -1138,6 +1138,7 @@ model ContinuityNote {
   page    Page?   @relation(fields: [pageId], references: [id], onDelete: Cascade)
 
   @@index([pageId])
+  @@index([projectId, createdAt])
 }
 
 model ResearchSource {
@@ -1466,4 +1467,6 @@ model Embedding {
   createdAt DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, scope])
 }

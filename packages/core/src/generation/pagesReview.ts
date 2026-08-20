@@ -1,4 +1,5 @@
 import type { TextModelAdapter } from "../adapters/types.js";
+import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload,
@@ -142,7 +143,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
               ...(options.styleExcerpts && options.styleExcerpts.length > 0
                 ? { styleExcerpts: options.styleExcerpts }
                 : {}),
-              continuityNotes: options.continuityNotes.slice(-20),
+              continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.review),
               instruction:
                 options.nextPages && options.nextPages.length > 0
                   ? "Approve only if this is a finished, specific page that can appear in the final book without visible generation artifacts or repeated beats. followingPages is prose that already exists after this page: judge progression by whether this page leads into it without repeating it, not by whether the page resolves on its own."

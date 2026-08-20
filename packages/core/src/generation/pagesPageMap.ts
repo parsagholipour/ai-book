@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { TextModelAdapter } from "../adapters/types.js";
 import { mapWithConcurrency } from "../concurrency.js";
+import { CONTINUITY_NOTE_PROMPT_LIMITS, continuityNotesForPrompt } from "../context/contextPack.js";
 import {
   targetLanguageGenerationGuidance,
   targetLanguagePayload
@@ -277,7 +278,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
             },
             qualityReport: options.report,
             previousPages: compactPriorPages(options.previousPages, 6, 900),
-            continuityNotes: options.continuityNotes.slice(-20),
+            continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.review),
             instruction:
               "Repair the assignment itself. If the original brief requires material already covered or flagged by QA, replace that material with a fresh page beat that still belongs in this chapter."
           },

@@ -8,21 +8,23 @@ import {
 } from "../generation/qualityEnrichment.js";
 import { applyPlanThinkingBoost, loadQualityContext } from "../generation/qualitySettings.js";
 import { loadProjectStoryState } from "../generation/storyStateStore.js";
+import { repairPageEmbeddings } from "../generation/embeddingRepair.js";
+import { storeEmbedding } from "../generation/embeddingWrites.js";
+import { loadEntityStateLines, updateEntityStateFromPage } from "../generation/entityState.js";
+import { retrieveSemanticResearchNotes } from "../generation/researchMemory.js";
 import {
   RECENT_PAGE_WINDOW,
   embedSemanticQuery,
-  loadEntityStateLines,
-  retrieveSemanticPageMemory,
-  retrieveSemanticResearchNotes,
-  storeEmbedding,
-  updateEntityStateFromPage
-} from "../generation/semanticMemory.js";
+  lexicalTermsForQuery,
+  retrieveSemanticPageMemory
+} from "../generation/semanticRecall.js";
 import { MAX_PAGE_QA_CANDIDATES, MAX_PAGE_QA_REWRITE_ATTEMPTS } from "../generation/tuning.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
 import { enqueueNextPageIfReady, enqueueWorkerJob } from "../runtime/dispatch.js";
 import { advanceJobStep, updateJobProgress } from "../runtime/jobLifecycle.js";
+import { isStopRequestedError } from "../runtime/jobTypes.js";
 import {
   bestOfCandidateCount,
   bookPlanSchema,
@@ -36,7 +38,7 @@ import {
   sampleExcerptsFromInput,
   type PriorPageContext
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { pageScope, Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
 /**
@@ -60,15 +62,7 @@ export async function generatePage(job: Job) {
   const plan = bookPlanSchema.parse(planVersion.planningPackage);
   const providers = createLoggedProviders(job, createProviders(config, input), input);
   await prisma.page.update({ where: { id: pageId }, data: { status: "GENERATING" } });
-  const previousPages = await prisma.page.findMany({
-    where: { projectId, index: { lt: page.index }, status: "COMPLETED" },
-    orderBy: { index: "desc" },
-    take: 18
-  });
-  const continuityNotes = await loadContinuityNotes(projectId);
   const chapterPlan = plan.chapters.find((chapter) => chapter.index === page.chapter?.index);
-  const orderedPreviousPages = previousPages.reverse();
-  const priorPageContext = orderedPreviousPages.map(toPriorPageContext);
   const chapterBrief = parseChapterBrief(page.chapter?.productionBrief);
   const pageBrief = chapterBrief?.pages.find((brief) => brief.pageIndex === page.index);
 
@@ -79,28 +73,98 @@ export async function generatePage(job: Job) {
   ]
     .filter(Boolean)
     .join("\n");
-  // Embedded once: the research retrieval and the page-memory retrieval share
-  // this vector instead of paying two embedding calls for the same string.
-  const semanticQueryVector = await embedSemanticQuery(providers.embedding, semanticQueryText, projectId);
+  // The trigram arms of both retrievals below take distinctive needles, not
+  // the composed brief: entity names the brief mentions score 1.0 against a
+  // note or summary naming them, while the whole brief measurably matches
+  // nothing but stop-word noise. The names select the relevance share of the
+  // continuity notes, so a setup about this page's cast planted far behind
+  // the recency window can still reach the page that pays it off.
+  const lexicalTerms = lexicalTermsForQuery(plan, semanticQueryText);
+
+  // Everything the composed brief needs is already in hand — the page row, the
+  // plan and the input — so none of these six loads reads anything another one
+  // writes, and they go out together instead of one await at a time. The
+  // embedding call is why it is worth doing: it is the only provider round trip
+  // in the set, so every database read now finishes underneath it rather than
+  // after it. `loadContinuityNotes` belongs here despite taking `queryTerms`,
+  // because those terms come from the plan and this page's own brief — nothing
+  // this set loads.
+  //
+  // The fan-out is deliberately bounded, and to *reads* only. At most seven
+  // statements leave a page job at once (`loadContinuityNotes` and
+  // `loadEntityStateLines` each run two of their own), and with
+  // `MAX_PARALLEL_PAGE_JOBS` at 4 against the worker's 10-connection pg pool a
+  // full wave queues on the pool rather than exhausting it: these are short
+  // point reads, none of them holds a transaction open across an await, and
+  // pg's connection acquisition has no timeout unless one is configured, so the
+  // excess waits instead of erroring. Provider concurrency does not change at
+  // all — one embedding call in flight, exactly as before.
+  const [previousPages, continuityNotes, semanticQueryVector, entityStateLines, quality, storyState] =
+    await settleIndependentLoads([
+      prisma.page.findMany({
+        // The window itself, not a number that happens to match it:
+        // `pastRecencyWindow` below and `shouldSkipWriterTools`
+        // (`packages/core/src/generation/writerTools.ts`) both read the gate off
+        // this load, so a second copy of the number could only drift from it.
+        where: { projectId, index: { lt: page.index }, status: "COMPLETED" },
+        orderBy: { index: "desc" },
+        take: RECENT_PAGE_WINDOW
+      }),
+      // Same clamp the page-memory retrieval below takes, and for the same
+      // reason: on a FAILED_QA retry this page's successors are COMPLETED and
+      // have written continuity notes about this page's own cast.
+      loadContinuityNotes(projectId, { queryTerms: lexicalTerms, beforePageIndex: page.index }),
+      // Embedded once: the research retrieval and the page-memory retrieval
+      // share this vector instead of paying two embedding calls for the same
+      // string.
+      embedSemanticQuery(providers.embedding, semanticQueryText, projectId),
+      loadEntityStateLines(projectId, plan),
+      loadQualityContext(input),
+      loadProjectStoryState(projectId, plan.promises ?? [])
+    ]);
+  const orderedPreviousPages = previousPages.reverse();
+  const priorPageContext = orderedPreviousPages.map(toPriorPageContext);
+  applyPlanThinkingBoost(providers.text, quality.enabled("planThinkingBoost"));
+
+  // What follows stays serial, and every link in it is a real dependency rather
+  // than a habit: both retrievals want the vector above, and the repair pass
+  // writes the very embedding rows the retrieval then reads, so overlapping the
+  // two would have a page read the memory it is in the middle of backfilling.
+  // The repair is also the only step here that writes anything, and it spends
+  // up to three embedding calls of its own — running it beside the research
+  // retrieval would multiply provider concurrency across a whole wave of page
+  // jobs to save a single database round trip.
   const researchNotes = await loadResearchNotesForGeneration(projectId, strategy, chapterPlan, {
     embedding: providers.embedding,
     queryText: semanticQueryText,
     ...(semanticQueryVector ? { vector: semanticQueryVector } : {})
   });
-  const semanticMemory =
-    page.index > RECENT_PAGE_WINDOW + 1
-      ? await retrieveSemanticPageMemory({
-          projectId,
-          queryText: semanticQueryText,
-          embedding: providers.embedding,
-          excludePageIndexes: orderedPreviousPages.map((previousPage) => previousPage.index),
-          ...(semanticQueryVector ? { vector: semanticQueryVector } : {})
-        })
-      : [];
-  const entityStateLines = await loadEntityStateLines(projectId, plan);
-  const quality = await loadQualityContext(input);
-  applyPlanThinkingBoost(providers.text, quality.enabled("planThinkingBoost"));
-  const storyState = await loadProjectStoryState(projectId, plan.promises ?? []);
+  const pastRecencyWindow = page.index > RECENT_PAGE_WINDOW + 1;
+  if (pastRecencyWindow) {
+    // Backfill a few missing or degraded page embeddings before this page
+    // reads long-range memory. The recency-window cutoff is a cost/race
+    // reduction heuristic — a page in BullMQ retry backoff can still sit
+    // COMPLETED with no row — uniqueness plus upsert is what settles a
+    // duplicate insert, not this bound.
+    await repairPageEmbeddings({
+      projectId,
+      embedding: providers.embedding,
+      beforeIndex: page.index - RECENT_PAGE_WINDOW
+    });
+  }
+  const semanticMemory = pastRecencyWindow
+    ? await retrieveSemanticPageMemory({
+        projectId,
+        queryText: semanticQueryText,
+        lexicalTerms,
+        embedding: providers.embedding,
+        excludePageIndexes: orderedPreviousPages.map((previousPage) => previousPage.index),
+        // Same clamp `lookupStoredPage` applies below, for the same reason: on
+        // a retry this page's successors are COMPLETED and embedded.
+        beforePageIndex: page.index,
+        ...(semanticQueryVector ? { vector: semanticQueryVector } : {})
+      })
+    : [];
   const storyLines = formatStoryStateLines(storyState);
   const entityState = mergeEntityAndStoryStateLines(entityStateLines, storyLines);
   const styleLockPages = quality.enabled("styleExcerpts")
@@ -137,6 +201,40 @@ export async function generatePage(job: Job) {
     semanticMemory,
     entityState,
     ...(styleExcerpts.length > 0 ? { styleExcerpts } : {}),
+    // Injected so the writer tool loop can reach the whole manuscript and its
+    // long-range memory, not just the pages already in this context pack.
+    lookupStoredPage: async (index: number): Promise<PriorPageContext | null> => {
+      // FAILED_QA retry: later pages and this page's stale draft are already
+      // COMPLETED, so looking them up would hand the model future content
+      // (or its own prior draft) as a "stored earlier page."
+      if (index >= page.index) {
+        return null;
+      }
+      const stored = await prisma.page.findFirst({
+        where: { projectId, index, status: "COMPLETED" },
+        select: { index: true, title: true, summary: true, markdown: true }
+      });
+      return stored ?? null;
+    },
+    searchStoredMemory: (query: string): Promise<string[]> =>
+      retrieveSemanticPageMemory({
+        projectId,
+        queryText: query,
+        // The model's own query is the needle: it types the distinctive
+        // phrase it wants back ("brass key"), which is exactly the shape
+        // strict_word_similarity scores 1.0 when a summary contains it.
+        lexicalTerms: [query],
+        embedding: providers.embedding,
+        // The tool promises the model "earlier pages of this book", so the
+        // search is clamped exactly like `lookupStoredPage` above: on a
+        // FAILED_QA retry the pages after this one are already COMPLETED and
+        // embedded, and `search_memory("the vault")` would answer with
+        // `Page 41:` — events the page being drafted has not reached.
+        // `beforePageIndex` is strict, so it also covers this page's own stale
+        // draft; `excludePageIndexes` keeps that explicit for a reader.
+        excludePageIndexes: [page.index],
+        beforePageIndex: page.index
+      }),
     textModel: providers.text
   };
   const draftPage = async (options: typeof draftOptions) => {
@@ -310,7 +408,7 @@ export async function generatePage(job: Job) {
       data: draft.continuityNotes.map((body) => ({
         projectId,
         pageId: page.id,
-        scope: `page:${page.index}`,
+        scope: pageScope(page.index),
         body,
         tags: ["page", String(page.index)]
       }))
@@ -318,9 +416,51 @@ export async function generatePage(job: Job) {
     await updateEntityStateFromPage(projectId, page.index, draft.continuityNotes);
   }
 
-  await storeEmbedding(projectId, `page:${page.index}`, pageId, draft.summary, providers.embedding);
+  await storeEmbedding({ projectId, scope: pageScope(page.index), sourceId: pageId, text: draft.summary }, providers.embedding);
 
   await enqueueNextPageIfReady(projectId, planId, input);
+}
+
+/**
+ * Awaits loads that depend on nothing each other produces, without changing
+ * which failure the page job ends up seeing.
+ *
+ * `Promise.all` is the wrong tool here twice over. It settles on the *first*
+ * rejection and leaves its siblings running behind the handler's own failure
+ * settlement — a warn line or a stray provider call landing in the next job's
+ * run log — and it makes which error wins a matter of who lost the race. That
+ * second half is the expensive one: `embedSemanticQuery` rethrows the
+ * `StopRequestedError` the logged adapter raises when the reader stops the run,
+ * and `loadEntityStateLines` and `loadProjectStoryState` swallow everything
+ * *except* that error, so a stop is the one rejection several of these loads
+ * can produce — and `Promise.all` would let an ordinary database error from a
+ * sibling read mask it. `generate-page` has retry attempts, so the masked stop
+ * comes back as a retry of a run the user already cancelled, and the book is
+ * charged for it.
+ *
+ * So: wait for every load, then choose deterministically. A stop request wins
+ * wherever it came from, and otherwise the failure the serial chain this
+ * replaced would have thrown — the earliest one in argument order, which is
+ * that chain's order. Nothing is swallowed and nothing escapes: `allSettled`
+ * holds every other rejection, so none of them can surface as an unhandled
+ * rejection either.
+ */
+async function settleIndependentLoads<T extends readonly unknown[] | []>(
+  loads: T
+): Promise<{ -readonly [K in keyof T]: Awaited<T[K]> }> {
+  const settled = await Promise.allSettled(loads);
+  const failures = settled.flatMap((result) => (result.status === "rejected" ? [result.reason as unknown] : []));
+  for (const failure of failures) {
+    if (isStopRequestedError(failure)) {
+      throw failure;
+    }
+  }
+  if (failures.length > 0) {
+    throw failures[0];
+  }
+  return settled.map((result) => (result as PromiseFulfilledResult<unknown>).value) as unknown as {
+    -readonly [K in keyof T]: Awaited<T[K]>;
+  };
 }
 
 async function loadStyleLockPages(

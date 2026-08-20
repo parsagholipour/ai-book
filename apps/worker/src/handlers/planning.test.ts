@@ -31,11 +31,11 @@ vi.mock("../runtime/config.js", () => ({ config: { MOCK_AI: true } }));
 vi.mock("../providers/loggedAdapters.js", () => ({
   createLoggedProviders: () => ({ text: {}, research: {}, embedding: {} })
 }));
-vi.mock("../generation/semanticMemory.js", () => ({
-  embedResearchSourcesForProject: mocks.embedResearchSourcesForProject,
-  // True so the embed-degradation tests keep exercising the embedding path.
-  strategyUsesSemanticMemory: () => true
+vi.mock("../generation/researchMemory.js", () => ({
+  embedResearchSourcesForProject: mocks.embedResearchSourcesForProject
 }));
+// True so the embed-degradation tests keep exercising the embedding path.
+vi.mock("../generation/embeddingWrites.js", () => ({ strategyUsesSemanticMemory: () => true }));
 vi.mock("../generation/bookHelpers.js", () => ({
   getProjectOrThrow: async (id: string) => ({
     id,

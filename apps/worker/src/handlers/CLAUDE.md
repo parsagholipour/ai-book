@@ -26,6 +26,53 @@ Note the two predicates that decide this — `jobOwnsProjectLifecycle` in `runti
 and `ownsProjectStatus` in `compileExport.ts` — are both module-private. You cannot import and
 reuse them; read them and add your branch alongside the others.
 
+## Page generation
+
+- **A page's independent loads fan out, and which failure comes back is decided rather than raced.**
+  `generate-page` opens with six loads that read nothing any of the others writes — the recency
+  window, the continuity notes, the query embedding, the entity state, the quality context and the
+  story state — so they go out together and every database read finishes underneath the one provider
+  round trip in the set instead of after it. `Promise.all` is the wrong tool for that twice over. It
+  settles on the *first* rejection and leaves the siblings running behind the handler's own failure
+  settlement, which is a warn line or a stray provider call landing in the next job's run log; and it
+  makes which error wins a matter of who lost the race. The second half is the expensive one.
+  `embedSemanticQuery` re-raises the `StopRequestedError` that `LoggingEmbeddingAdapter.embed` throws
+  when the reader stops a run, while `loadEntityStateLines` and `loadProjectStoryState` swallow
+  everything *except* that error — so a stop is the one rejection several of these loads can produce,
+  and an ordinary database error from a sibling read would mask it. `generate-page` is one of the
+  three jobs with a BullMQ attempt budget (`retryJobOptions`), so a masked stop comes back as a retry
+  of a run the reader already cancelled and the book is charged for it: the "never swallow it" rule
+  at the top of this file, reached without swallowing anything. `settleIndependentLoads` therefore
+  waits for every load and then *chooses* — a stop wins wherever in the set it came from, and
+  otherwise the earliest failure in argument order, which is the failure the serial chain it replaced
+  would have thrown. `allSettled` holds the rest, so none of them can surface as an unhandled
+  rejection either. Keep the fan-out bounded and keep it to **reads**: at most seven statements leave
+  a page job at once, which a wave of `MAX_PARALLEL_PAGE_JOBS` queues on the worker's ten-connection
+  pool rather than exhausting, and nothing in it holds a transaction open across an await. Everything
+  after it stays serial on real dependencies — both retrievals want that vector, and the repair pass
+  writes the very embedding rows the retrieval then reads, so overlapping them would have a page read
+  the memory it is in the middle of backfilling.
+- **Whether the writer tools run at all is decided by what this handler loaded, not by what the book
+  is.** `shouldSkipWriterTools` (`packages/core/src/generation/writerTools.ts`) is there to keep a
+  tool loop off a page with nothing to look up: on an empty story state and no research notes,
+  `lookup_entity` and `search_research` can only spend model calls being told twice that there is
+  nothing there. `search_memory` broke that equivalence — it reaches stored pages *outside* the
+  prompt, through the `searchStoredMemory` this handler injects, and the empty story state of a long
+  unresearched novel says nothing whatever about them, so page 200 of exactly the book long-range
+  recall exists for was answering the gate with the state of a book that has no memory at all.
+  Injecting the callback is not the answer either, because this handler injects it for every page it
+  drafts, and while the recency window still reaches page 1 the whole past of the book is already in
+  the prompt and a search can only hand back what the model can read. **The window starting above
+  page 1 is the evidence**, which makes the gate a fact about `previousPages` as this handler loads
+  it — every COMPLETED page below this one, newest first, up to a `take` that is `RECENT_PAGE_WINDOW`
+  itself, which is why the gate opens on exactly the page `pastRecencyWindow` does and not one
+  either side. Narrow that load, filter it, or stop passing it, and the gate quietly changes meaning
+  for every book. It is read off the window rather than compared against a page number because
+  `RECENT_PAGE_WINDOW` sits on the far side of `apps/* → packages/db → packages/core`: a second copy
+  in core could only drift from the boundary this handler already crosses before it will spend an
+  embedding call on long-range retrieval at all. What the search may reach once it runs is bounded
+  separately, and that rule lives in `../generation/CLAUDE.md`.
+
 ## Image layout
 
 **The image forks are decided by the operation's `kind` too, and the payload they used to read is
@@ -269,9 +316,11 @@ reason, and a null answer refuses the whole move rather than half-applying it.
   the map one revision behind and the chat silently drops back to model indexes for a book whose
   printed numbers never moved), and queues a full unbilled `compile-export` — no `skipFinalReview`,
   not detached, so it owns the verdict and a `blocked` report hands a COMPLETE book back as
-  REVIEW_REQUIRED. All off a redelivery of an edit that did nothing. `settleAppliedRestructure` keys
-  on the marker, which already exists and is the same one `operationCanUndo` reads to refuse the row
-  an Undo. The reachable door is not the crash window but the racing one: `staleGenerationJobReason`
+  REVIEW_REQUIRED. All off a redelivery of an edit that did nothing. Every door that can resume that
+  tail reads `classifier.structuralSkipped` off the row before it does — the entry fence, the
+  `activated.count === 0` re-read, and the `"settled"` outcome a delivery meets when another one
+  finished the operation while this one was resolving its plan — a marker that already existed and
+  is the same one `operationCanUndo` reads to refuse the row an Undo. The reachable door is not the crash window but the racing one: `staleGenerationJobReason`
   cancels a redelivery whose attempt the refund closed CANCELED, but a second delivery already past
   that check — a stalled lock reclaimed, a stray host worker on the same queue — lands on the
   APPLIED row the first one just wrote. For the same reason the skip's two writes are now **one

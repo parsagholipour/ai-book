@@ -644,7 +644,12 @@ of the same manuscript can have fixed.
   the intent stay bare, because that is what the card shows and what the resumable pending state
   rebuilds from. In the creation chat mentions are message-level `{id, name}` refs, so
   `activeThreadPayload` branch-filters them for free, and every turn re-reads the live rows so a
-  library edit propagates; the build snapshot is the moment that stops.
+  library edit propagates; the build snapshot is the moment that stops. Where a *typed* `@name`
+  ends is `isNameCharacter` in `creationBuild.ts`, and its `\p{M}` is deliberate: it is the exact
+  opposite of what `foldCharacterName` does with combining marks one package over, because a
+  word-boundary test needs the mark that a spelling-fold has to drop. Both halves are argued
+  together in `packages/core/src/generation/CLAUDE.md`; neither may be narrowed to agree with the
+  other.
 
 ## Voice and audiobook routes
 

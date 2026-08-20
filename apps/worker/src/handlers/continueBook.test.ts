@@ -26,7 +26,11 @@ const mocks = vi.hoisted(() => ({
   reviewAndSaveGeneratedPage: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db", async () => ({
+  prisma: mocks.prisma,
+  Prisma: {},
+  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
+}));
 vi.mock("../runtime/dispatch.js", () => ({ maybeEnqueueCompile: mocks.maybeEnqueueCompile }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn() }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));

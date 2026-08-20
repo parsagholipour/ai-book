@@ -129,6 +129,91 @@ describe("runToolLoop", () => {
     expect(result.toolEvents[1]!.resultContent).toContain("boom");
   });
 
+  it.each<[string, Error]>([
+    ["a stop", Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" })],
+    ["an abort", Object.assign(new Error("The operation was aborted"), { name: "AbortError" })]
+  ])("lets %s raised inside a tool escape instead of answering the model with it", async (_label, cancellation) => {
+    // The worker's StopRequestedError by shape: packages/core is the leaf of
+    // `apps/* -> packages/db -> packages/core` and cannot import the class.
+    const cancelledTool: ToolLoopTool<{ value: string }> = {
+      ...echoTool,
+      execute: () => {
+        throw cancellation;
+      }
+    };
+    const model = scriptedModel([
+      { toolCalls: [{ name: "echo", arguments: { value: "the vault" } }] },
+      { toolCalls: [{ name: "finish", arguments: { answer: "kept writing" } }] }
+    ]);
+
+    await expect(
+      runToolLoop({
+        textModel: model,
+        messages: [{ role: "user", content: "go" }],
+        tools: [cancelledTool],
+        finishTool
+      })
+    ).rejects.toBe(cancellation);
+    // The loop stopped where the cancellation was raised rather than letting
+    // the model work past it to a finished answer.
+    expect(model.calls).toHaveLength(1);
+  });
+
+  it("keeps a tool failure that merely says 'aborted' recoverable", async () => {
+    // The counterpart of the test above, and the reason the escape hatch reads
+    // the error's identity rather than its message: this loop is shared with the
+    // API's chat loops, which have no cancellation to honour, and an ordinary
+    // provider failure escaping there would end the turn instead of giving the
+    // model something to work around.
+    const flakyTool: ToolLoopTool<{ value: string }> = {
+      ...echoTool,
+      execute: () => {
+        throw new Error("The grounded web search failed: upstream request aborted by the gateway.");
+      }
+    };
+    const model = scriptedModel([
+      { toolCalls: [{ name: "echo", arguments: { value: "the vault" } }] },
+      { toolCalls: [{ name: "finish", arguments: { answer: "recovered" } }] }
+    ]);
+
+    const result = await runToolLoop({
+      textModel: model,
+      messages: [{ role: "user", content: "go" }],
+      tools: [flakyTool],
+      finishTool
+    });
+
+    expect(result.status).toBe("finished");
+    expect(result.finish).toEqual({ answer: "recovered" });
+    expect(result.toolEvents[0]!.isError).toBe(true);
+    expect(result.toolEvents[0]!.resultContent).toContain("request aborted");
+  });
+
+  it("lets a loop opt out of the escape hatch entirely with rethrowIf: null", async () => {
+    const cancellation = Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" });
+    const cancelledTool: ToolLoopTool<{ value: string }> = {
+      ...echoTool,
+      execute: () => {
+        throw cancellation;
+      }
+    };
+    const model = scriptedModel([
+      { toolCalls: [{ name: "echo", arguments: { value: "the vault" } }] },
+      { toolCalls: [{ name: "finish", arguments: { answer: "carried on" } }] }
+    ]);
+
+    const result = await runToolLoop({
+      textModel: model,
+      messages: [{ role: "user", content: "go" }],
+      tools: [cancelledTool],
+      finishTool,
+      rethrowIf: null
+    });
+
+    expect(result.status).toBe("finished");
+    expect(result.toolEvents[0]!.isError).toBe(true);
+  });
+
   it("rejects invalid tool arguments without executing the handler", async () => {
     let executed = 0;
     const strictTool: ToolLoopTool<{ value: string }> = {

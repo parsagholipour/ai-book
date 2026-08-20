@@ -149,6 +149,17 @@ describe("matchLibraryCharacter", () => {
     expect(matchLibraryCharacter("Luna Vega", twins)).toBeNull();
   });
 
+  it("keeps two names apart when they differ only by a vowel sign", () => {
+    // Devanagari matras are `Mn`/`Mc`, so the old blanket `\p{M}` strip folded
+    // both of these onto the bare consonants "मर" — and an exact match on a
+    // folded name then handed the plan whichever snapshot the array listed
+    // first. A wrong seed is the unrecoverable one: it puts the reader's saved
+    // face on a character they never saved.
+    const cast = [snapshot({ id: "mara", name: "मारा" }), snapshot({ id: "meera", name: "मीरा" })];
+    expect(matchLibraryCharacter("मीरा", cast)?.id).toBe("meera");
+    expect(matchLibraryCharacter("मारा", cast)?.id).toBe("mara");
+  });
+
   it("still prefers an exact match when another name also contains it", () => {
     const both = [
       snapshot({ id: "long", name: "Captain Luna Vega" }),
@@ -167,6 +178,35 @@ describe("foldCharacterName", () => {
 
   it("normalizes Arabic-Indic and Persian digits to ASCII", () => {
     expect(foldCharacterName("R2٠۱")).toBe("r201");
+  });
+
+  it("drops the marks a name may or may not carry", () => {
+    // Latin: the accent is something a keyboard has or has not got.
+    expect(foldCharacterName("José")).toBe(foldCharacterName("Jose"));
+    expect(foldCharacterName("Nguyễn")).toBe(foldCharacterName("Nguyen"));
+    // Arabic harakat, and the hamza NFD decomposes أ into — both optional, and
+    // both the reason this fold strips anything at all.
+    expect(foldCharacterName("عَلِيّ")).toBe(foldCharacterName("علی"));
+    expect(foldCharacterName("أحمد")).toBe(foldCharacterName("احمد"));
+    // The tatweel is a stretch glyph, never the difference between two names.
+    expect(foldCharacterName("عــلی")).toBe(foldCharacterName("علی"));
+    // Hebrew is written unpointed; niqqud is an annotation, not a letter, so
+    // it belongs with the harakat rather than with the Devanagari matras.
+    expect(foldCharacterName("שָׁלוֹם")).toBe(foldCharacterName("שלום"));
+  });
+
+  it("keeps the marks that are letters, so two such names stay two names", () => {
+    // Every one of these was a collision under the old blanket `\p{M}` strip:
+    // Devanagari matras onto a consonant skeleton, Thai sara onto a bare
+    // consonant, and — because the fold runs on NFD — the dakuten out of ガ.
+    expect(foldCharacterName("मीरा")).not.toBe(foldCharacterName("मारा"));
+    expect(foldCharacterName("ผี")).not.toBe(foldCharacterName("ผา"));
+    expect(foldCharacterName("ガ")).not.toBe(foldCharacterName("カ"));
+    // Kept in NFD, so the composed and decomposed spellings of one name still
+    // fold together — क़ against क + nukta.
+    expect(foldCharacterName("क़ला")).toBe(foldCharacterName("क़ला".normalize("NFD")));
+    const folded = foldCharacterName("मीरा");
+    expect(foldCharacterName(folded)).toBe(folded);
   });
 });
 

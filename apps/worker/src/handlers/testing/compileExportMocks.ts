@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import type { Job } from "bullmq";
 import type { QualityFeatureId, StoryState } from "@book-maker/core";
+import { dbScopeMocks } from "../../testing/dbScopeMocks.js";
 
 /**
  * Module mocks shared by the `compileExport*.test.ts` suites.
@@ -72,7 +73,8 @@ export const mocks = {
 export const dbModuleMock = () => ({
   prisma: mocks.prisma,
   Prisma: {},
-  researchCitationsForExport: async () => []
+  researchCitationsForExport: async () => [],
+  ...dbScopeMocks()
 });
 
 export const configModuleMock = () => ({ config: mocks.config });
@@ -96,7 +98,7 @@ export const jobLifecycleModuleMock = () => ({
 
 export const loggedAdaptersModuleMock = () => ({ createLoggedProviders: () => ({ text: {}, embedding: {} }) });
 
-export const semanticMemoryModuleMock = () => ({
+export const embeddingWritesModuleMock = () => ({
   storeEmbedding: mocks.storeEmbedding,
   // Mirrors the real predicate so fixtures choose their mode explicitly.
   strategyUsesSemanticMemory: (strategy: { executionMode?: string }) => strategy?.executionMode === "sequential-pages"

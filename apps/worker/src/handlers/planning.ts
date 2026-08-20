@@ -5,7 +5,8 @@ import {
   planMediaSettingsSnapshot,
   strategyForInput
 } from "../generation/bookHelpers.js";
-import { embedResearchSourcesForProject, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
+import { strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
+import { embedResearchSourcesForProject } from "../generation/researchMemory.js";
 import { planRevisionConsistencyWarning } from "../generation/planRevisionSafety.js";
 import {
   inputForPlanVersion,

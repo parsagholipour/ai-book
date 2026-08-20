@@ -22,8 +22,8 @@ vi.mock(
   async () => (await import("./testing/compileExportMocks.js")).loggedAdaptersModuleMock()
 );
 vi.mock(
-  "../generation/semanticMemory.js",
-  async () => (await import("./testing/compileExportMocks.js")).semanticMemoryModuleMock()
+  "../generation/embeddingWrites.js",
+  async () => (await import("./testing/compileExportMocks.js")).embeddingWritesModuleMock()
 );
 vi.mock("./characters.js", async () => (await import("./testing/compileExportMocks.js")).charactersModuleMock());
 vi.mock(
@@ -150,10 +150,7 @@ describe("repairPagesFromFinalQa", () => {
       ]
     });
     expect(mocks.storeEmbedding).toHaveBeenCalledWith(
-      "project-1",
-      "page:2",
-      "page-2",
-      "Repaired summary.",
+      { projectId: "project-1", scope: "page:2", sourceId: "page-2", text: "Repaired summary." },
       expect.anything()
     );
     expect(mocks.loadPagesForExport).toHaveBeenCalledWith("project-1");

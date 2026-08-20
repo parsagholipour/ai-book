@@ -25,8 +25,8 @@ vi.mock(
   async () => (await import("./testing/compileExportMocks.js")).loggedAdaptersModuleMock()
 );
 vi.mock(
-  "../generation/semanticMemory.js",
-  async () => (await import("./testing/compileExportMocks.js")).semanticMemoryModuleMock()
+  "../generation/embeddingWrites.js",
+  async () => (await import("./testing/compileExportMocks.js")).embeddingWritesModuleMock()
 );
 vi.mock("./characters.js", async () => (await import("./testing/compileExportMocks.js")).charactersModuleMock());
 vi.mock(

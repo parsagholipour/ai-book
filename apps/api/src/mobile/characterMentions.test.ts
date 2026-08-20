@@ -424,6 +424,28 @@ describe("character snapshots at build time", () => {
     expect(created.mediaSettings.mobile.characters).toBeUndefined();
   });
 
+  it("treats a Devanagari vowel sign as part of the word, in both directions", async () => {
+    const typed = [{ id: "m1", role: "user", content: "@मीरा को कहानी में डालो", isActiveChild: true }];
+
+    // The fold used to strip every combining mark, and Devanagari matras are
+    // combining marks: "मीरा" and "मारा" were both "मर", so this pair looked
+    // like the "Luna"/"luna" collision above and neither bound. They are two
+    // different people, and the typed name says which.
+    const bound = await buildWithMessages(typed, [
+      libraryCharacterRow({ id: "char-meera", name: "मीरा" }),
+      libraryCharacterRow({ id: "char-mara", name: "मारा" })
+    ]);
+    expect(bound.mediaSettings.mobile.characters).toMatchObject([{ id: "char-meera", name: "मीरा" }]);
+
+    // And the other direction: with the matra kept, a saved "मीर" is a prefix
+    // of the typed "@मीरा" that ends in front of a mark rather than a letter.
+    // Nothing else is standing in the way here, so `isNameCharacter` is what
+    // has to refuse it — sub-token binding is how "Luna" once seeded
+    // "Luna-Bear", and a wrong seed is the unrecoverable one.
+    const unbound = await buildWithMessages(typed, [libraryCharacterRow({ id: "char-meer", name: "मीर" })]);
+    expect(unbound.mediaSettings.mobile.characters).toBeUndefined();
+  });
+
   it("keeps an edited-away mention out, tapped or typed", async () => {
     // The scan reads the ACTIVE branch's current text, never history, which is
     // the same rule the tapped ids already followed — expressed against the

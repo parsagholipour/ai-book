@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { TextGenerationFallbackError } from "./textFallback.js";
 import {
   ProviderHttpError,
+  isCancellationError,
   isRecoverableNetworkError,
   isSpeechProviderFallbackError,
+  isStopOrAbortError,
   withRecoverableNetworkRetry
 } from "./retry.js";
 
@@ -102,6 +104,32 @@ describe("isSpeechProviderFallbackError", () => {
     expect(isSpeechProviderFallbackError(Object.assign(new TypeError("fetch failed"), { code: "ECONNRESET" }))).toBe(true);
     expect(isSpeechProviderFallbackError(Object.assign(new Error("request aborted"), { name: "AbortError" }))).toBe(false);
     expect(isSpeechProviderFallbackError(Object.assign(new Error("Stopped by user"), { name: "StopRequestedError" }))).toBe(false);
+  });
+});
+
+describe("isCancellationError", () => {
+  it("recognizes a cancellation by name or code, however it is nested", () => {
+    // The worker's StopRequestedError by shape: packages/core is the leaf of
+    // `apps/* -> packages/db -> packages/core` and cannot import the class.
+    expect(isCancellationError(Object.assign(new Error("Generation stopped"), { name: "StopRequestedError" }))).toBe(true);
+    expect(isCancellationError(new DOMException("This operation was aborted", "AbortError"))).toBe(true);
+    expect(isCancellationError(Object.assign(new Error("aborted"), { code: "ABORT_ERR" }))).toBe(true);
+    expect(
+      isCancellationError(Object.assign(new TypeError("fetch failed"), { cause: new DOMException("go away", "AbortError") }))
+    ).toBe(true);
+  });
+
+  it("does not read a cancellation out of message prose, where isStopOrAbortError does", () => {
+    // The whole point of the narrower predicate: a provider failure that merely
+    // *says* it was aborted is recoverable, and `runToolLoop` must be able to
+    // hand it back to the model instead of ending the turn on it.
+    const provider = new ProviderHttpError("upstream request aborted by the gateway", { status: 502 });
+    expect(isStopOrAbortError(provider)).toBe(true);
+    expect(isCancellationError(provider)).toBe(false);
+
+    // A timeout is a failure, not a cancellation, even when it aborts a socket.
+    expect(isCancellationError(new DOMException("took too long", "TimeoutError"))).toBe(false);
+    expect(isCancellationError(new Error("The AbortError was logged upstream"))).toBe(false);
   });
 });
 

@@ -203,6 +203,42 @@ void main() {
       expect(identified.chatReaderContext['pdfPage'], 6);
       expect(identified.chatReaderContext['pdfDigest'], 'pdf-a');
     });
+
+    test('a digest is the sheet\'s identity, not a stamp on the message', () {
+      // The other half of the pairing. A cache the reader is holding can be
+      // identified byte-for-byte and still be a file the server no longer
+      // offers, so no sheet leaves — and the digest must not leave either.
+      // Nothing on the server reads a digest without a sheet beside it, so
+      // writing it alone is inert; it is also a shape that invites both ends
+      // to re-derive a pairing this getter is supposed to have settled.
+      const unofferedButIdentified = ReaderSelection(
+        text: 'A passage.',
+        pdfPageNumber: 6,
+        bookPageIndex: 3,
+        placed: true,
+        pdfDigest: 'pdf-a',
+      );
+
+      final context = unofferedButIdentified.chatReaderContext;
+      // The resolved book page still travels: it names a page of the book.
+      expect(context['pageIndex'], 3);
+      // The sheet and the file it is a sheet of stayed behind together.
+      expect(context.containsKey('pdfPage'), isFalse);
+      expect(context.containsKey('pdfDigest'), isFalse);
+      expect(context.containsKey('contentRevision'), isFalse);
+    });
+
+    test('an unplaced passage on an unidentified file sends nothing', () {
+      // Neither half of the position is knowable, and the printed number the
+      // message itself speaks is what routes instead.
+      const nothingKnown = ReaderSelection(
+        text: 'A passage.',
+        pdfPageNumber: 6,
+        placed: true,
+      );
+
+      expect(nothingKnown.chatReaderContext, isEmpty);
+    });
   });
 
   group('printedPageForPdfPage', () {

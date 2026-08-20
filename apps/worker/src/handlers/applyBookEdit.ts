@@ -1,5 +1,5 @@
 import { getProjectOrThrow, invalidateProjectExports, strategyForInput } from "../generation/bookHelpers.js";
-import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -19,7 +19,7 @@ import {
   type ExactReplacement,
   type StructuralPageEdit
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { pageScope, Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 
 /**
@@ -287,7 +287,7 @@ export async function applyBookEdit(job: Job) {
         });
       }
       if (strategyUsesSemanticMemory(strategy)) {
-        await storeEmbedding(projectId, `page:${page.index}`, page.id, saved.summary, providers.embedding);
+        await storeEmbedding({ projectId, scope: pageScope(page.index), sourceId: page.id, text: saved.summary }, providers.embedding);
       }
       const nextState = await persistKeeperStoryDelta({
         projectId,

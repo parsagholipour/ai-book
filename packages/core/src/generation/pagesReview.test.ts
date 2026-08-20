@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { unsupportedGenerateWithTools } from "../adapters/fake.js";
 import type { TextModelAdapter } from "../adapters/types.js";
+import { CONTINUITY_NOTE_PROMPT_LIMITS } from "../context/contextPack.js";
 import { makeFallbackPlan } from "../prompting/templates.js";
 import type { CreateProjectInput } from "../schemas/book.js";
 import { reviewPageDraft } from "./pagesReview.js";
@@ -104,5 +105,56 @@ describe("reviewPageDraft recency window", () => {
     const compacted = capture.payload?.previousPages as Array<{ index: number; excerpt: string }>;
     expect(compacted.map((page) => page.index)).toEqual([2, 3, 4, 5, 6]);
     expect(compacted.every((page) => page.excerpt.length === 800)).toBe(true);
+  });
+});
+
+describe("reviewPageDraft continuity notes", () => {
+  it("keeps the end of the producer's ranking when the full budget overflows the prompt", async () => {
+    const capture = capturingReviewModel({
+      approved: true,
+      score: 92,
+      issues: [],
+      requiredRevisions: [],
+      notes: "Approved.",
+      checks: {
+        placeholderFree: true,
+        promptLeakFree: true,
+        titleClean: true,
+        repetitionOk: true,
+        progressionOk: true,
+        styleNatural: true
+      }
+    });
+    // `loadContinuityNotes` hands over its whole budget ranked ascending, so
+    // the last entry is the best-scoring trigram hit about this page's own
+    // cast. This prompt keeps fewer than that budget, and it used to keep the
+    // wrong end: `slice(-20)` of a descending ranking dropped exactly the
+    // eight hits the relevance arm exists to surface.
+    const topHit = "Tomas still guards the vault, and the brass key opens it.";
+    const continuityNotes = [
+      ...Array.from({ length: CONTINUITY_NOTE_PROMPT_LIMITS.draft - 1 }, (_, index) => `Recency note ${index}.`),
+      topHit
+    ];
+
+    await reviewPageDraft({
+      input,
+      plan,
+      chapter: plan.chapters[0],
+      pageIndex: 7,
+      draft: {
+        title: "The Door Opens",
+        markdown: goodMarkdown(),
+        summary: "Jack crosses the threshold and commits to a dangerous choice.",
+        continuityNotes: []
+      },
+      previousPages: [],
+      continuityNotes,
+      textModel: capture.model
+    });
+
+    const sent = capture.payload?.continuityNotes as string[];
+    expect(sent).toHaveLength(CONTINUITY_NOTE_PROMPT_LIMITS.review);
+    expect(sent.at(-1)).toBe(topHit);
+    expect(sent[0]).toBe(`Recency note ${CONTINUITY_NOTE_PROMPT_LIMITS.draft - CONTINUITY_NOTE_PROMPT_LIMITS.review}.`);
   });
 });

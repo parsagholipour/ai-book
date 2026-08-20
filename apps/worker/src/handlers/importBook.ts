@@ -1,5 +1,5 @@
 import { getProjectOrThrow, nextPlanVersion, planInputSnapshot, strategyForInput } from "../generation/bookHelpers.js";
-import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { importChapterRows, importStats, mediaSettingsWithImportStyle, normalizeImportedLanguage } from "./importBookSupport.js";
 import { inputFromProject } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
@@ -15,7 +15,7 @@ import {
   synthesizeImportedBookPlan,
   type ManuscriptImportFormat
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { pageScope, Prisma, prisma } from "@book-maker/db";
 import { Job } from "bullmq";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -156,7 +156,7 @@ export async function importBook(job: Job) {
     // size routes elsewhere skip one embedding call per imported page.
     if (strategyUsesSemanticMemory(strategyForInput(input))) {
       for (const page of savedPages) {
-        await storeEmbedding(projectId, `page:${page.index}`, page.id, page.summary, providers.embedding);
+        await storeEmbedding({ projectId, scope: pageScope(page.index), sourceId: page.id, text: page.summary }, providers.embedding);
       }
     }
 

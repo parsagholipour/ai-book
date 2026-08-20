@@ -3,10 +3,15 @@ import type { Job } from "bullmq";
 
 const mocks = vi.hoisted(() => ({
   prisma: {
-    page: { findUnique: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    page: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     planVersion: { findUnique: vi.fn() },
     continuityNote: { findMany: vi.fn(), createMany: vi.fn() }
   },
+  // `beforePageIndex` is optional *here* only so a stand-in can show what an
+  // unbounded retrieval would have answered; the real signature requires it.
+  retrieveSemanticPageMemory: vi.fn(
+    async (_options: { beforePageIndex?: number; excludePageIndexes: number[] }) => [] as string[]
+  ),
   reviewPageDraft: vi.fn(),
   generatePageDraft: vi.fn(),
   revisePageDraft: vi.fn(),
@@ -14,6 +19,12 @@ const mocks = vi.hoisted(() => ({
   maybeEnqueueCompile: vi.fn(),
   enqueueWorkerJob: vi.fn(),
   storeEmbedding: vi.fn(),
+  loadContinuityNotes: vi.fn(),
+  loadResearchNotesForGeneration: vi.fn(),
+  embedSemanticQuery: vi.fn(),
+  lexicalTermsForQuery: vi.fn(),
+  repairPageEmbeddings: vi.fn(),
+  loadQualityContext: vi.fn(),
   loadEntityStateLines: vi.fn(async () => [] as string[]),
   loadProjectStoryState: vi.fn(async () => ({
     promises: [] as Array<Record<string, unknown>>,
@@ -30,7 +41,11 @@ const mocks = vi.hoisted(() => ({
   qualityEnabled: vi.fn((_feature?: string) => false)
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db", async () => ({
+  prisma: mocks.prisma,
+  Prisma: {},
+  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
+}));
 vi.mock("../runtime/dispatch.js", () => ({
   enqueueNextPageIfReady: mocks.enqueueNextPageIfReady,
   enqueueWorkerJob: mocks.enqueueWorkerJob,
@@ -39,18 +54,22 @@ vi.mock("../runtime/dispatch.js", () => ({
 vi.mock("../runtime/jobLifecycle.js", () => ({ advanceJobStep: vi.fn(), updateJobProgress: vi.fn() }));
 vi.mock("../runtime/config.js", () => ({ config: {} }));
 vi.mock("../providers/loggedAdapters.js", () => ({ createLoggedProviders: () => ({ text: {}, embedding: {} }) }));
-vi.mock("../generation/semanticMemory.js", () => ({
-  RECENT_PAGE_WINDOW: 6,
-  embedSemanticQuery: async () => undefined,
+vi.mock("../generation/embeddingRepair.js", () => ({ repairPageEmbeddings: mocks.repairPageEmbeddings }));
+vi.mock("../generation/embeddingWrites.js", () => ({ storeEmbedding: mocks.storeEmbedding }));
+vi.mock("../generation/entityState.js", () => ({
   loadEntityStateLines: mocks.loadEntityStateLines,
-  retrieveSemanticPageMemory: async () => [],
-  retrieveSemanticResearchNotes: async () => [],
-  storeEmbedding: mocks.storeEmbedding,
   updateEntityStateFromPage: vi.fn()
 }));
+vi.mock("../generation/researchMemory.js", () => ({ retrieveSemanticResearchNotes: async () => [] }));
+vi.mock("../generation/semanticRecall.js", () => ({
+  RECENT_PAGE_WINDOW: 6,
+  embedSemanticQuery: mocks.embedSemanticQuery,
+  lexicalTermsForQuery: mocks.lexicalTermsForQuery,
+  retrieveSemanticPageMemory: mocks.retrieveSemanticPageMemory
+}));
 vi.mock("../generation/generationContext.js", () => ({
-  loadContinuityNotes: async () => [],
-  loadResearchNotesForGeneration: async () => []
+  loadContinuityNotes: mocks.loadContinuityNotes,
+  loadResearchNotesForGeneration: mocks.loadResearchNotesForGeneration
 }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: mocks.inputForPlanVersion }));
 vi.mock("../generation/bookHelpers.js", () => ({
@@ -76,11 +95,7 @@ vi.mock("../generation/tuning.js", () => ({
   PAGE_QA_RECOVERY_CANDIDATE: 4
 }));
 vi.mock("../generation/qualitySettings.js", () => ({
-  loadQualityContext: async () => ({
-    settings: {},
-    tier: "balanced",
-    enabled: (feature: string) => mocks.qualityEnabled(feature)
-  }),
+  loadQualityContext: mocks.loadQualityContext,
   applyPlanThinkingBoost: vi.fn()
 }));
 vi.mock("../generation/storyStateStore.js", () => ({
@@ -115,6 +130,12 @@ vi.mock("@book-maker/core", async () => {
 });
 
 import { generatePage } from "./generatePage.js";
+// The mocked window (6 above), so the recency load is discriminated by the
+// constant the handler passes rather than by a copy of its value.
+import { RECENT_PAGE_WINDOW } from "../generation/semanticRecall.js";
+// Not mocked: the handler's own stop-request test has to be the real one, or a
+// suite could pass while a stop was being masked by a sibling's failure.
+import { StopRequestedError } from "../runtime/jobTypes.js";
 
 const draftNamed = (name: string) => ({
   title: name,
@@ -146,7 +167,17 @@ describe("generatePage quality loop", () => {
     });
     mocks.prisma.planVersion.findUnique.mockResolvedValue({ id: "plan-1", inputSnapshot: {}, planningPackage: {} });
     mocks.prisma.page.findMany.mockResolvedValue([]);
+    mocks.prisma.page.findFirst.mockResolvedValue(null);
     mocks.prisma.continuityNote.findMany.mockResolvedValue([]);
+    mocks.loadContinuityNotes.mockResolvedValue([]);
+    mocks.loadResearchNotesForGeneration.mockResolvedValue([]);
+    mocks.embedSemanticQuery.mockResolvedValue(undefined);
+    mocks.lexicalTermsForQuery.mockReturnValue([]);
+    mocks.repairPageEmbeddings.mockResolvedValue(undefined);
+    mocks.loadQualityContext.mockImplementation(async () => qualityContextStub());
+    // clearAllMocks keeps implementations, so restore the default here rather
+    // than leaking one test's stand-in retrieval into the next.
+    mocks.retrieveSemanticPageMemory.mockImplementation(async () => []);
     mocks.prisma.page.update.mockResolvedValue({});
     mocks.strategyOverrides.shouldIllustratePage = () => false;
     mocks.inputForPlanVersion.mockReturnValue({ mediaSettings: {} });
@@ -309,7 +340,7 @@ describe("generatePage quality loop", () => {
     const styleLockPages = [completedPage(1, "opening-voice"), completedPage(2, "second-voice")];
     mocks.prisma.page.findMany.mockImplementation(
       async (args: { where?: { index?: { lt?: number; in?: number[] } }; take?: number }) => {
-        if (args.take === 18) {
+        if (args.take === RECENT_PAGE_WINDOW) {
           return recencyPages;
         }
         const wanted = args.where?.index?.in ?? [];
@@ -343,6 +374,103 @@ describe("generatePage quality loop", () => {
     expect(draftArgs.styleExcerpts.join(" ")).not.toMatch(/late-17|late-18/);
   });
 
+  it("clamps lookupStoredPage to earlier completed pages and excludes this page from memory search", async () => {
+    mocks.prisma.page.findUnique.mockResolvedValue({
+      id: "page-10",
+      index: 10,
+      chapterId: null,
+      chapter: null
+    });
+    mocks.prisma.page.findFirst.mockResolvedValue({
+      index: 9,
+      title: "Earlier",
+      summary: "Earlier summary",
+      markdown: "Earlier markdown"
+    });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    const draftArgs = mocks.generatePageDraft.mock.calls[0]?.[0] as {
+      lookupStoredPage: (index: number) => Promise<unknown>;
+      searchStoredMemory: (query: string) => Promise<string[]>;
+    };
+
+    await expect(draftArgs.lookupStoredPage(9)).resolves.toEqual({
+      index: 9,
+      title: "Earlier",
+      summary: "Earlier summary",
+      markdown: "Earlier markdown"
+    });
+    expect(mocks.prisma.page.findFirst).toHaveBeenCalledWith({
+      where: { projectId: "project-1", index: 9, status: "COMPLETED" },
+      select: { index: true, title: true, summary: true, markdown: true }
+    });
+
+    mocks.prisma.page.findFirst.mockClear();
+    await expect(draftArgs.lookupStoredPage(10)).resolves.toBeNull();
+    await expect(draftArgs.lookupStoredPage(11)).resolves.toBeNull();
+    expect(mocks.prisma.page.findFirst).not.toHaveBeenCalled();
+
+    mocks.retrieveSemanticPageMemory.mockClear();
+    await draftArgs.searchStoredMemory("brass key");
+    expect(mocks.retrieveSemanticPageMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryText: "brass key",
+        excludePageIndexes: expect.arrayContaining([10]),
+        beforePageIndex: 10
+      })
+    );
+  });
+
+  /**
+   * The retry shape: page 30 is redrafted after FAILED_QA, so pages after it
+   * are already COMPLETED and embedded. `search_memory` is described to the
+   * model as "earlier pages of this book", so it has to be clamped exactly
+   * like `lookupStoredPage` — the page-memory retrieval is bounded, not the
+   * hits filtered afterwards, which is why the stand-in below honours
+   * `beforePageIndex` the way the SQL does (`packages/db/src/hybridRetrieval.test.ts`).
+   */
+  it("never lets search_memory or the context pack reach a page after this one", async () => {
+    mocks.prisma.page.findUnique.mockResolvedValue({
+      id: "page-30",
+      index: 30,
+      chapterId: null,
+      chapter: null
+    });
+    const embedded = [
+      { index: 29, text: "The vault stands sealed." },
+      { index: 41, text: "The vault opens and the archive burns." }
+    ];
+    mocks.retrieveSemanticPageMemory.mockImplementation(async (options) =>
+      embedded
+        .filter(
+          (row) =>
+            row.index < (options.beforePageIndex ?? Number.POSITIVE_INFINITY) &&
+            !options.excludePageIndexes.includes(row.index)
+        )
+        .map((row) => `Page ${row.index}: ${row.text}`)
+    );
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    const draftArgs = mocks.generatePageDraft.mock.calls[0]?.[0] as {
+      semanticMemory: string[];
+      searchStoredMemory: (query: string) => Promise<string[]>;
+    };
+
+    expect(draftArgs.semanticMemory).toEqual(["Page 29: The vault stands sealed."]);
+    await expect(draftArgs.searchStoredMemory("the vault")).resolves.toEqual([
+      "Page 29: The vault stands sealed."
+    ]);
+    expect(mocks.retrieveSemanticPageMemory).toHaveBeenLastCalledWith(
+      expect.objectContaining({ queryText: "the vault", beforePageIndex: 30 })
+    );
+  });
+
   it("does not reload pages 1 and 2 when they are already in the recency window", async () => {
     mocks.qualityEnabled.mockImplementation((feature?: string) => feature === "styleExcerpts");
     mocks.prisma.page.findUnique.mockResolvedValue({
@@ -369,7 +497,237 @@ describe("generatePage quality loop", () => {
       })
     );
   });
+
+  /**
+   * The page critical path used to be one strictly serial await chain, and
+   * four of its steps read nothing the others write. They are one fan-out now,
+   * so the assertion that matters is that they are genuinely *in flight*
+   * together — a regression back to one await at a time still produces the
+   * same values, and every other test in this file would still pass.
+   */
+  it("issues the independent context loads together, not one await at a time", async () => {
+    const barrier = concurrencyBarrier(6);
+    mocks.prisma.page.findMany.mockImplementation(async (args: { take?: number }) => {
+      if (args?.take === RECENT_PAGE_WINDOW) {
+        await barrier.arrive("previousPages");
+      }
+      return [];
+    });
+    mocks.loadContinuityNotes.mockImplementation(async () => {
+      await barrier.arrive("continuityNotes");
+      return [];
+    });
+    mocks.embedSemanticQuery.mockImplementation(async () => {
+      await barrier.arrive("queryVector");
+      return [0.25];
+    });
+    mocks.loadEntityStateLines.mockImplementation(async () => {
+      await barrier.arrive("entityState");
+      return [];
+    });
+    mocks.loadQualityContext.mockImplementation(async () => {
+      await barrier.arrive("quality");
+      return qualityContextStub();
+    });
+    mocks.loadProjectStoryState.mockImplementation(async () => {
+      await barrier.arrive("storyState");
+      return emptyStoryState();
+    });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    try {
+      await generatePage(job);
+    } finally {
+      barrier.dispose();
+    }
+
+    expect(barrier.timedOut).toBe(false);
+    expect([...barrier.inFlightTogether].sort()).toEqual([
+      "continuityNotes",
+      "entityState",
+      "previousPages",
+      "quality",
+      "queryVector",
+      "storyState"
+    ]);
+  });
+
+  /**
+   * The other half of the same change: what is left serial is serial because
+   * it has to be. The research retrieval and the page-memory retrieval both
+   * spend the one embedded vector, and the repair pass writes the very
+   * embedding rows the retrieval reads, so it may never be moved beside it.
+   */
+  it("keeps the vector, the embedding repair and the memory retrieval in dependency order", async () => {
+    const order: string[] = [];
+    mocks.prisma.page.findUnique.mockResolvedValue({
+      id: "page-10",
+      index: 10,
+      chapterId: null,
+      chapter: null
+    });
+    mocks.embedSemanticQuery.mockImplementation(async () => {
+      order.push("embed");
+      return [0.5];
+    });
+    mocks.loadResearchNotesForGeneration.mockImplementation(async () => {
+      order.push("research");
+      return [];
+    });
+    mocks.repairPageEmbeddings.mockImplementation(async () => {
+      order.push("repair");
+    });
+    mocks.retrieveSemanticPageMemory.mockImplementation(async () => {
+      order.push("retrieve");
+      return [];
+    });
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(order).toEqual(["embed", "research", "repair", "retrieve"]);
+    expect(mocks.loadResearchNotesForGeneration).toHaveBeenCalledWith(
+      "project-1",
+      expect.anything(),
+      undefined,
+      expect.objectContaining({ vector: [0.5] })
+    );
+    // RECENT_PAGE_WINDOW is mocked to 6 above, so a page-10 job repairs below 4.
+    expect(mocks.repairPageEmbeddings).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "project-1", beforeIndex: 4 })
+    );
+    expect(mocks.retrieveSemanticPageMemory).toHaveBeenCalledWith(
+      expect.objectContaining({ vector: [0.5], beforePageIndex: 10 })
+    );
+  });
+
+  it("hands the composed brief's needles to the continuity load", async () => {
+    mocks.lexicalTermsForQuery.mockReturnValue(["Pip", "Oakhaven"]);
+    mocks.generatePageDraft.mockResolvedValue(draftNamed("First"));
+    mocks.reviewPageDraft.mockResolvedValueOnce({ ...report(88), approved: true });
+
+    await generatePage(job);
+
+    expect(mocks.lexicalTermsForQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ premise: "A tale." }),
+      "A tale."
+    );
+    expect(mocks.loadContinuityNotes).toHaveBeenCalledWith("project-1", {
+      queryTerms: ["Pip", "Oakhaven"],
+      // And the page being drafted, which is the same clamp the page-memory
+      // retrieval takes: a FAILED_QA redraft sits in a book whose later pages
+      // have already written notes about this page's own cast.
+      beforePageIndex: 1
+    });
+  });
+
+  /**
+   * `Promise.all` would report whichever load lost the race, and a stop request
+   * is the one rejection several of these loads can raise at all — the rest of
+   * their failures are caught and degraded. Masking it retries a run the reader
+   * already cancelled, on their credits.
+   */
+  it("aborts with the stop request even when a sibling load rejected first", async () => {
+    const stopped = new StopRequestedError();
+    mocks.loadQualityContext.mockRejectedValue(new Error("connection terminated unexpectedly"));
+    mocks.loadProjectStoryState.mockImplementation(async () => {
+      throw stopped;
+    });
+
+    await expect(generatePage(job)).rejects.toBe(stopped);
+    expect(mocks.generatePageDraft).not.toHaveBeenCalled();
+  });
+
+  it("reports the failure the serial chain would have thrown when two loads fail", async () => {
+    // Quality rejects first in wall-clock terms; continuity came first in the
+    // chain this fan-out replaced, so it is the failure the job must report.
+    mocks.loadQualityContext.mockRejectedValue(new Error("quality settings unavailable"));
+    mocks.loadContinuityNotes.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      throw new Error("continuity notes unavailable");
+    });
+
+    await expect(generatePage(job)).rejects.toThrow("continuity notes unavailable");
+  });
+
+  it("waits for every independent load to settle before failing the job", async () => {
+    let entityStateSettled = false;
+    mocks.loadQualityContext.mockRejectedValue(new Error("quality settings unavailable"));
+    mocks.loadEntityStateLines.mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      entityStateSettled = true;
+      return [];
+    });
+
+    await expect(generatePage(job)).rejects.toThrow("quality settings unavailable");
+    // Promise.all would have thrown out of the handler with this one still
+    // running, leaving its warn line or its write behind the job's settlement.
+    expect(entityStateSettled).toBe(true);
+    expect(mocks.generatePageDraft).not.toHaveBeenCalled();
+  });
 });
+
+function qualityContextStub() {
+  return {
+    settings: {} as Record<string, unknown>,
+    tier: "balanced",
+    enabled: (feature: string): boolean => mocks.qualityEnabled(feature)
+  };
+}
+
+function emptyStoryState() {
+  return {
+    promises: [] as Array<Record<string, unknown>>,
+    facts: [] as Array<Record<string, unknown>>,
+    entities: {},
+    unanswered: [] as string[]
+  };
+}
+
+/**
+ * Releases only once `expected` participants have arrived, so a load that waits
+ * on it can get past only by being in flight beside the others. The timeout is
+ * the safety valve: a chain that went back to one await at a time would
+ * otherwise deadlock the test instead of failing it, so the gate opens, records
+ * that it had to, and lets `timedOut` carry the verdict.
+ */
+function concurrencyBarrier(expected: number, timeoutMs = 250) {
+  const arrived: string[] = [];
+  let inFlightTogether: string[] = [];
+  let timedOut = false;
+  let release: () => void = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const timer = setTimeout(() => {
+    timedOut = true;
+    inFlightTogether = [...arrived];
+    release();
+  }, timeoutMs);
+  return {
+    get timedOut(): boolean {
+      return timedOut;
+    },
+    get inFlightTogether(): string[] {
+      return inFlightTogether;
+    },
+    async arrive(name: string): Promise<void> {
+      arrived.push(name);
+      if (arrived.length >= expected) {
+        clearTimeout(timer);
+        inFlightTogether = [...arrived];
+        release();
+      }
+      await released;
+    },
+    dispose(): void {
+      clearTimeout(timer);
+      release();
+    }
+  };
+}
 
 function completedPage(index: number, voice: string) {
   return {

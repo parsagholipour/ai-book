@@ -49,6 +49,8 @@ const transaction = (
   return {
     order,
     $executeRawUnsafe: track("raw", 0),
+    /** The re-point's collision probe. Untracked, and empty: a restored ordering displaces nothing. */
+    $queryRawUnsafe: vi.fn(async () => []),
     page: {
       createMany: track("page.createMany", {}),
       deleteMany: track("page.deleteMany", {}),
@@ -113,8 +115,10 @@ describe("reverting a structural page change", () => {
     expect(tx.page.deleteMany).toHaveBeenCalledWith({
       where: { projectId: "project-1", id: { in: ["new-1", "new-2"] } }
     });
-    // Two passes for the ordering, then continuity and embedding scopes.
-    expect(tx.$executeRawUnsafe).toHaveBeenCalledTimes(4);
+    // Two passes for the ordering, one for continuity scopes, then two more for
+    // the embedding scopes: `Embedding` carries `@@unique([projectId, scope])`,
+    // so that re-point parks and lands for the same reason the ordering does.
+    expect(tx.$executeRawUnsafe).toHaveBeenCalledTimes(5);
   });
 
   it("takes inserted-page continuity notes before Undo reuses their indexes", async () => {
@@ -412,7 +416,9 @@ describe("reverting a structural page change", () => {
     // No page is going away, so no memory is either — the reorder only moves
     // the scopes it already has.
     expect(tx.embedding.deleteMany).not.toHaveBeenCalled();
-    expect(tx.$executeRawUnsafe).toHaveBeenCalledTimes(4);
+    // Two ordering passes, the continuity re-point, then the embedding
+    // re-point's own park-and-land pair.
+    expect(tx.$executeRawUnsafe).toHaveBeenCalledTimes(5);
     const [continuitySql, ...continuityParams] = tx.$executeRawUnsafe.mock.calls[2] as unknown[];
     expect(continuitySql).toContain('UPDATE "ContinuityNote"');
     expect(continuityParams).toEqual(["project-1", "page-1", 1, "page-2", 2, "page-3", 3]);

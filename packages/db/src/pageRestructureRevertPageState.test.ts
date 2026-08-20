@@ -49,6 +49,8 @@ const transaction = () => {
   const track = <T>(result: T) => vi.fn(async () => result);
   return {
     $executeRawUnsafe: track(0),
+    /** The re-point's collision probe. Empty: a restored ordering displaces nothing. */
+    $queryRawUnsafe: track([]),
     page: {
       createMany: track({}),
       deleteMany: track({}),

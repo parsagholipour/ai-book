@@ -4,10 +4,47 @@ import { prisma } from "./client.ts";
 export { prisma, PrismaClient, Prisma } from "./client.ts";
 export * from "./planRevisionRetry.ts";
 export * from "./creditPricing.ts";
+export * from "./embeddingScopes.ts";
 export * from "./pageOrdering.ts";
 export * from "./pageRestructureRevert.ts";
 export * from "./researchLinks.ts";
 export * from "./storyState.ts";
+/**
+ * Semantic retrieval, split by arm. Re-exported **by name** rather than with
+ * `export *`: each module hands a helper or two to a sibling — the query
+ * builders in `retrievalQuery.ts` (the scope filter, the row cap and the top-K
+ * both arms are built from), `cleanLexicalTerms` and the already-cleaned
+ * `retrieveCleanedLexicalEmbeddings` it feeds — and those are seams inside the
+ * split, not surface this package offers. `RetrievalCandidate` is the one thing
+ * in that module which is: it is what both arms return, so a caller holding a
+ * retrieval's rows has to be able to name it.
+ */
+export { degradeRetrievalArm, type DegradeRetrievalArmOptions } from "./retrievalArms.ts";
+export { type RetrievalCandidate } from "./retrievalQuery.ts";
+export {
+  retrieveSimilarEmbeddings,
+  type RetrieveSimilarEmbeddingsOptions
+} from "./embeddingRetrieval.ts";
+export {
+  foldLexicalText,
+  LEXICAL_SIMILARITY_FLOOR,
+  retrieveLexicalContinuityNotes,
+  retrieveLexicalEmbeddings,
+  type LexicalContinuityNote,
+  type RetrieveLexicalContinuityNotesOptions,
+  type RetrieveLexicalEmbeddingsOptions
+} from "./lexicalRetrieval.ts";
+export {
+  fuseHybridEmbeddingRanks,
+  retrieveHybridEmbeddings,
+  type HybridEmbedding,
+  type RetrieveHybridEmbeddingsOptions
+} from "./hybridRetrieval.ts";
+export {
+  embeddingIsDegraded,
+  findPageEmbeddingRepairTargets,
+  type PageEmbeddingRepairTarget
+} from "./embeddingRepairTargets.ts";
 export * from "./generated/prisma/enums.ts";
 export type * from "./generated/prisma/models.ts";
 
@@ -32,69 +69,4 @@ export async function ensureSeedTemplates() {
       }
     });
   }
-}
-
-export type SimilarEmbedding = {
-  id: string;
-  scope: string;
-  sourceId: string | null;
-  text: string;
-  similarity: number;
-};
-
-export type RetrieveSimilarEmbeddingsOptions = {
-  projectId: string;
-  vector: number[];
-  topK?: number | undefined;
-  /** Restrict to embeddings whose scope starts with this prefix (e.g. "page:" or "research:"). */
-  scopePrefix?: string | undefined;
-  /** Exact scopes to exclude (e.g. pages already present in the recency window). */
-  excludeScopes?: string[] | undefined;
-};
-
-/**
- * Cosine-similarity search over the pgvector-backed Embedding table.
- * Returns rows ordered from most to least similar.
- */
-export async function retrieveSimilarEmbeddings(
-  options: RetrieveSimilarEmbeddingsOptions
-): Promise<SimilarEmbedding[]> {
-  if (options.vector.length === 0) {
-    return [];
-  }
-  const topK = Math.max(1, Math.min(50, Math.floor(options.topK ?? 8)));
-  const vectorLiteral = `[${options.vector.map((value) => Number(value).toFixed(7)).join(",")}]`;
-
-  const conditions = [`"projectId" = $1`, `"vector" IS NOT NULL`];
-  const params: unknown[] = [options.projectId, vectorLiteral];
-  let nextParam = 3;
-  if (options.scopePrefix) {
-    conditions.push(`"scope" LIKE $${nextParam}`);
-    params.push(`${options.scopePrefix}%`);
-    nextParam += 1;
-  }
-  if (options.excludeScopes && options.excludeScopes.length > 0) {
-    conditions.push(`NOT ("scope" = ANY($${nextParam}::text[]))`);
-    params.push(options.excludeScopes);
-    nextParam += 1;
-  }
-
-  const rows = await prisma.$queryRawUnsafe<
-    Array<{ id: string; scope: string; sourceId: string | null; text: string; similarity: number | string }>
-  >(
-    `SELECT "id", "scope", "sourceId", "text", 1 - ("vector" <=> $2::vector) AS "similarity"
-     FROM "Embedding"
-     WHERE ${conditions.join(" AND ")}
-     ORDER BY "vector" <=> $2::vector ASC
-     LIMIT ${topK}`,
-    ...params
-  );
-
-  return rows.map((row) => ({
-    id: row.id,
-    scope: row.scope,
-    sourceId: row.sourceId,
-    text: row.text,
-    similarity: Number(row.similarity)
-  }));
 }

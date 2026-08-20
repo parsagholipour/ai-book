@@ -22,7 +22,7 @@ import {
   readerChaptersFromPublishedMarkdown,
   readerChaptersWithCache
 } from "../generation/readerChapterCache.js";
-import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
+import { storeEmbedding, strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
 import { loadQualityContext } from "../generation/qualitySettings.js";
 import { persistKeeperStoryDelta } from "../generation/qualityEnrichment.js";
 import { rebuildProjectStoryState, rebuildStoryStateFromPages } from "../generation/storyStateStore.js";
@@ -72,7 +72,7 @@ import {
   type ProviderSet,
   type TextModelAdapter
 } from "@book-maker/core";
-import { Prisma, prisma, researchCitationsForExport } from "@book-maker/db";
+import { pageScope, Prisma, prisma, researchCitationsForExport } from "@book-maker/db";
 import { Job } from "bullmq";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -706,7 +706,9 @@ export async function repairPagesFromFinalQa(options: {
     `Repairing pages ${repairPageIndexes.join(", ")} after final QA`
   );
 
-  const continuityNotes = await loadContinuityNotes(options.projectId);
+  // Whole book: the final-QA repair rewrites a page inside a finished
+  // manuscript and must not contradict the pages after it.
+  const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   let pages = [...options.pages];
   let currentState = await rebuildStoryStateFromPages(options.projectId, options.plan.promises ?? []);
 
@@ -852,7 +854,7 @@ export async function repairPagesFromFinalQa(options: {
         data: draft.continuityNotes.map((body) => ({
           projectId: options.projectId,
           pageId: page.id,
-          scope: `page:${page.index}`,
+          scope: pageScope(page.index),
           body,
           tags: ["page", String(page.index), "final-qa-repair"]
         }))
@@ -860,7 +862,10 @@ export async function repairPagesFromFinalQa(options: {
     }
 
     if (strategyUsesSemanticMemory(options.strategy)) {
-      await storeEmbedding(options.projectId, `page:${page.index}`, page.id, draft.summary, options.providers.embedding);
+      await storeEmbedding(
+        { projectId: options.projectId, scope: pageScope(page.index), sourceId: page.id, text: draft.summary },
+        options.providers.embedding
+      );
     }
     pages = pages.map((candidate) => (candidate.index === page.index ? updatedPage : candidate));
   }

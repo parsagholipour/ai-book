@@ -51,7 +51,11 @@ holds for the open that established it; the next open asks the same map again.
   falls back to when the locator resolves nothing is gated separately, on `mappedPdfDigestFor`:
   it travels only when the map in force was measured from the open file, and it carries that
   digest so `modelPageForReaderContext` can make the same check against whatever has published
-  since this screen last read the status. Revision equality survives a same-revision repair —
+  since this screen last read the status. The pair leaves as one conditional spread in
+  `chatReaderContext`, not as two entries that happen to share a guard: the digest is the sheet's
+  identity rather than a stamp on the message, and it used to be written on its own whenever the
+  open file had one — inert, because nothing on the server reads a digest without a sheet beside
+  it, but a shape that leaves the pairing to be re-derived at both ends. Revision equality survives a same-revision repair —
   the new map is stamped with the revision the open file already has — while the pages under
   those sheet numbers do not, so a stale sheet would have been translated through the
   replacement's map. No digest on either side sends no sheet at all; the printed number the

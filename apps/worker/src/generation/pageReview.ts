@@ -5,13 +5,9 @@ import { type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { uniqueStrings } from "../runtime/serialization.js";
 import { loadContinuityNotes, loadResearchNotesForGeneration } from "./generationContext.js";
 import { enrichPageQualityReport, keeperStoryExtractForSave, persistStoryExtract } from "./qualityEnrichment.js";
-import {
-  prepareEmbedding,
-  retrieveSemanticResearchNotes,
-  strategyUsesSemanticMemory,
-  updateEntityStateFromPage,
-  writePreparedEmbedding
-} from "./semanticMemory.js";
+import { prepareEmbedding, strategyUsesSemanticMemory, writePreparedEmbedding } from "./embeddingWrites.js";
+import { updateEntityStateFromPage } from "./entityState.js";
+import { retrieveSemanticResearchNotes } from "./researchMemory.js";
 import { loadQualityContext } from "./qualitySettings.js";
 import {
   MAX_PAGE_QA_CANDIDATES,
@@ -33,7 +29,7 @@ import {
   type RevisePageOptions,
   type TextModelAdapter
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { pageScope, Prisma, prisma } from "@book-maker/db";
 
 /**
  * Page quality review loop: score a draft, revise it, and save the best candidate.
@@ -250,7 +246,10 @@ export async function reviewAndSaveGeneratedPage(options: {
   assertOwnership?: (() => Promise<void>) | undefined;
 }): Promise<PriorPageContext> {
   const pageBrief = options.chapterBrief?.pages.find((brief) => brief.pageIndex === options.draft.index);
-  const continuityNotes = await loadContinuityNotes(options.projectId);
+  // Whole book on purpose: this reviews a draft against the facts the book
+  // currently holds, and a page inserted into finished prose (the caller that
+  // passes `nextPages`) must be checked against what comes after it too.
+  const continuityNotes = await loadContinuityNotes(options.projectId, { beforePageIndex: null });
   const researchNotes = await loadResearchNotesForGeneration(options.projectId, options.strategy, options.chapter);
   const quality = await loadQualityContext(options.input);
   const initialReport = await options.strategy.reviewPageDraft({
@@ -424,7 +423,7 @@ export async function reviewAndSaveGeneratedPage(options: {
       data: draft.continuityNotes.map((body) => ({
         projectId: options.projectId,
         pageId: page.id,
-        scope: `page:${options.draft.index}`,
+        scope: pageScope(options.draft.index),
         body,
         tags: ["page", String(options.draft.index), options.strategy.id]
       }))
@@ -436,7 +435,10 @@ export async function reviewAndSaveGeneratedPage(options: {
       await updateEntityStateFromPage(options.projectId, options.draft.index, draft.continuityNotes);
     }
     if (preparedEmbedding) {
-      await writePreparedEmbedding(options.projectId, `page:${options.draft.index}`, page.id, draft.summary, preparedEmbedding);
+      await writePreparedEmbedding(
+        { projectId: options.projectId, scope: pageScope(options.draft.index), sourceId: page.id, text: draft.summary },
+        preparedEmbedding
+      );
     }
   }
 
@@ -623,7 +625,7 @@ const CHAPTER_BRIEF_CAS_ATTEMPTS = 3;
  * this merges the repaired beat into a freshly-read row and writes it back
  * conditioned on the row still holding the state just read — retrying against
  * the winner's brief on a miss, the same compare-and-swap shape used for
- * per-entity continuity state in semanticMemory.ts.
+ * per-entity continuity state in entityState.ts.
  */
 async function casUpdateChapterProductionBrief(chapterId: string, repaired: PageProductionBeat): Promise<void> {
   let current = await prisma.chapter.findUnique({ where: { id: chapterId }, select: { productionBrief: true } });

@@ -4,7 +4,7 @@ import {
   canClaimPlanRevisionRetry,
   planRevisionRetryDelayMs,
   retryRequestKey
-} from "./planRevisionRetry.js";
+} from "./planRevisionRetry.ts";
 
 const now = new Date("2026-07-21T12:00:00.000Z");
 

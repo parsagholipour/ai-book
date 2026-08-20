@@ -12,7 +12,11 @@ const mocks = vi.hoisted(() => ({
   updateJobProgress: vi.fn()
 }));
 
-vi.mock("@book-maker/db", () => ({ prisma: mocks.prisma, Prisma: {} }));
+vi.mock("@book-maker/db", async () => ({
+  prisma: mocks.prisma,
+  Prisma: {},
+  ...(await import("../testing/dbScopeMocks.js")).dbScopeMocks()
+}));
 vi.mock("../runtime/dispatch.js", () => ({
   enqueueWorkerJob: vi.fn(),
   maybeEnqueueCompile: vi.fn(),
@@ -37,10 +41,10 @@ vi.mock("../generation/bookPasses.js", () => ({
 }));
 vi.mock("../generation/bookState.js", () => ({ prepareChapterSetups: vi.fn() }));
 vi.mock("../generation/characterReferences.js", () => ({ ensureCharacterReferenceAssets: vi.fn() }));
-vi.mock("../generation/semanticMemory.js", () => ({
-  embedResearchSourcesForProject: mocks.embedResearchSourcesForProject,
-  strategyUsesSemanticMemory: () => false
+vi.mock("../generation/researchMemory.js", () => ({
+  embedResearchSourcesForProject: mocks.embedResearchSourcesForProject
 }));
+vi.mock("../generation/embeddingWrites.js", () => ({ strategyUsesSemanticMemory: () => false }));
 vi.mock("../generation/projectInput.js", () => ({ inputForPlanVersion: vi.fn() }));
 vi.mock("@book-maker/core", async () => {
   const actual = await vi.importActual<typeof import("@book-maker/core")>("@book-maker/core");

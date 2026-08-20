@@ -7,7 +7,8 @@ import {
 } from "../generation/bookPasses.js";
 import { prepareChapterSetups } from "../generation/bookState.js";
 import { ensureCharacterReferenceAssets } from "../generation/characterReferences.js";
-import { embedResearchSourcesForProject, strategyUsesSemanticMemory } from "../generation/semanticMemory.js";
+import { strategyUsesSemanticMemory } from "../generation/embeddingWrites.js";
+import { embedResearchSourcesForProject } from "../generation/researchMemory.js";
 import { inputForPlanVersion } from "../generation/projectInput.js";
 import { createLoggedProviders } from "../providers/loggedAdapters.js";
 import { config } from "../runtime/config.js";
@@ -23,7 +24,7 @@ import {
   type CreateProjectInput,
   type ProviderSet
 } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
+import { Prisma, prisma, PAGE_SCOPE_PREFIX } from "@book-maker/db";
 import { Job } from "bullmq";
 
 /**
@@ -145,7 +146,7 @@ export async function generateBookSequential(options: {
       await tx.page.deleteMany({ where: { projectId: options.projectId } });
       await tx.chapter.deleteMany({ where: { projectId: options.projectId } });
       await tx.continuityNote.deleteMany({ where: { projectId: options.projectId } });
-      await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: "page:" } } });
+      await tx.embedding.deleteMany({ where: { projectId: options.projectId, scope: { startsWith: PAGE_SCOPE_PREFIX } } });
       await tx.project.update({
         where: { id: options.projectId },
         data: {

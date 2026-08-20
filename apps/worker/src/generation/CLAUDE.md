@@ -160,6 +160,222 @@ may have been edited in the meantime.
   revert can refuse a partial archive while still read-only. More than 1,000 rows settles the free
   delete unchanged instead of truncating history or overrunning the structural transaction.
 
+## Long-range memory
+
+Five modules, split by which question each answers: `semanticRecall.ts` is the `page:` scope's read
+side, `researchMemory.ts` is both ends of the `research:` scope, `embeddingWrites.ts` owns every
+statement that goes into the `Embedding` table, `embeddingRepair.ts` is the backfill pass over its
+holes, and `entityState.ts` (over the shared fold in `entityMentions.ts`) is the per-entity
+continuity state. They were one `semanticMemory.ts` until the file reached its size budget.
+
+Whether a book writes any of it is `strategyUsesSemanticMemory`, which lives in
+`embeddingWrites.ts` — beside the writes, not beside the recall it is named for. Only the
+sequential-pages mode ever *reads* this memory, so every other mode (every book inside the mobile
+page ceiling) skips the embedding call per page and the per-entity writes entirely. Its seven call
+sites are all writers about to spend that call; no reader has ever asked it, which is why sitting in
+`semanticRecall.ts` it only made seven handlers and passes import the read module for a predicate that
+never reaches a retrieval.
+
+- **A page's long-range memory stops at the page being drafted, because a retry redrafts into a
+  finished book.** `retrieveSemanticPageMemory` takes a required `beforePageIndex` — `Page.index`,
+  the space every `page:<index>` scope is written in, never a printed page number — and hands it to
+  the db retrieval, which reads the index back out of the scope in SQL. Nothing about the Embedding
+  table means "everything written so far": pages generate in waves up to `MAX_PARALLEL_PAGE_JOBS`,
+  and a FAILED_QA page is redrafted long after its successors are COMPLETED and embedded. Unbounded,
+  the `search_memory` writer tool answered a page-30 search for "the vault" with `Page 41: the vault
+  opens and the archive burns` — described to the model as "earlier pages of this book", so the page
+  was written against an event the book had not reached, and the same call could hand back page 30's
+  own rejected draft. `lookup_page` and `lookupStoredPage` had always clamped `index >= page.index`;
+  the memory search was the one door left open, and `excludePageIndexes` could not close it — that
+  list is the recency window already in the context pack and says nothing about what lies ahead.
+  The bound belongs in the query rather than in a filter over the results: both arms of the hybrid
+  retrieval pool and fuse *before* the top-K cut, so dropping a later page afterwards would return
+  fewer pages than the caller asked for instead of the right ones. In SQL it resolves any scope that
+  is not `page:<integer>` to NULL instead of erroring, which is what lets a `research:` row share the
+  sweep — `AND` is not evaluated left to right, so a guard-then-cast predicate would have taken the
+  whole retrieval down with it (`packages/db/src/embeddingRetrieval.ts`; the opt-in
+  `lexicalRetrieval.integration.test.ts` measures both halves against pg_trgm).
+  **Continuity notes are the same memory and take the same bound.**
+  `loadContinuityNotes` (`generationContext.ts`) is two arms over `ContinuityNote` — the newest
+  notes, and since the trigram arm was added the best-scoring ones — and neither is a prefix of the
+  manuscript either. Unbounded, a page-30 redraft's own needles (`Tomas`, `The Vault of Hours`)
+  select the notes pages 41-60 wrote *about that page's cast*, because those are the rows naming it
+  most, and the ranking puts them last: the end `continuityNotesForPrompt` keeps and the end nearest
+  the model's attention. So `beforePageIndex` is a **required** `number | null` on that function and
+  on `retrieveLexicalContinuityNotes` (`packages/db/src/lexicalRetrieval.ts`), and it reaches both
+  arms. `null` is a claim rather than an opt-out, and all nine call sites that make it — spread over
+  six files — mean it. Seven are judging a draft against what the book *now* holds, the pages after
+  it included: the page reviewer, the whole-book passes at all four of their note loads, a replan
+  and the final-QA repair. A page inserted into finished prose states the same claim hardest, since
+  prose exists on both sides of it, which is why that path passes `nextPages` as well. `continueBook` earns it from the other
+  end — a continuation is written past the last page, so everything the project holds is behind the
+  first page it drafts and the bounded read and the unbounded one are the same set. The bound goes
+  through the `pageId` foreign key, not through `pageScopeIndexSql`: the
+  schema calls the scope display text and refuses it as identity, and an edit writes
+  `page:<index>:edit:<operationId>`, which that pattern resolves to NULL — bounding on it would drop
+  every edited page's notes out of the search instead of placing them in time. A surviving note with
+  no `pageId` is project-scoped, since the ownership filter has already removed the ambiguous
+  page-scoped ones, and nothing bounds a note that belongs to no page. In the query on both sides,
+  ahead of the `LIMIT`, for the reason the embedding arms are.
+  **And the order the notes come back in is half a contract nothing typechecks.** This loader emits
+  ascending priority — the recency window oldest first, then the trigram hits with the best score
+  last of all — and every prompt keeps the *tail*. Emitted descending, which is how it shipped, a
+  reviewer taking 20 of these 28 threw away all eight top-scoring lexical hits and kept the recency
+  window the relevance arm was added to reach past: no test failed, and the arm simply stopped
+  paying for itself. So no prompt slices these by hand. `continuityNotesForPrompt` with a budget out
+  of `CONTINUITY_NOTE_PROMPT_LIMITS` (`packages/core/src/context/contextPack.ts`) is the only
+  truncation there is — the four consumers keep the different budgets they always had, 28 for the
+  single-page pack, 24 for the bulk drafts, 20 for the two review prompts — and
+  `generationContext.test.ts` asserts a full-size result from this side against every one of them,
+  which is the only place the producer's order and the consumers' cut are checked against each other.
+- **A repair the provider refuses is written down, or it is paid for again on every page.**
+  `repairPageEmbeddings` backfills the three lowest-index pages whose embedding row is missing or
+  degraded, and its failure path used to `continue` without recording anything. So a page whose
+  summary a provider will not embed — a content filter on its own text — never left the hole set,
+  stayed first in the queue, and cost every one of the hundreds of page jobs that followed one
+  embedding call: billed, logged, on the page critical path, and permanently holding one of the
+  three slots, so three such pages starved every real hole further along out of ever being
+  repaired. A failure now writes (or refreshes) the degraded placeholder with `repairAttempts` and
+  `repairRetryFromIndex`, and the target query drops a scope inside that window **before** the
+  `LIMIT`, so the slots go to pages that can be filled. The clock is `beforeIndex` — page indexes,
+  the only clock this pass has — and the wait *doubles*, because a hard attempt cap cannot tell a
+  page a provider refuses from a provider outage that fails every page alike: doubling costs the
+  unembeddable page ~log2(N) calls over an N-page book while still forgiving an outage that ended,
+  with nothing needed to declare it over. The placeholder earns its own keep — a scope with no row
+  is invisible to *both* arms of the retrieval, while a vectorless row still carries the page's real
+  summary as `text` and is still recallable lexically. Its write is
+  `DO UPDATE ... WHERE "Embedding"."vector" IS NULL` **and** the ownership predicate below, the same
+  pair `createDegradedEmbedding` carries — the page's own job may have landed a healthy row since
+  the read, and a placeholder must never overwrite one — and it must be able to land on a row that
+  exists, or the count could never pass one. A success goes through `writePreparedEmbedding` like
+  every other caller: the upsert overwrites the placeholder whole, so a repaired page stops looking
+  degraded and stops carrying a stale `sourceId`. **Overwrites the placeholder — never another
+  page's row.** Every write this pass makes is dispatched against a *stale* reading of who owns the
+  scope: the targets are resolved, then a provider call takes seconds, and
+  `repointPageEmbeddings` hands `page:<index>` positions to other pages inside that window. An
+  unconditional `DO UPDATE SET "sourceId", "text", "vector", "metadata"` replaced a live page's
+  summary with the target's — `deletePageEmbeddings`' "a page whose embedding describes a different
+  page is a wrong answer nothing detects", reached from the write side. So the repair alone asks for
+  the `"same-page"` conflict policy, which appends
+  `WHERE "Embedding"."sourceId" = EXCLUDED."sourceId" OR "Embedding"."sourceId" IS NULL` — the
+  `sourceId` rather than the vector, because a re-point moves degraded rows too, and NULL because a
+  row no page claims is not another page's and must stay repairable. It reaches **all three** of
+  this pass's writes: the vector upsert, the degraded fallback behind it, and the backoff stamp
+  above — which is the one that matters on a refusal, because a refused summary never reaches
+  `writePreparedEmbedding` at all, so the stamp is the whole iteration and nothing else was left to
+  refuse it. The stamp is where the drift happened — it was written without the predicate, so it
+  could put its target's summary on the new owner's row by the one door the guarded vector upsert
+  had closed — so the two vectorless writes are now literally **one statement**,
+  `upsertVectorlessEmbedding`, which owns their columns, conflict target, `SET` list and both
+  guards; only the vector upsert is written separately, and `SAME_PAGE_ROW_PREDICATE` is the one
+  constant tying its guard to theirs. `embeddingVectorlessUpsert.test.ts` asserts the two
+  emitted strings are equal rather than checking each against a list, because what was wrong the
+  first time was the *difference*. It stays opt-in: every other caller writes a page it has just
+  *rewritten*, and that page's own row is its to replace whatever it holds. A guarded write that matches nothing comes back `"superseded"`, and the
+  loop then writes **nothing at all**; the stamp is guarded the same way and matches nothing in its
+  own right, rather than putting the target's summary on the new owner's row by the other door.
+  Nothing is lost by the silence: a renumber carries each page's rows with it, so a page that had no
+  row still has none under its new index, and the query offers it there on a later pass with the
+  attempt count it always had.
+  **A stop is not a refusal, and this is the pass that pays for
+  confusing the two.** `prepareEmbedding` used to fold the `StopRequestedError` that
+  `LoggingEmbeddingAdapter.embed` raises into its `{ vectorLiteral: null, error }` result, so a
+  reader stopping a run mid-draft arrived here as `"degraded"`: every target in the batch took a
+  vectorless placeholder stamped `repairAttempts: 1` and `repairRetryFromIndex: beforeIndex + 2`,
+  and the loop spent an aborted provider call on each of the ones behind it. Three healthy pages
+  deferred exponentially, on the one input the backoff can say nothing about — it is there to tell
+  a provider *refusal* from an outage, and a cancellation is neither. The `isStopRequestedError`
+  rethrow this pass already had could not fire, because nothing reached it. `prepareEmbedding`
+  raises now, which abandons the batch where it stands and leaves every page it did not embed an
+  ordinary hole for the next run.
+- **An embedding write may degrade, never fail the page that produced it.** `storeEmbedding` is the
+  last statement of a page job before `enqueueNextPageIfReady`, and in `pageReview.ts`
+  `writePreparedEmbedding` sits after the ownership fence among the publishing writes — so anything
+  escaping it stops a book's fan-out over a memory row on a page already saved and COMPLETED. Both
+  of its statements name `ON CONFLICT ("projectId", "scope")`, which needs the unique index
+  `000056_embedding_project_scope_unique` creates, and a database that could not
+  `CREATE EXTENSION pg_trgm` in `000055_trigram_memory_search` halts `prisma migrate deploy` before
+  reaching it — the same deployment `degradeRetrievalArm` (`packages/db/src/retrievalArms.ts`) is
+  written for. So `createDegradedEmbedding` is the fallback *and* the last line of defence: it
+  reports through that shared policy — counted per (arm, message), reported on the first occurrence
+  and every power of ten after, because the fault is an environment fact true of every page of every
+  book and a line per page job would bury it — and returns. `rethrowIf: isStopRequestedError`
+  is the one thing that still travels out, or a stopped run keeps drafting. The provider half owes
+  the same: `prepareEmbedding` degrades an embedding the provider refused into
+  `{ vectorLiteral: null, error }` and raises a stop, so a cancellation is never persisted as text
+  the provider would not embed. That rethrow is what carries a stop out of `storeEmbedding`, and
+  out of the prepare block in `pageReview.ts` beside `keeperStoryExtractForSave`, which swallows
+  every failure but this one.
+  **And the placeholder it leaves describes the page as it is now.** That write was `DO NOTHING`,
+  so a second failure under a scope already holding a placeholder wrote nothing at all and the row
+  kept the *previous* draft's summary — a chat edit rewrites page 12, its embedding fails again,
+  and the row still says what the page used to say. A vectorless row is deliberately recallable
+  anyway: `retrieveLexicalEmbeddings` (`packages/db`) filters on `text` and never on the vector, so
+  `retrieveSemanticPageMemory` handed every later page `Page 12: <text the edit removed>` as
+  earlier continuity, indistinguishable downstream from the page's real summary — the pre-diff
+  `prisma.embedding.create` at least stored the new text. It is
+  `DO UPDATE ... WHERE "Embedding"."vector" IS NULL` now, the shape `recordFailedEmbeddingRepair`
+  already carried and for its reason: this statement is only ever reached *after* a provider or
+  insert failure, so a row that holds a vector belongs to a writer that succeeded and is left
+  exactly alone. It refreshes `text`, which is the point; `sourceId`, the column a renumber carries
+  the row by and a delete removes it by, so a row describing this page under another page's id is
+  that same wrong answer reached from the other end; and `metadata`, whose `error` and repair
+  backoff were earned by text that is gone. `EmbeddingConflictPolicy` reaches this statement too,
+  because a re-point moves degraded rows as readily as healthy ones: the repair pass's
+  `"same-page"` predicate is appended here as well, while every other caller has just written the
+  page and claims the scope outright — guarding *those* on `sourceId` would refuse the row a
+  structurally inserted page inherited and leave the stale summary standing, which is the failure
+  above.
+- **The hole set is a query, and the `LIMIT` is what the backoff protects.** That whole filter used
+  to run in memory over two unbounded reads — every COMPLETED page below `beforeIndex` *with its
+  summary*, plus every `page:` embedding row of the project — on every page job past the recency
+  window: measured on a 300-page book, 123,921 rows and 11.5 MB of manuscript across 281 jobs, to
+  answer "nothing to repair" 281 times. `findPageEmbeddingRepairTargets`
+  (`packages/db/src/embeddingRepairTargets.ts`) derives it in SQL and returns at most three rows.
+  Three things about that query are load-bearing. The backoff is a `WHERE` predicate, so `LIMIT`
+  cuts what survives it — the same ordering the `filter`-before-`slice` had, and the whole of the
+  anti-starvation property. It is a `NOT EXISTS` anti-join rather than `LEFT JOIN … IS NULL`,
+  because only the anti-join stops early: the outer join plans as a merge join over both whole sets
+  (2.1 ms and two sorts on that book) while the anti-join walks `Page_projectId_index_key` and halts
+  at the third hole (0.14 ms, 0.72 ms on an intact book). And the degraded test is
+  `(metadata->'vectorStored' = 'false'::jsonb) **IS TRUE**`: healthy metadata carries no such key,
+  `->` yields NULL, and `NOT (NULL AND …)` is NULL — which drops the row from the subquery and calls
+  every healthy page a hole. Without `IS TRUE` the query offered all 300 pages of an intact book for
+  re-embedding, on every job. `page-repoint:` scopes cannot be seen either way: the correlation is
+  equality on `'page:' || index`, never a prefix. The predicate is mocked in the worker's suite and
+  measured against a real Postgres in `packages/db/src/embeddingRepairTargets.integration.test.ts`
+  (`DB_INTEGRATION=true`). **And the marker that SQL tests for is not written down twice.**
+  `researchMemory.ts` asks the same question of a row it already holds — a degraded row must not
+  count as embedded, or a failed research embedding is never retried — and its `embeddingIsDegraded`
+  is imported from `@book-maker/db`, where it sits beside the SQL spelling of the same test rather
+  than in this directory: one rule, two languages, one file, and one table of metadata shapes
+  (`packages/db/src/testing/degradedEmbeddingShapes.ts`) both are judged on. The mock factory in
+  `researchMemory.test.ts` restates it, for the reason `testing/dbScopeMocks.ts` restates the scope
+  vocabulary, so it carries the same obligation to stay equal to the original.
+- **Best effort has one spelling in this cluster, and a stop is the one thing it may not swallow.**
+  Every pass here is allowed to answer nothing — a page written from its recency window alone beats a
+  page not written at all — and every one of them runs *once per page job*. Hand-rolled, that meant
+  six `console.warn` lines whose fault was almost always a single fact about the deployment (no
+  `pg_trgm`, no `pgvector`, a `prisma migrate deploy` that halted before
+  `000056_embedding_project_scope_unique`) printing three hundred times for a three-hundred-page
+  book, with the first line — the only one that says anything new — buried under the rest. They all
+  go through `degradeRetrievalArm` (`packages/db/src/retrievalArms.ts`) now, which counts per
+  (arm, message) per process and reports the 1st, 10th, 100th …: the query embedding and the page
+  memory retrieval (`semanticRecall.ts`), the research retrieval (`researchMemory.ts`), both halves
+  of the entity state (`entityState.ts`), the whole repair pass (`embeddingRepair.ts`) and the
+  degraded write behind every embedding (`embeddingWrites.ts`). The arm names are the old messages
+  — the policy prints `<arm> failed for project <id>` — so nothing anyone greps for moved.
+  **Every one of them passes `rethrowIf: isStopRequestedError`**, and that is the whole risk of the
+  conversion: a degrade *looks* like success, so a stop folded into a fallback is a run the reader
+  ended that keeps drafting and keeps billing. `LoggingEmbeddingAdapter.embed` raises the stop from
+  inside three of these `try` blocks, and `retrieveHybridEmbeddings` deliberately re-raises rather
+  than degrading to one arm's rows precisely so it arrives at these catches — which is why the option
+  is required rather than optional in the policy's own signature. The one bare `console.warn` left in
+  the group is the CAS-race line in `entityState.ts`, and it stays: nothing *failed* there (every
+  write ran, one of them won), it is rare by construction rather than once per page job, and its
+  message names an entity id — a fresh census key on every entity that ever lost a race, so the
+  ladder could never reach a second rung and the policy's bounded census would churn instead.
+
 ## Image layout edits
 
 **A bulk remove is planned in memory and flushed once per page.** "Remove all the pictures" is

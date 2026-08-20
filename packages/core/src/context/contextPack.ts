@@ -1,5 +1,47 @@
 import type { BookPlan, ChapterPlan } from "../schemas/book.js";
 
+/**
+ * How many continuity notes each prompt keeps, and the only place that decides
+ * it.
+ *
+ * The producer is `loadContinuityNotes` in apps/worker, and it returns notes in
+ * **ascending priority**: the recency window first, oldest to newest, then the
+ * trigram relevance hits, best-scoring last of all. So every prompt keeps the
+ * *tail*, and {@link trimToBudget} cuts from the front for the same reason.
+ *
+ * These numbers used to be hand-rolled `slice(-N)` calls at six call sites,
+ * which is exactly how they came to disagree with the producer: the merged list
+ * was priority-*descending*, so each `slice(-N)` dropped the top-scoring lexical
+ * hits — the notes about this page's own cast, the whole reason the relevance
+ * arm exists — and kept the recency window that predates it. The producer's
+ * order and this truncation are one contract; `continuityNotesForPrompt` is
+ * where it is written down, and
+ * `apps/worker/src/generation/generationContext.test.ts` is where a full-size
+ * result is asserted against these limits.
+ */
+export const CONTINUITY_NOTE_PROMPT_LIMITS = {
+  /** {@link buildContextPack}, the single-page draft prompt. Matches the producer's own budget. */
+  draft: 28,
+  /** `generateChapterDraft`, `generateBatchDraft` and `polishPageDraft`. */
+  bulkDraft: 24,
+  /** `reviewPageDraft` and `repairPageBrief`. */
+  review: 20
+} as const;
+
+/**
+ * Truncates continuity notes for one prompt.
+ *
+ * Keeps the tail, because the producer ranks ascending and because the tail is
+ * also the end nearest the model's attention — see
+ * {@link CONTINUITY_NOTE_PROMPT_LIMITS}. Never slice these notes by hand.
+ */
+export function continuityNotesForPrompt(notes: string[], limit: number): string[] {
+  if (limit <= 0) {
+    return [];
+  }
+  return notes.slice(-limit);
+}
+
 export type ContextPackInput = {
   plan: BookPlan;
   chapter?: ChapterPlan | undefined;
@@ -53,7 +95,7 @@ export function buildContextPack(input: ContextPackInput): ContextPack {
         "Previous page summaries:",
         ...input.previousSummaries.slice(-18),
         "Continuity notes:",
-        ...input.continuityNotes.slice(-28)
+        ...continuityNotesForPrompt(input.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.draft)
       ].join("\n"),
       recencyBudget
     )
