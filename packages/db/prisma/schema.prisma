@@ -1060,28 +1060,80 @@ model LibraryCharacter {
 
   user             User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
   images           LibraryCharacterImage[]
-  outgoingMentions LibraryCharacterMention[] @relation("LibraryCharacterMentionSource")
-  incomingMentions LibraryCharacterMention[] @relation("LibraryCharacterMentionTarget")
+  outgoingMentions LibraryMention[] @relation("LibraryMentionSource")
+  incomingMentions LibraryMention[] @relation("LibraryMentionTarget")
 
   @@unique([userId, name])
   @@index([userId, createdAt])
 }
 
-/// One durable, directed @mention from a character description to another
-/// character in the same user's library. The description remains the prose
-/// authority; this row gives its @Name token a stable identity across renames.
-model LibraryCharacterMention {
+/// What a description @mention points at. CHARACTER is the only kind with a
+/// library table today; LOCATION and OTHER share this edge so those libraries
+/// can land without another primary-key rewrite. CHECKs in the migration
+/// enforce the exclusive-arc: CHARACTER rows set `targetCharacterId = targetId`
+/// and leave `otherType` null; LOCATION leaves both null; OTHER requires a
+/// user-typed `otherType` and no character FK. Location/Other FKs are added
+/// with those tables.
+enum LibraryMentionTargetKind {
+  CHARACTER
+  LOCATION
+  OTHER
+}
+
+/// One durable, directed @mention from a library-item description to a library
+/// target. The description remains the prose authority; this row gives its
+/// @Name token a stable identity across renames. The source is a character
+/// today; Location/Other sources land with those tables.
+///
+/// A migration CHECK refuses a character that mentions itself, and it is scoped
+/// to CHARACTER: only there does `targetId` share a key space with
+/// `sourceCharacterId`, so comparing the two across the other kinds would refuse
+/// a row whose ids merely collide.
+model LibraryMention {
   sourceCharacterId String
-  targetCharacterId String
-  /// First textual occurrence in the source description. Used for recursive
-  /// cast expansion; repeated mentions of one target still occupy one row.
+  targetKind        LibraryMentionTargetKind @default(CHARACTER)
+  /// Identity of the target in its own library. For CHARACTER this is the
+  /// LibraryCharacter id and equals `targetCharacterId`.
+  targetId          String
+  /// Set only when `targetKind` is OTHER: the user-typed subtype (e.g. "sword").
+  ///
+  /// `VarChar(80)` is the same ceiling `LibraryMention_target_arc` spells, kept
+  /// on the column so the model states the bound instead of leaving it to a
+  /// CHECK nothing above the database can read. It is the floor of three
+  /// statements of one rule, not the gate: `libraryMentionOtherTypeSchema`
+  /// (apps/api/src/mobile/characterSchemas.ts) trims and bounds it at the door,
+  /// which is the only one of the three that can answer a reader with a 400.
+  /// Note the column refuses a long value as SQLSTATE `22001` (Prisma `P2000`)
+  /// rather than the `23514` the CHECK raises, so the length half no longer
+  /// reaches `namesMentionCheckConstraint` — the trim and the arc still do.
+  otherType         String?                  @db.VarChar(80)
+  /// First textual occurrence in the source description, **among the rows of
+  /// this `targetKind`**. One write replaces one kind's rows and numbers what
+  /// it inserts from 0 (`REPLACED_MENTION_KINDS`,
+  /// apps/api/src/mobile/libraryMentionLinks.ts), so two kinds written by two calls
+  /// both start there and the numbers mean nothing against each other. Reads
+  /// compare them inside a kind and nowhere else: `libraryMentionInclude`
+  /// (packages/db/src/libraryMentions.ts) orders `targetKind`, then this, then
+  /// `targetId` — the rest of the primary key, so one source's rows can never
+  /// come back tied. Used for recursive cast expansion; repeated mentions of
+  /// one target still occupy one row.
   sortOrder         Int
+  /// Character FK, populated iff `targetKind` is CHARACTER. Cascade-deletes
+  /// those mentions when the character goes.
+  targetCharacterId String?
 
-  sourceCharacter LibraryCharacter @relation("LibraryCharacterMentionSource", fields: [sourceCharacterId], references: [id], onDelete: Cascade)
-  targetCharacter LibraryCharacter @relation("LibraryCharacterMentionTarget", fields: [targetCharacterId], references: [id], onDelete: Cascade)
+  sourceCharacter LibraryCharacter  @relation("LibraryMentionSource", fields: [sourceCharacterId], references: [id], onDelete: Cascade)
+  targetCharacter LibraryCharacter? @relation("LibraryMentionTarget", fields: [targetCharacterId], references: [id], onDelete: Cascade)
 
-  @@id([sourceCharacterId, targetCharacterId])
-  @@index([sourceCharacterId, sortOrder])
+  // Two ways in and no third: every read enters by `sourceCharacterId` — the
+  // key's leading column, which also serves the kind-filtered delete on rewrite
+  // — or by `targetCharacterId`. 000057's `([sourceCharacterId, sortOrder])`
+  // was dropped by 000058 along with the read order that named it: `sortOrder`
+  // is the second key of `libraryMentionOrder` now, so that index could no
+  // longer produce the ordering, and the lookup it was left doing is one this
+  // key already does. There is no index by target kind either. One of those
+  // goes in with the Location/Other read that needs it.
+  @@id([sourceCharacterId, targetKind, targetId])
   @@index([targetCharacterId])
 }
 

@@ -54,7 +54,15 @@ export const creationMutationQuerySchema = z.object({
   expectedRevision: z.coerce.number().int().positive().optional()
 });
 
-export const requestIdSchema = z.string().trim().min(8).max(64);
+/**
+ * The idempotency key a priced write may carry, said once. Every documented
+ * body below restates it, and on the routes that do not set `attachValidation`
+ * that restatement is what ajv enforces — so the two spellings are one number
+ * or they are two different gates.
+ */
+export const REQUEST_ID_MIN_LENGTH = 8;
+export const REQUEST_ID_MAX_LENGTH = 64;
+export const requestIdSchema = z.string().trim().min(REQUEST_ID_MIN_LENGTH).max(REQUEST_ID_MAX_LENGTH);
 
 export const operationRetryBodySchema = z
   .object({ requestId: requestIdSchema, retryToken: z.string().trim().min(16).max(128) })
@@ -68,7 +76,7 @@ export const mobileGenerationRetryOpenApiBody = {
   type: "object",
   additionalProperties: false,
   properties: {
-    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
     retryToken: { type: "string", minLength: 16, maxLength: 128 }
   },
   required: ["requestId", "retryToken"]
@@ -94,6 +102,31 @@ export const DEFAULT_BILLING_VERIFICATION_RATE_LIMIT = { maxAttempts: 20, window
 export const DEFAULT_ADVISOR_RATE_LIMIT = { maxAttempts: 20, windowMs: 60 * 60 * 1000 };
 
 export const DEFAULT_DRAFT_RATE_LIMIT = { maxAttempts: 120, windowMs: 60 * 60 * 1000 };
+
+/**
+ * Emptying the character library gets its own budget rather than the drafting
+ * one, and a more generous one.
+ *
+ * `DEFAULT_DRAFT_RATE_LIMIT` is sized for *typing* — chat turns, creation
+ * drafts, character edits — where 120 an hour is far more than a person writes
+ * and anything past it is a client in a loop. A cleanup is not typing. The
+ * library caps at `LIBRARY_CHARACTER_LIMIT_PER_USER` (100, in
+ * `characterSchemas.ts`; not imported here, because that module imports this
+ * one), so emptying a full one is a hundred requests the reader confirmed one
+ * by one — and on the shared `character-write` bucket the next few edits or
+ * promotes then answered 429 on a destructive gesture, with nothing on the
+ * character screen able to say why some rows went and some did not.
+ *
+ * It can afford to be generous because what makes a delete expensive is bounded
+ * by the door in front of it rather than by this number: the costly path — two
+ * transactions claiming the row plus every character whose description mentions
+ * it — needs a row that still exists, and every one of those had to be created
+ * through the 120/hour bucket above. A delete with nothing left to delete is one
+ * indexed read and a 404. So this ceiling stops a runaway client; it is not
+ * where the work is rationed. It is a bucket of its own so that a cleanup can
+ * never spend the tokens the reader's next edit needs, in either direction.
+ */
+export const DEFAULT_CHARACTER_DELETE_RATE_LIMIT = { maxAttempts: 300, windowMs: 60 * 60 * 1000 };
 
 /**
  * Voice calls get their own budget rather than sharing the generation one.
@@ -518,7 +551,7 @@ export const mobileAudiobookStartOpenApiBody = {
   properties: {
     voice: { type: "string", minLength: 1, maxLength: 60 },
     replace: { type: "boolean" },
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
   },
   required: ["voice"]
 } as const;
@@ -528,7 +561,7 @@ export const mobilePlanApprovalOpenApiBody = {
   additionalProperties: false,
   properties: {
     // Idempotency key: send one and retries replay instead of re-charging.
-    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
     disableIllustrations: {
       type: "boolean",
       description:
@@ -541,7 +574,7 @@ export const mobileOperationRetryOpenApiBody = {
   type: "object",
   additionalProperties: false,
   properties: {
-    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
     retryToken: { type: "string", minLength: 16, maxLength: 128 }
   },
   required: ["requestId", "retryToken"]
@@ -552,7 +585,7 @@ export const mobilePlanRevisionOpenApiBody = {
   additionalProperties: false,
   properties: {
     message: { type: "string", minLength: 1, maxLength: 5000 },
-    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
     respondedQuestionPrompts: {
       type: "array",
       maxItems: 40,
@@ -580,7 +613,7 @@ export const mobileProjectChatMessageOpenApiBody = {
         pdfDigest: { type: "string", minLength: 1, maxLength: 128 }
       }
     },
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
   },
   required: ["message"]
 } as const;
@@ -615,7 +648,7 @@ export const mobileCreationSessionStartOpenApiBody = {
     sourceNotes: { type: "string", maxLength: 12000 },
     optionalDetails: { type: "object" },
     mentionedCharacterIds: { type: "array", items: { type: "string", minLength: 1, maxLength: 64 }, maxItems: 10 },
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
   }
 } as const;
 
@@ -629,7 +662,7 @@ export const mobileCreationMessageOpenApiBody = {
     presets: { type: "object" },
     sourceNotes: { type: "string", maxLength: 12000 },
     optionalDetails: { type: "object" },
-    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
     expectedRevision: { type: "integer", minimum: 1 },
     editMessageId: { type: "string", minLength: 1, maxLength: 64 },
     replyToMessageId: { type: "string", minLength: 1, maxLength: 64 },
@@ -645,7 +678,7 @@ export const mobileCreationBuildOpenApiBody = {
     sourceNotes: { type: "string", maxLength: 12000 },
     optionalDetails: { type: "object" },
     language: { type: "string", minLength: 2, maxLength: 40 },
-    requestId: { type: "string", minLength: 8, maxLength: 64 },
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH },
     expectedRevision: { type: "integer", minimum: 1 }
   }
 } as const;
@@ -655,7 +688,7 @@ export const mobileEditProposalActionOpenApiBody = {
   additionalProperties: false,
   properties: {
     proposalId: { type: "string", format: "uuid" },
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
   },
   required: ["proposalId"]
 } as const;
@@ -664,7 +697,7 @@ export const mobileChatUndoOpenApiBody = {
   type: "object",
   additionalProperties: false,
   properties: {
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
   }
 } as const;
 
@@ -689,7 +722,7 @@ export const mobileManualBookEditOpenApiBody = {
       }
     },
     savedExportMessageId: { type: "string", minLength: 1, maxLength: 128 },
-    requestId: { type: "string", minLength: 8, maxLength: 64 }
+    requestId: { type: "string", minLength: REQUEST_ID_MIN_LENGTH, maxLength: REQUEST_ID_MAX_LENGTH }
   },
   required: ["pages"]
 } as const;

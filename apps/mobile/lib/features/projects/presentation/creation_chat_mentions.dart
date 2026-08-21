@@ -202,7 +202,7 @@ List<MobileCreationCharacterRef> _resolveComposerMentions({
   // The resolver returns one past `limit` so callers can see an over-full
   // set; this caller is the one that drops (see _maxMentionsPerMessage).
   return [
-    for (final mention in resolveCharacterMentions(
+    for (final mention in resolveLibraryMentions(
       text: text,
       inserted: inserted,
       characters: characters,
@@ -218,14 +218,14 @@ List<MobileCreationCharacterRef> _resolveComposerMentions({
 /// still that reader's pick, and dropping it silently was half of how a
 /// mention went missing.
 bool _textHasMention(String text, String mentionText) {
-  return characterTextHasMention(text, mentionText);
+  return libraryTextHasMention(text, mentionText);
 }
 
 /// The `token` at [caret], or null when the caret is not inside one. The `@`
 /// must open a word (start of text or after non-name punctuation) and the token
 /// must be short and single-line, so ordinary email addresses never trigger it.
 _MentionQuery? _mentionQueryAt(String text, int caret) {
-  final query = characterMentionQueryAt(text, caret);
+  final query = libraryMentionQueryAt(text, caret);
   return query == null
       ? null
       : _MentionQuery(start: query.start, query: query.query);

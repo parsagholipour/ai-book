@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tomeza/features/characters/domain/character_mentions.dart';
+import 'package:tomeza/features/characters/domain/library_mentions.dart';
 import 'package:tomeza/features/characters/domain/character_models.dart';
 
 import 'character_test_support.dart';
@@ -9,7 +9,7 @@ void main() {
   final vega = testCharacter(id: 'vega', name: 'Luna Vega');
 
   test('typed names resolve longest-first and in textual order', () {
-    final mentions = resolveCharacterMentions(
+    final mentions = resolveLibraryMentions(
       text: '@Luna Vega met @Luna.',
       inserted: const {},
       characters: [luna, vega],
@@ -20,7 +20,7 @@ void main() {
   test('ambiguous typed names require an explicit picked id', () {
     final otherLuna = testCharacter(id: 'other', name: 'luna');
     expect(
-      resolveCharacterMentions(
+      resolveLibraryMentions(
         text: '@Luna',
         inserted: const {},
         characters: [luna, otherLuna],
@@ -28,7 +28,7 @@ void main() {
       isEmpty,
     );
     expect(
-      resolveCharacterMentions(
+      resolveLibraryMentions(
         text: '@Luna',
         inserted: const {'luna': '@Luna'},
         characters: [luna, otherLuna],
@@ -39,7 +39,7 @@ void main() {
 
   test('the edited character is excluded from self mentions', () {
     expect(
-      resolveCharacterMentions(
+      resolveLibraryMentions(
         text: '@Luna',
         inserted: const {},
         characters: [luna],
@@ -59,7 +59,7 @@ void main() {
 
       expect(
         [
-          for (final mention in resolveCharacterMentions(
+          for (final mention in resolveLibraryMentions(
             text: '(@Luna), then @Luna-Bear.',
             inserted: const {},
             characters: characters,
@@ -69,7 +69,7 @@ void main() {
         ['luna', 'bear'],
       );
       expect(
-        resolveCharacterMentions(
+        resolveLibraryMentions(
           text: 'mail@Luna.example',
           inserted: const {},
           characters: characters,
@@ -77,7 +77,7 @@ void main() {
         isEmpty,
       );
       expect(
-        resolveCharacterMentions(
+        resolveLibraryMentions(
           text: '𐐀@Luna',
           inserted: const {},
           characters: characters,
@@ -92,9 +92,9 @@ void main() {
     // reading "@Luna's" as one word shipped the message with no character ids
     // and let the model invent the look this feature exists to pin.
     for (final text in ["@Luna's hat", '@Luna\u2019s hat']) {
-      expect(characterTextHasMention(text, '@Luna'), isTrue);
+      expect(libraryTextHasMention(text, '@Luna'), isTrue);
       expect(
-        resolveCharacterMentions(
+        resolveLibraryMentions(
           text: text,
           inserted: const {'luna': '@Luna'},
           characters: [luna],
@@ -109,20 +109,20 @@ void main() {
     // for "@Luna-Bear" while the server bound Luna behind it and snapshotted
     // her face onto a character the reader never named.
     expect(
-      resolveCharacterMentions(
+      resolveLibraryMentions(
         text: 'A story about @Luna-Bear',
         inserted: const {},
         characters: [luna],
       ),
       isEmpty,
     );
-    expect(characterTextHasMention('A story about @Luna-Bear', '@Luna'), isFalse);
+    expect(libraryTextHasMention('A story about @Luna-Bear', '@Luna'), isFalse);
 
     // The saved name may own the hyphen, and a hyphen joining nothing is
     // ordinary punctuation.
     final bear = testCharacter(id: 'bear', name: 'Luna-Bear');
     expect(
-      resolveCharacterMentions(
+      resolveLibraryMentions(
         text: 'A story about @Luna-Bear',
         inserted: const {},
         characters: [luna, bear],
@@ -131,7 +131,7 @@ void main() {
     );
     for (final text in ['@Luna-', '@Luna - the rabbit']) {
       expect(
-        resolveCharacterMentions(
+        resolveLibraryMentions(
           text: text,
           inserted: const {},
           characters: [luna],
@@ -152,7 +152,7 @@ void main() {
     final long = testCharacter(id: 'alireza', name: alireza);
 
     expect(
-      resolveCharacterMentions(
+      resolveLibraryMentions(
         text: text,
         inserted: const {},
         characters: [short],
@@ -160,7 +160,7 @@ void main() {
       isEmpty,
     );
     expect(
-      resolveCharacterMentions(
+      resolveLibraryMentions(
         text: text,
         inserted: const {},
         characters: [short, long],
@@ -168,18 +168,18 @@ void main() {
       'alireza',
     );
     expect(
-      savedCharacterMentionRanges(text, [
-        CharacterMention(id: 'ali', name: ali),
-        CharacterMention(id: 'alireza', name: alireza),
+      savedLibraryMentionRanges(text, [
+        LibraryMention(id: 'ali', name: ali),
+        LibraryMention(id: 'alireza', name: alireza),
       ]).single.mention.id,
       'alireza',
     );
   });
 
   test('saved ranges leave a nested name inside the longer one alone', () {
-    final ranges = savedCharacterMentionRanges('@Luna and @Luna Vega', const [
-      CharacterMention(id: 'luna', name: 'Luna'),
-      CharacterMention(id: 'vega', name: 'Luna Vega'),
+    final ranges = savedLibraryMentionRanges('@Luna and @Luna Vega', const [
+      LibraryMention(id: 'luna', name: 'Luna'),
+      LibraryMention(id: 'vega', name: 'Luna Vega'),
     ]);
 
     expect(
@@ -189,9 +189,9 @@ void main() {
   });
 
   test('two names differing only in case keep their own tokens', () {
-    final ranges = savedCharacterMentionRanges('@Bram met @bram.', const [
-      CharacterMention(id: 'upper', name: 'Bram'),
-      CharacterMention(id: 'lower', name: 'bram'),
+    final ranges = savedLibraryMentionRanges('@Bram met @bram.', const [
+      LibraryMention(id: 'upper', name: 'Bram'),
+      LibraryMention(id: 'lower', name: 'bram'),
     ]);
 
     expect(
@@ -209,10 +209,11 @@ void main() {
       for (var index = 0; index < 11; index += 1)
         testCharacter(id: 'char-$index', name: 'Name$index'),
     ];
-    final text = [for (final character in characters) '@${character.name}']
-        .join(' and ');
+    final text = [
+      for (final character in characters) '@${character.name}',
+    ].join(' and ');
 
-    final resolved = resolveCharacterMentions(
+    final resolved = resolveLibraryMentions(
       text: text,
       inserted: const {},
       characters: characters,
@@ -220,5 +221,51 @@ void main() {
 
     expect(resolved.length, greaterThan(10));
     expect(resolved.last.id, 'char-10');
+  });
+
+  test('the over-full set is exactly one sentinel past the limit', () {
+    // Pinned, because both callers do arithmetic on it: the editor sizes its
+    // chip row from the returned length and the composer drops down to its own
+    // cap. A second element past the limit is a chip nobody asked for.
+    final characters = [
+      for (var index = 0; index < 12; index += 1)
+        testCharacter(id: 'char-$index', name: 'Name$index'),
+    ];
+    final text = [
+      for (final character in characters) '@${character.name}',
+    ].join(' and ');
+
+    expect(
+      resolveLibraryMentions(
+        text: text,
+        inserted: const {},
+        characters: characters,
+        limit: 10,
+      ),
+      hasLength(11),
+    );
+    expect(
+      resolveLibraryMentions(
+        text: text,
+        inserted: const {},
+        characters: characters,
+        limit: 3,
+      ),
+      hasLength(4),
+    );
+  });
+
+  test('a resolved mention carries the character kind', () {
+    // Only character rows are written today, and the resolver only ever reads
+    // the character library — so anything it hands back is a character link,
+    // and the editor's chips and its save both rely on that.
+    expect(
+      resolveLibraryMentions(
+        text: '@Luna',
+        inserted: const {},
+        characters: [luna],
+      ).single.kind,
+      LibraryMentionKind.character,
+    );
   });
 }

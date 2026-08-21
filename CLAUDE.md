@@ -256,9 +256,32 @@ code in that area, however obvious the rule looks.
 - **A per-book character list is a copy, and it says which library character it is a copy of.** → apps/api/src/mobile/CLAUDE.md
 - **A reference-sheet filename must survive a non-Latin name.** → apps/worker/src/generation/CLAUDE.md
 - **`photoPath` is not a reference; `portraitPath` is, and the upload decides which one an image becomes.** → apps/api/src/mobile/CLAUDE.md
+- **A portrait start's prompt inputs are part of its command identity, never a test it is refused on.** → apps/api/src/mobile/CLAUDE.md
 - **The face is fed in twice, and only ever into spare budget.** → apps/worker/src/generation/CLAUDE.md
 - **A mentioned character's sheet rides the stored edit request, never the routed text.** → apps/api/src/mobile/CLAUDE.md
 - **The mention scanner's rule about marks runs the other way, and both are right.** → packages/core/src/generation/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
+- **A mention row nothing can name is what makes the strip stop trusting the name list.** → packages/db/CLAUDE.md
+- **The broad strip's word test reads the prose it is producing, not the prose it was handed.** → packages/db/CLAUDE.md
+- **Naming every row is not the same as claiming every marker, and a tie is settled rather than left standing.** → packages/db/CLAUDE.md + packages/core/src/generation/CLAUDE.md
+- **A character PATCH re-reads its own row under the claim, because the claim only asserts the name.** → apps/api/src/mobile/CLAUDE.md
+- **The text a character write screens is the text it stores, and the text the request typed is refused before anything is claimed — so each route screens twice.** → apps/api/src/mobile/CLAUDE.md
+- **Both mention-rewriting transactions claim every source in one statement, and the timeout that survives their ceiling is a 503, not a conflict.** → apps/api/src/mobile/CLAUDE.md
+- **One candidate set decides who owns a span, and the source's own name is not in it.** → apps/api/src/mobile/CLAUDE.md
+- **A mention a save gives up takes its `@` with it, because the row it was bound to is the only record of where the marker sits.** → apps/api/src/mobile/CLAUDE.md
+- **A mention row's kind is required, and one that arrives without it is nobody.** → apps/api/src/mobile/CLAUDE.md + packages/db/CLAUDE.md
+- **A ceiling on one transaction is not a ceiling on a request: the delete runs its lane twice, and the patch pays for two reads before it opens one.** → apps/api/src/mobile/CLAUDE.md
+- **A budget too small to commit in buys no window at all.** → apps/api/src/mobile/CLAUDE.md
+- **A refusal's `reason` reaches the reader only if the route's 422 schema names it.** → apps/api/src/mobile/CLAUDE.md
+- **A wire code owns one sentence, and it lives with the code rather than at the call site.** → apps/api/src/mobile/CLAUDE.md
+- **An unreadable body is recognised by the parser that refused it, never by a bare 400.** → apps/api/src/mobile/CLAUDE.md
+- **One declaration orders every read of a character's mentions, and no read spells it a second time.** → packages/db/CLAUDE.md
+- **A claim that writes a row's own value back does not lock it against being mentioned, so the mention rewrite takes the `FOR UPDATE` itself.** → apps/api/src/mobile/CLAUDE.md
+- **A lock is not a write, and a claim that writes stamps a clock from before it waited.** → apps/api/src/mobile/CLAUDE.md
+- **A mention target deleted mid-write is a 404, not a stack trace.** → apps/api/src/mobile/CLAUDE.md
+- **Where two answers are told apart by one exact test and one piece of prose, the prose speaks last.** → apps/api/src/mobile/CLAUDE.md
+- **A create tells the link writer it is new, and only the read is allowed to believe it.** → apps/api/src/mobile/CLAUDE.md
+- **A route's declared statuses are what its own handler can reach in the shared ladder, never the ladder's full set of rungs.** → apps/api/src/mobile/CLAUDE.md
+- **A module kept light enough to survive a mock has to be light in both directions.** → packages/core/CLAUDE.md + packages/db/CLAUDE.md
 
 ### Compiling, rendering and exports
 
@@ -300,6 +323,7 @@ code in that area, however obvious the rule looks.
 
 - **The Flutter creation chat screen is one library split with `part` files** → apps/mobile/lib/features/projects/CLAUDE.md
 - **The in-app reader renders the compiled `book.pdf` with pdfrx (PDFium).** → apps/mobile/lib/features/reader/CLAUDE.md
+- **The description field refuses rather than truncates, so its bound is a ceiling well above the cap and a mention scan that stops at it.** → apps/mobile/lib/features/characters/CLAUDE.md
 - **The reader places the rendered page before it places the selection.** → apps/mobile/lib/features/reader/CLAUDE.md
 
 ### Admin dashboards and cost accounting

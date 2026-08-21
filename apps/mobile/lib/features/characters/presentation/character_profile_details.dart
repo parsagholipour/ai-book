@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/ui/app_components.dart';
 import '../domain/character_models.dart';
-import '../domain/character_mentions.dart';
+import '../domain/library_mentions.dart';
 
 /// Who the character is: the description a book writes them from, the details
 /// beside it, and the description the server read off their photo while it is
@@ -142,7 +142,7 @@ class CharacterProfileDetails extends StatelessWidget {
 
   Widget _descriptionText(BuildContext context) {
     final theme = Theme.of(context);
-    final ranges = savedCharacterMentionRanges(
+    final ranges = savedLibraryMentionRanges(
       character.description,
       character.mentions,
     );
@@ -157,23 +157,34 @@ class CharacterProfileDetails extends StatelessWidget {
           TextSpan(text: character.description.substring(cursor, range.start)),
         );
       }
+      final token = character.description.substring(range.start, range.end);
+      // Only a character mention has a page to open. A location, or a kind a
+      // newer server invented, reads as an emphasised name and nothing more —
+      // the alternative is a link that resolves to no character, which is a tap
+      // that does nothing at all. Why either can reach a build that has no
+      // library for it is on [LibraryMentionKind].
       spans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.baseline,
-          baseline: TextBaseline.alphabetic,
-          child: GestureDetector(
-            key: ValueKey('character-mention-${range.mention.id}'),
-            behavior: HitTestBehavior.opaque,
-            onTap: () => onOpenMention(range.mention.id),
-            child: Text(
-              character.description.substring(range.start, range.end),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w700,
+        range.mention.kind == LibraryMentionKind.character
+            ? WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: GestureDetector(
+                  key: ValueKey('character-mention-${range.mention.id}'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onOpenMention(range.mention.id),
+                  child: Text(
+                    token,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              )
+            : TextSpan(
+                text: token,
+                style: const TextStyle(fontWeight: FontWeight.w700),
               ),
-            ),
-          ),
-        ),
       );
       cursor = range.end;
     }

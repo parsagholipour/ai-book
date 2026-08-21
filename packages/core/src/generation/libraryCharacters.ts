@@ -27,8 +27,8 @@ export const MAX_APPEARANCE_LENGTH = 600;
 const MAX_FIELD_KEY_LENGTH = 40;
 const MAX_FIELD_VALUE_LENGTH = 300;
 
-/** How many characters one chat message may @-mention. */
-export const LIBRARY_CHARACTER_MENTION_LIMIT = 10;
+/** How many library items one chat message may @-mention. */
+export const LIBRARY_MENTION_LIMIT = 10;
 
 export type LibraryCharacterField = { key: string; value: string };
 

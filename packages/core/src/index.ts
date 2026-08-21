@@ -53,7 +53,7 @@ export * from "./generation/pages.js";
 export * from "./generation/bestOf.js";
 export * from "./generation/characterReferences.js";
 export * from "./generation/libraryCharacters.js";
-export * from "./generation/libraryCharacterMentions.js";
+export * from "./generation/libraryMentions.js";
 export * from "./generation/libraryCharacterImages.js";
 export * from "./generation/voiceCharacters.js";
 export * from "./generation/readerChapters.js";

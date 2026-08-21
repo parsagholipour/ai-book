@@ -7,7 +7,7 @@ vi.mock("../projectStatus.js", async () => (await import("./testing/mobileApiMoc
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { reserveCredits } from "@book-maker/db/billing";
+import { InsufficientCreditsError, reserveCredits } from "@book-maker/db/billing";
 import { enqueueGenerationJob } from "../queue.js";
 import {
   bearer,
@@ -36,6 +36,10 @@ function characterRecord(overrides: Record<string, unknown> = {}) {
     name: "Luna",
     description: "A brave night-flying rabbit.",
     fields: [],
+    // This file's serializing read is `ownedCharacterWithMentions`, so a real
+    // row always carries this. A fixture without it models a read that does not
+    // happen, and `libraryMentionRefs` no longer covers for one.
+    outgoingMentions: [],
     photoPath: PHOTO_FILE,
     photoKind: "PHOTOGRAPH",
     suggestedDescription: null,
@@ -463,6 +467,264 @@ describe("mobile character image history routes", () => {
       expect(response.statusCode).toBe(404);
       expect(response.json().error.code).toBe("CHARACTER_NOT_FOUND");
     }
+    await app.close();
+  });
+
+  it("rations both picture writes on the bucket the character writes share", async () => {
+    // `character-write`, spent before either route reads a row. The 429 both
+    // answer with is the rung neither map declared: it reached the reader
+    // through the default serializer while `/docs` called it impossible.
+    withImages([imageRecord(), uploadImage]);
+    const app = await buildMobileApp({ draftRateLimit: { maxAttempts: 1, windowMs: 60_000 } });
+
+    expect((await removeImage(app, "img-portrait")).statusCode).toBe(200);
+    const limited = await promote(app, "img-portrait");
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toEqual({
+      error: { code: "RATE_LIMITED", message: "Too many attempts. Try again soon." }
+    });
+    await app.close();
+  });
+
+  it("says how many credits a refused portrait needed", async () => {
+    // The numbers are the reply: `sendInsufficientCredits` assembles five
+    // fields, but fast-json-stringify removes whatever the route's 402 schema
+    // does not name, and the app builds its shortfall card out of
+    // `requiredCredits` (`PaywallCreditsNeeded.fromApiError`, reached from
+    // `character_profile_screen.dart`). Documented with `mobileAuthError` this
+    // arrived as a bare sentence. Asserted on the serialized body, because the
+    // helper was always called correctly.
+    vi.mocked(reserveCredits).mockRejectedValueOnce(
+      new InsufficientCreditsError({ requiredCredits: 45, availableCredits: 12, reservedCredits: 3 })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/characters/char-1/portrait",
+      headers: bearer("token-a"),
+      payload: { requestId: "portrait-out-of-credits" }
+    });
+
+    expect(response.statusCode).toBe(402);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INSUFFICIENT_CREDITS",
+        message: "You need more credits for this action.",
+        requiredCredits: 45,
+        availableCredits: 12,
+        reservedCredits: 3
+      }
+    });
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("refuses a portrait for a look the prompt would have rendered verbatim", async () => {
+    // The rule the two character writes hold — the text a character write
+    // screens is the text it stores — read from the paying end: the text this
+    // route screens has to be the text it is about to have drawn.
+    // `buildLibraryCharacterPortraitPrompt` prints `Appearance (match
+    // exactly): …` straight into the image prompt, and `appearance` was the
+    // one field missing from `characterContentText`'s input here, so the only
+    // route in this group that reaches a provider on a charged job assessed
+    // every part of its prompt except the sentence the provider is told to
+    // follow exactly. Nothing upstream stands in for it: POST and PATCH
+    // screened this string under whatever the operator flag said at the time,
+    // and `fillAppearanceFromPhoto` writes a look off an uploaded photo onto a
+    // character that has none.
+    mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
+      characterRecord({ appearance: "Step-by-step instructions to build a bomb." })
+    );
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/characters/char-1/portrait",
+      headers: bearer("token-a"),
+      payload: { requestId: "portrait-restricted-appearance" }
+    });
+
+    expect(response.statusCode).toBe(422);
+    // `reason` reaches the reader because this route documents its 422 with
+    // `contentRestrictedError` — the name and description in the fixture are
+    // the same ones every other portrait test starts a job from, so the look
+    // is the whole refusal.
+    expect(response.json().error).toEqual({
+      code: "CONTENT_RESTRICTED",
+      message: "Tomeza cannot help create content that facilitates severe illegal harm.",
+      reason: "critical_illegal_harm"
+    });
+    expect(reserveCredits).not.toHaveBeenCalled();
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    // Nor was the row claimed out of its settled portrait status.
+    expect(mockPrisma.libraryCharacter.updateMany).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  /** The Redraw tap the app makes, reusing one id the way the screen does. */
+  const redrawWith = (app: Awaited<ReturnType<typeof buildMobileApp>>, requestId: string) =>
+    app.inject({
+      method: "POST",
+      url: "/api/mobile/characters/char-1/portrait",
+      headers: bearer("token-a"),
+      payload: { requestId }
+    });
+
+  it("charges a reused id once for the same drawing and starts a new one for a different look", async () => {
+    // The fingerprint is what a replayed `requestId` is asserted against, and
+    // `appearance` — printed verbatim by `buildLibraryCharacterPortraitPrompt`
+    // — is one of the inputs it has to name. What it must not do is *refuse*
+    // on it: the app reuses its `requestId` until a start it saw succeed
+    // (`character_profile_screen.dart` clears `_portraitRequestId` only in the
+    // try), so a 409 for a moved input is a Redraw button that stays dead for
+    // the life of the screen. The look is part of the command's identity
+    // instead — same look replays, changed look is a new command.
+    mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
+      characterRecord({ appearance: "Silver fur, one torn ear." })
+    );
+    const app = await buildMobileApp();
+
+    expect((await redrawWith(app, "portrait-retry")).statusCode).toBe(202);
+    // Same look, same id: still one drawing and one charge, which is what the
+    // reused id is for.
+    expect((await redrawWith(app, "portrait-retry")).statusCode).toBe(202);
+    expect(enqueueGenerationJob).toHaveBeenCalledTimes(1);
+
+    mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
+      characterRecord({ appearance: "Copper fur, both ears whole." })
+    );
+    const afterEdit = await redrawWith(app, "portrait-retry");
+
+    // A different drawing under an id the app has no way to retire: answered
+    // with the drawing, because replaying the old attempt promises the new look
+    // is being rendered when nothing is, and refusing leaves the reader tapping
+    // a button that can only 409.
+    expect(afterEdit.statusCode).toBe(202);
+    expect(enqueueGenerationJob).toHaveBeenCalledTimes(2);
+    await app.close();
+  });
+
+  it("keeps Redraw alive after a photo writes the look the reader never touched", async () => {
+    // The failure the fingerprint widening bought, end to end. Nothing here is
+    // a reader edit: `fillAppearanceFromPhoto` writes an `appearance` off an
+    // uploaded photo onto a character that had none, and moves `photoPath`
+    // with it. So a tap whose 202 was lost, an upload, and a second tap is
+    // three ordinary gestures that used to leave `POST /:id/portrait`
+    // answering `GENERATION_COMMAND_CONFLICT` forever — for a request the
+    // reader had no way to restate, since the retained id is only cleared by
+    // the start it never saw succeed.
+    mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
+      characterRecord({ appearance: null, photoPath: null, photoKind: null })
+    );
+    const app = await buildMobileApp();
+
+    expect((await redrawWith(app, "portrait-timed-out")).statusCode).toBe(202);
+
+    mockPrisma.libraryCharacter.findFirst.mockResolvedValue(
+      characterRecord({ appearance: "Auburn hair, round glasses.", photoKind: "PHOTOGRAPH" })
+    );
+    const afterUpload = await redrawWith(app, "portrait-timed-out");
+
+    expect(afterUpload.statusCode).toBe(202);
+    // And it is a real drawing of the photo, not a replay of the attempt that
+    // was started before there was one.
+    expect(enqueueGenerationJob).toHaveBeenCalledTimes(2);
+    await app.close();
+  });
+
+  it("starts fresh for an id whose attempt predates the look joining the fingerprint", async () => {
+    // The other half of the same wedge: a row stored by an earlier deploy
+    // carries a fingerprint computed without `appearance`, so the first retry
+    // of any of them recomputed a different one under the old key and 409ed a
+    // reader who had changed nothing at all. The stored fingerprint is spelled
+    // as a literal on purpose — what makes the row unreachable is the command
+    // key, not whatever the old shape hashed to.
+    state.generationAttempts.push({
+      id: "attempt-legacy",
+      userId: "user-a",
+      commandKey: "mobile:character-portrait:char-1:portrait-legacy",
+      requestFingerprint: "fingerprint-computed-before-appearance",
+      status: "QUEUED",
+      operation: "CHARACTER_PORTRAIT_GENERATION",
+      quotedCredits: 40,
+      projectId: null,
+      editOperationId: null,
+      ledgerEntryId: null,
+      primaryJobId: "job-legacy",
+      retryOfAttemptId: null,
+      error: null,
+      refundPending: false
+    });
+    const app = await buildMobileApp();
+
+    const response = await redrawWith(app, "portrait-legacy");
+
+    expect(response.statusCode).toBe(202);
+    expect(enqueueGenerationJob).toHaveBeenCalledTimes(1);
+    // The old row is left exactly as it was: it names a job of its own, and
+    // this start neither replays it nor settles it.
+    expect(state.generationAttempts[0]).toMatchObject({ id: "attempt-legacy", status: "QUEUED" });
+    await app.close();
+  });
+
+  it("answers a malformed portrait request in the shape the app reads", async () => {
+    // `attachValidation` is what makes the declared 400 the one this route
+    // sends. Left to reject on its own, ajv answers Fastify's
+    // `{ statusCode, error, message }` — no `error.code` for the app, and a
+    // body fast-json-stringify cannot push through the 400 schema at all, so
+    // declaring that status turned a malformed request into a 500.
+    const app = await buildMobileApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/mobile/characters/char-1/portrait",
+      headers: bearer("token-a"),
+      payload: { requestId: "short" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: { code: "VALIDATION_ERROR", message: "Invalid portrait request." }
+    });
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  /**
+   * The half of that same 400 `attachValidation` cannot reach.
+   *
+   * `FST_ERR_CTP_INVALID_JSON` comes out of the content-type parser, so there is
+   * no handler to attach a rejection to and no zod parse to answer — the reply
+   * is Fastify's own, pushed through a `mobileAuthError` that has nowhere to put
+   * `error: "Bad Request"`, and the reader got a 500 for a mis-encoded body. The
+   * upload is here too because it declares no body at all and yet accepts
+   * whatever content-type the client sends: `application/json` with garbage in
+   * it reaches the JSON parser just the same. Both now carry the route
+   * `errorHandler` the two character writes use.
+   */
+  it("refuses an unreadable body on both picture writes as a 400 the app can read", async () => {
+    const app = await buildMobileApp();
+    const malformed = (method: "POST" | "PUT", url: string) =>
+      app.inject({
+        method,
+        url,
+        headers: { ...bearer("token-a"), "content-type": "application/json" },
+        payload: "{ requestId: unquoted"
+      });
+
+    for (const response of [
+      await malformed("POST", "/api/mobile/characters/char-1/portrait"),
+      await malformed("PUT", "/api/mobile/characters/char-1/photo?filename=luna.jpg")
+    ]) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({
+        error: { code: "VALIDATION_ERROR", message: "That request could not be read." }
+      });
+    }
+    // Neither one got as far as drawing anything or storing a file.
+    expect(enqueueGenerationJob).not.toHaveBeenCalled();
     await app.close();
   });
 });

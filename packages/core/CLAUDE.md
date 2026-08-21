@@ -5,8 +5,19 @@ graph: `apps/* → packages/db → packages/core`. It must not import from `apps
 `packages/db`, and nothing in it may open an HTTP server or touch the queue.
 
 Relative imports carry the `.js` extension (`./foo.js`) even from `.ts`. Consumers import the bare
-specifier `@book-maker/core` — the `exports` map has a single entry and there are no deep imports
-anywhere in the repo. Keep it that way; add to `src/index.ts` instead.
+specifier `@book-maker/core`, and the barrel is the default — add to `src/index.ts` rather than
+reaching past it.
+
+**A module kept light enough to survive a mock has to be light in both directions.**
+The `exports` map has one narrow entry beside `.`, and it exists to be un-mockable.
+`./libraryMentions` is imported by `packages/db/src/libraryMentions.ts` and by nothing else. That db
+module is itself a subpath so it survives a wholesale `vi.mock("@book-maker/db")`; taking the strip
+helpers off this barrel quietly handed it a *second* mock surface, because a
+suite that mocks core with a bare factory replaces the whole barrel — adapters, prompts, PDF — and
+`generationDescription` then throws `stripBoundLibraryMentionMarkers is not a function`. What closes that
+is a specifier `vi.mock("@book-maker/core")` does not name. `packages/db/src/libraryMentions.test.ts`
+pins it with exactly that mock at the top of the file. A second entry has to earn itself the same
+way: a true leaf on the other end, and a test that fails without it.
 
 ## What lives where
 

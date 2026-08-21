@@ -62,11 +62,8 @@ import { advisorSnapshotForStorage, createCreationBuildHelpers, sendFinalizeOutc
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
 import { fieldsFromJson as characterFieldsFromJson } from "../characterSerializer.js";
-import {
-  expandLibraryCharacterGraph,
-  generationDescription,
-  orderedCharacterRefs
-} from "../characterMentions.js";
+import { expandLibraryCharacterGraph, generationDescription } from "../libraryMentionGraph.js";
+import { orderedCharacterRefs } from "../libraryMentionRows.js";
 
 /**
  * Branching creation chat: sessions, messages, attachments, preflight and build.

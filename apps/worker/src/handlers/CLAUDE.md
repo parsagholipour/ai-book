@@ -353,8 +353,9 @@ reason, and a null answer refuses the whole move rather than half-applying it.
 - **A cover that cannot be drawn now finishes the book instead of failing it.** The cover is the
   last thing a book makes, so a total image-provider outage used to mark a fully written, fully paid
   project FAILED and refund `FULL_BOOK_GENERATION` — `generate-image` has no retry attempts
-  (`jobRetryPolicy.ts`) and is not in `DERIVATIVE_GENERATION_JOBS`. `generateCover.ts` now catches
-  anything that is not a `StopRequestedError` and renders a designed cover, recording
+  (`retryJobOptions` in packages/core/src/jobDispatch.ts) and is not in
+  `DERIVATIVE_GENERATION_JOBS`. `generateCover.ts` now catches anything that is not a
+  `StopRequestedError` and renders a designed cover, recording
   `coverFallbackReason: "ai_cover_failed"`. The stop check is load-bearing: swallowing it would turn
   every user-cancelled run into a finished book.
 - **The portrait job is the one `GenerationJob` with no project.** `GENERATE_CHARACTER_PORTRAIT`

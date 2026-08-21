@@ -12,6 +12,7 @@ import {
   DEFAULT_ADVISOR_RATE_LIMIT,
   DEFAULT_ATTACHMENT_RATE_LIMIT,
   DEFAULT_BILLING_VERIFICATION_RATE_LIMIT,
+  DEFAULT_CHARACTER_DELETE_RATE_LIMIT,
   DEFAULT_DRAFT_RATE_LIMIT,
   DEFAULT_GENERATION_RATE_LIMIT,
   DEFAULT_VOICE_CALL_RATE_LIMIT
@@ -46,6 +47,7 @@ export type MobileProjectRoutesOptions = {
   billingVerificationRateLimit?: Partial<RateLimitConfig>;
   advisorRateLimit?: Partial<RateLimitConfig>;
   draftRateLimit?: Partial<RateLimitConfig>;
+  characterDeleteRateLimit?: Partial<RateLimitConfig>;
   attachmentRateLimit?: Partial<RateLimitConfig>;
   voiceCallRateLimit?: Partial<RateLimitConfig>;
   /** Test seam for attachment ingestion; defaults to the core pipeline. */
@@ -90,6 +92,8 @@ export type MobileRouteContext = {
   billingVerificationLimiter: InMemoryRateLimiter;
   advisorLimiter: InMemoryRateLimiter;
   draftLimiter: InMemoryRateLimiter;
+  /** Only `DELETE /api/mobile/characters/:id` — see the constant for why. */
+  characterDeleteLimiter: InMemoryRateLimiter;
   attachmentLimiter: InMemoryRateLimiter;
   voiceCallLimiter: InMemoryRateLimiter;
   attachmentIngestion: (input: IngestCreationAttachmentInput) => Promise<CreationAttachment>;
@@ -134,6 +138,10 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
   const draftLimiter = new InMemoryRateLimiter({
     ...DEFAULT_DRAFT_RATE_LIMIT,
     ...options.draftRateLimit
+  });
+  const characterDeleteLimiter = new InMemoryRateLimiter({
+    ...DEFAULT_CHARACTER_DELETE_RATE_LIMIT,
+    ...options.characterDeleteRateLimit
   });
   const attachmentLimiter = new InMemoryRateLimiter({
     ...DEFAULT_ATTACHMENT_RATE_LIMIT,
@@ -200,6 +208,7 @@ export function createMobileRouteContext(options: MobileProjectRoutesOptions): M
     billingVerificationLimiter,
     advisorLimiter,
     draftLimiter,
+    characterDeleteLimiter,
     attachmentLimiter,
     voiceCallLimiter,
     attachmentIngestion,

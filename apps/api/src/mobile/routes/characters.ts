@@ -1,168 +1,139 @@
-import { creditCostForOperation, CREATION_ATTACHMENT_MAX_BYTES } from "@book-maker/core";
-import { Prisma, prisma } from "@book-maker/db";
-import {
-  GenerationAttemptConflictError,
-  InsufficientCreditsError,
-  startGenerationAttempt
-} from "@book-maker/db/billing";
+import { creditCostForOperation } from "@book-maker/core";
+import { prisma } from "@book-maker/db";
+import type { LibraryCharacterModel, Prisma } from "@book-maker/db";
+import { libraryMentionInclude } from "@book-maker/db/libraryMentions";
 import type { FastifyInstance } from "fastify";
-import { randomUUID } from "node:crypto";
-import { enforceContentRestrictions } from "../../contentRestrictions.js";
-import { dispatchGenerationJob, enqueueGenerationJob } from "../../queue.js";
+import { contentRestrictedError, copyrightRestrictionsEnabled } from "../../contentRestrictions.js";
+import { assertCharacterContentAllowed } from "../characterContentScreen.js";
 import {
-  characterPhotoQuerySchema,
   LIBRARY_CHARACTER_LIMIT_PER_USER,
   mobileCharacterCreateBodySchema,
   mobileCharacterCreateOpenApiBody,
-  mobileCharacterPortraitBodySchema,
-  mobileCharacterPortraitOpenApiBody,
   mobileCharacterUpdateBodySchema,
   mobileCharacterUpdateOpenApiBody
 } from "../characterSchemas.js";
-import { readCharacterPhoto, type CharacterPhotoReading } from "../characterPhotoVision.js";
-import {
-  fieldsFromJson,
-  serializeLibraryCharacter,
-  serializeLibraryCharacterImage
-} from "../characterSerializer.js";
-import {
-  characterFileContentType,
-  deleteLibraryCharacterFile,
-  optimizeCharacterPhoto,
-  readLibraryCharacterFile,
-  resolveCharacterPhotoMimeType
-} from "../characterStorage.js";
-import {
-  loadCharacterImages,
-  ownedCharacter,
-  portraitClaimIsLive,
-  PORTRAIT_OPEN_STATUSES,
-  pruneCharacterImages,
-  recordCharacterImage
-} from "../characterImageStore.js";
+import { fieldsFromJson, serializeLibraryCharacter } from "../characterSerializer.js";
+import { deleteLibraryCharacterFile } from "../characterStorage.js";
+import { ownedCharacter, portraitClaimIsLive, PORTRAIT_OPEN_STATUSES } from "../characterImageStore.js";
 import type { MobileLibraryCharacterDto, MobileLibraryCharacterListDto } from "../dto.js";
 import {
   hitAuthenticatedLimit,
-  hitTieredLimit,
   requireMobileAuth,
-  sendInsufficientCredits,
-  sendMobileError
+  sendMobileError,
+  sendUnreadableBodyError
 } from "../httpErrors.js";
 import type { MobileRouteContext } from "../routeContext.js";
 import { idParamsSchema, mobileAuthError } from "../schemas.js";
-import { fingerprintGenerationRequest } from "../support.js";
+import { replaceLibraryMentions } from "../libraryMentionLinks.js";
+import { survivingMentionIds } from "../libraryMentionRows.js";
 import {
-  CharacterMentionError,
-  characterMentionRefs,
-  libraryCharacterMentionInclude,
-  replaceCharacterMentions,
-  rewriteIncomingCharacterMentions,
-  survivingMentionIds,
-  unlinkIncomingCharacterMentions
-} from "../characterMentions.js";
+  rewriteIncomingLibraryMentions,
+  unlinkIncomingLibraryMentions
+} from "../libraryMentionRewrites.js";
 import {
   CharacterDeleteClaimLostError,
   CharacterRowMovedError,
+  characterClaimSubject,
+  characterRetryTransactionOptions,
+  type CharacterTransactionOptions,
   claimCharacterRow,
-  isRetryableTransactionConflict,
-  namesMentionPrimaryKey,
-  sendCharacterEditConflict
+  sendCharacterEditConflict,
+  sendCharacterWriteBusy,
+  sendCharacterWriteError,
+  sendPortraitInProgress
 } from "../characterWriteConflicts.js";
 
 /**
- * The account-wide character library ("consistent characters").
+ * The account-wide character library ("consistent characters"): the record
+ * itself — reading the list, creating, editing and deleting one.
  *
- * CRUD is free; only `POST /:id/portrait` is priced. Characters belong to the
- * user, not to any project — books snapshot them at build time and never hold
- * a foreign key back, so deleting one here cannot break a book.
+ * Every route here is free, and every one of them is about the character's
+ * *prose*: the description, its durable `@mentions`, and the sibling
+ * descriptions that mention it back. That is what makes this a lane rather than
+ * a CRUD file — a write here claims its own row and, on a rename or a delete,
+ * up to 99 others, all inside one client budget
+ * (`characterWriteConflicts.ts`). The pictures live in `routes/characterImages.ts`
+ * and share nothing with it but the row they hang off; the one priced character
+ * route is over there too.
+ *
+ * Characters belong to the user, not to any project — books snapshot them at
+ * build time and never hold a foreign key back, so deleting one here cannot
+ * break a book.
  */
 
 /**
- * The rows an upload may move the reference on.
+ * Which portrait job owned the row when a delete's claim came back empty.
  *
- * Adoption is free and instant, so the only things it must never do are
- * overwrite work someone paid for and race the job that is producing it. A
- * failed or absent portrait is fair game — the reader's own artwork beats a
- * generation that did not happen — and so is an earlier adopted one, which is
- * simply the previous upload.
- *
- * This is a `where` rather than a predicate on the row the handler read,
- * because up to `CHARACTER_PHOTO_VISION_BUDGET_MS` passes between that read
- * and this write: a portrait the reader started in the meantime holds the row,
- * and clobbering its QUEUED claim would let the next start charge a second
- * time. It is the same compare-and-set `POST /:id/portrait` makes for the same
- * reason.
- *
- * Losing it is silent. An upload is not a portrait request, so "your photo was
- * stored but is a photograph" is a state the app renders, not an error the
- * upload fails with.
+ * The two columns and no more, because that is the whole of what
+ * `portraitClaimIsLive` asks — and they are read inside the losing transaction
+ * rather than taken off the row the request was built from, which is the same
+ * rule PATCH follows for the description it writes back: a claim asserts what it
+ * names and is evidence about nothing else. `null` is a row that is no longer
+ * there to read.
  */
-const REFERENCE_CLAIMABLE = {
-  portraitStatus: { notIn: [...PORTRAIT_OPEN_STATUSES] },
-  NOT: { AND: [{ portraitSource: "GENERATED" as const }, { portraitStatus: "READY" as const }] }
-};
+type LostPortraitClaim = Pick<LibraryCharacterModel, "portraitStatus" | "portraitJobId"> | null;
 
 /**
- * Whether this upload becomes the character's reference image outright.
- *
- * Only a confident single-subject illustration does. An upload used to be able
- * to *retire* an adopted reference too — an undrawable photo landing on a
- * character whose reference was the photo being replaced — on the grounds that
- * a book would otherwise draw artwork the reader had swapped out. With every
- * version retained that is simply untrue: the artwork is still in the strip,
- * still what the books draw, and one tap from being replaced deliberately. So
- * adding a picture no longer takes a character's look away without saying so.
+ * One delete attempt: it committed — carrying the retained file names it read
+ * under its own lock — or it lost its claim to this.
  */
-function adoptsAsReference(reading: CharacterPhotoReading | null): boolean {
-  return reading?.canAdoptAsReference === true;
+type DeleteAttempt = { deleted: true; files: string[] } | { deleted: false; found: LostPortraitClaim };
+
+/**
+ * One column of the row a PATCH leaves behind: what it will hold, and whether
+ * the request asked for it to be written at all.
+ *
+ * The two are not the same question and the update depends on both. What the
+ * screen assesses is the *effective* value — the patch merged onto the row the
+ * claim found — while the `update` may only carry the columns the body sent, or
+ * a `{name}` PATCH would write the description, the appearance and the fields
+ * back over whatever landed from another device in the meantime. Keeping them
+ * in one place is what stops the second half from being re-derived: `merged`,
+ * `stored` and the `update` data used to spell `body.data.X ?? live.X` three
+ * times in three shapes, so a column added to `LibraryCharacter` had to be
+ * added to all three — and a value screened but never written, or written but
+ * never screened, is exactly what this handler was restructured to prevent.
+ */
+type PatchedColumn<Value> = { value: Value; sent: boolean };
+
+/**
+ * The patch merged onto the row under the claim, one column at a time.
+ *
+ * **Presence decides, never the value.** Sent-and-empty is a deliberate clear
+ * — the appearance the reader just erased — so the caller normalizes what it
+ * sends ("" to null) and this only asks whether it sent anything.
+ */
+function patchedColumn<Value>(sent: Value | undefined, live: Value): PatchedColumn<Value> {
+  return sent === undefined ? { value: live, sent: false } : { value: sent, sent: true };
 }
 
+/** One PATCH's columns, as the two readings below take them. */
+type PatchedColumns = Record<string, PatchedColumn<unknown>>;
+
 /**
- * Writes the look read off the photo into `appearance`, but only onto a
- * character that has none.
+ * Every column's effective value: the row the screen assesses.
  *
- * This is the one thing the upload *applies* rather than offers, and the
- * asymmetry with `suggestedDescription` is deliberate. A description is prose
- * the user wrote about who their character is, so it is theirs and is never
- * overwritten. An appearance is a field they have never had, empty on every
- * existing row — and empty is not a neutral default: it is precisely the state
- * in which the planner invents a look for the character it was told to reuse
- * and writes that invention into every illustration prompt, where it beats the
- * reference image attached beside it. Leaving the fix behind a tap would mean
- * the default path — upload a photo, tap nothing — stays broken, and the
- * default path is the bug.
- *
- * Filling is therefore additive by construction: `appearance` moves only from
- * "nothing recorded" to "what your picture shows", never from one look to
- * another. A reading that lands on a character who already has one is offered
- * on the response instead, exactly as a description is.
- *
- * A compare-and-set rather than a field on the write above, for the same reason
- * `REFERENCE_CLAIMABLE` is one: up to `CHARACTER_PHOTO_VISION_BUDGET_MS` passes
- * between reading the row and this write, which is long enough for the user to
- * have typed an appearance of their own in the editor.
+ * Mechanical on purpose — a column added to the object it is handed reaches
+ * this reading and the one below without being named again, which is the whole
+ * of what `PatchedColumn` buys. The assertion is `Object.fromEntries`' own: it
+ * answers a string-keyed record for a key set the compiler already has, and
+ * nothing here narrows a type the caller has not already stated.
  */
-async function fillAppearanceFromPhoto(
-  characterId: string,
-  reading: CharacterPhotoReading | null
-): Promise<boolean> {
-  const appearance = reading?.suggestedAppearance;
-  if (!appearance) {
-    return false;
-  }
-  const filled = await prisma.libraryCharacter.updateMany({
-    where: { id: characterId, OR: [{ appearance: null }, { appearance: "" }] },
-    data: { appearance }
-  });
-  return filled.count === 1;
+function patchedValues<Columns extends PatchedColumns>(
+  columns: Columns
+): { [Key in keyof Columns]: Columns[Key]["value"] } {
+  return Object.fromEntries(
+    Object.entries(columns).map(([key, column]) => [key, column.value])
+  ) as { [Key in keyof Columns]: Columns[Key]["value"] };
 }
 
-/** Thrown inside the attempt transaction when another start already owns the portrait. */
-class PortraitInProgressError extends Error {
-  constructor() {
-    super("A portrait for this character is already being drawn.");
-    this.name = "PortraitInProgressError";
-  }
+/** The same reading minus the columns nothing sent: the row the `update` writes. */
+function patchedWrites<Columns extends PatchedColumns>(
+  columns: Columns
+): Partial<{ [Key in keyof Columns]: Columns[Key]["value"] }> {
+  return Object.fromEntries(
+    Object.entries(columns).flatMap(([key, column]) => (column.sent ? [[key, column.value]] : []))
+  ) as Partial<{ [Key in keyof Columns]: Columns[Key]["value"] }>;
 }
 
 export async function registerMobileCharacterRoutes(
@@ -170,25 +141,6 @@ export async function registerMobileCharacterRoutes(
   context: MobileRouteContext
 ): Promise<void> {
   const { appConfig } = context;
-
-  const characterContentText = (input: {
-    name: string;
-    description: string;
-    // Screened with the rest — it is user text like any other. The photo
-    // path's own reading never comes through here: `readCharacterPhoto`
-    // screens it there, so that one bad half can be dropped without
-    // failing an upload the reader did nothing wrong in.
-    appearance?: string | null | undefined;
-    fields: Array<{ key: string; value: string }>;
-  }) =>
-    [
-      input.name,
-      input.description,
-      input.appearance ?? "",
-      ...input.fields.map((field) => `${field.key}: ${field.value}`)
-    ]
-      .filter(Boolean)
-      .join("\n");
 
   fastify.get(
     "/api/mobile/characters",
@@ -200,7 +152,7 @@ export async function registerMobileCharacterRoutes(
       }
       const characters = await prisma.libraryCharacter.findMany({
         where: { userId: auth.user.id },
-        include: libraryCharacterMentionInclude,
+        include: libraryMentionInclude,
         orderBy: { createdAt: "asc" }
       });
       return {
@@ -213,10 +165,44 @@ export async function registerMobileCharacterRoutes(
   fastify.post(
     "/api/mobile/characters",
     {
+      // The Zod parse below is this body's only gate, and the `errorHandler`
+      // covers the one refusal that never reaches it — see
+      // `sendUnreadableBodyError`. Both are what the 400 declared underneath
+      // costs: without them ajv and the JSON parser answer in Fastify's shape,
+      // through a schema that cannot hold it, and a mistyped name comes back a
+      // 500. The documented body is still the coercion ajv applies and still
+      // the contract `/docs` publishes; it has stopped being the gate.
+      attachValidation: true,
+      errorHandler: sendUnreadableBodyError,
       schema: {
         tags: ["mobile"],
         body: mobileCharacterCreateOpenApiBody,
-        response: { 201: {}, 401: mobileAuthError, 403: mobileAuthError, 409: mobileAuthError, 422: mobileAuthError }
+        // Every status this handler can actually reach, and only those.
+        // fast-json-stringify serializes an answer through the schema its code
+        // names, so a status left out is documented at `/docs` as impossible
+        // while being served through the default serializer — the same
+        // mismatch `contentRestrictedError` exists to close one level down,
+        // where an undeclared `reason` was dropped from the body outright. The
+        // three writes share one catch (`sendCharacterWriteError`), so the map
+        // is read off what *this* handler can throw into that ladder rather
+        // than off the ladder's full set of rungs.
+        response: {
+          201: {},
+          // The mention catch below answers 404 for a target that is gone or
+          // deleted under the write's own insert, and 400 for a description
+          // that no longer holds its `@Name` or for a `LibraryMention` CHECK
+          // this side should have caught; 429 is the shared `character-write`
+          // bucket, 403 the library cap, and 503 the transaction running out of
+          // time — the same answer its siblings give.
+          400: mobileAuthError,
+          401: mobileAuthError,
+          403: mobileAuthError,
+          404: mobileAuthError,
+          409: mobileAuthError,
+          422: contentRestrictedError,
+          429: mobileAuthError,
+          503: mobileAuthError
+        }
       }
     },
     async (request, reply) => {
@@ -231,19 +217,61 @@ export async function registerMobileCharacterRoutes(
       if (!body.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Give the character a name.");
       }
-      if (!(await enforceContentRestrictions(reply, characterContentText(body.data)))) {
-        return;
-      }
-      const count = await prisma.libraryCharacter.count({ where: { userId: auth.user.id } });
-      if (count >= LIBRARY_CHARACTER_LIMIT_PER_USER) {
-        return sendMobileError(
-          reply,
-          403,
-          "CHARACTER_LIMIT_REACHED",
-          `Your library holds up to ${LIBRARY_CHARACTER_LIMIT_PER_USER} characters. Delete one to add another.`
-        );
-      }
+      // Two pool acquisitions that need nothing from each other, so they cost
+      // one round trip rather than two: the cap read says whether there is room
+      // for another character, and the flag is what both screens below are
+      // assessed against — read out here, for the reason PATCH reads it out
+      // here, because the screen inside the transaction runs while the new
+      // row's lock is held.
+      const [count, copyrightRestricted] = await Promise.all([
+        prisma.libraryCharacter.count({ where: { userId: auth.user.id } }),
+        copyrightRestrictionsEnabled()
+      ]);
       try {
+        // The prose the reader typed, screened before a row exists to refuse.
+        // This is the door nearly every refusal leaves through, and it used to
+        // be inside: a body that was never going to be stored opened a
+        // transaction, wrote the row and its link set and rolled all of it back
+        // — holding the new row's lock for as long as that took. The screen
+        // below it is not this one and does not replace it; see there.
+        //
+        // **In front of the cap, which is the order `sendCharacterWriteError`
+        // documents — the refusal first.** Both answers are already in hand
+        // above, so the sequence costs nothing and decides only what a request
+        // that is *both* is told. Behind the cap, a reader at
+        // `LIBRARY_CHARACTER_LIMIT_PER_USER` was answered 403 for prose that
+        // was never going to be stored: they deleted a character to make room
+        // and only then learned the text was refused, with the `reason`
+        // `contentRestrictedError` exists to carry never sent. PATCH screens
+        // ahead of its own claim for the same reason.
+        assertCharacterContentAllowed(
+          {
+            name: body.data.name,
+            description: body.data.description,
+            appearance: body.data.appearance,
+            fields: body.data.fields
+          },
+          copyrightRestricted
+        );
+        if (count >= LIBRARY_CHARACTER_LIMIT_PER_USER) {
+          return sendMobileError(
+            reply,
+            403,
+            "CHARACTER_LIMIT_REACHED",
+            `Your library holds up to ${LIBRARY_CHARACTER_LIMIT_PER_USER} characters. Delete one to add another.`
+          );
+        }
+        // Deliberately on Prisma's default ceiling rather than
+        // `CHARACTER_MENTION_TRANSACTION_OPTIONS`, which pays for work that
+        // grows with the library: PATCH and DELETE claim every character whose
+        // description mentions this one — up to 99 — and rewrite the ones that
+        // moved. Creation has no such set, because nothing can mention a row
+        // that does not exist yet; it writes a fixed handful whatever the
+        // library holds — the row, one bounded read of the mentioned ids, the
+        // link set, the canonicalized description. A wider window buys that
+        // nothing and costs it something, since the ceiling is also how long a
+        // stalled attempt keeps its pool connection and the new row's lock. It
+        // still needs an answer when it *does* expire, which is the 503 below.
         const character = await prisma.$transaction(async (tx) => {
           const created = await tx.libraryCharacter.create({
             data: {
@@ -256,32 +284,58 @@ export async function registerMobileCharacterRoutes(
               fields: body.data.fields
             }
           });
-          if (body.data.mentionedCharacterIds.length === 0) {
-            return { ...created, outgoingMentions: [] };
+          // The links this create writes, and the prose to store beside them —
+          // both in hand, so nothing reads the row back to serialize them. See
+          // `ReplacedLibraryMentions`.
+          const links = body.data.mentionedCharacterIds.length
+            ? await replaceLibraryMentions(tx, {
+                sourceCharacterId: created.id,
+                userId: auth.user.id,
+                description: body.data.description,
+                mentionedCharacterIds: body.data.mentionedCharacterIds,
+                // `created.id` is a cuid this statement minted and this
+                // transaction has not committed, so nothing anywhere can hold a
+                // link to it. The "did these links already move" read that
+                // spares PATCH a `deleteMany`/`createMany` pair therefore
+                // answers empty here every time, from inside the transaction
+                // holding the new row's lock.
+                sourceCreatedInThisTransaction: true
+              })
+            : null;
+          const description = links?.description ?? body.data.description;
+          // The row as it stands after the create, and after the canonicalized
+          // prose lands over it — `update` hands back what it wrote, which is
+          // the whole of what the reload used to be for.
+          let stored = created;
+          if (description !== body.data.description) {
+            // The string that actually lands, screened where it is produced.
+            // `replaceLibraryMentions` respells every claimed `@name` to its
+            // target's own spelling, so this is not the prose the door above
+            // read — respelled in *case* alone today, which case-blind rules
+            // cannot tell apart, and that is exactly why the ordering is pinned
+            // by the string screened rather than by the verdict
+            // (`characterContentScreen.test.ts`). A rule that stops being
+            // case-blind, or a canonicalization that stops being case-only,
+            // changes the answer here and nowhere else; the rollback is what
+            // keeps such a refusal from leaving half a character behind. Where
+            // the two strings are equal there is nothing here the door has not
+            // already read, which is every create that mentions nobody.
+            assertCharacterContentAllowed(
+              { name: body.data.name, description, appearance: body.data.appearance, fields: body.data.fields },
+              copyrightRestricted
+            );
+            stored = await tx.libraryCharacter.update({ where: { id: created.id }, data: { description } });
           }
-          const description = await replaceCharacterMentions(tx, {
-            sourceCharacterId: created.id,
-            userId: auth.user.id,
-            description: body.data.description,
-            mentionedCharacterIds: body.data.mentionedCharacterIds
-          });
-          if (description !== created.description) {
-            await tx.libraryCharacter.update({ where: { id: created.id }, data: { description } });
-          }
-          return tx.libraryCharacter.findFirst({
-            where: { id: created.id, userId: auth.user.id },
-            include: libraryCharacterMentionInclude
-          });
+          return { ...stored, outgoingMentions: links?.mentions ?? [] };
         });
-        if (!character) throw new Error("Created character could not be reloaded.");
         return reply.code(201).send({ character: serializeLibraryCharacter(character) satisfies MobileLibraryCharacterDto });
       } catch (error) {
-        if (error instanceof CharacterMentionError) {
-          const status = error.code === "CHARACTER_NOT_FOUND" ? 404 : 400;
-          return sendMobileError(reply, status, error.code, error.message);
-        }
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-          return sendMobileError(reply, 409, "CHARACTER_NAME_TAKEN", "You already have a character with that name.");
+        // One ladder for all three writes — a refusal arrives as a throw so the
+        // row and the links written above it roll back with it, and everything
+        // else this transaction can hand back is answered exactly as PATCH and
+        // DELETE answer it. See `sendCharacterWriteError`.
+        if (sendCharacterWriteError(reply, error)) {
+          return;
         }
         throw error;
       }
@@ -291,13 +345,36 @@ export async function registerMobileCharacterRoutes(
   fastify.patch(
     "/api/mobile/characters/:id",
     {
+      // Both for the reason create sets them.
+      attachValidation: true,
+      errorHandler: sendUnreadableBodyError,
       schema: {
         tags: ["mobile"],
         body: mobileCharacterUpdateOpenApiBody,
-        response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError, 422: mobileAuthError }
+        // Create's set minus the 403 only the library cap gives: a PATCH adds
+        // no character. 429 is the same `character-write` bucket all three
+        // writes are rationed on, and it was undeclared on every one of them.
+        response: {
+          400: mobileAuthError,
+          401: mobileAuthError,
+          404: mobileAuthError,
+          409: mobileAuthError,
+          422: contentRestrictedError,
+          429: mobileAuthError,
+          503: mobileAuthError
+        }
       }
     },
     async (request, reply) => {
+      // The whole request answers inside one client budget, so the clock starts
+      // before the first thing that can wait on the pool — which is the session
+      // read, not the character read. Taken after `requireMobileAuth`, a request
+      // that spent seconds on its `MobileSession` lookup handed
+      // `characterRetryTransactionOptions` an elapsed of ~0 and opened the full
+      // ceiling behind it: the `CHARACTER_EDIT_BUSY` that ceiling exists to
+      // leave room for was written past the app's 20 s receive timeout, to a
+      // device that had already given up with a bare network error.
+      const laneStartedAt = Date.now();
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
         return;
@@ -310,88 +387,170 @@ export async function registerMobileCharacterRoutes(
       if (!body.success) {
         return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send at least one change.");
       }
-      const character = await ownedCharacter(id, auth.user.id);
+      // Two pool acquisitions that need nothing from each other, and both are
+      // spent out of the one budget the transaction below is then sized from —
+      // so they are one round trip rather than two waits for a connection under
+      // exactly the pressure that makes waiting expensive.
+      const [character, copyrightRestricted] = await Promise.all([
+        // The id and the name, because that is all this read is still for — see
+        // `characterClaimSubject`.
+        characterClaimSubject(id, auth.user.id),
+        // Read out here because the screen runs inside the transaction:
+        // assessing is synchronous, but the flag behind it is a query on
+        // another pool connection — the last thing to want while holding up to
+        // 99 row locks.
+        copyrightRestrictionsEnabled()
+      ]);
       if (!character) {
         return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
       }
-      const next = {
-        name: body.data.name ?? character.name,
-        description: body.data.description ?? character.description,
-        appearance: body.data.appearance ?? character.appearance,
-        fields: body.data.fields ?? fieldsFromJson(character.fields)
-      };
-      if (!(await enforceContentRestrictions(reply, characterContentText(next)))) {
-        return;
+      // What the two reads above left of the client budget. Null is a window
+      // too small for a claim and a rewrite to commit in, and the honest answer
+      // to that is the 503 now rather than a transaction that cannot finish and
+      // a reply the device has stopped listening for — see
+      // `characterRetryTransactionOptions`.
+      const patchOptions = characterRetryTransactionOptions(Date.now() - laneStartedAt);
+      if (!patchOptions) {
+        return sendCharacterWriteBusy(reply);
       }
       try {
+        // What the request itself carries, screened before a single row is
+        // claimed. This whole screen used to live inside the transaction, below
+        // `rewriteIncomingLibraryMentions` and `replaceLibraryMentions` — so an
+        // edit that was always going to be refused first claimed up to 99
+        // sibling rows, rewrote the ones that moved, and rolled every one of
+        // them back, holding every other character write on the account behind
+        // its lock window for the length of it. The screen below still runs and
+        // still has to: it is the only one that ever sees a
+        // `{mentionedCharacterIds}` PATCH's stored prose, which this request
+        // never carried. `name` is the row's current one where the body sends
+        // none, because that is the name the update writes back.
+        assertCharacterContentAllowed(
+          {
+            name: body.data.name ?? character.name,
+            description: body.data.description ?? "",
+            appearance: body.data.appearance,
+            fields: body.data.fields ?? []
+          },
+          copyrightRestricted
+        );
         // Accepting the suggestion, rewriting it, and turning it down all
         // retire it: it describes a description the user has now settled, and
         // an offer that survives being taken is offered forever.
         const clearsSuggestion = body.data.description !== undefined || body.data.dismissSuggestion === true;
         const updated = await prisma.$transaction(async (tx) => {
-          const nextName = body.data.name ?? character.name;
           // Before a single sibling description is touched: this is both the
           // lock every write below runs under and the proof that `@Luna` is
           // still what those descriptions say. A rename that landed since
-          // `ownedCharacter` read the row would make the rewrite match nothing
+          // `characterClaimSubject` read it would make the rewrite match nothing
           // and strand its markers — see `claimCharacterRow`.
           if (!(await claimCharacterRow(tx, { id: character.id, userId: auth.user.id, name: character.name }))) {
             throw new CharacterRowMovedError();
           }
-          await rewriteIncomingCharacterMentions(tx, character.id, character.name, nextName);
+          // The row as the claim found it, for the same reason
+          // `claimedMentionSources` re-reads every sibling it rewrites: the claim
+          // asserts the *name* and nothing else, so a description saved on
+          // another device between the read above and this lock is still there.
+          // Every field the request did not send is written back from what this
+          // read found — driving them from the outer snapshot reverted that
+          // save, prose and links together, under a claim that had succeeded.
+          const live = await tx.libraryCharacter.findFirst({
+            where: { id: character.id, userId: auth.user.id },
+            include: libraryMentionInclude
+          });
+          // Narrowing rather than a guard: the claim locked this row, and this
+          // predicate is a subset of the one it matched — see `claimCharacterRow`.
+          if (!live) throw new Error("The claimed character row could not be re-read.");
+          // The row the update is about to leave behind, as the claim found it
+          // merged with what the request sends — screened here, which is the
+          // first line where it can be read and the last one before it costs
+          // anything to refuse.
+          //
+          // *Under the claim*, because `live` is the only place a description
+          // saved on another device is legible at all, and that prose is the
+          // whole reason a second screen exists. *Before*
+          // `rewriteIncomingLibraryMentions`, because held below it a refusal
+          // first claimed every character whose description mentions this one —
+          // up to 99 — rewrote the ones whose `@OldName` moved, replaced the
+          // link set, and rolled all of it back, with every other character
+          // write on the account queued behind that lock window for a request
+          // that was never going to be stored. That is the exact cost the door
+          // in front of the transaction was moved out to avoid, paid over again
+          // by the requests the door cannot answer.
+          //
+          // It also fixes the order `sendCharacterWriteError` documents — the
+          // refusal first: a rename that is both refused here *and* too long for
+          // a sibling's description used to answer the 409 the rewrite raised on
+          // the way past it.
+          //
+          // **One decision per column, and both readers derive from it.** The
+          // screen wants the effective value and the `update` wants only the
+          // columns the body sent, so a `PatchedColumn` carries both and
+          // `patchedValues`/`patchedWrites` are the two readings — see
+          // `PatchedColumn`. Sent-and-empty is a deliberate clear, which is why
+          // the appearance normalizes its own "" to null on the way in and
+          // presence alone decides the write.
+          const next = {
+            name: patchedColumn(body.data.name, live.name),
+            description: patchedColumn(body.data.description, live.description),
+            appearance: patchedColumn(
+              body.data.appearance === undefined ? undefined : body.data.appearance || null,
+              live.appearance
+            ),
+            fields: patchedColumn(body.data.fields, fieldsFromJson(live.fields))
+          };
+          const merged = patchedValues(next);
+          assertCharacterContentAllowed(merged, copyrightRestricted);
+          await rewriteIncomingLibraryMentions(tx, character.id, live.name, merged.name);
 
           const requestedMentionIds = body.data.mentionedCharacterIds ??
-            (body.data.description !== undefined
-              ? survivingMentionIds(body.data.description, characterMentionRefs(character))
-              : null);
-          const description = requestedMentionIds
-            ? await replaceCharacterMentions(tx, {
+            (next.description.sent ? survivingMentionIds(merged.description, live) : null);
+          // The link set this save owns afterwards, in hand rather than read
+          // back: a PATCH that touches no link keeps the rows the claim found,
+          // and one that does keeps the rows it just wrote. See
+          // `ReplacedLibraryMentions`.
+          const links = requestedMentionIds
+            ? await replaceLibraryMentions(tx, {
                 sourceCharacterId: character.id,
                 userId: auth.user.id,
-                description: body.data.description ?? character.description,
+                description: merged.description,
                 mentionedCharacterIds: requestedMentionIds
               })
-            : body.data.description;
+            : null;
+          // The row that actually lands: the merge above with the canonicalized
+          // prose over it, where there is one. **The column's decision is
+          // retaken rather than inherited**, because a canonicalization is a
+          // write the body did not ask for — a `{mentionedCharacterIds}` PATCH
+          // carries no description of its own and still stores one — and the
+          // same two readings then answer for the screen and for the `update`.
+          //
+          // Screened where it is produced, for the reason create screens its
+          // own: `replaceLibraryMentions` respells every claimed `@name` to its
+          // target's own spelling, so this is not the prose the screen above
+          // read — respelled in *case* alone today, which case-blind rules
+          // cannot tell apart, and that is exactly why the ordering is pinned
+          // by the string screened rather than by the verdict
+          // (`characterContentScreen.test.ts`). Where the two are equal there is
+          // nothing here the screen above has not already read, which is every
+          // PATCH that rewrites no `@name`.
+          const written = { ...next, description: patchedColumn(links?.description, merged.description) };
+          const stored = patchedValues(written);
+          if (stored.description !== merged.description) {
+            assertCharacterContentAllowed(stored, copyrightRestricted);
+          }
           const row = await tx.libraryCharacter.update({
             where: { id: character.id },
             data: {
-              ...(body.data.name !== undefined ? { name: body.data.name } : {}),
-              ...(description !== undefined ? { description } : {}),
-              // Sent-and-empty is a deliberate clear, which is why the write is
-              // keyed on the key being present rather than on the value.
-              ...(body.data.appearance !== undefined ? { appearance: body.data.appearance || null } : {}),
-              ...(body.data.fields !== undefined ? { fields: body.data.fields } : {}),
+              ...patchedWrites(written),
               ...(clearsSuggestion ? { suggestedDescription: null } : {})
             }
           });
-          if (!requestedMentionIds) {
-            return { ...row, outgoingMentions: character.outgoingMentions };
-          }
-          return tx.libraryCharacter.findFirst({
-            where: { id: character.id, userId: auth.user.id },
-            include: libraryCharacterMentionInclude
-          });
-        });
-        if (!updated) throw new Error("Updated character could not be reloaded.");
+          return { ...row, outgoingMentions: links?.mentions ?? live.outgoingMentions };
+        }, patchOptions);
         return { character: serializeLibraryCharacter(updated) satisfies MobileLibraryCharacterDto };
       } catch (error) {
-        if (error instanceof CharacterMentionError) {
-          const status = error.code === "CHARACTER_NOT_FOUND"
-            ? 404
-            : error.code === "CHARACTER_MENTION_TOO_LONG"
-              ? 409
-              : 400;
-          return sendMobileError(reply, status, error.code, error.message);
-        }
-        if (error instanceof CharacterRowMovedError || isRetryableTransactionConflict(error)) {
-          return sendCharacterEditConflict(reply);
-        }
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-          // Only the library's own `[userId, name]` is the reader's to fix.
-          if (namesMentionPrimaryKey(error)) {
-            return sendCharacterEditConflict(reply);
-          }
-          return sendMobileError(reply, 409, "CHARACTER_NAME_TAKEN", "You already have a character with that name.");
+        if (sendCharacterWriteError(reply, error)) {
+          return;
         }
         throw error;
       }
@@ -400,10 +559,59 @@ export async function registerMobileCharacterRoutes(
 
   fastify.delete(
     "/api/mobile/characters/:id",
-    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 409: mobileAuthError } } },
+    {
+      schema: {
+        tags: ["mobile"],
+        // Narrower than its two siblings on purpose. This handler shares their
+        // catch, so `sendCharacterWriteError` can answer 400 and 422 from
+        // here — but only for throws this transaction cannot produce: it
+        // screens no content (`ContentRestrictedError` is the 422) and writes
+        // no `LibraryMention` row at all, so neither `LibraryMentionError` nor
+        // a mention CHECK violation (the two 400s) has a statement to come out
+        // of. `unlinkIncomingLibraryMentions` only rewrites sibling
+        // descriptions and the cascade takes the rows. Declaring a refusal the
+        // route cannot give is the same lie as omitting one it can, so the day
+        // a mention write lands in this lane, both come back.
+        // 429 is the `character-write` bucket this route shares with POST and
+        // PATCH, and the one status all three were missing.
+        response: {
+          401: mobileAuthError,
+          404: mobileAuthError,
+          409: mobileAuthError,
+          429: mobileAuthError,
+          503: mobileAuthError
+        }
+      }
+    },
     async (request, reply) => {
+      // Before the session read, for the reason PATCH starts its clock there:
+      // every read here and both delete attempts answer inside one client
+      // budget (`characterRetryTransactionOptions`), and `requireMobileAuth` is
+      // itself a pool acquisition under the pressure that budget is sized for.
+      const laneStartedAt = Date.now();
       const auth = await requireMobileAuth(request, reply);
       if (!auth) {
+        return;
+      }
+      // Where POST and PATCH take theirs — before the owner read — and for the
+      // reason they take one at all. This is the most expensive write in the
+      // group and was once the only one with no ceiling: one token can loop it
+      // against a well-connected character and get `ownedCharacter` and then up
+      // to *two* transactions per request, each claiming the row plus every
+      // character whose description mentions it — up to
+      // `LIBRARY_CHARACTER_LIMIT_PER_USER - 1` — and rewriting every one this
+      // name is stripped out of, holding those locks for as much of the budget
+      // as `characterRetryTransactionOptions` still has to hand out, with every
+      // other character write on the account queued behind them.
+      //
+      // Its own bucket, though, not the `character-write` one the other four
+      // spend. Emptying a full library is a hundred confirmed taps against a
+      // ceiling of 120 sized for drafting, so the edits and promotes either side
+      // of a cleanup answered 429 — on a destructive gesture, with the character
+      // screen unable to say why some rows went and some did not. Why a delete
+      // can be given a wider ceiling than the writes it used to share one with
+      // is argued at `DEFAULT_CHARACTER_DELETE_RATE_LIMIT`.
+      if (!hitAuthenticatedLimit(context.characterDeleteLimiter, request, reply, auth.user.id, "character-delete")) {
         return;
       }
       const { id } = idParamsSchema.parse(request.params);
@@ -411,390 +619,186 @@ export async function registerMobileCharacterRoutes(
       if (!character) {
         return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
       }
-      // Read the history filenames before the row goes: the cascade takes the
-      // image rows with it, and nothing sweeps this tree, so a name not
-      // collected here is a file nothing can ever reach again.
-      const historyFiles = (await loadCharacterImages(character.id, auth.user.id)).map(
-        (image) => image.fileName
-      );
       // The conditional claim is the real guard, and it carries both halves:
       // the worker owns the row while a portrait is in flight and must find it
       // when it finishes, and the strip below is an exact-token match on the
       // name this claim re-asserts. It runs *before* the sibling descriptions
       // rather than after them, which is the lock order PATCH takes too.
-      const deleteCharacter = async (guardPortrait: boolean): Promise<boolean> => {
+      const deleteCharacter = async (
+        portraitGuard: Prisma.LibraryCharacterWhereInput,
+        options: CharacterTransactionOptions
+      ): Promise<DeleteAttempt> => {
         try {
-          return await prisma.$transaction(async (tx) => {
+          return await prisma.$transaction(async (tx): Promise<DeleteAttempt> => {
             const claimed = await claimCharacterRow(tx, {
               id: character.id,
               userId: auth.user.id,
               name: character.name,
-              ...(guardPortrait
-                ? { where: { portraitStatus: { notIn: [...PORTRAIT_OPEN_STATUSES] } } }
-                : {})
+              where: portraitGuard
             });
             if (!claimed) {
               // Which half of the claim failed decides the answer, so the row
               // is read rather than assumed: a portrait in flight is the escape
               // hatch below, a row that is gone is the 404 this has always
               // given, and a rename under us is a conflict worth retrying.
+              //
+              // **The portrait columns come back with the name**, and the
+              // caller is handed them rather than reading the row it was built
+              // from — the delete's copy of the rule PATCH keeps for the prose
+              // it writes back. `ownedCharacter` runs before the transaction
+              // opens and behind whatever the pool made the session read wait
+              // for, so a Redraw tapped on another device in that window leaves
+              // it saying READY with no job on it. Asked of *that*, the question
+              // answered "stale claim" without ever looking at the job now
+              // holding the row, the second attempt dropped the guard, and the
+              // character went out from under a portrait that was still being
+              // drawn — the one answer this two-attempt lane exists to give,
+              // never given.
+              //
+              // It **returns** where the throw below is a throw, and the
+              // difference is what each has written: this branch matched no row
+              // and issued nothing, so there is nothing for an unwind to take
+              // back and an exception would only be carrying a value.
               const current = await tx.libraryCharacter.findFirst({
                 where: { id: character.id, userId: auth.user.id },
-                select: { name: true }
+                select: { name: true, portraitStatus: true, portraitJobId: true }
               });
               if (current && current.name !== character.name) throw new CharacterRowMovedError();
-              throw new CharacterDeleteClaimLostError();
+              return { deleted: false, found: current };
             }
-            await unlinkIncomingCharacterMentions(tx, character.id, character.name);
+            await unlinkIncomingLibraryMentions(tx, character.id, character.name);
+            // Every retained file's name, read here and nowhere earlier. The
+            // cascade takes these rows with the character and nothing sweeps
+            // that tree, so a name missed here is bytes no route, no prune and
+            // no sweep can reach again — and this lane used to read them before
+            // the transaction opened, which is a window `PUT /:id/photo` fits
+            // inside whole: it inserts its version row and writes its file,
+            // finds the character still there on its own closing read, and the
+            // delete then cascades a row whose file it never learned the name
+            // of. That upload closes the other half of the same race, where the
+            // delete commits first and its read comes back empty; this is the
+            // half that lives here.
+            //
+            // Under the `FOR UPDATE` `unlinkIncomingLibraryMentions` has just
+            // taken on this row, which is what makes the read exact rather than
+            // merely later: an insert's own foreign key check takes
+            // `FOR KEY SHARE` on the parent, so a version row already committed
+            // is visible to this statement and one still coming waits for this
+            // transaction to end — and then meets a parent that is gone, which
+            // is the 404 that upload already answers.
+            //
+            // Through `tx` rather than `loadCharacterImages`, which would be a
+            // second pool connection taken while this lock is held, for an
+            // ordering nothing here has any use for: what is wanted is a set of
+            // names.
+            const retained = await tx.libraryCharacterImage.findMany({
+              where: { characterId: character.id, userId: auth.user.id },
+              select: { fileName: true }
+            });
             const deleted = await tx.libraryCharacter.deleteMany({
               where: { id: character.id, userId: auth.user.id }
             });
+            // Every sibling description this attempt just rewrote has to go
+            // back with it, which is why this one throws. It also has nothing
+            // to report: the row the claim was holding is gone, so there is no
+            // portrait claim left to ask about.
             if (deleted.count !== 1) throw new CharacterDeleteClaimLostError();
-            return true;
-          });
+            return { deleted: true, files: retained.map((image) => image.fileName) };
+          }, options);
         } catch (error) {
-          if (error instanceof CharacterDeleteClaimLostError) return false;
+          if (error instanceof CharacterDeleteClaimLostError) return { deleted: false, found: null };
           throw error;
         }
       };
+      let retainedFiles: readonly string[] = [];
       try {
-        if (!(await deleteCharacter(true))) {
+        const firstOptions = characterRetryTransactionOptions(Date.now() - laneStartedAt);
+        if (!firstOptions) {
+          return sendCharacterWriteBusy(reply);
+        }
+        const claim = await deleteCharacter(
+          { portraitStatus: { notIn: [...PORTRAIT_OPEN_STATUSES] } },
+          firstOptions
+        );
+        retainedFiles = claim.deleted ? claim.files : retainedFiles;
+        if (!claim.deleted) {
           // A claim can outlive its job: a worker killed hard never runs its
           // failure path, and nothing else resets an account-level row. When the
           // backing job is no longer open the claim is stale, and delete is the
           // user's escape hatch rather than a wedge.
-          if (await portraitClaimIsLive(character)) {
-            return sendMobileError(
-              reply,
-              409,
-              "PORTRAIT_IN_PROGRESS",
-              "This character's portrait is still being drawn. Try again when it finishes."
-            );
+          //
+          // Asked of the two columns the lost claim itself read. The snapshot is
+          // spread underneath them only to make the row shape the question
+          // takes; nothing else of it is looked at.
+          if (claim.found && (await portraitClaimIsLive({ ...character, ...claim.found }))) {
+            return sendPortraitInProgress(reply);
           }
-          if (!(await deleteCharacter(false))) {
+          // The retry drops the status guard and pins the claim it was just told
+          // is dead. `portraitJobId` is that claim's identity — it is written
+          // only where a portrait is enqueued and cleared nowhere, so a row
+          // still naming that job is the row the question was answered about,
+          // whatever its status has moved to since, and a row naming another one
+          // has been claimed again since the answer. Unpinned, this is a second
+          // window a Redraw can start inside, and it takes the character out
+          // from under the new job exactly as the stale snapshot did. A `found`
+          // of null is the row having gone, which pins nothing because there is
+          // nothing left to pin: the retry finds no row and answers the 404.
+          // What the first attempt and the liveness question left. Null here is
+          // the case the floor used to overrun: an attempt that spent its whole
+          // window leaves too little for a second one to commit in, and opening
+          // it anyway put the answer past the receive timeout — so the 503 goes
+          // now, while there is still someone to read it.
+          const retryOptions = characterRetryTransactionOptions(Date.now() - laneStartedAt);
+          if (!retryOptions) {
+            return sendCharacterWriteBusy(reply);
+          }
+          const retry = await deleteCharacter(
+            claim.found ? { portraitJobId: claim.found.portraitJobId } : {},
+            retryOptions
+          );
+          if (!retry.deleted) {
+            // Still there, and the claim moved again under the pin — a Redraw
+            // landing between the two attempts is what that looks like. The
+            // reader re-sends this; it is not a character that is gone, and
+            // saying so would be the one sentence they cannot act on.
+            if (retry.found) {
+              return sendCharacterEditConflict(reply);
+            }
             return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
           }
+          retainedFiles = retry.files;
         }
       } catch (error) {
-        if (error instanceof CharacterRowMovedError || isRetryableTransactionConflict(error)) {
-          return sendCharacterEditConflict(reply);
-        }
-        throw error;
-      }
-      for (const fileName of historyFiles) {
-        await deleteLibraryCharacterFile(appConfig.IMAGE_STORAGE_DIR, auth.user.id, fileName);
-      }
-      // Belt and braces: a pointer can name a file whose row was lost to a
-      // crash between the two writes, and the cascade has already taken the
-      // rows that would otherwise have named it.
-      await deleteLibraryCharacterFile(appConfig.IMAGE_STORAGE_DIR, auth.user.id, character.photoPath);
-      await deleteLibraryCharacterFile(appConfig.IMAGE_STORAGE_DIR, auth.user.id, character.portraitPath);
-      return { deleted: true };
-    }
-  );
-
-  fastify.put(
-    "/api/mobile/characters/:id/photo",
-    {
-      bodyLimit: CREATION_ATTACHMENT_MAX_BYTES + 64 * 1024,
-      schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError, 422: mobileAuthError } }
-    },
-    async (request, reply) => {
-      const auth = await requireMobileAuth(request, reply);
-      if (!auth) {
-        return;
-      }
-      if (!hitAuthenticatedLimit(context.attachmentLimiter, request, reply, auth.user.id, "character-photo-upload")) {
-        return;
-      }
-      const { id } = idParamsSchema.parse(request.params);
-      const query = characterPhotoQuerySchema.safeParse(request.query);
-      if (!query.success) {
-        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the photo with a filename.");
-      }
-      const data = request.body;
-      if (!Buffer.isBuffer(data) || data.length === 0) {
-        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Send the photo as the request body.");
-      }
-      const mimeType = resolveCharacterPhotoMimeType(query.data.mimeType, query.data.filename);
-      if (!mimeType) {
-        return sendMobileError(reply, 422, "PHOTO_UNSUPPORTED", "Use a JPEG, PNG, or WebP photo.");
-      }
-      const character = await ownedCharacter(id, auth.user.id);
-      if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
-      }
-      let optimized;
-      try {
-        optimized = await optimizeCharacterPhoto(data, mimeType);
-      } catch {
-        return sendMobileError(reply, 422, "PHOTO_UNREADABLE", "That photo could not be read. Try a different one.");
-      }
-      // Read before anything is written, so the retained row carries its
-      // verdict from birth. The optimized buffer, never the raw body: it is a
-      // few hundred KB rather than up to the body limit, and EXIF/GPS are
-      // already gone. A failed or absent reading still answers 200 — storing
-      // the photo regardless is the contract, and reordering does not change it.
-      const reading = await readCharacterPhoto({
-        vision: context.characterPhotoVision,
-        bytes: optimized.bytes,
-        mimeType: optimized.mimeType,
-        characterName: character.name,
-        budgetMs: context.options.characterPhotoVisionBudgetMs
-      });
-
-      const { fileName } = await recordCharacterImage({
-        imageStorageDir: appConfig.IMAGE_STORAGE_DIR,
-        userId: auth.user.id,
-        characterId: character.id,
-        source: "UPLOAD",
-        kind: "photo",
-        optimized,
-        photoKind: reading?.photoKind,
-        // Frozen at ingest and never re-derived. Promote reads only this.
-        referenceEligible: reading?.canAdoptAsReference ?? false
-      });
-
-      // The photo columns describe the upload itself and are always true of
-      // it, so they are written unconditionally. A re-upload replaces the
-      // verdict and the suggestion wholesale; stale ones would describe an
-      // image that is no longer there. The superseded photo is not deleted —
-      // it is a retained version now, one promote away.
-      await prisma.libraryCharacter.update({
-        where: { id: character.id },
-        data: {
-          photoPath: fileName,
-          photoKind: reading?.photoKind ?? null,
-          suggestedDescription: reading?.suggestedDescription ?? null
-        }
-      });
-
-      const appearanceApplied = await fillAppearanceFromPhoto(character.id, reading);
-
-      if (adoptsAsReference(reading)) {
-        // Adoption points *both* columns at the one uploaded file. The second
-        // copy existed so the two columns could be deleted independently;
-        // `DELETE /:id/photo` no longer unlinks anything, so a shared file is
-        // safe — and a duplicate would show up as a duplicate tile in the strip.
-        await prisma.libraryCharacter.updateMany({
-          where: { id: character.id, ...REFERENCE_CLAIMABLE },
-          data: {
-            portraitPath: fileName,
-            portraitSource: "ADOPTED_UPLOAD" as const,
-            portraitStatus: "READY" as const,
-            portraitError: null
-          }
-        });
-        // No rollback and no rm: the bytes were on disk before the claim, so a
-        // won claim can never name a missing file, and a superseded reference
-        // is a version the reader can put back.
-      }
-
-      await pruneCharacterImages(appConfig.IMAGE_STORAGE_DIR, auth.user.id, character.id);
-      const current = (await ownedCharacter(id, auth.user.id)) ?? character;
-      const images = await loadCharacterImages(character.id, auth.user.id);
-      return {
-        character: serializeLibraryCharacter(
-          current,
-          // Applied, it is the appearance and there is nothing to offer.
-          // Refused, the character already has a look the user owns and this
-          // is the alternative the new picture shows.
-          appearanceApplied || !reading?.suggestedAppearance
-            ? {}
-            : { suggestedAppearance: reading.suggestedAppearance }
-        ) satisfies MobileLibraryCharacterDto,
-        images: images.map((image) => serializeLibraryCharacterImage(current, image))
-      };
-    }
-  );
-
-  fastify.delete(
-    "/api/mobile/characters/:id/photo",
-    { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
-    async (request, reply) => {
-      const auth = await requireMobileAuth(request, reply);
-      if (!auth) {
-        return;
-      }
-      const { id } = idParamsSchema.parse(request.params);
-      const character = await ownedCharacter(id, auth.user.id);
-      if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
-      }
-      // Now a pointer clear and nothing else. It used to unlink the file and
-      // drop an adopted reference with it, on the grounds that the reader had
-      // swapped the picture out — which stopped being true the moment the
-      // picture was retained. The app calls the per-image delete instead; this
-      // stays for clients already in the wild.
-      const updated = await prisma.libraryCharacter.update({
-        where: { id: character.id },
-        data: { photoPath: null, photoKind: null, suggestedDescription: null }
-      });
-      return {
-        character: serializeLibraryCharacter({
-          ...updated,
-          outgoingMentions: character.outgoingMentions
-        }) satisfies MobileLibraryCharacterDto
-      };
-    }
-  );
-
-  for (const kind of ["photo", "portrait"] as const) {
-    fastify.get(
-      `/api/mobile/characters/:id/${kind}`,
-      { schema: { tags: ["mobile"], response: { 401: mobileAuthError, 404: mobileAuthError } } },
-      async (request, reply) => {
-        const auth = await requireMobileAuth(request, reply);
-        if (!auth) {
+        if (sendCharacterWriteError(reply, error)) {
           return;
         }
-        const { id } = idParamsSchema.parse(request.params);
-        const character = await ownedCharacter(id, auth.user.id);
-        const fileName = kind === "photo" ? character?.photoPath : character?.portraitPath;
-        if (!character || !fileName) {
-          return sendMobileError(reply, 404, "CHARACTER_FILE_NOT_FOUND", `This character has no ${kind}.`);
-        }
-        const bytes = await readLibraryCharacterFile(appConfig.IMAGE_STORAGE_DIR, auth.user.id, fileName);
-        if (!bytes) {
-          return sendMobileError(reply, 404, "CHARACTER_FILE_NOT_FOUND", `This character has no ${kind}.`);
-        }
-        reply.header("Cache-Control", "private, max-age=300");
-        reply.header("Content-Type", characterFileContentType(fileName));
-        return reply.send(bytes);
-      }
-    );
-  }
-
-  fastify.post(
-    "/api/mobile/characters/:id/portrait",
-    {
-      schema: {
-        tags: ["mobile"],
-        body: mobileCharacterPortraitOpenApiBody,
-        response: {
-          202: {},
-          401: mobileAuthError,
-          402: mobileAuthError,
-          404: mobileAuthError,
-          409: mobileAuthError,
-          422: mobileAuthError
-        }
-      }
-    },
-    async (request, reply) => {
-      const auth = await requireMobileAuth(request, reply);
-      if (!auth) {
-        return;
-      }
-      if (!(await hitTieredLimit(context.generationLimiter, request, reply, auth.user.id, "character-portrait"))) {
-        return;
-      }
-      const { id } = idParamsSchema.parse(request.params);
-      const body = mobileCharacterPortraitBodySchema.safeParse(request.body ?? {});
-      if (!body.success) {
-        return sendMobileError(reply, 400, "VALIDATION_ERROR", "Invalid portrait request.");
-      }
-      const character = await ownedCharacter(id, auth.user.id);
-      if (!character) {
-        return sendMobileError(reply, 404, "CHARACTER_NOT_FOUND", "That character is not in your library.");
-      }
-      if (PORTRAIT_OPEN_STATUSES.includes(character.portraitStatus as (typeof PORTRAIT_OPEN_STATUSES)[number])) {
-        return sendMobileError(
-          reply,
-          409,
-          "PORTRAIT_IN_PROGRESS",
-          "This character's portrait is already being drawn."
-        );
-      }
-      const contentText = characterContentText({
-        name: character.name,
-        description: character.description,
-        fields: fieldsFromJson(character.fields)
-      });
-      if (!(await enforceContentRestrictions(reply, contentText))) {
-        return;
-      }
-
-      const cost = creditCostForOperation("CHARACTER_PORTRAIT_GENERATION");
-      const hasPhoto = character.photoPath !== null;
-      let started;
-      try {
-        started = await startGenerationAttempt({
-          userId: auth.user.id,
-          commandKey: body.data.requestId
-            ? `mobile:character-portrait:${id}:${body.data.requestId}`
-            : `mobile:character-portrait:${id}:${randomUUID()}`,
-          requestFingerprint: fingerprintGenerationRequest({
-            characterId: id,
-            name: character.name,
-            description: character.description,
-            fields: character.fields,
-            hasPhoto
-          }),
-          operation: "CHARACTER_PORTRAIT_GENERATION",
-          quotedCredits: cost,
-          description: "Character portrait",
-          metadata: { libraryCharacterId: id, hasPhoto },
-          create: async (tx, { attemptId, ledgerEntry }) => {
-            // Race-safe twin of the 409 above: only one start may move the row
-            // out of a settled portrait status.
-            const claimed = await tx.libraryCharacter.updateMany({
-              where: { id, portraitStatus: { notIn: [...PORTRAIT_OPEN_STATUSES] } },
-              data: { portraitStatus: "QUEUED", portraitError: null }
-            });
-            if (claimed.count !== 1) {
-              throw new PortraitInProgressError();
-            }
-            const job = await enqueueGenerationJob({
-              projectId: null,
-              type: "GENERATE_CHARACTER_PORTRAIT",
-              dedupeKey: `character-portrait:${id}:${attemptId}`,
-              transaction: tx,
-              dispatch: false,
-              attemptId,
-              payload: {
-                libraryCharacterId: id,
-                userId: auth.user.id,
-                ...(ledgerEntry ? { billingLedgerEntryId: ledgerEntry.id } : {})
-              }
-            });
-            await tx.libraryCharacter.update({ where: { id }, data: { portraitJobId: job.id } });
-            return { projectId: null, primaryJobId: job.id };
-          }
-        });
-      } catch (error) {
-        if (error instanceof InsufficientCreditsError) {
-          return sendInsufficientCredits(reply, error);
-        }
-        if (error instanceof PortraitInProgressError) {
-          return sendMobileError(reply, 409, "PORTRAIT_IN_PROGRESS", "This character's portrait is already being drawn.");
-        }
-        if (error instanceof GenerationAttemptConflictError) {
-          return sendMobileError(reply, 409, error.code, error.message);
-        }
         throw error;
       }
-      if (started.replayed && ["FAILED", "CANCELED"].includes(started.attempt.status)) {
-        // A replayed requestId whose attempt already settled was refunded;
-        // answering 202 with creditsCharged would assert a charge that was
-        // handed back and imply work is coming when nothing is.
-        return sendMobileError(
-          reply,
-          409,
-          "PORTRAIT_ATTEMPT_SETTLED",
-          "That portrait attempt failed and was refunded. Start a new one."
-        );
-      }
-      if (!started.attempt.primaryJobId) {
-        throw new Error("Character portrait attempt has no primary job.");
-      }
-      await dispatchGenerationJob(started.attempt.primaryJobId);
-
-      const current = await ownedCharacter(id, auth.user.id);
-      return reply.code(202).send({
-        character: serializeLibraryCharacter(current ?? character) satisfies MobileLibraryCharacterDto,
-        creditsCharged: started.attempt.quotedCredits
-      });
+      // One round of I/O, not a dozen. The row is committed and gone, so every
+      // name here is independent and every unlink is idempotent and cannot
+      // reject — `deleteLibraryCharacterFile` resolves an unsafe handle to
+      // nothing and swallows `rm --force`'s own failure — which is what makes
+      // `Promise.all` the right shape and a settled-per-file walk unnecessary.
+      // Awaited one at a time it was a sequential round trip per retained
+      // version on a possibly bind-mounted `IMAGE_STORAGE_DIR`, and a character
+      // at the retention limit leaves the whole history plus both pointers.
+      // None of that is inside the window `characterRetryTransactionOptions`
+      // hands the two transactions, and `CHARACTER_WRITE_RESERVE_MS` holds back
+      // 2 s for the reply and the liveness question and nothing for this — so a
+      // lane that spent its budget and then met slow storage answered past the
+      // app's 20 s receive timeout, and the reader saw a bare network error for
+      // a delete that had already committed.
+      //
+      // The two pointers ride along belt-and-braces: one can name a file whose
+      // row was lost to a crash between `recordCharacterImage`'s two writes, and
+      // the cascade has already taken the rows that would otherwise have named
+      // it.
+      await Promise.all(
+        [...retainedFiles, character.photoPath, character.portraitPath].map((fileName) =>
+          deleteLibraryCharacterFile(appConfig.IMAGE_STORAGE_DIR, auth.user.id, fileName)
+        )
+      );
+      return { deleted: true };
     }
   );
 }

@@ -5,6 +5,7 @@ import type {
   LibraryCharacterPortraitSource,
   LibraryCharacterPortraitStatus
 } from "@book-maker/db";
+import type { LibraryCharacterWithMentions } from "@book-maker/db/libraryMentions";
 import type {
   MobileLibraryCharacterDto,
   MobileLibraryCharacterImageDto,
@@ -12,7 +13,7 @@ import type {
   MobileLibraryCharacterPortraitSource,
   MobileLibraryCharacterPortraitStatus
 } from "./dto.js";
-import { characterMentionRefs, type LibraryCharacterWithMentions } from "./characterMentions.js";
+import { libraryMentionRefs } from "./libraryMentionRows.js";
 
 /**
  * An appearance a photo upload read but did not apply, offered on that
@@ -44,8 +45,19 @@ export function libraryCharacterPortraitUrl(
     : null;
 }
 
+/**
+ * The mention include is **required**, not optional.
+ *
+ * `mentions` is a field the editor sheet writes back: it seeds its state from
+ * this array and a later description save PATCHes whatever survived, so a
+ * response that serialized `mentions: []` because its caller forgot the include
+ * would delete every durable link whose `@Name` is still sitting in the prose.
+ * Widening this parameter to accept a row read without `outgoingMentions` made
+ * that a call site nobody could see; asking the compiler for the include is
+ * what keeps every serialized character one that was actually loaded with one.
+ */
 export function serializeLibraryCharacter(
-  character: LibraryCharacterModel & Partial<Pick<LibraryCharacterWithMentions, "outgoingMentions">>,
+  character: LibraryCharacterModel & Pick<LibraryCharacterWithMentions, "outgoingMentions">,
   offered: OfferedCharacterReading = {}
 ): MobileLibraryCharacterDto {
   const id = encodeURIComponent(character.id);
@@ -55,7 +67,7 @@ export function serializeLibraryCharacter(
     id: character.id,
     name: character.name,
     description: character.description,
-    mentions: characterMentionRefs(character),
+    mentions: libraryMentionRefs(character),
     fields: fieldsFromJson(character.fields),
     portraitStatus: PORTRAIT_STATUS[character.portraitStatus],
     portraitError: character.portraitStatus === "FAILED" ? character.portraitError : null,

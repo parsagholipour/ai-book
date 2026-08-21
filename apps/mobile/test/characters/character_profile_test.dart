@@ -453,7 +453,7 @@ void main() {
       final bram = testCharacter(id: 'char-2', name: 'Bram');
       final mina = testCharacter(
         description: 'Best friends with @Bram.',
-        mentions: const [CharacterMention(id: 'char-2', name: 'Bram')],
+        mentions: const [LibraryMention(id: 'char-2', name: 'Bram')],
       );
       await pumpProfile(tester, mina, libraryCharacters: [mina, bram]);
 
@@ -465,6 +465,35 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Bram'), findsWidgets);
     });
+
+    testWidgets(
+      'a mention of something that is not a character is not a link',
+      (tester) async {
+        // No server emits a location row yet — one has no name to print — but
+        // this build will still be installed when the first one does, and
+        // drawing it as a character link is a tap that resolves to nobody.
+        final mina = testCharacter(
+          description: 'Grew up in @Thornwood.',
+          mentions: const [
+            LibraryMention(
+              id: 'loc-1',
+              name: 'Thornwood',
+              kind: LibraryMentionKind.location,
+            ),
+          ],
+        );
+        await pumpProfile(tester, mina);
+
+        expect(
+          find.byKey(const ValueKey('character-linked-description')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('character-mention-loc-1')),
+          findsNothing,
+        );
+      },
+    );
 
     testWidgets('an unlinked @name remains ordinary prose', (tester) async {
       await pumpProfile(tester, testCharacter(description: 'Once knew @Bram.'));
@@ -484,11 +513,11 @@ void main() {
         id: 'char-2',
         name: 'Bram',
         description: 'Trusts @Cora.',
-        mentions: const [CharacterMention(id: 'char-3', name: 'Cora')],
+        mentions: const [LibraryMention(id: 'char-3', name: 'Cora')],
       );
       final mina = testCharacter(
         description: 'Best friends with @Bram.',
-        mentions: const [CharacterMention(id: 'char-2', name: 'Bram')],
+        mentions: const [LibraryMention(id: 'char-2', name: 'Bram')],
       );
       await pumpProfile(tester, mina, libraryCharacters: [mina, bram, cora]);
 

@@ -55,11 +55,8 @@ import { prisma } from "@book-maker/db";
 import type { FastifyInstance } from "fastify";
 import type { MobileRouteContext } from "../routeContext.js";
 import { enforceContentRestrictions } from "../../contentRestrictions.js";
-import {
-  expandLibraryCharacterGraph,
-  generationDescription,
-  orderedCharacterRefs
-} from "../characterMentions.js";
+import { expandLibraryCharacterGraph, generationDescription } from "../libraryMentionGraph.js";
+import { orderedCharacterRefs } from "../libraryMentionRows.js";
 
 /**
  * Post-generation chat: messages, edit proposals, undo and branch switching.

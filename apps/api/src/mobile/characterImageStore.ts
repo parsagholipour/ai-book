@@ -9,28 +9,33 @@ import {
 import { prisma, type LibraryCharacterImageModel, type LibraryCharacterModel } from "@book-maker/db";
 import { stat } from "node:fs/promises";
 import { deleteLibraryCharacterFile, saveLibraryCharacterFile } from "./characterStorage.js";
-import {
-  libraryCharacterMentionInclude,
-  type LibraryCharacterWithMentions
-} from "./characterMentions.js";
 
 /**
  * The retained-history half of the character library.
  *
- * Both route groups reach it: `routes/characters.ts` records a version on every
- * upload and drawing, and `routes/characterImages.ts` lists, promotes and
- * deletes them. The ownership helpers live here too, so the two groups cannot
- * drift on what "this user's character" means.
+ * Both route groups reach it, but only one writes: `routes/characterImages.ts`
+ * records a version on every upload and drawing and lists, promotes and deletes
+ * them, while `routes/characters.ts` is left with the reads. The ownership
+ * helpers live here too, so the two groups cannot drift on what "this user's
+ * character" means.
  */
 
 /** Statuses in which a portrait job owns the character row. */
 export const PORTRAIT_OPEN_STATUSES = ["QUEUED", "GENERATING"] as const;
 
-export async function ownedCharacter(id: string, userId: string): Promise<LibraryCharacterWithMentions | null> {
-  return prisma.libraryCharacter.findFirst({
-    where: { id, userId },
-    include: libraryCharacterMentionInclude
-  });
+/**
+ * The row and nothing else — no mention graph.
+ *
+ * Most callers here want a file name, a pointer or a portrait status, and the
+ * two byte routes (`GET /:id/photo`, `GET /:id/portrait`) are the hottest
+ * character path the app has. Joining `LibraryMention` and its nested
+ * `targetCharacter` select onto every one of those reads bought nothing:
+ * nothing on those paths serializes a character. A route that does serialize
+ * one reads through `ownedCharacterWithMentions` instead, which is the include
+ * `serializeLibraryCharacter` now demands.
+ */
+export async function ownedCharacter(id: string, userId: string): Promise<LibraryCharacterModel | null> {
+  return prisma.libraryCharacter.findFirst({ where: { id, userId } });
 }
 
 /** One retained picture, scoped by all three of image, character and owner. */

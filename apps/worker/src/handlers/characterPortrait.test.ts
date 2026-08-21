@@ -141,7 +141,13 @@ describe("generateCharacterPortrait", () => {
     mocks.prisma.libraryCharacter.findFirst.mockResolvedValue(
       characterRow({
         description: "Travels with @Bram.",
-        outgoingMentions: [{ targetCharacter: { id: "char-2", name: "Bram" } }]
+        // `targetKind` is what makes this a character, here and in every other
+        // reader of these rows. The fixture used to leave it out and be read as
+        // one anyway; a row with no kind is now read as nobody, and `findFirst`
+        // runs under `libraryMentionInclude`, which always selects the column.
+        outgoingMentions: [
+          { targetKind: "CHARACTER", targetCharacterId: "char-2", targetCharacter: { id: "char-2", name: "Bram" } }
+        ]
       })
     );
 
@@ -149,6 +155,42 @@ describe("generateCharacterPortrait", () => {
 
     const prompt = mocks.generateImageBytes.mock.calls[0]![0].prompt as string;
     expect(prompt).toContain("Travels with Bram.");
+    expect(prompt).not.toContain("@Bram");
+  });
+
+  it("strips every marker once a mention row turns out to be unnameable", async () => {
+    // The strip normally runs over the names the mention rows are bound to —
+    // `libraryMentionNames`, not the cast. A LOCATION or OTHER row has no
+    // target table and no join yet, and `LibraryMention_target_arc` forces its
+    // `targetCharacterId` null, so it reaches the strip nameless. That used to
+    // ride its `@` into the image prompt, where a model is about as likely to
+    // draw it as visible text as to ignore it. `generationDescription` now
+    // notices that a row cannot be named and strips every marker in the prose
+    // instead of only the claimed spans, so the reader's own unbound `@Ghost`
+    // loses its marker too — the documented cost of failing safe. Nothing
+    // writes LOCATION or OTHER rows today; this pins the fallback, which stops
+    // firing on its own once those joins land and the rows become nameable.
+    mocks.prisma.libraryCharacter.findFirst.mockResolvedValue(
+      characterRow({
+        description: "Lives at @Harbor with @Bram, and carries @Sunfang.",
+        outgoingMentions: [
+          { targetKind: "LOCATION", targetCharacterId: null, targetCharacter: null },
+          {
+            targetKind: "CHARACTER",
+            targetCharacterId: "char-2",
+            targetCharacter: { id: "char-2", name: "Bram" }
+          },
+          { targetKind: "OTHER", targetCharacterId: null, targetCharacter: null }
+        ]
+      })
+    );
+
+    await generateCharacterPortrait(job);
+
+    const prompt = mocks.generateImageBytes.mock.calls[0]![0].prompt as string;
+    expect(prompt).toContain("Lives at Harbor with Bram, and carries Sunfang.");
+    expect(prompt).not.toContain("@Harbor");
+    expect(prompt).not.toContain("@Sunfang");
     expect(prompt).not.toContain("@Bram");
   });
 

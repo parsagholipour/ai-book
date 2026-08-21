@@ -19,13 +19,38 @@ export type MobileLibraryCharacterPhotoKind = "photograph" | "illustration" | "u
 /** Whether the reference image was drawn for a fee or is the user's own art. */
 export type MobileLibraryCharacterPortraitSource = "generated" | "adopted_upload";
 
+/**
+ * What a description @mention points at. Every kind the link table stores has a
+ * spelling here and the producer reads it off the row, but only a CHARACTER row
+ * can be *named* today, so it is the only kind that reaches a client —
+ * `libraryMentionRefs` is where that constraint and what lifts it are written
+ * down.
+ *
+ * So `location` and `other` are unreachable end to end, here and in the Dart
+ * `LibraryMentionKind.fromWire` and profile-screen arms that mirror them. That
+ * is groundwork for those kinds, not dead code, and the half still missing is
+ * the app's: drawing such a link as something a reader can follow or unlink.
+ * Widening the wire before then is what stops the producer's first
+ * non-CHARACTER row being a breaking change for every shipped build.
+ */
+export type MobileLibraryMentionKind = "character" | "location" | "other";
+
+/** One durable directed link represented by an @Name token in `description`. */
+export type MobileLibraryMentionDto = {
+  id: string;
+  name: string;
+  kind: MobileLibraryMentionKind;
+  /** User-typed subtype when `kind` is `other`; otherwise null. */
+  otherType: string | null;
+};
+
 /** An account-level library character ("consistent characters"). */
 export type MobileLibraryCharacterDto = {
   id: string;
   name: string;
   description: string;
   /** Durable directed links represented by @Name tokens in `description`. */
-  mentions: Array<{ id: string; name: string }>;
+  mentions: MobileLibraryMentionDto[];
   fields: Array<{ key: string; value: string }>;
   portraitStatus: MobileLibraryCharacterPortraitStatus;
   portraitError: string | null;

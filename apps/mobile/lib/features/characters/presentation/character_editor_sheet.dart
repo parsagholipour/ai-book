@@ -6,7 +6,10 @@ import '../../../shared/ui/app_components.dart';
 import '../../../shared/ui/feedback/app_snack_bar.dart';
 import '../data/characters_repository.dart';
 import '../domain/character_models.dart';
-import '../domain/character_mentions.dart';
+import '../domain/library_mentions.dart';
+import 'character_editor_fields.dart';
+
+part 'character_editor_mentions.dart';
 
 /// Creates or edits one library character.
 ///
@@ -47,64 +50,33 @@ class _CharacterEditorSheet extends ConsumerStatefulWidget {
       _CharacterEditorSheetState();
 }
 
-class _FieldRow {
-  _FieldRow({String key = '', String value = ''})
-    : key = TextEditingController(text: key),
-      value = TextEditingController(text: value);
-
-  final TextEditingController key;
-  final TextEditingController value;
-
-  void dispose() {
-    key.dispose();
-    value.dispose();
-  }
-}
-
-class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
+class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet>
+    with _CharacterEditorMentions {
   late final _nameController = TextEditingController(
     text: widget.character?.name ?? '',
   );
-  late final _descriptionController = TextEditingController(
-    text: widget.character?.description ?? '',
-  );
-  late final List<_FieldRow> _fields = [
+  @override
+  late final TextEditingController _descriptionController =
+      TextEditingController(text: widget.character?.description ?? '');
+  late final List<CharacterDetailRow> _fields = [
     for (final field in widget.character?.fields ?? const <CharacterField>[])
-      _FieldRow(key: field.key, value: field.value),
+      CharacterDetailRow(key: field.key, value: field.value),
   ];
-  late final Map<String, String> _insertedMentionTextById = {
-    for (final mention
-        in widget.character?.mentions ?? const <CharacterMention>[])
-      mention.id: '@${mention.name}',
-  };
-  late List<CharacterMention> _attachedMentions =
-      widget.character?.mentions ?? const <CharacterMention>[];
-  CharacterMentionQuery? _mentionQuery;
+
   ProviderSubscription<AsyncValue<CharacterLibrary>>? _characterLibraryWatch;
 
   /// Rows taken out of [_fields] stay alive until the sheet closes: their
   /// text fields may still be animating out when they are removed.
-  final List<_FieldRow> _removedFields = [];
+  final List<CharacterDetailRow> _removedFields = [];
 
   /// The character as the server last confirmed it. Null until a new character
   /// is created; the photo and portrait sections need an id to talk about.
+  @override
   late LibraryCharacter? _saved = widget.character;
 
   bool _saving = false;
   bool _suggestionBusy = false;
   String? _nameError;
-
-  /// Whether the reader themselves changed the description — typed in it, took
-  /// the photo suggestion, or tapped a mention chip.
-  ///
-  /// It is tracked rather than derived, because the sheet resolves mentions on
-  /// its own: a pre-feature character whose prose says "Inspired by @bram" gets
-  /// a link the moment the library arrives, which is a change to
-  /// [_attachedMentions] that no comparison can tell from an edit. Deriving
-  /// "changed" from that state turned a look-and-Save into a PATCH — one that
-  /// canonicalizes the prose, writes a durable link nobody made, and retires
-  /// the pending photo suggestion, which sending any description does.
-  bool _descriptionEdited = false;
 
   /// Set the moment the reader taps "Use this", so the card goes away without
   /// waiting for the PATCH that retires it server-side — which only happens
@@ -114,11 +86,16 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
   @override
   void initState() {
     super.initState();
+    _descriptionOverflow = _descriptionOverflowOf(_descriptionController.text);
     _descriptionController.addListener(_syncDescriptionMentions);
     _characterLibraryWatch = ref.listenManual(charactersProvider, (_, next) {
-      // Resolve a name that was typed while the library request was still in
-      // flight as soon as the identities needed to disambiguate it arrive.
-      if (mounted && next.hasValue) _syncDescriptionMentions();
+      if (!mounted || !next.hasValue) return;
+      // Both halves of a delivery. A rename it carries is followed here and
+      // nowhere else ([_respellRenamedMentions] holds why); a respell writes
+      // the field, so the resolve re-enters through the controller's listener
+      // and the call below is for the delivery that respelled nothing — a name
+      // typed while the library request was still in flight, resolved now.
+      if (!_respellRenamedMentions()) _syncDescriptionMentions();
     });
   }
 
@@ -136,109 +113,7 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
     super.dispose();
   }
 
-  List<LibraryCharacter> get _loadedCharacters =>
-      ref.read(charactersProvider).asData?.value.characters ??
-      const <LibraryCharacter>[];
-
-  void _syncDescriptionMentions() {
-    if (!mounted) return;
-    final text = _descriptionController.text;
-    _insertedMentionTextById.removeWhere(
-      (_, mentionText) => !characterTextHasMention(text, mentionText),
-    );
-    final selection = _descriptionController.selection;
-    final caret = selection.isValid && selection.isCollapsed
-        ? selection.baseOffset
-        : -1;
-    final query = caret < 0 ? null : characterMentionQueryAt(text, caret);
-    final attached = resolveCharacterMentions(
-      text: text,
-      inserted: _insertedMentionTextById,
-      characters: _loadedCharacters,
-      excludeCharacterId: _saved?.id,
-      // One past the cap: an over-full set has to stay visible here, because a
-      // set trimmed to a legal-looking length is what silently dropped a link
-      // the prose still carried on the next save.
-      limit: _mentionsMax + 1,
-    );
-    final changed =
-        query?.start != _mentionQuery?.start ||
-        query?.query != _mentionQuery?.query ||
-        !_sameMentionIds(attached, _attachedMentions);
-    if (!changed) return;
-    setState(() {
-      _mentionQuery = query;
-      _attachedMentions = attached;
-    });
-  }
-
-  bool _sameMentionIds(
-    List<CharacterMention> left,
-    List<CharacterMention> right,
-  ) {
-    if (left.length != right.length) return false;
-    for (var index = 0; index < left.length; index++) {
-      if (left[index].id != right[index].id) return false;
-    }
-    return true;
-  }
-
-  void _insertMention(LibraryCharacter character) {
-    final query = _mentionQuery;
-    if (query == null) return;
-    final text = _descriptionController.text;
-    final selection = _descriptionController.selection;
-    final caret = selection.isValid && selection.isCollapsed
-        ? selection.baseOffset
-        : text.length;
-    final mentionText = '@${character.name}';
-    final replacement = '$mentionText ';
-    final inserted =
-        text.substring(0, query.start) + replacement + text.substring(caret);
-    // A tap is not IME input, so the field's own maxLength formatter never runs
-    // over this text. Without the check the chip could push the description
-    // past a cap whose counter is hidden, and the save would come back as the
-    // route's generic message with nothing on screen explaining it.
-    if (_overDescriptionLimit(inserted)) {
-      _refuseMention('That would make the description too long.');
-      return;
-    }
-    // The limit belongs to the set of distinct characters, so a second
-    // occurrence of one already attached is not a new mention.
-    if (_attachedMentions.length >= _mentionsMax &&
-        !_attachedMentions.any((mention) => mention.id == character.id)) {
-      _refuseMention(
-        'A description can mention up to $_mentionsMax characters.',
-      );
-      return;
-    }
-    _descriptionEdited = true;
-    _insertedMentionTextById[character.id] = mentionText;
-    _descriptionController.value = TextEditingValue(
-      text: inserted,
-      selection: TextSelection.collapsed(
-        offset: query.start + replacement.length,
-      ),
-    );
-  }
-
-  /// Says why an insertion was refused, having changed nothing: the text and
-  /// the half-typed `@token` are left exactly as the reader had them, so a
-  /// silent refusal would look like a tap that missed.
-  void _refuseMention(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showAppSnackBar(SnackBar(content: Text(message)));
-  }
-
-  /// Whether [text] is past either ceiling the description has: the field's own
-  /// [_descriptionMax], counted in the grapheme clusters Flutter's maxLength
-  /// counts, and the server's cap on the trimmed string, counted in the UTF-16
-  /// units zod measures.
-  bool _overDescriptionLimit(String text) =>
-      text.characters.length > _descriptionMax ||
-      text.trim().length > _descriptionMax;
-
+  @override
   bool get _busy => _saving || _suggestionBusy;
 
   /// The description read off the photo, while it is still on offer.
@@ -257,10 +132,10 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
 
   void _addField({String key = ''}) {
     if (_fields.length >= _fieldsMax) return;
-    setState(() => _fields.add(_FieldRow(key: key)));
+    setState(() => _fields.add(CharacterDetailRow(key: key)));
   }
 
-  void _removeField(_FieldRow row) {
+  void _removeField(CharacterDetailRow row) {
     setState(() {
       _fields.remove(row);
       _removedFields.add(row);
@@ -324,7 +199,13 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
         changedDescription = description != saved.description
             ? description
             : null;
-        changedMentions = _sameMentionIds(_attachedMentions, saved.mentions)
+        // Against the cast, not the whole stored list. A link into another
+        // library is one this sheet neither resolves nor sends, so a row of
+        // that kind sitting in `mentions` is not a change the reader made —
+        // compared against the wider list it read as one on every save, and
+        // sent a link write nobody asked for.
+        changedMentions =
+            _sameMentionIds(_attachedMentions, saved.characterMentions)
             ? null
             : mentionIds;
       }
@@ -336,12 +217,31 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
         return;
       }
     }
+    // The body carries the description exactly when it carries the link set: a
+    // mention-set change sends the prose it was resolved from, and a create
+    // sends both. One predicate for both refusals below — and a body that
+    // carries neither is held back by neither.
+    final sendsDescription =
+        saved == null || changedDescription != null || changedMentions != null;
+    // Nothing between the field and the route enforces this cap — see
+    // [_descriptionOverflow] — so here is the last place it can be stopped
+    // while it is still something the reader can be shown. It counts
+    // [description], the string the body carries, which is what the counter on
+    // screen counts too: one measurement, or the two disagree in whitespace.
+    if (sendsDescription && _overDescriptionLimit(description)) {
+      messenger.showAppSnackBar(
+        const SnackBar(
+          content: Text(
+            'The description is too long. Shorten it and save again.',
+          ),
+        ),
+      );
+      return;
+    }
     // The route refuses more than this, and the alternative to saying so is
     // sending a set quietly cut down to the cap — which deletes a link the
     // reader can still see in their own prose.
-    final sendsMentions =
-        saved == null || changedDescription != null || changedMentions != null;
-    if (sendsMentions && mentionIds.length > _mentionsMax) {
+    if (sendsDescription && mentionIds.length > _mentionsMax) {
       messenger.showAppSnackBar(
         SnackBar(
           content: Text(
@@ -458,6 +358,9 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
   Widget build(BuildContext context) {
     // Background polling can move this row underneath the form; adopt the new
     // one without clobbering anything the reader is part-way through typing.
+    // Mentions are not re-resolved here: the subscription opened in `initState`
+    // already answers the same notification, and running both meant a second
+    // pass over the whole description every three seconds for the sheet's life.
     ref.listen(charactersProvider, (previous, next) {
       final saved = _saved;
       final characters = next.value?.characters;
@@ -465,7 +368,6 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
       for (final character in characters) {
         if (character.id == saved.id) {
           if (!identical(character, saved)) setState(() => _saved = character);
-          _syncDescriptionMentions();
           return;
         }
       }
@@ -519,18 +421,11 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
                 },
               ),
               const SizedBox(height: 12),
-              TextField(
-                key: const ValueKey('character-description-field'),
+              CharacterDescriptionField(
                 controller: _descriptionController,
-                maxLength: _descriptionMax,
-                minLines: 3,
-                maxLines: 6,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  counterText: '',
-                  hintText: 'What they look like, how they act, who they are.',
-                ),
-                onChanged: (_) => _descriptionEdited = true,
+                max: _descriptionMax,
+                overflow: _descriptionOverflow,
+                onChanged: () => _descriptionEdited = true,
               ),
               if (_mentionQuery != null) ...[
                 const SizedBox(height: 8),
@@ -553,7 +448,11 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
               ],
               if (suggestion != null) ...[
                 const SizedBox(height: 12),
-                _suggestionCard(suggestion),
+                CharacterSuggestionCard(
+                  suggestion: suggestion,
+                  onUse: _busy ? null : () => _useSuggestion(suggestion),
+                  onDismiss: _busy ? null : _dismissSuggestion,
+                ),
               ],
               const SizedBox(height: 16),
               Text(
@@ -563,7 +462,13 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
                 ),
               ),
               const SizedBox(height: 8),
-              for (final row in _fields) _fieldRow(row),
+              for (final row in _fields)
+                CharacterDetailRowField(
+                  row: row,
+                  keyMax: _fieldKeyMax,
+                  valueMax: _fieldValueMax,
+                  onRemove: () => _removeField(row),
+                ),
               Wrap(
                 spacing: 8,
                 children: [
@@ -597,123 +502,4 @@ class _CharacterEditorSheetState extends ConsumerState<_CharacterEditorSheet> {
     );
   }
 
-  Widget _mentionSuggestions(CharacterMentionQuery query) {
-    final library = ref.watch(charactersProvider);
-    final needle = query.query.trim().toLowerCase();
-    final matches = [
-      for (final character
-          in library.asData?.value.characters ?? const <LibraryCharacter>[])
-        if (character.id != _saved?.id &&
-            (needle.isEmpty || character.name.toLowerCase().contains(needle)))
-          character,
-    ];
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        key: const ValueKey('character-mention-suggestions'),
-        scrollDirection: Axis.horizontal,
-        itemCount: matches.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final character = matches[index];
-          return ActionChip(
-            avatar: const Icon(Icons.person_outline, size: 16),
-            label: Text(character.name),
-            onPressed: _busy ? null : () => _insertMention(character),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _suggestionCard(String suggestion) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.auto_awesome_outlined,
-                  size: 16,
-                  color: colors.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Suggested from your photo',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(suggestion, style: theme.textTheme.bodyMedium),
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                AppButton.text(
-                  label: 'Use this',
-                  onPressed: _busy ? null : () => _useSuggestion(suggestion),
-                ),
-                AppButton.text(
-                  label: 'Dismiss',
-                  onPressed: _busy ? null : _dismissSuggestion,
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _fieldRow(_FieldRow row) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 2,
-            child: TextField(
-              controller: row.key,
-              maxLength: _fieldKeyMax,
-              decoration: const InputDecoration(
-                labelText: 'Detail',
-                counterText: '',
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: row.value,
-              maxLength: _fieldValueMax,
-              decoration: const InputDecoration(
-                labelText: 'Value',
-                counterText: '',
-              ),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Remove detail',
-            icon: const Icon(Icons.close),
-            onPressed: () => _removeField(row),
-          ),
-        ],
-      ),
-    );
-  }
 }

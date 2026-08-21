@@ -50,8 +50,8 @@ import {
   creditCostForOperation,
   foldCharacterName,
   generateJsonWithRetry,
-  isLibraryCharacterNameCharacterAt,
-  libraryCharacterMentionTokenEndsAt,
+  isLibraryMentionNameCharacterAt,
+  libraryMentionTokenEndsAt,
   libraryCharacterRelativeFile,
 } from "@book-maker/core";
 import { linearizeCreationMessages } from "../creationChatTree.js";
@@ -65,7 +65,7 @@ import {
 import { type FastifyReply } from "fastify";
 import type { MobileRouteContext } from "./routeContext.js";
 import { assessCurrentContentRestrictions } from "../contentRestrictions.js";
-import { expandLibraryCharacterGraph, generationDescription } from "./characterMentions.js";
+import { expandLibraryCharacterGraph, generationDescription } from "./libraryMentionGraph.js";
 
 class CreationSessionConflictError extends Error {
   constructor() {
@@ -475,8 +475,13 @@ async function libraryCharacterSnapshotsForBuild(
   // no more than this many, and the ids above are already clamped to it — so
   // the linked characters get whatever room the tapped cast leaves, and a
   // branch that filled the list on its own carries no expansion rather than
-  // failing the payload re-parse. A character deleted since being mentioned is
-  // simply missing, which is why nothing here reads `missingIds`.
+  // failing the payload re-parse. The graph takes it as the total and narrows
+  // it to nothing of its own — it used to `Math.min` the argument against the
+  // chat's mention cap, which is the same ten, so raising this constant (and
+  // `MAX_SNAPSHOT_CHARACTERS`, which the worker reads the copy back through)
+  // would have bought no extra sheets and said nothing about why. A character
+  // deleted since being mentioned is simply missing, which is why nothing here
+  // reads `missingIds`.
   const { characters: rows } = await expandLibraryCharacterGraph(userId, ids, BUILD_CHARACTER_SNAPSHOT_LIMIT);
   return rows.map((row) => ({
     id: row.id,
@@ -578,8 +583,8 @@ function scanTypedMentions(
       // a UTF-16 unit that is only half of 𐐀 cannot open a word, and a hyphen
       // that joins the next word still binds nobody.
       if (
-        isLibraryCharacterNameCharacterAt(haystack, at - 1) ||
-        !libraryCharacterMentionTokenEndsAt(haystack, end)
+        isLibraryMentionNameCharacterAt(haystack, at - 1) ||
+        !libraryMentionTokenEndsAt(haystack, end)
       ) {
         continue;
       }

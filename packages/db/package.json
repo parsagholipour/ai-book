@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./billing": "./src/billing.ts"
+    "./billing": "./src/billing.ts",
+    "./libraryMentions": "./src/libraryMentions.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",

@@ -27,7 +27,7 @@ import '../../billing/domain/billing_models.dart';
 import '../../billing/presentation/billing_paywall.dart';
 import '../../characters/data/characters_repository.dart';
 import '../../characters/domain/character_models.dart';
-import '../../characters/domain/character_mentions.dart';
+import '../../characters/domain/library_mentions.dart';
 import '../../characters/presentation/character_avatar.dart';
 import '../../characters/presentation/character_library_screen.dart';
 import '../data/creation_prefs_store.dart';

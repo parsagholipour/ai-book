@@ -18,12 +18,13 @@ Map<String, dynamic> characterJson({
   bool usedInBooks = false,
   String? photoUrl,
   String? portraitUrl,
+  Object mentions = const <dynamic>[],
 }) {
   return {
     'id': id,
     'name': name,
     'description': description,
-    'mentions': const <dynamic>[],
+    'mentions': mentions,
     'fields': fields,
     'portraitStatus': portraitStatus,
     'portraitError': portraitError,
@@ -92,6 +93,117 @@ void main() {
       expect(parsed.portraitSource, CharacterPortraitSource.adoptedUpload);
       expect(parsed.usedInBooks, isTrue);
       expect(parsed.toJson(), json);
+    });
+
+    test('a mention round-trips the kind and subtype it arrived with', () {
+      // The link table carries kinds the app does not have libraries for yet.
+      // Parsing neither field is what would render a location as a character
+      // chip and send the reader to a page that resolves to nobody.
+      final json = characterJson(
+        mentions: const [
+          {
+            'id': 'char-2',
+            'name': 'Bram',
+            'kind': 'character',
+            'otherType': null,
+          },
+          {
+            'id': 'loc-1',
+            'name': 'Thornwood',
+            'kind': 'location',
+            'otherType': null,
+          },
+          {
+            'id': 'obj-1',
+            'name': 'Skyfire',
+            'kind': 'other',
+            'otherType': 'sword',
+          },
+        ],
+      );
+
+      final parsed = LibraryCharacter.fromJson(json);
+
+      expect(
+        [for (final mention in parsed.mentions) mention.kind],
+        [
+          LibraryMentionKind.character,
+          LibraryMentionKind.location,
+          LibraryMentionKind.other,
+        ],
+      );
+      expect(parsed.mentions.last.otherType, 'sword');
+      expect(parsed.toJson(), json);
+    });
+
+    test(
+      'an unknown mention kind reads as other, an absent one as character',
+      () {
+        // Anything unrecognized must not be routed to a character page, and a
+        // payload with no kind at all is a server from before the link table was
+        // generalized, where every row was a character.
+        final parsed = LibraryCharacter.fromJson(
+          characterJson(
+            mentions: const [
+              {'id': 'a', 'name': 'Ley Line', 'kind': 'ley_line'},
+              {'id': 'b', 'name': 'Bram'},
+              {'id': 'c', 'name': 'Nine', 'kind': 9},
+            ],
+          ),
+        );
+
+        expect(
+          [for (final mention in parsed.mentions) mention.kind],
+          [
+            LibraryMentionKind.other,
+            LibraryMentionKind.character,
+            LibraryMentionKind.other,
+          ],
+        );
+        expect(parsed.mentions.first.otherType, isNull);
+      },
+    );
+
+    test('a subtype that is not a string reads as absent', () {
+      // `listFromJson` is the only decode of a mention row, and this is why
+      // there is no second one: a spelling that cast `otherType` instead of
+      // testing it throws on a payload a newer server is free to send, taking
+      // the whole character down with it rather than the one field.
+      final parsed = LibraryCharacter.fromJson(
+        characterJson(
+          mentions: const [
+            {'id': 'obj-1', 'name': 'Skyfire', 'kind': 'other', 'otherType': 7},
+          ],
+        ),
+      );
+
+      expect(parsed.mentions.single.kind, LibraryMentionKind.other);
+      expect(parsed.mentions.single.otherType, isNull);
+    });
+
+    test('the cast is the character-kind subset of the stored mentions', () {
+      // Two readings of one row set, exactly as the server keeps them:
+      // `mentions` answers "which spans are markers at all" and
+      // `characterMentions` answers "who is in the cast". Everything that
+      // treats a mention as a person reads the second — a location resolved as
+      // a character is chipped with a face, counted against the description's
+      // ten, and sent back in `mentionedCharacterIds`, which the update route
+      // answers 404 for.
+      final character = LibraryCharacter.fromJson(
+        characterJson(
+          mentions: const [
+            {'id': 'loc-1', 'name': 'Thornwood', 'kind': 'location'},
+            {'id': 'char-2', 'name': 'Bram', 'kind': 'character'},
+            {'id': 'obj-1', 'name': 'Skyfire', 'kind': 'other'},
+          ],
+        ),
+      );
+
+      expect(character.mentions, hasLength(3));
+      expect(
+        [for (final mention in character.characterMentions) mention.id],
+        ['char-2'],
+      );
     });
 
     test('unknown photo kinds and portrait sources read as null', () {

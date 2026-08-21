@@ -12,10 +12,10 @@ import {
   libraryCharacterRelativeFile,
   optimizeImageForStorage,
   pruneLibraryCharacterImages,
-  stripLibraryCharacterMentionMarkers,
   type LibraryCharacterField
 } from "@book-maker/core";
 import { prisma } from "@book-maker/db";
+import { generationDescription, libraryMentionInclude } from "@book-maker/db/libraryMentions";
 import { Job } from "bullmq";
 import { mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -40,12 +40,10 @@ export async function generateCharacterPortrait(job: Job): Promise<void> {
 
   const character = await prisma.libraryCharacter.findFirst({
     where: { id: libraryCharacterId, userId },
-    include: {
-      outgoingMentions: {
-        orderBy: { sortOrder: "asc" },
-        include: { targetCharacter: { select: { id: true, name: true } } }
-      }
-    }
+    // The API's own include, and the description read through the API's own
+    // filter below: a prompt built off a second copy of this shape is how the
+    // planner and the renderer end up describing two different people.
+    include: libraryMentionInclude
   });
   if (!character) {
     throw new Error("The library character behind this portrait no longer exists.");
@@ -68,10 +66,7 @@ export async function generateCharacterPortrait(job: Job): Promise<void> {
   const prompt = buildLibraryCharacterPortraitPrompt(
     {
       name: character.name,
-      description: stripLibraryCharacterMentionMarkers(
-        character.description,
-        (character.outgoingMentions ?? []).map((mention) => mention.targetCharacter)
-      ),
+      description: generationDescription(character),
       // The recorded look, so a redraw lands on the same person rather than
       // inventing a new one for every generation.
       ...(character.appearance ? { appearance: character.appearance } : {}),

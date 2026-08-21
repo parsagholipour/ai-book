@@ -6,7 +6,7 @@ import {
   ensureProjectExportEntitlementOrSpend,
   hasActiveSubscriptionEntitlement
 } from "@book-maker/db/billing";
-import { type FastifyReply, type FastifyRequest } from "fastify";
+import { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
 
 /**
  * Mobile auth guard, rate-limit guard, and the shared error response helpers.
@@ -100,6 +100,136 @@ export function sendMobileError(reply: FastifyReply, statusCode: number, code: s
   });
 }
 
+/**
+ * A body Fastify could not read at all, answered in the shape every other
+ * refusal on these routes arrives in.
+ *
+ * A route that declares a status is declaring how *every* answer at that status
+ * is serialized, Fastify's own included — and Fastify's error body is
+ * `{ statusCode, error: "Bad Request", message }`, where `mobileAuthError` wants
+ * `error` to be an object with a required `code`. A string cannot be pushed
+ * through that, so the serializer throws and the reader gets a 500
+ * (`FST_ERR_FAILED_ERROR_SERIALIZATION`) for a request that was merely
+ * mis-encoded. Before those statuses were declared the fallback serializer
+ * answered these correctly, which is why declaring them is what surfaced it.
+ *
+ * `attachValidation: true` closes the half of that which is *validation* — ajv
+ * hands its rejection to the handler, whose own parse is then the only gate
+ * that answers. It cannot close this half: `FST_ERR_CTP_INVALID_JSON_BODY` comes
+ * out of the content-type parser, before validation runs and so before there is a
+ * `request.validationError` for a handler to read — the request never reaches
+ * one at all. So the parser's 400 is translated here into the one shape the app
+ * reads a code out of, and everything else is handed straight back to Fastify's
+ * own handler, which is what the 500s these routes can still throw are supposed
+ * to get.
+ *
+ * It sits here rather than in either route group because both of them need it:
+ * the two character writes in `routes/characters.ts` and, in
+ * `routes/characterImages.ts`, the portrait request and the photo upload —
+ * whose `application/octet-stream` parser does not stop a client from sending
+ * `application/json` with something the JSON parser cannot read.
+ *
+ * **A route-level `errorHandler` is not a parser hook, so the parser has to be
+ * recognised rather than assumed.** Fastify hands this every error the route's
+ * hooks and its own handler throw as well, and `statusCode === 400` — which is
+ * what this used to test — is the shape every Fastify-family error carries, not
+ * the parser's signature. All four routes rethrow whatever
+ * `sendCharacterWriteError` does not recognise, and `POST /:id/portrait` runs
+ * `enqueueGenerationJob`, `dispatchGenerationJob` and `startGenerationAttempt`
+ * long after the parse; any of those — or the next hook or plugin — surfacing a
+ * 400 was answered "That request could not be read", with its own code and
+ * message gone and nothing handed back to Fastify to log it.
+ *
+ * What the predicate does not claim goes to `reply.send(error)`, which is
+ * Fastify's normal handling: a status no response schema names is serialized
+ * whole, code and message intact. A status the route *does* declare with
+ * `mobileAuthError` cannot be — that is the same serialization failure this
+ * comment opens with, arriving loud, logged, and carrying `Original error: …`,
+ * which is what a handler throwing where it should have sent deserves and is
+ * the reason not to reach for the bare status test again. `FST_ERR_VALIDATION`
+ * is a 400 that never gets here: every route installing this either carries
+ * `attachValidation: true` or declares no schema for ajv to compile, so its own
+ * parse is the only gate, and the ids in their paths carry no JSON schema
+ * either.
+ */
+export function sendUnreadableBodyError(error: FastifyError, request: FastifyRequest, reply: FastifyReply): void {
+  if (isUnreadableRequestBody(error, request)) {
+    sendMobileError(reply, 400, "VALIDATION_ERROR", "That request could not be read.");
+    return;
+  }
+  reply.send(error);
+}
+
+/**
+ * The content-type parser names every refusal it invents after itself, which is
+ * what makes the family a test rather than a guess:
+ * `FST_ERR_CTP_INVALID_JSON_BODY` for prose the JSON parser cannot read,
+ * `FST_ERR_CTP_EMPTY_JSON_BODY` for an empty one, `FST_ERR_CTP_INVALID_CONTENT_LENGTH`
+ * for a body that did not match its header.
+ */
+const CONTENT_TYPE_PARSER_CODE_PREFIX = "FST_ERR_CTP_";
+
+function isUnreadableRequestBody(error: FastifyError, request: FastifyRequest): boolean {
+  // The parser's other two refusals answer at a status of their own —
+  // `FST_ERR_CTP_BODY_TOO_LARGE` is 413 and `FST_ERR_CTP_INVALID_MEDIA_TYPE` is
+  // 415 — and no route installing this declares either, so Fastify's fallback
+  // serializer already answers them whole. Translating them would move a
+  // reader's "that photo is too big" to a bare 400. Only the parser's 400s meet
+  // a declared `mobileAuthError` and only they need the shape.
+  if (error.statusCode !== 400) {
+    return false;
+  }
+  const code: string | undefined = error.code;
+  if (code !== undefined && code.startsWith(CONTENT_TYPE_PARSER_CODE_PREFIX)) {
+    return true;
+  }
+  // The one unreadable body the parser does not name. When the payload stream
+  // *itself* fails, `rawBody` stamps `statusCode = 400` onto whatever the stream
+  // threw and sends that on — measured on this Fastify as
+  // `Error { code: "ECONNRESET", message: "aborted", statusCode: 400 }` for a
+  // client that hangs up mid-body. Nothing about that error says "parser", so it
+  // is recognised by identity instead: Node destroys a stream *with* the error
+  // that killed it, so `request.raw.errored` is this very object, where it is
+  // null for a parser refusal and for anything a handler throws. Status is the
+  // one thing it must not be recognised by — `request.body` is `undefined` here
+  // and also for a bodyless `POST /:id/portrait`, whose body is optional and
+  // whose handler is exactly the one that can throw a 400 of its own.
+  return request.raw.errored === error;
+}
+
+/**
+ * A mention write refusing something the request asked for, on its way to the
+ * one ladder that answers it.
+ *
+ * **It lives here because it is a leaf, and because it was the makings of a
+ * boot failure where it used to live.** `libraryMentionRewrites.ts` defines
+ * helpers that throw it and imports `claimCharacterRows` from
+ * `characterWriteConflicts.ts`, which imported this class back — a cycle that
+ * held only while neither module touched the other's binding while it was
+ * being evaluated. The first top-level use of either name — a `Record` keyed by
+ * error class, a `class X extends LibraryMentionError`, a `satisfies` over
+ * `claimCharacterRows` — makes whichever module ESM evaluates second throw
+ * `ReferenceError: Cannot access 'LibraryMentionError' before initialization`,
+ * at API boot rather than under a test. This module imports neither of them and
+ * never will: it is where `sendMobileError` lives, which is what every rung of
+ * that ladder ends in. `libraryMentionRewrites.ts` re-exports the name, so
+ * nothing that imports it from there has to know it moved.
+ */
+export class LibraryMentionError extends Error {
+  constructor(
+    // These strings go out on the wire under `/api/mobile/*`, which serves app
+    // builds already installed, so they keep the noun they shipped with even
+    // where the module that throws them has stopped being character-only. A
+    // stale noun in an opaque code costs nothing; a renamed one is a client
+    // that stops recognising the error.
+    readonly code: "INVALID_CHARACTER_MENTION" | "CHARACTER_NOT_FOUND" | "CHARACTER_MENTION_TOO_LONG",
+    message: string
+  ) {
+    super(message);
+    this.name = "LibraryMentionError";
+  }
+}
+
 export function sendInsufficientCredits(reply: FastifyReply, error: InsufficientCreditsError): FastifyReply {
   return reply.code(402).send({
     error: {
@@ -111,6 +241,38 @@ export function sendInsufficientCredits(reply: FastifyReply, error: Insufficient
     }
   });
 }
+
+/**
+ * The serializer's copy of that body, for any route that documents its 402.
+ *
+ * The three numbers are the whole point of the reply — the message says nothing
+ * a reader can act on, and `PaywallCreditsNeeded.fromApiError` builds the
+ * shortfall card out of `requiredCredits` — but fast-json-stringify removes
+ * whatever the response schema does not name, and `mobileAuthError` names
+ * `code` and `message` only. A 402 documented with that one arrives as a bare
+ * sentence however carefully this assembled it, which is exactly the hazard
+ * `contentRestrictedError` exists for one status code up. Most 402 routes
+ * declare no schema at all and are serialized whole; this is for the ones that
+ * do declare one. It sits beside the sender rather than with the other OpenAPI
+ * fragments in `schemas.ts` because the two halves only work together.
+ */
+export const insufficientCreditsError = {
+  type: "object",
+  properties: {
+    error: {
+      type: "object",
+      properties: {
+        code: { type: "string" },
+        message: { type: "string" },
+        requiredCredits: { type: "integer" },
+        availableCredits: { type: "integer" },
+        reservedCredits: { type: "integer" }
+      },
+      required: ["code", "message", "requiredCredits", "availableCredits", "reservedCredits"]
+    }
+  },
+  required: ["error"]
+} as const;
 
 /**
  * The free tier's illustrated-book budget is spent for this month.

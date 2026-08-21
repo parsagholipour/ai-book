@@ -45,6 +45,14 @@ rather than duplicating per suite.
 so importing anything that transitively reaches a mocked module deadlocks the registry — the suite
 hangs rather than failing, which is slow to diagnose.
 
+Its `$transaction` mock rolls nothing back — there is no store to roll back — so it **accounts**
+instead: each interactive transaction records the options it was handed, the writes issued through
+the `tx` client it handed out, and whether the callback threw, and `survivingWrites()` reads those
+back as the statements a database would still hold. That is how a rollback claim is asserted here
+(`characterWriteRollback.test.ts`). Attribution is by client rather than by wall clock on purpose:
+a callback reaching for the imported `prisma` instead of its `tx` lands on no record and is
+reported as surviving, which is the escape a rollback-capable mock could not simulate.
+
 ## Index
 
 - [Billing surfaces](#billing-surfaces)
@@ -594,6 +602,24 @@ of the same manuscript can have fixed.
 
 ## Characters
 
+The library routes split by what they write, not by which noun is in the path.
+`routes/characters.ts` owns the record and its prose — the list, create, PATCH, delete — which is
+the lane that claims sibling rows and shares one client budget. `routes/characterImages.ts` owns
+every route that moves the two picture pointers: the photo upload, the priced portrait job, the
+byte GETs, and the retained history behind them. They register on one Fastify instance, so the
+`application/octet-stream` parser covers the upload wherever its file sits.
+
+Mentions split the same way — by what the code does to a row, not by the noun in it.
+`libraryMentionRows.ts` holds the readings of a row that is already stored and touches no client:
+`libraryMentionRefs` (the wire list), `claimingNames` (who may hold a span of prose) and
+`survivingMentionIds` (what an old client's edit leaves behind). `libraryMentionGraph.ts` reads the
+library by id and walks the links behind a tapped cast. `libraryMentionLinks.ts` is the outgoing
+write — the complete link set one description owns, and the two constants that keep its `deleteMany`
+and its `createMany` naming the same kinds. `libraryMentionRewrites.ts` is the incoming direction:
+every *other* description, claimed as a set under the target's own `FOR UPDATE`, when that target is
+renamed or deleted. The readings are one file because of the one-candidate-set rule below — a span
+the write binds has to be one all three of them can still find.
+
 - **A per-book character list is a copy, and it says which library character it is a copy of.**
   `VoiceCharacter` rows (the "Talk to characters" cast, the only per-book character list the app
   has) are built one-for-one from `plan.characters`, so a saved character reached the sheet as a
@@ -622,12 +648,36 @@ of the same manuscript can have fixed.
   writer's condition, so no surface can promise a look the build will not carry. The suggestion is
   offered and never applied — it is screened through `assessCurrentContentRestrictions` like any
   user text, since a photo's visible text reaches the model, and it is dropped rather than failing
-  the upload. Every failure here (no vision key, a refusal, a timeout) stores the photo and answers
-  200; `CHARACTER_PHOTO_VISION_BUDGET_MS` is not optional, because the Gemini client sets no request
-  timeout and Fastify sets none either. Deleting the photo takes an **adopted** reference with it
-  (it is the same image) and leaves a `GENERATED` one (a derived work that was paid for), and an
-  upload never lands on a READY generated portrait or on a row an open portrait job owns —
-  silently, because an upload is not a portrait request.
+  the upload. Every *vision* failure here (no vision key, a refusal, a timeout) stores the photo and
+  answers 200; `CHARACTER_PHOTO_VISION_BUDGET_MS` is not optional, because the Gemini client sets no
+  request timeout and Fastify sets none either. The one non-200 exit after the writes is a character
+  deleted mid-upload, and it is a 404: the handler's first read is deliberately the lean
+  `ownedCharacter` (it wants a name and an id, and joining the mention graph in front of a
+  multi-second vision call bought nothing), so the row it would once have fallen back to predates
+  every write the handler just made and would have answered `hasPhoto: false` for the picture it
+  had just stored. `DELETE /:id/photo` is a **pointer clear and nothing else** now — it nulls
+  `photoPath`, `photoKind` and `suggestedDescription` and leaves every reference and every byte
+  where they are. It used to unlink the file and drop an *adopted* reference with it, on the
+  grounds that the reader had swapped the picture out; retaining every version made that untrue —
+  the artwork is still in the strip and still what the books draw — and the app calls the per-image
+  delete instead, so the route stays only for clients already in the wild. An upload never lands on
+  a READY generated portrait or on a row an open portrait job owns — silently, because an upload is
+  not a portrait request.
+- **A portrait start's prompt inputs are part of its command identity, never a test it is refused
+  on.** `assertMatchingCommand` refuses a known `commandKey` whose stored `requestFingerprint` or
+  `quotedCredits` moved, so where the fingerprint sits decides what a retained `requestId` can do:
+  folded *into* the key, the same request replays onto one attempt and one charge while a moved
+  input mints a key nothing has used and draws what the reader is now asking for; sat *beside* it,
+  the same move is a 409. Beside it the fingerprint could never protect a live job anyway — a
+  second tap while the portrait is QUEUED or GENERATING is refused by `PORTRAIT_OPEN_STATUSES` well
+  before the ledger — so it only ever fired on a *settled* attempt, which is exactly where "start
+  the new drawing" is the answer. It carried `hasPhoto`, and then `appearance`, and
+  `storeCharacterPhotoUpload` moves `photoPath` and `appearance` together: the server writing a
+  look the reader never touched turned Redraw into a permanent dead button, because
+  `character_profile_screen.dart` clears `_portraitRequestId` only inside the try after a start it
+  saw succeed, so the retained id could only 409 again until the screen was disposed. `cost` is in
+  the key for the same reason — it is the other value the refusal is made on, and prices are
+  operator-editable and re-read every 15s.
 - **A mentioned character's sheet rides the stored edit request, never the routed text.** In the
   finished-book chat the sheets become `characterContext`, carried on `PendingEditState` (so a
   clarify → confirm → Apply chain keeps it) and appended only where the request reaches a model:
@@ -645,7 +695,7 @@ of the same manuscript can have fixed.
   rebuilds from. In the creation chat mentions are message-level `{id, name}` refs, so
   `activeThreadPayload` branch-filters them for free, and every turn re-reads the live rows so a
   library edit propagates; the build snapshot is the moment that stops. Where a *typed* `@name`
-  ends is `isLibraryCharacterNameCharacterAt` in core, which the build sweep calls rather than
+  ends is `isLibraryMentionNameCharacterAt` in core, which the build sweep calls rather than
   keeping its own copy, and its `\p{M}` is deliberate: it is the exact
   opposite of what `foldCharacterName` does with combining marks one package over, because a
   word-boundary test needs the mark that a spelling-fold has to drop. Both halves are argued
@@ -654,9 +704,362 @@ of the same manuscript can have fixed.
   `_nameCharacter` — and the two only
   move together, because a token the composer refuses and the build sweep then binds is an
   invisible cast member. The rows themselves are read through `expandLibraryCharacterGraph`, which
-  follows durable description links outward from the mentioned characters: every explicitly tapped
-  character always reaches the model, the ten-cap bounds only the linked expansion behind them,
-  and the mention routes derive their 404 from its `missingIds` instead of a second read.
+  follows durable description links of `targetKind` CHARACTER outward from the mentioned
+  characters: every explicitly tapped character always reaches the model, the ten-cap bounds
+  only the linked expansion behind them, Location/Other edges on the same join are ignored, and
+  the mention routes derive their 404 from its `missingIds` instead of a second read.
+
+- **A character PATCH re-reads its own row under the claim, because the claim only asserts the
+  name.** `claimCharacterRow` guards the rename race and nothing else, so everything the handler
+  derived from the pre-transaction `ownedCharacter` snapshot — the description, and the link set
+  `libraryMentionRefs` read off it — was still the request's own stale copy. Two devices editing
+  one character was enough: a `{mentionedCharacterIds}` PATCH read `description`, a `{description}`
+  PATCH from elsewhere committed first, the claim passed because the *name* never moved, and
+  `body.data.description ?? character.description` wrote the old prose back over the new. The
+  transaction now opens with a `findFirst` on its own row under `libraryMentionInclude` and drives
+  the update, `replaceLibraryMentions`, `survivingMentionIds` and `rewriteIncomingLibraryMentions`
+  off that `live` read; a row that moved out from under it raises `CharacterRowMovedError` and
+  retries. The outer read survives for the 404 and for the name the claim asserts, and nothing
+  else — and that is now a `select`, `characterClaimSubject`, so the compiler is what refuses the
+  next attempt to read prose off the stale snapshot rather than a comment asking nobody to. The asymmetry was the tell: `claimedMentionSource` already went to lengths to re-read every
+  *other* character under the claim, and the route never re-read itself.
+- **The text a character write screens is the text it stores, and the text the request typed is
+  refused before anything is claimed — so each route screens twice.**
+  `enforceContentRestrictions` ran on the outer snapshot, which stopped being what gets stored the
+  moment the update was driven off `live`: a PATCH carrying only `mentionedCharacterIds`
+  canonicalizes and writes `live.description` — prose saved on another device that this request
+  never passed through the screener. So the assessment runs on the row the `update` is about to
+  leave behind: the merge of `live` and the patch, screened under the claim but *before*
+  `rewriteIncomingLibraryMentions` and `replaceLibraryMentions`, with the canonicalized prose
+  re-screened only when canonicalization actually moved the string.
+  **That is the only screen that can read those strings, and it is the wrong place for the refusal
+  almost every refused request earns.** Held there alone, a description nothing was ever going to
+  store first claimed the row, claimed every character whose description mentions it — up to 99 —
+  rewrote the ones that moved and rolled all of it back, with every other character write on that
+  account queued behind the lock window for the length of it; create paid for the row and its whole
+  link set the same way. So both routes screen what the body carries *before* the transaction
+  opens and screen the stored row inside it: the door answers the reader's own prose, the inner one
+  answers everything the reader never typed. The door alone did not settle it, because the prose
+  it cannot see is exactly the prose that was paying that bill — a PATCH refused on a description
+  saved from another device kept claiming the 99 and rolling them back until the inner screen moved
+  ahead of the rewrites. Moving it also put the ladder in `sendCharacterWriteError` back the way it
+  is written: a request that is both content-refused and too long for a sibling's description now
+  answers the 422 rather than the `CHARACTER_MENTION_TOO_LONG` 409 the rewrite used to raise on the
+  way past. Neither is redundant and neither is the other's
+  fallback — `characterContentScreen.test.ts` records **which string** each screen was given,
+  because canonicalization is case-only and `assessContentRestrictions` lowercases, so the verdict
+  cannot tell the two orderings apart and would not until a rule stops being case-blind.
+  `name` is reasoned about field by field rather than screened as a blanket copy: the claim asserts
+  it, so the screened name and the stored one are the same string by construction, and `appearance`
+  and `fields` are only ever written from the body. What the transaction cannot do is *answer*:
+  `assessContentRestrictions` is synchronous but the operator flag behind it is a query on another
+  pool connection, so `copyrightRestrictionsEnabled` is read before the transaction opens rather
+  than while it holds up to 99 sibling row locks — and awaited *beside* the route's own read in one
+  `Promise.all`, because neither needs the other and both are charged against the client budget
+  below. A refusal throws `ContentRestrictedError` — which rolls the mention writes back with it
+  and leaves the 422 to the catch, where every other answer on this route is written. That class
+  lives beside the screen in `apps/api/src/contentRestrictions.ts` and carries the whole refusal, so
+  the wire `code` is derived once by `contentRestrictionCode`; the route never spells one. **`POST`
+  held the rule wrongly for longer**: it screened `request.body` and then stored whatever
+  `replaceLibraryMentions` canonicalized — a case-only respelling that today's case-blind rules
+  cannot tell apart, which is exactly why nothing caught it and why the ordering is worth pinning
+  rather than arguing. Both routes read the rule out of `characterContentScreen.ts`
+  (`characterContentText` + `assertCharacterContentAllowed`), which also owns the throw. On create
+  the row and its links are written *before* the inner screen — a mention needs a source row to hang
+  off — so the rollback is what keeps a refusal from leaving half a character behind, the same thing
+  it does for PATCH's sibling descriptions.
+  **A refusal's `reason` reaches the reader only if the route's 422 schema names it.** —
+  fast-json-stringify drops what the response schema omits, which is how all three character
+  surfaces came to answer `{code, message}` while `enforceContentRestrictions` was building three
+  fields. `contentRestrictedError` in `apps/api/src/contentRestrictions.ts` is that declaration —
+  beside `sendContentRestricted` rather than with the other OpenAPI fragments in `mobile/schemas.ts`,
+  because the body and the schema that lets it out only work together.
+- **Both mention-rewriting transactions claim every source in one statement, and the timeout that
+  survives their ceiling is a 503, not a conflict.** `LIBRARY_CHARACTER_LIMIT_PER_USER` is 100, so
+  up to 99 characters can name one target, and `rewriteIncomingLibraryMentions` /
+  `unlinkIncomingLibraryMentions` used to issue a claim, a re-read and a write per source — around
+  300 serial round trips at the cap, 81 measured for thirty sources, inside Prisma's default
+  5-second interactive transaction, which a perfectly valid rename could exhaust while holding a
+  row lock on all 99 of them. They now cost **five statements, whatever the library holds**: the
+  target's own `FOR UPDATE` below, then `incomingMentionSources` reads the set,
+  `claimCharacterRows` claims it in a single row-locking `SELECT` whose tuples still name every row
+  by id, owner and the name the read found — a short row count is a row that moved and raises
+  `CharacterRowMovedError`, exactly as the per-row `false` did — and the same query then runs again
+  under the claim, because a source's own links
+  can only move under its own claim, so the re-read that keeps a concurrent PATCH from being
+  overwritten is a set operation too. A row in only one of the two reads is skipped rather than
+  written: one this transaction never claimed is the whole thing the claim exists to stop, and one
+  that no longer links here has no link for the rename to follow. The fifth is the write itself:
+  one `UPDATE … FROM unnest($ids::text[], $descriptions::text[])` carrying a description per row
+  whose text actually moved — the idiom `claimCharacterRows` already uses, adopted because that
+  write was the last of the three costs that still grew with the library, awaited once per changed
+  row while all 99 were locked. The count is pinned in `libraryMentionRewrites.test.ts`, which is
+  where it went when the mention suites split, because nothing about the result of either function
+  says how many statements it took. `CHARACTER_MENTION_TRANSACTION_OPTIONS` is therefore
+  `{ timeout: 10_000, maxWait: 5_000 }` rather than the `{ 30_000, 10_000 }` the loop needed — the
+  shape `PAGE_RESTRUCTURE_TRANSACTION_OPTIONS` uses one package over, and a lock window before it
+  is a budget: it is how long one rename can make every other character edit on that account wait,
+  and it has to stay under the app's 20-second default receive timeout (`api_client.dart`, which
+  these routes do not raise) or the 503 below is written after the device has already given up.
+  **A ceiling on one transaction is not a ceiling on a request: the delete runs its lane twice,
+  and the patch pays for two reads before it opens one.** The delete
+  runs its lane twice — claim, then a stale-claim retry — so the pair shares
+  `CHARACTER_WRITE_CLIENT_BUDGET_MS` through `characterRetryTransactionOptions(elapsedMs)`, which
+  hands the retry what the first attempt left rather than a second full window. `PATCH /:id` opens
+  one transaction and asks that same function what is left, because what it spends first comes out
+  of the same 20 s: `characterClaimSubject` and `copyrightRestrictionsEnabled()`, the latter read
+  out there precisely so it is not read while the transaction holds up to 99 sibling row locks.
+  Sized against the ceiling alone it still opened the full 15 s behind them. Those two are now one
+  `Promise.all` — neither needs the other, and two waits for a pool connection is exactly what the
+  budget is spent on under the pressure it was written for. **The clock itself starts before
+  `requireMobileAuth`, on every route that asks the function anything**: the session lookup is a
+  `MobileSession` query, a pool acquisition under that same pressure, so a lane started after it
+  reported `elapsedMs ≈ 0` for seconds it had already spent and opened the full ceiling behind
+  them. Reading the per-transaction ceiling as a per-request one is what put the 503 past the
+  budget it was chosen to fit inside.
+  **A budget too small to commit in buys no window at all.** `CHARACTER_RETRY_FLOOR_MS` used to be
+  a clamp — a window under it was widened back up to the floor — and a clamp is the one arithmetic
+  that can put the lane back over the budget everything above holds it to: a first attempt that
+  spent its whole 15 s leaves 3 s, floored to 4.5 s, so the delete answered at ~19.5 s *plus* the
+  liveness read, past the 18 s `CHARACTER_WRITE_RESERVE_MS` was sized to leave and at or over the
+  app's 20 s receive timeout. Both halves of the floor's trade were being paid at once: a window too
+  small for the claim and the unlink to commit in, **and** a `CHARACTER_EDIT_BUSY` written to a
+  device that had already shown a bare network error. So `characterRetryTransactionOptions` returns
+  `null` there and the route answers `sendCharacterWriteBusy` itself — the same 503, arriving while
+  someone is still reading. It also makes the bound inductive rather than approximate: every window
+  it hands out is what is left or less, so `elapsed + window` cannot pass the budget for any attempt
+  of either lane.
+  The status matters as much: P2028 is deliberately **not** in `isRetryableTransactionConflict`,
+  because that predicate means "you lost a race, send it again now" and answering a timeout that
+  way just burns another window — and P2028 also covers "transaction already closed", which is no
+  race at all. `isTransactionTimeout` routes it to `sendCharacterWriteBusy`, a 503
+  `CHARACTER_EDIT_BUSY` the app already surfaces through `_mapDioException` with no Dart change.
+  **Three routes send that 503 and only two carry the ceiling.** `POST /api/mobile/characters`
+  keeps Prisma's 5-second default on purpose: the ceiling exists to pay for work that grows with
+  the library, and creation has none — it writes the row, one bounded read of the mentioned ids,
+  the link set and the canonicalized description, a fixed handful of statements whatever the
+  library holds. A wider window would buy that nothing and cost it something, because the ceiling
+  is also how long a stalled attempt keeps its pool connection and the new row's lock. What
+  creation did need is the *answer*: a `P2028` there used to fall through as a 500 for a character
+  the reader typed correctly, so `isTransactionTimeout` is checked on that path too, above the
+  `P2002` name-clash branch — a clash is something they have to fix and a timeout is not.
+  **And it is checked there because there is one ladder, not three.** `sendCharacterWriteError`
+  (`characterWriteConflicts.ts`) is every answer a failed character write gives, in one order —
+  refusal, mention error, timeout, conflict, `P2002` — and it returns whether it answered so each
+  catch rethrows what it does not recognise. Three catches spelling out one list had drifted in
+  every direction three copies allow: create knew the timeout rung and not the conflict one, delete
+  neither the refusal nor the mention one, and only patch asked `namesMentionPrimaryKey` whether its
+  `P2002` really named the library's own unique. The rung that matters next is the mention one —
+  LOCATION and OTHER share `LibraryMention` with the cast (`REPLACED_MENTION_KINDS`), so a refusal
+  taught to one catch would have answered 500 from the other two.
+- **A wire code owns one sentence, and it lives with the code rather than at the call site.** The
+  app snackbars `error.message` verbatim, so a reader who meets one wall from three gestures is
+  told three different things about one state — which is what `PORTRAIT_IN_PROGRESS` had become:
+  five sites (promote, the per-image delete, the portrait route's status guard and its own
+  `PortraitInProgressError`, and `DELETE /:id` on a live claim) spelling three sentences, because
+  the constant extracted during the route split was private to `routes/characterImages.ts` and the
+  record route could not reach it. `sendPortraitInProgress` and `sendCharacterImageChanged` sit
+  beside `sendCharacterEditConflict` and `sendCharacterWriteBusy` in `characterWriteConflicts.ts`
+  for the same reason the ladder does: both route groups answer a character conflict, so the answer
+  belongs to neither of them. The noun follows the **app's** vocabulary rather than the column's —
+  `character_reference_copy.dart` says *illustration* wherever it addresses a reader, and
+  `referenceWanted` calls "generate portrait" the secondary framing — while `portrait` stays in the
+  wire code, the columns and the internal error class, because a shipped client recognises the code
+  and renaming one buys nothing. And the sentence says what to do next: the block lifts when the
+  job settles, so "try again when it finishes" is the whole recovery where "is already being drawn"
+  is a snackbar nobody can act on.
+- **An unreadable body is recognised by the parser that refused it, never by a bare 400.**
+  `sendUnreadableBodyError` is installed as a route-level `errorHandler`, and Fastify calls that for
+  every error the route's handler and hooks throw — not only for a body the content-type parser
+  could not read. Keyed on `statusCode === 400` alone it rewrote *any* of them into
+  `VALIDATION_ERROR` "That request could not be read.", so a domain error from `startGenerationAttempt`
+  or `dispatchGenerationJob` on `POST /:id/portrait` reached the reader as a malformed body, with its
+  own code and message gone and nothing logged — the handler never called `reply.send`. The predicate
+  is now the parser's: a 400 whose `code` starts `FST_ERR_CTP_`, **or** whose error object is
+  `request.raw.errored` — the one genuine parser failure with no CTP code, because `rawBody`'s
+  `onEnd` stamps 400 onto whatever the payload stream threw (a client hanging up mid-body arrives as
+  `ECONNRESET`). `request.body === undefined` is not the discriminator it looks like: a bodyless POST
+  with no `content-type` reaches the handler the same way, and the portrait route reads
+  `request.body ?? {}`, so that test would rebuild the bug on the route that motivated the fix. The
+  400 gate is deliberate — `FST_ERR_CTP_BODY_TOO_LARGE` is 413 and `FST_ERR_CTP_INVALID_MEDIA_TYPE`
+  is 415, no route installing this declares either, and translating them would answer "that photo is
+  too big" with "could not be read". Those two still reach the app in Fastify's own
+  `{statusCode, error, message}` shape rather than the mobile envelope.
+- **One candidate set decides who owns a span, and the source's own name is not in it.** A
+  description is scanned whole and the longest name wins a nested span, so the names in play at
+  write time and at rename time have to be one set — or a span bound by one is invisible to the
+  other. They were not: `claimingNames` added the source's own name, which the write never had. A
+  character called "Luna Vega" linked to a "Luna", describing herself as "@Luna Vega is my hero and
+  @Luna is my friend", bound both spans to Luna at save; renaming Luna to Nova then handed `[0,10)`
+  to the longer "Luna Vega" and left it — "@Luna Vega is my hero and @Nova is my friend" — and
+  deleting Luna left "@Luna Vega" naming nobody, inside text no later scan can reach, which is the
+  exact failure the whole-set scan exists to prevent. `claimingNames` was the outlier, not the
+  write: the editor resolves a description against the library **minus the character being edited**
+  (`excludeCharacterId` in `library_mentions.dart`), so teaching the write side to bind the source's
+  own name instead would make the server answer 400 "the description no longer contains @Luna" for
+  a token the app is highlighting as Luna — a save the reader cannot fix. Write,
+  `survivingMentionIds`, rename and delete now all read the description's own links through
+  `libraryMentionCharacterRefs`.
+
+- **A mention a save gives up takes its `@` with it, because the row it was bound to is the only
+  record of where the marker sits.** `replaceLibraryMentions`' `deleteMany` clears the rows a new
+  description no longer names, and a `deleteMany` over prose that keeps the token leaves an `@Mina`
+  naming nobody — permanently, since every later scan is driven by the rows that statement just
+  removed. `generationDescription` (`@book-maker/db`) then finds its name list and the surviving
+  rows the same length, strips *by name*, and hands the raw token to the planner brief
+  (`creationBuild.ts`) and to `buildLibraryCharacterPortraitPrompt`, which is the one place a UI
+  token must never reach. Deleting a character already strips its markers out of every other
+  description (`unlinkIncomingLibraryMentions`); dropping one out of your own is the same event
+  from the other end and gets the same answer — the marker goes, the reader's own spelling stays as
+  ordinary prose. Nothing upstream can stand in for it, because
+  `{mentionedCharacterIds: []}` carries no description at all and so there is no edit to have taken
+  the tokens out. **The strip runs before the canonicalizing scan and is handed the survivors as
+  `siblings`**, so the two passes cannot disagree about a span: one pass over dropped ∪ kept keeps
+  "@Luna Vega" as Vega's and takes only the "@Luna" beside it, and once a dropped name has no `@`
+  left the kept set really is the whole candidate set for the prose that remains. Stripping after
+  canonicalizing is the same two scans asking different questions of one span — a longer dropped
+  name would take the marker off a link this write is *storing*. The one set the single scan cannot
+  bind is refused rather than read a second way: a kept target whose only token is the prefix of a
+  dropped name ("@Luna Vega" kept as Vega, sent as Luna) comes back `missing` and answers 400
+  `INVALID_CHARACTER_MENTION`, where binding it to the nested span is the bug the whole-set scan
+  exists to prevent. No shipped client can send such a set — the editor resolves against the whole
+  library, longest name first — and the derived path cannot either, since `survivingMentionIds`
+  selects from the same rows under the same names. The read that finds the dropped targets is the
+  one `mentionLinksAlreadyStored` was already taking; it moved ahead of the validating scan because
+  the drop decides what that scan is handed, so a refused save pays one indexed read inside a
+  transaction that rolls back anyway.
+
+- **A mention row's kind is required, and one that arrives without it is nobody.** Location and
+  Other share `LibraryMention` with the cast, so the kind is the only thing separating a character
+  from a place — and `isCharacterMention` used to read a missing `targetKind` as CHARACTER. That
+  was safe only while CHARACTER was the sole kind: a narrower `select` that forgets the column
+  turns a location into a cast member, which earns it a reference sheet and puts it in front of the
+  planner as a person. Nothing made the compiler say so, and `incomingSourceSelect` had to be
+  widened by hand to prove it. `LibraryMentionRow.targetKind` is therefore **required** — an
+  omitting `select` no longer compiles — and the runtime answer for a row that gets past the type
+  anyway is *not a character*, never the other way round. `claimingNames` takes the shared
+  `LibraryMentionRows` for the same reason: the hand-rolled copy of that shape it used to declare
+  was laxer than the real one, so it would have swallowed the error at the one call site that had
+  to see it. `packages/db/src/libraryMentions.test.ts` pins the type with a `@ts-expect-error` that
+  fails the build if the field goes optional again. What the kind still cannot buy is a **name**:
+  `LibraryMention_target_arc` forces `targetCharacterId IS NULL` for both other kinds and there is
+  no table to join in their place, so `libraryMentionNames` and `libraryMentionCharacterRefs`
+  return the same rows today, `generationDescription` leaves a marker it cannot name where the
+  reader put it, and `libraryMentionRefs` withholds such a row rather than shipping it with an
+  empty name. Those joins landing in `libraryMentionInclude` is the one change that lifts all four.
+
+- **A claim that writes a row's own value back does not lock it against being mentioned, so the
+  mention rewrite takes the `FOR UPDATE` itself.** `claimCharacterRow` and `claimCharacterRows` both
+  assert a row by writing a column it already holds, and Postgres escalates an `UPDATE` to
+  `FOR UPDATE` only when a key column's value **actually changes** — `heap_update` compares old
+  against new, it does not read the `SET` list. Measured against the dev database: with
+  `SET name = name` held open, a concurrent `LibraryMention` insert naming that row **succeeds**;
+  with `SET name = 'Anita'` it blocks. So both claims take `FOR NO KEY UPDATE`, which is exactly the
+  mode `FOR KEY SHARE` — the lock an FK check takes — was designed not to wait behind. That left
+  `claimedMentionSources` deriving its whole source set from an unlocked read, and claiming *nothing
+  at all* when that read came back empty: a DELETE could see no mentions, a concurrent PATCH could
+  commit `"Best friends with @Ana."` plus its link row, and the delete's cascade would then take
+  that row away and leave `@Ana` in another character's stored prose with nothing behind it —
+  dangling permanently, in text nothing will scan again, naming somebody nothing can now identify.
+  `lockMentionTarget` takes a real `SELECT … FOR UPDATE` on the target before the snapshot read, so
+  no transaction can *begin* mentioning it while the rewrite holds it; that is what turns the empty
+  short-circuit from "nobody had committed one yet" into "nobody mentions this, and nobody can
+  start to". Both lanes go through `claimedMentionSources`, so the rename window closes in the same
+  place. The cost is priced and accepted: the lock order is target-then-sources while a PATCH of a
+  source claims itself first, so two writes over the same pair can deadlock — Postgres detects it,
+  reports `40P01`, and `isRetryableTransactionConflict` already answers that as a retryable 409. A
+  detected collision the app re-sends, in exchange for a marker nothing can repair.
+
+- **A lock is not a write, and a claim that writes stamps a clock from before it waited.**
+  `claimCharacterRows` was an `UPDATE` writing each row its own `userId` back, and taking an
+  explicit `data: { updatedAt: new Date() }` out of it fixed nothing, because **`@updatedAt` is
+  stamped when Prisma *builds* the statement, not when Postgres runs it**: it compiles to
+  `UPDATE … SET "userId" = $1, "updatedAt" = $2` and binds `$2` from the client's clock before the
+  query is sent. Measured: a claim issued at `T` and blocked 4.0 s on a real row lock wrote
+  `T + 20 ms`. A claim is the one statement here that routinely waits, so a rename claiming 99
+  siblings stamped `t0`, queued behind a PATCH of sibling B that committed `t1 > t0`, and landed
+  `t0` over it — and that column is not bookkeeping, `character_avatar.dart` spends it as the
+  portrait URL's `v=` cache-buster, so the device kept bytes it already had and a portrait replaced
+  in that window stayed stale until something else edited B. It is now a
+  `SELECT … FOR NO KEY UPDATE`, which gives both things the claim actually wanted — the row lock,
+  and a predicate re-evaluated once the lock is granted — while touching nothing.
+  `FOR NO KEY UPDATE` and not `FOR UPDATE`, deliberately: it is the mode the `UPDATE` already took,
+  and the stronger lock would start blocking the `FOR KEY SHARE` of every `LibraryMention` insert
+  against claims that do not conflict with them. The comparison is row-wise —
+  `("id", "userId", "name") IN (SELECT * FROM unnest(…))` — because matched column by column a
+  character renamed into a name another row of the same claim was read under satisfies every term
+  and is reported as a row this claim holds; `[userId, name]` is unique so it takes two renames to
+  arrange, and the window is ten seconds. Measured on the statement as written: the borrowed-name
+  set matches zero rows where the column-wise spelling matches both.
+
+- **A mention target deleted mid-write is a 404, not a stack trace.** `mentionedTargets` reads its
+  targets with no lock, so one deleted between that read and the `createMany` below it violates
+  `LibraryMention_targetCharacterId_fkey` — SQLSTATE 23503, Prisma `P2003`. `sendCharacterWriteError`
+  recognised `ContentRestrictedError`, `LibraryMentionError`, `P2028`, `40P01`, the CHECKs and
+  `P2002` and nothing else, so the route rethrew and a whole character save was lost to a 500 — for
+  an ordinary concurrent-delete race whose answer, `CHARACTER_NOT_FOUND` with `mentionedTargets`'
+  own sentence, was already implemented one rung up. The rung sits below the typed
+  `LibraryMentionError` (that one knows *which* id went and reads no constraint name to find out)
+  and above `P2002`; the three constraint rungs are disjoint by SQLSTATE, so their order among
+  themselves is grouping rather than precedence. It fires on a `LibraryMention…_fkey` constraint
+  name, or on `23503`/`P2003` that also mentions `LibraryMention` — both FKs on that table point at
+  `LibraryCharacter`, so any 23503 naming it *is* a character that went away, while
+  `LibraryCharacter_userId_fkey` stays a 500. Note the shape this reads: on Prisma 7.8 with
+  `@prisma/adapter-pg` the SQLSTATE arrives under `meta.driverAdapterError.cause`, and every rung
+  that needs it reads one `constraintErrorText` — this module's single record of where an adapter
+  puts a SQLSTATE, which `characterPhotoWrites.ts` borrows for its own deleted-character rung
+  rather than keeping a second copy. It was three copies of that traversal, and one of them was
+  not a copy: `namesMentionCheckConstraint` read `meta.code` and `meta.column_name` and never
+  walked the adapter cause at all, so a CHECK reported the way a foreign key is reported was
+  invisible to it. The shared text is the union of what the three read, so no predicate narrowed;
+  the CHECK rung widened onto the shape it had been blind to.
+
+- **Where two answers are told apart by one exact test and one piece of prose, the prose speaks
+  last.** `isTransactionTimeout` sits above the conflict rung and falls back to matching
+  `/transaction already closed|expired transaction/i` over any error's `message`, so a wrapper error
+  quoting that phrase while reporting a serialization failure was answered `CHARACTER_EDIT_BUSY`
+  ("try again in a moment") instead of `CHARACTER_EDIT_CONFLICT` ("open it again and retry") — the
+  two sentences this module exists to keep apart. Two narrowings, neither of them a tighter phrase
+  (the fallback exists for shapes nobody can enumerate, so anchoring the prose only moves the
+  guess): `isRetryableTransactionConflict` is asked after the exact `P2028` test and **wins**,
+  because every test it makes is exact; and an error carrying any `code` other than `P2028` never
+  reaches the string at all, because a coded error has already said what it is.
+
+- **A create tells the link writer it is new, and only the read is allowed to believe it.**
+  `mentionLinksAlreadyStored` exists because the common save changes prose and no links, and
+  re-writing an unchanged link set is two statements for nothing — but that is a PATCH property. On
+  `POST /characters` the `sourceCharacterId` was created moments earlier in the same transaction, so
+  the query can only ever return zero rows: a round trip inside the transaction holding the new
+  row's lock, decided by the length check alone. `replaceLibraryMentions` therefore takes
+  `sourceCreatedInThisTransaction`, and only the **read** is skipped — the `deleteMany` still runs.
+  A wrongly-passed flag that skips the read still performs a correct full replace; one that skipped
+  the delete would hit `createMany` on its own primary key. Absent is the safe default.
+
+- **A route's declared statuses are what its own handler can reach in the shared ladder, never the
+  ladder's full set of rungs.** Routing three catches through one `sendCharacterWriteError` means
+  the ladder can answer things a given route never declared: `DELETE /characters/:id` declared
+  `{401, 404, 409, 503}` while the ladder could hand it a 400 or a 422, and none of the three
+  declared the 429 `hitAuthenticatedLimit` emits. Fastify falls back to the default serializer so
+  no field is dropped, but `/docs` then documents a set the handler does not have — the same class
+  of mismatch the `contentRestrictedError` schema work exists to close. The maps are now audited per
+  route against what that handler can actually throw, which cuts both ways: DELETE gained the 429
+  and deliberately **not** the 400 or 422, because it screens no content and writes no
+  `LibraryMention` row, so neither has a statement in that lane to come out of. Declaring a refusal
+  a route cannot give is the same lie as omitting one it can.
+
+  The picture routes in `routes/characterImages.ts` are audited to the same standard, and every
+  gap there ran the one way — a rung the handler reaches and the map left out. All four rationed
+  ones — promote, the per-image delete, the photo upload, the portrait — omitted the 429 their
+  limiters emit, and `PUT /:id/photo` and `POST /:id/portrait` omitted the 400 they send
+  themselves. The other five gained nothing: the four byte-and-list reads and the legacy
+  `DELETE /:id/photo` ration nothing and refuse nothing past the 404 they already declared. The
+  portrait route is also where the fallback stops being free. It documents a body, so ajv used to
+  answer a short `requestId` before the handler ran — and Fastify cannot push its own
+  `{ statusCode, error, message }` through a declared `mobileAuthError`, so naming the 400 turned
+  that reply into a 500 (`FST_ERR_FAILED_ERROR_SERIALIZATION`). Declaring a status means owning
+  every reply served at it: the route now carries `attachValidation: true` like every other mobile
+  route with a documented body, which leaves the zod parse as the only gate and its
+  `VALIDATION_ERROR` as the only 400.
 
 ## Voice and audiobook routes
 

@@ -24,8 +24,21 @@ don't flip the generator setting to make the root convention true.
 
 **Import `@book-maker/db/billing`, never a module behind it.** The API suites mock the facade with
 `vi.mock("@book-maker/db/billing")`; a deep import silently escapes that mock and the test stops
-covering you. The package's `exports` map has exactly two entries (`.` and `./billing`) to keep
-that honest.
+covering you. The package's `exports` map names only whole facades — `.`, `./billing` and
+`./libraryMentions` — and nothing behind one, to keep that honest.
+
+`./libraryMentions` is a subpath for the opposite reason: it holds no client at all (its Prisma
+import is types only), and both apps import it. The mobile API suites mock `@book-maker/db`
+wholesale from a factory that may import nothing but `vitest`, so a name on the main entry has to
+be re-implementable there — a mention scanner is not. Off the subpath the real module loads under
+those mocks, which is what makes one definition of the include and the description safe to share.
+
+**A module kept light enough to survive a mock has to be light in both directions.**
+Being light is a claim about every import it has, not just the Prisma one. The types-only
+Prisma import is half the reason; the other half is that the strip helpers come off
+`@book-maker/core/libraryMentions` and not the core barrel. A suite that mocks core with a bare
+factory takes the barrel down whole, and this module would go with it — the same breakage the
+subpath exists to avoid, aimed at the other package. → packages/core/CLAUDE.md
 
 ## Adding a priced operation
 
@@ -383,13 +396,149 @@ the scope would drop every edited page's notes instead of placing them in time. 
   research suite restates the function in its `@book-maker/db` mock factory for `dbScopeMocks`'
   reasons, and carries that file's "keep it equal" note.
 
+## Library mentions
+
+`src/libraryMentions.ts` is the shared reading of a character's `@mention` rows — the include, the
+cast, the scan set, and `generationDescription`, the one function here that hands prose to a model.
+The ordering those reads carry is under [Tests](#tests), with the suite that measures it.
+
+- **A mention row nothing can name is what makes the strip stop trusting the name list.**
+  The narrow strip (`stripLibraryMentionMarkers`) finds each marker by scanning for its owner's
+  name, which is exact and only as complete as the list it is given. A row
+  `libraryMentionTargetName` answers `null` for — a LOCATION or OTHER row, whose target table does
+  not exist yet; a CHARACTER row whose join a narrow `select` dropped — is a marker the reader
+  bound, standing somewhere in that prose, that no scan can locate. It was walked past, so
+  `@Harbor` — a UI-only token — went into the planner brief (`creationBuild.ts`) and into
+  `buildLibraryCharacterPortraitPrompt` verbatim. Nothing kept that shut but `REPLACED_MENTION_KINDS`
+  (`apps/api/src/mobile/libraryMentionLinks.ts`) still being `["CHARACTER"]` alone: the first row of
+  another kind anything wrote was the leak, with no code change anywhere to notice it. So the answer
+  is read off the rows every time rather than remembered for that day — any unnameable row in the
+  set switches `generationDescription` to `stripEveryLibraryMentionMarker`
+  (`@book-maker/core/libraryMentions`), which takes the `@` off every token-opening marker, claimed
+  or not. It is the scanner's own word test, so an `@` inside a word is still an email address and
+  one with nothing after it is still prose. What it costs is the reader's own `@handle` elsewhere in
+  *that* description losing its marker; what it buys is that no marker can survive by being
+  unnameable — and nothing has to be changed back either, since the day the Location library lands
+  and its join goes into `libraryMentionInclude` the row becomes nameable and the strip by name
+  covers it again. The app-side half of the same hole is still open: `libraryMentionRefs` withholds
+  a row it cannot name, so a stored `@Harbor` would be a link only the database knows about.
+
+- **Naming every row is not the same as claiming every marker, and a tie is settled rather than
+  left standing.** `[userId, name]` is
+  case-sensitive, so "Bram" and "bram" are two legal rows — and `claimAt`
+  (`@book-maker/core/libraryMentions`) refuses a span two names tie over, because a wrong owner is
+  the unrecoverable half. Both rows are perfectly nameable, so `generationDescription`'s test above
+  sends that description down the *narrow* branch, where an `@` nobody claimed is left standing as
+  the reader's own text: `@BRAM` beside those two rows reached the planner brief and
+  `buildLibraryCharacterPortraitPrompt` with its marker on. The narrow strip cannot fix that itself
+  — it takes `siblings` whose tokens must survive, so a tie may belong to one of them — which is
+  why the model-facing read uses `stripBoundLibraryMentionMarkers` instead: same scan, and a tie
+  settled rather than skipped, because with no surviving sibling every candidate agrees on the one
+  deletion. The broad strip is not the answer here either; it would take the reader's own `@handle`
+  with it for a marker that is perfectly locatable.
+
+- **The broad strip's word test reads the prose it is producing, not the prose it was handed.**
+  `stripEveryLibraryMentionMarker` decides "does this `@` open a word" from the character in front
+  of it, and then deletes characters out of the very string it just read. Two markers escaped
+  through that gap. `@Bram@Harbor`, with only Bram nameable, came back `Bram@Harbor`: the second
+  `@` is preceded by `m`, so the test walked past it — but that `m` is the tail of a token whose
+  own `@` was already going. `@@Harbor` was worse, deleting one marker and returning `@Harbor` —
+  the exact UI-only token the branch exists to keep out of a prompt, one deletion later. Both are
+  closed by measuring against the result rather than the input: a claimed range's `end` is a word
+  boundary, and the scan runs right to left so a marker's verdict is in before its left neighbour
+  asks. What makes the first safe is that the claim is evidence *from the rows* that those letters
+  are a token — the strip never chains off its own heuristic, so with nobody nameable
+  `@bram@example.com` keeps both. Inferring a second marker from a first that was itself a guess is
+  how an address loses its `@`. The function is a fixed point now: nothing it returns opens a word.
+  **The bound strip takes the run half of that rule, and only the run half.** `@@Bram`, with Bram
+  claimed, dropped the marker at offset 1 and answered `@Bram` — reachable rather than theoretical,
+  because `libraryMentionQueryAt` opens a mention query on an `@` whose left neighbour is an `@`, so
+  typing `@@` and tapping the suggestion chip stores exactly that with a live CHARACTER row bound to
+  it; `@@BRAM` beside "Bram" and "bram" leaked identically through the contested half. So an `@`
+  standing in front of a marker that strip is deleting goes with it, and its guarantee is the
+  narrower twin of the fixed point above: nothing it returns stands where a deleted marker stood.
+  What it does **not** take is the `tokenEnds` exemption — that is evidence about a marker the broad
+  strip cannot name, and this caller's list is the whole of what the prose is bound to, so
+  `@Bram@Harbor` keeps its second `@` and the reader's own `@handle` is never at risk on this
+  branch.
+
+
 ## Tests
 
 `src/testing/billingTestDb.ts` is the shared harness. Nothing here needs a live Postgres — except
-the three opt-in suites (`*.integration.test.ts`), which `vitest.config.ts` leaves out of collection
+the four opt-in suites (`*.integration.test.ts`), which `vitest.config.ts` leaves out of collection
 unless `DB_INTEGRATION=true`.
 
-- **An opt-in suite is made inert by not being *loaded*, not by skipping itself.** All three of
+`libraryMentions.integration.test.ts` is the one that measures a claim about **Prisma** rather than
+about a query of ours: `libraryMentionOrder` names the `orderBy` terms of every read of a
+character's mentions, and every character suite in the repo mocks `@book-maker/db` or `prisma`, so
+none of them reaches the client at all. It reads through `libraryMentionInclude` and through a
+respelling of the API's hand-written `incomingSourceSelect`, over a fixture seeded in an order no
+term of the read order produces — and, for `incomingLibraryMentionOrder`, over three sources naming
+one target where the one that sorts first is written last. Since the include now splices the
+declaration itself, asserting
+`libraryMentionOrder` is unchanged after a burst of concurrent reads is a real measurement of "a
+real client does not write into the args it is given" — where against a per-read copy it was
+measuring something nobody shared. A future client that normalises args in place fails here with a
+diff rather than by silently reordering rows.
+
+- **One declaration orders every read of a character's mentions, and no read spells it a second
+  time.** `libraryMentionOrder` names the `orderBy` terms of every read of these rows, and the
+  order is load-bearing in a way a second spelling would silently break: kind first because
+  `sortOrder` is per write per kind, `targetId` last because it closes the primary key. It used to
+  be deep-frozen, and `libraryMentionInclude` used to expose `orderBy` as a *getter* over a fresh
+  copy per read, to defend against a client extension or `$use` middleware writing into the args
+  object it was handed. That bet is not one anything in this repo is taking — there is exactly one
+  client construction (`client.ts`, `new PrismaClient({ adapter, log })`, nothing chained), no
+  `$extends` and no `$use` anywhere outside the generated client's own type declaration, and no
+  `prisma-extension*` package in the lockfile — and it was paid for on every read, in three
+  indirections and an allocation per query, to be exercised only by a test poking the declaration
+  directly. What is left is the narrower rule the ordering actually needs: the include splices the
+  declaration itself, so an equal-but-separate second spelling fails the unit test, and the opt-in
+  integration suite measures that a real client hands a plain args object back exactly as given.
+  `libraryMentionOrderArgs()` survives for the two hand-written reads outside the include, which
+  hold it differently. `incomingSourceSelect` (`apps/api/src/mobile/libraryMentionRewrites.ts`) is a
+  module constant every rename and delete read shares, so it takes a disposable copy per read rather
+  than keeping an array of its own. `storedMentionLinks`
+  (`apps/api/src/mobile/libraryMentionLinks.ts`) builds its whole `findMany` args per call, and there
+  the order is load-bearing in a way it is nowhere else: `mentionLinksAlreadyStored` compares those
+  rows **positionally** against an insertion batch numbered `0..n-1`, so an unordered read answers
+  "not identical" at random and puts every ordinary description save back on the `deleteMany` plus
+  `createMany` pair the skip exists to avoid — two statements inside the transaction holding the
+  character's row lock, and the primary-key collision `namesMentionPrimaryKey` has to translate into
+  a 409 for a save that asked for no link change at all.
+  What no API write lane does is read these rows back to *hand them on*: `replaceLibraryMentions`
+  returns the batch it just wrote, typed as `LibraryCharacterWithMentions["outgoingMentions"]` so a
+  join landing in `libraryMentionInclude` stops compiling there instead of shipping half a row. It satisfies the
+  declaration by construction rather than by spelling it — one kind numbered `0..n-1` in first-token
+  order already *is* kind → `sortOrder` → `targetId`. A write that holds the ordering is not a
+  second declaration of it; a write that sorted would be.
+  **One declaration per axis, and the outer read is an axis of its own.** That rule was written and
+  then applied at one level only: `incomingSourceSelect` takes those terms on its *nested*
+  `outgoingMentions`, while the `findMany` that produces the sources it is nested in —
+  `incomingMentionSources`, the first statement of every character rename and delete — asked for no
+  order at all. An ordered list of mentions inside a list of characters the plan sequenced, past the
+  same rule, one level up. `incomingLibraryMentionOrder` is that read's declaration, and it is a
+  second declaration rather than a second spelling because the axis really is different:
+  `libraryMentionOrder` is read under a fixed `sourceCharacterId` and closes on the rest of the key,
+  while this one is read under a fixed `targetCharacterId`, where `targetKind` is the constant
+  instead — the arc CHECK forces `targetCharacterId IS NULL` for LOCATION and OTHER, so every row
+  the incoming read can return is a CHARACTER row and those terms would leave the whole set tied.
+  The answer is `@@id([sourceCharacterId, targetKind, targetId])` whole, which is what makes it
+  total; the source id leads because it is the only one of those three that sorts these rows at all,
+  `targetKind` being the constant above and `targetId` constant with it — one write stores it
+  equal to `targetCharacterId`, which the filter has already fixed. It used to be argued as a lock
+  order: `claimCharacterRows` locks the set in one `SELECT … FOR NO KEY UPDATE` `ORDER BY "id"`, so
+  ascending source id was said to make `rewriteMentioningDescriptions` issue its per-row `UPDATE`s
+  in the sequence their locks were granted in. There are no per-row `UPDATE`s — that write is one
+  `UPDATE … FROM unnest(…)`, which takes no lock the claim is not already holding, so its array
+  order is not a lock order — and what the leading term buys is that the read is ordered at all.
+  What the missing order actually cost is small and real: which sibling a
+  `CHARACTER_MENTION_TOO_LONG` refusal names when a rename is too long for more than one
+  description, and which of a source's duplicate rows wins the dedupe. Neither is visible to a suite
+  that mocks Prisma, which is why the opt-in suite above is where that read is measured.
+
+- **An opt-in suite is made inert by not being *loaded*, not by skipping itself.** All four of
   those files import `prisma` from `src/client.ts`, and `describe.skipIf(!enabled)` skips only the
   test bodies — the file's imports still ran, so every ordinary `pnpm test` built a `PrismaPg` adapter and
   a `PrismaClient` against the default `localhost:55432` URL: a pg pool per suite, and a handle for

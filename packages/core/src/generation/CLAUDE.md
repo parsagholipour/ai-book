@@ -411,18 +411,18 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   the other. Thai sara and (after the NFD) the Japanese dakuten were the same collision. A script
   nobody enumerated keeps its marks, because a missed match is a character drawn from prose and a
   merged one is the unrecoverable half of the very rule below.   **The mention scanner's rule about
-  marks runs the other way, and both are right.** `isLibraryCharacterNameCharacterAt`
-  (`libraryCharacterMentions.ts`), the word-boundary test deciding where a typed `@name`
+  marks runs the other way, and both are right.** `isLibraryMentionNameCharacterAt`
+  (`libraryMentions.ts`), the word-boundary test deciding where a typed `@name`
   ends, matches `\p{M}` on purpose: a combining mark belongs to the letter before it, so with marks
   outside the boundary class `@मीर` ends cleanly in front of the "ा" of `@मीरा` and binds a saved
   character the reader never named — `Luna` seeding `Luna-Bear` again, in a script where the
   sub-token is invisible. One rule says a mark is not part of the *spelling*; the other says it is
   part of the *word*. Neither may be narrowed to agree with the other, because each is closing a
   collision the other cannot see. The boundary class is one rule spelled twice —
-  `isLibraryCharacterNameCharacterAt` + `libraryCharacterMentionTokenEndsAt` in
-  `libraryCharacterMentions.ts` (the description scanner and the build sweep in
+  `isLibraryMentionNameCharacterAt` + `libraryMentionTokenEndsAt` in
+  `libraryMentions.ts` (the description scanner and the build sweep in
   `apps/api/src/mobile/creationBuild.ts` both call these), and `_nameCharacter` +
-  `_endsMentionToken` in the Dart twin (`apps/mobile/lib/features/characters/domain/character_mentions.dart`)
+  `_endsMentionToken` in the Dart twin (`apps/mobile/lib/features/characters/domain/library_mentions.dart`)
   — and the two only move together:
   the composer and the build sweep disagreeing is how the server silently bound the `Luna` the
   composer had just refused to show inside a typed `@Luna-Bear`. The class carries ZWNJ/ZWJ, so the
@@ -440,6 +440,19 @@ checks between entries and awaited, rather than left running into `prisma.$disco
   `IMAGE_STORAGE_DIR/characters/<userId>/` — never swept, unreachable from the project asset
   route and the render allowlist — and every path to them resolves through
   `libraryCharacterDiskPath`, which returns null for anything but exactly `<userId>/<fileName>`.
+- **Naming every row is not the same as claiming every marker, and a tie is settled rather than
+  left standing.** `claimAt` (`libraryMentions.ts`) refuses a span two candidate names tie over —
+  "Bram" and "bram" are two legal rows, since `[userId, name]` is case-sensitive, and neither is
+  spelled the way `@BRAM` is — because a wrong owner is the unrecoverable half, exactly as it is
+  for a typed mention. That refusal is right for a *rewrite*, which needs an owner, and wrong for a
+  *strip*, which only ever deletes the `@`: every tied candidate agrees on that edit. Folded into
+  one "nobody claimed it", the tie read as the reader's own prose and the marker went into the
+  planner brief and `buildLibraryCharacterPortraitPrompt`. So the scan reports ties separately and
+  `stripBoundLibraryMentionMarkers` takes them, for a caller whose list is the whole of what the
+  prose is bound to. `stripLibraryMentionMarkers` may not: it takes `siblings` whose tokens must
+  survive, so a tie there may belong to one of them, and dropping that `@` would leave a stored row
+  pointing at a token the prose no longer carries.
+
 - **A character's look lives in pixels, so it has to be written down or the planner invents one.**
   `LibraryCharacter.description` is who the character is — free text the reader writes, routinely
   carrying no appearance at all ("she's a great wife and future mother") — while what they *look

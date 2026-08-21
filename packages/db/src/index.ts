@@ -1,6 +1,14 @@
 import { templateDefinitions } from "@book-maker/core";
 import { prisma } from "./client.ts";
 
+/**
+ * `libraryMentions.ts` is **not** re-exported here. It is reached as
+ * `@book-maker/db/libraryMentions`, because the mobile API suites mock this
+ * entry point wholesale from a factory that may import nothing but `vitest`,
+ * and a mention scanner cannot be re-implemented there — a name on this entry
+ * takes every one of those suites down. See CLAUDE.md.
+ */
+
 export { prisma, PrismaClient, Prisma } from "./client.ts";
 export * from "./planRevisionRetry.ts";
 export * from "./creditPricing.ts";

@@ -13,7 +13,7 @@ import {
   mockPrisma,
   mockProjectStatus,
   mockQueue,
-  resetCharacterImageMocks
+  resetCharacterMocks
 } from "./mobileApiMocks.js";
 import { installGenerationAttemptMock } from "./mobileApiGenerationAttemptMock.js";
 
@@ -51,13 +51,7 @@ export function resetMobileHarness(): void {
   vi.resetAllMocks();
   mockPrisma.user.upsert.mockResolvedValue({ id: "local-admin" });
   mockPrisma.project.findFirst.mockImplementation((...args: unknown[]) => mockPrisma.project.findUnique(...args));
-  mockPrisma.$transaction.mockImplementation(async (operationOrOperations: unknown) => {
-    if (Array.isArray(operationOrOperations)) {
-      return Promise.all(operationOrOperations);
-    }
-    return (operationOrOperations as (tx: typeof mockPrisma) => Promise<unknown>)(mockPrisma);
-  });
-  resetCharacterImageMocks();
+  resetCharacterMocks();
   mockBilling.ensureDefaultProductCatalog.mockResolvedValue(undefined);
   mockPrisma.productCatalog.findUnique.mockResolvedValue({
     sku: "tomeza.one_book_export",

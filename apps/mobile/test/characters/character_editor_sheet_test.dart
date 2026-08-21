@@ -7,62 +7,23 @@ import 'package:tomeza/features/characters/presentation/character_editor_sheet.d
 
 import 'character_test_support.dart';
 
-/// Eleven library names, one past the ten a description may mention. None is a
-/// sub-token of another, so each `@name` resolves on its own.
-const _mentionNames = [
-  'Ana',
-  'Bea',
-  'Cyd',
-  'Dee',
-  'Eve',
-  'Fay',
-  'Gus',
-  'Hal',
-  'Ivy',
-  'Jo',
-  'Kim',
-];
+/// The sheet's own `_descriptionMax`, which mirrors
+/// `LIBRARY_CHARACTER_DESCRIPTION_MAX` in
+/// `apps/api/src/mobile/characterSchemas.ts`.
+const _descriptionMax = 2000;
 
 /// The editor sheet is the form and nothing else: a name, a description, some
 /// details, and the one description the server read off a picture — which is
 /// offered and never applied. Everything about the pictures themselves moved to
 /// the character's own page; those assertions live in
-/// `character_profile_test.dart`.
+/// `character_profile_test.dart`, and everything about `@name` links lives in
+/// `character_editor_mentions_test.dart` — except where the description's cap
+/// is what decides what happens to them.
 void main() {
-  Future<FakeCharactersRepository> pumpSheet(
-    WidgetTester tester,
-    LibraryCharacter saved, {
-    List<LibraryCharacter>? libraryCharacters,
-  }) async {
-    final repository = FakeCharactersRepository(
-      saved,
-      libraryCharacters: libraryCharacters,
-    );
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [charactersRepositoryProvider.overrideWithValue(repository)],
-        child: MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (context) => TextButton(
-                onPressed: () =>
-                    showCharacterEditorSheet(context, character: saved),
-                child: const Text('open'),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
-    return repository;
-  }
-
   testWidgets('offers the suggestion without touching the description', (
     tester,
   ) async {
-    await pumpSheet(
+    await pumpCharacterEditorSheet(
       tester,
       testCharacter(suggestedDescription: 'A girl in a yellow raincoat.'),
     );
@@ -79,7 +40,7 @@ void main() {
   testWidgets('Use this fills the field locally, sending nothing', (
     tester,
   ) async {
-    final repository = await pumpSheet(
+    final repository = await pumpCharacterEditorSheet(
       tester,
       testCharacter(suggestedDescription: 'A girl in a yellow raincoat.'),
     );
@@ -99,7 +60,7 @@ void main() {
   });
 
   testWidgets('Dismiss retires the suggestion server-side', (tester) async {
-    final repository = await pumpSheet(
+    final repository = await pumpCharacterEditorSheet(
       tester,
       testCharacter(suggestedDescription: 'A girl in a yellow raincoat.'),
     );
@@ -119,14 +80,14 @@ void main() {
   });
 
   testWidgets('no card when there is nothing on offer', (tester) async {
-    await pumpSheet(tester, testCharacter());
+    await pumpCharacterEditorSheet(tester, testCharacter());
     expect(find.text('Suggested from your photo'), findsNothing);
   });
 
   testWidgets('the form holds no pictures at all', (tester) async {
     // Everything about a picture moved to the character's page. A sheet that
     // still drew a face here would be the waypoint this split removed.
-    await pumpSheet(
+    await pumpCharacterEditorSheet(
       tester,
       testCharacter(photoKind: CharacterPhotoKind.photograph),
     );
@@ -176,291 +137,242 @@ void main() {
     expect(returned?.id, 'char-1');
   });
 
-  testWidgets('typing @ offers another character and saves its durable id', (
-    tester,
-  ) async {
-    final mina = testCharacter(description: 'Friends with ');
-    final bram = testCharacter(id: 'char-2', name: 'Bram');
-    final repository = await pumpSheet(
+  /// The description's cap, at the boundary. The rename that overruns it is
+  /// asserted in `character_editor_mentions_test.dart`; what these are about is
+  /// which string the refusal measures — the body carries the trimmed
+  /// description, so whitespace on the ends is length the route never sees —
+  /// and that a length past the cap costs the reader nothing but a refusal:
+  /// the text stays whole, the sheet stops resolving links in it, and the only
+  /// bound that ever clips is the ceiling twenty times further up.
+  group('the description cap', () {
+    const field = ValueKey('character-description-field');
+    const save = ValueKey('character-editor-save');
+
+    /// The description the sheet is holding right now.
+    String descriptionText(WidgetTester tester) =>
+        tester.widget<TextField>(find.byKey(field)).controller!.text;
+
+    /// Fills the description with [text], as the reader's own edit.
+    ///
+    /// Typed first because only an edit the reader made sends a description at
+    /// all, then written straight to the controller — which is how the sheet's
+    /// own three writers write, and the one of them that can land past the cap
+    /// is a rename arriving from another device.
+    Future<void> writeDescription(WidgetTester tester, String text) async {
+      await tester.enterText(find.byKey(field), 'x' * _descriptionMax);
+      await tester.pumpAndSettle();
+      tester.widget<TextField>(find.byKey(field)).controller!.text = text;
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> tapSave(WidgetTester tester) async {
+      await tester.ensureVisible(find.byKey(save));
+      await tester.tap(find.byKey(save));
+    }
+
+    testWidgets('a description at the cap is sent', (tester) async {
+      final repository = await pumpCharacterEditorSheet(
+        tester,
+        testCharacter(),
+      );
+
+      await tester.enterText(find.byKey(field), 'x' * _descriptionMax);
+      await tester.pumpAndSettle();
+      expect(find.text('Too long to save.'), findsNothing);
+      await tapSave(tester);
+      await tester.pumpAndSettle();
+
+      expect(repository.updates.single['description'], 'x' * _descriptionMax);
+    });
+
+    testWidgets('trailing whitespace over the cap is not a refusal', (
       tester,
-      mina,
-      libraryCharacters: [mina, bram],
-    );
+    ) async {
+      // Exactly at the cap once trimmed, and one grapheme over it as the field
+      // holds it. Measuring the field's own text refused this save for a
+      // newline zod strips before it counts anything — a refusal the reader
+      // cannot see, over a description the route would have taken.
+      final repository = await pumpCharacterEditorSheet(
+        tester,
+        testCharacter(),
+      );
+      await writeDescription(tester, '${'x' * _descriptionMax}\n');
 
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Friends with '),
-      'Friends with @',
-    );
-    await tester.pumpAndSettle();
-    final suggestions = find.byKey(
-      const ValueKey('character-mention-suggestions'),
-    );
-    expect(
-      find.descendant(of: suggestions, matching: find.text('Bram')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: suggestions, matching: find.text('Mina Park')),
-      findsNothing,
-    );
+      // The counter and the error measure the string the body carries, so
+      // neither says a word about the newline. Saying "Too long to save." over
+      // a save that goes through is a refusal the reader is told about and
+      // cannot find, on whitespace nothing draws.
+      expect(find.text('Too long to save.'), findsNothing);
+      expect(find.text('2001/2000'), findsNothing);
 
-    await tester.tap(
-      find.descendant(of: suggestions, matching: find.text('Bram')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('@Bram'), findsOneWidget);
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('character-editor-save')),
-    );
-    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
-    await tester.pumpAndSettle();
+      await tapSave(tester);
+      await tester.pumpAndSettle();
 
-    expect(repository.updates.single['description'], 'Friends with @Bram');
-    expect(repository.updates.single['mentionedCharacterIds'], ['char-2']);
-  });
+      expect(repository.updates.single['description'], 'x' * _descriptionMax);
+      expect(
+        find.text('The description is too long. Shorten it and save again.'),
+        findsNothing,
+      );
+    });
 
-  testWidgets('removing a saved token sends an authoritative empty link set', (
-    tester,
-  ) async {
-    final bram = testCharacter(id: 'char-2', name: 'Bram');
-    final mina = testCharacter(
-      description: 'Friends with @Bram.',
-      mentions: const [CharacterMention(id: 'char-2', name: 'Bram')],
-    );
-    final repository = await pumpSheet(
+    testWidgets('one grapheme past the cap after trimming is refused', (
       tester,
-      mina,
-      libraryCharacters: [mina, bram],
-    );
-    expect(
-      find.byKey(const ValueKey('character-description-mentions')),
-      findsOneWidget,
-    );
+    ) async {
+      // The other side of the same boundary: whitespace on the ends buys the
+      // body nothing, because the route trims before it counts too.
+      final repository = await pumpCharacterEditorSheet(
+        tester,
+        testCharacter(),
+      );
+      await writeDescription(tester, '  ${'x' * (_descriptionMax + 1)}  ');
 
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Friends with @Bram.'),
-      'Friends with Bram.',
-    );
-    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
-    await tester.pumpAndSettle();
+      await tapSave(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-    expect(repository.updates.single['mentionedCharacterIds'], isEmpty);
-  });
+      expect(repository.updates, isEmpty);
+      expect(
+        find.text('The description is too long. Shorten it and save again.'),
+        findsOneWidget,
+      );
+      // Refused, not closed: the sheet is where the prose can be shortened.
+      expect(find.text('Edit character'), findsOneWidget);
+    });
 
-  testWidgets('an unambiguous manually typed name resolves without a tap', (
-    tester,
-  ) async {
-    final mina = testCharacter(description: 'Friends with ');
-    final bram = testCharacter(id: 'char-2', name: 'Bram');
-    final repository = await pumpSheet(
+    testWidgets('an edit made while past the cap keeps the whole tail', (
       tester,
-      mina,
-      libraryCharacters: [mina, bram],
-    );
+    ) async {
+      // Only a rename arriving from another device can put the field past the
+      // cap, and the reader shortening it is exactly what they are asked to do.
+      // Enforcing `maxLength` made that keystroke the destructive one: with the
+      // field 13 over and the edit still over, `LengthLimitingTextInputFormatter`
+      // returned `truncate(newValue, 2000)` — the end of the description and
+      // the `@marker` in it gone, nowhere near where they were typing, again on
+      // every keystroke after.
+      await pumpCharacterEditorSheet(tester, testCharacter());
+      await writeDescription(tester, '${'x' * _descriptionMax} @Alexandria.');
+      expect(find.text('Too long to save.'), findsOneWidget);
 
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Friends with '),
-      'Friends with @Bram',
-    );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('character-editor-save')),
-    );
-    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
-    await tester.pumpAndSettle();
+      final shortened = descriptionText(tester).replaceFirst('x', '');
+      await tester.enterText(find.byKey(field), shortened);
+      await tester.pumpAndSettle();
 
-    expect(repository.updates.single['mentionedCharacterIds'], ['char-2']);
-  });
+      expect(descriptionText(tester), shortened);
+      expect(descriptionText(tester).endsWith(' @Alexandria.'), isTrue);
+      // Still over, and still saying so: the reader can see the length they
+      // have left to lose.
+      expect(find.text('2012/2000'), findsOneWidget);
+    });
 
-  testWidgets('a legacy @name the sheet resolved on its own is not a change', (
-    tester,
-  ) async {
-    // A pre-feature character: plain prose, no durable link, and a description
-    // the photo read that is still on offer. The sheet resolves the token as
-    // soon as the library arrives, which must not turn a look-and-Save into a
-    // PATCH — that one canonicalizes the prose, writes a link the reader never
-    // made, and retires the suggestion they never acted on.
-    final mina = testCharacter(
-      description: 'Inspired by @bram',
-      suggestedDescription: 'A girl in a yellow raincoat.',
-    );
-    final bram = testCharacter(id: 'char-2', name: 'Bram');
-    final repository = await pumpSheet(
+    testWidgets('a paste ten times over is refused whole, not shortened', (
       tester,
-      mina,
-      libraryCharacters: [mina, bram],
-    );
-    // The chip is the proof that the auto-resolution happened.
-    expect(
-      find.byKey(const ValueKey('character-description-mentions')),
-      findsOneWidget,
-    );
+    ) async {
+      // Ten times the cap is a document, and the reader gets it back entire
+      // with a refusal — which is the whole point of leaving the field
+      // unenforced. A `LengthLimitingTextInputFormatter` at the cap would have
+      // answered this paste with its first 2000 characters and no way to see
+      // what became of the rest.
+      final repository = await pumpCharacterEditorSheet(
+        tester,
+        testCharacter(),
+      );
+      final pasted = 'x' * (_descriptionMax * 10);
+      await tester.enterText(find.byKey(field), pasted);
+      await tester.pumpAndSettle();
 
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('character-editor-save')),
-    );
-    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
-    await tester.pumpAndSettle();
+      expect(descriptionText(tester), pasted);
+      expect(find.text('20000/2000'), findsOneWidget);
 
-    expect(repository.updates, isEmpty);
-    expect(find.text('Edit character'), findsNothing);
-  });
+      await tapSave(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-  testWidgets('a chip that still fits at the cap is inserted', (tester) async {
-    final mina = testCharacter(description: '');
-    final bram = testCharacter(id: 'char-2', name: 'Bram');
-    await pumpSheet(tester, mina, libraryCharacters: [mina, bram]);
+      expect(repository.updates, isEmpty);
+      expect(
+        find.text('The description is too long. Shorten it and save again.'),
+        findsOneWidget,
+      );
+      expect(find.text('Edit character'), findsOneWidget);
+    });
 
-    final field = find.byKey(const ValueKey('character-description-field'));
-    await tester.enterText(field, '${'x' * 1993} @');
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const ValueKey('character-mention-suggestions')),
-        matching: find.text('Bram'),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    final controller = tester.widget<TextField>(field).controller!;
-    expect(controller.text.length, 2000);
-    expect(controller.text.endsWith('@Bram '), isTrue);
-    expect(find.byType(SnackBar), findsNothing);
-  });
-
-  testWidgets('a chip that would pass the cap is refused, changing nothing', (
-    tester,
-  ) async {
-    // The tap writes the controller directly, so the field's maxLength
-    // formatter never runs over it — without the check the description goes
-    // past the server's cap and the save comes back as a generic error with a
-    // hidden counter and nothing on screen to explain it.
-    final mina = testCharacter(description: '');
-    final bram = testCharacter(id: 'char-2', name: 'Bram');
-    await pumpSheet(tester, mina, libraryCharacters: [mina, bram]);
-
-    final field = find.byKey(const ValueKey('character-description-field'));
-    final typed = '${'x' * 1994} @';
-    await tester.enterText(field, typed);
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const ValueKey('character-mention-suggestions')),
-        matching: find.text('Bram'),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(tester.widget<TextField>(field).controller!.text, typed);
-    expect(
-      find.text('That would make the description too long.'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('the eleventh mention chip is refused', (tester) async {
-    final mina = testCharacter(description: '');
-    final others = [
-      for (var index = 0; index < _mentionNames.length; index++)
-        testCharacter(id: 'char-${index + 2}', name: _mentionNames[index]),
-    ];
-    await pumpSheet(tester, mina, libraryCharacters: [mina, ...others]);
-
-    final field = find.byKey(const ValueKey('character-description-field'));
-    final tokens = _mentionNames.take(10).map((name) => '@$name').join(' ');
-    // The trailing fragment narrows the suggestion row to the one chip.
-    await tester.enterText(field, 'Knows $tokens @Ki');
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const ValueKey('character-mention-suggestions')),
-        matching: find.text('Kim'),
-      ),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(
-      tester.widget<TextField>(field).controller!.text,
-      'Knows $tokens @Ki',
-    );
-    expect(
-      find.text('A description can mention up to 10 characters.'),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('a save carrying more mentions than the cap is refused', (
-    tester,
-  ) async {
-    // The resolver used to trim the set to the cap, so a save quietly deleted
-    // a link the reader could still see in their own prose. Saying so is the
-    // only honest answer.
-    final mina = testCharacter(description: '');
-    final others = [
-      for (var index = 0; index < _mentionNames.length; index++)
-        testCharacter(id: 'char-${index + 2}', name: _mentionNames[index]),
-    ];
-    final repository = await pumpSheet(
+    testWidgets('a paste no box could hold is clipped at the ceiling', (
       tester,
-      mina,
-      libraryCharacters: [mina, ...others],
-    );
+    ) async {
+      // The bound on what may reach the field at all, spelled out rather than
+      // derived so that moving it is a line somebody has to change here too.
+      // Everything under it arrives whole — the test above — so this is the one
+      // size that loses a tail, and it is a size nobody was going to shorten by
+      // hand inside a six-line box.
+      const ceiling = _descriptionMax * 20;
+      final repository = await pumpCharacterEditorSheet(
+        tester,
+        testCharacter(),
+      );
 
-    final tokens = _mentionNames.map((name) => '@$name').join(' ');
-    await tester.enterText(
-      find.byKey(const ValueKey('character-description-field')),
-      'Knows $tokens.',
-    );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('character-editor-save')),
-    );
-    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+      await tester.enterText(find.byKey(field), 'x' * (_descriptionMax * 50));
+      await tester.pumpAndSettle();
 
-    expect(repository.updates, isEmpty);
-    expect(find.textContaining('mention up to 10 characters'), findsOneWidget);
-    expect(find.text('Edit character'), findsOneWidget);
-  });
+      expect(descriptionText(tester).length, ceiling);
+      // Clipped and still refused: the ceiling is not a second opinion about
+      // what a description may be, and nothing about hitting it turns a
+      // manuscript into something this sheet will send.
+      expect(find.text('$ceiling/$_descriptionMax'), findsOneWidget);
+      await tapSave(tester);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
 
-  testWidgets('a case-ambiguous typed name remains unlinked until picked', (
-    tester,
-  ) async {
-    final mina = testCharacter(description: 'Friends with ');
-    final upper = testCharacter(id: 'char-2', name: 'Bram');
-    final lower = testCharacter(id: 'char-3', name: 'bram');
-    final repository = await pumpSheet(
+      expect(repository.updates, isEmpty);
+      expect(
+        find.text('The description is too long. Shorten it and save again.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('past the cap the sheet resolves nothing, and says how far', (
       tester,
-      mina,
-      libraryCharacters: [mina, upper, lower],
-    );
+    ) async {
+      // The `@name` half of this suite lives in
+      // `character_editor_mentions_test.dart`, which is at its file-size
+      // budget; what this is about is the cap, and that resolving stops at it.
+      // Every keystroke used to re-sweep the whole description twice over — the
+      // cost a paste this size multiplies — for a link set no save can carry:
+      // prose over the cap is refused before any request goes out.
+      final mina = testCharacter();
+      await pumpCharacterEditorSheet(
+        tester,
+        mina,
+        libraryCharacters: [mina, testCharacter(id: 'char-2', name: 'Nova')],
+      );
 
-    await tester.enterText(
-      find.widgetWithText(TextField, 'Friends with '),
-      'Friends with @BRAM',
-    );
-    await tester.pumpAndSettle();
-    final suggestions = find.byKey(
-      const ValueKey('character-mention-suggestions'),
-    );
-    expect(
-      find.descendant(of: suggestions, matching: find.text('Bram')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: suggestions, matching: find.text('bram')),
-      findsOneWidget,
-    );
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('character-editor-save')),
-    );
-    await tester.tap(find.byKey(const ValueKey('character-editor-save')));
-    await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(field), '${'x' * _descriptionMax} @Nova');
+      await tester.pumpAndSettle();
 
-    expect(repository.updates.single['mentionedCharacterIds'], isEmpty);
+      expect(
+        find.byKey(const ValueKey('character-description-mentions')),
+        findsNothing,
+      );
+      // Nor is a pick offered for the token under the caret: [_insertMention]
+      // measures the cap first, so a strip here would refuse everything it
+      // offered.
+      expect(
+        find.byKey(const ValueKey('character-mention-suggestions')),
+        findsNothing,
+      );
+      // The one thing that does keep moving, because it is what the reader
+      // shortens against.
+      expect(find.text('2006/2000'), findsOneWidget);
+
+      // And the first keystroke back under the cap resolves the lot.
+      await tester.enterText(find.byKey(field), 'Friends with @Nova.');
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('character-description-mentions')),
+          matching: find.text('@Nova'),
+        ),
+        findsOneWidget,
+      );
+    });
   });
 }

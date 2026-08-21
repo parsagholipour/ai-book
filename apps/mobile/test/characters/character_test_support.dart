@@ -1,6 +1,57 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:tomeza/features/characters/data/characters_repository.dart';
 import 'package:tomeza/features/characters/domain/character_image_models.dart';
 import 'package:tomeza/features/characters/domain/character_models.dart';
+import 'package:tomeza/features/characters/presentation/character_editor_sheet.dart';
+import 'package:tomeza/shared/api/api_error.dart';
+
+/// Opens the editor sheet over [saved], with [libraryCharacters] standing in
+/// for everything else the reader has saved.
+///
+/// Answers the repository double, which is where a suite reads what the sheet
+/// asked the server to do.
+Future<FakeCharactersRepository> pumpCharacterEditorSheet(
+  WidgetTester tester,
+  LibraryCharacter saved, {
+  List<LibraryCharacter>? libraryCharacters,
+}) async {
+  final repository = FakeCharactersRepository(
+    saved,
+    libraryCharacters: libraryCharacters,
+  );
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [charactersRepositoryProvider.overrideWithValue(repository)],
+      child: MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () =>
+                  showCharacterEditorSheet(context, character: saved),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.tap(find.text('open'));
+  await tester.pumpAndSettle();
+  return repository;
+}
+
+/// The 3-second library poll landing: whatever
+/// [FakeCharactersRepository.replaceLibraryCharacter] was told about reaches
+/// the widgets watching it.
+Future<void> pumpLibraryPoll(WidgetTester tester) async {
+  ProviderScope.containerOf(
+    tester.element(find.byType(MaterialApp)),
+    listen: false,
+  ).invalidate(charactersProvider);
+  await tester.pumpAndSettle();
+}
 
 /// One library character, with only the fields these suites care about spelled
 /// out at each call site.
@@ -15,7 +66,7 @@ LibraryCharacter testCharacter({
   CharacterPortraitStatus portraitStatus = CharacterPortraitStatus.none,
   String? portraitError,
   bool usedInBooks = false,
-  List<CharacterMention> mentions = const [],
+  List<LibraryMention> mentions = const [],
 }) {
   return LibraryCharacter(
     id: id,
@@ -84,6 +135,16 @@ class FakeCharactersRepository implements CharactersRepository {
   final List<String?> portraitRequests = [];
   final List<int> uploadedByteLengths = [];
 
+  /// Stands in for the 3-second poll picking up what another device did: the
+  /// next `list()` answers with [character] in place of the row it replaces.
+  void replaceLibraryCharacter(LibraryCharacter character) {
+    final index = _libraryCharacters.indexWhere(
+      (row) => row.id == character.id,
+    );
+    if (index >= 0) _libraryCharacters[index] = character;
+    if (character.id == _character.id) _character = character;
+  }
+
   @override
   Future<CharacterLibrary> list() async => CharacterLibrary(
     characters: [
@@ -102,6 +163,21 @@ class FakeCharactersRepository implements CharactersRepository {
     List<String>? mentionedCharacterIds,
     bool? dismissSuggestion,
   }) async {
+    // The update route's own rule, so a suite can watch the sheet meet it:
+    // every id in `mentionedCharacterIds` is looked up in `libraryCharacter`,
+    // and a set that comes back short is a 404 (`mentionedTargets` in
+    // `apps/api/src/mobile/libraryMentionLinks.ts`). A link the description holds
+    // into some other library is not a row that lookup can find, which is why
+    // the editor may only ever send [LibraryCharacter.characterMentions].
+    for (final mentionId in mentionedCharacterIds ?? const <String>[]) {
+      if (!_libraryCharacters.any((row) => row.id == mentionId)) {
+        throw const ApiException(
+          code: 'CHARACTER_NOT_FOUND',
+          message: 'A mentioned character is no longer in your library.',
+          statusCode: 404,
+        );
+      }
+    }
     updates.add({
       'id': id,
       'name': ?name,
@@ -118,7 +194,11 @@ class FakeCharactersRepository implements CharactersRepository {
           ? null
           : [
               for (final id in mentionedCharacterIds)
-                CharacterMention(id: id, name: id),
+                LibraryMention(
+                  id: id,
+                  name: id,
+                  kind: LibraryMentionKind.character,
+                ),
             ],
       suggestedDescription: dismissSuggestion == true || description != null
           ? null

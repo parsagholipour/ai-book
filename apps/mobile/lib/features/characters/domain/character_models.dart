@@ -98,29 +98,80 @@ class CharacterField {
   }
 }
 
-/// One durable @mention in a character description.
-class CharacterMention {
-  const CharacterMention({required this.id, required this.name});
+/// What a mention points at. The link table is generalized past characters —
+/// location and other libraries are on the roadmap — and the server reads this
+/// off the stored row rather than stamping it, so the day one of those tables
+/// lands is the day these arms start arriving. Until then it withholds a
+/// mention it cannot name, and `libraryMentionRefs` (api) is where that is
+/// written down.
+///
+/// The arms below are forward compatibility rather than speculation: an
+/// installed build outlives the server it was written against, so the app that
+/// meets the first location row is one already on a phone — this one.
+enum LibraryMentionKind {
+  character,
+  location,
+  other;
+
+  /// An absent kind is a server from before the link table was generalized,
+  /// where every row was a character. An unrecognized one is a kind a newer
+  /// server added: it reads as [other], so a client that has never heard of it
+  /// still refuses to send the reader to a character page.
+  static LibraryMentionKind fromWire(Object? value) {
+    return switch (value) {
+      null => character,
+      'character' => character,
+      'location' => location,
+      _ => other,
+    };
+  }
+
+  String get wire => name;
+}
+
+/// One durable @mention in a library-item description.
+class LibraryMention {
+  const LibraryMention({
+    required this.id,
+    required this.name,
+    this.kind = LibraryMentionKind.character,
+    this.otherType,
+  });
 
   final String id;
   final String name;
+  final LibraryMentionKind kind;
 
-  factory CharacterMention.fromJson(Map<String, dynamic> json) =>
-      CharacterMention(
-        id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-      );
+  /// The subtype the user typed behind [LibraryMentionKind.other]; null for
+  /// every other kind.
+  final String? otherType;
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'kind': kind.wire,
+    'otherType': otherType,
+  };
 
-  static List<CharacterMention> listFromJson(Object? json) {
+  /// The only way a mention row is read. There is deliberately no per-row
+  /// `fromJson` beside it: a second spelling of this decode drifts from the
+  /// first, and the half that drifted here was the defensive one — a cast
+  /// where this tests, so an `otherType` a newer server sends as anything but
+  /// a string throws instead of reading as absent. Rows missing either half of
+  /// their identity are dropped rather than rendered as blanks, matching
+  /// [CharacterField.listFromJson] and the API serializer's own rule.
+  static List<LibraryMention> listFromJson(Object? json) {
     if (json is! List) return const [];
     return [
       for (final entry in json)
         if (entry is Map && entry['id'] is String && entry['name'] is String)
-          CharacterMention(
+          LibraryMention(
             id: entry['id'] as String,
             name: entry['name'] as String,
+            kind: LibraryMentionKind.fromWire(entry['kind']),
+            otherType: entry['otherType'] is String
+                ? entry['otherType'] as String
+                : null,
           ),
     ];
   }
@@ -151,7 +202,11 @@ class LibraryCharacter {
   final String id;
   final String name;
   final String description;
-  final List<CharacterMention> mentions;
+
+  /// Every durable link the description carries, whatever it points at. The
+  /// cast is [characterMentions]; this is the scan set.
+  final List<LibraryMention> mentions;
+
   final List<CharacterField> fields;
   final CharacterPortraitStatus portraitStatus;
 
@@ -194,12 +249,34 @@ class LibraryCharacter {
   bool get needsCartoonReference =>
       hasPhoto && !usedInBooks && !portraitStatus.isBusy;
 
+  /// The links that point into the character library — the **cast**.
+  ///
+  /// [mentions] is wider than this and is meant to be: the link table is shared
+  /// with the location and other libraries, and the server reads each row's
+  /// kind off the row rather than stamping it, so the build that meets the
+  /// first location row is one already on a phone — see [LibraryMentionKind].
+  /// Anything that treats a mention *as a character* reads this instead:
+  /// resolving an `@token` against the library, drawing a chip with a face on
+  /// it, or sending an id back in `mentionedCharacterIds`, which the server
+  /// looks up in `libraryCharacter` and answers with `CHARACTER_NOT_FOUND` for
+  /// a link that was never a person — a 404 on every save of a description
+  /// nothing the reader can type would fix.
+  ///
+  /// The same two readings of one row set exist server-side and for the same
+  /// reason: `libraryMentionCharacterRefs` is the cast and `libraryMentionNames`
+  /// is every marker (`packages/db/src/libraryMentions.ts`). This is the first
+  /// of them; [mentions] is the second.
+  List<LibraryMention> get characterMentions => [
+    for (final mention in mentions)
+      if (mention.kind == LibraryMentionKind.character) mention,
+  ];
+
   factory LibraryCharacter.fromJson(Map<String, dynamic> json) {
     return LibraryCharacter(
       id: json['id'] as String,
       name: json['name'] as String? ?? '',
       description: json['description'] as String? ?? '',
-      mentions: CharacterMention.listFromJson(json['mentions']),
+      mentions: LibraryMention.listFromJson(json['mentions']),
       fields: CharacterField.listFromJson(json['fields']),
       portraitStatus: CharacterPortraitStatus.fromWire(
         json['portraitStatus'] as String?,
@@ -262,7 +339,7 @@ class LibraryCharacter {
   LibraryCharacter copyWith({
     String? name,
     String? description,
-    List<CharacterMention>? mentions,
+    List<LibraryMention>? mentions,
     List<CharacterField>? fields,
     CharacterPortraitStatus? portraitStatus,
     Object? portraitError = _sentinel,
