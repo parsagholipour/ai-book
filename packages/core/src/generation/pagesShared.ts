@@ -1,4 +1,5 @@
 import type { TextModelAdapter } from "../adapters/types.js";
+import { isSignpostingBookCategory } from "../categories.js";
 import {
   kidsReadingGuidanceLines,
   kidsReadingGuidancePayload
@@ -6,6 +7,7 @@ import {
 import { plannerToneGuidance, reviewerStyleGuidance, toneProfileFromMediaSettings, writerToneGuidance } from "../prompting/tone.js";
 import type { BookPlan, ChapterBrief, ChapterPlan, CreateProjectInput, PageProductionBeat } from "../schemas/book.js";
 import { isRecord, jsonRecord, mediaSettingsMobileRecord } from "../schemas/jsonCoercion.js";
+import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import { BYLINE_IS_TYPESET_RULE } from "./markdown.js";
 
 /**
@@ -265,7 +267,319 @@ export function range(start: number, end: number): number[] {
   return Array.from({ length: end - start + 1 }, (_, index) => start + index);
 }
 
-export function buildPageInstruction(pageIndex: number, targetPages: number): string {
+/**
+ * What a page prompt needs to know to talk about the book's opening: the book,
+ * the plan that may have committed to a hook, and which page is being written.
+ * Every option type in the drafting and review layers already satisfies it —
+ * `GeneratePageOptions`, `PolishPageOptions`, `ReviewPageOptions` and
+ * `RevisePageOptions` — so a prompt passes its own `options` straight through.
+ */
+export type PageInstructionSource = OpeningContractSource & {
+  pageIndex: number;
+};
+
+/** Spread into a prompt payload; empty on every page that is not shown a hook. */
+export type OpeningHookPayload = { openingHook?: string };
+
+export type PageInstructionFields = {
+  /** The instruction line, under whatever key this prompt names it. */
+  text: string;
+  /** The `openingHook` key that line owes the model, spread beside it. */
+  payload: OpeningHookPayload;
+};
+
+/**
+ * The one predicate every opening-hook decision in the pipeline is built on:
+ * *does what this call writes include global page 1*.
+ *
+ * It is a range and not an index because most callers write or brief several
+ * pages at once, and because the range is the only honest form of the question.
+ * A chapter-scoped call asks it of the absolute page range it was handed rather
+ * than of its chapter index, since a leading chapter that ended up with no pages
+ * hands page 1 to the next one. A single-page prompt asks the degenerate
+ * one-page form.
+ */
+export function writesFirstPage(pageStart: number, pageEnd: number): boolean {
+  return pageStart <= 1 && pageEnd >= 1;
+}
+
+/**
+ * The hook this call is responsible for showing the model: the plan's
+ * commitment when this call writes page 1, and nothing otherwise.
+ *
+ * Every prompt that *names* `openingHook` owes the model the key beside it, or
+ * the page is told to deliver a hook it was never shown — so nothing reads
+ * `plan.openingHook` beside a first-page test of its own. The two audiences wrap
+ * this with their own rule text and never with each other's: the page prompts
+ * with {@link openingContractFields} (deliver, or judge the delivery of, the
+ * hook in page 1's prose) and the page-map producers with
+ * `firstPageBriefFieldsForRange` (`pageBriefContract.ts`, assign the hook inside
+ * page 1's brief).
+ *
+ * **This is the plan's answer, not the contract's**, which is why it is private:
+ * both audiences reach it only through {@link openingContractForRange}, the one
+ * place the imported-manuscript exemption is applied to it. Exported, it was a
+ * hook reader with no gate on it, and the brief producers took it — so a
+ * `book_replan` on an import (whose plan carries a hook a model invented after
+ * the fact) briefed page 1 to deliver one its writer prompt was no longer told
+ * to carry. See the exemption's reasoning on {@link OpeningContract}.
+ *
+ * An empty hook is no hook — a plan stores its hook trimmed, and every consumer
+ * of this gates on truthiness rather than on presence.
+ */
+function openingHookForRange(plan: BookPlan, pageStart: number, pageEnd: number): string | undefined {
+  return writesFirstPage(pageStart, pageEnd) && plan.openingHook ? plan.openingHook : undefined;
+}
+
+/**
+ * The book an opening contract is read from: the plan that may have committed
+ * to a hook, and the `input` whose provenance decides the exemption. Every
+ * multi-page writer's options already satisfy it and pass themselves straight
+ * through, the way `PageBriefBookScope` (`pageBriefContract.ts`) takes one.
+ */
+export type OpeningContractSource = {
+  input: CreateProjectInput;
+  plan: BookPlan;
+};
+
+/**
+ * **What one call owes the book's first page — decided in one place, for every
+ * prompt that says anything about it.**
+ *
+ * The contract has two halves — one gated on the book's provenance, one on that
+ * provenance *and* the plan — and **an imported manuscript is exempt from
+ * both**:
+ *
+ *   - the **opening-quality** half (never open on throat-clearing; open the way
+ *     this category opens) is what the exemption was first written for. Page 1
+ *     of an import is the author's own first sentence, and every one of these
+ *     rules is a licence to rewrite it — `runLocalPageQualityChecks`
+ *     (`pagesLocalQa.ts`) is the deterministic twin that gate was first spelled
+ *     in, and this is the same gate reaching the prompts;
+ *   - the **hook-delivery** half (deliver `plan.openingHook` in page 1's own
+ *     prose) is gated on the plan having committed to a hook **and on the same
+ *     provenance**, because an import's plan is not a commitment its book was
+ *     written to. `synthesizeImportedBookPlan` (`ingestion/manuscriptImport.ts`)
+ *     builds an import's plan out of the finished manuscript and sets no
+ *     `openingHook` at all; one appears only once that plan is *revised*, and
+ *     `revisePlanningPackage`'s "preserve or improve openingHook" line
+ *     (`planner.ts`) is unconditional. So an import's hook is a sentence a model
+ *     invented for a book that already existed, from a premise field, having
+ *     never seen page 1.
+ *
+ * Fusing the two is what round one found: the multi-page writers' whole
+ * first-page instruction was a single sentence that named the hook *and* stated
+ * the ban, so a plan with no hook — every MOCK_AI run, every plan stored before
+ * the field existed, `makeFallbackPlan` itself — drafted page 1 with no ban at
+ * all, and the reviewer then failed it and paid for a revision. Round two found
+ * the reviewer stating the ban on every page of every book, page 7 included.
+ * Round three found `buildPageInstruction` stating it with no import check,
+ * feeding the reviser and the polisher an instruction to rewrite the author's
+ * opening on any page-1 failure with an unrelated cause.
+ *
+ * Round four found local QA excusing categories the writer prompt banned
+ * outright. The unification those rounds produced then wrote the exemption down
+ * as covering the ban alone, on the grounds that "a repair's replacement page is
+ * generated prose" — and round five found that justification true of the *brief*
+ * producers, which assign work for prose about to be written, and false of every
+ * prompt this contract feeds: `revisePageDraft` and `polishPageDraft`
+ * rewrite the page they are handed, in place, and `rewritePageForUserRequest`
+ * (`apps/worker/src/handlers/replanBook.ts`) routes a reader's "make page 1
+ * sharper" through that same `revisePageDraft`. On an import's page 1 all three
+ * therefore carried "deliver the plan's openingHook in the page's own prose" —
+ * an instruction to rewrite the author's opening into a stranger's idea of it,
+ * arriving through the half the exemption did not cover, after a QA failure with
+ * some entirely unrelated cause. Hence the second half of the gate.
+ *
+ * **Which page is the author's is not a question that can be asked.** `Page`
+ * carries no provenance column, so `isImportedManuscript` reads the *project's*
+ * mediaSettings and both halves can only ever be book-level. That over-applies
+ * in one direction — `resolveStructuralEdit` (`pageRestructure.ts`) accepts
+ * `anchorPageIndex: 0`, so pages inserted at the head of an imported book are
+ * pipeline prose sitting at global index 1 — and it is the right trade for both
+ * halves at once: the hook such a page would be told to deliver is the invented
+ * one, and it is the page that has to hand off to the author's original opening
+ * on the very next page. Hook without ban is also the worst of the four
+ * combinations, round one in mirror image — a page told to make its opening
+ * striking with none of the rules that say what a striking opening is.
+ *
+ * Each round is one prompt disagreeing with the others about one of these three
+ * booleans, so the booleans are answered here and the sentences are chosen from
+ * {@link OPENING_CONTRACT_RULES} by audience. A prompt cannot state the ban
+ * without being gated on the exemption, or name the hook without sending it,
+ * because it does not build either one for itself — and the reviewer reads the
+ * same contract as the writer, so it can no longer be asked to judge whether
+ * page 1 delivered a hook the author never wrote, a rejection whose only repair
+ * is a model rewrite of exactly the page the exemption protects.
+ */
+export type OpeningContract = {
+  /** Whether what this call writes, judges or briefs includes global page 1. */
+  writesFirstPage: boolean;
+  /**
+   * Whether page 1's prose may be held to the opening-quality rules — false
+   * for every call that does not reach page 1, and for every page of an
+   * imported manuscript.
+   */
+  statesOpeningQuality: boolean;
+  /**
+   * The plan's commitment to how the book opens, when this call reaches page 1
+   * of a book the pipeline wrote — `undefined` for an import, whose plan
+   * describes a manuscript it did not commission.
+   */
+  openingHook: string | undefined;
+  /** The `openingHook` key every rule naming it owes the model. */
+  payload: OpeningHookPayload;
+};
+
+export function openingContractForRange(
+  source: OpeningContractSource,
+  pageStart: number,
+  pageEnd: number
+): OpeningContract {
+  const reachesFirstPage = writesFirstPage(pageStart, pageEnd);
+  // One fact, both halves. `statesOpeningQuality` is the exemption as it has
+  // always read; the hook is the plan's answer *less that same exemption*,
+  // rather than a second predicate spelled beside it — which is what the brief
+  // producers' `openingHookForRange` still returns, and why nothing here calls
+  // `isImportedManuscript` twice.
+  const speaksForThisBooksOpening = reachesFirstPage && !isImportedManuscript(source.input.mediaSettings);
+  const openingHook = speaksForThisBooksOpening ? openingHookForRange(source.plan, pageStart, pageEnd) : undefined;
+  return {
+    writesFirstPage: reachesFirstPage,
+    statesOpeningQuality: speaksForThisBooksOpening,
+    openingHook,
+    payload: openingHook ? { openingHook } : {}
+  };
+}
+
+/**
+ * The word every audience's opening-quality sentence is built around, and the
+ * only handle anything outside this module has on "does this prompt state the
+ * ban".
+ *
+ * The three sentences below cannot be one string — a prompt writing forty pages
+ * has to say *which* page it means, a prompt writing one says "this page", and
+ * the reviewer is told what to reject rather than what to write — so the shared
+ * thing is a token they all interpolate. `pagesShared.test.ts` sweeps every
+ * prompt in the pipeline for it and checks that the set stating it is exactly
+ * the set the exemption silences — the comparison all three rounds would have
+ * failed. A fourth audience that phrases the ban in its own words rather than
+ * quoting this is invisible to that sweep, so quote it.
+ */
+export const OPENING_QUALITY_RULE_MARKER = "throat-clearing";
+
+/**
+ * Who is being told, and therefore in whose voice. Exhaustive by type: a new
+ * prompt that says anything about page 1 has to name itself here, and naming
+ * itself is what gets it both halves of the contract and the exemption with
+ * them.
+ */
+export type OpeningContractAudience = "multiPageWriter" | "pageWriter" | "reviewer";
+
+type OpeningContractRules = {
+  /** The ban, in this audience's voice. */
+  quality: string;
+  /**
+   * Whether this audience also hears how its *category* opens. The writers do —
+   * they choose the opening, and "open inside a scene already in motion" is the
+   * only concession the ban makes. The reviewer does not: it judges the page it
+   * was handed, and a category recipe in a rejection prompt invites it to reject
+   * a legitimate opening for being the wrong shape.
+   */
+  statesCategoryOpening: boolean;
+  /** The hook sentence, and the only line in either half that names the payload key. */
+  hook: string;
+};
+
+const OPENING_CONTRACT_RULES: Record<OpeningContractAudience, OpeningContractRules> = {
+  multiPageWriter: {
+    quality: `Global page 1 opens the book and is the reader's first impression: it must never begin with ${OPENING_QUALITY_RULE_MARKER}, a welcome, a definition of the topic, or meta framing such as 'In this book'.`,
+    statesCategoryOpening: true,
+    hook: "openingHook is the plan's commitment to how it opens, so global page 1 must deliver it in its own prose without echoing its wording."
+  },
+  pageWriter: {
+    quality: `This is the book's first page and the reader's first impression: hook the reader by the end of the first paragraph, and never open with ${OPENING_QUALITY_RULE_MARKER}, a welcome, a definition of the topic, or meta framing such as 'In this book' or 'This story is about'.`,
+    statesCategoryOpening: true,
+    hook: "The plan's openingHook names how this book opens; deliver it in the page's own prose without echoing its wording."
+  },
+  reviewer: {
+    quality: `For the book's first page, reject ${OPENING_QUALITY_RULE_MARKER} or meta openings ('In this book...', 'Welcome to...', 'Have you ever wondered...'), generic scene-setting that delays the subject, and a first paragraph that gives the reader no concrete reason to keep reading.`,
+    statesCategoryOpening: false,
+    // The payload carries openingHook, and for a round nothing here named it:
+    // an unlabelled field beside pageBrief reads as "the page must match this",
+    // which is the opposite of what the writer was told — deliver the hook
+    // "without echoing its wording" — so a page that transformed it correctly
+    // could be rejected for not reproducing it.
+    hook: "openingHook is the plan's commitment to how this book opens: judge whether the first page delivers that opening in its own prose, and never require it to reproduce, quote, or echo the hook's wording, which the page writer is instructed not to do."
+  }
+};
+
+export type OpeningContractFields = {
+  /** The rule lines to state; empty whenever this call owes page 1 nothing. */
+  rules: string[];
+  /** The `openingHook` key those lines name, spread into the same prompt's payload. */
+  payload: OpeningHookPayload;
+};
+
+/**
+ * The contract as one prompt states it — the rule lines **and** the payload key
+ * one of them names, from one call.
+ *
+ * The `{ rules, payload }` shape is `buildPageInstruction`'s, and it is here for
+ * the same reason: spreading the payload beside the lines is the only way to use
+ * either, so a prompt cannot ship the sentence without the key. What this adds
+ * is the other direction — both lines are chosen by
+ * {@link openingContractForRange}, so a prompt cannot ship either half of the
+ * contract without the exemption that silences it.
+ */
+export function openingContractFields(
+  source: OpeningContractSource,
+  audience: OpeningContractAudience,
+  pageStart: number,
+  pageEnd: number
+): OpeningContractFields {
+  const contract = openingContractForRange(source, pageStart, pageEnd);
+  const rules = OPENING_CONTRACT_RULES[audience];
+  return {
+    rules: [
+      ...(contract.statesOpeningQuality
+        ? [rules.quality, ...(rules.statesCategoryOpening ? [firstPageOpeningRule(source.input.category)] : [])]
+        : []),
+      ...(contract.openingHook ? [rules.hook] : [])
+    ],
+    payload: contract.payload
+  };
+}
+
+/** The degenerate one-page form, for a prompt that writes or judges one page. */
+export function openingContractFieldsForPage(
+  source: PageInstructionSource,
+  audience: OpeningContractAudience
+): OpeningContractFields {
+  return openingContractFields(source, audience, source.pageIndex, source.pageIndex);
+}
+
+/**
+ * The per-page writing instruction **and** the payload key it owes, from one
+ * call.
+ *
+ * The first-page lines name a payload field, so a prompt carrying this sentence
+ * has to send the field too, or the page is told to deliver a hook it was never
+ * shown. That used to be a condition each prompt spelled for itself beside its
+ * own `buildPageInstruction(…, plan.openingHook)` call — five copies of one
+ * predicate across the four single-page prompts, two of which shipped a round
+ * without the key. Returning both halves together is what makes the next prompt
+ * site unable to get it half right: spreading `payload` beside `text` is the
+ * only way to use the instruction at all.
+ *
+ * The first-page lines themselves are {@link openingContractFields}', not this
+ * function's. Owning them here is what shipped an import's page-1 reviser and
+ * polisher an explicit instruction to rewrite the author's opening, on a page
+ * that had failed QA for repetition or a prompt leak.
+ */
+export function buildPageInstruction(source: PageInstructionSource): PageInstructionFields {
+  const { input, pageIndex } = source;
+  const opening = openingContractFieldsForPage(source, "pageWriter");
   const base = [
     "Write exactly this page, not a description of the page.",
     "Use a clean title without a Page N prefix.",
@@ -273,14 +587,28 @@ export function buildPageInstruction(pageIndex: number, targetPages: number): st
     GROUNDED_FACTUALITY_RULE,
     "Advance beyond recentPages and alreadyCovered; do not restate their scene, decision, exposition, or emotional beat.",
     'Treat pageBrief and endingPressure as internal notes; do not echo phrases like "concluding the survey" or announce a transition to another chapter.',
-    "The page summary must name the new beat or changed consequence introduced on this page."
+    "The page summary must name the new beat or changed consequence introduced on this page.",
+    ...opening.rules
   ];
-  if (pageIndex === targetPages) {
+  if (pageIndex === input.targetPages) {
     base.push(
       "This is the final page: resolve the book's central promise with a concrete consequence, completed choice, or settled question instead of a vague closing image."
     );
   }
-  return base.join(" ");
+  return { text: base.join(" "), payload: opening.payload };
+}
+
+function firstPageOpeningRule(category: string | undefined): string {
+  if (category === "STORY") {
+    return "Open inside a concrete scene already in motion: a specific character, place, and pressure in the first lines, not backstory or panoramic scene-setting.";
+  }
+  if (category === "KIDS") {
+    return "Open with a named character doing something a child can picture immediately; keep the first lines simple, warm, and read-aloud friendly for the target age band.";
+  }
+  if (isSignpostingBookCategory(category)) {
+    return "Open with a concrete claim, surprising specific, or real mini-case the reader can test; you may signpost later on the page, never in the first paragraph.";
+  }
+  return "Open with a striking specific - a scene, fact, or grounded question - not a generalization like 'Throughout history' or 'Since the dawn of time'.";
 }
 
 // ---------------------------------------------------------------------------

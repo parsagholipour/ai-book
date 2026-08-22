@@ -147,7 +147,12 @@ function baseOptions(strategy: ReturnType<typeof baseStrategy>) {
   return {
     projectId: "project-1",
     planId: "plan-1",
-    input: { targetPages: 4, mediaSettings: {} },
+    // `temperature` is required on CreateProjectInput and defaulted to 0.8 by the
+    // schema, so every input a handler builds carries one. Omitting it here made
+    // this fixture NaN its way through the best-of ladder, whose zero-width-band
+    // guard then read the duplicate rungs as "this book asked for temperature 0"
+    // and skipped page 1's second polish — silently, and only in this suite.
+    input: { targetPages: 4, temperature: 0.8, mediaSettings: {} },
     plan: { title: "Book", chapters: [] },
     providers: { text: {}, embedding: {} },
     strategy,
@@ -401,6 +406,9 @@ describe("generateBookDraftThenPolish", () => {
     // polish, so a failure mid-polish resumes instead of redrafting the book.
     expect(order.slice(0, 2)).toEqual(["checkpoint", "persist-target"]);
     expect(order.filter((step) => step.startsWith("polish-"))).toEqual([
+      // Page 1 polishes twice: this harness leaves the tier unset (balanced),
+      // and the first page best-ofs by tier (`firstPageCandidateCount`).
+      "polish-1",
       "polish-1",
       "polish-2",
       "polish-3",

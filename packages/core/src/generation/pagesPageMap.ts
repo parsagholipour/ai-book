@@ -7,6 +7,12 @@ import {
   targetLanguagePayload
 } from "../prompting/language.js";
 import { generateJsonWithRetry } from "./generateJsonWithRetry.js";
+import {
+  FIRST_PAGE_ENDING_PRESSURE,
+  LAST_PAGE_ENDING_PRESSURE,
+  firstPageBriefFieldsForRange,
+  pageEndingContract
+} from "./pageBriefContract.js";
 import { normalizePlanPageTargets } from "./planner.js";
 import type {
   BookPlan,
@@ -27,6 +33,7 @@ import {
   isRecord,
   numberField,
   objectKeys,
+  openingContractForRange,
   pageScopePayload,
   plannerToneRules,
   range,
@@ -41,6 +48,12 @@ import {
  * per-chapter briefs behind it, and the brief repair loop QA falls back to.
  * Split out of pages.ts, which re-exports everything public so
  * `@book-maker/core` is unchanged.
+ *
+ * Four of the five writers of page 1's brief live here, and none of them owns
+ * the contract it writes that brief under. `pageBriefContract.ts` does, and
+ * every rule line in this file is reached through its
+ * `firstPageBriefFieldsForRange`. The fifth writer, `pageMapCritic.ts`, reads
+ * that module rather than this one.
  */
 
 export type GenerateChapterBriefOptions = {
@@ -63,6 +76,21 @@ export type RepairPageBriefOptions = ReviewPageOptions & {
   report: PageQualityReport;
 };
 
+/**
+ * The ceiling for a pass that **rewrites work the pipeline already produced**,
+ * rather than creating it: `repairPageBrief` below, rewriting an assignment QA
+ * rejected, and `polishPageDraft` (`pages.ts`), rewriting the page that
+ * assignment produced. Sampled at the book's own creative temperature a rewrite
+ * stops improving what it was handed and starts replacing it.
+ *
+ * It is a ceiling, not a setting: a book configured cooler keeps its own
+ * temperature. It lives here because `pages.ts` imports this module and not the
+ * other way round — the two passes used to clamp to independent `0.65`
+ * literals with a comment in `pages.ts` asserting they were one number, so
+ * moving the ceiling moved only the polish path.
+ */
+export const REWRITE_TEMPERATURE_CEILING = 0.65;
+
 const CHUNKED_PAGE_MAP_THRESHOLD = 24;
 
 const wholeBookPageMapSchema = z.object({
@@ -74,6 +102,8 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
     return generateChunkedPageMap(options);
   }
 
+  // This pass maps the whole book, so it is always the one that briefs page 1.
+  const firstPage = firstPageBriefFieldsForRange(options, 1, options.input.targetPages);
   const chapterPageRanges = chapterRangesForPlan(options.plan, options.input.targetPages).map((setup) => ({
     index: setup.chapter.index,
     title: setup.chapter.title,
@@ -106,6 +136,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
             "Never emit pageIndex values greater than targetPages.",
             "Each page beat object must include pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure, and optional imageMoment.",
             "Use global page indexes, not chapter-local page numbers.",
+            ...firstPage.rules,
             ...targetLanguageGenerationGuidance(options.input.language),
             ...plannerToneRules(options.input)
           ].join(" ")
@@ -129,6 +160,7 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
                 continuityRules: options.plan.continuityRules,
                 styleGuidance: styleGuidancePayload(options.input)
               },
+              ...firstPage.payload,
               chapterPageRanges,
               characters: options.plan.characters,
               locations: options.plan.locations,
@@ -165,6 +197,14 @@ export async function generateWholeBookPageMap(options: GeneratePageMapOptions):
 
 export async function generateChapterBrief(options: GenerateChapterBriefOptions): Promise<ChapterBrief> {
   const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
+  // This brief is chapter-scoped, so only the chapter whose absolute page range
+  // covers global page 1 opens the book; telling every chapter to hook a first
+  // impression would hook a reader who is already twenty pages in. The test is
+  // on the range this call was handed rather than on the chapter index, because
+  // a leading chapter that ended up with no pages hands page 1 to the next one —
+  // which is why `writesFirstPage` (`pagesShared.ts`), under the helper below,
+  // is a range predicate and not an index one.
+  const firstPage = firstPageBriefFieldsForRange(options, options.chapterPageStart, options.chapterPageEnd);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-chapter-brief",
     temperature: Math.min(0.7, options.input.temperature),
@@ -180,6 +220,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
           "The beats must prevent filler, repetition, and generic endings.",
           "Return exactly one root JSON object with chapterIndex, title, summary, pages, and continuityFocus.",
           "Use pages for the page beat array; do not return pageBeats as the root shape.",
+          ...firstPage.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...plannerToneRules(options.input)
         ].join(" ")
@@ -200,6 +241,7 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
               continuityRules: options.plan.continuityRules,
               styleGuidance: styleGuidancePayload(options.input)
             },
+            ...firstPage.payload,
             chapter: options.chapter,
             pageRange: {
               start: options.chapterPageStart,
@@ -226,9 +268,15 @@ export async function generateChapterBrief(options: GenerateChapterBriefOptions)
 }
 
 export async function repairPageBrief(options: RepairPageBriefOptions): Promise<PageProductionBeat> {
+  // `pageIndex` on a review/repair call is the *global* page index — it is what
+  // `pageScopePayload` publishes as `globalPageIndex` — so this is the book's
+  // first page whatever chapter the repair happens to be scoped to, and it
+  // stays right for a page 1 redrafted inside a finished book. A repair rewrites
+  // exactly one page, so it asks the range question in its one-page form.
+  const firstPage = firstPageBriefFieldsForRange(options, options.pageIndex, options.pageIndex);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "repair-page-brief",
-    temperature: Math.min(0.65, options.input.temperature),
+    temperature: Math.min(REWRITE_TEMPERATURE_CEILING, options.input.temperature),
     maxTokens: 2200,
     schema: pageProductionBeatSchema,
     messages: [
@@ -246,6 +294,11 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
           "Use pageScope to keep the repaired assignment inside the current page. Do not move futureChapterPageBriefs or later chapter keyBeats into this page.",
           "The endingPressure must name a concrete consequence, completed choice, or resolved claim.",
           "The endingPressure must be phrased as a substantive landing claim the prose can earn, not a procedural instruction. It must not include words such as concluding, survey, chapter, section, scope, transition, recap, reader, or next chapter.",
+          // Placed after the two endingPressure rules above because page 1
+          // amends them rather than replacing them: the landing still has to be
+          // a concrete claim the prose earns, and it also has to leave the
+          // second page something to answer.
+          ...firstPage.rules,
           "Return exactly one JSON object with pageIndex, chapterIndex, purpose, beat, requiredContinuity, endingPressure, and optional imageMoment.",
           ...targetLanguageGenerationGuidance(options.input.language),
           ...plannerToneRules(options.input)
@@ -266,6 +319,7 @@ export async function repairPageBrief(options: RepairPageBriefOptions): Promise<
               antiAiRules: options.plan.antiAiRules,
               styleGuidance: styleGuidancePayload(options.input)
             },
+            ...firstPage.payload,
             chapter: options.chapter,
             chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageIndex: options.pageIndex,
@@ -389,18 +443,59 @@ function fallbackPageBeatFromChapter(options: {
   const nextChapter = normalizedChaptersForGeneration(options.plan, options.input.targetPages).find(
     (chapter) => chapter.index > options.chapter.index
   );
+  const handoffPressure =
+    chapterPageNumber === options.pageCount && nextChapter ? `Hand off cleanly toward ${nextChapter.title}.` : undefined;
+  // The chapter hand-off composes with the opening tension rather than shadowing
+  // it, because a one-page first chapter is both: the tension is what page 1 owes
+  // the reader, and the named hand-off is the only thing telling page 2 which
+  // chapter it is opening. Ranking the first-page rule above the hand-off left
+  // page 2 starting a chapter nothing had set up. The book's own ending never
+  // composes and wins outright — a one-page book resolves its promise instead of
+  // teasing a page 2 that does not exist — which is the ranking
+  // `pageEndingContract` (`pageBriefContract.ts`) holds for all five producers,
+  // so this reads it rather than deciding it again.
+  const contract = pageEndingContract(options.pageIndex, options.input.targetPages);
   const endingPressure =
-    options.pageIndex === options.input.targetPages
-      ? "Resolve the book's central promise with a concrete final consequence."
-      : chapterPageNumber === options.pageCount && nextChapter
-        ? `Hand off cleanly toward ${nextChapter.title}.`
-        : "End with a concrete reason the next assigned page must continue.";
+    contract === "ending"
+      ? LAST_PAGE_ENDING_PRESSURE
+      : contract === "opening"
+        ? handoffPressure
+          ? `${FIRST_PAGE_ENDING_PRESSURE} ${handoffPressure}`
+          : FIRST_PAGE_ENDING_PRESSURE
+        : (handoffPressure ?? "End with a concrete reason the next assigned page must continue.");
+  const baseBeat = `${assignedBeat} Keep the page focused on ${options.chapter.summary}`;
+  // The hook is *assigned* here, never pasted, which is the whole of
+  // `OPENING_HOOK_BRIEF_RULE`'s docstring in `pageBriefContract.ts`. Every
+  // prompt that carries a page-1 pageBrief already carries `plan.openingHook`
+  // beside it as its own key — the draft (`pageDraftMessages.ts`), the review
+  // and revision passes (`pagesReview.ts`), the bulk draft (`pages.ts`) — and
+  // `buildPageInstruction` tells that same writer to deliver the hook "without
+  // echoing its wording". A copy of the hook's prose inside the beat is
+  // therefore one string the writer is told to transform
+  // (READER_FACING_PAGE_BRIEF_RULES) and to leave unechoed at the same time,
+  // and on this path there is no model call to reconcile the two. So the brief
+  // states the assignment and the payload field supplies the words.
+  //
+  // Which is why this is the one first-page site that reads the contract rather
+  // than stating it through `firstPageBriefFieldsForRange`: it writes no prompt,
+  // so it has no rule line to state and no payload to carry the key — the
+  // condition is all of the contract it can hold. It is still the same contract,
+  // read from the same `openingContractForRange` (`pagesShared.ts`) the four
+  // prompt producers reach through the brief helper, because the one thing this
+  // path must not do is answer the question differently: an imported manuscript's
+  // hook is invented by a plan revision that never saw page 1, and a purpose line
+  // assigning it here would send the writer after the author's own first sentence
+  // with no `openingHook` payload anywhere in the prompt that drafts it.
+  const openingHook = openingContractForRange(options, options.pageIndex, options.pageIndex).openingHook;
+  const openingPurpose = openingHook
+    ? `Opening page of the book for ${options.chapter.title}. Deliver the plan's openingHook here, in the page's own prose.`
+    : `Opening page of the book for ${options.chapter.title}.`;
 
   return {
     pageIndex: options.pageIndex,
     chapterIndex: options.chapter.index,
-    purpose: `${capitalize(position)} for ${options.chapter.title}.`,
-    beat: `${assignedBeat} Keep the page focused on ${options.chapter.summary}`,
+    purpose: options.pageIndex === 1 ? openingPurpose : `${capitalize(position)} for ${options.chapter.title}.`,
+    beat: baseBeat,
     requiredContinuity: [
       `Chapter ${options.chapter.index}: ${options.chapter.title}.`,
       ...options.plan.continuityRules.slice(0, 4)
@@ -546,6 +641,20 @@ function normalizeRepairedPageBrief(raw: unknown, options: RepairPageBriefOption
   };
 }
 
+/**
+ * The last-resort pressure when the model's own is empty or meta-laden. It is
+ * deliberately blind to {@link pageEndingContract}: both of that function's
+ * sentences are worded as instructions to the writer ("End the first page
+ * with…", "Resolve the book's…"), which is exactly the procedural shape the
+ * repair contract above forbids and the shape QA rejected to get here — pasting
+ * one in would fail the next review on the one page that can least afford it.
+ * The `fallbackPageBeatFromChapter` composition has no counterpart here for the
+ * same reason its other half does not exist: a repair is scoped to one page
+ * inside the current chapter and never names a next chapter to hand off to, so
+ * there is nothing for a first-page pressure to compose with. Page 1's tension
+ * and the last page's resolution are carried by the prompt rules instead, where
+ * the model can phrase either as a claim.
+ */
 function repairedEndingPressureFallback(options: RepairPageBriefOptions): string {
   const feedback = [...options.report.issues, ...options.report.requiredRevisions, options.report.notes].join(" ");
   const authorityContext = `${feedback} ${options.plan.premise} ${options.chapter?.summary ?? ""}`;

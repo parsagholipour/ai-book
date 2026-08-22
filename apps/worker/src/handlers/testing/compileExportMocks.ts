@@ -21,6 +21,13 @@ export const mocks = {
     generationJob: { update: vi.fn() }
   },
   revisePageDraftWithRestart: vi.fn(),
+  // Which pages the final-QA repair redrafts is a test hook, so a fixture names
+  // them on its own verdict. A `vi.fn` rather than a plain function because the
+  // bound it is called with — the compiled book's last page, never the plan's
+  // target — is itself asserted on.
+  extractRepairPageIndexes: vi.fn((finalQa: { repairPageIndexes?: number[] }, _lastPage: number) =>
+    finalQa.repairPageIndexes ?? []
+  ),
   pageReportFromFinalQa: vi.fn(),
   loadPagesForExport: vi.fn(),
   // The repair pins its style anchor through the shared loader, which answers
@@ -121,8 +128,22 @@ export const charactersModuleMock = () => ({
   maybeEnqueueCharacterCandidatePreparation: mocks.maybeEnqueueCharacterCandidatePreparation
 });
 
+/**
+ * Only `extractRepairPageIndexes` is stubbed, over the real module.
+ *
+ * Everything else this module answers is measured rather than staged — above
+ * all `extractRepairPageIndexesFromText`, which is what `exportQualityReview.ts`
+ * maps each complaint on the reader's quality card with, and `lastPageIndex`,
+ * which is the bound both of them are asked in. Spreading the actual module is
+ * what keeps those real; stubbing the whole of it would quietly turn the card
+ * assertions into assertions about this file.
+ */
+export const finalQaPageTargetsModuleMock = (actual: typeof import("../../generation/finalQaPageTargets.js")) => ({
+  ...actual,
+  extractRepairPageIndexes: mocks.extractRepairPageIndexes
+});
+
 export const bookHelpersModuleMock = () => ({
-  extractRepairPageIndexes: (finalQa: { repairPageIndexes?: number[] }) => finalQa.repairPageIndexes ?? [],
   loadPagesForExport: mocks.loadPagesForExport,
   loadStyleLockPages: mocks.loadStyleLockPages,
   pageReportFromFinalQa: mocks.pageReportFromFinalQa,

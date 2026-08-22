@@ -33,6 +33,17 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
+// One export of one module, over the real rest of it: which pages the final-QA
+// repair redrafts is a test hook, while the per-message extractor behind the
+// reader's quality card and the page bound both questions are asked in stay
+// real, so the card assertions below measure the actual mapping.
+vi.mock("../generation/finalQaPageTargets.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
+      "../generation/finalQaPageTargets.js"
+    );
+  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
+});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -545,7 +556,13 @@ describe("compileExport reader chapters", () => {
   /** The quality report this compile persisted onto its own job row. */
   function persistedQualityReport(): {
     state: string;
-    issues: Array<{ code: string; severity: string; source: string }>;
+    issues: Array<{
+      code: string;
+      severity: string;
+      source: string;
+      message: string;
+      affectedPageIndexes: number[];
+    }>;
   } {
     const qualityUpdate = mocks.prisma.generationJob.update.mock.calls.find(
       (call) => (call[0] as { data?: { qualityReport?: { state?: string } } }).data?.qualityReport
@@ -556,7 +573,16 @@ describe("compileExport reader chapters", () => {
     return (
       qualityUpdate[0] as {
         data: {
-          qualityReport: { state: string; issues: Array<{ code: string; severity: string; source: string }> };
+          qualityReport: {
+            state: string;
+            issues: Array<{
+              code: string;
+              severity: string;
+              source: string;
+              message: string;
+              affectedPageIndexes: number[];
+            }>;
+          };
         };
       }
     ).data.qualityReport;
@@ -597,6 +623,63 @@ describe("compileExport reader chapters", () => {
     );
     expect(report.issues.every((issue) => issue.severity === "warning")).toBe(true);
     expect(mocks.publishCompiledExports).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETE" }));
+  });
+
+  it("carries each final-QA complaint's own pages onto the reader's quality card", async () => {
+    // The card draws one page list under each message and opens Edit Mode at
+    // its first page, so a page borrowed from a neighbouring complaint sends
+    // the reader to prose nobody complained about. One verdict, three
+    // complaints, three different answers.
+    mocks.strategy.runFinalBookQa.mockResolvedValue({
+      approved: false,
+      issues: [
+        "The opening on page 1 is generic scene-setting.",
+        "Chapter 4 restates the same argument twice on page 9.",
+        "The pacing sags throughout."
+      ],
+      requiredFixes: [],
+      // Nothing to redraft, so the repair pass stands down and this verdict is
+      // the one the card is built from.
+      repairPageIndexes: []
+    });
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    const card = persistedQualityReport().issues.filter((issue) => issue.code === "WHOLE_BOOK_REVIEW");
+    expect(card.map((issue) => [issue.message, issue.affectedPageIndexes])).toEqual([
+      ["The opening on page 1 is generic scene-setting.", [1]],
+      ["Chapter 4 restates the same argument twice on page 9.", [9]],
+      ["The pacing sags throughout.", []]
+    ]);
+  });
+
+  it("bounds the card by the book it compiled, not by the plan's page count", async () => {
+    // The two numbers genuinely disagree — the deterministic checks report
+    // `pages.length !== expectedPageCount` as an integrity issue of its own, and
+    // `effectiveSavedWholeBookExportContext` adopts a drafted count only inside
+    // half again the plan's. Twenty pages against a plan of twelve is a
+    // structural insert whose plan snapshot lagged it, and bounded by the plan
+    // every complaint about the pages past twelve was dropped: no "Pages …"
+    // line and no tap target, for pages the reader can open right now.
+    mocks.prisma.project.findUnique.mockResolvedValue({
+      ...projectRecord(),
+      pages: Array.from({ length: 20 }, (_, position) => compilePage(position + 1))
+    });
+    // Approved, so the repair pass stands down and this verdict's required fix
+    // is the whole of what the card is built from.
+    mocks.strategy.runFinalBookQa.mockResolvedValue({
+      approved: true,
+      issues: [],
+      requiredFixes: ["Page 19 trails off mid-thought."],
+      repairPageIndexes: []
+    });
+
+    await compileExport(job({ contentRevision: 4 }));
+
+    const card = persistedQualityReport().issues.filter((issue) => issue.code === "WHOLE_BOOK_REVIEW");
+    expect(card.map((issue) => [issue.message, issue.affectedPageIndexes])).toEqual([
+      ["Page 19 trails off mid-thought.", [19]]
+    ]);
   });
 
   it("keeps a deterministic-only recompile from re-grading a book on warnings alone", async () => {

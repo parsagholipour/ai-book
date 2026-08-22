@@ -36,6 +36,7 @@ import {
   bestOfCandidateCount,
   bookPlanSchema,
   createProviders,
+  firstPageCandidateCount,
   formatStoryStateLines,
   generateBestOfPageDrafts,
   generatePageDraftWithWriterTools,
@@ -180,8 +181,13 @@ export async function generatePage(job: Job) {
 
   // Sequential drafting uses the same `bestOfPolish` gate as polish
   // (`polishPageWithQualityGates`). Operator `draftCandidates` only applies
-  // when that gate is on.
-  const candidateCount = quality.enabled("bestOfPolish") ? bestOfCandidateCount(input) : 1;
+  // when that gate is on. Page 1 is the exception: it best-ofs by tier
+  // (`firstPageCandidateCount`), and `Math.max` keeps the two gates from
+  // multiplying on ultra.
+  const candidateCount = Math.max(
+    quality.enabled("bestOfPolish") ? bestOfCandidateCount(input) : 1,
+    firstPageCandidateCount(input, page.index)
+  );
   await advanceJobStep(
     generationJobId,
     "draft",

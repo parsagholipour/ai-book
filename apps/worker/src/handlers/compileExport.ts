@@ -1,9 +1,6 @@
 import { clipQualityText, clipQualityTextPrefix, clipQualityTextSuffix, qualityIssuesFromFinalQa } from "../generation/exportQualityReview.js";
-import {
-  extractRepairPageIndexes,
-  strategyForInput,
-  toFinalQaPage
-} from "../generation/bookHelpers.js";
+import { strategyForInput, toFinalQaPage } from "../generation/bookHelpers.js";
+import { lastPageIndex } from "../generation/finalQaPageTargets.js";
 import {
   discardPendingExports,
   exportPublicationSuperseded,
@@ -257,7 +254,20 @@ export async function compileExport(job: Job): Promise<JobCompletion> {
         message: `Final review still reports issues; exporting the best available version. ${finalQa.issues.slice(0, 5).join(" ")}`
       });
     }
-    modelQualityIssues.push(...qualityIssuesFromFinalQa(finalQa, extractRepairPageIndexes(finalQa, 10_000)));
+    // Two questions off one verdict, and they are not the same question. The
+    // repair pass above asked which pages to *redraft* and keeps both prose
+    // edge heuristics for it (`extractRepairPageIndexes` in
+    // `compileExportRepair.ts`). This asks what to show the reader, so it is
+    // per message and named pages only — `qualityIssuesFromFinalQa` maps each
+    // complaint to the pages that complaint names, bounded by the book's own
+    // page count. One array over the whole verdict cannot be right for both,
+    // and stamped on every message it was right for neither.
+    //
+    // Bounded by `pages`, which is the manuscript this compile just reviewed,
+    // rather than by `input.targetPages`, which is the plan's count and can
+    // differ — `runLocalFinalQa` reports the difference as a mismatch of its
+    // own. The card's promise is a page the reader can open.
+    modelQualityIssues.push(...qualityIssuesFromFinalQa(finalQa, lastPageIndex(pages)));
   } else {
     await advanceJobStep(generationJobId, "qa", 25, "Running deterministic integrity checks");
   }

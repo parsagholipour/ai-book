@@ -383,6 +383,23 @@ function responseText(response: any): string {
     .trim();
 }
 
+/**
+ * **Google bills thinking tokens as output, so they are counted as output here.**
+ * `usageMetadata` reports `thoughtsTokenCount` *beside* `candidatesTokenCount`
+ * rather than inside it, and premium/ultra prose runs with a 2048-token
+ * thinking budget (ULTRA plan calls at 8192) — so reading only the candidates
+ * count under-reported every reasoning call by up to ~$0.02. That number does
+ * not surface as a missing token anywhere: `costHint` is what the admin
+ * Operations and Costs tabs sum for the *actual* side of every margin
+ * (`../costs.ts`), so a dropped thought silently flatters the margin on exactly
+ * the tiers that cost the most to run. Page 1's best-of drafting
+ * (`../generation/bestOf.ts`) tripled how many of those calls a premium book
+ * makes, which is what made the gap worth closing.
+ *
+ * Absent on non-thinking models and on responses from before the field existed;
+ * a response carrying neither count still reports `undefined` rather than 0,
+ * because "not told" and "no tokens" price differently downstream.
+ */
 function usageFromGeminiResponse(response: any): Usage | undefined {
   const usage = response.usageMetadata;
   if (!usage) {
@@ -390,9 +407,19 @@ function usageFromGeminiResponse(response: any): Usage | undefined {
   }
   return {
     promptTokens: usage.promptTokenCount,
-    outputTokens: usage.candidatesTokenCount,
+    outputTokens: sumTokenCounts(usage.candidatesTokenCount, usage.thoughtsTokenCount),
     cacheHitTokens: usage.cachedContentTokenCount
   };
+}
+
+/**
+ * Adds the token counts that arrived and stays `undefined` when none did. A
+ * call truncated while still thinking reports thoughts with no candidates, so
+ * no count may assume another one is there.
+ */
+function sumTokenCounts(...counts: unknown[]): number | undefined {
+  const reported = counts.filter((count): count is number => typeof count === "number" && Number.isFinite(count));
+  return reported.length === 0 ? undefined : reported.reduce((total, count) => total + count, 0);
 }
 
 export class GeminiResearchAdapter implements ResearchAdapter {

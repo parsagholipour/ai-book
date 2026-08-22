@@ -235,6 +235,7 @@ code in that area, however obvious the rule looks.
 - **The edit chat gets one clarifying question per request, and it is enforced three times.** → apps/api/src/mobile/CLAUDE.md
 - **Moving and removing a picture are free, and neither is a page edit.** → apps/api/src/mobile/CLAUDE.md + apps/worker/src/generation/CLAUDE.md + apps/worker/src/handlers/CLAUDE.md
 - **A question declares how many of its answers count, and the picker follows.** → packages/core/CLAUDE.md
+- **An alias is how the model spelled a plan field, never a weaker claim on it, so a candidate's aliases are canonicalised before it merges onto the fallback — and an answer the field's own schema refuses is dropped under every spelling, canonical included.** → packages/core/CLAUDE.md
 - **The Sources list at the end of a book is not page text.** → apps/api/src/mobile/CLAUDE.md
 - **A cited source is stored as the publisher's own address, never Google's.** → packages/core/src/adapters/CLAUDE.md
 - **Chapter headings are not page text either, and the word "Chapter" is stored nowhere.** → apps/api/src/mobile/CLAUDE.md
@@ -244,6 +245,11 @@ code in that area, however obvious the rule looks.
 - **Changing *which* pages a book has is its own edit, and it used to be a whole new project.** → apps/api/src/mobile/CLAUDE.md
 - **Undoing a structural edit moves the book to a different plan version, and the recompile has to follow it there.** → packages/db/CLAUDE.md + apps/api/src/mobile/CLAUDE.md
 - **Undo is offered only for an edit the undo would actually revert, and that is one predicate.** → apps/api/src/mobile/CLAUDE.md
+
+### Drafting and page quality
+
+- **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets the ban, the import exemption that silences it, and the hook fused to its payload key — or gets nothing.** → packages/core/src/generation/CLAUDE.md
+- **No best-of candidate samples hotter than the pass would have run at without candidates, and a band too narrow for the ladder compresses the step rather than widening the band.** → packages/core/src/generation/CLAUDE.md
 
 ### Characters, covers and illustrations
 

@@ -30,14 +30,107 @@ function isPlanLikeRecord(value: unknown): value is Record<string, unknown> {
   );
 }
 
+/**
+ * The plan fields a model is allowed to misspell, canonical spelling first —
+ * the same order `normalizeBookPlan` reads them in, because these lists *are*
+ * that lookup.
+ *
+ * The lookup runs at the end of the pipeline, over a record a revision has
+ * already been merged onto. The fallback is a parsed plan, so it always carries
+ * the canonical spelling: `{ opening_hook: "<new>" }` merged onto
+ * `{ openingHook: "<old>" }` leaves both keys standing, and a first-match lookup
+ * answers with the stale one — the reader asks for a new opening and the book
+ * keeps opening on the old. So a candidate's aliases are promoted to their
+ * canonical spelling *before* the merge. An alias is how the model spelled the
+ * field, never a weaker claim on it.
+ *
+ * `accepts` is what keeps that promotion from making things worse. Only a value
+ * the schema can actually use displaces the fallback; a hook emitted as an
+ * object, or a reading level of "grade 5", is not an answer, and letting it
+ * through would trade a preserved field for a revision that no longer parses.
+ * The test is on the *value*, not on the spelling, so it governs the canonical
+ * key too — a revision that spelt `writingComplexity` correctly and answered it
+ * "grade 5" was still overwriting the fallback's number, and since that field is
+ * required the whole revision then lost its parse. A key whose value
+ * is refused is dropped from the candidate, so the merge sees no answer there
+ * and the fallback's value stands.
+ */
+const WRITING_COMPLEXITY_KEYS = [
+  "writingComplexity",
+  "complexity",
+  "writing_complexity",
+  "writingLevel",
+  "readingLevel"
+] as const;
+const OPENING_HOOK_KEYS = ["openingHook", "opening_hook", "hook"] as const;
+
+type PlanAliasedField = {
+  readonly keys: readonly [string, ...string[]];
+  readonly accepts: (value: unknown) => boolean;
+};
+
+/**
+ * The level field, spelled once. `accepts` refusing a value the object schema
+ * would have taken is the same bug in the other direction — the answer is
+ * dropped and a required field goes missing — so the predicate must be this
+ * schema itself, never a hand-written restatement of its range.
+ */
+const writingComplexitySchema = z.coerce.number().int().min(1).max(10);
+
+const PLAN_ALIASED_FIELDS: readonly PlanAliasedField[] = [
+  { keys: WRITING_COMPLEXITY_KEYS, accepts: (value) => writingComplexitySchema.safeParse(value).success },
+  // A hook is stored trimmed, so a blank one is not a hook: every consumer gates
+  // on truthiness, and promoting `""` cost the book its opening commitment.
+  { keys: OPENING_HOOK_KEYS, accepts: (value) => typeof value === "string" && value.trim().length > 0 }
+];
+
+function canonicalizePlanAliases(candidate: Record<string, unknown>): Record<string, unknown> {
+  let resolved: Record<string, unknown> | undefined;
+  for (const { keys, accepts } of PLAN_ALIASED_FIELDS) {
+    const [canonical] = keys;
+    const answered = keys.find((key) => accepts(candidate[key]));
+    const refused = keys.filter((key) => key in candidate && !accepts(candidate[key]));
+    if (refused.length === 0 && (answered === undefined || answered === canonical)) {
+      continue;
+    }
+    resolved ??= { ...candidate };
+    for (const key of refused) {
+      delete resolved[key];
+    }
+    if (answered !== undefined) {
+      resolved[canonical] = candidate[answered];
+    }
+  }
+  return resolved ?? candidate;
+}
+
+/** The first key carrying a value at all — the `??` chain, over one shared key list. */
+function firstPresentField(record: Record<string, unknown>, keys: readonly string[]): unknown {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
 function mergePlanRecords(
   fallback: Record<string, unknown> | undefined,
   candidate: Record<string, unknown>
 ): Record<string, unknown> {
-  if (!fallback) {
-    return candidate;
-  }
+  // Canonicalised here rather than after the merge: once the fallback's own
+  // canonical keys have joined the record, they outrank the candidate's aliased
+  // answer in every lookup downstream.
+  const answered = canonicalizePlanAliases(candidate);
+  return fallback ? mergeRecords(fallback, answered) : answered;
+}
 
+/** Plain recursive merge. Aliases are a top-level plan concern, so nesting does not repeat it. */
+function mergeRecords(
+  fallback: Record<string, unknown>,
+  candidate: Record<string, unknown>
+): Record<string, unknown> {
   const merged = { ...fallback };
   for (const [key, value] of Object.entries(candidate)) {
     if (value === undefined || value === null) {
@@ -48,7 +141,7 @@ function mergePlanRecords(
     // arrays are intentional atomic replacements (chapter order and question
     // deletion would otherwise be ambiguous).
     merged[key] = isRecord(fallbackValue) && isRecord(value)
-      ? mergePlanRecords(fallbackValue, value)
+      ? mergeRecords(fallbackValue, value)
       : value;
   }
   return merged;
@@ -170,12 +263,12 @@ function normalizeBookPlan(value: unknown, fallback: PlanStyleSource | undefined
   return normalizePlanScalarArrays(
     {
       ...unwrapped,
-      writingComplexity:
-        unwrapped.writingComplexity ??
-        unwrapped.complexity ??
-        unwrapped.writing_complexity ??
-        unwrapped.writingLevel ??
-        unwrapped.readingLevel
+      writingComplexity: firstPresentField(unwrapped, WRITING_COMPLEXITY_KEYS),
+      // stringField rather than `??`: a model that answers the hook as an
+      // object or array must degrade to "no hook", not fail the whole parse.
+      // Trimmed like every other string this file normalizes, and a hook that
+      // trims away is no hook at all.
+      openingHook: stringField(unwrapped, [...OPENING_HOOK_KEYS])?.trim() || undefined
     },
     fallback ?? fallbackOutline
   );
@@ -371,7 +464,7 @@ const bookPlanObjectSchema = z.object({
   subtitle: z.string().optional(),
   premise: z.string(),
   audience: z.string(),
-  writingComplexity: z.coerce.number().int().min(1).max(10),
+  writingComplexity: writingComplexitySchema,
   voiceGuide: z.array(z.string()).min(1),
   antiAiRules: z.array(z.string()).min(1),
   questions: z.array(planQuestionSchema).default([]),
@@ -382,6 +475,7 @@ const bookPlanObjectSchema = z.object({
   researchQueries: z.array(z.string()).default([]),
   researchNotes: z.array(researchSourceSchema).default([]),
   promises: z.array(z.string()).default([]),
+  openingHook: z.string().optional(),
   illustrationPlan: illustrationPlanSchema
 });
 

@@ -46,6 +46,40 @@ describe("GeminiTextAdapter", () => {
     });
   });
 
+  it("counts thinking tokens as output tokens, because Google bills them that way", async () => {
+    const usageFor = async (usageMetadata: Record<string, number>) => {
+      const adapter = new GeminiTextAdapter({ apiKey: "test-key", textModel: "gemini-2.5-pro" });
+      (adapter as any).ai = {
+        models: { generateContent: async () => ({ text: "A generated response.", usageMetadata }) }
+      };
+      const result = await adapter.generateText({ messages: [{ role: "user", content: "Draft a paragraph." }] });
+      return result.usage;
+    };
+
+    // `thoughtsTokenCount` sits beside `candidatesTokenCount`, not inside it, so
+    // reading only the candidates count under-reported every reasoning call —
+    // and `costHint` is what the admin margin columns sum.
+    expect(await usageFor({ promptTokenCount: 11, candidatesTokenCount: 7, thoughtsTokenCount: 512 })).toMatchObject({
+      promptTokens: 11,
+      outputTokens: 519
+    });
+
+    // Non-thinking models and older responses omit the field entirely, and they
+    // report exactly what they always did.
+    expect(await usageFor({ promptTokenCount: 11, candidatesTokenCount: 7 })).toMatchObject({
+      promptTokens: 11,
+      outputTokens: 7
+    });
+
+    // A call truncated while still thinking reports thoughts and no candidates.
+    // Those tokens were still billed, so they are still output.
+    expect(await usageFor({ promptTokenCount: 11, thoughtsTokenCount: 512 })).toMatchObject({ outputTokens: 512 });
+
+    // Told nothing stays undefined rather than becoming a confident zero: the
+    // cost tables price an unreported count differently from a real zero.
+    expect((await usageFor({ promptTokenCount: 11 }))?.outputTokens).toBeUndefined();
+  });
+
   it("passes a configured thinking budget to text generation requests", async () => {
     const requests: any[] = [];
     const adapter = new GeminiTextAdapter({

@@ -24,14 +24,47 @@ export type ProviderCostAssumptions = { [K in keyof typeof PROVIDER_COST_ASSUMPT
  * premium books pay for gemini-2.5-pro prose (with best-of candidates and
  * bounded thinking), the 3.1 flash image model, and a pro cover — while the
  * mechanical review/QA phases run on cheap flash models in every tier.
+ *
+ * **Exhaustive by type, for the same reason `FIRST_PAGE_CANDIDATES_BY_TIER`
+ * (`generation/bestOf.ts`) is.** As a `Partial` record it resolved an unlisted
+ * tier to the balanced base table through a `||` fallback, so a fifth
+ * `ModelTier` would have been *costed* as balanced while running whatever
+ * models it actually routes — nothing fails to compile, no book fails, and the
+ * admin margin columns simply report a healthy number for a book that never ran
+ * balanced models. `balanced` therefore spells out the base table it used to
+ * inherit; a tier nobody costed here is a compile error until somebody does.
  */
-const MODEL_TIER_COST_ASSUMPTIONS_USD: Partial<Record<ModelTier, ProviderCostAssumptions>> = {
+const MODEL_TIER_COST_ASSUMPTIONS_USD: Record<ModelTier, ProviderCostAssumptions> = {
   fast: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
+    // `textBase` stays at the base rate: fast draws one draft of page 1
+    // (`FIRST_PAGE_CANDIDATES_BY_TIER`), so best-of costs it nothing.
     textPerPage: 0.008
+  },
+  balanced: {
+    ...PROVIDER_COST_ASSUMPTIONS_USD,
+    // Balanced samples page 1 twice and judges the pair, which measures at
+    // +$0.0024 — one extra `deepseek-v4-pro` draft plus a `deepseek-v4-flash`
+    // judge. Small enough to sit inside this table's error bars, and carried
+    // anyway: balanced is the default tier and what the free tier runs on, so
+    // it is the row the margin dashboard reports most often, and a tier that
+    // silently inherited the base table is the shape this record was made
+    // exhaustive to prevent. On the per-book base for the reason premium's is
+    // — measured once per book, whatever the book's length.
+    textBase: 0.083
   },
   premium: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
+    // Page 1 is drafted best-of-3 and judged (`firstPageCandidateCount`,
+    // `generation/bestOf.ts`), measured at +$0.048 over the single draft it
+    // replaces. That lands on the per-book base and never on `textPerPage`,
+    // because it happens **once per book however long the book is**: the same
+    // $0.048 is 12% of an 8-page book's per-page text spend and 0.16% of a
+    // 600-page book's, so no per-page adder can be right for both — set to
+    // cover the short book and a 600-page book is billed ~33x the real
+    // one-off. `textPerPage` is also what the Max-plan break-even floor is
+    // tested against (`billing.test.ts`), and that test is per page.
+    textBase: 0.14,
     textPerPage: 0.05,
     imageGeneration: 0.067,
     coverIncluded: 0.134,
@@ -39,9 +72,15 @@ const MODEL_TIER_COST_ASSUMPTIONS_USD: Partial<Record<ModelTier, ProviderCostAss
   },
   ultra: {
     ...PROVIDER_COST_ASSUMPTIONS_USD,
-    // Draft ~$0.05 + polish ~$0.05 + judge/tools/extract ~$0.02. Premium's
-    // 0.05 only covers one prose call; ultra adds a second full draft, a
-    // judge, writer-tool rounds, and extract/audit per page.
+    // Same one-off as premium, priced at ultra's worst realistic shape: an
+    // operator-created ultra book on the sequential path draws three page-1
+    // candidates that are each a full writer-tool loop, plus the judge, for
+    // +$0.087. Per-book for the reason spelled out on premium above.
+    textBase: 0.17,
+    // Per *page*, and unchanged by the page-1 work: draft ~$0.05 + polish
+    // ~$0.05 + judge/tools/extract ~$0.02, on every page. Premium's 0.05 only
+    // covers one prose call; ultra adds a second full draft, a judge,
+    // writer-tool rounds, and extract/audit per page.
     textPerPage: 0.12,
     imageGeneration: 0.067,
     coverIncluded: 0.134,
@@ -49,9 +88,15 @@ const MODEL_TIER_COST_ASSUMPTIONS_USD: Partial<Record<ModelTier, ProviderCostAss
   }
 };
 
+/**
+ * The cost table a book is estimated against.
+ *
+ * Keyed through {@link modelTierForInput} rather than off the raw field, so a
+ * book with no tier recorded costs as balanced by the same rule that prices it
+ * as balanced — one answer, not two that happen to agree.
+ */
 export function providerCostAssumptionsForInput(input: CreateProjectInput): ProviderCostAssumptions {
-  const tier = input.mediaSettings.modelTier;
-  return (tier && MODEL_TIER_COST_ASSUMPTIONS_USD[tier]) || PROVIDER_COST_ASSUMPTIONS_USD;
+  return MODEL_TIER_COST_ASSUMPTIONS_USD[modelTierForInput(input)];
 }
 
 /**

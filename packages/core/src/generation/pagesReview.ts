@@ -17,16 +17,24 @@ import type {
   PageQualityReport
 } from "../schemas/book.js";
 import { finalBookQaSchema, pageDraftSchema, pageQualityReportSchema } from "../schemas/book.js";
-import { compactPageMap, runLocalFinalQa, runLocalPageQualityChecks } from "./pagesLocalQa.js";
+import {
+  compactPageMap,
+  compactSummaryForQa,
+  runLocalFinalQa,
+  runLocalPageQualityChecks
+} from "./pagesLocalQa.js";
 import {
   GROUNDED_FACTUALITY_RULE,
   IMAGE_PROMPT_CHARACTER_RULE,
   INTERNAL_PAGE_TITLE_RULE,
+  OPENING_QUALITY_RULE_MARKER,
   READER_FACING_PAGE_BRIEF_RULES,
   buildPageInstruction,
   chapterBriefPayloadForPageScope,
   compactFollowingPages,
   compactPriorPages,
+  openingContractFieldsForPage,
+  openingContractForRange,
   pageScopePayload,
   reviewerStyleRules,
   styleGuidancePayload,
@@ -88,6 +96,19 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
     return localReport;
   }
 
+  // Everything this reviewer says about the book's opening, from the same call
+  // that decides what its writer was told (`openingContractFields`,
+  // pagesShared.ts): the ban when this is page 1 of a book the pipeline wrote,
+  // the hook sentence when *that same book's* plan committed to one, and the
+  // `openingHook` key that sentence names. Reading the three conditions here is
+  // what shipped the ban to page 7 of a forty-page book and to page 1 of an
+  // imported manuscript. The hook rides the exemption for a reason this end of
+  // the contract makes plain: an import's hook is invented by a plan revision
+  // that never saw page 1, and a reviewer told to check page 1 delivers it
+  // rejects the author's own opening — a verdict whose only repair is
+  // `revisePageDraft` rewriting that page.
+  const opening = openingContractFieldsForPage(options, "reviewer");
+
   let result: { data: PageQualityReport };
   try {
     result = await generateJsonWithRetry(options.textModel, {
@@ -106,6 +127,7 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
             "Treat semantic repetition as a failure even when wording differs: the same encounter, same decision, same exposition, or same emotional turn cannot appear twice.",
             "Do not reject merely because the same character performs a necessary recurring action type assigned by the current pageBrief; reject it only when it restages the same beat, reuses distinctive wording, or fails to add a new consequence.",
             "For a final page, reject vague closure unless it resolves the core promise with a concrete consequence or completed choice.",
+            ...opening.rules,
             "Use pageScope to distinguish global page position from chapter-local position.",
             "Evaluate only the current pageBrief. Do not reject a page for omitting chapter keyBeats or futureChapterPageBriefs assigned to later pages.",
             "If pageScope.isLastPageOfChapter is false, do not require chapter closure or all chapter keyBeats on this page.",
@@ -133,6 +155,11 @@ export async function reviewPageDraft(options: ReviewPageOptions): Promise<PageQ
               chapter: options.chapter,
               chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
               pageBrief: options.pageBrief,
+              // This reviewer's first-page rules are system lines rather than a
+              // built instruction, so it spreads the payload the shared contract
+              // handed it beside those lines; every other page prompt gets the
+              // same pair out of `buildPageInstruction`.
+              ...opening.payload,
               pageScope: pageScopePayload(options),
               pageIndex: options.pageIndex,
               draft: options.draft,
@@ -195,6 +222,7 @@ function shouldUseLocalReviewFallback(error: unknown): boolean {
 }
 
 export async function revisePageDraft(options: RevisePageOptions): Promise<PageDraft> {
+  const pageInstruction = buildPageInstruction(options);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "revise-page",
     temperature: Math.min(0.85, options.input.temperature),
@@ -245,6 +273,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             chapter: options.chapter,
             chapterBrief: chapterBriefPayloadForPageScope(options.chapterBrief),
             pageBrief: options.pageBrief,
+            ...pageInstruction.payload,
             pageScope: pageScopePayload(options),
             pageIndex: options.pageIndex,
             characters: options.plan.characters,
@@ -261,7 +290,7 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
             ...(options.retrievedResearch && options.retrievedResearch.length > 0
               ? { retrievedResearch: options.retrievedResearch }
               : {}),
-            instruction: buildPageInstruction(options.pageIndex, options.input.targetPages)
+            instruction: pageInstruction.text
           },
           null,
           2
@@ -271,6 +300,53 @@ export async function revisePageDraft(options: RevisePageOptions): Promise<PageD
   });
 
   return pageDraftSchema.parse(result.data);
+}
+
+/**
+ * Per-page ceiling on the opening prose final QA is judged on.
+ *
+ * This reviewer is told openingPages is how the book opens and rejects the
+ * whole book on it, so a page cut mid-sentence reads as an unfinished opening
+ * and fails a manuscript with nothing wrong with it — and an issue phrased
+ * "the opening stops mid-sentence" names no page number, which is the shape the
+ * repair pass has the hardest time targeting. The widest fuse any page writer
+ * runs under is polishPageDraft's 3,400 tokens, so ~13,600 characters at the
+ * loosest tokenization: a page that fits its own output budget fits here whole.
+ * Only page 1 is ever sent, so the ceiling costs less than the pageMap already
+ * in this prompt. What still overruns is cut with the pageMap's own ellipsis
+ * marker, and both prompts say that marker is a shortening rather than a
+ * defect.
+ */
+const FINAL_QA_OPENING_PAGE_CHARS = 14_000;
+
+/**
+ * The opening this reviewer judges is page 1, and nothing else.
+ *
+ * It used to be handed pages 1 and 2, and page 1 is the only page an opening
+ * verdict can be repaired on: an issue like "the second page repeats the first
+ * page's opening image" carries no digit, so `extractRepairPageIndexesFromText`
+ * (`apps/worker/src/generation/bookHelpers.ts`) finds no page number and the
+ * opening heuristic beside it adds index 1. Page 2 was never redrafted, so if
+ * page 1 was fine the repair changed nothing, the second `runFinalBookQa`
+ * rejected the book on the same complaint, and it exported permanently flagged
+ * with no path back — a rejection the pipeline cannot act on.
+ *
+ * The alternative was to keep both pages and instruct the reviewer to attribute
+ * every opening issue to a page number so the digit match places it. That is a
+ * wider first impression bought with the model's compliance: "the second page"
+ * is the phrasing this failed on, and it maps to page 1 whatever the prompt
+ * asks for. Narrowing the payload is the deterministic half, and it costs
+ * little — page 2 is still in this prompt as a `pageMap` row, which carries its
+ * own index, so a complaint drawn from it names a page the repair can find.
+ */
+function finalQaOpeningPages(pages: FinalQaPage[]) {
+  return pages
+    .filter((page) => page.index === 1)
+    .map((page) => ({
+      index: page.index,
+      title: page.title,
+      markdown: compactSummaryForQa(page.markdown, FINAL_QA_OPENING_PAGE_CHARS)
+    }));
 }
 
 export async function runFinalBookQa(options: FinalBookQaOptions): Promise<FinalBookQa> {
@@ -285,6 +361,33 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
     };
   }
 
+  /*
+   * The imported-manuscript exemption, carried the rest of the way — and asked
+   * of the same contract every page prompt asks (`openingContractForRange`,
+   * pagesShared.ts). This reviewer is handed the whole book, so the range test
+   * is settled and `statesOpeningQuality` is exactly the exemption.
+   *
+   * The deterministic gate skips page 1's opening check for an import — which
+   * means it returns no issues, the early return above does not fire, and this
+   * model call runs. Stating the opening rule here therefore made the exemption
+   * *worse* than having none: before it, the local rejection was where the path
+   * stopped; after it, the reviewer was asked to reject the author's own first
+   * sentence, the verdict came back naming no page, `extractRepairPageIndexes`
+   * (`apps/worker/src/generation/bookHelpers.ts`) files a pageless opening
+   * complaint against page 1, and the repair pass model-rewrote that line.
+   *
+   * The rule and the page it is judged from go together. Keeping the payload
+   * while dropping the sentence would leave an unlabelled excerpt of the
+   * author's prose beside the pageMap for the model to draw its own conclusion
+   * from, which is the same mistake in a quieter form. A book whose page set
+   * carries no index 1 leaves both out anyway, which is why the flag is read
+   * off the pages this call actually kept.
+   */
+  const openingPages = openingContractForRange(options, 1, options.input.targetPages).statesOpeningQuality
+    ? finalQaOpeningPages(options.pages)
+    : [];
+  const judgesOpening = openingPages.length > 0;
+
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "final-book-qa",
     temperature: 0.1,
@@ -298,7 +401,16 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
           "Reject the book if it contains placeholders, repeated pages, prompt leakage, broken continuity, or no progression.",
           "Reject the book if factual or research-grounded passages contain invented studies, journals, institutes, statistics, experts, citations, or claims described as fictional/fabricated/invented.",
           "pageMap summaries are abbreviated excerpts for this review, not the exported manuscript.",
-          "Do not reject because a pageMap summary ends with an ellipsis or looks cut off.",
+          ...(judgesOpening
+            ? [
+                "Do not reject because a pageMap summary or an openingPages excerpt ends with an ellipsis or looks cut off.",
+                `openingPages carries the book's first page as written: reject the book when the opening is meta, ${OPENING_QUALITY_RULE_MARKER}, or generic, or fails to commit to the book's subject.`,
+                "An opening verdict is about that first page; give any other page's issue the page number pageMap records for it."
+              ]
+            : [
+                "Do not reject because a pageMap summary ends with an ellipsis or looks cut off.",
+                "Give every issue the page number pageMap records for it."
+              ]),
           ...targetLanguageReviewGuidance(options.input.language),
           ...reviewerStyleRules(options.input),
           "Return one JSON object with approved (boolean), score (integer 0-100), issues (string array), requiredFixes (string array), and notes (string).",
@@ -320,9 +432,11 @@ export async function runFinalBookQa(options: FinalBookQaOptions): Promise<Final
               styleGuidance: styleGuidancePayload(options.input)
             },
             pageMap: compactPageMap(options.pages),
+            ...(judgesOpening ? { openingPages } : {}),
             researchNotes: options.researchNotes?.slice(0, 20) ?? [],
-            instruction:
-              "Approve only if the compiled Markdown can be shown to a reader as the book output without obvious generation artifacts. pageMap summaries may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats."
+            instruction: judgesOpening
+              ? "Approve only if the compiled Markdown can be shown to a reader as the book output without obvious generation artifacts. pageMap summaries and openingPages excerpts may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. openingPages is the book's first page as written and the only page an opening verdict is about; judge the reader's first impression from it, and give any other page's issue the page number pageMap records for it."
+              : "Approve only if the compiled Markdown can be shown to a reader as the book output without obvious generation artifacts. pageMap summaries may end with … because they are shortened for this check; that is not a book defect. Identical titles on adjacent pages are fine when the summaries describe different beats. Give every issue the page number pageMap records for it."
           },
           null,
           2

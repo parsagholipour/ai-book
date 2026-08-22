@@ -2,13 +2,22 @@ import type { TextModelAdapter } from "../adapters/types.js";
 import { isSignpostingBookCategory } from "../categories.js";
 import { kidsReadingGuidanceForInput } from "../prompting/readingLevel.js";
 import type { CreateProjectInput, PageDraft, PageQualityReport } from "../schemas/book.js";
+import { isImportedManuscript } from "../schemas/mediaSettings.js";
 import type { FinalQaPage, ReviewPageOptions } from "./pages.js";
 import { PAGE_PROMPT_LEAK_PATTERNS, containsPromptLeak } from "./promptLeak.js";
+import {
+  countReadableWords,
+  hasExcessiveDashUse,
+  narrationOutsideQuotedSpeech,
+  sentenceLengthStats,
+  splitSentences
+} from "./proseShape.js";
 
 /**
- * The deterministic local-QA block: model-free page and manuscript checks, the
- * text metrics behind them, and their pattern tables. Split out of pages.ts,
- * which re-exports the public pieces so `@book-maker/core` is unchanged.
+ * The deterministic local-QA block: model-free page and manuscript checks and
+ * the pattern tables they read a page against. Split out of pages.ts, which
+ * re-exports the public pieces so `@book-maker/core` is unchanged; the prose
+ * measurement every check here counts with is `proseShape.ts` next door.
  */
 
 export type LocalPageReviewOptions = Omit<ReviewPageOptions, "textModel">;
@@ -25,6 +34,29 @@ export function reviewPageDraftLocally(options: LocalPageReviewOptions): PageQua
 export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQualityReport {
   const text = `${options.draft.title}\n${options.draft.markdown}`;
   const currentBody = options.draft.markdown.trim();
+  // The phrase tables below are written with literal single spaces, so a page
+  // that hard-wraps mid-phrase — or a model that emits a double space — walked
+  // past them. `splitSentences` (`proseShape.ts`) collapses whitespace before
+  // matching for exactly this reason; these checks did not. Only the checks
+  // that read *flowing prose* take the collapsed copy: dialogue removal, dash
+  // counting and the opening window all read the page as written, because line
+  // structure is the signal they are built on.
+  //
+  // The title/body break survives the collapse, because it is a break between
+  // two texts rather than inside one: glued together, a page called "The
+  // Placeholder" whose prose opens "Page one begins…" reads as the literal
+  // scaffold phrase `placeholder page` and auto-rejects a page with nothing
+  // wrong with it. The breaks *inside* one text survive for the same reason,
+  // which is `collapseHardWraps`' own note below: a hard wrap is one phrase
+  // broken in half, and every other line break is two phrases.
+  //
+  // The body is collapsed once and the title's copy glued in front of it,
+  // because `collapseHardWraps` trims each line itself and so answers
+  // identically for `markdown` and for its trimmed twin. This runs for every
+  // draft candidate of every page — page 1 of a balanced-and-up book has
+  // several — and again for every page of `runLocalFinalQa`.
+  const flowingBody = collapseHardWraps(currentBody);
+  const flowingText = `${collapseHardWraps(options.draft.title)}\n${flowingBody}`;
   const issues: string[] = [];
   const checks = {
     placeholderFree: true,
@@ -35,7 +67,7 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
     styleNatural: true
   };
 
-  const placeholder = PLACEHOLDER_PATTERNS.find((pattern) => pattern.test(text));
+  const placeholder = PLACEHOLDER_PATTERNS.find((pattern) => pattern.test(flowingText));
   if (placeholder) {
     checks.placeholderFree = false;
     issues.push("Page contains placeholder or scaffold prose.");
@@ -52,14 +84,14 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
     issues.push("Page turns page-brief instructions into reader-facing meta-commentary.");
   }
 
-  const fabricatedResearch = FABRICATED_RESEARCH_PATTERNS.find((pattern) => pattern.test(text));
+  const fabricatedResearch = FABRICATED_RESEARCH_PATTERNS.find((pattern) => pattern.test(flowingText));
   if (fabricatedResearch) {
     checks.promptLeakFree = false;
     checks.progressionOk = false;
     issues.push("Page contains invented or explicitly fabricated research evidence.");
   }
 
-  if (hasFormulaicProofLeap(currentBody)) {
+  if (hasFormulaicProofLeap(flowingBody)) {
     checks.styleNatural = false;
     issues.push("Page uses a formulaic proof-leap phrase that makes the prose sound generated.");
   }
@@ -138,9 +170,14 @@ export function runLocalPageQualityChecks(options: ReviewPageOptions): PageQuali
     }
   }
 
-  if (SCAFFOLD_SHAPE_PATTERNS.some((pattern) => pattern.test(currentBody))) {
+  if (SCAFFOLD_SHAPE_PATTERNS.some((pattern) => pattern.test(flowingBody))) {
     checks.progressionOk = false;
     issues.push("Page describes its intended function instead of becoming finished book prose.");
+  }
+
+  if (options.pageIndex === 1 && !isImportedManuscript(options.input.mediaSettings) && hasWeakFirstPageOpening(currentBody)) {
+    checks.styleNatural = false;
+    issues.push("First page opens with a generic or meta hook instead of a concrete one.");
   }
 
   if (options.pageIndex === options.input.targetPages && hasVagueEnding(options.draft)) {
@@ -263,11 +300,15 @@ export function hasDuplicatePagePrefix(pageIndex: number, title: string): boolea
 }
 
 
+// Every class in this file that names an apostrophe names both: provider prose
+// writes the typographic U+2019 far more often than the ASCII one, and a class
+// that keeps only `'` splits "don’t" into a word and a dropped fragment while
+// keeping "don't" whole — the same hole the phrase patterns had.
 function normalizeTitle(title: string): string {
   return title
     .toLowerCase()
     .replace(/^page\s+\d+\s*[:-]\s*/i, "")
-    .replace(/[^\p{L}\p{N}\s']/gu, " ")
+    .replace(/[^\p{L}\p{N}\s'’]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -313,68 +354,9 @@ function shingles(tokens: string[], size: number): Set<string> {
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s']/gu, " ")
+    .replace(/[^\p{L}\p{N}\s'’]/gu, " ")
     .split(/\s+/)
     .filter((token) => token.length > 2);
-}
-
-/**
- * Space-separated scripts count one word per run, but CJK and the unsegmented
- * Southeast Asian scripts have no spaces to split on: a whole Thai clause or a
- * Chinese sentence between punctuation marks is a single `\p{L}` run, so
- * counting runs made every normal-length page "too short to show meaningful
- * progression" and burned its whole revision budget on a false failure. Those
- * scripts are estimated from character counts instead — ~2 chars per word for
- * CJK, ~4 for Thai-like scripts — which is rough in both directions but keeps
- * the min/max gates meaningful rather than always-firing. The estimate counts
- * code points, never UTF-16 units (a supplementary-plane Han character is one
- * character, not a leftover extra word), classifies by Script_Extensions so a
- * shared character like the katakana prolonged sound mark ー stays part of the
- * word it lengthens, and folds combining marks into the letter they modify —
- * a Thai tone mark neither splits the run it sits in nor feeds the divisor.
- */
-function countReadableWords(text: string): number {
-  const tokens = text.match(/[\p{L}\p{N}\p{M}]+(?:['-][\p{L}\p{N}\p{M}]+)*/gu) ?? [];
-  let count = 0;
-  for (const token of tokens) {
-    let cjkChars = 0;
-    let unsegmentedChars = 0;
-    let spacedChars = 0;
-    for (const character of token) {
-      if (COMBINING_MARK_PATTERN.test(character)) {
-        continue;
-      }
-      if (CJK_CHARACTER_PATTERN.test(character)) {
-        cjkChars += 1;
-      } else if (UNSEGMENTED_CHARACTER_PATTERN.test(character)) {
-        unsegmentedChars += 1;
-      } else {
-        spacedChars += 1;
-      }
-    }
-    count += Math.ceil(cjkChars / 2) + Math.ceil(unsegmentedChars / 4);
-    if (spacedChars > 0) {
-      count += 1;
-    }
-  }
-  return count;
-}
-
-// No Hangul here: Korean is space-separated, so the run count is already right.
-const CJK_CHARACTER_PATTERN = /[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}]/u;
-const UNSEGMENTED_CHARACTER_PATTERN = /[\p{Script_Extensions=Thai}\p{Script_Extensions=Lao}\p{Script_Extensions=Khmer}\p{Script_Extensions=Myanmar}]/u;
-const COMBINING_MARK_PATTERN = /\p{M}/u;
-
-function sentenceLengthStats(text: string): { average: number; max: number } {
-  const sentenceWordCounts = splitSentences(text).map(countReadableWords).filter((count) => count > 0);
-  if (sentenceWordCounts.length === 0) {
-    return { average: 0, max: 0 };
-  }
-  const total = sentenceWordCounts.reduce((sum, count) => sum + count, 0);
-  return {
-    average: total / sentenceWordCounts.length,
-    max: Math.max(...sentenceWordCounts)
-  };
 }
 
 function hasFormulaicProofLeap(text: string): boolean {
@@ -441,151 +423,258 @@ function hasChapterOpenerScaffold(body: string): boolean {
 }
 
 /**
- * The page with everything a character or a source said removed from it.
- * A whole line is quoted when it is a markdown blockquote, or when it opens
- * with an em/en dash — the French, Spanish and Russian dialogue convention,
- * the same one `countStyleDashes` already reads a line for. Inside a line,
- * spans are removed by quotation marks, and there is no single convention to
- * key off: this ships Persian and Arabic books, where the guillemets are the
- * quotation marks, and CJK books, which quote with corner brackets, so the
- * table below is keyed by opener and lists every closer that opener takes.
+ * The page-1 twin of `hasVagueEnding`: the reader's first paragraph must not
+ * be a stock hook. The list is deliberately tiny — every match costs 25 points
+ * and auto-rejects, spending real revision budget — and it reads only the
+ * page's opening window, so a character may say any of these lines and a later
+ * paragraph may earn them. English-only like every pattern in this file; other
+ * languages are carried by the model reviewer's first-page rule.
+ *
+ * **The window is measured on the page as written, and the dialogue is removed
+ * from inside it — never the other way round.** Stripping first collapses every
+ * quoted span to a single space and every blockquoted or dash-led line to the
+ * empty string, so on a dialogue-heavy page the 280 surviving characters reach
+ * far past the first paragraph: a first page opening on the French/Spanish/
+ * Russian dash convention left a handful of newlines, and the window then
+ * covered narration sitting ~900 characters into the page. A sixth-paragraph
+ * "Have you ever wondered why the river stopped freezing?" auto-rejected page 1
+ * and spent its revision budget — the exact prose the paragraph above promises
+ * is safe. Truncating first can cut a closing quote off and read the tail of
+ * the window as dialogue instead, which is the direction `stripQuotedSpans`
+ * (`proseShape.ts`) already errs in deliberately: reading too much as dialogue only misses a
+ * hook, reading too little fails a page that was right.
  */
-function narrationOutsideQuotedSpeech(text: string): string {
-  return text
-    .split(/\r?\n/)
-    .map((line) => {
-      if (BLOCKQUOTE_LINE_PATTERN.test(line)) {
-        return "";
-      }
-      const firstContentIndex = line.search(/\S/);
-      if (firstContentIndex >= 0 && isDash(line[firstContentIndex])) {
-        return "";
-      }
-      return stripQuotedSpans(line);
-    })
-    .join("\n");
+export const FIRST_PAGE_OPENING_WINDOW = 280;
+
+const WEAK_FIRST_PAGE_OPENER_PATTERNS = [
+  /\bhave you ever (?:wondered|noticed|asked)\b/i,
+  /\b(?:since|from) the dawn of (?:time|history|civilization)\b/i,
+  /\bthroughout (?:history|the ages)\b/i,
+  // `['’]`, like every other apostrophe in this file: a provider writes the
+  // typographic one, so the straight-only class retired the single most
+  // recognisable AI opener there is on the page it matters most on.
+  /\bin today['’]s (?:fast-paced|modern|busy|digital) world\b/i,
+  /\bimagine a world where\b/i
+];
+
+/**
+ * Meta framing about the book itself, banned across the opening window for
+ * **every** category. `buildPageInstruction` (`pagesShared.ts`) tells every
+ * page-1 writer, whatever the book is, never to open with "throat-clearing, a
+ * welcome, a definition of the topic, or meta framing such as 'In this book' or
+ * 'This story is about'", and `FIRST_PAGE_IDENTITY_RULE`
+ * (`pageBriefContract.ts`) briefs the same ban. `firstPageOpeningRule` grants the signposting categories
+ * (`isSignpostingBookCategory`, `../categories.ts`) exactly one concession —
+ * "you may signpost later on the page, never in the first paragraph" — and the
+ * window below *is* that first paragraph, so an exemption here excused the one
+ * place the instruction never did: the checker approving the exact sentence its
+ * own writer had been forbidden to write. Signposting stays legal everywhere
+ * this check does not look, which is what `hasChapterOpenerScaffold` — whole
+ * page, category-gated — is for.
+ */
+const META_FIRST_PAGE_OPENER_PATTERNS = [
+  /\bthis (?:book|story) (?:is about|will (?:show|teach|take))\b/i,
+  // The phrase both prompts quote verbatim, plus the two variants that carry
+  // the same framing. A reader or author subject is required rather than the
+  // bare "in this book", which a history page's own prose can own ("In this
+  // book of hours, a clerk recorded…").
+  /\b(?:in|throughout) (?:this book|these pages)\s*,?\s+(?:we|you|i|the reader|the author)\b/i
+];
+
+/**
+ * Meta framing that only means what it means as the page's *first* words.
+ * "Welcome to" is a greeting at the top of page 1 and ordinary prose in the
+ * middle of a paragraph ("the lit porch was a welcome to anyone walking up"),
+ * so this list alone is anchored, and the window patterns above are not.
+ */
+const OPENING_WORDS_META_PATTERNS = [/^welcome to\b/i];
+
+/**
+ * **Whitespace is collapsed last, after the window and after the dialogue
+ * strip, and never before either.** The window is a count of the page as
+ * written and the strip is line-based, so collapsing first destroys both: a
+ * page opening on the dash convention becomes one line whose first character is
+ * a dash, `narrationOutsideQuotedSpeech` discards the whole page as dialogue,
+ * and the gate silently stops looking at anything. Collapsing last leaves both
+ * boundary fixtures meaning exactly what they meant — they are built from
+ * single-spaced prose, where the collapse is the identity — and closes the hole
+ * the patterns' literal spaces left: `"Have you ever\nwondered why the river
+ * stopped freezing?"` is the most recognisable AI opener there is, and a hard
+ * wrap inside the phrase was enough to pass it. That the collapse now keeps
+ * every break but a hard wrap changes nothing about the order: it only ever
+ * joins *less* than a flat collapse, and the strip has already emptied the
+ * dialogue lines it would refuse to join.
+ */
+function hasWeakFirstPageOpening(body: string): boolean {
+  const written = body.slice(0, FIRST_PAGE_OPENING_WINDOW);
+  const narration = narrationOutsideQuotedSpeech(written);
+  const opening = collapseHardWraps(narration);
+  if (WEAK_FIRST_PAGE_OPENER_PATTERNS.some((pattern) => pattern.test(opening))) {
+    return true;
+  }
+  if (META_FIRST_PAGE_OPENER_PATTERNS.some((pattern) => pattern.test(opening))) {
+    return true;
+  }
+  return firstPageOpeningCandidates(narration, written).some((candidate) =>
+    OPENING_WORDS_META_PATTERNS.some((pattern) => pattern.test(candidate))
+  );
 }
 
 /**
- * An unterminated opener takes the rest of its line: English opens every
- * paragraph of a continued speech and closes only the last, and a hard-wrapped
- * quote breaks the same way. Reading too much of a page as dialogue only ever
- * misses a scaffold sentence; reading too little fails a page that was right,
- * and that failure costs the page its revisions.
+ * What the anchored patterns above are anchored to: the narration's first
+ * *word*, not its first character. `^` against the raw narration was the whole
+ * test, and `narrationOutsideQuotedSpeech` keeps headings and emphasis markers
+ * verbatim, so `**Welcome to the world of home water testing.** The kit…`
+ * begins with `*` and the exact sentence this file's own comment says must
+ * never pass was approved — as it was for `## Tap Water\n\nWelcome to…`, which
+ * models emit in front of the prose despite INTERNAL_PAGE_TITLE_RULE. So
+ * leading whitespace and markdown decoration are dropped, and a leading ATX
+ * heading is a page title the writer was told not to write at all: the line
+ * after it is offered as an opening too, and the heading's own text stays a
+ * candidate, since `# Welcome to…` is the same greeting.
+ *
+ * It stays *only* the opening. Scanning stops at the first line that is not a
+ * heading, so a later paragraph is never a candidate — the property the window
+ * boundary tests pin, and the reason a mid-page "welcome to" costs a page
+ * nothing.
+ *
+ * **A line the dialogue strip emptied is not a blank line, which is the whole
+ * reason the page as written is read alongside the narration.** Only the
+ * written line tells a paragraph break from a line `narrationOutsideQuotedSpeech`
+ * mapped to `""`, and skipping both is skipping past the dialogue: a page
+ * opening on four dash-convention lines took its first *candidate* from the
+ * narration paragraph ~200 characters in, so a later "Welcome to the museum"
+ * auto-rejected page 1 for 25 points and a revision call — the promise two
+ * paragraphs up, broken. A page whose opening prose is dialogue has no
+ * narration opening at all, and the greeting rule has nothing to say about it;
+ * stopping there errs the way this whole window errs, since reading too little
+ * only misses a hook while reading too much fails a page that was right. The
+ * two splits line up index for index because `narrationOutsideQuotedSpeech`
+ * maps a line to a line and joins them back.
  */
-function stripQuotedSpans(line: string): string {
-  let narration = "";
-  let index = 0;
-  while (index < line.length) {
-    const character = line[index]!;
-    const closers = DIALOGUE_QUOTE_CLOSERS.get(character);
-    if (closers === undefined) {
-      narration += character;
-      index += 1;
-      continue;
-    }
-
-    let closeIndex = -1;
-    for (let scan = index + 1; scan < line.length; scan += 1) {
-      if (closers.includes(line[scan]!)) {
-        closeIndex = scan;
+function firstPageOpeningCandidates(narration: string, written: string): string[] {
+  const lines = narration.split(/\r?\n/);
+  const writtenLines = written.split(/\r?\n/);
+  const candidates: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index]!;
+    if (line.trim().length === 0) {
+      // Blank here and blank on the page is a paragraph break; blank here and
+      // prose on the page is the dialogue this page opens on.
+      if ((writtenLines[index] ?? "").trim().length > 0) {
         break;
       }
-    }
-    if (closeIndex < 0) {
-      return `${narration} `;
-    }
-
-    narration += " ";
-    index = closeIndex + 1;
-  }
-  return narration;
-}
-
-const BLOCKQUOTE_LINE_PATTERN = /^\s{0,3}>/;
-
-/**
- * Openers to the closers they take. The straight apostrophe is deliberately
- * absent: `it's` would open a quote on every page written with one.
- */
-const DIALOGUE_QUOTE_CLOSERS = new Map<string, string>([
-  ['"', '"'],
-  ["“", "”"], // “ … ”
-  ["„", "“”"], // „ … “ and „ … ”
-  ["‘", "’"], // ‘ … ’
-  ["«", "»"], // « … » — Persian, Arabic, French, Russian
-  ["»", "«"], // » … « — German, Danish
-  ["「", "」"], // 「 … 」
-  ["『", "』"] // 『 … 』
-]);
-
-function hasExcessiveDashUse(text: string): boolean {
-  const dashCount = countStyleDashes(text);
-  if (dashCount < 4) {
-    return false;
-  }
-  const wordCount = Math.max(1, countReadableWords(text));
-  const sentenceCount = Math.max(1, splitSentences(text).length);
-  return dashCount / wordCount >= 0.018 || dashCount / sentenceCount >= 0.35;
-}
-
-function countStyleDashes(text: string): number {
-  let count = 0;
-  for (const line of text.split(/\r?\n/)) {
-    const dashIndexes = [...line.matchAll(/[—–]/g)].map((match) => match.index ?? 0);
-    if (dashIndexes.length === 0) {
       continue;
     }
-
-    const ignored = new Set<number>();
-    const firstContentIndex = line.search(/\S/);
-    if (firstContentIndex >= 0 && isDash(line[firstContentIndex])) {
-      ignored.add(firstContentIndex);
-      const attributionDashIndex = dashIndexes.find(
-        (index) => index !== firstContentIndex && isDialogueAttributionDash(line, index)
-      );
-      if (attributionDashIndex !== undefined) {
-        ignored.add(attributionDashIndex);
-      }
+    const opening = line.replace(LEADING_MARKDOWN_DECORATION_PATTERN, "");
+    if (opening.length === 0) {
+      continue;
     }
-
-    count += dashIndexes.filter((index) => !ignored.has(index)).length;
+    // A candidate is its line *plus the rest of the window*, collapsed: the
+    // anchored patterns are anchored to a line's first word, and a page that
+    // hard-wraps between "Welcome" and "to" put the second half on a line no
+    // pattern was ever matched against. Carrying the tail cannot widen what
+    // counts as an opening — `^` still has to land on a line this loop chose,
+    // and it chooses no line after the first non-heading one.
+    candidates.push(collapseHardWraps([opening, ...lines.slice(index + 1)].join(" ")));
+    if (!ATX_HEADING_LINE_PATTERN.test(line)) {
+      break;
+    }
   }
-  return count;
-}
-
-function isDash(value: string | undefined): boolean {
-  return value === "—" || value === "–";
-}
-
-function isDialogueAttributionDash(line: string, index: number): boolean {
-  return /\s$/.test(line.slice(0, index)) && /^\s*\p{L}/u.test(line.slice(index + 1));
-}
-
-function splitSentences(text: string): string[] {
-  return text
-    .replace(/\s+/g, " ")
-    .split(SENTENCE_BOUNDARY_PATTERN)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
+  return candidates;
 }
 
 /**
- * Where one sentence ends and the next begins, in three script shapes: a
- * spaced terminator (Latin and Arabic-script punctuation, with any closing
- * quotes riding along), a full-width CJK terminator that takes no space after
- * it — its closing quotes/brackets ride along too — and, in the unsegmented
- * Southeast Asian scripts, the space itself, which is those scripts' sentence
- * mark. Splitting only on spaced ASCII terminators left a zh/ja page as one
- * "sentence" whose word count was the whole page, so the kids sentence-length
- * gate fired on every page and no rewrite could satisfy it. Kept consistent
- * with the scripts countReadableWords estimates above.
+ * One line of flowing prose *per unit*, for the phrase patterns in this file
+ * that spell their gaps as literal single spaces: inside one unit a hard wrap
+ * or a run of spaces becomes a single space, and every other line break
+ * survives as a single `\n`. Every caller has already taken whatever it needs
+ * from the line structure, because this destroys all of it but those breaks.
+ *
+ * **A hard wrap is a single newline between two lines that are each the middle
+ * of one unit of prose, and nothing else is.** A line that opens a unit of its
+ * own — a heading, a list item, a blockquote, a table row, a thematic break, a
+ * code fence, a standalone image, a line of dialogue (`OWN_UNIT_LINE_PATTERN`)
+ * — was never one sentence with the line beside it, so the break is kept
+ * whenever *either* side of it is such a line. A wrapped continuation of a list
+ * item or of a dialogue line is therefore left broken rather than guessed at:
+ * rejoining it would take the indentation rules of the block it continues, and
+ * the two directions do not cost the same. A break kept where a hard wrap sat
+ * only misses a slop phrase; a break removed where a unit ended fails a page
+ * that was right, for 25 points and a revision call.
+ *
+ * **Those breaks are what bound every windowed pattern in this file, which is
+ * why the bound is drawn exactly here and not one step looser.** The collapse
+ * exists because `"Have you ever\nwondered why…"` is one phrase a literal space
+ * could not match; but `.` does not match `\n` without the `s` flag, so every
+ * newline removed hands `.{0,80}` (`VAGUE_ENDING_PATTERNS`), `.{0,100}`
+ * (`FABRICATED_RESEARCH_PATTERNS`), `.{0,140}` (`PROOF_LEAP_PATTERNS`) and the
+ * literal tables (`/placeholder page/i`) reach they never had. Flattening the
+ * page whole cost a finished final page 25 points, an auto-rejection and a
+ * revision call: "She had nothing left to give." and a next paragraph opening
+ * "Everything about the morning felt heavier now" became one line and matched
+ * `/\bnothing\b.{0,80}\beverything\b/` with no resolution word anywhere near
+ * them. Keeping only the blank line cost exactly the same to two list items —
+ * "- The map I invented for the frontispiece" over "- Data from the 1902
+ * soundings" is `\binvented\b.{0,100}\bdata\b` — and to any block of dialogue,
+ * which is written one line per speaker with no blank line anywhere in it.
  */
-const SENTENCE_BOUNDARY_PATTERN =
-  /(?<=[。！？។။][」』】〉》）'’"”]*)(?![」』】〉》）'’"”])|(?<=[.!?؟۔…]['’"”»)\]]*)\s+|(?<=[\p{Script_Extensions=Thai}\p{Script_Extensions=Lao}\p{Script_Extensions=Khmer}\p{Script_Extensions=Myanmar}])\s+/u;
+function collapseHardWraps(text: string): string {
+  const units: string[] = [];
+  let continuing = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, " ").trim();
+    if (line.length === 0) {
+      continuing = false;
+      continue;
+    }
+    const opensItsOwnUnit = OWN_UNIT_LINE_PATTERN.test(line);
+    const previous = units.length - 1;
+    if (continuing && !opensItsOwnUnit && previous >= 0) {
+      units[previous] = `${units[previous]!} ${line}`;
+    } else {
+      units.push(line);
+    }
+    continuing = !opensItsOwnUnit;
+  }
+  return units.join("\n");
+}
+
+/**
+ * A line that is a unit of its own rather than the middle of a paragraph,
+ * tested against the line with its own whitespace already collapsed away.
+ *
+ * The markdown half is the block syntax a model actually emits into a page:
+ * ATX heading, bullet or ordered list item, blockquote, table row, thematic
+ * break, code fence, standalone image. Both list markers require the space
+ * after them, so `**Welcome to…**` stays the prose it is. The dialogue half is
+ * the recognition `narrationOutsideQuotedSpeech` (`proseShape.ts`) already
+ * makes when it decides a whole line is speech: an em/en dash opening the line
+ * is the French/Spanish/Russian convention, and the openers are
+ * `DIALOGUE_QUOTE_CLOSERS`' keys — spelled again here because that map is
+ * private to its file, and carrying its deliberate omission of the straight
+ * apostrophe, which would make a unit of every line beginning "It's".
+ */
+const OWN_UNIT_LINE_PATTERN =
+  /^(?:#{1,6}(?:\s|$)|[-*+]\s|\d{1,9}[.)]\s|[-*_]{3,}$|>|\||!\[|```|~~~|[—–]|["“„‘«»「『])/;
+
+const LEADING_MARKDOWN_DECORATION_PATTERN = /^[\s#*_~`>+-]+/;
+const ATX_HEADING_LINE_PATTERN = /^\s{0,3}#{1,6}(?:\s|$)/;
+
 
 function hasVagueEnding(draft: PageDraft): boolean {
-  const endingText = `${draft.markdown}\n${draft.summary}`.toLowerCase();
+  // Collapsed for the same reason the phrase tables above are: these are
+  // literal-space patterns, and "into the\nunknown" is the shape a page ends
+  // on as often as not. Each half is collapsed on its own, so no phrase is
+  // assembled out of the last words of the prose and the first of the summary
+  // — and `collapseHardWraps` keeps every break inside each half that is not a
+  // hard wrap, which is what bounds this list's one windowed pattern: a final
+  // page reading "She had nothing left to give.\n\nEverything about the
+  // morning felt heavier" is two sentences a paragraph apart, and the same two
+  // clauses in two speakers' mouths are two lines of a dialogue block — not
+  // the "nothing … everything" shrug `/\bnothing\b.{0,80}\beverything\b/` is
+  // looking for.
+  const endingText = `${collapseHardWraps(draft.markdown)}\n${collapseHardWraps(draft.summary)}`.toLowerCase();
   const hasVagueSignal = VAGUE_ENDING_PATTERNS.some((pattern) => pattern.test(endingText));
   const hasResolutionSignal = RESOLUTION_PATTERNS.some((pattern) => pattern.test(endingText));
   return hasVagueSignal && !hasResolutionSignal;

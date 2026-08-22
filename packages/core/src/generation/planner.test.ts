@@ -227,6 +227,8 @@ describe("createPlanningPackage", () => {
     // answer at once is declared rather than smuggled into the prompt text.
     expect(systemPrompt).toContain('"multi" (up to 6 options)');
     expect(systemPrompt).toContain("never list the options inside the prompt text");
+    // The plan commits to how page 1 opens; the drafting side reads it back.
+    expect(systemPrompt).toContain("Set openingHook to one or two sentences");
   });
 
   it("keeps at most one subject clarification for an incomplete prompt", async () => {
@@ -271,6 +273,7 @@ describe("revisePlanningPackage", () => {
     const input = testInput();
     const currentPlan: BookPlan = {
       ...makeFallbackPlan(input),
+      openingHook: "Open mid-race, with the rabbit already asleep and the turtle three strides from the ribbon.",
       researchNotes: [
         {
           query: "rabbit turtle fable",
@@ -330,6 +333,9 @@ describe("revisePlanningPackage", () => {
     const revisionPrompt = request!.messages.find((message) => message.role === "system")!.content;
     expect(revisionPrompt).toContain("set options to [] and let them type it");
     expect(revisionPrompt).toContain('"multi" (up to 6 options)');
+    // A revision that omits the hook keeps it, like every other plan field.
+    expect(revisionPrompt).toContain("Preserve or improve openingHook");
+    expect(revised.openingHook).toBe(currentPlan.openingHook);
   });
 
   it("defaults omitted revision questions to none instead of restoring legacy questions", async () => {

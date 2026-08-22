@@ -15,6 +15,9 @@ vi.mock("@book-maker/db", async () => ({
 vi.mock("../runtime/config.js", () => ({ config: { BOOK_STORAGE_DIR: "" } }));
 vi.mock("../runtime/jobLifecycle.js", () => ({ updateJobProgress: vi.fn() }));
 
+// The final-QA verdict rules this file used to cover moved out with the code:
+// they are pure text and live in `finalQaPageTargets.test.ts`, which needs no
+// module mocks at all.
 import { styleExcerptsForPage } from "./bookHelpers.js";
 
 const input = { mediaSettings: {} } as CreateProjectInput;

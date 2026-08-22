@@ -45,6 +45,7 @@ import {
   createProjectSchema,
   creditCostForOperation,
   generationJobControlsProjectStatus,
+  isImportedManuscript,
   loadConfig,
   mediaSettingsSchema,
   modelTierSchema,
@@ -753,10 +754,20 @@ export function mobileAssetFilenameFromPath(path: string, projectId: string): st
 }
 
 
-/** Imported manuscripts carry mediaSettings.mobile.import provenance. */
+/**
+ * Imported manuscripts carry `mediaSettings.mobile.import` provenance.
+ *
+ * The predicate is `isImportedManuscript` in `@book-maker/core`, not a copy of
+ * it: the same record decides the label the app shows here and whether local QA
+ * and the model reviewers are allowed to rewrite the author's own opening
+ * sentence (`packages/core/src/generation/pagesLocalQa.ts`). Those were two
+ * character-identical expressions in two workspaces, which is one edit away
+ * from a book the app calls "imported" whose first line the pipeline still
+ * treats as generated. Core is the leaf of the dependency graph, so this
+ * direction is the one it already allows.
+ */
 export function projectSourceFromMediaSettings(mediaSettings: unknown): "imported" | "generated" {
-  const mobile = jsonRecord(jsonRecord(mediaSettings).mobile);
-  return Object.keys(jsonRecord(mobile.import)).length > 0 ? "imported" : "generated";
+  return isImportedManuscript(mediaSettings) ? "imported" : "generated";
 }
 
 /**

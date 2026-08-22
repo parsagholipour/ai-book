@@ -31,7 +31,7 @@ const SKIP_DIRS = new Set(["node_modules", "generated", "dist", "build", ".dart_
  * raise one without splitting something first.
  */
 export const GRANDFATHERED = {
-  "packages/core/src/generation/pages.test.ts": 2160,
+  "packages/core/src/generation/pages.test.ts": 2003,
   "apps/api/src/routes/projects.ts": 1300,
   "apps/web/src/features/voice/BrowserVoiceRoomClient.ts": 1790,
   "apps/web/src/features/voice/BrowserVoiceCallClient.ts": 1360,

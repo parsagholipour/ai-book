@@ -68,6 +68,7 @@ export function buildPageDraftSystemContent(
 }
 
 export function buildPageDraftUserPayload(options: GeneratePageOptions) {
+  const pageInstruction = buildPageInstruction(options);
   const context = buildContextPack({
     plan: options.plan,
     chapter: options.chapter,
@@ -111,7 +112,8 @@ export function buildPageDraftUserPayload(options: GeneratePageOptions) {
       title: page.title,
       coveredBeat: page.summary
     })),
-    pageInstruction: buildPageInstruction(options.pageIndex, options.input.targetPages)
+    ...pageInstruction.payload,
+    pageInstruction: pageInstruction.text
   };
 }
 

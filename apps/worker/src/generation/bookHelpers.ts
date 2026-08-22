@@ -2,6 +2,7 @@ import { config } from "../runtime/config.js";
 import { updateJobProgress } from "../runtime/jobLifecycle.js";
 import { isStopRequestedError, type ExportPageForRepair, type IndexedPageDraft } from "../runtime/jobTypes.js";
 import { cleanOptionalText } from "../runtime/serialization.js";
+import { finalQaMessagesForPage } from "./finalQaPageTargets.js";
 import {
   chapterBriefSchema,
   exportProvenancePaths,
@@ -256,8 +257,8 @@ export function toFinalQaPage(page: { index: number; title: string; markdown: st
   };
 }
 
-export function pageReportFromFinalQa(finalQa: FinalBookQa, pageIndex: number, targetPages: number): PageQualityReport {
-  const scopedMessages = finalQaMessagesForPage(finalQa, pageIndex, targetPages);
+export function pageReportFromFinalQa(finalQa: FinalBookQa, pageIndex: number, lastPage: number): PageQualityReport {
+  const scopedMessages = finalQaMessagesForPage(finalQa, pageIndex, lastPage);
   const issueText = scopedMessages.join(" ");
   const repetitionOk = !/(repeat|overlap|same|redundan|duplicate)/i.test(issueText);
   const progressionOk = !/(progress|restat|vague|ending|resolution|incomplete|commitment|decision)/i.test(issueText);
@@ -279,54 +280,6 @@ export function pageReportFromFinalQa(finalQa: FinalBookQa, pageIndex: number, t
       styleNatural: true
     }
   };
-}
-
-export function finalQaMessagesForPage(finalQa: FinalBookQa, pageIndex: number, targetPages: number): string[] {
-  const messages = [...finalQa.issues, ...finalQa.requiredFixes];
-  const scoped = messages.filter((message) => messageTargetsPage(message, pageIndex, targetPages));
-  return scoped.length > 0 ? scoped : finalQa.issues;
-}
-
-export function messageTargetsPage(message: string, pageIndex: number, targetPages: number): boolean {
-  const pageIndexes = extractRepairPageIndexesFromText(message, targetPages);
-  if (pageIndexes.includes(pageIndex)) {
-    return true;
-  }
-  return pageIndex === targetPages && /\b(final page|ending|conclusion|resolution|incomplete)\b/i.test(message);
-}
-
-export function extractRepairPageIndexes(finalQa: FinalBookQa, targetPages: number): number[] {
-  const indexes = new Set<number>();
-  for (const message of [...finalQa.issues, ...finalQa.requiredFixes]) {
-    for (const pageIndex of extractRepairPageIndexesFromText(message, targetPages)) {
-      indexes.add(pageIndex);
-    }
-  }
-  if ([...finalQa.issues, ...finalQa.requiredFixes].some((message) => /\b(final page|ending|conclusion|resolution)\b/i.test(message))) {
-    indexes.add(targetPages);
-  }
-  return [...indexes].filter((pageIndex) => pageIndex >= 1 && pageIndex <= targetPages);
-}
-
-export function extractRepairPageIndexesFromText(text: string, targetPages: number): number[] {
-  const indexes = new Set<number>();
-  const pagePattern = /\bpages?\s+(\d+)(?:\s*(?:,|and|to|-)\s*(\d+))?/gi;
-  let match: RegExpExecArray | null;
-
-  while ((match = pagePattern.exec(text)) !== null) {
-    const first = Number(match[1]);
-    const second = match[2] ? Number(match[2]) : undefined;
-    const prefix = text.slice(Math.max(0, match.index - 8), match.index).toLowerCase();
-    if (!second && /\bfrom\s+$/.test(prefix)) {
-      continue;
-    }
-    const repairIndex = second ?? first;
-    if (repairIndex >= 1 && repairIndex <= targetPages) {
-      indexes.add(repairIndex);
-    }
-  }
-
-  return [...indexes];
 }
 
 export function parseChapterBrief(value: unknown): ChapterBrief | undefined {

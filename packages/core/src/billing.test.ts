@@ -266,15 +266,36 @@ describe("billing credit assumptions", () => {
         mediaSettings: { ...mediaSettings, ...(modelTier ? { modelTier } : {}) }
       });
 
-    expect(providerCostAssumptionsForInput(inputForTier())).toEqual(PROVIDER_COST_ASSUMPTIONS_USD);
-    expect(providerCostAssumptionsForInput(inputForTier("balanced"))).toEqual(PROVIDER_COST_ASSUMPTIONS_USD);
-    expect(providerCostAssumptionsForInput(inputForTier("fast"))).toMatchObject({ textPerPage: 0.008 });
+    // Balanced is its own entry in the table rather than a fallthrough, so it
+    // no longer equals the base table: page 1's second draft and its judge put
+    // it $0.003 above. What the pair still pins is the property that mattered —
+    // a book with **no tier recorded** costs as balanced, by the same rule that
+    // prices it as balanced, and would keep doing so if a fifth tier were added.
+    expect(providerCostAssumptionsForInput(inputForTier())).toEqual(
+      providerCostAssumptionsForInput(inputForTier("balanced"))
+    );
+    expect(providerCostAssumptionsForInput(inputForTier("balanced"))).toMatchObject({
+      // The one-off rides the per-book base, never `textPerPage` — the rate the
+      // Max break-even floor below is tested against, per page.
+      textBase: 0.083,
+      textPerPage: PROVIDER_COST_ASSUMPTIONS_USD.textPerPage,
+      imageGeneration: PROVIDER_COST_ASSUMPTIONS_USD.imageGeneration,
+      coverIncluded: PROVIDER_COST_ASSUMPTIONS_USD.coverIncluded
+    });
+    expect(providerCostAssumptionsForInput(inputForTier("fast"))).toMatchObject({
+      textPerPage: 0.008,
+      // Fast draws one draft of page 1, so best-of moved nothing here.
+      textBase: PROVIDER_COST_ASSUMPTIONS_USD.textBase
+    });
     expect(providerCostAssumptionsForInput(inputForTier("premium"))).toMatchObject({
+      // Page 1's best-of-3 draft and its judge, charged once per book.
+      textBase: 0.14,
       textPerPage: 0.05,
       imageGeneration: 0.067,
       coverIncluded: 0.134
     });
     expect(providerCostAssumptionsForInput(inputForTier("ultra"))).toMatchObject({
+      textBase: 0.17,
       textPerPage: 0.12,
       imageGeneration: 0.067,
       coverIncluded: 0.134
@@ -288,6 +309,43 @@ describe("billing credit assumptions", () => {
     const premiumEstimate = estimateProviderCostForProject(inputForTier("premium"));
     expect(fastEstimate.estimatedUsd).toBeLessThan(balancedEstimate.estimatedUsd);
     expect(premiumEstimate.estimatedUsd).toBeGreaterThan(balancedEstimate.estimatedUsd);
+  });
+
+  it("charges page 1's best-of drafting once per book, never per page", () => {
+    // No illustrations and no AI cover, so the only thing that moves between
+    // these two books is text: base + pages x per-page.
+    const inputFor = (modelTier: "fast" | "balanced" | "premium" | "ultra", targetPages: number) =>
+      createProjectSchema.parse({
+        prompt: "Create a guide about pricing consulting retainers.",
+        category: "BUSINESS",
+        subcategory: "Lead Magnet Ebook",
+        targetPages,
+        mediaSettings: {
+          fullIllustrations: false,
+          includeCover: false,
+          finalReview: true,
+          toneProfile: "confident",
+          modelTier
+        }
+      });
+
+    for (const tier of ["fast", "balanced", "premium", "ultra"] as const) {
+      const assumptions = providerCostAssumptionsForInput(inputFor(tier, 8));
+      const short = estimateProviderCostForProject(inputFor(tier, 8)).estimatedUsd;
+      const long = estimateProviderCostForProject(inputFor(tier, 108)).estimatedUsd;
+
+      // The whole point of putting the one-off on `textBase`: a hundred more
+      // pages cost a hundred per-page rates and not one cent more. Folded into
+      // `textPerPage` instead, the extra opening-page work would be billed a
+      // hundred times over on the long book and once-in-a-hundred on a short one.
+      expect(long - short).toBeCloseTo(100 * assumptions.textPerPage, 6);
+      const premiumReview = tier === "premium" || tier === "ultra" ? assumptions.premiumReview : 0;
+      expect(short).toBeCloseTo(assumptions.textBase + 8 * assumptions.textPerPage + assumptions.exportCompile + premiumReview, 6);
+    }
+
+    // And the base itself did move for the tiers that pay for three candidates.
+    expect(estimateProviderCostForProject(inputFor("premium", 8)).estimatedUsd).toBeCloseTo(0.62, 6);
+    expect(estimateProviderCostForProject(inputFor("ultra", 8)).estimatedUsd).toBeCloseTo(1.21, 6);
   });
 
   it("builds margin summaries from estimated revenue and actual provider cost", () => {

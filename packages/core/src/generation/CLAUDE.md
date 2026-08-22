@@ -36,11 +36,146 @@ holds the event loop open and vitest will never exit.
 
 ## Index
 
+- [Page 1's opening contract](#page-1s-opening-contract)
+- [Best-of candidate sampling](#best-of-candidate-sampling)
 - [Covers](#covers)
 - [PDF typesetting and the render transport](#pdf-typesetting-and-the-render-transport)
 - [Export provenance and scratch files](#export-provenance-and-scratch-files)
 - [Chapter apparatus](#chapter-apparatus)
 - [Library characters](#library-characters)
+
+## Page 1's opening contract
+
+- **Nothing states page 1's opening contract in its own words: a prompt names an audience and gets
+  the ban, the import exemption that silences it, and the hook fused to its payload key — or gets
+  nothing.** The contract is two halves gated on different facts. The **opening-quality** half —
+  never open on throat-clearing, a welcome, a definition of the topic, or meta framing such as "In
+  this book" — is what an imported manuscript is exempt from: page 1 of an import is the author's
+  own first sentence, and every one of those rules is a licence to rewrite it
+  (`isImportedManuscript`, `schemas/mediaSettings.ts`). The **hook-delivery** half is gated on the
+  plan having committed to an `openingHook` **and on that same provenance**, because an import's
+  plan is not a commitment its book was written to: `synthesizeImportedBookPlan`
+  (`ingestion/manuscriptImport.ts`) builds it out of the finished manuscript and sets no
+  `openingHook` at all, and one appears only when that plan is later *revised* —
+  `revisePlanningPackage`'s "Preserve or improve openingHook" line is unconditional — so an import's
+  hook is a sentence a model invented from a premise field, having never seen page 1. Leaving it
+  ungated was justified as "a repair's replacement page is generated prose", which holds for the
+  brief producers and fails for every prompt this contract feeds: `revisePageDraft` and
+  `polishPageDraft` rewrite the page they are handed, in place, and a reader's own "make page 1
+  sharper" reaches `revisePageDraft` through `rewritePageForUserRequest`
+  (`apps/worker/src/handlers/replanBook.ts`). Which page is the author's cannot be asked — `Page`
+  has no provenance column, so `isImportedManuscript` reads the *project's* mediaSettings and both
+  halves are book-level. That over-applies to prose inserted at the head of an import
+  (`resolveStructuralEdit` accepts `anchorPageIndex: 0`, so a generated page can sit at global index
+  1) and is right anyway: the hook that page would deliver is the invented one, and hook-without-ban
+  is the worst of the four combinations — a page told to make its opening striking with none of the
+  rules that say what a striking opening is. Eight prompts say something about that page:
+  the three bulk writers (`generateWholeBookDraft`, `generateChapterDraft`, `generateBatchDraft`),
+  the single-page draft, `polishPageDraft`, `revisePageDraft`, `reviewPageDraft` and
+  `runFinalBookQa`. Spelled per prompt, the halves came apart four times running, each one a
+  different mismatch between the set of prompts *stating* a rule and the set applying its gate: the
+  ban fused to the hook sentence in the bulk writers, so a plan with no hook — every `MOCK_AI` run,
+  `makeFallbackPlan` itself, every plan stored before the field, any run where the model omits the
+  optional key — drafted page 1 with no ban at all and was then failed by the deterministic checker,
+  which is gated on provenance and never on the hook; the exemption reaching local QA and neither
+  model reviewer, which is *worse* than no exemption, because the local gate's early return in
+  `reviewPageDraft` was the only thing that had been keeping the model call off an import's page 1;
+  the exemption never reaching `buildPageInstruction`, so a page-1 revision of an import was
+  explicitly instructed to rewrite the author's opening after a failure with some unrelated cause;
+  and local QA excusing categories the writer prompt banned outright; and the hook half left
+  ungated after all four, so an import's page 1 — the author's own first sentence — was handed
+  "deliver the plan's `openingHook` in the page's own prose" by the reviser, the polisher and the
+  reviewer, after any QA failure with an unrelated cause and on any reader-requested rewrite of
+  that page. Every one of those is a rule
+  and its gate answered in different places, so the three questions are answered once —
+  `openingContractForRange` (`pagesShared.ts`): does this call reach global page 1, may page 1's
+  prose be held to the quality rules, did the plan commit to a hook. `openingContractFields` is the
+  only way to the sentences. It picks them out of `OPENING_CONTRACT_RULES`, an **exhaustive
+  `Record`** over `multiPageWriter`, `pageWriter` and `reviewer`, and returns them fused to the
+  payload: spreading `payload` beside `rules` is the only way to use either, so a prompt cannot
+  carry the ban without the exemption having been applied, nor name the hook without sending it. A
+  ninth prompt names an audience or gets no text at all. The question is asked of a **range**, not
+  an index, because a chapter-scoped call has to ask it of the absolute pages it was handed — a
+  leading chapter that ended up with no pages hands page 1 to the next one.
+  **The reviewer's two sentences are not the writers', and neither difference is cosmetic.**
+  `statesCategoryOpening` is true only for the writer audiences, which choose the opening;
+  `firstPageOpeningRule`'s category recipes inside a rejection prompt invite rejecting a legitimate
+  opening for being the wrong shape. And because the writers are told to deliver the hook "without
+  echoing its wording", the reviewer's hook sentence has to say so outright — an unlabelled
+  `openingHook` beside `pageBrief` reads as "the page must match this", so a page that transformed
+  the hook correctly could be rejected for not reproducing it. `runFinalBookQa` asks the same contract over the whole book and sends the opening
+  pages only when `statesOpeningQuality` says it may judge them.
+  **The deterministic twin is the same ban, gated on provenance alone.** `hasWeakFirstPageOpening`
+  (`pagesLocalQa.ts`) fires on `pageIndex === 1` for every book the pipeline wrote, with no category
+  exemption: `firstPageOpeningRule` grants the signposting categories exactly one concession — "you
+  may signpost later on the page, never in the first paragraph" — and `FIRST_PAGE_OPENING_WINDOW`
+  *is* that first paragraph, so an exemption there approved the one sentence the instruction never
+  did. `isImportedManuscript` is therefore named in exactly two places in this pipeline, the prompts
+  (`pagesShared.ts`) and the gate (`pagesLocalQa.ts`); `pagesReview.ts` names it nowhere and reads
+  `statesOpeningQuality` off the contract instead.
+  **The sweep measures both sets rather than listing them, which is why editing the test cannot keep
+  it green.** `pagesShared.test.ts` runs all eight prompts against a generated book and an imported
+  one, a plan with a hook and a plan without, on page 1 and on page 2, and asserts set identities:
+  the prompts stating the ban are exactly the ones the import exemption silences, and the prompts
+  naming the hook are exactly the ones a hookless plan silences **and** exactly the ones an import
+  silences — three measured sets, so no gate can move on its own. A further case asserts the whole
+  contract goes quiet on an import's page 1, both halves at once. Its handle on "does this prompt state
+  the ban" is `OPENING_QUALITY_RULE_MARKER` — the word "throat-clearing", which all three sentences
+  interpolate instead of each phrasing the ban — so a prompt wording it freshly measures as not
+  stating it at all, which the "every site states it" assertion is what catches.
+- **The page *brief* producers gate the hook and not the ban, and that split is the one deliberate
+  asymmetry.** `firstPageBriefFieldsForRange` (`pageBriefContract.ts`) is the single entry point all
+  five brief producers reach the contract through — the whole-book map, the per-chapter brief,
+  `repairPageBrief`, `critiquePageMap`, and the deterministic `fallbackPageBeatFromChapter`, which
+  takes only the condition because it writes no prompt and has no payload key to emit — and it reads
+  its hook off the very same `openingContractForRange`, so an import's page 1 is never *assigned*
+  the hook its prompts are no longer told to *deliver*. Leaving that half raw was the last door:
+  `synthesizeImportedBookPlan` sets no `openingHook`, a `book_replan` invents one, and a later
+  `GENERATE_BOOK` then briefed page 1 to deliver it while the writer prompt — gated — carried no
+  `openingHook` key at all, which is the "told to deliver a hook it was never shown" failure the
+  whole contract exists to prevent, arriving through the brief instead of the instruction.
+  `FIRST_PAGE_IDENTITY_RULE`, the brief side's opening *ban*, stays ungated on purpose: the
+  exemption protects an author's own sentence from being rejected and rewritten, and a brief is a
+  production assignment for prose about to be generated — a repair's replacement page included — so
+  the ban over-applies to an import's page 1 without ever reaching a sentence the author wrote. The
+  halves part company because their over-application costs different things: a ban costs a
+  regenerated page some freedom it was never going to use, a hook costs the author their opening.
+  Two things keep that from drifting back. `PageBriefBookScope` **is** `OpeningContractSource` — an
+  alias, not a twin — so a producer whose options satisfy one satisfies the other by construction;
+  and the raw `(openingHook, lastPageIndex)` form is module-private, so no producer can answer the
+  provenance question at its own call site. `critiquePageMap` was the one that did — the worker
+  handed it `plan.openingHook` as a string — and it now takes the book like the other four, with
+  `apps/worker/src/generation/bookState.ts` passing `input` and `plan` over whole and only
+  `mergePageMapCriticPatch`, which states no rule, still taking a plain `lastPageIndex`.
+
+## Best-of candidate sampling
+
+- **No best-of candidate samples hotter than the pass would have run at without candidates, and a
+  band too narrow for the ladder compresses the step rather than widening the band.**
+  `bestOfCandidateTemperatures(top, count)` (`bestOf.ts`) is the only place a candidate temperature
+  is computed, and its ladder **descends**: candidate 0 sits exactly on `top`, each later one a
+  `CANDIDATE_TEMPERATURE_STEP` below. `top` is what the pass runs at with no candidates at all —
+  the book's own `input.temperature` on the draft path, `polishPageTemperature(input)` on the
+  polish path, which is the `REWRITE_TEMPERATURE_CEILING` clamp `polishPageDraft` already applies
+  to itself. Climbing from a base is what this replaced, and both paths were wrong in opposite
+  directions once `firstPageCandidateCount` made best-of the default for page 1 of every
+  balanced-and-up book rather than an ultra-only operator opt-in. On the draft path the ladder had
+  no ceiling: at the default 0.8 page 1 was sampled at 0.8, 0.95 and **1.1**, and page 1 is the
+  style lock `loadStyleLockPages` pins into every later page's draft prompt *and* into the review
+  that scores it — so the hottest sample, if the judge liked it, became the voice the whole book
+  was written and audited against. On the polish path the clamp flattened it instead: every
+  candidate landed on exactly 0.65, so the extra call and its judge bought sampling noise rather
+  than a spread. Lowering the base to fit fixed that and opened the mirror hole — a floor at zero
+  widened the band *above* the book's own temperature, so a project created at 0.2 sampled at 0.0,
+  0.15 and 0.30 with nothing to catch it, since 0.30 is under the ceiling. Descending closes both
+  and pays twice over: a book that never best-ofs is byte-identical, because the top rung *is* the
+  candidate-free temperature and `draftPage` receives that very `baseOptions` object; and the
+  judge's fallback (`drafts[0]`) is the draft the book would have got anyway rather than the
+  coldest sample. A book that asked for `temperature: 0` has no band, so its candidates would be
+  copies and the judge would be choosing between duplicates — `generateBestOfPageDrafts` refuses
+  that spend outright and makes one untouched call. A non-finite temperature reaches the same
+  guard and reads as that book, so an input that skipped the schema's `.default(0.8)` silently
+  loses best-of rather than failing.
 
 ## Covers
 

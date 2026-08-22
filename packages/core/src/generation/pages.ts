@@ -28,6 +28,7 @@ import {
   compactPriorPages,
   isRecord,
   numberField,
+  openingContractFields,
   range,
   stringArrayField,
   stringField,
@@ -38,7 +39,7 @@ import {
   type PriorPageContext
 } from "./pagesShared.js";
 import { pageGetsInteriorIllustration } from "./illustrationSlots.js";
-import { pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
+import { REWRITE_TEMPERATURE_CEILING, pageMapForRange, pageMapForWholeBookDraft } from "./pagesPageMap.js";
 
 export { shouldIllustratePage } from "./illustrationSlots.js";
 
@@ -48,6 +49,7 @@ export {
   type LocalPageReviewOptions
 } from "./pagesLocalQa.js";
 export {
+  REWRITE_TEMPERATURE_CEILING,
   generateChapterBrief,
   generateWholeBookPageMap,
   repairPageBrief,
@@ -68,10 +70,21 @@ export {
   pinStyleExcerpts,
   sampleExcerptsFromInput,
   buildPageInstruction,
+  openingContractFields,
+  openingContractFieldsForPage,
+  openingContractForRange,
   pagesForStyleExcerpts,
   missingStyleLockIndexes,
+  OPENING_QUALITY_RULE_MARKER,
   STYLE_LOCK_PAGE_INDEXES,
   type GeneratePageOptions,
+  type OpeningContract,
+  type OpeningContractAudience,
+  type OpeningContractFields,
+  type OpeningContractSource,
+  type OpeningHookPayload,
+  type PageInstructionFields,
+  type PageInstructionSource,
   type PriorPageContext
 } from "./pagesShared.js";
 
@@ -195,6 +208,9 @@ export async function generatePageDraft(options: GeneratePageOptions): Promise<P
 }
 
 export async function generateWholeBookDraft(options: GenerateWholeBookOptions): Promise<WholeBookDraft> {
+  // This pass always writes page 1, so it always owes page 1's opening contract
+  // — including the hook the page map's first brief is written against.
+  const opening = openingContractFields(options, "multiPageWriter", 1, options.input.targetPages);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-whole-book",
     temperature: options.input.temperature,
@@ -212,6 +228,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
           ...multiPageImagePromptGuidance(options.input, 1, options.input.targetPages),
           ...READER_FACING_PAGE_BRIEF_RULES,
           "Every page must add distinct progression; do not repeat the same scene, explanation, decision, or emotional beat across pages.",
+          ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -239,6 +256,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
             characters: options.plan.characters,
             locations: options.plan.locations,
             pageMap: options.chapterBriefs ? pageMapForWholeBookDraft(options.chapterBriefs) : undefined,
+            ...opening.payload,
             researchNotes: options.researchNotes,
             illustrationPlan: options.plan.illustrationPlan,
             pageGuidance: {
@@ -265,6 +283,7 @@ export async function generateWholeBookDraft(options: GenerateWholeBookOptions):
 
 export async function generateChapterDraft(options: GenerateChapterDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.chapterPageStart, options.chapterPageEnd);
+  const opening = openingContractFields(options, "multiPageWriter", options.chapterPageStart, options.chapterPageEnd);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-chapter-draft",
     temperature: options.input.temperature,
@@ -282,6 +301,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
           GROUNDED_FACTUALITY_RULE,
           "Do not mention AI, prompts, JSON, schemas, generation, or production instructions in reader-facing pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
+          ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -306,6 +326,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
             },
             chapter: options.chapter,
             chapterBrief: options.chapterBrief,
+            ...opening.payload,
             characters: options.plan.characters,
             illustrationPlan: options.plan.illustrationPlan,
             pageRange: {
@@ -338,6 +359,7 @@ export async function generateChapterDraft(options: GenerateChapterDraftOptions)
 
 export async function generateBatchDraft(options: GenerateBatchDraftOptions): Promise<WholeBookDraft> {
   const expectedPages = range(options.pageStart, options.pageEnd);
+  const opening = openingContractFields(options, "multiPageWriter", options.pageStart, options.pageEnd);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "generate-page-batch",
     temperature: options.input.temperature,
@@ -355,6 +377,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
           GROUNDED_FACTUALITY_RULE,
           "Make each page advance a distinct beat and avoid repeating recent pages.",
           ...READER_FACING_PAGE_BRIEF_RULES,
+          ...opening.rules,
           ...targetLanguageGenerationGuidance(options.input.language),
           ...writerToneRules(options.input)
         ].join(" ")
@@ -383,6 +406,7 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
             characters: options.plan.characters,
             illustrationPlan: options.plan.illustrationPlan,
             pageMap: pageMapForRange(options.chapterBriefs, options.pageStart, options.pageEnd),
+            ...opening.payload,
             previousPages: compactPriorPages(options.previousPages, 8, 900),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             researchNotes: options.researchNotes.slice(0, 18),
@@ -409,10 +433,35 @@ export async function generateBatchDraft(options: GenerateBatchDraftOptions): Pr
   };
 }
 
+/**
+ * **What one polish call samples at — and therefore the top of the ladder the
+ * polish path hands best-of.**
+ *
+ * The polish pass rewrites a page that already exists, so it runs cooler than
+ * the draft that produced it: `REWRITE_TEMPERATURE_CEILING` (`pagesPageMap.ts`,
+ * shared with `repairPageBrief` for the same reason) is absolute — nothing on
+ * this path may sample above it — while a book configured below it keeps its own
+ * temperature.
+ *
+ * That makes this the temperature a candidate-free polish runs at, which is
+ * exactly what `generateBestOfPageDrafts` (`bestOf.ts`) needs handed to it: its
+ * ladder descends from the temperature the pass would have used on its own, so
+ * no candidate samples hotter than the book asked for. Handing it the book's
+ * raw `temperature` instead would clamp the hottest rungs back onto the ceiling
+ * and buy sampling noise for the extra polish calls and the judge — the corner
+ * that was invisible while `bestOfPolish` was ultra-only, and became the default
+ * the day `firstPageCandidateCount` gave every balanced-and-up book a best-of
+ * page 1.
+ */
+export function polishPageTemperature(input: CreateProjectInput): number {
+  return Math.min(REWRITE_TEMPERATURE_CEILING, input.temperature);
+}
+
 export async function polishPageDraft(options: PolishPageOptions): Promise<PageDraft> {
+  const pageInstruction = buildPageInstruction(options);
   const result = await generateJsonWithRetry(options.textModel, {
     purpose: "polish-page",
-    temperature: Math.min(0.65, options.input.temperature),
+    temperature: polishPageTemperature(options.input),
     maxTokens: 3400,
     schema: pageDraftSchema,
     messages: [
@@ -451,6 +500,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
             chapter: options.chapter,
             chapterBrief: options.chapterBrief,
             pageBrief: options.pageBrief,
+            ...pageInstruction.payload,
             characters: options.plan.characters,
             illustrationPlan: options.plan.illustrationPlan,
             draft: options.draft,
@@ -458,7 +508,7 @@ export async function polishPageDraft(options: PolishPageOptions): Promise<PageD
             nextPages: compactPriorPages(options.nextPages, 3, 800),
             continuityNotes: continuityNotesForPrompt(options.continuityNotes, CONTINUITY_NOTE_PROMPT_LIMITS.bulkDraft),
             researchNotes: options.researchNotes.slice(0, 18),
-            instruction: buildPageInstruction(options.pageIndex, options.input.targetPages)
+            instruction: pageInstruction.text
           },
           null,
           2

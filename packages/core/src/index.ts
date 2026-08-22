@@ -98,3 +98,8 @@ export * from "./jobDispatch.js";
 // The record coercion every workspace reaches for. Only these two names leave
 // the package — the rest of `schemas/jsonCoercion.js` stays internal.
 export { isRecord, jsonRecord } from "./schemas/jsonCoercion.js";
+// `generation/pages.js` re-exports only the page-QA surface the worker calls,
+// and this is not one of those: it is a provenance predicate the API's project
+// serializer reads too, so it leaves the package by name from the module that
+// owns the rule. See its docstring for why there is one of it.
+export { isImportedManuscript } from "./schemas/mediaSettings.js";

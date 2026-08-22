@@ -30,6 +30,15 @@ vi.mock(
   "../generation/bookHelpers.js",
   async () => (await import("./testing/compileExportMocks.js")).bookHelpersModuleMock()
 );
+// Only `extractRepairPageIndexes` is a test hook here; `lastPageIndex` — the
+// bound the repair asks both of its questions in — stays real.
+vi.mock("../generation/finalQaPageTargets.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("../generation/finalQaPageTargets.js")>(
+      "../generation/finalQaPageTargets.js"
+    );
+  return (await import("./testing/compileExportMocks.js")).finalQaPageTargetsModuleMock(actual);
+});
 vi.mock(
   "../generation/storyStateStore.js",
   async () => (await import("./testing/compileExportMocks.js")).storyStateStoreModuleMock()
@@ -199,6 +208,25 @@ describe("repairPagesFromFinalQa", () => {
 
     const updatedIds = mocks.prisma.page.update.mock.calls.map((call) => (call[0] as { where: { id: string } }).where.id);
     expect(updatedIds).toEqual(["page-1", "page-2"]);
+  });
+
+  it("asks both of its questions in the book's page numbers, never the plan's", async () => {
+    // `input.targetPages` is what the plan asked for; the pages handed in are
+    // what was drafted, and `runLocalFinalQa` reports the difference as a
+    // mismatch of its own. Bounded by the plan, a complaint about page 3 of this
+    // book was dropped before the repair could see it, and the ending
+    // heuristic redrafted page 2 — the plan's last page, not the book's.
+    mocks.revisePageDraftWithRestart.mockResolvedValue(draftNamed("Repaired"));
+    strategy.reviewPageDraft.mockResolvedValue(report(85, true));
+
+    await repairPagesFromFinalQa(
+      baseOptions({ pages: [exportPage(1), exportPage(2), exportPage(3)], finalQa: finalQa([3]) })
+    );
+
+    expect(mocks.extractRepairPageIndexes).toHaveBeenCalledWith(expect.anything(), 3);
+    // And the same number reaches the report that tells the rewrite which
+    // complaints page 3 is answering.
+    expect(mocks.pageReportFromFinalQa).toHaveBeenCalledWith(expect.anything(), 3, 3);
   });
 
   it("skips flagged indexes that have no page row", async () => {

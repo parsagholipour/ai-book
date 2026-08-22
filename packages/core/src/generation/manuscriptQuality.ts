@@ -569,13 +569,23 @@ function tokenizePage(plain: string): PageTokens {
 /**
  * How many words a reader reads here, and in which script.
  *
- * A local counterpart of `countReadableWords` in `pagesLocalQa.ts`, which is
- * module-private there: same rule (a CJK character is half a word, an
- * unsegmented Southeast Asian one a quarter, a combining mark none of one),
- * summed over the page rather than rounded up per run. Counting runs instead is
- * what made every check below inert in Chinese and Japanese: a full ~1100
- * character page is ~30 runs, so the 80-word picture-book floor skipped it, and
- * a book with the same sentence on twenty pages sailed through.
+ * A local counterpart of `countReadableWords` in `proseShape.ts`, which exports
+ * it: same rule (a CJK character is half a word, an unsegmented Southeast Asian
+ * one a quarter, a combining mark none of one), summed over the page rather
+ * than rounded up per run. Counting runs instead is what made every check below
+ * inert in Chinese and Japanese: a full ~1100 character page is ~30 runs, so the
+ * 80-word picture-book floor skipped it, and a book with the same sentence on
+ * twenty pages sailed through.
+ *
+ * Deliberately a twin rather than a call, so this file's checks cannot be moved
+ * by a change made for the page gates. The rounding above is the intended
+ * divergence; one more is known and unintended, kept here so nobody "fixes" it
+ * blind: a token of combining marks alone, in a script outside the CJK/SEA
+ * sets, is one word here and none there — `NON_SPACED_CHARACTER_PATTERN` fails,
+ * so the token is banked as a spaced word before any character is inspected,
+ * while `countReadableWords` skips every mark and reaches zero. It needs a mark
+ * standing alone between separators, so it moves Indic and NFD-Latin counts
+ * only, and by less than the per-run rounding already does.
  */
 function measureWords(tokens: string[]): { wordCount: number; script: NonSpacedScript | null } {
   let spacedWords = 0;
@@ -638,7 +648,7 @@ const COMBINING_MARK_PATTERN = /\p{M}/u;
 
 /**
  * Where one sentence ends and the next begins. A local counterpart of
- * `SENTENCE_BOUNDARY_PATTERN` in `pagesLocalQa.ts` (module-private there) and
+ * `SENTENCE_BOUNDARY_PATTERN` in `proseShape.ts` (module-private there) and
  * deliberately identical: a spaced terminator with its closing quotes, a
  * full-width CJK terminator that takes no space after it, and — in the
  * unsegmented Southeast Asian scripts — the space itself, which is those

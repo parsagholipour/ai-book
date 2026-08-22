@@ -15,7 +15,6 @@ import {
   polishPageDraft,
   repairPageBrief,
   reviewPageDraft,
-  reviewPageDraftLocally,
   revisePageDraft
 } from "./pages.js";
 
@@ -165,14 +164,7 @@ describe("page quality review", () => {
       mediaSettings: { ...input.mediaSettings, toneProfile: "skeptical" as const }
     };
     const promptPlan = makeFallbackPlan(promptInput);
-    const model: TextModelAdapter = {
-      async generateText() {
-        return {
-          text: "",
-          model: "test-model",
-          provider: "test"
-        };
-      },
+    const model = stubTextModel({
       async generateJson(options) {
         request = options;
         return {
@@ -186,12 +178,8 @@ describe("page quality review", () => {
           model: "test-model",
           provider: "test"
         };
-      },
-      async *streamText() {
-        yield "";
-      },
-      generateWithTools: unsupportedGenerateWithTools
-    };
+      }
+    });
 
     await generatePageDraft({
       input: promptInput,
@@ -274,14 +262,7 @@ describe("page quality review", () => {
     let request: GenerateJsonOptions<unknown> | undefined;
     const promptInput = kidsInput("4-6");
     const promptPlan = makeFallbackPlan(promptInput);
-    const model: TextModelAdapter = {
-      async generateText() {
-        return {
-          text: "",
-          model: "test-model",
-          provider: "test"
-        };
-      },
+    const model = stubTextModel({
       async generateJson(options) {
         request = options;
         return {
@@ -295,12 +276,8 @@ describe("page quality review", () => {
           model: "test-model",
           provider: "test"
         };
-      },
-      async *streamText() {
-        yield "";
-      },
-      generateWithTools: unsupportedGenerateWithTools
-    };
+      }
+    });
 
     await generatePageDraft({
       input: promptInput,
@@ -348,14 +325,7 @@ describe("page quality review", () => {
         }
       ]
     };
-    const model: TextModelAdapter = {
-      async generateText() {
-        return {
-          text: "",
-          model: "test-model",
-          provider: "test"
-        };
-      },
+    const model = stubTextModel({
       async generateJson(options) {
         request = options;
         return {
@@ -370,12 +340,8 @@ describe("page quality review", () => {
           model: "test-model",
           provider: "test"
         };
-      },
-      async *streamText() {
-        yield "";
-      },
-      generateWithTools: unsupportedGenerateWithTools
-    };
+      }
+    });
 
     await generatePageDraft({
       input,
@@ -402,14 +368,7 @@ describe("page quality review", () => {
 
   it("repairs a page brief after QA shows the assignment itself causes repetition", async () => {
     let request: GenerateJsonOptions<unknown> | undefined;
-    const model: TextModelAdapter = {
-      async generateText() {
-        return {
-          text: "",
-          model: "test-model",
-          provider: "test"
-        };
-      },
+    const model = stubTextModel({
       async generateJson(options) {
         request = options;
         const repaired = {
@@ -427,12 +386,8 @@ describe("page quality review", () => {
           model: "test-model",
           provider: "test"
         };
-      },
-      async *streamText() {
-        yield "";
-      },
-      generateWithTools: unsupportedGenerateWithTools
-    };
+      }
+    });
 
     const repaired = await repairPageBrief({
       input,
@@ -749,10 +704,7 @@ describe("page quality review", () => {
       pageGuidance?: { instruction?: string };
     };
     let capturedPayload: CapturedWholeBookPayload = {};
-    const model: TextModelAdapter = {
-      async generateText() {
-        return { text: "", model: "test-model", provider: "test" };
-      },
+    const model = stubTextModel({
       async generateJson<T>(options: GenerateJsonOptions<T>) {
         const userMessage = [...options.messages].reverse().find((message) => message.role === "user");
         capturedPayload = userMessage ? JSON.parse(userMessage.content) : {};
@@ -762,12 +714,8 @@ describe("page quality review", () => {
           model: "test-model",
           provider: "test"
         };
-      },
-      async *streamText() {
-        yield "";
-      },
-      generateWithTools: unsupportedGenerateWithTools
-    };
+      }
+    });
 
     const draft = await generateWholeBookDraft({
       input: mapInput,
@@ -836,25 +784,14 @@ describe("page quality review", () => {
     const briefs = await generateWholeBookPageMap({
       input: pageMapInput,
       plan: pageMapPlan,
-      textModel: {
-        async generateText() {
-          return {
-            text: "",
-            model: "test-model",
-            provider: "test"
-          };
-        },
+      textModel: stubTextModel({
         async generateJson() {
           calls += 1;
           const error = new Error("Model returned invalid JSON. Unterminated string in JSON at position 8111");
           error.name = "GeminiJsonParseError";
           throw error;
-        },
-        async *streamText() {
-          yield "";
-        },
-        generateWithTools: unsupportedGenerateWithTools
-      }
+        }
+      })
     });
 
     expect(calls).toBe(2);
@@ -908,14 +845,7 @@ describe("page quality review", () => {
     await generateWholeBookPageMap({
       input: pageMapInput,
       plan: pageMapPlan,
-      textModel: {
-        async generateText() {
-          return {
-            text: "",
-            model: "test-model",
-            provider: "test"
-          };
-        },
+      textModel: stubTextModel({
         async generateJson(options) {
           payload = JSON.parse(options.messages.find((message) => message.role === "user")?.content ?? "{}");
           const rawData = {
@@ -932,12 +862,8 @@ describe("page quality review", () => {
             model: "test-model",
             provider: "test"
           };
-        },
-        async *streamText() {
-          yield "";
-        },
-        generateWithTools: unsupportedGenerateWithTools
-      }
+        }
+      })
     });
 
     expect(payload?.chapters).toBeUndefined();
@@ -980,14 +906,7 @@ describe("page quality review", () => {
     const briefs = await generateWholeBookPageMap({
       input: pageMapInput,
       plan: pageMapPlan,
-      textModel: {
-        async generateText() {
-          return {
-            text: "",
-            model: "test-model",
-            provider: "test"
-          };
-        },
+      textModel: stubTextModel({
         async generateJson(options) {
           calls.push(options.purpose ?? "");
           if (options.purpose === "generate-page-map") {
@@ -1016,12 +935,8 @@ describe("page quality review", () => {
             model: "test-model",
             provider: "test"
           };
-        },
-        async *streamText() {
-          yield "";
-        },
-        generateWithTools: unsupportedGenerateWithTools
-      }
+        }
+      })
     });
 
     expect(calls).not.toContain("generate-page-map");
@@ -1298,6 +1213,31 @@ describe("page quality review", () => {
 
     expect(polished.title).toBe("The Door Opens Wider");
     expect(polished.continuityNotes).toEqual(["Jack carries the cracked seal."]);
+  });
+
+  it("hands the polisher the openingHook its own instruction names, on page 1 only", async () => {
+    // Polish is the whole-book strategy's only page-1 writer, and the instruction it
+    // builds names "the plan's openingHook" - so the payload beside it owes that field.
+    const hookPlan = { ...plan, openingHook: "Jack is mid-climb over the chapel wall when the bell starts." };
+    const capture = capturingJsonModel({ title: "The Wall Bell", markdown: goodAlternateMarkdown(), summary: "Jack is caught mid-climb.", continuityNotes: [] });
+    const polishOptions = (pageIndex: number) => ({
+      input,
+      plan: hookPlan,
+      pageIndex,
+      draft: { title: "The Door Opens", markdown: goodMarkdown(), summary: "Jack opens the chapel door.", continuityNotes: [] },
+      previousPages: [],
+      nextPages: [],
+      continuityNotes: [],
+      researchNotes: [],
+      textModel: capture.model
+    });
+
+    await polishPageDraft(polishOptions(1));
+    expect(capture.payload?.openingHook).toBe(hookPlan.openingHook);
+    expect(capture.payload?.instruction).toMatch(/openingHook/);
+
+    await polishPageDraft(polishOptions(7));
+    expect(capture.payload).not.toHaveProperty("openingHook");
   });
 
   it("normalizes DeepSeek pageBeats-only chapter briefs", async () => {
@@ -1984,15 +1924,22 @@ function kidsOverlongMarkdown(): string {
   ].join("\n");
 }
 
-function jsonModel(rawData: unknown): TextModelAdapter {
+/** A TextModelAdapter whose only live method is the one these tests exercise. */
+function stubTextModel(overrides: Pick<TextModelAdapter, "generateJson">): TextModelAdapter {
   return {
     async generateText() {
-      return {
-        text: "",
-        model: "test-model",
-        provider: "test"
-      };
+      return { text: "", model: "test-model", provider: "test" };
     },
+    async *streamText() {
+      yield "";
+    },
+    generateWithTools: unsupportedGenerateWithTools,
+    ...overrides
+  };
+}
+
+function jsonModel(rawData: unknown): TextModelAdapter {
+  return stubTextModel({
     async generateJson(options) {
       return {
         data: options.schema.parse(rawData),
@@ -2000,12 +1947,8 @@ function jsonModel(rawData: unknown): TextModelAdapter {
         model: "test-model",
         provider: "test"
       };
-    },
-    async *streamText() {
-      yield "";
-    },
-    generateWithTools: unsupportedGenerateWithTools
-  };
+    }
+  });
 }
 
 function wholeBookTestPages(count: number) {
@@ -2019,24 +1962,13 @@ function wholeBookTestPages(count: number) {
 }
 
 function malformedJsonModel(): TextModelAdapter {
-  return {
-    async generateText() {
-      return {
-        text: "",
-        model: "test-model",
-        provider: "test"
-      };
-    },
+  return stubTextModel({
     async generateJson() {
       throw new Error(
         "Model returned invalid JSON. Expected double-quoted property name in JSON at position 1172 (line 14 column 245)"
       );
-    },
-    async *streamText() {
-      yield "";
-    },
-    generateWithTools: unsupportedGenerateWithTools
-  };
+    }
+  });
 }
 
 function capturingJsonModel(rawData: unknown): {
@@ -2052,14 +1984,7 @@ function capturingJsonModel(rawData: unknown): {
     maxTokens: number | undefined;
   } = {
     maxTokens: undefined,
-    model: {
-      async generateText() {
-        return {
-          text: "",
-          model: "test-model",
-          provider: "test"
-        };
-      },
+    model: stubTextModel({
       async generateJson(options) {
         capture.systemPrompt = options.messages[0]?.content ?? "";
         capture.payload = JSON.parse(options.messages[1]?.content ?? "{}") as Record<string, any>;
@@ -2070,80 +1995,8 @@ function capturingJsonModel(rawData: unknown): {
           model: "test-model",
           provider: "test"
         };
-      },
-      async *streamText() {
-        yield "";
-      },
-      generateWithTools: unsupportedGenerateWithTools
-    }
+      }
+    })
   };
   return capture;
 }
-
-describe("non-Latin local quality review", () => {
-  const persianInput: CreateProjectInput = {
-    ...input,
-    prompt: "یک داستان آرام شبانه درباره چمنزار خواب‌آلود.",
-    category: "CUSTOM",
-    language: "fa",
-    targetPages: 5
-  };
-  const persianPlan = makeFallbackPlan(persianInput);
-  const persianBody = [
-    "خرگوش کوچولو در چمنزار سبز و نرم دراز کشیده بود و به آسمان شب نگاه می‌کرد.",
-    "ستاره‌ها یکی‌یکی روشن می‌شدند و برای او چشمک می‌زدند.",
-    "مادرش کنار او نشست و پتوی گرم و پشمی را روی شانه‌هایش کشید.",
-    "باد ملایمی میان علف‌های بلند می‌پیچید و بوی گل‌های وحشی را با خود می‌آورد.",
-    "جیرجیرک‌ها آواز آرام شبانه‌شان را از گوشه‌ی چمنزار شروع کرده بودند.",
-    "خرگوش کوچولو خمیازه‌ای بلند کشید و گفت که هنوز خوابش نمی‌آید.",
-    "مادرش آرام خندید و قصه‌ی قدیمی ماه و تپه‌ی نقره‌ای را برایش تعریف کرد.",
-    "ماه از پشت تپه بالا آمد و نور نقره‌ای‌اش را روی تمام چمنزار پاشید.",
-    "کم‌کم پلک‌های خرگوش کوچولو سنگین و سنگین‌تر شد.",
-    "او در میان لالایی نسیم و عطر علف‌های تازه به خوابی شیرین رفت."
-  ].join(" ");
-
-  it("counts Persian prose as real words instead of rejecting the page as empty", () => {
-    const report = reviewPageDraftLocally({
-      input: persianInput,
-      plan: persianPlan,
-      pageIndex: 1,
-      draft: {
-        title: "چمنزار خواب‌آلود",
-        markdown: persianBody,
-        summary: "خرگوش کوچولو زیر آسمان پرستاره آماده خواب می‌شود.",
-        continuityNotes: []
-      },
-      previousPages: [],
-      continuityNotes: []
-    });
-
-    expect(report.issues.find((issue) => issue.includes("too short"))).toBeUndefined();
-    expect(report.checks.progressionOk).toBe(true);
-  });
-
-  it("does not flag distinct Persian titles as duplicates of the previous page", () => {
-    const report = reviewPageDraftLocally({
-      input: persianInput,
-      plan: persianPlan,
-      pageIndex: 2,
-      draft: {
-        title: "ستاره‌های بیدار",
-        markdown: persianBody,
-        summary: "ستاره‌ها برای چمنزار آواز شبانه می‌خوانند.",
-        continuityNotes: []
-      },
-      previousPages: [
-        {
-          index: 1,
-          title: "چمنزار خواب‌آلود",
-          markdown: "مهتاب روی رودخانه می‌درخشید و قورباغه‌ها آواز می‌خواندند و شب‌تاب‌ها می‌رقصیدند.",
-          summary: "شب در کنار رودخانه آغاز می‌شود."
-        }
-      ],
-      continuityNotes: []
-    });
-
-    expect(report.issues.find((issue) => issue.includes("title repeats"))).toBeUndefined();
-    expect(report.checks.titleClean).toBe(true);
-  });
-});

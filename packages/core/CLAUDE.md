@@ -57,6 +57,40 @@ arrive with one.
   `QuestionResponse.picked`, which is also what stops a joined answer being mistaken for a typed
   custom one.
 
+- **An alias is how the model spelled a plan field, never a weaker claim on it, so a candidate's
+  aliases are canonicalised before it merges onto the fallback — and an answer the field's own
+  schema refuses is dropped under every spelling, canonical included.** `openingHook` may arrive as
+  `opening_hook` or `hook`, `writingComplexity` as `complexity`, `writing_complexity`, `writingLevel`
+  or `readingLevel`; both are resolved by a first-match lookup down a canonical-first key list. A
+  revision is a patch, so it is merged onto a fallback — the current plan, or the template plan
+  `makeFallbackPlan` seeds — and that fallback is a *parsed* plan, which always spells its fields
+  canonically. Merging first therefore left `{ openingHook: "<old>", opening_hook: "<new>" }`
+  standing in one record and the lookup answered with the stale one: the reader asked for a
+  different opening, the book kept the old one, and nothing failed. `writingComplexity` had it
+  worse — it is required, so the fallback always carries it, and `makeFallbackPlan` fills it from
+  the caller's own `input.complexity`, which is why it bit initial planning too and handed back the
+  number the request came in with instead of the planner's answer. So `canonicalizePlanAliases`
+  runs inside `mergePlanRecords` (`packages/core/src/schemas/plan.ts`), on the candidate alone, off
+  `PLAN_ALIASED_FIELDS` — one table the promoter and the reader both consume, so a spelling cannot
+  be tolerated by one and unknown to the other.
+
+  `accepts` tests the **value**, not the spelling, so it governs the canonical key exactly as it
+  governs the aliases: every key the field cannot use is deleted from the candidate, the merge
+  finds no answer there, and the fallback's value stands. Guarding only the promotion left the one
+  spelling the planner prompt actually asks for unguarded, which is where both losses came from —
+  a `writingComplexity` of `"grade 5"` (NaN, and the field is required) overwrote the fallback's
+  number and cost the revision its whole parse, and an `openingHook` emitted as an array erased a
+  good stored hook that its `opening_hook` twin was already being refused for. The level predicate
+  is `writingComplexitySchema` itself, the same object `bookPlanObjectSchema` takes the field with,
+  never a hand-written restatement of its range: a predicate that refuses what the schema would
+  have taken drops a usable answer and leaves a required field missing, the same bug pointing the
+  other way. A hook is stored trimmed and a hook that trims away is no hook, because every consumer
+  gates on truthiness. Nothing is dropped on `bookPlanSchema`'s no-fallback path over a plan-like
+  record — the path every worker handler re-reads a stored plan through: it never merges, so
+  `canonicalizePlanAliases` never runs on it, the charitable lookup still reads whatever spelling
+  the model used, and a non-string hook still degrades to "no hook" rather than failing the whole
+  parse.
+
 ## Credit pricing
 
 - **A price key with no tier suffix is the *balanced* rate.** The quality preset a reader picks in

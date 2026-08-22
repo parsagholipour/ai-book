@@ -54,12 +54,33 @@ export async function prepareChapterSetups(options: {
     let mapped = briefs;
     if (quality.enabled("pageMapCritic")) {
       try {
+        // Both halves of the critic rank page 1 against the book's last page,
+        // and the book's is `targetPages`: pages are numbered 1..targetPages,
+        // which is what `chapterRanges` above partitions. It is passed rather
+        // than left to be read off `briefs`, because a map that came back short
+        // is exactly the failure `requireBriefForChapter` below and the brief
+        // repair loop exist for — and its highest page is then a middle page
+        // that would be told to resolve the book's central promise. The merge
+        // takes that number; the critic takes the book it came off, because the
+        // prompt half also has to ask whether this book's opening is ours to
+        // commit at all.
+        const lastPageIndex = options.input.targetPages;
+        // Nothing about page 1's contract is decided here. This handler used to
+        // pass `plan.openingHook` through as a string, which made it the one
+        // place the imported-manuscript exemption had to be spelled a second
+        // time — and it was not, so an imported book that had been replanned
+        // once briefed its page 1 to deliver a hook a plan revision invented
+        // without ever reading it. `input` and `plan` go over whole and
+        // `openingContractForRange` (`packages/core`) answers it there, beside
+        // the rule it gates.
         const patch = await critiquePageMap({
           textModel: options.providers.text,
+          input: options.input,
+          plan: options.plan,
           briefs,
           promises: options.plan.promises ?? []
         });
-        mapped = mergePageMapCriticPatch(briefs, patch);
+        mapped = mergePageMapCriticPatch(briefs, patch, lastPageIndex);
       } catch (error) {
         if (isStopRequestedError(error)) {
           throw error;

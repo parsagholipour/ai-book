@@ -1,5 +1,4 @@
 import {
-  extractRepairPageIndexes,
   formatQualityFailure,
   loadPagesForExport,
   loadStyleLockPages,
@@ -7,6 +6,7 @@ import {
   parseChapterBrief,
   toPriorPageContext
 } from "../generation/bookHelpers.js";
+import { extractRepairPageIndexes, lastPageIndex } from "../generation/finalQaPageTargets.js";
 import { loadContinuityNotes } from "../generation/generationContext.js";
 import { revisePageDraftWithRestart, runPageQualityLoop } from "../generation/pageReview.js";
 import { persistKeeperStoryDelta, type QualityGateContext } from "../generation/qualityEnrichment.js";
@@ -55,8 +55,17 @@ export async function repairPagesFromFinalQa(options: {
 }): Promise<ExportPageForRepair[] | undefined> {
   // Global editor pass: every flagged page is eligible for repair, not just
   // the first few — large books get the same treatment as short ones.
+  //
+  // In the manuscript's own page numbers, not the plan's: `input.targetPages`
+  // is what the plan asked for, and a book that drafted a different count (or
+  // whose plan-version snapshot lags a structural insert) had every complaint
+  // about its tail dropped — an ending complaint redrafting the plan's last
+  // page instead of the book's, or nothing at all. The same bound reaches
+  // `pageReportFromFinalQa`, which decides which complaints each repaired page
+  // is answering, so both halves read one number.
+  const lastPage = lastPageIndex(options.pages);
   const repairPageIndexes = [
-    ...new Set([...(options.extraPageIndexes ?? []), ...extractRepairPageIndexes(options.finalQa, options.input.targetPages)])
+    ...new Set([...(options.extraPageIndexes ?? []), ...extractRepairPageIndexes(options.finalQa, lastPage)])
   ].sort((first, second) => first - second);
   if (repairPageIndexes.length === 0) {
     return undefined;
@@ -128,7 +137,7 @@ export async function repairPagesFromFinalQa(options: {
       .filter((candidate) => candidate.index < page.index && candidate.status === "COMPLETED")
       .map(toPriorPageContext);
     const styleExcerpts = pinsStyleLock ? await styleLockFor(acceptedPreviousPages, page.index) : [];
-    const finalQaReport = pageReportFromFinalQa(options.finalQa, pageIndex, options.input.targetPages);
+    const finalQaReport = pageReportFromFinalQa(options.finalQa, pageIndex, lastPage);
     let draft = await revisePageDraftWithRestart({
       strategy: options.strategy,
       generationJobId: options.generationJobId,

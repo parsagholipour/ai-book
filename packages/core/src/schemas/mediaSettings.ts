@@ -3,7 +3,7 @@ import { normalizeAlibabaModel } from "../adapters/alibabaModels.js";
 import { normalizeGeminiImageModel } from "../adapters/geminiModels.js";
 import { BOOK_CATEGORIES } from "../categories.js";
 import { BOOK_GENERATION_STRATEGY_IDS } from "../generation/strategies/ids.js";
-import { jsonValueSchema } from "./jsonCoercion.js";
+import { jsonRecord, jsonValueSchema, mediaSettingsMobileRecord } from "./jsonCoercion.js";
 
 /**
  * Project input: mediaSettings, createProject, and the option enums they are
@@ -207,3 +207,42 @@ export type ImageModelSelection = z.infer<typeof imageModelSelectionSchema>;
 export type CoverTemplateId = z.infer<typeof coverTemplateIdSchema>;
 export type AudienceAgeRange = z.infer<typeof audienceAgeRangeSchema>;
 export type ToneProfile = z.infer<typeof toneProfileSchema>;
+
+/**
+ * Whether these `mediaSettings` describe a manuscript the reader brought in
+ * rather than a book this pipeline wrote.
+ *
+ * Page 1 of an imported manuscript is the author's own opening sentence, and
+ * the gate above is not advisory: `runLocalFinalQa` hands its rejection to
+ * `repairPagesFromFinalQa`, which model-redrafts the page in place. Nothing
+ * generated that page — the writer instruction this check is the deterministic
+ * twin of was never given to anyone for it — so a book that genuinely opens
+ * "Have you ever wondered why your tap water tastes different in August?" would
+ * have had the author's first line rewritten for breaking a rule it was never
+ * held to. Provenance is `mediaSettings.mobile.import`, written when the import
+ * creates the project and carried through `planInputSnapshot` into every plan
+ * version's input snapshot, which is what `compileExport` reconstructs `input`
+ * from. Only the opening gate is skipped; the rest of local QA still runs, and
+ * the final page's `hasVagueEnding` is left exactly as it was.
+ *
+ * **The model reviewers ask this too** (`pagesReview.ts`), because the local
+ * gate returning no issue is precisely what stops `runFinalBookQa` returning
+ * early — so an exemption spelled only here handed the author's opening to the
+ * model that was instructed to reject it, which is worse than no exemption at
+ * all.
+ *
+ * It takes the raw `mediaSettings` rather than a `CreateProjectInput` because
+ * its consumers sit on both sides of that type: the page gates read it off an
+ * input, while `projectSourceFromMediaSettings`
+ * (`apps/api/src/mobile/projectSerializers.ts`) labels a book `"imported"` or
+ * `"generated"` for the app straight off a project row, and used to read that
+ * record with its own character-identical copy of this expression. One
+ * predicate is the only way the app's label and the author's protection cannot
+ * drift apart, and core is the leaf of the dependency graph, so this is the
+ * direction the graph already allows. It lives here rather than beside either
+ * consumer for that reason: provenance is a fact about `mediaSettings`, and a
+ * page-QA module owning it made an app serializer import the prose gates.
+ */
+export function isImportedManuscript(mediaSettings: unknown): boolean {
+  return Object.keys(jsonRecord(mediaSettingsMobileRecord(mediaSettings).import)).length > 0;
+}
